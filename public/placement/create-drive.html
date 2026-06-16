@@ -1,0 +1,79 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Create Drive · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="create-drive.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div><h1 class="page-title">Create Placement Drive</h1><p class="page-sub">Fill in the details to publish a new opportunity.</p></div>
+  <div class="d-flex gap-2"><a href="drives.html" class="btn btn-outline-secondary">Cancel</a><button class="btn btn-primary"><i class="bi bi-send me-1"></i>Publish Drive</button></div>
+</div>
+
+<form class="row g-3">
+  <div class="col-lg-8">
+    <div class="card-surface p-4 mb-3">
+      <h6 class="fw-bold mb-3">Basic information</h6>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" placeholder="e.g. Google"/></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">Job role</label><input class="form-control" placeholder="e.g. SDE-1"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Job type</label><select class="form-select"><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">CTC (LPA)</label><input class="form-control" placeholder="e.g. 12"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Location</label><input class="form-control" placeholder="e.g. Bengaluru"/></div>
+        <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" rows="5" placeholder="Role overview, responsibilities…"></textarea></div>
+      </div>
+    </div>
+
+    <div class="card-surface p-4 mb-3">
+      <h6 class="fw-bold mb-3">Eligibility criteria</h6>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label small fw-semibold">Branches allowed</label>
+          <div class="d-flex flex-wrap gap-2">
+            <span class="badge-soft">CSE ×</span><span class="badge-soft">IT ×</span><span class="badge-soft">ECE ×</span>
+            <button type="button" class="badge-soft muted border-0">+ Add</button>
+          </div>
+        </div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" value="7.0"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" value="0"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">10th %</label><input class="form-control" value="70"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">12th %</label><input class="form-control" value="70"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Graduation year</label><select class="form-select"><option>2026</option><option>2027</option></select></div>
+      </div>
+    </div>
+
+    <div class="card-surface p-4">
+      <h6 class="fw-bold mb-3">Job description upload</h6>
+      <div class="dropzone"><i class="bi bi-cloud-arrow-up display-5 d-block mb-2"></i>Drag & drop the JD PDF or <span class="text-decoration-underline">browse files</span><div class="small mt-1">Max 10MB · PDF, DOC, DOCX</div></div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card-surface p-4 mb-3">
+      <h6 class="fw-bold mb-3">Schedule</h6>
+      <div class="mb-3"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control"/></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Drive date</label><input type="date" class="form-control"/></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Mode</label><select class="form-select"><option>On-campus</option><option>Virtual</option><option>Hybrid</option></select></div>
+    </div>
+    <div class="card-surface p-4 mb-3">
+      <h6 class="fw-bold mb-3">Selection process</h6>
+      <div class="timeline">
+        <div class="item done"><strong class="small">Online Test</strong><div class="small text-muted-2">90 min · MCQ + Coding</div></div>
+        <div class="item"><strong class="small">Technical Interview</strong><div class="small text-muted-2">2 rounds</div></div>
+        <div class="item pending"><strong class="small">HR Round</strong><div class="small text-muted-2">Final</div></div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-2"><i class="bi bi-plus-lg"></i> Add stage</button>
+    </div>
+    <div class="card-surface p-4">
+      <h6 class="fw-bold mb-2">Visibility</h6>
+      <div class="form-check"><input class="form-check-input" type="checkbox" checked id="v1"><label class="form-check-label small" for="v1">Notify eligible students by email</label></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" checked id="v2"><label class="form-check-label small" for="v2">Show on public placement portal</label></div>
+    </div>
+  </div>
+</form>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/app.js"></script></body></html>
