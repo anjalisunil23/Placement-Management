@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public Placement Statistics — PMS</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/frontend/assets/css/style.css" rel="stylesheet">
+</head>
+<body data-pms-fallback="/frontend/pages/login.html">
+  <section class="public-hero text-center">
+    <div class="container">
+      <h1 class="display-4 fw-bold">Placement Achievements</h1>
+      <p class="lead">College Placement Management System — Public Statistics</p>
+      <a href="login.html" class="btn btn-light btn-lg mt-2">Portal Login</a>
+    </div>
+  </section>
+  <div class="container py-5">
+    <div class="row g-4 text-center">
+      <div class="col-md-3"><div class="card highlight-card p-4"><h3 id="placementPct">—</h3><p class="text-muted mb-0">Placement Rate</p></div></div>
+      <div class="col-md-3"><div class="card highlight-card p-4"><h3 id="totalPlaced">—</h3><p class="text-muted mb-0">Students Placed</p></div></div>
+      <div class="col-md-3"><div class="card highlight-card p-4"><h3 id="totalCompanies">—</h3><p class="text-muted mb-0">Partner Companies</p></div></div>
+      <div class="col-md-3"><div class="card highlight-card p-4"><h3 id="highestSal">—</h3><p class="text-muted mb-0">Highest Package (LPA)</p></div></div>
+    </div>
+    <h3 class="mt-5 mb-3">Branch-wise Statistics</h3>
+    <div id="branchStats" class="row g-3"></div>
+    <h3 class="mt-5 mb-3">Top Recruiters</h3>
+    <div id="topCompanies"></div>
+  </div>
+  <script src="/frontend/assets/js/api.js"></script>
+  <script src="/frontend/assets/js/nav.js"></script>
+  <script>
+    fetch('/backend/api/public/placement-stats').then(r => r.json()).then(res => {
+      const d = res.data;
+      document.getElementById('placementPct').textContent = d.placementPercentage + '%';
+      document.getElementById('totalPlaced').textContent = d.totalPlaced;
+      document.getElementById('totalCompanies').textContent = d.totalCompanies;
+      document.getElementById('highestSal').textContent = d.salaryHighlights?.highest || '—';
+      document.getElementById('branchStats').innerHTML = (d.branchStats || []).map(b => `
+        <div class="col-md-4"><div class="card p-3"><strong>${b.department}</strong><br>${b.placed}/${b.total} placed (${b.percentage}%)</div></div>
+      `).join('');
+      document.getElementById('topCompanies').innerHTML = '<ul class="list-group">' +
+        (d.topCompanies || []).map(c => `<li class="list-group-item d-flex justify-content-between">${c.name}<span class="badge bg-primary">${c.selected} selected</span></li>`).join('') + '</ul>';
+    });
+  </script>
+</body>
+</html>
