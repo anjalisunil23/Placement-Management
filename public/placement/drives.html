@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Placement Drives · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="drives.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div><h1 class="page-title">Placement Drives</h1><p class="page-sub">Manage all ongoing and upcoming recruitment drives.</p></div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary"><i class="bi bi-funnel me-1"></i>Filters</button>
+    <a href="create-drive.html" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Create Drive</a>
+  </div>
+</div>
+
+<div class="card-surface p-3 mb-3">
+  <div class="row g-2">
+    <div class="col-md-4"><div class="position-relative"><i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i><input class="form-control ps-4" placeholder="Search by company, role…"/></div></div>
+    <div class="col-6 col-md-2"><select class="form-select"><option>All Status</option><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
+    <div class="col-6 col-md-2"><select class="form-select"><option>All Branches</option><option>CSE</option><option>ECE</option><option>ME</option><option>EE</option></select></div>
+    <div class="col-6 col-md-2"><select class="form-select"><option>All Roles</option><option>Full-time</option><option>Internship</option></select></div>
+    <div class="col-6 col-md-2"><input type="date" class="form-control"/></div>
+  </div>
+</div>
+
+<div class="card-surface">
+  <div class="d-flex justify-content-between align-items-center p-3 p-md-4">
+    <div><h6 class="fw-bold mb-0">All Drives <span class="badge-soft muted ms-1">142</span></h6></div>
+    <div class="d-flex gap-2"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i></button></div>
+  </div>
+  <div class="table-wrap">
+    <table class="table-modern"><thead><tr>
+      <th><input type="checkbox"/></th><th>Company</th><th>Role</th><th>Package</th><th>Eligible</th><th>Applied</th><th>Status</th><th>Deadline</th><th></th></tr></thead>
+      <tbody id="rows"></tbody></table>
+  </div>
+  <div class="d-flex justify-content-between align-items-center p-3 border-top" style="border-color:var(--border)!important">
+    <small class="text-muted-2">Showing 1–10 of 142</small>
+    <nav><ul class="pagination pagination-sm mb-0">
+      <li class="page-item disabled"><a class="page-link" href="#">‹</a></li>
+      <li class="page-item active"><a class="page-link" href="#">1</a></li>
+      <li class="page-item"><a class="page-link" href="#">2</a></li>
+      <li class="page-item"><a class="page-link" href="#">3</a></li>
+      <li class="page-item"><a class="page-link" href="#">›</a></li>
+    </ul></nav>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="editModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Edit Drive</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="row g-3">
+      <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><input class="form-control" value="Google"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" value="SDE-1"/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">CTC (LPA)</label><input class="form-control" value="42"/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Deadline</label><input type="date" class="form-control"/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select"><option>Open</option><option>Ongoing</option><option>Closed</option></select></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" rows="4"></textarea></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Upload JD</label><div class="dropzone"><i class="bi bi-cloud-arrow-up display-6 d-block mb-1"></i>Drag & drop JD PDF or click to browse</div></div>
+    </div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Save changes</button></div>
+</div></div></div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/app.js"></script>
+<script>
+const data=[
+ ["Google","SDE-1","₹42 LPA","CSE,IT","412","success","Open","Dec 28"],
+ ["Amazon","SDE Intern","₹18 LPA","CSE,ECE","680","info","Ongoing","Jan 04"],
+ ["Microsoft","SWE","₹52 LPA","CSE","148","success","Open","Jan 10"],
+ ["Deloitte","Analyst","₹9 LPA","All","1240","info","Ongoing","Jan 06"],
+ ["TCS","System Engineer","₹4.5 LPA","All","2160","warning","Open","Jan 15"],
+ ["Infosys","SE","₹4.5 LPA","All","1980","muted","Closed","Dec 12"],
+ ["Goldman Sachs","Quant Intern","₹28 LPA","CSE,Math","94","success","Open","Jan 18"],
+ ["Adobe","Product Intern","₹22 LPA","CSE,ECE","312","info","Ongoing","Jan 09"],
+ ["Flipkart","SDE","₹26 LPA","CSE,IT","380","success","Open","Jan 12"],
+ ["Wipro","Project Engineer","₹4 LPA","All","2450","muted","Closed","Dec 02"]
+];
+document.getElementById("rows").innerHTML=data.map(d=>`<tr>
+  <td><input type="checkbox"/></td>
+  <td><div class="d-flex align-items-center gap-2"><div class="ic" style="width:32px;height:32px;border-radius:8px;background:var(--surface-2);display:grid;place-items:center;font-weight:700;color:var(--primary)">${d[0][0]}</div><strong>${d[0]}</strong></div></td>
+  <td>${d[1]}</td><td>${d[2]}</td><td>${d[3]}</td><td>${d[4]}</td>
+  <td><span class="badge-soft ${d[5]}">${d[6]}</span></td><td>${d[7]}</td>
+  <td><div class="d-flex gap-1"><button class="icon-btn" style="width:30px;height:30px" data-bs-toggle="modal" data-bs-target="#editModal"><i class="bi bi-pencil"></i></button><button class="icon-btn" style="width:30px;height:30px"><i class="bi bi-three-dots"></i></button></div></td>
+</tr>`).join("");
+</script></body></html>
