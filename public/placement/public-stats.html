@@ -54,9 +54,7 @@
   <div class="container">
     <h2 class="fw-bold text-center">Top recruiters</h2>
     <p class="text-center text-muted-2">Brands that hire our talent year after year</p>
-    <div class="row row-cols-2 row-cols-md-4 row-cols-lg-6 g-3 mt-3">
-      ${["Google","Amazon","Microsoft","Adobe","Deloitte","TCS","Infosys","Wipro","Goldman","Flipkart","Oracle","Cisco"].map(n=>`<div class="col"><div class="recruiter-logo">${n}</div></div>`).join("")}
-    </div>
+    <div class="row row-cols-2 row-cols-md-4 row-cols-lg-6 g-3 mt-3" id="recruitersRow"></div>
   </div>
 </section>
 
@@ -75,40 +73,14 @@
 <section id="stories" class="py-5" style="background:var(--surface-2)">
   <div class="container">
     <h2 class="fw-bold text-center mb-4">Success stories</h2>
-    <div class="row g-3">
-      ${[
-        ["Aarav Mehta","Google · SDE-1","₹42 LPA","“PlaceHub made the entire process so structured — from resume reviews to interview slots.”"],
-        ["Sneha Iyer","Microsoft · SWE","₹52 LPA","“Practice rounds organized through the portal helped me crack four offers.”"],
-        ["Rahul Verma","Goldman Sachs · Quant","₹28 LPA","“The eligibility matching pointed me to the right drives at the right time.”"],
-      ].map(s=>`
-        <div class="col-md-4"><div class="card-surface p-4 h-100">
-          <div class="d-flex align-items-center gap-3 mb-3">
-            <div class="avatar" style="width:48px;height:48px">${s[0].split(' ').map(n=>n[0]).join('')}</div>
-            <div><strong>${s[0]}</strong><div class="small text-muted-2">${s[1]}</div></div>
-          </div>
-          <span class="badge-soft success mb-2">${s[2]}</span>
-          <p class="text-muted-2 small mb-0">${s[3]}</p>
-        </div></div>`).join("")}
-    </div>
+    <div class="row g-3" id="storiesRow"></div>
   </div>
 </section>
 
 <section id="news" class="py-5">
   <div class="container">
     <h2 class="fw-bold text-center mb-4">Placement news</h2>
-    <div class="row g-3">
-      ${[
-        ["Record-breaking season kicks off","Over 142 companies have already confirmed campus visits for 2025–26.","Nov 12, 2025"],
-        ["Google announces 28 SDE offers","One of the largest cohorts hired from a single drive this year.","Oct 30, 2025"],
-        ["New mentorship program launched","Alumni from 60+ companies join the placement readiness program.","Oct 18, 2025"],
-      ].map(p=>`
-        <div class="col-md-4"><div class="card-surface p-4 h-100">
-          <small class="text-muted-2">${p[2]}</small>
-          <h5 class="fw-bold mt-2">${p[0]}</h5>
-          <p class="text-muted-2 small mb-3">${p[1]}</p>
-          <a href="#" class="fw-semibold text-decoration-none">Read more →</a>
-        </div></div>`).join("")}
-    </div>
+    <div class="row g-3" id="newsRow"></div>
   </div>
 </section>
 
@@ -122,5 +94,37 @@
 <script>
 Charts.bar(document.getElementById("pubBar"),["2021","2022","2023","2024","2025","2026"],[1420,1610,1820,1980,2080,2154],"Offers");
 Charts.doughnut(document.getElementById("pubPie"),["IT/Software","Consulting","Core Eng","Finance","Product","Other"],[1240,360,280,150,90,34]);
+
+document.getElementById("recruitersRow").innerHTML =
+  ["Google","Amazon","Microsoft","Adobe","Deloitte","TCS","Infosys","Wipro","Goldman","Flipkart","Oracle","Cisco"]
+    .map(n=>`<div class="col"><div class="recruiter-logo">${n}</div></div>`).join("");
+
+const stories=[
+ ["Aarav Mehta","Google · SDE-1","₹42 LPA","“PlaceHub made the entire process so structured — from resume reviews to interview slots.”"],
+ ["Sneha Iyer","Microsoft · SWE","₹52 LPA","“Practice rounds organized through the portal helped me crack four offers.”"],
+ ["Rahul Verma","Goldman Sachs · Quant","₹28 LPA","“The eligibility matching pointed me to the right drives at the right time.”"],
+];
+document.getElementById("storiesRow").innerHTML = stories.map(s=>`
+  <div class="col-md-4"><div class="card-surface p-4 h-100">
+    <div class="d-flex align-items-center gap-3 mb-3">
+      <div class="avatar" style="width:48px;height:48px">${s[0].split(' ').map(n=>n[0]).join('')}</div>
+      <div><strong>${s[0]}</strong><div class="small text-muted-2">${s[1]}</div></div>
+    </div>
+    <span class="badge-soft success mb-2">${s[2]}</span>
+    <p class="text-muted-2 small mb-0">${s[3]}</p>
+  </div></div>`).join("");
+
+const news=[
+ ["Record-breaking season kicks off","Over 142 companies have already confirmed campus visits for 2025–26.","Nov 12, 2025"],
+ ["Google announces 28 SDE offers","One of the largest cohorts hired from a single drive this year.","Oct 30, 2025"],
+ ["New mentorship program launched","Alumni from 60+ companies join the placement readiness program.","Oct 18, 2025"],
+];
+document.getElementById("newsRow").innerHTML = news.map(p=>`
+  <div class="col-md-4"><div class="card-surface p-4 h-100">
+    <small class="text-muted-2">${p[2]}</small>
+    <h5 class="fw-bold mt-2">${p[0]}</h5>
+    <p class="text-muted-2 small mb-3">${p[1]}</p>
+    <a href="#" class="fw-semibold text-decoration-none">Read more →</a>
+  </div></div>`).join("");
 </script>
 </body></html>
