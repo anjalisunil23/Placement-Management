@@ -1,0 +1,5 @@
+RewriteEngine On
+
+# Route API requests to the REST router
+RewriteRule ^backend/api(/.*)?$ backend/api/index.php [L,QSA]
+RewriteRule ^api(/.*)?$ backend/api/index.php [L,QSA]

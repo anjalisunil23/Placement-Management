@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Placement Management System</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/frontend/assets/css/style.css" rel="stylesheet">
+</head>
+<body data-pms-fallback="/frontend/pages/public.html">
+  <div class="auth-wrapper">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-md-5">
+          <div class="card auth-card">
+            <div class="card-body p-5">
+              <div class="text-center mb-4">
+                <h2 class="fw-bold text-primary">PMS Portal</h2>
+                <p class="text-muted">College Placement Management System</p>
+              </div>
+              <div id="alert" class="alert alert-danger d-none"></div>
+              <form id="loginForm">
+                <div class="mb-3">
+                  <label class="form-label">Email</label>
+                  <input type="email" class="form-control" id="email" required placeholder="you@college.edu">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Password</label>
+                  <input type="password" class="form-control" id="password" required>
+                </div>
+                <button type="submit" class="btn btn-pms w-100 py-2">Sign In</button>
+              </form>
+              <hr>
+              <p class="text-center mb-0">
+                <a href="register.html">Create an account</a> ·
+                <a href="public.html">Public Placement Page</a>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/frontend/assets/js/api.js"></script>
+  <script src="/frontend/assets/js/nav.js"></script>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alert = document.getElementById('alert');
+      alert.classList.add('d-none');
+      try {
+        const res = await PMS.post('/auth/login', {
+          email: document.getElementById('email').value,
+          password: document.getElementById('password').value
+        });
+        PMS.setToken(res.data.token);
+        PMS.setUser(res.data);
+        window.location.href = res.data.dashboard;
+      } catch (err) {
+        alert.textContent = err.message;
+        alert.classList.remove('d-none');
+      }
+    });
+  </script>
+</body>
+</html>

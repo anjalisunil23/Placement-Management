@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alumni — PMS</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/frontend/assets/css/style.css" rel="stylesheet">
+</head>
+<body data-pms-fallback="/frontend/pages/login.html">
+  <nav class="navbar navbar-dark bg-dark"><div class="container-fluid"><span class="navbar-brand">PMS — Alumni</span>
+    <button class="btn btn-outline-light btn-sm" onclick="PMS.logout()">Logout</button></div></nav>
+  <div class="container p-4">
+    <div class="row">
+      <div class="col-md-6">
+        <h2>Alumni Profile</h2>
+        <form id="profileForm">
+          <input class="form-control mb-2" id="company" placeholder="Current Company">
+          <input class="form-control mb-2" id="role" placeholder="Role">
+          <input type="number" class="form-control mb-2" id="experience" placeholder="Experience (years)">
+          <input class="form-control mb-2" id="skills" placeholder="Skills (comma separated)">
+          <button type="submit" class="btn btn-pms">Save Profile</button>
+        </form>
+      </div>
+      <div class="col-md-6">
+        <h2>Refer a Job</h2>
+        <form id="referForm">
+          <input class="form-control mb-2" id="jobTitle" placeholder="Job Title" required>
+          <input class="form-control mb-2" id="refCompany" placeholder="Company Name" required>
+          <textarea class="form-control mb-2" id="refDesc" placeholder="Description"></textarea>
+          <input class="form-control mb-2" id="refPackage" placeholder="Package">
+          <button type="submit" class="btn btn-pms">Submit Referral</button>
+        </form>
+        <h4 class="mt-4">My Referrals</h4>
+        <div id="referrals"></div>
+      </div>
+    </div>
+    <hr>
+    <h3>Eligible Drives</h3>
+    <div id="drives" class="row g-3"></div>
+    <h4 class="mt-4">Open Jobs</h4>
+    <div id="jobs"></div>
+  </div>
+  <script src="/frontend/assets/js/api.js"></script>
+  <script src="/frontend/assets/js/nav.js"></script>
+  <script>
+    PMS.requireAuth(['alumni']);
+    PMS.get('/alumni/profile').then(res => {
+      if (!res.data) return;
+      document.getElementById('company').value = res.data.company || '';
+      document.getElementById('role').value = res.data.role || '';
+      document.getElementById('experience').value = res.data.experience || '';
+      document.getElementById('skills').value = (res.data.skills || []).join(', ');
+    });
+    PMS.get('/alumni/referrals').then(res => {
+      document.getElementById('referrals').innerHTML = res.data.map(r => `<div class="card p-2 mb-2">${r.jobTitle} @ ${r.companyName}</div>`).join('') || '<p class="text-muted">No referrals yet.</p>';
+    });
+    PMS.get('/alumni/drives').then(res => {
+      document.getElementById('drives').innerHTML = res.data.map(d => `<div class="col-md-6"><div class="card p-3">
+        <h5>${d.title}</h5><p>${d.date} — ${d.eligibility?.eligible ? '<span class="badge bg-success">Eligible</span>' : '<span class="badge bg-danger">Not eligible</span>'}</p>
+        ${d.eligibility?.eligible ? `<button class="btn btn-sm btn-pms" onclick="apply('${d._id}')">Apply</button>` : ''}
+      </div></div>`).join('') || '<p class="text-muted">No drives or no linked student profile.</p>';
+    });
+    PMS.get('/alumni/jobs').then(res => {
+      document.getElementById('jobs').innerHTML = res.data.map(j => `<div class="card p-2 mb-2">${j.title} — ${j.package}</div>`).join('');
+    });
+    document.getElementById('profileForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      await PMS.put('/alumni/profile', {
+        company: document.getElementById('company').value,
+        role: document.getElementById('role').value,
+        experience: parseInt(document.getElementById('experience').value),
+        skills: document.getElementById('skills').value.split(',').map(s => s.trim())
+      });
+      alert('Saved.');
+    });
+    document.getElementById('referForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      await PMS.post('/alumni/jobs/refer', {
+        jobTitle: document.getElementById('jobTitle').value,
+        companyName: document.getElementById('refCompany').value,
+        description: document.getElementById('refDesc').value,
+        package: document.getElementById('refPackage').value
+      });
+      alert('Referral submitted.');
+      location.reload();
+    });
+    async function apply(driveId) {
+      try { await PMS.post('/alumni/apply', { driveId }); alert('Applied!'); } catch(e) { alert(e.message); }
+    }
+  </script>
+</body>
+</html>

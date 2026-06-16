@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Management — PMS Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/frontend/assets/css/style.css" rel="stylesheet">
+</head>
+<body data-pms-fallback="/frontend/pages/admin/dashboard.html">
+  <nav class="navbar navbar-dark bg-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="dashboard.html">PMS — Admin</a>
+      <button class="btn btn-outline-light btn-sm" onclick="PMS.logout()">Logout</button>
+    </div>
+  </nav>
+  <div class="container-fluid p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2>User Management</h2>
+      <button class="btn btn-pms" data-bs-toggle="modal" data-bs-target="#addUserModal">Add User</button>
+    </div>
+    <div class="mb-3">
+      <select class="form-select w-auto d-inline-block" id="roleFilter">
+        <option value="">All Roles</option>
+        <option value="student">Student</option>
+        <option value="staff">Staff</option>
+        <option value="company">Company</option>
+        <option value="alumni">Alumni</option>
+        <option value="placement_officer">Placement Officer</option>
+      </select>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-pms table-striped table-hover">
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th id="deptCol" class="d-none">Department</th><th>Status</th><th>Approved</th><th>Actions</th></tr></thead>
+        <tbody id="userTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Add User</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <form id="addUserForm">
+            <input class="form-control mb-2" id="newName" placeholder="Name" required>
+            <input class="form-control mb-2" id="newEmail" type="email" placeholder="Email" required>
+            <input class="form-control mb-2" id="newPassword" type="password" placeholder="Password" required>
+            <select class="form-select mb-2" id="newRole" onchange="toggleDeptField()">
+              <option value="student">Student</option>
+              <option value="staff">Staff</option>
+              <option value="company">Company</option>
+              <option value="alumni">Alumni</option>
+              <option value="placement_officer">Placement Officer</option>
+            </select>
+            <div id="deptField" class="d-none">
+              <label class="form-label">Department <span class="text-danger">*</span></label>
+              <select class="form-select mb-2" id="newDepartment">
+                <option value="">Select department…</option>
+              </select>
+              <small class="text-muted">One placement officer per department. Only departments without an officer are listed.</small>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-pms" onclick="addUser()">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/frontend/assets/js/api.js"></script>
+  <script src="/frontend/assets/js/nav.js"></script>
+  <script>
+    PMS.requireAuth(['admin']);
+
+    let departments = [];
+    let officerByUserId = {};
+
+    async function loadDepartments() {
+      const res = await PMS.get('/admin/departments');
+      departments = res.data || [];
+      officerByUserId = {};
+      departments.forEach(d => {
+        if (d.placementOfficer?.userId) {
+          officerByUserId[d.placementOfficer.userId] = d;
+        }
+      });
+      refreshDepartmentOptions();
+    }
+
+    function refreshDepartmentOptions() {
+      const available = departments.filter(d => !d.hasOfficer);
+      const sel = document.getElementById('newDepartment');
+      if (!available.length) {
+        sel.innerHTML = '<option value="">No departments available (all have officers)</option>';
+        sel.disabled = true;
+        return;
+      }
+      sel.disabled = false;
+      sel.innerHTML = '<option value="">Select department…</option>' +
+        available.map(d => `<option value="${d._id}">${d.name} (${d.code})</option>`).join('');
+    }
+
+    function toggleDeptField() {
+      const show = document.getElementById('newRole').value === 'placement_officer';
+      document.getElementById('deptField').classList.toggle('d-none', !show);
+      if (show) refreshDepartmentOptions();
+    }
+
+    async function loadUsers() {
+      const role = document.getElementById('roleFilter').value;
+      const showDept = role === 'placement_officer';
+      document.getElementById('deptCol').classList.toggle('d-none', !showDept);
+      const path = role ? `/admin/users?role=${role}` : '/admin/users';
+      const res = await PMS.get(path);
+      const tbody = document.getElementById('userTable');
+      tbody.innerHTML = res.data.map(u => {
+        const dept = officerByUserId[u._id];
+        const deptCell = showDept
+          ? `<td>${dept ? `${dept.name} (${dept.code})` : '<span class="text-warning">Not assigned</span>'}</td>`
+          : '';
+        return `
+        <tr>
+          <td>${u.name}</td><td>${u.email}</td><td>${u.role}</td>
+          ${deptCell}
+          <td><span class="badge bg-${u.status === 'active' ? 'success' : u.status === 'blocked' ? 'danger' : 'warning'}">${u.status}</span></td>
+          <td>${u.approved ? 'Yes' : 'No'}</td>
+          <td>
+            ${!u.approved ? `<button class="btn btn-sm btn-success" onclick="approve('${u._id}')">Approve</button>` : ''}
+            ${u.status !== 'blocked' ? `<button class="btn btn-sm btn-warning" onclick="block('${u._id}')">Block</button>` : `<button class="btn btn-sm btn-info" onclick="unblock('${u._id}')">Unblock</button>`}
+            <button class="btn btn-sm btn-danger" onclick="del('${u._id}')">Delete</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function addUser() {
+      const role = document.getElementById('newRole').value;
+      const payload = {
+        name: document.getElementById('newName').value,
+        email: document.getElementById('newEmail').value,
+        password: document.getElementById('newPassword').value,
+        role,
+      };
+      if (role === 'placement_officer') {
+        const deptId = document.getElementById('newDepartment').value;
+        if (!deptId) { alert('Select a department. Each department can have only one placement officer.'); return; }
+        payload.departmentId = deptId;
+      }
+      try {
+        await PMS.post('/admin/users', payload);
+        bootstrap.Modal.getInstance(document.getElementById('addUserModal')).hide();
+        await loadDepartments();
+        loadUsers();
+      } catch (e) {
+        alert(e.message || 'Failed to create user.');
+      }
+    }
+
+    const approve = id => PMS.post(`/admin/users/${id}/approve`).then(loadUsers);
+    const block = id => PMS.post(`/admin/users/${id}/block`).then(loadUsers);
+    const unblock = id => PMS.post(`/admin/users/${id}/unblock`).then(loadUsers);
+    const del = id => { if (confirm('Delete user?')) PMS.del(`/admin/users/${id}`).then(() => { loadDepartments(); loadUsers(); }); };
+
+    document.getElementById('roleFilter').addEventListener('change', loadUsers);
+    loadDepartments();
+    loadUsers();
+  </script>
+</body>
+</html>
