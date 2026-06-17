@@ -6,7 +6,6 @@ namespace PMS\Middleware;
 
 use PMS\Models\UserModel;
 use PMS\Utils\DocumentHelper;
-use PMS\Utils\JwtHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
 
@@ -30,21 +29,6 @@ final class AuthMiddleware
 
     $userModel = new UserModel();
 
-    // Try JWT first
-    $token = JwtHelper::extractFromHeader();
-    if ($token !== null) {
-      $payload = JwtHelper::decode($token);
-      if ($payload && isset($payload['sub'])) {
-        $user = $userModel->findById((string) $payload['sub']);
-        if ($user && ($user['status'] ?? '') === 'active' && ($user['approved'] ?? false)) {
-          self::$currentUser = $user;
-          return $user;
-        }
-      }
-      Response::unauthorized('Invalid or expired token.');
-    }
-
-    // Fall back to session
     $session = Security::getSessionUser();
     if ($session !== null) {
       $user = $userModel->findById($session['id']);

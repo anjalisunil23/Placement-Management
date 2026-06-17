@@ -42,6 +42,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/admin-api.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
@@ -56,15 +57,11 @@ function canAct(a) {
 }
 
 function approveApp(id) {
-  ApplicationPipeline.approve(id);
-  toast('Application advanced to company selection.', 'success');
-  render();
+  ApplicationPipeline.approve(id).then(() => { toast('Application advanced.', 'success'); render(); });
 }
 
 function rejectApp(id) {
-  ApplicationPipeline.reject(id);
-  toast('Application rejected.', 'warn');
-  render();
+  ApplicationPipeline.reject(id).then(() => { toast('Application rejected.', 'warn'); render(); });
 }
 
 function render() {
@@ -91,5 +88,9 @@ function render() {
     </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No applications in the pipeline.</td></tr>';
 }
 
-render();
+async function initApplicationsPage() {
+  await ApplicationPipeline.fetch();
+  render();
+}
+initApplicationsPage();
 </script></body></html>

@@ -38,6 +38,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/admin-api.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
@@ -68,9 +69,7 @@ function removeDept(id) {
   const d = DepartmentStore.all().find(x => x.id === id);
   if (!d) return;
   if (!confirm(`Delete department "${d.name}" (${d.code})?`)) return;
-  DepartmentStore.remove(id);
-  toast('Department removed.', 'success');
-  render();
+  DepartmentStore.remove(id).then(ok => { toast(ok ? 'Department removed.' : 'Removed locally.', ok ? 'success' : 'warn'); render(); });
 }
 
 function render() {
@@ -91,21 +90,25 @@ function render() {
 
 document.getElementById('btnAdd').addEventListener('click', openAdd);
 
-document.getElementById('deptForm').addEventListener('submit', e => {
+document.getElementById('deptForm').addEventListener('submit', async e => {
   e.preventDefault();
   const name = document.getElementById('deptName').value.trim();
   const code = document.getElementById('deptCode').value.trim();
   if (!name || !code) return;
   if (editingId) {
-    DepartmentStore.update(editingId, { name, code: code.toUpperCase() });
+    await DepartmentStore.update(editingId, { name, code: code.toUpperCase() });
     toast('Department updated.', 'success');
   } else {
-    DepartmentStore.add({ name, code });
+    await DepartmentStore.add({ name, code });
     toast('Department added.', 'success');
   }
   deptModal().hide();
   render();
 });
 
-render();
+async function initDepartmentsPage() {
+  await DepartmentStore.fetch();
+  render();
+}
+initDepartmentsPage();
 </script></body></html>

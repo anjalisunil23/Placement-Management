@@ -47,6 +47,16 @@ class PlacementOfficerModel extends BaseModel
         return $result->getDeletedCount() > 0;
     }
 
+    public function deleteByDepartment(string $departmentId): bool
+    {
+        $oid = Security::toObjectId($departmentId);
+        if ($oid === null) {
+            return false;
+        }
+        $result = $this->collection->deleteOne(['departmentId' => $oid]);
+        return $result->getDeletedCount() > 0;
+    }
+
     /**
      * @return string[] Department IDs that already have an assigned officer
      */

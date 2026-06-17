@@ -214,6 +214,53 @@ final class OfficerController
 
     }
 
+    /** PUT /api/officer/drives/{id} */
+    public function updateDrive(string $driveId): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $driveModel = new DriveModel();
+        $drive = $driveModel->findById($driveId);
+        if (!$drive) {
+            Response::notFound('Drive not found.');
+        }
+
+        if (!$ctx['isAdmin'] && !PlacementOfficerContext::driveMatchesDepartment($drive, $ctx)) {
+            Response::forbidden('This drive is not for your department.');
+        }
+
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $allowed = ['title','type','date','time','eligibility','tier','status'];
+        $update = array_intersect_key($input, array_flip($allowed));
+
+        // For placement officers, keep drive scoped to their department
+        if (!$ctx['isAdmin']) {
+            $update = PlacementOfficerContext::applyDepartmentToDriveInput($update, $ctx);
+        }
+
+        $driveModel->update($driveId, $update);
+        Response::success(null, 'Drive updated.');
+    }
+
+    /** DELETE /api/officer/drives/{id} */
+    public function deleteDrive(string $driveId): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $driveModel = new DriveModel();
+        $drive = $driveModel->findById($driveId);
+        if (!$drive) {
+            Response::notFound('Drive not found.');
+        }
+
+        if (!$ctx['isAdmin'] && !PlacementOfficerContext::driveMatchesDepartment($drive, $ctx)) {
+            Response::forbidden('This drive is not for your department.');
+        }
+
+        $driveModel->delete($driveId);
+        Response::success(null, 'Drive deleted.');
+    }
+
 
 
     /** POST /api/officer/drives/{id}/attendance */

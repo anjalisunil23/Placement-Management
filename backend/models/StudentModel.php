@@ -46,6 +46,7 @@ class StudentModel extends BaseModel
             'userId'         => $userOid,
             'registerNumber' => strtoupper(trim($data['registerNumber'])),
             'departmentId'   => $deptOid,
+            'classBatch'     => $data['classBatch'] ?? '',
             'personal'       => $data['personal'] ?? [],
             'academic'       => array_merge([
                 'ugMarks'   => 0.0,

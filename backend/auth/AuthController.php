@@ -13,7 +13,6 @@ use PMS\Models\UserModel;
 use PMS\Services\NotificationService;
 use PMS\Schemas\Collections;
 use PMS\Utils\DocumentHelper;
-use PMS\Utils\JwtHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
 use PMS\Utils\Validator;
@@ -113,14 +112,8 @@ final class AuthController
 
         Security::setSessionUser($user);
 
-        $token = JwtHelper::encode([
-            'sub'  => (string) $user['_id'],
-            'role' => $user['role'],
-            'email'=> $user['email'],
-        ]);
-
         Response::success(
-            AuthMiddleware::userResponse($user, $token),
+            AuthMiddleware::userResponse($user, null),
             'Login successful.'
         );
     }

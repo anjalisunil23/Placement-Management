@@ -20,12 +20,15 @@ class AlumniReferralModel extends BaseModel
     public function createReferral(string $alumniUserId, array $data): string
     {
         return $this->insert([
-            'alumniUserId' => Security::toObjectId($alumniUserId),
-            'jobTitle'     => $data['jobTitle'] ?? '',
-            'companyName'  => $data['companyName'] ?? '',
-            'description'  => $data['description'] ?? '',
-            'link'         => $data['link'] ?? '',
-            'package'      => $data['package'] ?? '',
+            'alumniUserId'  => Security::toObjectId($alumniUserId),
+            'jobTitle'      => $data['jobTitle'] ?? '',
+            'companyName'   => $data['companyName'] ?? '',
+            'companyWebsite'=> $data['companyWebsite'] ?? $data['link'] ?? '',
+            'description'   => $data['description'] ?? '',
+            'link'          => $data['link'] ?? $data['companyWebsite'] ?? '',
+            'package'       => $data['package'] ?? '',
+            'referralType'  => $data['type'] ?? $data['referralType'] ?? 'Either',
+            'status'        => 'submitted',
         ]);
     }
 

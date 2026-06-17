@@ -162,16 +162,34 @@ function seedStaffRecommendations() {
 }
 
 const StaffRecs = {
+  _cache: null,
   all() {
+    if (this._cache) return this._cache;
     seedStaffRecommendations();
     try { return JSON.parse(localStorage.getItem(STAFF_REC_KEY) || '[]'); } catch { return []; }
   },
-  save(list) { localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); },
+  save(list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); },
+  async fetch() {
+    const list = await AdminApi.fetchRecommendations();
+    if (list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); return list; }
+    return this.all();
+  },
   mine() {
     const email = Auth.user()?.email;
     return this.all().filter(r => r.staffEmail === email);
   },
-  add(payload) {
+  async add(payload) {
+    const res = await api('/staff/recommendations', {
+      method: 'POST',
+      body: {
+        companyName: payload.companyName,
+        companyWebsite: payload.companyWebsite || '',
+        category: payload.category || 'Software',
+        reason: payload.reason || payload.hrName || 'Staff recommendation',
+        contact: { name: payload.hrName, email: payload.hrEmail, phone: payload.contactNumber },
+      },
+    });
+    if (res.success) { await this.fetch(); return res.data; }
     const u = Auth.user();
     const rec = {
       id: 'rec-' + Date.now(),
@@ -185,22 +203,35 @@ const StaffRecs = {
       submittedAt: new Date().toISOString(),
       status: 'pending',
     };
-    const list = this.all();
-    list.unshift(rec);
-    this.save(list);
+    this.save([rec, ...this.all()]);
     return rec;
   },
-  updateStatus(id, status) {
+  async updateStatus(id, status) {
+    const res = await api(`/admin/recommendations/${encodeURIComponent(id)}/status`, { method: 'PUT', body: { status } });
+    if (res.success) { await this.fetch(); return true; }
     this.save(this.all().map(r => r.id === id ? { ...r, status } : r));
+    return false;
   },
 };
 
 const RegisteredCompanies = {
+  _cache: null,
   all() {
+    if (this._cache) return this._cache;
     try { return JSON.parse(localStorage.getItem(REG_COMPANIES_KEY) || '[]'); } catch { return []; }
   },
-  save(list) { localStorage.setItem(REG_COMPANIES_KEY, JSON.stringify(list)); },
-  register(payload) {
+  save(list) { this._cache = list; localStorage.setItem(REG_COMPANIES_KEY, JSON.stringify(list)); },
+  async fetch() {
+    const list = await AdminApi.fetchCompanies();
+    if (list) { this._cache = list; localStorage.setItem(REG_COMPANIES_KEY, JSON.stringify(list)); return list; }
+    return this.all();
+  },
+  async register(payload) {
+    const res = await api('/admin/companies/register', { method: 'POST', body: payload });
+    if (res.success) {
+      await Promise.all([this.fetch(), StaffRecs.fetch()]);
+      return res.data;
+    }
     const company = {
       id: 'co-' + Date.now(),
       companyName: payload.companyName?.trim(),
@@ -213,9 +244,7 @@ const RegisteredCompanies = {
       registeredAt: new Date().toISOString(),
       sourceRecommendationId: payload.sourceRecommendationId || null,
     };
-    const list = this.all();
-    list.unshift(company);
-    this.save(list);
+    this.save([company, ...this.all()]);
     if (payload.sourceRecommendationId) StaffRecs.updateStatus(payload.sourceRecommendationId, 'registered');
     return company;
   },
@@ -233,13 +262,48 @@ function seedAlumniReferrals() {
 }
 
 const AlumniReferrals = {
-  all() { seedAlumniReferrals(); try { return JSON.parse(localStorage.getItem(ALUMNI_REF_KEY) || '[]'); } catch { return []; } },
-  save(list) { localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify(list)); },
+  _cache: null,
+  all() { seedAlumniReferrals(); if (this._cache) return this._cache; try { return JSON.parse(localStorage.getItem(ALUMNI_REF_KEY) || '[]'); } catch { return []; } },
+  save(list) { this._cache = list; localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify(list)); },
   mine() {
     const email = Auth.user()?.email || '';
     return this.all().filter(r => r.alumniEmail === email);
   },
-  add(payload) {
+  async fetch() {
+    const res = await api('/alumni/referrals');
+    if (res.success && Array.isArray(res.data)) {
+      this._cache = res.data.map(r => ({
+        id: r.id || r._id,
+        jobTitle: r.jobTitle,
+        companyName: r.companyName,
+        companyWebsite: r.companyWebsite || r.link || '',
+        package: r.package || '',
+        type: r.referralType || r.type || 'Either',
+        description: r.description || '',
+        status: r.status || 'Submitted',
+        statusCls: 'success',
+        submittedAt: r.createdAt || '',
+        alumniEmail: Auth.user()?.email || '',
+      }));
+      localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify(this._cache));
+      return this._cache;
+    }
+    return this.all();
+  },
+  async add(payload) {
+    const res = await api('/alumni/jobs/refer', {
+      method: 'POST',
+      body: {
+        jobTitle: payload.jobTitle,
+        companyName: payload.companyName,
+        companyWebsite: payload.companyWebsite || '',
+        link: payload.companyWebsite || '',
+        package: payload.package || '',
+        type: payload.type || 'Either',
+        description: payload.description || '',
+      },
+    });
+    if (res.success) { await this.fetch(); return res.data; }
     const u = Auth.user();
     const row = {
       id: 'ar-' + Date.now(),
@@ -255,9 +319,7 @@ const AlumniReferrals = {
       alumniEmail: u?.email || '',
       alumniName: u?.name || 'Alumni',
     };
-    const list = this.all();
-    list.unshift(row);
-    this.save(list);
+    this.save([row, ...this.all()]);
     return row;
   },
 };
@@ -717,11 +779,37 @@ function seedDepartments() {
 }
 
 const DepartmentStore = {
-  all() { seedDepartments(); try { return JSON.parse(localStorage.getItem(DEPTS_KEY) || '[]'); } catch { return []; } },
-  save(l) { localStorage.setItem(DEPTS_KEY, JSON.stringify(l)); },
-  add(p) { const d = { id:'d-'+Date.now(), name:p.name?.trim(), code:p.code?.trim().toUpperCase() }; this.save([...this.all(), d]); return d; },
-  update(id, p) { this.save(this.all().map(d => d.id === id ? { ...d, ...p } : d)); },
-  remove(id) { this.save(this.all().filter(d => d.id !== id)); },
+  _cache: null,
+  all() {
+    if (this._cache) return this._cache;
+    seedDepartments();
+    try { return JSON.parse(localStorage.getItem(DEPTS_KEY) || '[]'); } catch { return []; }
+  },
+  save(l) { this._cache = l; localStorage.setItem(DEPTS_KEY, JSON.stringify(l)); },
+  async fetch() {
+    const list = await AdminApi.fetchDepartments();
+    if (list) { this._cache = list; localStorage.setItem(DEPTS_KEY, JSON.stringify(list)); return list; }
+    return this.all();
+  },
+  async add(p) {
+    const res = await api('/admin/departments', { method: 'POST', body: { name: p.name, code: p.code } });
+    if (res.success) { await this.fetch(); return res.data; }
+    const d = { id:'d-'+Date.now(), name:p.name?.trim(), code:p.code?.trim().toUpperCase() };
+    this.save([...this.all(), d]);
+    return d;
+  },
+  async update(id, p) {
+    const res = await api(`/admin/departments/${encodeURIComponent(id)}`, { method: 'PUT', body: p });
+    if (res.success) { await this.fetch(); return true; }
+    this.save(this.all().map(d => d.id === id ? { ...d, ...p } : d));
+    return false;
+  },
+  async remove(id) {
+    const res = await api(`/admin/departments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res.success) { await this.fetch(); return true; }
+    this.save(this.all().filter(d => d.id !== id));
+    return false;
+  },
 };
 
 function seedDeptOfficers() {
@@ -771,15 +859,72 @@ function seedUsers() {
 }
 
 const UserRegistry = {
-  all() { seedUsers(); try { return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); } catch { return []; } },
-  save(l) { localStorage.setItem(USERS_KEY, JSON.stringify(l)); },
+  _cache: null,
+  all() {
+    if (this._cache) return this._cache;
+    seedUsers();
+    try { return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); } catch { return []; }
+  },
+  save(l) { this._cache = l; localStorage.setItem(USERS_KEY, JSON.stringify(l)); },
   byRole(r) { return this.all().filter(u => u.role === r); },
   get(id) { return this.all().find(u => u.id === id); },
   update(id, patch) { this.save(this.all().map(u => u.id === id ? { ...u, ...patch } : u)); },
   remove(id) { this.save(this.all().filter(u => u.id !== id)); },
-  add(p) { const u = { id:'u-'+Date.now(), status:'pending', blocked:false, blacklisted:false, ...p }; this.save([u, ...this.all()]); return u; },
-  approve(id) { this.update(id, { status:'approved' }); },
-  block(id, blocked=true) { this.update(id, { blocked }); },
+  async fetch() {
+    const [users, students, companies] = await Promise.all([
+      AdminApi.fetchUsers(),
+      AdminApi.fetchStudents(),
+      AdminApi.fetchCompanies(),
+    ]);
+    if (!users && !students && !companies) return this.all();
+    const list = [];
+    if (students) list.push(...students);
+    const studentIds = new Set(students?.map(s => s.id) || []);
+    users?.forEach(u => {
+      if (u.role === 'student' && studentIds.has(u.id)) return;
+      if (u.role === 'company') return;
+      list.push(u);
+    });
+    companies?.forEach(c => list.push({ ...c, role: 'company' }));
+    this._cache = list;
+    localStorage.setItem(USERS_KEY, JSON.stringify(list));
+    return list;
+  },
+  async add(p) {
+    const res = await api('/admin/users', {
+      method: 'POST',
+      body: {
+        name: p.name,
+        email: p.email,
+        password: p.password || 'Staff@123456',
+        role: p.role || 'staff',
+        approved: false,
+      },
+    });
+    if (res.success) { await this.fetch(); return res.data; }
+    const u = { id:'u-'+Date.now(), status:'pending', blocked:false, blacklisted:false, ...p };
+    this.save([u, ...this.all()]);
+    return u;
+  },
+  async approve(id) {
+    const res = await api(`/admin/users/${encodeURIComponent(id)}/approve`, { method: 'POST' });
+    if (res.success) { await this.fetch(); return true; }
+    this.update(id, { status:'approved' });
+    return false;
+  },
+  async block(id, blocked = true) {
+    const path = blocked ? 'block' : 'unblock';
+    const res = await api(`/admin/users/${encodeURIComponent(id)}/${path}`, { method: 'POST' });
+    if (res.success) { await this.fetch(); return true; }
+    this.update(id, { blocked });
+    return false;
+  },
+  async removeUser(id) {
+    const res = await api(`/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res.success) { await this.fetch(); return true; }
+    this.remove(id);
+    return false;
+  },
 };
 
 function seedRules() {
@@ -792,8 +937,33 @@ function seedRules() {
 }
 
 const PlacementRules = {
-  get() { seedRules(); try { return JSON.parse(localStorage.getItem(RULES_KEY) || '{}'); } catch { return {}; } },
-  set(p) { const n = { ...this.get(), ...p, updatedAt:new Date().toISOString() }; localStorage.setItem(RULES_KEY, JSON.stringify(n)); return n; },
+  _cache: null,
+  get() {
+    if (this._cache) return this._cache;
+    seedRules();
+    try { return JSON.parse(localStorage.getItem(RULES_KEY) || '{}'); } catch { return {}; }
+  },
+  set(p) {
+    const n = { ...this.get(), ...p, updatedAt:new Date().toISOString() };
+    this._cache = n;
+    localStorage.setItem(RULES_KEY, JSON.stringify(n));
+    return n;
+  },
+  async fetch() {
+    const rule = await AdminApi.fetchActiveRule();
+    if (rule) { this._cache = rule; localStorage.setItem(RULES_KEY, JSON.stringify(rule)); return rule; }
+    return this.get();
+  },
+  async save(p) {
+    const res = await api('/admin/rules/active', { method: 'PUT', body: p });
+    if (res.success && res.data) {
+      const mapped = AdminApi.mapRule(res.data);
+      this._cache = mapped;
+      localStorage.setItem(RULES_KEY, JSON.stringify(mapped));
+      return { ok: true, data: mapped };
+    }
+    return { ok: false, data: this.set(p) };
+  },
 };
 
 function seedApplications() {
@@ -807,11 +977,33 @@ function seedApplications() {
 }
 
 const ApplicationPipeline = {
-  all() { seedApplications(); try { return JSON.parse(localStorage.getItem(APPS_KEY) || '[]'); } catch { return []; } },
-  save(l) { localStorage.setItem(APPS_KEY, JSON.stringify(l)); },
-  advance(id, stage, status) { this.save(this.all().map(a => a.id === id ? { ...a, stage, status } : a)); },
-  approve(id) { this.advance(id, 'company_selection', 'approved'); },
-  reject(id) { this.advance(id, 'rejected', 'rejected'); },
+  _cache: null,
+  all() {
+    if (this._cache) return this._cache;
+    seedApplications();
+    try { return JSON.parse(localStorage.getItem(APPS_KEY) || '[]'); } catch { return []; }
+  },
+  save(l) { this._cache = l; localStorage.setItem(APPS_KEY, JSON.stringify(l)); },
+  async fetch() {
+    const list = await AdminApi.fetchApplications();
+    if (list) { this._cache = list; localStorage.setItem(APPS_KEY, JSON.stringify(list)); return list; }
+    return this.all();
+  },
+  async transition(id, status, remarks = '') {
+    const res = await api(`/admin/applications/${encodeURIComponent(id)}/transition`, { method: 'POST', body: { status, remarks } });
+    if (res.success) { await this.fetch(); return true; }
+    return false;
+  },
+  async approve(id) {
+    if (await this.transition(id, 'officer_approved')) return true;
+    this.save(this.all().map(a => a.id === id ? { ...a, stage:'company_selection', status:'approved' } : a));
+    return false;
+  },
+  async reject(id) {
+    if (await this.transition(id, 'rejected')) return true;
+    this.save(this.all().map(a => a.id === id ? { ...a, stage:'rejected', status:'rejected' } : a));
+    return false;
+  },
 };
 
 function seedBlacklist() {
@@ -822,10 +1014,33 @@ function seedBlacklist() {
 }
 
 const BlacklistStore = {
-  all() { seedBlacklist(); try { return JSON.parse(localStorage.getItem(BLACKLIST_KEY) || '[]'); } catch { return []; } },
-  save(l) { localStorage.setItem(BLACKLIST_KEY, JSON.stringify(l)); },
-  add(p) { const e = { id:'bl-'+Date.now(), active:true, addedAt:new Date().toISOString(), ...p }; this.save([e, ...this.all()]); return e; },
-  remove(id) { this.save(this.all().map(b => b.id === id ? { ...b, active:false } : b)); },
+  _cache: null,
+  all() {
+    if (this._cache) return this._cache;
+    seedBlacklist();
+    try { return JSON.parse(localStorage.getItem(BLACKLIST_KEY) || '[]'); } catch { return []; }
+  },
+  save(l) { this._cache = l; localStorage.setItem(BLACKLIST_KEY, JSON.stringify(l)); },
+  async fetch() {
+    const list = await AdminApi.fetchBlacklist();
+    if (list) { this._cache = list; localStorage.setItem(BLACKLIST_KEY, JSON.stringify(list)); return list; }
+    return this.all();
+  },
+  async add(p) {
+    const res = await api('/admin/blacklist', { method: 'POST', body: { registerNumber: p.registerNumber, reason: p.reason } });
+    if (res.success) { await this.fetch(); return true; }
+    const e = { id:'bl-'+Date.now(), active:true, addedAt:new Date().toISOString(), ...p };
+    this.save([e, ...this.all()]);
+    return false;
+  },
+  async remove(id) {
+    const row = this.all().find(b => b.id === id);
+    const studentId = row?.studentId || id;
+    const res = await api(`/admin/blacklist/${encodeURIComponent(studentId)}`, { method: 'DELETE' });
+    if (res.success) { await this.fetch(); return true; }
+    this.save(this.all().map(b => b.id === id ? { ...b, active:false } : b));
+    return false;
+  },
 };
 
 function seedResults() {
@@ -838,14 +1053,33 @@ function seedResults() {
 }
 
 const RecruitmentResults = {
-  all() { seedResults(); try { return JSON.parse(localStorage.getItem(RESULTS_KEY) || '[]'); } catch { return []; } },
-  save(l) { localStorage.setItem(RESULTS_KEY, JSON.stringify(l)); },
-  upsert(p) {
+  _cache: null,
+  all() {
+    if (this._cache) return this._cache;
+    seedResults();
+    try { return JSON.parse(localStorage.getItem(RESULTS_KEY) || '[]'); } catch { return []; }
+  },
+  save(l) { this._cache = l; localStorage.setItem(RESULTS_KEY, JSON.stringify(l)); },
+  async fetch() {
+    const list = await AdminApi.fetchResults();
+    if (list) { this._cache = list; localStorage.setItem(RESULTS_KEY, JSON.stringify(list)); return list; }
+    return this.all();
+  },
+  async upsert(p) {
+    const res = await api('/admin/results', { method: 'POST', body: p });
+    if (res.success) { await this.fetch(); return res.data; }
     const list = this.all();
     const idx = list.findIndex(r => r.registerNumber === p.registerNumber && r.company === p.company);
     const row = { id: p.id || 'res-'+Date.now(), ...p };
     if (idx >= 0) list[idx] = { ...list[idx], ...row }; else list.unshift(row);
-    this.save(list); return row;
+    this.save(list);
+    return row;
+  },
+  async remove(id) {
+    const res = await api(`/admin/results/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res.success) { await this.fetch(); return true; }
+    this.save(this.all().filter(r => r.id !== id));
+    return false;
   },
 };
 
@@ -859,15 +1093,30 @@ function seedResumeQueue() {
 }
 
 const ResumeQueue = {
-  all() { seedResumeQueue(); try { return JSON.parse(localStorage.getItem(RESUME_QUEUE_KEY) || '[]'); } catch { return []; } },
-  save(l) { localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify(l)); },
-  approve(id) {
-    const item = this.all().find(x => x.id === id);
-    this.save(this.all().map(r => r.id === id ? { ...r, status:'approved' } : r));
-    const u = UserRegistry.all().find(x => x.registerNumber === item?.registerNumber);
-    if (u) UserRegistry.update(u.id, { resumeStatus:'approved' });
+  _cache: null,
+  all() {
+    if (this._cache) return this._cache;
+    seedResumeQueue();
+    try { return JSON.parse(localStorage.getItem(RESUME_QUEUE_KEY) || '[]'); } catch { return []; }
   },
-  reject(id) { this.save(this.all().map(r => r.id === id ? { ...r, status:'rejected' } : r)); },
+  save(l) { this._cache = l; localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify(l)); },
+  async fetch() {
+    const list = await AdminApi.fetchPendingResumes();
+    if (list) { this._cache = list; localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify(list)); return list; }
+    return this.all();
+  },
+  async approve(id) {
+    const item = this.all().find(x => x.id === id);
+    const studentId = item?.studentId || id;
+    const res = await api(`/admin/students/${encodeURIComponent(studentId)}/verify-resume`, { method: 'POST' });
+    if (res.success) { await this.fetch(); return true; }
+    this.save(this.all().map(r => r.id === id ? { ...r, status:'approved' } : r));
+    return false;
+  },
+  async reject(id) {
+    this.save(this.all().map(r => r.id === id ? { ...r, status:'rejected' } : r));
+    return true;
+  },
 };
 
 function checkResumeFileName(fileName) {
@@ -875,28 +1124,83 @@ function checkResumeFileName(fileName) {
 }
 
 const SystemSettings = {
-  get() {
-    try {
-      return JSON.parse(localStorage.getItem(SYS_SETTINGS_KEY) || JSON.stringify({
-        placementYear:'2025-26', emailFrom:'placement@college.edu', maxUploadMb:10,
-        smtpEnabled:true, notifyOnApproval:true,
-      }));
-    } catch { return { placementYear:'2025-26', maxUploadMb:10 }; }
+  _cache: null,
+  defaults() {
+    return { placementYear:'2025-26', emailFrom:'placement@college.edu', maxUploadMb:10, smtpEnabled:true, notifyOnApproval:true };
   },
-  set(p) { const n = { ...this.get(), ...p }; localStorage.setItem(SYS_SETTINGS_KEY, JSON.stringify(n)); return n; },
+  get() {
+    if (this._cache) return { ...this.defaults(), ...this._cache };
+    try {
+      return JSON.parse(localStorage.getItem(SYS_SETTINGS_KEY) || JSON.stringify(this.defaults()));
+    } catch { return this.defaults(); }
+  },
+  set(p) {
+    const n = { ...this.get(), ...p };
+    this._cache = n;
+    localStorage.setItem(SYS_SETTINGS_KEY, JSON.stringify(n));
+    return n;
+  },
+  async fetch() {
+    const res = await api('/admin/settings/system');
+    if (res.success && res.data) {
+      this._cache = res.data;
+      localStorage.setItem(SYS_SETTINGS_KEY, JSON.stringify(res.data));
+      return res.data;
+    }
+    return this.get();
+  },
+  async save(payload) {
+    const res = await api('/admin/settings/system', { method: 'PUT', body: payload });
+    if (res.success && res.data) {
+      this._cache = res.data;
+      localStorage.setItem(SYS_SETTINGS_KEY, JSON.stringify(res.data));
+      return { ok: true, data: res.data };
+    }
+    const merged = this.set(payload);
+    return { ok: false, data: merged, message: res.message };
+  },
 };
 
 const PublicPageContent = {
-  get() {
-    try {
-      return JSON.parse(localStorage.getItem(PUBLIC_PAGE_KEY) || JSON.stringify({
-        season:'2025-26', placed:2154, highestPkg:68, avgPkg:9.4, medianPkg:8.2, lowestPkg:3.5,
-        companies:142, headline:'Where ambition meets opportunity',
-        achievements:'Record ₹68 LPA international offer · 92.5% MCA placement rate',
-      }));
-    } catch { return {}; }
+  _cache: null,
+  defaults() {
+    return {
+      season:'2025-26', placed:2154, highestPkg:68, avgPkg:9.4, medianPkg:8.2, lowestPkg:3.5,
+      companies:142, headline:'Where ambition meets opportunity',
+      achievements:'Record ₹68 LPA international offer · 92.5% MCA placement rate',
+    };
   },
-  set(p) { const n = { ...this.get(), ...p }; localStorage.setItem(PUBLIC_PAGE_KEY, JSON.stringify(n)); return n; },
+  get() {
+    if (this._cache) return { ...this.defaults(), ...this._cache };
+    try {
+      return JSON.parse(localStorage.getItem(PUBLIC_PAGE_KEY) || JSON.stringify(this.defaults()));
+    } catch { return this.defaults(); }
+  },
+  set(p) {
+    const n = { ...this.get(), ...p };
+    this._cache = n;
+    localStorage.setItem(PUBLIC_PAGE_KEY, JSON.stringify(n));
+    return n;
+  },
+  async fetch() {
+    const res = await api('/admin/settings/public');
+    if (res.success && res.data) {
+      this._cache = res.data;
+      localStorage.setItem(PUBLIC_PAGE_KEY, JSON.stringify(res.data));
+      return res.data;
+    }
+    return this.get();
+  },
+  async save(payload) {
+    const res = await api('/admin/settings/public', { method: 'PUT', body: payload });
+    if (res.success && res.data) {
+      this._cache = res.data;
+      localStorage.setItem(PUBLIC_PAGE_KEY, JSON.stringify(res.data));
+      return { ok: true, data: res.data };
+    }
+    const merged = this.set(payload);
+    return { ok: false, data: merged, message: res.message };
+  },
 };
 
 function seedPlacementNews() {
@@ -916,20 +1220,80 @@ function formatNewsDate(value) {
 }
 
 const PlacementNewsStore = {
+  _cache: null,
+  normalizeItem(n) {
+    return {
+      id: n.id || n._id,
+      title: n.title,
+      summary: n.summary,
+      date: n.date,
+      link: n.link || '',
+      createdAt: n.createdAt,
+    };
+  },
   all() {
+    if (this._cache) return this._cache.map(n => this.normalizeItem(n));
     seedPlacementNews();
     try { return JSON.parse(localStorage.getItem(PLACEMENT_NEWS_KEY) || '[]'); } catch { return []; }
   },
-  save(list) { localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify(list)); },
-  add(payload) {
+  save(list) {
+    this._cache = list;
+    localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify(list));
+  },
+  async fetch() {
+    const res = await api('/admin/placement-news');
+    if (res.success && Array.isArray(res.data)) {
+      this._cache = res.data.map(n => this.normalizeItem(n));
+      localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify(this._cache));
+      return this._cache;
+    }
+    return this.all();
+  },
+  async fetchPublic() {
+    const res = await api('/public/site-content');
+    if (res.success && res.data) {
+      if (res.data.system) {
+        SystemSettings._cache = res.data.system;
+        localStorage.setItem(SYS_SETTINGS_KEY, JSON.stringify(res.data.system));
+      }
+      if (res.data.publicPage) {
+        PublicPageContent._cache = res.data.publicPage;
+        localStorage.setItem(PUBLIC_PAGE_KEY, JSON.stringify(res.data.publicPage));
+      }
+      this._cache = (res.data.news || []).map(n => this.normalizeItem(n));
+      localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify(this._cache));
+      return res.data;
+    }
+    return null;
+  },
+  async add(payload) {
+    const res = await api('/admin/placement-news', { method: 'POST', body: payload });
+    if (res.success) {
+      await this.fetch();
+      return res.data;
+    }
     const item = { id:'news-'+Date.now(), link:'', createdAt:new Date().toISOString(), ...payload };
     this.save([item, ...this.all()]);
     return item;
   },
-  update(id, payload) {
+  async update(id, payload) {
+    const res = await api('/admin/placement-news/' + encodeURIComponent(id), { method: 'PUT', body: payload });
+    if (res.success) {
+      await this.fetch();
+      return true;
+    }
     this.save(this.all().map(n => n.id === id ? { ...n, ...payload, updatedAt:new Date().toISOString() } : n));
+    return false;
   },
-  remove(id) { this.save(this.all().filter(n => n.id !== id)); },
+  async remove(id) {
+    const res = await api('/admin/placement-news/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (res.success) {
+      await this.fetch();
+      return true;
+    }
+    this.save(this.all().filter(n => n.id !== id));
+    return false;
+  },
   published() {
     return this.all().slice().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
   },
@@ -1066,7 +1430,12 @@ async function api(path, opts = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
   const body = opts.body && typeof opts.body !== 'string' ? JSON.stringify(opts.body) : opts.body;
   try {
-    const res = await fetch(API_BASE + path, { method: opts.method || 'GET', headers, body });
+    const res = await fetch(API_BASE + path, {
+      method: opts.method || 'GET',
+      headers,
+      body,
+      credentials: 'include',
+    });
     if (res.status === 401) { Auth.clear(); window.location.href = 'login.html'; return { success:false, message:'Session expired', data:null }; }
     const json = await res.json().catch(() => ({ success:false, message:'Bad response', data:null }));
     return json;

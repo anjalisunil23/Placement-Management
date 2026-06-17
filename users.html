@@ -66,6 +66,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/admin-api.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
@@ -86,14 +87,12 @@ function actionBtns(u) {
   </div>`;
 }
 
-function approveUser(id) { UserRegistry.approve(id); toast('User approved.', 'success'); render(); }
-function toggleBlock(id, blocked) { UserRegistry.block(id, blocked); toast(blocked ? 'User blocked.' : 'User unblocked.', blocked ? 'warn' : 'success'); render(); }
+function approveUser(id) { UserRegistry.approve(id).then(ok => { toast(ok ? 'User approved.' : 'Approved locally.', ok ? 'success' : 'warn'); render(); }); }
+function toggleBlock(id, blocked) { UserRegistry.block(id, blocked).then(ok => { toast(blocked ? 'User blocked.' : 'User unblocked.', blocked ? 'warn' : 'success'); render(); }); }
 function deleteUser(id) {
   const u = UserRegistry.get(id);
   if (!u || !confirm(`Delete ${u.name}? This cannot be undone.`)) return;
-  UserRegistry.remove(id);
-  toast('User removed.', 'success');
-  render();
+  UserRegistry.removeUser(id).then(ok => { toast(ok ? 'User removed.' : 'Removed locally.', ok ? 'success' : 'warn'); render(); });
 }
 
 function renderStudents(list) {
@@ -158,12 +157,13 @@ function render() {
   renderAlumni(UserRegistry.byRole('alumni'));
 }
 
-document.getElementById('staffForm').addEventListener('submit', e => {
+document.getElementById('staffForm').addEventListener('submit', async e => {
   e.preventDefault();
-  UserRegistry.add({
+  await UserRegistry.add({
     role: 'staff',
     name: document.getElementById('staffName').value.trim(),
     email: document.getElementById('staffEmail').value.trim(),
+    password: 'Staff@123456',
     department: document.getElementById('staffDept').value.trim(),
     designation: document.getElementById('staffDesignation').value.trim() || 'Faculty',
     permissions: ['recommend_company'],
@@ -174,5 +174,9 @@ document.getElementById('staffForm').addEventListener('submit', e => {
   render();
 });
 
-render();
+async function initUsersPage() {
+  await UserRegistry.fetch();
+  render();
+}
+initUsersPage();
 </script></body></html>

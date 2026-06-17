@@ -26,6 +26,10 @@ final class Collections
     public const RECOMMENDATIONS = 'recommendations';
     public const ALUMNI_REFERRALS = 'alumni_referrals';
     public const PLACEMENT_OFFICERS = 'placement_officers';
+    public const RECRUITMENT_RESULTS = 'recruitment_results';
+    public const SYSTEM_SETTINGS = 'system_settings';
+    public const PUBLIC_PAGE_CONTENT = 'public_page_content';
+    public const PLACEMENT_NEWS = 'placement_news';
 
     /** Valid user roles */
     public const ROLES = [
@@ -260,10 +264,61 @@ final class Collections
                 '_id'         => 'ObjectId',
                 'staffId'     => 'ObjectId',
                 'companyName' => 'string',
+                'companyWebsite' => 'string',
                 'category'    => 'string',
                 'reason'      => 'string',
                 'contact'     => ['name' => 'string', 'email' => 'string', 'phone' => 'string'],
+                'status'      => 'string (pending|contacted|registered)',
                 'createdAt'   => 'UTCDateTime',
+            ],
+            self::RECRUITMENT_RESULTS => [
+                '_id'           => 'ObjectId',
+                'studentName'   => 'string',
+                'registerNumber'=> 'string',
+                'departmentId'  => 'ObjectId|null',
+                'classBatch'    => 'string',
+                'company'       => 'string',
+                'role'          => 'string',
+                'package'       => 'string',
+                'status'        => 'string (selected|rejected)',
+                'joiningDate'   => 'string (YYYY-MM-DD)',
+                'createdAt'     => 'UTCDateTime',
+                'updatedAt'     => 'UTCDateTime',
+            ],
+            self::SYSTEM_SETTINGS => [
+                '_id'              => 'ObjectId',
+                'key'              => 'string (default)',
+                'placementYear'    => 'string',
+                'emailFrom'        => 'string',
+                'maxUploadMb'      => 'int',
+                'smtpEnabled'      => 'bool',
+                'notifyOnApproval' => 'bool',
+                'createdAt'        => 'UTCDateTime',
+                'updatedAt'        => 'UTCDateTime',
+            ],
+            self::PUBLIC_PAGE_CONTENT => [
+                '_id'          => 'ObjectId',
+                'key'          => 'string (default)',
+                'season'       => 'string',
+                'placed'       => 'int',
+                'companies'    => 'int',
+                'highestPkg'   => 'float',
+                'avgPkg'       => 'float',
+                'medianPkg'    => 'float',
+                'lowestPkg'    => 'float',
+                'headline'     => 'string',
+                'achievements' => 'string',
+                'createdAt'    => 'UTCDateTime',
+                'updatedAt'    => 'UTCDateTime',
+            ],
+            self::PLACEMENT_NEWS => [
+                '_id'       => 'ObjectId',
+                'title'     => 'string',
+                'summary'   => 'string',
+                'date'      => 'string (YYYY-MM-DD)',
+                'link'      => 'string',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
             ],
         ];
     }
