@@ -1,0 +1,89 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Blacklist · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="blacklist.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div><h1 class="page-title">Blacklist</h1><p class="page-sub">Students barred from placement activities due to policy violations or misconduct.</p></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card-surface p-4">
+      <h5 class="fw-bold mb-3">Add to blacklist</h5>
+      <form id="blacklistForm" class="row g-3">
+        <div class="col-12"><label class="form-label small fw-semibold">Student name</label><input class="form-control" id="blName" required placeholder="Full name"/></div>
+        <div class="col-12"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="blRegNo" required placeholder="e.g. 21CSE001"/></div>
+        <div class="col-12"><label class="form-label small fw-semibold">Reason</label><textarea class="form-control" id="blReason" rows="3" required placeholder="Reason for blacklisting…"></textarea></div>
+        <div class="col-12"><button type="submit" class="btn btn-danger w-100"><i class="bi bi-slash-circle me-1"></i>Add to blacklist</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card-surface">
+      <div class="d-flex align-items-center justify-content-between p-3 border-bottom">
+        <h5 class="fw-bold mb-0">Blacklisted students</h5>
+        <span class="badge-soft danger" id="statCount">0 active</span>
+      </div>
+      <div class="table-wrap">
+        <table class="table-modern"><thead><tr><th>Student</th><th>Register no.</th><th>Reason</th><th>Added</th><th></th></tr></thead>
+        <tbody id="blRows"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+function activeList() {
+  return BlacklistStore.all().filter(b => b.active !== false);
+}
+
+function removeEntry(id) {
+  const e = BlacklistStore.all().find(b => b.id === id);
+  if (!e) return;
+  if (!confirm(`Remove ${e.studentName} (${e.registerNumber}) from the blacklist?`)) return;
+  BlacklistStore.remove(id);
+  toast('Student removed from blacklist.', 'success');
+  render();
+}
+
+function render() {
+  const list = activeList();
+  document.getElementById('statCount').textContent = list.length + ' active';
+  document.getElementById('blRows').innerHTML = list.length ? list.map(b => `
+    <tr>
+      <td><strong>${b.studentName}</strong></td>
+      <td>${b.registerNumber}</td>
+      <td class="small">${b.reason || '—'}</td>
+      <td>${b.addedAt ? formatDate(b.addedAt) : '—'}</td>
+      <td><button class="btn btn-sm btn-outline-secondary" onclick="removeEntry('${b.id}')"><i class="bi bi-x-lg me-1"></i>Remove</button></td>
+    </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No blacklisted students.</td></tr>';
+}
+
+document.getElementById('blacklistForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const studentName = document.getElementById('blName').value.trim();
+  const registerNumber = document.getElementById('blRegNo').value.trim();
+  const reason = document.getElementById('blReason').value.trim();
+  if (!studentName || !registerNumber || !reason) return;
+  if (activeList().some(b => b.registerNumber.toLowerCase() === registerNumber.toLowerCase())) {
+    toast('This register number is already blacklisted.', 'error');
+    return;
+  }
+  BlacklistStore.add({ studentName, registerNumber, reason });
+  document.getElementById('blacklistForm').reset();
+  toast('Student added to blacklist.', 'success');
+  render();
+});
+
+render();
+</script></body></html>

@@ -1,0 +1,22 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# PHP / Composer
+.env
+vendor/
+composer.phar
+uploads/**/*
+!uploads/**/
+!uploads/**/.gitkeep
+
+# Dependencies (optional — static site runs without install via npx serve)
+node_modules
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea

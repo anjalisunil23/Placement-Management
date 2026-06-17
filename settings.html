@@ -1,0 +1,583 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Settings · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="settings.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header"><div><h1 class="page-title" id="settingsTitle">Settings</h1><p class="page-sub" id="settingsSub">Manage profile, preferences, and integrations.</p></div><button class="btn btn-primary" id="saveSettings">Save changes</button></div>
+
+<div class="row g-3">
+  <div class="col-lg-3">
+    <div class="card-surface p-2">
+      <div class="nav flex-column nav-pills" id="settingsNav">
+        <a class="nav-item nav-link active" data-bs-toggle="pill" href="#prof">Profile</a>
+        <a class="nav-item nav-link" data-bs-toggle="pill" href="#resumes" data-student-only>Resumes</a>
+        <a class="nav-item nav-link" data-bs-toggle="pill" href="#pref">Preferences</a>
+        <a class="nav-item nav-link" data-bs-toggle="pill" href="#sec">Security</a>
+        <a class="nav-item nav-link" data-bs-toggle="pill" href="#notif">Notifications</a>
+        <a class="nav-item nav-link" data-bs-toggle="pill" href="#int">Integrations</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-9">
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="prof"><div class="card-surface p-4">
+        <h5 class="fw-bold mb-3">Profile</h5>
+        <div class="d-flex align-items-center gap-3 mb-4"><div class="avatar" id="profAvatar" style="width:72px;height:72px;font-size:1.5rem">U</div><div><button type="button" class="btn btn-sm btn-outline-primary">Edit</button></div></div>
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label small fw-semibold">Full name</label><input class="form-control" id="profName"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Email</label><input class="form-control" id="profEmail" disabled/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" value="+91 98765 43210"/></div>
+          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
+          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profDept"/></div>
+          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">CGPA</label><input class="form-control" id="profCgpa" type="number" step="0.1" min="0" max="10"/></div>
+        </div>
+        <div class="row g-3 mt-2" data-roles="alumni">
+          <div class="col-12"><hr class="my-1"/></div>
+          <div class="col-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="alumniWorking"/>
+              <label class="form-check-label" for="alumniWorking">I am currently employed</label>
+            </div>
+          </div>
+          <div class="col-md-6" id="alumniCompanyWrap"><label class="form-label small fw-semibold">Current company</label><input class="form-control" id="alumniCompany"/></div>
+          <div class="col-md-6" id="alumniTitleWrap"><label class="form-label small fw-semibold">Role / Title</label><input class="form-control" id="alumniTitle"/></div>
+        </div>
+      </div></div>
+
+      <div class="tab-pane fade" id="resumes"><div class="card-surface p-4">
+        <h5 class="fw-bold mb-1">Resume bucket</h5>
+        <p class="small text-muted-2 mb-4" id="resumeStorageNote">Upload multiple resumes tailored to different job profiles.</p>
+        <form id="resumeUploadForm" class="row g-3 mb-4 p-3 rounded-3" style="background:var(--surface-2)">
+          <div class="col-md-4"><label class="form-label small fw-semibold">Resume label</label><input class="form-control" name="label" placeholder="e.g. SDE Resume v2" required/></div>
+          <div class="col-md-4"><label class="form-label small fw-semibold">Job profile</label><select class="form-select" name="profileType" id="resumeProfileType" required></select></div>
+          <div class="col-md-4"><label class="form-label small fw-semibold">PDF / DOC file</label><input class="form-control" type="file" name="file" accept=".pdf,.doc,.docx" required/></div>
+          <div class="col-12"><button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up me-1"></i>Upload to bucket</button></div>
+        </form>
+        <div class="table-wrap">
+          <table class="table-modern"><thead><tr><th>Label</th><th>Job profile</th><th>File</th><th>Storage</th><th>Uploaded</th><th></th></tr></thead>
+          <tbody id="resumeRows"></tbody></table>
+        </div>
+      </div></div>
+
+      <div class="tab-pane fade" id="pref"><div class="card-surface p-4">
+        <h5 class="fw-bold mb-3">Preferences</h5>
+        <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="dk"><label class="form-check-label" for="dk">Dark mode</label></div>
+        <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cd" checked><label class="form-check-label" for="cd">Compact density</label></div>
+      </div></div>
+
+      <div class="tab-pane fade" id="sec"><div class="card-surface p-4">
+        <h5 class="fw-bold mb-3">Security</h5>
+        <p class="small text-muted-2 mb-3" id="secNote">Change your account password. New password must be at least 8 characters.</p>
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label small fw-semibold">Current password</label><input type="password" class="form-control" id="curPassword" autocomplete="current-password"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">New password</label><input type="password" class="form-control" id="newPassword" autocomplete="new-password" minlength="8"/></div>
+          <div class="col-12"><button type="button" class="btn btn-outline-primary btn-sm" id="changePasswordBtn"><i class="bi bi-shield-lock me-1"></i>Change password</button></div>
+        </div>
+      </div></div>
+
+      <div class="tab-pane fade" id="notif"><div class="card-surface p-4">
+        <h5 class="fw-bold mb-3">Notification preferences</h5>
+        <div id="notifList"></div>
+      </div></div>
+
+      <div class="tab-pane fade" id="int"><div class="card-surface p-4">
+        <h5 class="fw-bold mb-3">Integrations</h5>
+        <p class="small text-muted-2 mb-3" id="intNote">Connect workplace tools for calendar, messaging, and email workflows.</p>
+        <div class="row g-3" id="intList"></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = Auth.user() || demoUserFor(Auth.role());
+const role = Auth.role();
+const isStudent = role === 'student';
+
+if (isStudent) {
+  document.getElementById('settingsTitle').textContent = 'Profile & Resumes';
+  document.getElementById('settingsSub').textContent = 'Update your profile and manage resumes in the storage bucket.';
+  document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');
+} else {
+  document.querySelector('[href="#resumes"]')?.remove();
+  document.getElementById('resumes')?.remove();
+}
+
+document.getElementById('profName').value = user.name || '';
+document.getElementById('profEmail').value = user.email || '';
+document.getElementById('profRole').value = ROLE_LABELS[role] || '';
+const profAvatarEl = document.getElementById('profAvatar');
+function setAvatarInitials() {
+  profAvatarEl.style.backgroundImage = '';
+  profAvatarEl.textContent = (user.name || 'U').split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
+}
+function setAvatarPhoto(url) {
+  if (!url) return setAvatarInitials();
+  profAvatarEl.textContent = '';
+  profAvatarEl.style.backgroundImage = `url('${url}')`;
+  profAvatarEl.style.backgroundSize = 'cover';
+  profAvatarEl.style.backgroundPosition = 'center';
+}
+setAvatarPhoto(user.photoUrl || user.photo?.url || '');
+
+if (isStudent) {
+  document.getElementById('profRegNo').value = user.registerNumber || '';
+  document.getElementById('profDept').value = user.department || '';
+  document.getElementById('profCgpa').value = user.cgpa || '';
+  document.getElementById('resumeProfileType').innerHTML = RESUME_PROFILES.map(p => `<option>${p}</option>`).join('');
+}
+
+// Profile photo menu (Edit -> Upload / Remove)
+const changePhotoBtn = document.querySelector('#prof button.btn-outline-primary');
+async function uploadStudentPhoto(file) {
+  const token = Auth.token();
+  if (!token || String(token).startsWith('demo-token')) {
+    toast('Please sign in with a real account to upload a photo.', 'warn');
+    return;
+  }
+  const fd = new FormData();
+  fd.append('photo', file);
+  const res = await fetch(API_BASE + '/student/photo', {
+    method: 'POST',
+    body: fd,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
+  });
+  const json = await res.json().catch(() => ({ success:false, message:'Bad response', data:null }));
+  if (!res.ok || !json.success) {
+    toast(json.message || 'Photo upload failed', 'error');
+    return;
+  }
+  const url = json.data?.url || '';
+  if (url) {
+    setAvatarPhoto(url);
+    Auth.set({ ...user, photoUrl: url }, token);
+  }
+  toast('Photo updated.', 'success');
+}
+
+async function removeStudentPhoto() {
+  const token = Auth.token();
+  if (!token || String(token).startsWith('demo-token')) {
+    toast('Please sign in with a real account to remove a photo.', 'warn');
+    return;
+  }
+  const res = await fetch(API_BASE + '/student/photo/remove', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
+  });
+  const json = await res.json().catch(() => ({ success:false, message:'Bad response', data:null }));
+  if (!res.ok || !json.success) {
+    toast(json.message || 'Remove photo failed', 'error');
+    return;
+  }
+  setAvatarInitials();
+  Auth.set({ ...user, photoUrl: '' }, token);
+  toast('Photo removed.', 'success');
+}
+
+function pickPhotoFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/png,image/jpeg,image/webp';
+  input.style.display = 'none';
+  input.onchange = () => {
+    const f = input.files && input.files[0];
+    if (f) uploadStudentPhoto(f);
+    input.remove();
+  };
+  document.body.appendChild(input);
+  input.click();
+}
+
+function openPhotoMenu() {
+  // Simple anchored menu (keeps markup untouched)
+  let menu = document.getElementById('ph-photo-menu');
+  if (menu) menu.remove();
+  menu = document.createElement('div');
+  menu.id = 'ph-photo-menu';
+  menu.className = 'dropdown-menu show';
+  menu.style.position = 'absolute';
+  const r = changePhotoBtn.getBoundingClientRect();
+  menu.style.left = (window.scrollX + r.left) + 'px';
+  menu.style.top = (window.scrollY + r.bottom + 6) + 'px';
+  menu.innerHTML = `
+    <button class="dropdown-item" type="button" id="phUploadPhoto">Upload a photo…</button>
+    <button class="dropdown-item text-danger" type="button" id="phRemovePhoto">Remove photo</button>
+  `;
+  document.body.appendChild(menu);
+
+  const close = () => { menu?.remove(); document.removeEventListener('click', onDoc, true); };
+  const onDoc = (e) => { if (!menu.contains(e.target) && e.target !== changePhotoBtn) close(); };
+  document.addEventListener('click', onDoc, true);
+
+  menu.querySelector('#phUploadPhoto')?.addEventListener('click', () => { close(); pickPhotoFile(); });
+  menu.querySelector('#phRemovePhoto')?.addEventListener('click', () => { close(); if (confirm('Remove profile photo?')) removeStudentPhoto(); });
+}
+
+changePhotoBtn?.addEventListener('click', () => openPhotoMenu());
+
+document.querySelectorAll('.role-field-student').forEach(el => {
+  el.style.display = isStudent ? '' : 'none';
+});
+
+if (role === 'alumni') {
+  const working = alumniIsWorking();
+  document.getElementById('alumniWorking').checked = working;
+  document.getElementById('alumniCompany').value = user.company || '';
+  document.getElementById('alumniTitle').value = user.title || '';
+  function syncAlumniFields() {
+    const on = document.getElementById('alumniWorking').checked;
+    document.getElementById('alumniCompanyWrap').style.display = on ? '' : 'none';
+    document.getElementById('alumniTitleWrap').style.display = on ? '' : 'none';
+  }
+  document.getElementById('alumniWorking').addEventListener('change', syncAlumniFields);
+  syncAlumniFields();
+  if (Auth.hasRealAuth()) {
+    api('/alumni/profile', { noRedirectOn401: true }).then(res => {
+      if (!res?.success || !res.data) return;
+      const p = res.data;
+      document.getElementById('alumniWorking').checked = !!p.isWorking;
+      document.getElementById('alumniCompany').value = p.company || '';
+      document.getElementById('alumniTitle').value = p.title || p.role || '';
+      Auth.set({ ...user, isWorking: !!p.isWorking, company: p.company || '', title: p.title || p.role || '' }, Auth.token());
+      syncAlumniFields();
+    });
+  }
+}
+
+let resumeRows = [];
+let resumeUseApi = false;
+
+function resumeDataKey() {
+  return studentKey('resume-data');
+}
+function getResumeDataMap() {
+  try { return JSON.parse(localStorage.getItem(resumeDataKey()) || '{}'); } catch { return {}; }
+}
+function saveResumeDataMap(map) {
+  localStorage.setItem(resumeDataKey(), JSON.stringify(map));
+}
+
+function normalizeLocalResume(r) {
+  const dataMap = getResumeDataMap();
+  return {
+    _id: r.id,
+    label: r.label,
+    profileType: r.profileType,
+    fileName: r.fileName,
+    fileSize: r.fileSize,
+    uploadedAt: r.uploadedAt,
+    viewUrl: dataMap[r.id] || '',
+  };
+}
+
+async function loadResumes() {
+  resumeUseApi = Auth.hasRealAuth();
+  if (resumeUseApi) {
+    const res = await api('/student/resumes', { method:'GET', noRedirectOn401: true });
+    if (res?.success) {
+      resumeRows = res.data || [];
+      return;
+    }
+    resumeUseApi = false;
+  }
+  ResumeBucket.seed();
+  resumeRows = ResumeBucket.all().map(normalizeLocalResume);
+}
+
+function renderResumes() {
+  const rows = resumeRows;
+  document.getElementById('resumeRows').innerHTML = rows.length ? rows.map(r => {
+    const fileCell = r.viewUrl
+      ? `<a href="${r.viewUrl}" target="_blank" rel="noopener noreferrer" class="link-info text-decoration-none fw-medium">${r.fileName}</a>`
+      : `<span class="text-muted-2">${r.fileName}</span>`;
+    return `
+    <tr>
+      <td><strong>${r.label}</strong></td>
+      <td>${r.profileType}</td>
+      <td>${fileCell} <small class="text-muted-2">(${(r.fileSize/1024).toFixed(1)} KB)</small></td>
+      <td><span class="small text-muted-2">Stored</span></td>
+      <td>${formatDate(r.uploadedAt)}</td>
+      <td><button class="btn btn-sm btn-outline-danger" onclick="deleteResume('${r._id}')"><i class="bi bi-trash"></i></button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No resumes uploaded yet.</td></tr>';
+}
+
+window.deleteResume = async id => {
+  if (!confirm('Delete this resume?')) return;
+  if (resumeUseApi) {
+    const res = await api(`/student/resumes/${id}/delete`, { method:'POST', noRedirectOn401: true });
+    if (res?.success) { toast('Resume deleted.', 'success'); await refreshResumes(); return; }
+    toast(res.message || 'Delete failed', 'error');
+    return;
+  }
+  ResumeBucket.remove(id);
+  const map = getResumeDataMap();
+  delete map[id];
+  saveResumeDataMap(map);
+  toast('Resume deleted.', 'success');
+  await refreshResumes();
+};
+
+function readFileDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadResumeLocal(file, profileType, label) {
+  const entry = ResumeBucket.upload(file, profileType, label);
+  if (file.size <= 3 * 1024 * 1024) {
+    try {
+      const dataUrl = await readFileDataUrl(file);
+      const map = getResumeDataMap();
+      map[entry.id] = dataUrl;
+      saveResumeDataMap(map);
+    } catch { /* preview optional */ }
+  }
+  return entry;
+}
+
+document.getElementById('resumeUploadForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const file = fd.get('file');
+  const label = fd.get('label');
+  const profileType = fd.get('profileType');
+  if (!file?.name) return;
+
+  if (Auth.hasRealAuth()) {
+    const uploadFd = new FormData();
+    uploadFd.append('file', file);
+    uploadFd.append('label', label);
+    uploadFd.append('profileType', profileType);
+    try {
+      const res = await fetch(API_BASE + '/student/resumes/upload', {
+        method:'POST',
+        body: uploadFd,
+        headers: Auth.token() ? { Authorization: `Bearer ${Auth.token()}` } : {},
+        credentials:'include',
+      });
+      const json = await res.json().catch(() => ({ success:false, message:'Bad response' }));
+      if (res.ok && json.success) {
+        toast('Resume uploaded.', 'success');
+        e.target.reset();
+        await refreshResumes();
+        return;
+      }
+      toast(json.message || 'Upload failed — using local storage.', 'warn');
+    } catch {
+      toast('Server unavailable — saved locally.', 'warn');
+    }
+  }
+
+  await uploadResumeLocal(file, profileType, label);
+  toast('Resume uploaded.', 'success');
+  e.target.reset();
+  resumeUseApi = false;
+  await refreshResumes();
+});
+
+async function refreshResumes() {
+  await loadResumes();
+  renderResumes();
+}
+if (isStudent) refreshResumes();
+
+document.getElementById('saveSettings').addEventListener('click', async () => {
+  savePreferences();
+
+  if (role === 'alumni') {
+    const working = document.getElementById('alumniWorking').checked;
+    const payload = {
+      isWorking: working,
+      company: working ? document.getElementById('alumniCompany').value.trim() : '',
+      title: working ? document.getElementById('alumniTitle').value.trim() : '',
+    };
+    if (Auth.hasRealAuth()) {
+      const res = await api('/alumni/profile', { method: 'PUT', body: payload, noRedirectOn401: true });
+      if (res?.success) {
+        const prof = res.data || {};
+        Auth.set({
+          ...user,
+          isWorking: prof.isWorking ?? working,
+          company: prof.company ?? payload.company,
+          title: prof.title ?? payload.title,
+          experience: prof.experience ?? user.experience,
+        }, Auth.token());
+        toast('Profile updated.', 'success');
+        setTimeout(() => window.location.href = 'dashboard.html', 700);
+        return;
+      }
+      toast(res?.message || 'Could not save to server — saved locally.', 'warn');
+    }
+    Auth.set({ ...user, isWorking: working, company: payload.company, title: payload.title }, Auth.token());
+    toast('Profile updated.', 'success');
+    setTimeout(() => window.location.href = 'dashboard.html', 700);
+    return;
+  }
+  if (isStudent) {
+    Auth.set({
+      ...user,
+      name: document.getElementById('profName').value,
+      phone: document.getElementById('profPhone').value,
+      registerNumber: document.getElementById('profRegNo').value,
+      department: document.getElementById('profDept').value,
+      cgpa: parseFloat(document.getElementById('profCgpa').value) || user.cgpa,
+    }, Auth.token());
+    toast('Settings saved.', 'success');
+    return;
+  }
+  toast('Preferences saved.', 'success');
+});
+
+document.getElementById('changePasswordBtn')?.addEventListener('click', async () => {
+  const cur = document.getElementById('curPassword').value;
+  const neu = document.getElementById('newPassword').value;
+  if (!cur || !neu) { toast('Enter current and new password.', 'warn'); return; }
+  if (neu.length < 8) { toast('New password must be at least 8 characters.', 'warn'); return; }
+  if (cur === neu) { toast('New password must be different from the current password.', 'warn'); return; }
+
+  if (!Auth.hasRealAuth()) {
+    toast('Sign in with a real account to change your password.', 'warn');
+    return;
+  }
+
+  const res = await api('/auth/change-password', {
+    method: 'POST',
+    body: { currentPassword: cur, newPassword: neu },
+    noRedirectOn401: true,
+  });
+
+  if (res?.success) {
+    document.getElementById('curPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    toast('Password changed successfully.', 'success');
+    return;
+  }
+
+  toast(res?.message || 'Password change failed.', 'error');
+});
+
+if (!Auth.hasRealAuth()) {
+  const note = document.getElementById('secNote');
+  if (note) note.textContent = 'Password change requires a real account login (not demo preview). New password must be at least 8 characters.';
+}
+
+function savePreferences() {
+  const darkMode = document.getElementById('dk').checked;
+  const compactDensity = document.getElementById('cd').checked;
+  UserPrefs.setTheme(darkMode ? 'dark' : 'light');
+  UserPrefs.setDensity(compactDensity ? 'compact' : 'comfortable');
+  const notifications = {};
+  document.querySelectorAll('#notifList input[type=checkbox]').forEach(el => {
+    notifications[el.dataset.key] = el.checked;
+  });
+  UserPrefs.setNotificationPrefs(notifications);
+  collectIntegrationState();
+}
+
+function loadPreferences() {
+  document.getElementById('dk').checked = UserPrefs.isDark();
+  document.getElementById('cd').checked = UserPrefs.isCompact();
+}
+
+const notifPrefs = isStudent
+  ? [
+    { key: 'job_posters', label: 'New job posters / drives' },
+    { key: 'app_updates', label: 'Application status updates' },
+    { key: 'shortlist', label: 'Shortlist & interview alerts' },
+    { key: 'offers', label: 'Offer notifications' },
+  ]
+  : [
+    { key: 'new_drive', label: 'New drive published' },
+    { key: 'resume_review', label: 'Resume awaiting review' },
+    { key: 'offer_updates', label: 'Offer accepted/declined' },
+    { key: 'digest', label: 'Weekly placement digest' },
+    { key: 'system', label: 'System alerts' },
+  ];
+
+const savedNotifPrefs = UserPrefs.notificationPrefs();
+document.getElementById('notifList').innerHTML = notifPrefs.map(p => `
+  <div class="d-flex justify-content-between border-bottom py-2" style="border-color:var(--border)!important">
+    <div><strong class="d-block small">${p.label}</strong><span class="small text-muted-2">In-app + email</span></div>
+    <div class="form-check form-switch"><input class="form-check-input" type="checkbox" data-key="${p.key}" ${savedNotifPrefs[p.key] !== false ? 'checked' : ''}></div>
+  </div>`).join('');
+
+loadPreferences();
+
+document.getElementById('dk')?.addEventListener('change', () => {
+  UserPrefs.setTheme(document.getElementById('dk').checked ? 'dark' : 'light');
+});
+document.getElementById('cd')?.addEventListener('change', () => {
+  UserPrefs.setDensity(document.getElementById('cd').checked ? 'compact' : 'comfortable');
+});
+
+function collectIntegrationState() {
+  const state = {};
+  INTEGRATION_CATALOG.forEach(item => {
+    const btn = document.querySelector(`[data-integration="${item.key}"]`);
+    state[item.key] = {
+      connected: btn?.dataset.connected === '1',
+      connectedAt: btn?.dataset.connected === '1' ? (UserPrefs.integrationPrefs()[item.key]?.connectedAt || new Date().toISOString()) : null,
+    };
+  });
+  UserPrefs.setIntegrationPrefs(state);
+  return state;
+}
+
+function renderIntegrations() {
+  const prefs = UserPrefs.integrationPrefs();
+  document.getElementById('intList').innerHTML = INTEGRATION_CATALOG.map(item => {
+    const connected = !!prefs[item.key]?.connected;
+    return `<div class="col-md-6">
+      <div class="card-surface p-3 d-flex align-items-center gap-3 h-100">
+        <div class="ic"><i class="bi ${item.icon}"></i></div>
+        <div class="flex-grow-1 min-width-0">
+          <strong class="d-block">${item.name}</strong>
+          <span class="small text-muted-2 d-block">${item.desc}</span>
+          <span class="badge-soft ${connected ? 'success' : 'muted'} mt-1 d-inline-block">${connected ? 'Connected' : 'Not connected'}</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-${connected ? 'danger' : 'primary'} flex-shrink-0"
+          data-integration="${item.key}" data-connected="${connected ? '1' : '0'}">${connected ? 'Disconnect' : 'Connect'}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function bindIntegrationClicks() {
+  const list = document.getElementById('intList');
+  if (!list || list.dataset.bound === '1') return;
+  list.dataset.bound = '1';
+  list.addEventListener('click', e => {
+    const btn = e.target.closest('[data-integration]');
+    if (!btn) return;
+    const key = btn.dataset.integration;
+    const item = INTEGRATION_CATALOG.find(i => i.key === key);
+    const willConnect = btn.dataset.connected !== '1';
+    if (willConnect && !confirm(`Connect ${item?.name || 'this integration'} to PlaceHub?`)) return;
+    if (!willConnect && !confirm(`Disconnect ${item?.name || 'this integration'}?`)) return;
+    UserPrefs.setIntegrationConnected(key, willConnect);
+    renderIntegrations();
+    toast(`${item?.name || 'Integration'} ${willConnect ? 'connected' : 'disconnected'}.`, 'success');
+  });
+}
+
+renderIntegrations();
+bindIntegrationClicks();
+</script></body></html>

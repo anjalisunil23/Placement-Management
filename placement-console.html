@@ -1,0 +1,409 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Placement Console · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="placement-console.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Placement Console</h1>
+    <p class="page-sub">Department statistics, staff, referrals, job posts, recruiting companies, and applicant pipeline.</p>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <div class="form-check form-switch mb-0" title="Resume verification">
+      <input class="form-check-input" type="checkbox" id="resumeVerifyToggle">
+      <label class="form-check-label small" for="resumeVerifyToggle">Verify resumes</label>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Applicants</div><div class="val"><span class="counter" id="tApplicants" data-target="0">0</span></div></div></div>
+  <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Shortlisted</div><div class="val"><span class="counter" id="tShortlisted" data-target="0">0</span></div></div></div>
+  <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Selected</div><div class="val"><span class="counter" id="tSelected" data-target="0">0</span></div></div></div>
+  <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Placements</div><div class="val"><span class="counter" id="tPlaced" data-target="0">0</span></div></div></div>
+  <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Recruiting cos.</div><div class="val"><span class="counter" id="tCompanies" data-target="0">0</span></div></div></div>
+  <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Job posts</div><div class="val"><span class="counter" id="tJobs" data-target="0">0</span></div></div></div>
+</div>
+
+<ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist">
+  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabDept">Dept. Statistics</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabStaff">Staff</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabReferrals">Staff Referrals</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabJobs">Job Posts</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabRecruiting">Recruiting Companies</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabApplicants">Applicants</a></li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- Department statistics -->
+  <div class="tab-pane fade show active" id="tabDept">
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="card-surface">
+          <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Placement statistics by department</h6></div>
+          <div class="table-wrap">
+            <table class="table-modern">
+              <thead><tr>
+                <th>Department</th><th>Students</th><th>Applicants</th><th>Shortlisted</th><th>Selected</th><th>Placed</th><th>Placement %</th><th>Avg package</th>
+              </tr></thead>
+              <tbody id="deptStatsRows"></tbody>
+              <tfoot id="deptStatsFoot"></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="card-surface p-3 p-md-4 mb-3"><h6 class="fw-bold mb-3">Placements by department</h6><div style="height:240px"><canvas id="deptPlacedChart"></canvas></div></div>
+        <div class="card-surface p-3 p-md-4"><h6 class="fw-bold mb-3">Pipeline by department</h6><div style="height:240px"><canvas id="deptPipelineChart"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Staff management -->
+  <div class="tab-pane fade" id="tabStaff">
+    <div class="row g-3">
+      <div class="col-lg-4" id="addStaffPanel">
+        <div class="card-surface p-3 p-md-4">
+          <h6 class="fw-bold mb-3">Add staff member</h6>
+          <form id="addStaffForm" class="row g-2">
+            <div class="col-12"><label class="form-label small fw-semibold">Full name</label><input class="form-control" name="name" required/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Email</label><input class="form-control" type="email" name="email" required/></div>
+            <div class="col-6"><label class="form-label small fw-semibold">Department</label><select class="form-select" name="department" required>
+              <option>CSE</option><option>IT</option><option>ECE</option><option>ME</option><option>EE</option><option>CE</option><option>MCA</option>
+            </select></div>
+            <div class="col-6"><label class="form-label small fw-semibold">Designation</label><input class="form-control" name="designation" placeholder="Professor"/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Phone</label><input class="form-control" name="phone"/></div>
+            <div class="col-12"><button type="submit" class="btn btn-primary w-100"><i class="bi bi-person-plus me-1"></i>Add staff</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="col-lg-8">
+        <div class="card-surface">
+          <div class="p-3 p-md-4 pb-0 d-flex justify-content-between"><h6 class="fw-bold mb-0">Staff directory</h6><span class="badge-soft muted" id="staffCount">0</span></div>
+          <div class="table-wrap">
+            <table class="table-modern">
+              <thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Designation</th><th>Added</th><th class="admin-only-col"></th></tr></thead>
+              <tbody id="staffRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Staff referrals -->
+  <div class="tab-pane fade" id="tabReferrals">
+    <div class="card-surface">
+      <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Staff company referrals</h6><small class="text-muted-2">Recommendations submitted by faculty for new recruiters</small></div>
+      <div class="table-wrap">
+        <table class="table-modern">
+          <thead><tr><th>Company</th><th>HR contact</th><th>Recommended by</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="referralRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Job posts -->
+  <div class="tab-pane fade" id="tabJobs">
+    <div class="card-surface">
+      <div class="p-3 p-md-4 pb-0 d-flex justify-content-between"><div><h6 class="fw-bold mb-0">Active job posts</h6><small class="text-muted-2">Open and ongoing placement drives</small></div><a href="drives.html" class="btn btn-sm btn-outline-primary">Manage drives</a></div>
+      <div class="table-wrap">
+        <table class="table-modern">
+          <thead><tr><th>Company</th><th>Role</th><th>Package</th><th>Branches</th><th>Applicants</th><th>Status</th><th>Deadline</th></tr></thead>
+          <tbody id="jobRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recruiting companies -->
+  <div class="tab-pane fade" id="tabRecruiting">
+    <div class="card-surface">
+      <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Companies currently recruiting</h6><small class="text-muted-2">Active on campus this season</small></div>
+      <div class="table-wrap">
+        <table class="table-modern">
+          <thead><tr><th>Company</th><th>Open roles</th><th>Package</th><th>Total applicants</th><th>Status</th></tr></thead>
+          <tbody id="recruitingRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Applicants pipeline -->
+  <div class="tab-pane fade" id="tabApplicants">
+    <div class="card-surface">
+      <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
+        <div><h6 class="fw-bold mb-0">Student applicants</h6><small class="text-muted-2" id="resumeHint">Resume viewing is enabled</small></div>
+        <div class="d-flex gap-2">
+          <input class="form-control form-control-sm" id="appSearch" placeholder="Search…" style="min-width:160px"/>
+          <select class="form-select form-select-sm w-auto" id="appStatusFilter">
+            <option value="">All statuses</option>
+            <option value="applied">Applied</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="selected">Selected</option>
+            <option value="placed">Placed</option>
+          </select>
+          <select class="form-select form-select-sm w-auto" id="appDeptFilter"><option value="">All depts</option></select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table-modern">
+          <thead><tr>
+            <th>Student</th><th>Roll</th><th>Dept</th><th>CGPA</th><th>Company</th><th>Role</th><th>Status</th><th class="resume-col">Resume</th>
+          </tr></thead>
+          <tbody id="applicantRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Resume modal -->
+<div class="modal fade" id="resumeModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Student resume</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <p class="mb-2"><strong id="resumeStudentName"></strong> · <span id="resumeStudentRoll" class="text-muted-2"></span></p>
+    <div class="alert alert-info small mb-3"><i class="bi bi-shield-check me-1"></i>Resume verification is <strong>ON</strong>. Viewing from storage bucket.</div>
+    <label class="form-label small fw-semibold">Resume</label>
+    <code class="d-block small mb-3 p-2 rounded" style="background:var(--surface-2)" id="resumePath"></code>
+    <div class="border rounded p-4 text-center" style="border-color:var(--border)!important;background:var(--surface-2)">
+      <i class="bi bi-file-earmark-pdf-fill text-danger display-4"></i>
+      <p class="small text-muted-2 mt-2 mb-0">PDF preview (demo) — connect S3 bucket for live view</p>
+    </div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button><button class="btn btn-primary" onclick="toast('Download started (demo).','info')"><i class="bi bi-download me-1"></i>Download</button></div>
+</div></div></div>
+
+<!-- Register company from referral -->
+<div class="modal fade" id="registerModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Register company</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="registerForm">
+    <div class="modal-body row g-3">
+      <input type="hidden" name="sourceRecommendationId" id="sourceRecId"/>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" id="regCompanyName" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Company website (optional)</label><input class="form-control" name="companyWebsite" id="regCompanyWebsite" placeholder="https://company.com"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">HR name</label><input class="form-control" name="hrName" id="regHrName" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">HR email</label><input class="form-control" type="email" name="hrEmail" id="regHrEmail" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Contact</label><input class="form-control" name="contactNumber" id="regContact" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Category</label><select class="form-select" name="category"><option>Product</option><option>Service</option><option>Startup</option></select></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Tier</label><select class="form-select" name="tier"><option>Tier 1</option><option>Tier 2</option><option>Tier 3</option></select></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Register</button></div>
+  </form>
+</div></div></div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+<script>
+const role = Auth.role();
+const isAdmin = role === 'admin';
+const totals = placementDeptTotals();
+const activeCos = activeRecruitingCompanies();
+const openJobs = DRIVE_CATALOG.filter(d => d.status !== 'Closed');
+
+function updateTopStats() {
+  document.getElementById('tApplicants').dataset.target = totals.applicants;
+  document.getElementById('tShortlisted').dataset.target = totals.shortlisted;
+  document.getElementById('tSelected').dataset.target = totals.selected;
+  document.getElementById('tPlaced').dataset.target = totals.placed;
+  document.getElementById('tCompanies').dataset.target = activeCos.length;
+  document.getElementById('tJobs').dataset.target = openJobs.length;
+  ['tApplicants','tShortlisted','tSelected','tPlaced','tCompanies','tJobs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.dataset.animated = '0';
+  });
+  animateCounters(document);
+}
+
+function renderDeptStats() {
+  document.getElementById('deptStatsRows').innerHTML = DEPARTMENT_PLACEMENT.map(d => `
+    <tr>
+      <td><strong>${d.dept}</strong></td>
+      <td>${d.students}</td><td>${d.applicants}</td><td>${d.shortlisted}</td>
+      <td>${d.selected}</td><td>${d.placed}</td>
+      <td>${d.pct}%</td><td>₹${d.avgPkg} LPA</td>
+    </tr>`).join('');
+  document.getElementById('deptStatsFoot').innerHTML = `<tr class="fw-bold" style="background:var(--surface-2)">
+    <td>Total</td><td>${totals.students}</td><td>${totals.applicants}</td><td>${totals.shortlisted}</td>
+    <td>${totals.selected}</td><td>${totals.placed}</td>
+    <td>${((totals.placed / totals.students) * 100).toFixed(1)}%</td><td>—</td></tr>`;
+  Charts.bar(document.getElementById('deptPlacedChart'), DEPARTMENT_PLACEMENT.map(d => d.dept), DEPARTMENT_PLACEMENT.map(d => d.placed), 'Placed');
+  Charts.bar(document.getElementById('deptPipelineChart'), DEPARTMENT_PLACEMENT.map(d => d.dept), DEPARTMENT_PLACEMENT.map(d => d.shortlisted), 'Shortlisted');
+}
+
+function renderStaff() {
+  const list = StaffRegistry.all();
+  document.getElementById('staffCount').textContent = list.length + ' staff';
+  document.getElementById('staffRows').innerHTML = list.length ? list.map(s => `
+    <tr>
+      <td><strong>${s.name}</strong></td><td>${s.email}</td><td>${s.department}</td>
+      <td>${s.designation}</td><td>${formatDate(s.addedAt)}</td>
+      <td class="admin-only-col">${isAdmin ? `<button class="btn btn-sm btn-outline-danger" onclick="removeStaff('${s.id}')"><i class="bi bi-trash"></i></button>` : ''}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No staff added yet.</td></tr>';
+}
+
+window.removeStaff = id => {
+  if (!isAdmin) return;
+  StaffRegistry.remove(id);
+  toast('Staff removed.', 'success');
+  renderStaff();
+};
+
+function renderReferrals() {
+  const recs = StaffRecs.all();
+  document.getElementById('referralRows').innerHTML = recs.length ? recs.map(r => `
+    <tr>
+      <td>
+        <strong>${r.companyName}</strong>
+        <div class="small text-muted-2">
+          ${r.companyWebsite ? `<a href="${r.companyWebsite}" target="_blank" rel="noopener">${r.companyWebsite.replace(/^https?:\/\//,'')}</a> · ` : ''}
+          ${r.hrName} · <a href="mailto:${r.hrEmail}">${r.hrEmail}</a>
+        </div>
+      </td>
+      <td><a href="tel:${r.contactNumber.replace(/\s/g,'')}">${r.contactNumber}</a></td>
+      <td>${r.staffName}<div class="small text-muted-2">${r.staffEmail}</div></td>
+      <td>${formatDate(r.submittedAt)}</td>
+      <td>${recStatusBadge(r.status)}</td>
+      <td><div class="d-flex gap-1 flex-wrap">
+        ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${r.id}')">Contacted</button>` : ''}
+        ${r.status !== 'registered' ? `<button class="btn btn-sm btn-primary" onclick="openRegister('${r.id}')">Register</button>` : ''}
+      </div></td>
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No referrals yet.</td></tr>';
+}
+
+window.markContacted = id => { StaffRecs.updateStatus(id, 'contacted'); toast('Marked contacted.', 'success'); renderReferrals(); };
+
+const registerModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('registerModal'));
+window.openRegister = id => {
+  const rec = StaffRecs.all().find(r => r.id === id);
+  if (!rec) return;
+  document.getElementById('sourceRecId').value = rec.id;
+  document.getElementById('regCompanyName').value = rec.companyName;
+  document.getElementById('regCompanyWebsite').value = rec.companyWebsite || '';
+  document.getElementById('regHrName').value = rec.hrName;
+  document.getElementById('regHrEmail').value = rec.hrEmail;
+  document.getElementById('regContact').value = rec.contactNumber;
+  registerModal().show();
+};
+
+function renderJobs() {
+  document.getElementById('jobRows').innerHTML = openJobs.map(d => `
+    <tr>
+      <td><strong>${d.company}</strong></td><td>${d.role}</td><td>${d.package}</td>
+      <td>${d.branches}</td><td>${d.applied}</td>
+      <td><span class="badge-soft ${d.statusCls}">${d.status}</span></td><td>${d.deadline}</td>
+    </tr>`).join('');
+}
+
+function renderRecruiting() {
+  document.getElementById('recruitingRows').innerHTML = activeCos.map(c => `
+    <tr>
+      <td><strong>${c.company}</strong></td><td>${c.roles.join(', ')}</td><td>${c.package}</td>
+      <td>${c.applicants.toLocaleString('en-IN')}</td>
+      <td><span class="badge-soft ${c.statusCls}">${c.status}</span></td>
+    </tr>`).join('');
+}
+
+function resumeVerificationOn() { return PlacementSettings.isResumeVerificationOn(); }
+
+function syncResumeUI() {
+  const on = resumeVerificationOn();
+  document.getElementById('resumeVerifyToggle').checked = on;
+  document.getElementById('resumeHint').textContent = on
+    ? 'Resume verification is ON — you can view student resumes'
+    : 'Resume verification is OFF — resume viewing disabled';
+  document.querySelectorAll('.resume-col').forEach(el => { el.style.display = on ? '' : 'none'; });
+}
+
+function renderApplicants() {
+  const on = resumeVerificationOn();
+  const q = document.getElementById('appSearch').value.trim().toLowerCase();
+  const status = document.getElementById('appStatusFilter').value;
+  const dept = document.getElementById('appDeptFilter').value;
+  const filtered = PLACEMENT_STUDENTS.filter(s => {
+    if (status && s.status !== status) return false;
+    if (dept && s.dept !== dept) return false;
+    if (q && !`${s.name} ${s.roll} ${s.dept} ${s.company}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  document.getElementById('applicantRows').innerHTML = filtered.length ? filtered.map(s => `
+    <tr>
+      <td><strong>${s.name}</strong></td><td>${s.roll}</td><td>${s.dept}</td><td>${s.cgpa.toFixed(2)}</td>
+      <td>${s.company}</td><td>${s.role}</td><td>${pipelineStatusBadge(s.status)}</td>
+      <td class="resume-col">${on ? `<button class="btn btn-sm btn-outline-primary" onclick="viewResume('${s.id}')"><i class="bi bi-file-earmark-pdf"></i> View</button>` : '<span class="text-muted-2 small">Hidden</span>'}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="8" class="text-muted-2 p-4">No matching applicants.</td></tr>';
+  syncResumeUI();
+}
+
+window.viewResume = id => {
+  if (!resumeVerificationOn()) { toast('Enable resume verification to view resumes.', 'warn'); return; }
+  const s = PLACEMENT_STUDENTS.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('resumeStudentName').textContent = s.name;
+  document.getElementById('resumeStudentRoll').textContent = s.roll + ' · ' + s.dept;
+  document.getElementById('resumePath').textContent = s.resumePath;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('resumeModal')).show();
+};
+
+/* Init */
+if (!isAdmin) {
+  document.getElementById('addStaffPanel').style.display = 'none';
+  document.querySelectorAll('.admin-only-col').forEach(el => el.style.display = 'none');
+}
+
+DEPARTMENT_PLACEMENT.forEach(d => {
+  document.getElementById('appDeptFilter').innerHTML += `<option value="${d.dept}">${d.dept}</option>`;
+});
+
+document.getElementById('resumeVerifyToggle').checked = resumeVerificationOn();
+document.getElementById('resumeVerifyToggle').addEventListener('change', e => {
+  PlacementSettings.set({ resumeVerificationEnabled: e.target.checked });
+  toast(e.target.checked ? 'Resume verification enabled.' : 'Resume verification disabled.', 'success');
+  renderApplicants();
+});
+
+document.getElementById('addStaffForm')?.addEventListener('submit', e => {
+  e.preventDefault();
+  if (!isAdmin) return;
+  StaffRegistry.add(Object.fromEntries(new FormData(e.target).entries()));
+  toast('Staff member added.', 'success');
+  e.target.reset();
+  renderStaff();
+});
+
+document.getElementById('registerForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target).entries());
+  if (!data.sourceRecommendationId) delete data.sourceRecommendationId;
+  RegisteredCompanies.register(data);
+  toast('Company registered.', 'success');
+  registerModal().hide();
+  e.target.reset();
+  renderReferrals();
+});
+
+['appSearch','appStatusFilter','appDeptFilter'].forEach(id => {
+  document.getElementById(id).addEventListener('input', renderApplicants);
+  document.getElementById(id).addEventListener('change', renderApplicants);
+});
+
+updateTopStats();
+renderDeptStats();
+renderStaff();
+renderReferrals();
+renderJobs();
+renderRecruiting();
+renderApplicants();
+</script></body></html>

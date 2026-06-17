@@ -1,0 +1,178 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>User Management · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="users.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div><h1 class="page-title">User Management</h1><p class="page-sub">Approve registrations, block accounts, and manage students, staff, companies, and alumni.</p></div>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#staffModal"><i class="bi bi-person-plus me-1"></i>Add staff</button>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Students</div><div class="val" id="statStudents">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Staff</div><div class="val" id="statStaff">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Companies</div><div class="val" id="statCompanies">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending approval</div><div class="val" id="statPending">0</div></div></div>
+</div>
+
+<div class="card-surface">
+  <ul class="nav nav-tabs px-3 pt-2" role="tablist">
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabStudents">Students</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabStaff">Staff</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabCompanies">Companies</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAlumni">Alumni</a></li>
+  </ul>
+  <div class="tab-content">
+    <div class="tab-pane fade show active" id="tabStudents">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Name</th><th>Register No</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Chances</th><th>Status</th><th>Actions</th>
+      </tr></thead><tbody id="studentRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="tabStaff">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Name</th><th>Email</th><th>Department</th><th>Designation</th><th>Status</th><th>Actions</th>
+      </tr></thead><tbody id="staffRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="tabCompanies">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Company</th><th>Contact</th><th>Category</th><th>Tier</th><th>Association</th><th>Status</th><th>Actions</th>
+      </tr></thead><tbody id="companyRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="tabAlumni">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Actions</th>
+      </tr></thead><tbody id="alumniRows"></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="staffModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Add staff member</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="staffForm">
+    <div class="modal-body row g-3">
+      <div class="col-12"><label class="form-label small fw-semibold">Full name</label><input class="form-control" id="staffName" required/></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Email</label><input class="form-control" type="email" id="staffEmail" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="staffDept" required placeholder="e.g. CSE"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Designation</label><input class="form-control" id="staffDesignation" placeholder="Faculty"/></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Add staff</button></div>
+  </form>
+</div></div></div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+const staffModal = () => bootstrap.Modal.getInstance(document.getElementById('staffModal')) || new bootstrap.Modal(document.getElementById('staffModal'));
+
+function placementBadge(s) {
+  const map = { registered:['muted','Registered'], applied:['info','Applied'], placed:['success','Placed'], shortlisted:['warning','Shortlisted'] };
+  const [cls, label] = map[s] || ['muted', s || '—'];
+  return `<span class="badge-soft ${cls}">${label}</span>`;
+}
+
+function actionBtns(u) {
+  const blocked = u.blocked;
+  return `<div class="d-flex gap-1 flex-wrap">
+    ${u.status !== 'approved' ? `<button class="btn btn-sm btn-success" onclick="approveUser('${u.id}')" title="Approve"><i class="bi bi-check2"></i></button>` : ''}
+    <button class="btn btn-sm btn-outline-${blocked ? 'info' : 'warning'}" onclick="toggleBlock('${u.id}', ${!blocked})" title="${blocked ? 'Unblock' : 'Block'}"><i class="bi bi-${blocked ? 'unlock' : 'slash-circle'}"></i></button>
+    <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${u.id}')" title="Delete"><i class="bi bi-trash"></i></button>
+  </div>`;
+}
+
+function approveUser(id) { UserRegistry.approve(id); toast('User approved.', 'success'); render(); }
+function toggleBlock(id, blocked) { UserRegistry.block(id, blocked); toast(blocked ? 'User blocked.' : 'User unblocked.', blocked ? 'warn' : 'success'); render(); }
+function deleteUser(id) {
+  const u = UserRegistry.get(id);
+  if (!u || !confirm(`Delete ${u.name}? This cannot be undone.`)) return;
+  UserRegistry.remove(id);
+  toast('User removed.', 'success');
+  render();
+}
+
+function renderStudents(list) {
+  document.getElementById('studentRows').innerHTML = list.length ? list.map(u => `
+    <tr>
+      <td><div class="fw-semibold small">${u.name}</div><div class="small text-muted-2">${u.email}</div></td>
+      <td>${u.registerNumber || '—'}</td>
+      <td>${u.department || '—'}</td>
+      <td>${u.cgpa != null ? u.cgpa : '—'}</td>
+      <td>${placementBadge(u.placementStatus)}</td>
+      <td><span class="small">${u.chancesUsed ?? 0} / ${u.chancesMax ?? 5}</span></td>
+      <td>${userStatusBadge(u.status, u.blocked)}</td>
+      <td>${actionBtns(u)}</td>
+    </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No students found.</td></tr>';
+}
+
+function renderStaff(list) {
+  document.getElementById('staffRows').innerHTML = list.length ? list.map(u => `
+    <tr>
+      <td class="fw-semibold small">${u.name}</td>
+      <td>${u.email}</td>
+      <td>${u.department || '—'}</td>
+      <td>${u.designation || '—'}</td>
+      <td>${userStatusBadge(u.status, u.blocked)}</td>
+      <td>${actionBtns(u)}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No staff found.</td></tr>';
+}
+
+function renderCompanies(list) {
+  document.getElementById('companyRows').innerHTML = list.length ? list.map(u => `
+    <tr>
+      <td><div class="fw-semibold small">${u.companyName || u.name}</div><div class="small text-muted-2">${u.email}</div></td>
+      <td>${u.contactPerson || u.name}<br><span class="small text-muted-2">${u.phone || '—'}</span></td>
+      <td>${u.category || '—'}</td>
+      <td><span class="badge-soft primary">${u.tier || '—'}</span></td>
+      <td>${u.associationStatus || '—'}</td>
+      <td>${userStatusBadge(u.status, u.blocked)}</td>
+      <td>${actionBtns(u)}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="text-muted-2 p-4">No companies found.</td></tr>';
+}
+
+function renderAlumni(list) {
+  document.getElementById('alumniRows').innerHTML = list.length ? list.map(u => `
+    <tr>
+      <td class="fw-semibold small">${u.name}</td>
+      <td>${u.email}</td>
+      <td>${u.company || '<span class="text-muted-2">—</span>'}</td>
+      <td>${userStatusBadge(u.status, u.blocked)}</td>
+      <td>${actionBtns(u)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No alumni found.</td></tr>';
+}
+
+function render() {
+  const all = UserRegistry.all();
+  document.getElementById('statStudents').textContent = UserRegistry.byRole('student').length;
+  document.getElementById('statStaff').textContent = UserRegistry.byRole('staff').length;
+  document.getElementById('statCompanies').textContent = UserRegistry.byRole('company').length;
+  document.getElementById('statPending').textContent = all.filter(u => u.status === 'pending').length;
+  renderStudents(UserRegistry.byRole('student'));
+  renderStaff(UserRegistry.byRole('staff'));
+  renderCompanies(UserRegistry.byRole('company'));
+  renderAlumni(UserRegistry.byRole('alumni'));
+}
+
+document.getElementById('staffForm').addEventListener('submit', e => {
+  e.preventDefault();
+  UserRegistry.add({
+    role: 'staff',
+    name: document.getElementById('staffName').value.trim(),
+    email: document.getElementById('staffEmail').value.trim(),
+    department: document.getElementById('staffDept').value.trim(),
+    designation: document.getElementById('staffDesignation').value.trim() || 'Faculty',
+    permissions: ['recommend_company'],
+  });
+  staffModal().hide();
+  document.getElementById('staffForm').reset();
+  toast('Staff member added (pending approval).', 'success');
+  render();
+});
+
+render();
+</script></body></html>
