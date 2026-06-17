@@ -197,7 +197,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   let res = await api('/auth/login', { method:'POST', body: data });
   if (!res.success) res = await mockAuth('login', data);
   if (res.success) {
-    Auth.set(res.data.user, res.data.token);
+    Auth.set(res.data.user, res.data.token || '');
     toast('Welcome back, ' + res.data.user.name, 'success');
     setTimeout(()=>window.location.href='dashboard.html', 400);
   } else { toast(res.message || 'Sign-in failed', 'error'); }

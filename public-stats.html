@@ -93,52 +93,57 @@
 <script src="js/api.js"></script>
 <script src="js/app.js"></script><script src="js/charts.js"></script>
 <script>
-const pub = PublicPageContent.get();
-document.querySelector('.hero .badge-soft').textContent = `Placement Season ${pub.season || '2025-26'}`;
-document.querySelector('.hero .lead').textContent = `${pub.placed || 2154} students placed across ${pub.companies || 142} recruiters with a record-breaking ₹${pub.highestPkg || 68} LPA highest package this year.`;
-document.querySelectorAll('#stats .counter').forEach((el, i) => {
-  const vals = [pub.placed, pub.highestPkg, pub.avgPkg, pub.companies];
-  if (vals[i] != null) el.dataset.target = vals[i];
-});
-document.querySelectorAll('#stats .val .counter').forEach(el => el.dataset.animated = '0');
-if (typeof animateCounters === 'function') animateCounters(document.getElementById('stats'));
+async function renderPublicPage() {
+  await PlacementNewsStore.fetchPublic();
+  const pub = PublicPageContent.get();
+  document.querySelector('.hero .badge-soft').textContent = `Placement Season ${pub.season || '2025-26'}`;
+  document.querySelector('.hero .lead').textContent = `${pub.placed || 2154} students placed across ${pub.companies || 142} recruiters with a record-breaking ₹${pub.highestPkg || 68} LPA highest package this year.`;
+  document.querySelectorAll('#stats .counter').forEach((el, i) => {
+    const vals = [pub.placed, pub.highestPkg, pub.avgPkg, pub.companies];
+    if (vals[i] != null) el.dataset.target = vals[i];
+  });
+  document.querySelectorAll('#stats .val .counter').forEach(el => el.dataset.animated = '0');
+  if (typeof animateCounters === 'function') animateCounters(document.getElementById('stats'));
 
-Charts.bar(document.getElementById("pubBar"),["2021","2022","2023","2024","2025","2026"],[1420,1610,1820,1980,2080,pub.placed||2154],"Offers");
-Charts.doughnut(document.getElementById("pubPie"),["IT/Software","Consulting","Core Eng","Finance","Product","Other"],[1240,360,280,150,90,34]);
+  Charts.bar(document.getElementById("pubBar"),["2021","2022","2023","2024","2025","2026"],[1420,1610,1820,1980,2080,pub.placed||2154],"Offers");
+  Charts.doughnut(document.getElementById("pubPie"),["IT/Software","Consulting","Core Eng","Finance","Product","Other"],[1240,360,280,150,90,34]);
 
-document.getElementById("recruitersRow").innerHTML =
-  ["Google","Amazon","Microsoft","Adobe","Deloitte","TCS","Infosys","Wipro","Goldman","Flipkart","Oracle","Cisco"]
-    .map(n=>`<div class="col"><div class="recruiter-logo">${n}</div></div>`).join("");
+  document.getElementById("recruitersRow").innerHTML =
+    ["Google","Amazon","Microsoft","Adobe","Deloitte","TCS","Infosys","Wipro","Goldman","Flipkart","Oracle","Cisco"]
+      .map(n=>`<div class="col"><div class="recruiter-logo">${n}</div></div>`).join("");
 
-const stories=[
- ["Aarav Mehta","Google · SDE-1","₹42 LPA","“PlaceHub made the entire process so structured — from resume reviews to interview slots.”"],
- ["Sneha Iyer","Microsoft · SWE","₹52 LPA","“Practice rounds organized through the portal helped me crack four offers.”"],
- ["Rahul Verma","Goldman Sachs · Quant","₹28 LPA","“The eligibility matching pointed me to the right drives at the right time.”"],
-];
-document.getElementById("storiesRow").innerHTML = stories.map(s=>`
-  <div class="col-md-4"><div class="card-surface p-4 h-100">
-    <div class="d-flex align-items-center gap-3 mb-3">
-      <div class="avatar" style="width:48px;height:48px">${s[0].split(' ').map(n=>n[0]).join('')}</div>
-      <div><strong>${s[0]}</strong><div class="small text-muted-2">${s[1]}</div></div>
-    </div>
-    <span class="badge-soft success mb-2">${s[2]}</span>
-    <p class="text-muted-2 small mb-0">${s[3]}</p>
-  </div></div>`).join("");
+  const stories=[
+   ["Aarav Mehta","Google · SDE-1","₹42 LPA","“PlaceHub made the entire process so structured — from resume reviews to interview slots.”"],
+   ["Sneha Iyer","Microsoft · SWE","₹52 LPA","“Practice rounds organized through the portal helped me crack four offers.”"],
+   ["Rahul Verma","Goldman Sachs · Quant","₹28 LPA","“The eligibility matching pointed me to the right drives at the right time.”"],
+  ];
+  document.getElementById("storiesRow").innerHTML = stories.map(s=>`
+    <div class="col-md-4"><div class="card-surface p-4 h-100">
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <div class="avatar" style="width:48px;height:48px">${s[0].split(' ').map(n=>n[0]).join('')}</div>
+        <div><strong>${s[0]}</strong><div class="small text-muted-2">${s[1]}</div></div>
+      </div>
+      <span class="badge-soft success mb-2">${s[2]}</span>
+      <p class="text-muted-2 small mb-0">${s[3]}</p>
+    </div></div>`).join("");
 
-const news = PlacementNewsStore.published();
-document.getElementById("newsRow").innerHTML = news.length ? news.map(n => {
-  const more = n.link
-    ? `<a href="${n.link.replace(/"/g, '&quot;')}" class="fw-semibold text-decoration-none" target="_blank" rel="noopener">Read more →</a>`
-    : '<span class="text-muted-2 small">—</span>';
-  const title = String(n.title || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const summary = String(n.summary || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  return `
-  <div class="col-md-4"><div class="card-surface p-4 h-100">
-    <small class="text-muted-2">${formatNewsDate(n.date)}</small>
-    <h5 class="fw-bold mt-2">${title}</h5>
-    <p class="text-muted-2 small mb-3">${summary}</p>
-    ${more}
-  </div></div>`;
-}).join("") : '<div class="col-12"><p class="text-center text-muted-2 mb-0">No placement news yet. Check back soon.</p></div>';
+  const news = PlacementNewsStore.published();
+  document.getElementById("newsRow").innerHTML = news.length ? news.map(n => {
+    const more = n.link
+      ? `<a href="${n.link.replace(/"/g, '&quot;')}" class="fw-semibold text-decoration-none" target="_blank" rel="noopener">Read more →</a>`
+      : '<span class="text-muted-2 small">—</span>';
+    const title = String(n.title || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const summary = String(n.summary || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    return `
+    <div class="col-md-4"><div class="card-surface p-4 h-100">
+      <small class="text-muted-2">${formatNewsDate(n.date)}</small>
+      <h5 class="fw-bold mt-2">${title}</h5>
+      <p class="text-muted-2 small mb-3">${summary}</p>
+      ${more}
+    </div></div>`;
+  }).join("") : '<div class="col-12"><p class="text-center text-muted-2 mb-0">No placement news yet. Check back soon.</p></div>';
+}
+
+renderPublicPage();
 </script>
 </body></html>

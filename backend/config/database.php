@@ -133,5 +133,28 @@ class Database
         $db->selectCollection('alumni_referrals')->createIndexes([
             ['key' => ['alumniUserId' => 1]],
         ]);
+
+        // recruitment results
+        $db->selectCollection('recruitment_results')->createIndexes([
+            ['key' => ['registerNumber' => 1]],
+            ['key' => ['company' => 1]],
+            ['key' => ['status' => 1]],
+            ['key' => ['departmentId' => 1]],
+            ['key' => ['classBatch' => 1]],
+            ['key' => ['createdAt' => -1]],
+        ]);
+
+        $db->selectCollection('system_settings')->createIndexes([
+            ['key' => ['key' => 1], 'unique' => true],
+        ]);
+
+        $db->selectCollection('public_page_content')->createIndexes([
+            ['key' => ['key' => 1], 'unique' => true],
+        ]);
+
+        $db->selectCollection('placement_news')->createIndexes([
+            ['key' => ['date' => -1]],
+            ['key' => ['createdAt' => -1]],
+        ]);
     }
 }

@@ -8,9 +8,17 @@ use PMS\Middleware\RBACMiddleware;
 use PMS\Models\BlacklistModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
+use PMS\Models\DriveModel;
+use PMS\Models\ApplicationModel;
+use PMS\Models\AlumniReferralModel;
+use PMS\Models\PlacementNewsModel;
+use PMS\Models\RecommendationModel;
 use PMS\Models\PlacementOfficerModel;
+use PMS\Models\PublicPageContentModel;
+use PMS\Models\RecruitmentResultModel;
 use PMS\Models\RuleModel;
 use PMS\Models\StudentModel;
+use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
 use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\EmailService;
@@ -18,6 +26,7 @@ use PMS\Services\NotificationService;
 use PMS\Services\ReportService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
+use PMS\Utils\Security;
 use PMS\Utils\Validator;
 use PMS\Schemas\Collections;
 
@@ -38,6 +47,134 @@ final class AdminController
     {
         RBACMiddleware::requireAdmin();
         Response::success($this->userModel->getDashboardStats());
+    }
+
+    // --- Drives (Admin manages all drives) ---
+
+    /** GET /api/admin/drives */
+    public function listDrives(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $filter = [];
+        if (!empty($_GET['status'])) {
+            $filter['status'] = $_GET['status'];
+        }
+        Response::success(DocumentHelper::serializeMany((new DriveModel())->findAll($filter, 300)));
+    }
+
+    /** POST /api/admin/drives */
+    public function createDrive(): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'title'     => 'required',
+            'companyId' => 'required',
+            'type'      => 'required|in:exclusive,pooled,direct',
+            'date'      => 'required',
+            'time'      => 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+        $id = (new DriveModel())->createDrive($input, (string) $admin['_id']);
+        Response::success(['id' => $id], 'Drive created.', 201);
+    }
+
+    /** PUT /api/admin/drives/{id} */
+    public function updateDrive(string $id): void
+    {
+        RBACMiddleware::requireAdmin();
+        $model = new DriveModel();
+        if (!$model->findById($id)) {
+            Response::notFound('Drive not found.');
+        }
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $allowed = ['title','companyId','type','date','time','branches','eligibility','tier','jdFile','status','departmentId'];
+        $update = array_intersect_key($input, array_flip($allowed));
+        $model->update($id, $update);
+        Response::success(null, 'Drive updated.');
+    }
+
+    /** DELETE /api/admin/drives/{id} */
+    public function deleteDrive(string $id): void
+    {
+        RBACMiddleware::requireAdmin();
+        if (!(new DriveModel())->delete($id)) {
+            Response::notFound('Drive not found.');
+        }
+        Response::success(null, 'Drive deleted.');
+    }
+
+    // --- Applications (Admin can view and transition any application) ---
+
+    /** GET /api/admin/applications */
+    public function listApplications(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $filter = [];
+        if (!empty($_GET['status'])) {
+            $filter['status'] = $_GET['status'];
+        }
+
+        $apps = (new ApplicationModel())->findAll($filter, 500);
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+        $companyModel = new CompanyModel();
+        $deptModel = new DepartmentModel();
+        $driveModel = new DriveModel();
+
+        $rows = [];
+        foreach ($apps as $app) {
+            $student = $studentModel->findById((string) ($app['studentId'] ?? ''));
+            $user = $student ? $userModel->findById((string) ($student['userId'] ?? '')) : null;
+            $company = $companyModel->findById((string) ($app['companyId'] ?? ''));
+            $drive = $driveModel->findById((string) ($app['driveId'] ?? ''));
+            $dept = $student ? $deptModel->findById((string) ($student['departmentId'] ?? '')) : null;
+
+            $status = $app['status'] ?? 'applied';
+            $stage = match ($status) {
+                'applied', 'resume_pending' => 'resume_verification',
+                'resume_verified' => 'resume_verification',
+                'officer_approved' => 'approval',
+                'company_review', 'shortlisted' => 'company_selection',
+                'selected' => 'company_selection',
+                'rejected' => 'rejected',
+                default => $status,
+            };
+
+            $row = DocumentHelper::serialize($app) ?? [];
+            $row['studentName'] = $user['name'] ?? '';
+            $row['registerNumber'] = $student['registerNumber'] ?? '';
+            $row['department'] = $dept['code'] ?? $dept['name'] ?? '';
+            $row['company'] = $company['companyName'] ?? '';
+            $row['role'] = $drive['title'] ?? '';
+            $row['stage'] = $stage;
+            $row['appliedAt'] = $row['createdAt'] ?? null;
+            $rows[] = $row;
+        }
+
+        Response::success($rows);
+    }
+
+    /** POST /api/admin/applications/{id}/transition */
+    public function transitionApplication(string $appId): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'status' => 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+        (new ApplicationWorkflowService())->transition(
+            $appId,
+            (string) $input['status'],
+            (string) $admin['_id'],
+            (string) ($input['remarks'] ?? '')
+        );
+        Response::success(null, 'Application updated.');
     }
 
     /** GET /api/admin/users */
@@ -165,6 +302,62 @@ final class AdminController
         Response::success((new PlacementOfficerModel())->listEnriched());
     }
 
+    /** PUT /api/admin/departments/{id}/placement-officer */
+    public function assignPlacementOfficer(string $departmentId): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $userId = (string) ($input['userId'] ?? '');
+        if ($userId === '') {
+            Response::error('userId is required.', 422);
+        }
+
+        $deptModel = new DepartmentModel();
+        if (!$deptModel->findById($departmentId)) {
+            Response::notFound('Department not found.');
+        }
+
+        $user = $this->userModel->findById($userId);
+        if (!$user) {
+            Response::notFound('Placement officer user not found.');
+        }
+        if (($user['role'] ?? '') !== 'placement_officer') {
+            Response::error('User must have role placement_officer.', 422);
+        }
+
+        $po = new PlacementOfficerModel();
+
+        // If department already has an officer and it's not this user, replace assignment.
+        $existingDept = $po->findByDepartment($departmentId);
+        if ($existingDept && (string) ($existingDept['userId'] ?? '') !== (string) Security::toObjectId($userId)) {
+            $po->deleteByDepartment($departmentId);
+        }
+
+        // If user already assigned to a different department, block.
+        $existingUser = $po->findByUserId($userId);
+        if ($existingUser && (string) ($existingUser['departmentId'] ?? '') !== (string) Security::toObjectId($departmentId)) {
+            Response::error('This placement officer is already assigned to another department.', 409);
+        }
+
+        if (!$existingUser) {
+            try {
+                $po->createProfile($userId, ['departmentId' => $departmentId, 'designation' => $input['designation'] ?? null]);
+            } catch (\Throwable $e) {
+                Response::error($e->getMessage(), 422);
+            }
+        }
+
+        Response::success(null, 'Placement officer assigned.');
+    }
+
+    /** DELETE /api/admin/departments/{id}/placement-officer */
+    public function unassignPlacementOfficer(string $departmentId): void
+    {
+        RBACMiddleware::requireAdmin();
+        (new PlacementOfficerModel())->deleteByDepartment($departmentId);
+        Response::success(null, 'Placement officer unassigned.');
+    }
+
     // --- Departments ---
 
     /** GET /api/admin/departments */
@@ -268,6 +461,23 @@ final class AdminController
         Response::success(['id' => $id], 'Rule created.', 201);
     }
 
+    /** PUT /api/admin/rules/active */
+    public function saveActiveRule(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $rule = (new RuleModel())->saveActiveRule($input);
+        Response::success(DocumentHelper::serialize($rule), 'Placement rules saved.');
+    }
+
+    /** GET /api/admin/rules/active */
+    public function getActiveRule(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $rule = (new RuleModel())->getActiveRule();
+        Response::success($rule ? DocumentHelper::serialize($rule) : null);
+    }
+
     // --- Student Control ---
 
     /** POST /api/admin/students/{id}/verify-resume */
@@ -299,7 +509,6 @@ final class AdminController
     /** POST /api/admin/students/{id}/blacklist */
     public function blacklistStudent(string $studentId): void
     {
-        RBACMiddleware::requireAdmin();
         $user = RBACMiddleware::requireAdmin();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $reason = $input['reason'] ?? 'Administrative action';
@@ -353,8 +562,102 @@ final class AdminController
     public function listStudents(): void
     {
         RBACMiddleware::requireAdmin();
-        $students = (new StudentModel())->findAll([], 300);
-        Response::success(DocumentHelper::serializeMany($students));
+        $studentModel = new StudentModel();
+        $deptModel = new DepartmentModel();
+        $users = new UserModel();
+
+        $departments = [];
+        foreach ($deptModel->findAll([], 200) as $d) {
+            $departments[(string) $d['_id']] = $d;
+        }
+
+        $rows = [];
+        foreach ($studentModel->findAll([], 500) as $s) {
+            $userId = (string) ($s['userId'] ?? '');
+            $deptId = (string) ($s['departmentId'] ?? '');
+            $u = $userId ? $users->findById($userId) : null;
+            $dept = $departments[$deptId] ?? null;
+
+            $row = DocumentHelper::serialize($s) ?? [];
+            $row['user'] = $u ? DocumentHelper::serialize($u) : null;
+            $row['department'] = $dept ? ['id' => (string) $dept['_id'], 'name' => $dept['name'] ?? '', 'code' => $dept['code'] ?? ''] : null;
+            $rows[] = $row;
+        }
+
+        Response::success($rows);
+    }
+
+    /** GET /api/admin/blacklist */
+    public function listBlacklist(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $bl = new BlacklistModel();
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+
+        $rows = [];
+        foreach ($bl->active(500) as $r) {
+            $studentId = (string) ($r['studentId'] ?? '');
+            $student = $studentId ? $studentModel->findById($studentId) : null;
+            $userId = $student ? (string) ($student['userId'] ?? '') : '';
+            $user = $userId ? $userModel->findById($userId) : null;
+            $row = DocumentHelper::serialize($r) ?? [];
+            $row['student'] = $student ? DocumentHelper::serialize($student) : null;
+            $row['user'] = $user ? DocumentHelper::serialize($user) : null;
+            $rows[] = $row;
+        }
+        Response::success($rows);
+    }
+
+    // --- Recruitment Results ---
+
+    /** GET /api/admin/results */
+    public function listResults(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $filter = [];
+        if (!empty($_GET['status'])) {
+            $filter['status'] = $_GET['status'];
+        }
+        if (!empty($_GET['registerNumber'])) {
+            $filter['registerNumber'] = strtoupper(trim((string) $_GET['registerNumber']));
+        }
+        Response::success(DocumentHelper::serializeMany((new RecruitmentResultModel())->list($filter, 500)));
+    }
+
+    /** POST /api/admin/results */
+    public function upsertResult(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+
+        $errors = Validator::validate($input, [
+            'studentName'    => 'required|min:2',
+            'registerNumber' => 'required',
+            'company'        => 'required',
+            'role'           => 'required',
+            'status'         => 'required|in:selected,rejected',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+
+        try {
+            $id = (new RecruitmentResultModel())->upsertByRegisterCompany($input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+        Response::success(['id' => $id], 'Result saved.');
+    }
+
+    /** DELETE /api/admin/results/{id} */
+    public function deleteResult(string $id): void
+    {
+        RBACMiddleware::requireAdmin();
+        if (!(new RecruitmentResultModel())->delete($id)) {
+            Response::notFound();
+        }
+        Response::success(null, 'Result deleted.');
     }
 
     // --- Company management ---
@@ -403,6 +706,140 @@ final class AdminController
         Response::success(null, 'Company deleted.');
     }
 
+    // --- Staff recommendations & company registration ---
+
+    /** GET /api/admin/recommendations */
+    public function listRecommendations(): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new RecommendationModel())->listEnriched());
+    }
+
+    /** PUT /api/admin/recommendations/{id}/status */
+    public function updateRecommendationStatus(string $id): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $status = (string) ($input['status'] ?? '');
+        if (!(new RecommendationModel())->updateStatus($id, $status)) {
+            Response::error('Invalid status or recommendation not found.', 422);
+        }
+        Response::success(null, 'Recommendation status updated.');
+    }
+
+    /** POST /api/admin/companies/register */
+    public function registerCompany(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'companyName'   => 'required',
+            'hrName'        => 'required',
+            'hrEmail'       => 'required|email',
+            'contactNumber' => 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+
+        $companyId = (new CompanyModel())->createCompany([
+            'companyName'       => $input['companyName'],
+            'website'           => $input['companyWebsite'] ?? '',
+            'category'          => $input['category'] ?? 'Software',
+            'tier'              => $input['tier'] ?? 'Tier 2',
+            'contacts'          => [[
+                'name'  => $input['hrName'],
+                'email' => $input['hrEmail'],
+                'phone' => $input['contactNumber'],
+            ]],
+            'associationStatus' => 'active',
+        ]);
+
+        if (!empty($input['sourceRecommendationId'])) {
+            (new RecommendationModel())->updateStatus((string) $input['sourceRecommendationId'], 'registered');
+        }
+
+        Response::success(['id' => $companyId], 'Company registered.', 201);
+    }
+
+    /** GET /api/admin/alumni-referrals */
+    public function listAlumniReferrals(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $userModel = $this->userModel;
+        $rows = [];
+        foreach ((new AlumniReferralModel())->findAll([], 200) as $ref) {
+            $user = $userModel->findById((string) ($ref['alumniUserId'] ?? ''));
+            $row = DocumentHelper::serialize($ref) ?? [];
+            $row['alumniName'] = $user['name'] ?? '';
+            $row['alumniEmail'] = $user['email'] ?? '';
+            $rows[] = $row;
+        }
+        Response::success($rows);
+    }
+
+    /** GET /api/admin/resumes/pending */
+    public function listPendingResumes(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
+
+        $rows = [];
+        foreach ($studentModel->findAll([], 500) as $student) {
+            $resume = $student['resume'] ?? null;
+            if (!$resume || empty($resume['path'])) {
+                continue;
+            }
+            if (!empty($resume['verified'])) {
+                continue;
+            }
+            $user = $userModel->findById((string) ($student['userId'] ?? ''));
+            $dept = $deptModel->findById((string) ($student['departmentId'] ?? ''));
+            $rows[] = [
+                'id'             => (string) $student['_id'],
+                'studentId'      => (string) $student['_id'],
+                'studentName'    => $user['name'] ?? '',
+                'registerNumber' => $student['registerNumber'] ?? '',
+                'department'     => $dept['code'] ?? $dept['name'] ?? '',
+                'fileName'       => $resume['filename'] ?? basename((string) ($resume['path'] ?? '')),
+                'validFormat'    => true,
+                'status'         => 'pending',
+                'submittedAt'    => $resume['uploadedAt'] ?? null,
+            ];
+        }
+        Response::success(DocumentHelper::serializeMany($rows));
+    }
+
+    /** POST /api/admin/blacklist */
+    public function addBlacklist(): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $registerNumber = strtoupper(trim((string) ($input['registerNumber'] ?? '')));
+        $reason = trim((string) ($input['reason'] ?? ''));
+        if ($registerNumber === '' || $reason === '') {
+            Response::error('registerNumber and reason are required.', 422);
+        }
+
+        $student = (new StudentModel())->findByRegisterNumber($registerNumber);
+        if (!$student) {
+            Response::notFound('Student not found for register number.');
+        }
+
+        (new BlacklistModel())->blacklist((string) $student['_id'], $reason, (string) $admin['_id']);
+        Response::success(null, 'Student blacklisted.', 201);
+    }
+
+    /** DELETE /api/admin/blacklist/{studentId} */
+    public function removeBlacklistEntry(string $studentId): void
+    {
+        RBACMiddleware::requireAdmin();
+        (new BlacklistModel())->removeBlacklist($studentId);
+        Response::success(null, 'Student removed from blacklist.');
+    }
+
     /** GET /api/admin/reports/download/{filename} */
     public function downloadReport(string $filename): void
     {
@@ -417,5 +854,103 @@ final class AdminController
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         readfile($path);
         exit;
+    }
+
+    // --- System settings, public page content, placement news ---
+
+    /** GET /api/admin/settings/system */
+    public function getSystemSettings(): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new SystemSettingsModel())->get());
+    }
+
+    /** PUT /api/admin/settings/system */
+    public function updateSystemSettings(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'placementYear' => 'required',
+            'emailFrom'     => 'required|email',
+            'maxUploadMb'   => 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+        $saved = (new SystemSettingsModel())->save($input);
+        Response::success($saved, 'System settings saved.');
+    }
+
+    /** GET /api/admin/settings/public */
+    public function getPublicPageSettings(): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new PublicPageContentModel())->get());
+    }
+
+    /** PUT /api/admin/settings/public */
+    public function updatePublicPageSettings(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $saved = (new PublicPageContentModel())->save($input);
+        Response::success($saved, 'Public page content saved.');
+    }
+
+    /** GET /api/admin/placement-news */
+    public function listPlacementNews(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $news = (new PlacementNewsModel())->published(100);
+        Response::success(DocumentHelper::serializeMany($news));
+    }
+
+    /** POST /api/admin/placement-news */
+    public function createPlacementNews(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'title'   => 'required',
+            'summary' => 'required',
+            'date'    => 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+        $id = (new PlacementNewsModel())->createNews($input);
+        Response::success(['id' => $id], 'Placement news added.', 201);
+    }
+
+    /** PUT /api/admin/placement-news/{id} */
+    public function updatePlacementNews(string $id): void
+    {
+        RBACMiddleware::requireAdmin();
+        $model = new PlacementNewsModel();
+        if (!$model->findById($id)) {
+            Response::notFound('News item not found.');
+        }
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'title'   => 'required',
+            'summary' => 'required',
+            'date'    => 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+        $model->updateNews($id, $input);
+        Response::success(null, 'Placement news updated.');
+    }
+
+    /** DELETE /api/admin/placement-news/{id} */
+    public function deletePlacementNews(string $id): void
+    {
+        RBACMiddleware::requireAdmin();
+        if (!(new PlacementNewsModel())->delete($id)) {
+            Response::notFound('News item not found.');
+        }
+        Response::success(null, 'Placement news removed.');
     }
 }

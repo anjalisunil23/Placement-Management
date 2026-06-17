@@ -22,6 +22,7 @@ if ($origin !== '' && in_array($origin, $allowed, true)) {
 }
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Credentials: true');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
@@ -71,19 +72,49 @@ $routes = [
     ['GET',    '/admin/departments',            [AdminController::class, 'listDepartments']],
     ['POST',   '/admin/departments',            [AdminController::class, 'createDepartment']],
     ['PUT',    '/admin/departments/{id}',       [AdminController::class, 'updateDepartment']],
+    ['PUT',    '/admin/departments/{id}/placement-officer', [AdminController::class, 'assignPlacementOfficer']],
+    ['DELETE', '/admin/departments/{id}/placement-officer', [AdminController::class, 'unassignPlacementOfficer']],
     ['DELETE', '/admin/departments/{id}',       [AdminController::class, 'deleteDepartment']],
     ['GET',    '/admin/rules',                  [AdminController::class, 'listRules']],
     ['POST',   '/admin/rules',                  [AdminController::class, 'createRule']],
+    ['GET',    '/admin/rules/active',           [AdminController::class, 'getActiveRule']],
+    ['PUT',    '/admin/rules/active',           [AdminController::class, 'saveActiveRule']],
+    // Admin drives & application pipeline (Mongo-backed)
+    ['GET',    '/admin/drives',                 [AdminController::class, 'listDrives']],
+    ['POST',   '/admin/drives',                 [AdminController::class, 'createDrive']],
+    ['PUT',    '/admin/drives/{id}',            [AdminController::class, 'updateDrive']],
+    ['DELETE', '/admin/drives/{id}',            [AdminController::class, 'deleteDrive']],
+    ['GET',    '/admin/applications',           [AdminController::class, 'listApplications']],
+    ['POST',   '/admin/applications/{id}/transition', [AdminController::class, 'transitionApplication']],
     ['POST',   '/admin/students/{id}/verify-resume', [AdminController::class, 'verifyResume']],
     ['POST',   '/admin/students/{id}/blacklist',     [AdminController::class, 'blacklistStudent']],
     ['POST',   '/admin/students/{id}/unblacklist',   [AdminController::class, 'unblacklistStudent']],
     ['GET',    '/admin/students',                    [AdminController::class, 'listStudents']],
+    ['GET',    '/admin/blacklist',                   [AdminController::class, 'listBlacklist']],
+    ['GET',    '/admin/results',                     [AdminController::class, 'listResults']],
+    ['POST',   '/admin/results',                     [AdminController::class, 'upsertResult']],
+    ['DELETE', '/admin/results/{id}',                [AdminController::class, 'deleteResult']],
     ['GET',    '/admin/companies',                   [AdminController::class, 'listCompanies']],
     ['POST',   '/admin/companies',                   [AdminController::class, 'createCompany']],
     ['PUT',    '/admin/companies/{id}',              [AdminController::class, 'updateCompany']],
     ['DELETE', '/admin/companies/{id}',              [AdminController::class, 'deleteCompany']],
+    ['POST',   '/admin/companies/register',         [AdminController::class, 'registerCompany']],
+    ['GET',    '/admin/recommendations',            [AdminController::class, 'listRecommendations']],
+    ['PUT',    '/admin/recommendations/{id}/status', [AdminController::class, 'updateRecommendationStatus']],
+    ['GET',    '/admin/alumni-referrals',           [AdminController::class, 'listAlumniReferrals']],
+    ['GET',    '/admin/resumes/pending',            [AdminController::class, 'listPendingResumes']],
+    ['POST',   '/admin/blacklist',                  [AdminController::class, 'addBlacklist']],
+    ['DELETE', '/admin/blacklist/{id}',             [AdminController::class, 'removeBlacklistEntry']],
     ['POST',   '/admin/reports/{type}',              [AdminController::class, 'generateReport']],
     ['GET',    '/admin/reports/download/{filename}', [AdminController::class, 'downloadReport']],
+    ['GET',    '/admin/settings/system',             [AdminController::class, 'getSystemSettings']],
+    ['PUT',    '/admin/settings/system',             [AdminController::class, 'updateSystemSettings']],
+    ['GET',    '/admin/settings/public',             [AdminController::class, 'getPublicPageSettings']],
+    ['PUT',    '/admin/settings/public',             [AdminController::class, 'updatePublicPageSettings']],
+    ['GET',    '/admin/placement-news',              [AdminController::class, 'listPlacementNews']],
+    ['POST',   '/admin/placement-news',              [AdminController::class, 'createPlacementNews']],
+    ['PUT',    '/admin/placement-news/{id}',         [AdminController::class, 'updatePlacementNews']],
+    ['DELETE', '/admin/placement-news/{id}',         [AdminController::class, 'deletePlacementNews']],
 
     // Student
     ['GET',  '/student/profile',           [StudentController::class, 'getProfile']],
@@ -128,6 +159,8 @@ $routes = [
     ['GET',  '/officer/profile',                   [OfficerController::class, 'profile']],
     ['POST', '/officer/drives',                    [OfficerController::class, 'createDrive']],
     ['GET',  '/officer/drives',                    [OfficerController::class, 'listDrives']],
+    ['PUT',  '/officer/drives/{id}',               [OfficerController::class, 'updateDrive']],
+    ['DELETE','/officer/drives/{id}',              [OfficerController::class, 'deleteDrive']],
     ['POST', '/officer/drives/{id}/attendance',    [OfficerController::class, 'markAttendance']],
     ['POST', '/officer/applications/{id}/approve', [OfficerController::class, 'approveApplication']],
     ['GET',  '/officer/applications/pending',      [OfficerController::class, 'pendingApplications']],
@@ -136,6 +169,7 @@ $routes = [
 
     // Public & Analytics
     ['GET', '/public/placement-stats', [PublicController::class, 'placementStats']],
+    ['GET', '/public/site-content',    [PublicController::class, 'siteContent']],
     ['GET', '/analytics/dashboard',    [PublicController::class, 'analyticsDashboard']],
 ];
 
