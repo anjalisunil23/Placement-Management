@@ -1,4 +1,4 @@
 <?php
 // Redirect to login page
-header('Location: /frontend/pages/login.html');
+header('Location: /public-stats.html');
 exit;

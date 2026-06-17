@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Student Registration · PlaceHub</title>
+<title>Students · PlaceHub</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -9,48 +9,74 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Student Registration</h1><p class="page-sub">Approve registrations, verify resumes, manage student records.</p></div>
-  <div class="d-flex gap-2"><button class="btn btn-outline-secondary"><i class="bi bi-upload me-1"></i>Bulk import</button><button class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Add student</button></div>
+  <div><h1 class="page-title">Student Management</h1><p class="page-sub">View profiles, verify academics & resumes, approve placement registration.</p></div>
+  <a href="resumes.html" class="btn btn-outline-primary"><i class="bi bi-file-earmark-check me-1"></i>Resume verification</a>
 </div>
 
-<div class="row g-3 mb-3">
-  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registered</div><div class="val"><span class="counter" data-target="3284">0</span></div></div></div>
-  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending Verification</div><div class="val"><span class="counter" data-target="186">0</span></div></div></div>
-  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Approved</div><div class="val"><span class="counter" data-target="3024">0</span></div></div></div>
-  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Rejected</div><div class="val"><span class="counter" data-target="74">0</span></div></div></div>
-</div>
+<div class="row g-3 mb-3" id="stats"></div>
 
 <div class="card-surface">
   <ul class="nav nav-tabs px-3 pt-2" role="tablist">
-    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#queue">Verification queue <span class="badge-soft warning ms-1">186</span></a></li>
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#pending" id="tabPending">Pending</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#approved">Approved</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#rejected">Rejected</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#all">All students</a></li>
   </ul>
   <div class="tab-content">
-    <div class="tab-pane fade show active" id="queue">
-      <div class="table-wrap"><table class="table-modern"><thead><tr><th>Student</th><th>Roll No</th><th>Branch</th><th>CGPA</th><th>Resume</th><th>Submitted</th><th>Action</th></tr></thead><tbody id="qrows"></tbody></table></div>
-    </div>
-    <div class="tab-pane fade p-4" id="approved"><p class="text-muted-2 mb-0">3,024 approved students. Use filters to drill down.</p></div>
-    <div class="tab-pane fade p-4" id="rejected"><p class="text-muted-2 mb-0">74 rejected applications with reasons.</p></div>
+    <div class="tab-pane fade show active" id="pending"><div class="table-wrap"><table class="table-modern"><thead><tr>
+      <th>Student</th><th>Reg. no.</th><th>Dept</th><th>UG</th><th>MCA</th><th>CGPA</th><th>Resume</th><th>Chances</th><th>Status</th><th></th>
+    </tr></thead><tbody id="pendingRows"></tbody></table></div></div>
+    <div class="tab-pane fade" id="approved"><div class="table-wrap"><table class="table-modern"><thead><tr>
+      <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Resume</th><th>Chances</th>
+    </tr></thead><tbody id="approvedRows"></tbody></table></div></div>
+    <div class="tab-pane fade" id="all"><div class="table-wrap"><table class="table-modern"><thead><tr>
+      <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Certs</th><th>Status</th><th>Actions</th>
+    </tr></thead><tbody id="allRows"></tbody></table></div></div>
   </div>
 </div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
-const s=[
- ["Aarav Mehta","21CSE001","CSE","8.92","resume.pdf","2h ago"],
- ["Sneha Iyer","21ECE044","ECE","8.40","resume.pdf","3h ago"],
- ["Rahul Verma","21IT012","IT","9.10","resume.pdf","5h ago"],
- ["Priya Nair","21ME032","ME","7.85","resume.pdf","8h ago"],
- ["Kabir Singh","21EE007","EE","8.05","resume.pdf","1d ago"],
-];
-document.getElementById("qrows").innerHTML=s.map(x=>`<tr>
-  <td><div class="d-flex align-items-center gap-2"><div class="avatar" style="width:32px;height:32px;font-size:.75rem">${x[0].split(' ').map(n=>n[0]).join('')}</div><div><div class="fw-semibold small">${x[0]}</div><div class="small text-muted-2">${x[0].toLowerCase().replace(' ','.')}@college.edu</div></div></div></td>
-  <td>${x[1]}</td><td>${x[2]}</td><td>${x[3]}</td>
-  <td><a href="#" class="text-decoration-none"><i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i>${x[4]}</a></td>
-  <td>${x[5]}</td>
-  <td><div class="d-flex gap-1"><button class="btn btn-sm btn-success"><i class="bi bi-check2"></i></button><button class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></button><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></button></div></td>
-</tr>`).join("");
+const students = UserRegistry.byRole('student');
+const pending = students.filter(s => s.status === 'pending');
+const approved = students.filter(s => s.status === 'approved');
+
+document.getElementById('stats').innerHTML = `
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registered</div><div class="val">${students.length}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending</div><div class="val">${pending.length}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Approved</div><div class="val">${approved.length}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Placed</div><div class="val">${students.filter(s=>s.placementStatus==='placed').length}</div></div></div>`;
+document.getElementById('tabPending').innerHTML = `Pending <span class="badge-soft warning ms-1">${pending.length}</span>`;
+
+function rowActions(s) {
+  return `<div class="d-flex gap-1 flex-wrap">
+    ${s.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="approveStudent('${s.id}')">Approve</button>` : ''}
+    <button class="btn btn-sm btn-outline-${s.blocked?'success':'warning'}" onclick="toggleBlock('${s.id}')">${s.blocked?'Unblock':'Block'}</button>
+    <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${s.id}')"><i class="bi bi-trash"></i></button>
+  </div>`;
+}
+
+function render() {
+  document.getElementById('pendingRows').innerHTML = pending.length ? pending.map(s => `
+    <tr><td><strong>${s.name}</strong><div class="small text-muted-2">${s.email}</div></td><td>${s.registerNumber}</td><td>${s.department}</td>
+    <td>${s.ugMarks ?? '—'}%</td><td>${s.mcaMarks ?? '—'}${s.mcaMarks?'%':''}</td><td>${s.cgpa}</td>
+    <td><span class="badge-soft ${s.resumeStatus==='approved'?'success':'warning'}">${s.resumeStatus}</span></td>
+    <td>${s.chancesUsed}/${s.chancesMax}</td><td>${userStatusBadge(s.status, s.blocked)}</td><td>${rowActions(s)}</td></tr>`).join('')
+    : '<tr><td colspan="10" class="text-muted-2 p-4">No pending registrations.</td></tr>';
+
+  document.getElementById('approvedRows').innerHTML = approved.map(s => `
+    <tr><td><strong>${s.name}</strong></td><td>${s.registerNumber}</td><td>${s.department}</td><td>${s.cgpa}</td>
+    <td>${s.placementStatus || '—'}</td><td>${s.resumeStatus}</td><td>${s.chancesUsed}/${s.chancesMax}</td></tr>`).join('');
+
+  document.getElementById('allRows').innerHTML = students.map(s => `
+    <tr><td><strong>${s.name}</strong></td><td>${s.registerNumber}</td><td>${s.department}</td><td>${s.cgpa}</td>
+    <td class="small">${s.certifications || '—'}</td><td>${userStatusBadge(s.status, s.blacklisted?'blocked':s.blocked)}</td><td>${rowActions(s)}</td></tr>`).join('');
+}
+
+window.approveStudent = id => { UserRegistry.approve(id); toast('Student approved.', 'success'); location.reload(); };
+window.toggleBlock = id => { const s = UserRegistry.get(id); UserRegistry.block(id, !s.blocked); toast(s.blocked ? 'Unblocked.' : 'Blocked.', 'success'); location.reload(); };
+window.deleteStudent = id => { if (confirm('Delete student account?')) { UserRegistry.remove(id); toast('Deleted.', 'success'); location.reload(); } };
+render();
 </script></body></html>

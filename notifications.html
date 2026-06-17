@@ -9,24 +9,29 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Notifications Center</h1><p class="page-sub">Alerts, email status and broadcast history.</p></div>
-  <div class="d-flex gap-2"><button class="btn btn-outline-secondary"><i class="bi bi-check2-all me-1"></i>Mark all read</button><button class="btn btn-primary"><i class="bi bi-megaphone me-1"></i>New broadcast</button></div>
+  <div><h1 class="page-title" id="notifTitle">Notifications Center</h1><p class="page-sub" id="notifSub">Alerts, email status and broadcast history.</p></div>
+  <div class="d-flex gap-2" id="notifActions">
+    <button class="btn btn-outline-secondary" id="markAllRead"><i class="bi bi-check2-all me-1"></i>Mark all read</button>
+    <button class="btn btn-primary"><i class="bi bi-megaphone me-1"></i>New broadcast</button>
+  </div>
 </div>
 
 <div class="card-surface">
-  <ul class="nav nav-tabs px-3 pt-2">
-    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#unread">Unread <span class="badge-soft danger ms-1">8</span></a></li>
+  <ul class="nav nav-tabs px-3 pt-2" id="notifTabs">
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#unread">Unread <span class="badge-soft danger ms-1" id="unreadBadge">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#read">Read</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#email">Email status</a></li>
+    <li class="nav-item" data-non-student><a class="nav-link" data-bs-toggle="tab" href="#email">Email status</a></li>
+    <li class="nav-item" data-student-only><a class="nav-link" data-bs-toggle="tab" href="#jobposters">Job Posters</a></li>
+    <li class="nav-item" data-student-only><a class="nav-link" data-bs-toggle="tab" href="#appupdates">Application Updates</a></li>
   </ul>
   <div class="tab-content p-3 p-md-4">
-    <div class="tab-pane fade show active" id="unread"><div id="nlist" class="d-flex flex-column gap-2"></div></div>
-    <div class="tab-pane fade" id="read"><p class="text-muted-2">204 read notifications.</p></div>
+    <div class="tab-pane fade show active" id="unread"><div id="nlistUnread" class="d-flex flex-column gap-2"></div></div>
+    <div class="tab-pane fade" id="read"><div id="nlistRead" class="d-flex flex-column gap-2"></div></div>
+    <div class="tab-pane fade" id="jobposters"><div id="nlistJobs" class="d-flex flex-column gap-2"></div></div>
+    <div class="tab-pane fade" id="appupdates"><div id="nlistApps" class="d-flex flex-column gap-2"></div></div>
     <div class="tab-pane fade" id="email">
       <div class="table-wrap"><table class="table-modern"><thead><tr><th>Subject</th><th>Recipients</th><th>Sent</th><th>Opens</th><th>Status</th></tr></thead><tbody>
         <tr><td><strong>Google SDE Drive — Registration Open</strong></td><td>1,240</td><td>2h ago</td><td>892 (72%)</td><td><span class="badge-soft success">Delivered</span></td></tr>
-        <tr><td><strong>Resume verification reminder</strong></td><td>186</td><td>1d ago</td><td>140 (75%)</td><td><span class="badge-soft success">Delivered</span></td></tr>
-        <tr><td><strong>Amazon results uploaded</strong></td><td>680</td><td>2d ago</td><td>610 (90%)</td><td><span class="badge-soft warning">Partial</span></td></tr>
       </tbody></table></div>
     </div>
   </div>
@@ -34,19 +39,67 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
-const n=[
- ["primary","bi-briefcase-fill","New drive published","Google SDE-1 is now open for registrations.","2 min ago"],
- ["success","bi-check-circle-fill","Offer accepted","Kabir Singh accepted Amazon SDE Intern offer.","12 min ago"],
- ["warning","bi-exclamation-triangle-fill","Resume needs review","18 new resumes pending verification.","1h ago"],
- ["info","bi-people-fill","412 applications","Google drive received 412 applications today.","3h ago"],
- ["danger","bi-x-octagon-fill","Drive closing soon","TCS drive closes in 6 hours.","4h ago"],
-];
-document.getElementById("nlist").innerHTML=n.map(x=>`
- <div class="notif-card unread">
-   <div class="notif-ic" style="background:color-mix(in srgb,var(--${x[0]==='primary'?'primary':x[0]}) 15%,transparent);color:var(--${x[0]==='primary'?'primary':x[0]})"><i class="bi ${x[1]}"></i></div>
-   <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${x[2]}</strong><small class="text-muted-2">${x[4]}</small></div>
-   <p class="mb-0 small text-muted-2">${x[3]}</p></div>
- </div>`).join("");
+const role = Auth.role();
+const isStudent = role === 'student';
+
+if (isStudent) {
+  StudentNotifs.seed();
+  document.getElementById('notifTitle').textContent = 'Notifications';
+  document.getElementById('notifSub').textContent = 'Job posters and updates from your applied drives.';
+  document.getElementById('notifActions').innerHTML = '<button class="btn btn-outline-secondary" id="markAllRead"><i class="bi bi-check2-all me-1"></i>Mark all read</button>';
+  document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');
+} else {
+  document.querySelectorAll('[data-student-only]').forEach(el => el.style.display = 'none');
+}
+
+function notifCard(n) {
+  const icon = n.type === 'job_poster' ? ['primary','bi-briefcase-fill'] : ['info','bi-send-check-fill'];
+  const ago = formatDate(n.createdAt);
+  return `<div class="notif-card ${n.read ? '' : 'unread'}" data-id="${n.id}">
+    <div class="notif-ic" style="background:color-mix(in srgb,var(--${icon[0]}) 15%,transparent);color:var(--${icon[0]})"><i class="bi ${icon[1]}"></i></div>
+    <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${n.title}</strong><small class="text-muted-2">${ago}</small></div>
+    <p class="mb-0 small text-muted-2">${n.body}</p></div>
+  </div>`;
+}
+
+function adminCard(x) {
+  return `<div class="notif-card unread">
+    <div class="notif-ic" style="background:color-mix(in srgb,var(--${x[0]==='primary'?'primary':x[0]}) 15%,transparent);color:var(--${x[0]==='primary'?'primary':x[0]})"><i class="bi ${x[1]}"></i></div>
+    <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${x[2]}</strong><small class="text-muted-2">${x[4]}</small></div>
+    <p class="mb-0 small text-muted-2">${x[3]}</p></div>
+  </div>`;
+}
+
+function renderStudentNotifs() {
+  const all = StudentNotifs.all();
+  document.getElementById('unreadBadge').textContent = StudentNotifs.unreadCount();
+  document.getElementById('nlistUnread').innerHTML = all.filter(n => !n.read).map(notifCard).join('') || '<p class="text-muted-2">No unread notifications.</p>';
+  document.getElementById('nlistRead').innerHTML = all.filter(n => n.read).map(notifCard).join('') || '<p class="text-muted-2">No read notifications yet.</p>';
+  document.getElementById('nlistJobs').innerHTML = all.filter(n => n.type === 'job_poster').map(notifCard).join('') || '<p class="text-muted-2">No job posters yet.</p>';
+  document.getElementById('nlistApps').innerHTML = all.filter(n => n.type === 'application_update').map(notifCard).join('') || '<p class="text-muted-2">No application updates yet.</p>';
+}
+
+if (isStudent) {
+  renderStudentNotifs();
+  document.getElementById('markAllRead')?.addEventListener('click', () => { StudentNotifs.markAllRead(); renderStudentNotifs(); toast('All marked as read.', 'success'); });
+} else {
+  const n = [
+    ['primary','bi-briefcase-fill','New drive published','Google SDE-1 is now open for registrations.','2 min ago'],
+    ['success','bi-check-circle-fill','Offer accepted','Kabir Singh accepted Amazon SDE Intern offer.','12 min ago'],
+    ['warning','bi-exclamation-triangle-fill','Resume needs review','18 new resumes pending verification.','1h ago'],
+  ];
+  document.getElementById('unreadBadge').textContent = '3';
+  document.getElementById('nlistUnread').innerHTML = n.map(adminCard).join('');
+  document.getElementById('nlistRead').innerHTML = '<p class="text-muted-2">204 read notifications.</p>';
+  document.getElementById('markAllRead')?.addEventListener('click', () => toast('All marked as read.', 'success'));
+  document.querySelector('#notifActions .btn-primary')?.addEventListener('click', () => {
+    const title = prompt('Broadcast title:', 'New placement drive announced');
+    if (!title) return;
+    const body = prompt('Message:', 'Registration is now open. Check drives page.');
+    if (body) toast(`Broadcast sent: "${title}" (demo)`, 'success');
+  });
+}
 </script></body></html>

@@ -1,0 +1,99 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Placement Rules · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="rules.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div><h1 class="page-title">Placement Rules</h1><p class="page-sub">Configure eligibility thresholds, placement chances, and policy for the current season.</p></div>
+  <button class="btn btn-primary" id="btnSave"><i class="bi bi-check2-lg me-1"></i>Save rules</button>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card-surface p-4">
+      <h5 class="fw-bold mb-3">Eligibility &amp; limits</h5>
+      <form id="rulesForm" class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Minimum CGPA</label>
+          <input type="number" class="form-control" id="minCgpa" step="0.01" min="0" max="10" required/>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Max backlogs allowed</label>
+          <input type="number" class="form-control" id="maxBacklog" min="0" max="20" required/>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Max placement chances</label>
+          <input type="number" class="form-control" id="maxPlacementChances" min="1" max="20" required/>
+        </div>
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="blockPlacedStudents"/>
+            <label class="form-check-label" for="blockPlacedStudents">Block already-placed students from applying to new drives</label>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="allowPlacedForSelectedDrives"/>
+            <label class="form-check-label" for="allowPlacedForSelectedDrives">Allow placed students for selected drives only (override)</label>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Placement policy</label>
+          <textarea class="form-control" id="placementPolicy" rows="5" placeholder="Describe eligibility rules, backlog policy, tier restrictions…"></textarea>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card-surface p-4">
+      <h5 class="fw-bold mb-3">Policy info</h5>
+      <p class="small text-muted-2 mb-2">Version: <strong id="policyVersion">—</strong></p>
+      <p class="small text-muted-2 mb-0">Last updated: <strong id="updatedAt">—</strong></p>
+      <hr/>
+      <p class="small text-muted-2 mb-0">These rules apply globally to student eligibility checks and drive registration.</p>
+    </div>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+function loadRules() {
+  const r = PlacementRules.get();
+  document.getElementById('minCgpa').value = r.minCgpa ?? 7.5;
+  document.getElementById('maxBacklog').value = r.maxBacklog ?? 0;
+  document.getElementById('maxPlacementChances').value = r.maxPlacementChances ?? 5;
+  document.getElementById('blockPlacedStudents').checked = r.blockPlacedStudents !== false;
+  document.getElementById('allowPlacedForSelectedDrives').checked = !!r.allowPlacedForSelectedDrives;
+  document.getElementById('placementPolicy').value = r.placementPolicy || '';
+  document.getElementById('policyVersion').textContent = r.policyVersion || 'v1.0';
+  document.getElementById('updatedAt').textContent = r.updatedAt ? formatDate(r.updatedAt) : '—';
+}
+
+function saveRules() {
+  const payload = {
+    minCgpa: parseFloat(document.getElementById('minCgpa').value) || 0,
+    maxBacklog: parseInt(document.getElementById('maxBacklog').value, 10) || 0,
+    maxPlacementChances: parseInt(document.getElementById('maxPlacementChances').value, 10) || 1,
+    blockPlacedStudents: document.getElementById('blockPlacedStudents').checked,
+    allowPlacedForSelectedDrives: document.getElementById('allowPlacedForSelectedDrives').checked,
+    placementPolicy: document.getElementById('placementPolicy').value.trim(),
+    policyVersion: 'v' + (parseFloat((PlacementRules.get().policyVersion || 'v3.0').replace(/^v/i, '')) + 0.1).toFixed(1),
+  };
+  PlacementRules.set(payload);
+  toast('Placement rules saved.', 'success');
+  loadRules();
+}
+
+document.getElementById('btnSave').addEventListener('click', saveRules);
+document.getElementById('rulesForm').addEventListener('submit', e => { e.preventDefault(); saveRules(); });
+
+loadRules();
+</script></body></html>

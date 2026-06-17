@@ -32,29 +32,200 @@
 
   <section class="login-form">
     <div class="login-card">
-      <h2 class="fw-bold mb-1">Welcome back</h2>
-      <p class="text-muted-2 mb-4">Sign in to your PlaceHub account</p>
-      <form onsubmit="event.preventDefault();window.location='dashboard.html'">
-        <div class="mb-3">
-          <label class="form-label small fw-semibold">Email</label>
-          <input type="email" class="form-control" value="riya@college.edu" required />
+      <ul class="nav nav-pills mb-4 p-1 rounded-3" style="background:var(--surface-2);gap:.25rem" role="tablist">
+        <li class="nav-item flex-grow-1"><button class="nav-link w-100 active" data-bs-toggle="pill" data-bs-target="#tab-login">Sign in</button></li>
+        <li class="nav-item flex-grow-1"><button class="nav-link w-100" data-bs-toggle="pill" data-bs-target="#tab-register">Register</button></li>
+      </ul>
+
+      <div class="tab-content">
+        <!-- LOGIN -->
+        <div class="tab-pane fade show active" id="tab-login">
+          <h2 class="fw-bold mb-1">Welcome back</h2>
+          <p class="text-muted-2 mb-4">Sign in to your PlaceHub account</p>
+          <form id="loginForm">
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Email</label>
+              <input name="email" type="email" class="form-control" value="riya@college.edu" required />
+            </div>
+            <div class="mb-2">
+              <label class="form-label small fw-semibold d-flex justify-content-between">
+                <span>Password</span><a href="#" class="text-decoration-none small">Forgot?</a>
+              </label>
+              <input name="password" type="password" class="form-control" value="demo1234" required />
+            </div>
+            <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="r" checked><label class="form-check-label small" for="r">Keep me signed in</label></div>
+            <button class="btn btn-primary w-100 py-2 fw-semibold" type="submit">Sign in</button>
+            <div class="text-center my-3 text-muted-2 small">or preview as a role</div>
+            <div class="row g-2">
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="admin">Admin</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="placement_officer">Placement Officer</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="student">Student</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="staff">Staff</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="company">Company</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni">Alumni (Working)</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni-seeking">Alumni (Job Seeking)</button></div>
+            </div>
+          </form>
         </div>
-        <div class="mb-2">
-          <label class="form-label small fw-semibold d-flex justify-content-between">
-            <span>Password</span><a href="#" class="text-decoration-none small">Forgot?</a>
-          </label>
-          <input type="password" class="form-control" value="••••••••" required />
+
+        <!-- REGISTER -->
+        <div class="tab-pane fade" id="tab-register">
+          <h2 class="fw-bold mb-1">Create your account</h2>
+          <p class="text-muted-2 mb-4">Admin and Placement Officer accounts are seeded by the institute.</p>
+          <form id="registerForm">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold">Full name</label>
+                <input name="name" class="form-control" required />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold">Email</label>
+                <input name="email" type="email" class="form-control" required />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold">Password</label>
+                <input name="password" type="password" class="form-control" required minlength="6" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold">Register as</label>
+                <select name="role" id="roleSel" class="form-select" required>
+                  <option value="student">Student</option>
+                  <option value="staff">Faculty / Staff</option>
+                  <option value="company">Company Recruiter</option>
+                  <option value="alumni">Alumni</option>
+                </select>
+              </div>
+
+              <!-- Student -->
+              <div class="col-md-6 role-field role-student">
+                <label class="form-label small fw-semibold">Register number</label>
+                <input name="registerNumber" class="form-control" placeholder="22MCA047" />
+              </div>
+              <div class="col-md-6 role-field role-student role-staff">
+                <label class="form-label small fw-semibold">Department</label>
+                <select name="departmentId" class="form-select">
+                  <option value="1">Computer Science (CSE)</option>
+                  <option value="2">Information Technology (IT)</option>
+                  <option value="3">Electronics (ECE)</option>
+                  <option value="4">Mechanical (ME)</option>
+                  <option value="5">Civil (CE)</option>
+                  <option value="6">MCA</option>
+                </select>
+              </div>
+
+              <!-- Staff -->
+              <div class="col-md-6 role-field role-staff">
+                <label class="form-label small fw-semibold">Designation</label>
+                <input name="designation" class="form-control" placeholder="Assistant Professor" />
+              </div>
+
+              <!-- Company -->
+              <div class="col-md-6 role-field role-company">
+                <label class="form-label small fw-semibold">Company name</label>
+                <input name="companyName" class="form-control" />
+              </div>
+              <div class="col-md-3 role-field role-company">
+                <label class="form-label small fw-semibold">Category</label>
+                <select name="category" class="form-select">
+                  <option>Product</option><option>Service</option><option>Startup</option><option>Consulting</option><option>Core</option>
+                </select>
+              </div>
+              <div class="col-md-3 role-field role-company">
+                <label class="form-label small fw-semibold">Tier</label>
+                <select name="tier" class="form-select">
+                  <option>Tier 1</option><option>Tier 2</option><option>Tier 3</option>
+                </select>
+              </div>
+
+              <!-- Alumni -->
+              <div class="col-12 role-field role-alumni">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="isWorking" id="regAlumniWorking" checked>
+                  <label class="form-check-label" for="regAlumniWorking">I am currently employed</label>
+                </div>
+              </div>
+              <div class="col-md-6 role-field role-alumni">
+                <label class="form-label small fw-semibold">Current company</label>
+                <input name="company" class="form-control" />
+              </div>
+              <div class="col-md-6 role-field role-alumni">
+                <label class="form-label small fw-semibold">Role / Title</label>
+                <input name="title" class="form-control" />
+              </div>
+              <div class="col-md-3 role-field role-alumni">
+                <label class="form-label small fw-semibold">Experience (yrs)</label>
+                <input name="experience" type="number" min="0" class="form-control" />
+              </div>
+              <div class="col-md-9 role-field role-alumni">
+                <label class="form-label small fw-semibold">Skills (comma separated)</label>
+                <input name="skills" class="form-control" placeholder="React, Node, AWS" />
+              </div>
+            </div>
+
+            <div id="regNote" class="alert alert-info small mt-3 mb-0" style="display:none"></div>
+            <button class="btn btn-primary w-100 py-2 fw-semibold mt-3" type="submit">Create account</button>
+          </form>
         </div>
-        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="r" checked><label class="form-check-label small" for="r">Keep me signed in</label></div>
-        <button class="btn btn-primary w-100 py-2 fw-semibold">Sign in</button>
-        <div class="text-center my-3 text-muted-2 small">or continue with</div>
-        <div class="d-grid gap-2">
-          <button type="button" class="btn btn-outline-secondary"><i class="bi bi-google me-2"></i>Google Workspace</button>
-        </div>
-        <p class="text-center small text-muted-2 mt-4 mb-0">New to PlaceHub? <a href="#" class="fw-semibold">Request access</a></p>
-      </form>
+      </div>
     </div>
   </section>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script>
+function showRoleFields() {
+  const r = document.getElementById('roleSel').value;
+  document.querySelectorAll('.role-field').forEach(el => {
+    const show = el.classList.contains('role-' + r);
+    el.style.display = show ? '' : 'none';
+    el.querySelectorAll('input,select').forEach(i => i.disabled = !show);
+  });
+  const note = document.getElementById('regNote');
+  if (r === 'student' || r === 'company') {
+    note.style.display = ''; note.textContent = 'Accounts for ' + (r==='student'?'students':'companies') + ' require approval by the placement cell before sign-in is enabled.';
+  } else { note.style.display = 'none'; }
+}
+document.getElementById('roleSel').addEventListener('change', showRoleFields);
+showRoleFields();
+
+function fd(form) { return Object.fromEntries(new FormData(form).entries()); }
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = fd(e.target);
+  let res = await api('/auth/login', { method:'POST', body: data });
+  if (!res.success) res = await mockAuth('login', data);
+  if (res.success) {
+    Auth.set(res.data.user, res.data.token);
+    toast('Welcome back, ' + res.data.user.name, 'success');
+    setTimeout(()=>window.location.href='dashboard.html', 400);
+  } else { toast(res.message || 'Sign-in failed', 'error'); }
+});
+
+document.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => {
+  const key = b.dataset.demo;
+  const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
+  Auth.setRole(user.role);
+  Auth.set(user, 'demo-token');
+  window.location.href = 'dashboard.html';
+}));
+
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = fd(e.target);
+  let res = await api('/auth/register', { method:'POST', body: data });
+  if (!res.success) res = await mockAuth('register', data);
+  if (res.success) {
+    if (data.role === 'student' || data.role === 'company') {
+      toast('Registered. Your account is pending approval.', 'success');
+    } else {
+      Auth.set(res.data.user, res.data.token);
+      toast('Account created. Welcome!', 'success');
+      setTimeout(()=>window.location.href='dashboard.html', 400);
+    }
+  } else { toast(res.message || 'Registration failed', 'error'); }
+});
+</script>
 </body>
 </html>

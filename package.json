@@ -1,9 +1,0 @@
-{
-  "name": "placement-pulse",
-  "private": true,
-  "description": "PlaceHub — Placement Drive Management (Bootstrap 5.3 static site)",
-  "scripts": {
-    "dev": "npx --yes serve . -p 8080",
-    "start": "npx --yes serve . -p 8080"
-  }
-}

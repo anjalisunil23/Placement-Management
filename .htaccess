@@ -1,5 +1,14 @@
 RewriteEngine On
 
-# Route API requests to the REST router
+# API → PHP router
 RewriteRule ^backend/api(/.*)?$ backend/api/index.php [L,QSA]
 RewriteRule ^api(/.*)?$ backend/api/index.php [L,QSA]
+
+# Root → public landing page
+RewriteRule ^$ public-stats.html [L]
+
+# Extensionless HTML: /dashboard → dashboard.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.+?)/?$ $1.html [L]

@@ -1,91 +1,481 @@
 <!doctype html><html lang="en"><head>
+
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+
 <title>Placement Drives · PlaceHub</title>
+
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+
 <link href="css/style.css" rel="stylesheet"/></head>
+
 <body data-page="drives.html"><div class="app">
+
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
+
+
 <div class="page-header">
-  <div><h1 class="page-title">Placement Drives</h1><p class="page-sub">Manage all ongoing and upcoming recruitment drives.</p></div>
-  <div class="d-flex gap-2">
+
+  <div><h1 class="page-title" id="drivesTitle">Placement Drives</h1><p class="page-sub" id="drivesSub">Manage all ongoing and upcoming recruitment drives.</p></div>
+
+  <div class="d-flex gap-2" id="drivesActions">
+
     <button class="btn btn-outline-secondary"><i class="bi bi-funnel me-1"></i>Filters</button>
-    <a href="create-drive.html" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Create Drive</a>
+
+    <a href="create-drive.html" class="btn btn-primary drives-manage-col"><i class="bi bi-plus-lg me-1"></i>Create Drive</a>
+
   </div>
+
 </div>
+
+
 
 <div class="card-surface p-3 mb-3">
+
   <div class="row g-2">
-    <div class="col-md-4"><div class="position-relative"><i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i><input class="form-control ps-4" placeholder="Search by company, role…"/></div></div>
-    <div class="col-6 col-md-2"><select class="form-select"><option>All Status</option><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
+
+    <div class="col-md-4"><div class="position-relative"><i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i><input class="form-control ps-4" id="driveSearch" placeholder="Search by company, role…"/></div></div>
+
+    <div class="col-6 col-md-2"><select class="form-select" id="driveStatusFilter"><option value="">All Status</option><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
+
     <div class="col-6 col-md-2"><select class="form-select"><option>All Branches</option><option>CSE</option><option>ECE</option><option>ME</option><option>EE</option></select></div>
+
     <div class="col-6 col-md-2"><select class="form-select"><option>All Roles</option><option>Full-time</option><option>Internship</option></select></div>
+
     <div class="col-6 col-md-2"><input type="date" class="form-control"/></div>
+
   </div>
+
 </div>
+
+
 
 <div class="card-surface">
+
   <div class="d-flex justify-content-between align-items-center p-3 p-md-4">
-    <div><h6 class="fw-bold mb-0">All Drives <span class="badge-soft muted ms-1">142</span></h6></div>
+
+    <div><h6 class="fw-bold mb-0">All Drives <span class="badge-soft muted ms-1" id="driveCount">0</span></h6></div>
+
     <div class="d-flex gap-2"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i></button></div>
+
   </div>
+
   <div class="table-wrap">
+
     <table class="table-modern"><thead><tr>
-      <th><input type="checkbox"/></th><th>Company</th><th>Role</th><th>Package</th><th>Eligible</th><th>Applied</th><th>Status</th><th>Deadline</th><th></th></tr></thead>
+
+      <th class="drives-manage-col"><input type="checkbox" id="selectAllDrives"/></th><th>Company</th><th>Role</th><th>Package</th><th class="drives-detail-col">Eligible</th><th class="drives-detail-col">Applied</th><th>Status</th><th>Deadline</th><th class="drives-manage-col"></th><th class="drives-apply-col">Action</th></tr></thead>
+
       <tbody id="rows"></tbody></table>
+
   </div>
+
   <div class="d-flex justify-content-between align-items-center p-3 border-top" style="border-color:var(--border)!important">
-    <small class="text-muted-2">Showing 1–10 of 142</small>
+
+    <small class="text-muted-2" id="driveShowing">Showing drives</small>
+
     <nav><ul class="pagination pagination-sm mb-0">
+
       <li class="page-item disabled"><a class="page-link" href="#">‹</a></li>
+
       <li class="page-item active"><a class="page-link" href="#">1</a></li>
-      <li class="page-item"><a class="page-link" href="#">2</a></li>
-      <li class="page-item"><a class="page-link" href="#">3</a></li>
+
       <li class="page-item"><a class="page-link" href="#">›</a></li>
+
     </ul></nav>
+
   </div>
+
 </div>
 
-<!-- Modal -->
+
+
 <div class="modal fade" id="editModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+
   <div class="modal-header"><h5 class="modal-title fw-bold">Edit Drive</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-  <div class="modal-body">
-    <div class="row g-3">
-      <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><input class="form-control" value="Google"/></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" value="SDE-1"/></div>
-      <div class="col-md-4"><label class="form-label small fw-semibold">CTC (LPA)</label><input class="form-control" value="42"/></div>
-      <div class="col-md-4"><label class="form-label small fw-semibold">Deadline</label><input type="date" class="form-control"/></div>
-      <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select"><option>Open</option><option>Ongoing</option><option>Closed</option></select></div>
-      <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" rows="4"></textarea></div>
-      <div class="col-12"><label class="form-label small fw-semibold">Upload JD</label><div class="dropzone"><i class="bi bi-cloud-arrow-up display-6 d-block mb-1"></i>Drag & drop JD PDF or click to browse</div></div>
+
+  <form id="editDriveForm">
+
+    <input type="hidden" id="editDriveId"/>
+
+    <div class="modal-body">
+
+      <div class="row g-3">
+
+        <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><input class="form-control" id="editCompany" required/></div>
+
+        <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="editRole" required/></div>
+
+        <div class="col-md-4"><label class="form-label small fw-semibold">Package</label><input class="form-control" id="editPackage" required/></div>
+
+        <div class="col-md-4"><label class="form-label small fw-semibold">Eligible branches</label><input class="form-control" id="editBranches"/></div>
+
+        <div class="col-md-4"><label class="form-label small fw-semibold">Deadline</label><input class="form-control" id="editDeadline"/></div>
+
+        <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="editStatus"><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
+
+        <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="editDescription" rows="3"></textarea></div>
+
+      </div>
+
     </div>
-  </div>
-  <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Save changes</button></div>
+
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save changes</button></div>
+
+  </form>
+
 </div></div></div>
 
+
+
+<div class="modal fade" id="applyModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+
+  <div class="modal-header"><h5 class="modal-title fw-bold">Apply for drive</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+
+  <div class="modal-body">
+
+    <p class="small text-muted-2 mb-3" id="applyDriveInfo"></p>
+
+    <label class="form-label small fw-semibold">Select resume for this job profile</label>
+
+    <select class="form-select mb-2" id="applyResumeSelect"></select>
+
+    <div class="small text-muted-2" id="applyResumeMeta"></div>
+
+    <div class="alert alert-info small mt-3 mb-0">Resumes are stored in the <code>s3://placehub-resumes</code> bucket. <a href="settings.html">Upload more resumes</a></div>
+
+  </div>
+
+  <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" id="confirmApply">Submit application</button></div>
+
+</div></div></div>
+
+
+
 </main></div></div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script src="js/api.js"></script>
+
 <script src="js/app.js"></script>
+
 <script>
-const data=[
- ["Google","SDE-1","₹42 LPA","CSE,IT","412","success","Open","Dec 28"],
- ["Amazon","SDE Intern","₹18 LPA","CSE,ECE","680","info","Ongoing","Jan 04"],
- ["Microsoft","SWE","₹52 LPA","CSE","148","success","Open","Jan 10"],
- ["Deloitte","Analyst","₹9 LPA","All","1240","info","Ongoing","Jan 06"],
- ["TCS","System Engineer","₹4.5 LPA","All","2160","warning","Open","Jan 15"],
- ["Infosys","SE","₹4.5 LPA","All","1980","muted","Closed","Dec 12"],
- ["Goldman Sachs","Quant Intern","₹28 LPA","CSE,Math","94","success","Open","Jan 18"],
- ["Adobe","Product Intern","₹22 LPA","CSE,ECE","312","info","Ongoing","Jan 09"],
- ["Flipkart","SDE","₹26 LPA","CSE,IT","380","success","Open","Jan 12"],
- ["Wipro","Project Engineer","₹4 LPA","All","2450","muted","Closed","Dec 02"]
-];
-document.getElementById("rows").innerHTML=data.map(d=>`<tr>
-  <td><input type="checkbox"/></td>
-  <td><div class="d-flex align-items-center gap-2"><div class="ic" style="width:32px;height:32px;border-radius:8px;background:var(--surface-2);display:grid;place-items:center;font-weight:700;color:var(--primary)">${d[0][0]}</div><strong>${d[0]}</strong></div></td>
-  <td>${d[1]}</td><td>${d[2]}</td><td>${d[3]}</td><td>${d[4]}</td>
-  <td><span class="badge-soft ${d[5]}">${d[6]}</span></td><td>${d[7]}</td>
-  <td><div class="d-flex gap-1"><button class="icon-btn" style="width:30px;height:30px" data-bs-toggle="modal" data-bs-target="#editModal"><i class="bi bi-pencil"></i></button><button class="icon-btn" style="width:30px;height:30px"><i class="bi bi-three-dots"></i></button></div></td>
-</tr>`).join("");
+
+const role = Auth.role();
+
+const canManage = canManageDrives();
+
+const isStudent = role === 'student';
+
+const alumniSeeking = role === 'alumni' && !alumniIsWorking();
+
+let pendingDrive = null;
+
+let allDrives = [];
+
+
+
+if (isStudent) {
+
+  StudentNotifs.seed();
+
+  ResumeBucket.seed();
+
+  document.getElementById('drivesTitle').textContent = 'Browse & Apply';
+
+  document.getElementById('drivesSub').textContent = 'View open drives and apply with a profile-matched resume.';
+
+  document.getElementById('drivesActions').innerHTML = '<a href="settings.html" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-arrow-up me-1"></i>Manage Resumes</a>';
+
+  document.querySelectorAll('.drives-manage-col').forEach(el => el.style.display = 'none');
+
+  document.querySelectorAll('.drives-detail-col').forEach(el => el.style.display = 'none');
+
+} else if (alumniSeeking) {
+
+  document.getElementById('drivesTitle').textContent = 'Apply for Jobs';
+
+  document.getElementById('drivesSub').textContent = 'View all lateral and alumni-eligible drives open for application.';
+
+  document.getElementById('drivesActions').innerHTML = '<button class="btn btn-outline-secondary"><i class="bi bi-funnel me-1"></i>Filters</button>';
+
+  document.querySelectorAll('.drives-manage-col').forEach(el => el.style.display = 'none');
+
+  document.querySelectorAll('.drives-detail-col').forEach(el => el.style.display = 'none');
+
+} else if (!canManage) {
+
+  document.getElementById('drivesTitle').textContent = 'Placement Drives';
+
+  document.getElementById('drivesSub').textContent = 'View all ongoing and upcoming recruitment drives.';
+
+  document.getElementById('drivesActions').innerHTML = '<button class="btn btn-outline-secondary"><i class="bi bi-funnel me-1"></i>Filters</button>';
+
+  document.querySelectorAll('.drives-manage-col').forEach(el => el.style.display = 'none');
+
+  document.querySelectorAll('.drives-apply-col').forEach(el => el.style.display = 'none');
+
+} else {
+
+  document.querySelectorAll('.drives-apply-col').forEach(el => el.style.display = 'none');
+
+}
+
+
+
+function filteredDrives() {
+
+  const q = (document.getElementById('driveSearch')?.value || '').trim().toLowerCase();
+
+  const status = document.getElementById('driveStatusFilter')?.value || '';
+
+  return allDrives.filter(d => {
+
+    const hay = `${d.company} ${d.role} ${d.package}`.toLowerCase();
+
+    if (q && !hay.includes(q)) return false;
+
+    if (status && d.status !== status) return false;
+
+    return true;
+
+  });
+
+}
+
+
+
+function manageActions(d) {
+  if (!canManage) return '';
+  return `<div class="d-flex gap-1">
+    <button type="button" class="icon-btn" style="width:30px;height:30px" title="Edit" onclick="openEditDrive('${d.id}')"><i class="bi bi-pencil"></i></button>
+    <button type="button" class="icon-btn" style="width:30px;height:30px;color:var(--danger)" title="Delete" onclick="deleteDrive('${d.id}')"><i class="bi bi-trash"></i></button>
+  </div>`;
+}
+
+
+
+function applyAction(d) {
+
+  const applied = isStudent && StudentApps.hasApplied(d.id);
+
+  if (applied) return appStatusBadge(StudentApps.get(d.id).status);
+
+  if (d.status === 'Closed') return '<span class="badge-soft muted">Closed</span>';
+
+  if (isStudent) return `<button class="btn btn-sm btn-primary" onclick="openApply('${d.id}')">Apply</button>`;
+
+  if (alumniSeeking) return `<button class="btn btn-sm btn-primary" onclick="toast('Application submitted.','success')">Apply</button>`;
+
+  return '';
+
+}
+
+
+
+function renderRows() {
+
+  const list = filteredDrives();
+
+  document.getElementById('driveCount').textContent = list.length;
+
+  document.getElementById('driveShowing').textContent = list.length
+
+    ? `Showing ${list.length} drive${list.length === 1 ? '' : 's'}`
+
+    : 'No drives match your filters';
+
+
+
+  document.getElementById('rows').innerHTML = list.length ? list.map(d => `<tr>
+
+    <td class="drives-manage-col"><input type="checkbox" data-drive-id="${d.id}"/></td>
+
+    <td><div class="d-flex align-items-center gap-2"><div class="ic" style="width:32px;height:32px;border-radius:8px;background:var(--surface-2);display:grid;place-items:center;font-weight:700;color:var(--primary)">${d.company[0]}</div><strong>${d.company}</strong></div></td>
+
+    <td>${d.role}${isStudent && d.profile ? `<div class="small text-muted-2">${d.profile}</div>` : ''}</td>
+
+    <td>${d.package}</td>
+
+    <td class="drives-detail-col">${d.branches || '—'}</td>
+
+    <td class="drives-detail-col">${d.applied ?? 0}</td>
+
+    <td><span class="badge-soft ${d.statusCls || driveStatusCls(d.status)}">${d.status}</span></td>
+
+    <td>${d.deadline || '—'}</td>
+
+    <td class="drives-manage-col">${manageActions(d)}</td>
+
+    <td class="drives-apply-col">${applyAction(d)}</td>
+
+  </tr>`).join('') : `<tr><td colspan="10" class="text-muted-2 p-4 text-center">No drives found.</td></tr>`;
+
+}
+
+
+
+function loadDrives() {
+
+  allDrives = DriveStore.allWithCatalog();
+
+  renderRows();
+
+}
+
+
+
+window.openEditDrive = id => {
+  if (!canManage) return;
+  const d = DriveStore.get(id);
+  if (!d) return;
+
+  document.getElementById('editDriveId').value = id;
+
+  document.getElementById('editCompany').value = d.company || '';
+
+  document.getElementById('editRole').value = d.role || '';
+
+  document.getElementById('editPackage').value = d.package || '';
+
+  document.getElementById('editBranches').value = d.branches || '';
+
+  document.getElementById('editDeadline').value = d.deadline || '';
+
+  document.getElementById('editStatus').value = d.status || 'Open';
+
+  document.getElementById('editDescription').value = d.description || '';
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
+
+};
+
+
+
+window.deleteDrive = id => {
+  if (!canManage) return;
+  const d = DriveStore.get(id);
+  if (!d) return;
+
+  if (!confirm(`Delete drive "${d.company} · ${d.role}"?`)) return;
+
+  DriveStore.remove(id);
+
+  toast('Drive deleted.', 'success');
+
+  loadDrives();
+
+};
+
+
+
+document.getElementById('editDriveForm')?.addEventListener('submit', e => {
+
+  e.preventDefault();
+
+  if (!canManage) return;
+
+  const id = document.getElementById('editDriveId').value;
+
+  DriveStore.update(id, {
+
+    company: document.getElementById('editCompany').value.trim(),
+
+    role: document.getElementById('editRole').value.trim(),
+
+    package: document.getElementById('editPackage').value.trim(),
+
+    branches: document.getElementById('editBranches').value.trim(),
+
+    deadline: document.getElementById('editDeadline').value.trim(),
+
+    status: document.getElementById('editStatus').value,
+
+    description: document.getElementById('editDescription').value.trim(),
+
+  });
+
+  bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+
+  toast('Drive updated.', 'success');
+
+  loadDrives();
+
+});
+
+
+
+window.openApply = driveId => {
+
+  pendingDrive = DriveStore.get(driveId);
+
+  if (!pendingDrive) return;
+
+  const resumes = ResumeBucket.forProfile(pendingDrive.profile || 'General');
+
+  document.getElementById('applyDriveInfo').textContent = `${pendingDrive.company} · ${pendingDrive.role} · ${pendingDrive.package}${pendingDrive.profile ? ` (Profile: ${pendingDrive.profile})` : ''}`;
+
+  const sel = document.getElementById('applyResumeSelect');
+
+  if (!resumes.length) {
+
+    sel.innerHTML = '<option value="">No matching resume — upload one first</option>';
+
+    document.getElementById('applyResumeMeta').textContent = '';
+
+  } else {
+
+    sel.innerHTML = resumes.map(r => `<option value="${r.id}">${r.label} — ${r.fileName}</option>`).join('');
+
+    sel.onchange = () => {
+
+      const r = resumes.find(x => x.id === sel.value);
+
+      document.getElementById('applyResumeMeta').textContent = r ? `Bucket: ${r.bucketPath}` : '';
+
+    };
+
+    sel.dispatchEvent(new Event('change'));
+
+  }
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('applyModal')).show();
+
+};
+
+
+
+document.getElementById('confirmApply')?.addEventListener('click', () => {
+
+  const resumeId = document.getElementById('applyResumeSelect').value;
+
+  if (!resumeId) { toast('Upload a resume for this job profile first.', 'warn'); return; }
+
+  StudentApps.apply(pendingDrive, resumeId);
+
+  bootstrap.Modal.getInstance(document.getElementById('applyModal')).hide();
+
+  toast(`Applied to ${pendingDrive.company} · ${pendingDrive.role}`, 'success');
+
+  renderRows();
+
+});
+
+
+
+document.getElementById('driveSearch')?.addEventListener('input', renderRows);
+
+document.getElementById('driveStatusFilter')?.addEventListener('change', renderRows);
+
+
+
+loadDrives();
+
 </script></body></html>
+
+

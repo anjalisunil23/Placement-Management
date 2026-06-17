@@ -96,7 +96,7 @@ final class AuthMiddleware
   {
     $config = require dirname(__DIR__) . '/config/app.php';
     $data = DocumentHelper::serialize($user);
-    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/frontend/pages/login.html';
+    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
     if ($token !== null) {
       $data['token'] = $token;
     }

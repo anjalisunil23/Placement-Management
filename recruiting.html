@@ -1,0 +1,184 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Recruitment Overview · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="recruiting.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Recruitment Overview</h1>
+    <p class="page-sub" id="recruitingSub">Active recruiting companies, department-wise applicants, and candidate list.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary" id="exportBtn"><i class="bi bi-download me-1"></i>Export</button>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4 col-6"><div class="card-surface stat-card">
+    <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-buildings"></i></div><span class="badge-soft success">Campus</span></div>
+    <div class="val"><span class="counter" id="statCompanies" data-target="0">0</span></div><div class="lbl">Active recruiting companies</div>
+  </div></div>
+  <div class="col-md-4 col-6"><div class="card-surface stat-card">
+    <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-people-fill"></i></div><span class="badge-soft info" id="myCoBadge">Your co.</span></div>
+    <div class="val"><span class="counter" id="statApplicants" data-target="0">0</span></div><div class="lbl">Your applicants</div>
+  </div></div>
+  <div class="col-md-4 col-6"><div class="card-surface stat-card">
+    <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-diagram-3-fill"></i></div><span class="badge-soft muted" id="deptCountBadge">—</span></div>
+    <div class="val"><span class="counter" id="statDepts" data-target="0">0</span></div><div class="lbl">Departments represented</div>
+  </div></div>
+</div>
+
+<!-- Active recruiting companies -->
+<div class="card-surface mb-3">
+  <div class="p-3 p-md-4 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div><h6 class="fw-bold mb-0">Active recruiting companies</h6><small class="text-muted-2">Companies with open or ongoing drives on campus</small></div>
+    <span class="badge-soft success" id="activeCount">0 active</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table-modern">
+      <thead><tr><th>Company</th><th>Open roles</th><th>Package</th><th>Applicants</th><th>Status</th></tr></thead>
+      <tbody id="activeCompanies"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Department-wise applicants -->
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <div class="card-surface p-3 p-md-4 h-100">
+      <h6 class="fw-bold mb-1">Applicants by department</h6>
+      <small class="text-muted-2 d-block mb-3" id="deptSub">Breakdown for your company</small>
+      <div class="table-wrap">
+        <table class="table-modern">
+          <thead><tr><th>Department</th><th>Applicants</th><th>Share</th></tr></thead>
+          <tbody id="deptRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card-surface p-3 p-md-4 h-100">
+      <h6 class="fw-bold mb-3">Department distribution</h6>
+      <div style="height:260px"><canvas id="deptChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- Applicant list -->
+<div class="card-surface">
+  <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
+    <div><h6 class="fw-bold mb-0">Applicant list</h6><small class="text-muted-2" id="applicantListSub">All candidates who applied to your drives</small></div>
+    <div class="d-flex gap-2 flex-grow-1 flex-md-grow-0">
+      <div class="position-relative flex-grow-1" style="min-width:180px">
+        <i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i>
+        <input class="form-control form-control-sm ps-4" id="searchInput" placeholder="Search name, roll, dept…"/>
+      </div>
+      <select class="form-select form-select-sm w-auto" id="deptFilter"><option value="">All departments</option></select>
+      <select class="form-select form-select-sm w-auto" id="statusFilter">
+        <option value="">All statuses</option>
+        <option value="applied">Applied</option>
+        <option value="under_review">Under review</option>
+        <option value="shortlisted">Shortlisted</option>
+        <option value="offered">Offered</option>
+        <option value="rejected">Not selected</option>
+      </select>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="table-modern">
+      <thead><tr><th>Candidate</th><th>Roll no.</th><th>Department</th><th>CGPA</th><th>Role applied</th><th>Applied on</th><th>Status</th></tr></thead>
+      <tbody id="applicantRows"></tbody>
+    </table>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = Auth.user() || demoUserFor('company');
+const companyName = user.companyName || 'Acme Cloud';
+document.getElementById('recruitingSub').textContent = `${companyName} — campus recruitment snapshot`;
+document.getElementById('myCoBadge').textContent = companyName;
+
+const active = activeRecruitingCompanies();
+const apps = companyApplicants(companyName);
+const byDept = applicantsByDepartment(companyName);
+const totalApps = apps.length;
+
+document.getElementById('statCompanies').dataset.target = active.length;
+document.getElementById('statApplicants').dataset.target = totalApps;
+document.getElementById('statDepts').dataset.target = byDept.length;
+document.getElementById('deptCountBadge').textContent = byDept.length + ' depts';
+document.getElementById('activeCount').textContent = active.length + ' active';
+['statCompanies','statApplicants','statDepts'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.dataset.animated = '0';
+});
+animateCounters(document);
+
+document.getElementById('activeCompanies').innerHTML = active.map(c => {
+  const mine = c.company === companyName;
+  return `<tr${mine ? ' style="background:color-mix(in srgb,var(--primary) 6%,transparent)"' : ''}>
+    <td><strong>${c.company}</strong>${mine ? ' <span class="badge-soft info">You</span>' : ''}</td>
+    <td>${c.roles.join(', ')}</td>
+    <td>${c.package}</td>
+    <td>${c.applicants.toLocaleString('en-IN')}</td>
+    <td><span class="badge-soft ${c.statusCls}">${c.status}</span></td>
+  </tr>`;
+}).join('');
+
+document.getElementById('deptSub').textContent = `Breakdown for ${companyName} (${totalApps} applicants)`;
+document.getElementById('deptRows').innerHTML = byDept.length ? byDept.map(d => {
+  const pct = totalApps ? Math.round((d.count / totalApps) * 100) : 0;
+  return `<tr><td><strong>${d.dept}</strong></td><td>${d.count}</td><td>
+    <div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1" style="height:6px"><div class="progress-bar" style="width:${pct}%"></div></div><small class="text-muted-2">${pct}%</small></div>
+  </td></tr>`;
+}).join('') : '<tr><td colspan="3" class="text-muted-2 p-4">No applicants yet.</td></tr>';
+
+if (byDept.length) {
+  Charts.bar(document.getElementById('deptChart'), byDept.map(d => d.dept), byDept.map(d => d.count), 'Applicants');
+}
+
+const deptFilter = document.getElementById('deptFilter');
+byDept.forEach(d => { deptFilter.innerHTML += `<option value="${d.dept}">${d.dept}</option>`; });
+
+function renderApplicants() {
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const dept = document.getElementById('deptFilter').value;
+  const status = document.getElementById('statusFilter').value;
+  const filtered = apps.filter(a => {
+    if (dept && a.dept !== dept) return false;
+    if (status && a.status !== status) return false;
+    if (q && !`${a.name} ${a.roll} ${a.dept} ${a.role}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  document.getElementById('applicantRows').innerHTML = filtered.length ? filtered.map(a => `
+    <tr>
+      <td><div class="d-flex align-items-center gap-2">
+        <div class="avatar" style="width:32px;height:32px;font-size:.72rem">${a.name.split(' ').map(n=>n[0]).join('')}</div>
+        <strong>${a.name}</strong>
+      </div></td>
+      <td>${a.roll}</td>
+      <td>${a.dept}</td>
+      <td>${a.cgpa.toFixed(2)}</td>
+      <td>${a.role}</td>
+      <td>${formatDate(a.appliedAt)}</td>
+      <td>${appStatusBadge(a.status)}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="7" class="text-muted-2 p-4">No applicants match your filters.</td></tr>';
+}
+
+renderApplicants();
+document.getElementById('searchInput').addEventListener('input', renderApplicants);
+document.getElementById('deptFilter').addEventListener('change', renderApplicants);
+document.getElementById('statusFilter').addEventListener('change', renderApplicants);
+document.getElementById('exportBtn').addEventListener('click', () => toast('Export started (demo).', 'info'));
+</script></body></html>
