@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Eligibility · PlaceHub</title>
+<title>Eligibility Criteria · PlaceHub</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -9,47 +9,265 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Eligibility Management</h1><p class="page-sub">Configure eligibility rules per drive and approve workflows.</p></div>
-  <button class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>New rule</button>
+  <div>
+    <h1 class="page-title">Eligibility Criteria</h1>
+    <p class="page-sub" id="eligSub">Set role-specific eligibility for your company's drives — each company defines its own criteria.</p>
+  </div>
+  <button class="btn btn-primary" id="addRuleBtn" data-bs-toggle="modal" data-bs-target="#ruleModal"><i class="bi bi-plus-lg me-1"></i>Add criteria</button>
+</div>
+
+<div class="alert alert-info small mb-3">
+  <i class="bi bi-info-circle me-1"></i>
+  Eligibility is configured <strong>per company</strong>. The placement cell publishes your drives; students are auto-matched against <em>your</em> rules before applying.
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4"><div class="card-surface stat-card"><div class="lbl">Your open roles</div><div class="val" id="statRoles">0</div></div></div>
+  <div class="col-md-4"><div class="card-surface stat-card"><div class="lbl">Criteria defined</div><div class="val" id="statRules">0</div></div></div>
+  <div class="col-md-4"><div class="card-surface stat-card"><div class="lbl">Est. eligible students</div><div class="val" id="statEligible">0</div></div></div>
 </div>
 
 <div class="row g-3">
-  <div class="col-lg-7">
-    <div class="card-surface p-4 mb-3">
-      <h6 class="fw-bold">Active rule: Google SDE-1</h6>
-      <div class="row g-3 mt-1">
-        <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Min CGPA</div><div class="val">7.5</div></div></div>
-        <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Backlogs</div><div class="val">0</div></div></div>
-        <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Branches</div><div class="val" style="font-size:1.1rem">CSE, IT</div></div></div>
-        <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">10th %</div><div class="val">70</div></div></div>
-        <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">12th %</div><div class="val">70</div></div></div>
-        <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Eligible students</div><div class="val"><span class="counter" data-target="412">0</span></div></div></div>
-      </div>
-    </div>
+  <div class="col-lg-5">
     <div class="card-surface">
-      <div class="d-flex justify-content-between p-3 p-md-4"><h6 class="fw-bold mb-0">Eligible students preview</h6><a href="#" class="btn btn-sm btn-outline-primary">Export list</a></div>
-      <div class="table-wrap"><table class="table-modern"><thead><tr><th>Name</th><th>Roll</th><th>Branch</th><th>CGPA</th><th>Eligible</th></tr></thead><tbody id="er"></tbody></table></div>
+      <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Your job roles</h6><small class="text-muted-2">Select a role to view or edit criteria</small></div>
+      <div class="list-group list-group-flush" id="roleList"></div>
     </div>
   </div>
-  <div class="col-lg-5">
-    <div class="card-surface p-4">
-      <h6 class="fw-bold mb-3">Approval workflow</h6>
-      <div class="timeline">
-        <div class="item done"><strong class="small">Student submits application</strong><div class="small text-muted-2">412 submitted</div></div>
-        <div class="item done"><strong class="small">Automatic eligibility check</strong><div class="small text-muted-2">380 passed</div></div>
-        <div class="item"><strong class="small">TPO manual review</strong><div class="small text-muted-2">42 in review</div></div>
-        <div class="item pending"><strong class="small">Final approval</strong><div class="small text-muted-2">Pending</div></div>
-        <div class="item pending"><strong class="small">Shared with company</strong><div class="small text-muted-2">—</div></div>
+  <div class="col-lg-7">
+    <div class="card-surface p-3 p-md-4 mb-3" id="ruleDetail">
+      <p class="text-muted-2 mb-0">Select a role on the left to view eligibility criteria.</p>
+    </div>
+    <div class="card-surface" id="previewPanel" style="display:none">
+      <div class="p-3 p-md-4 pb-0 d-flex justify-content-between align-items-center">
+        <div><h6 class="fw-bold mb-0">Eligible students preview</h6><small class="text-muted-2">Sample match against your criteria</small></div>
+        <button class="btn btn-sm btn-outline-secondary" onclick="toast('Export started (demo).','info')"><i class="bi bi-download"></i></button>
+      </div>
+      <div class="table-wrap">
+        <table class="table-modern">
+          <thead><tr><th>Name</th><th>Roll</th><th>Branch</th><th>CGPA</th><th>Backlogs</th><th>Eligible</th></tr></thead>
+          <tbody id="previewRows"></tbody>
+        </table>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Add / edit modal -->
+<div class="modal fade" id="ruleModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="ruleModalTitle">Add eligibility criteria</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="ruleForm">
+    <div class="modal-body row g-3">
+      <input type="hidden" name="id" id="ruleId"/>
+      <div class="col-12">
+        <label class="form-label small fw-semibold">Job role / drive</label>
+        <select class="form-select" name="driveId" id="ruleDrive" required></select>
+      </div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" type="number" name="minCgpa" step="0.1" min="0" max="10" value="7.0" required/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" type="number" name="maxBacklogs" min="0" max="20" value="0" required/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Min 10th %</label><input class="form-control" type="number" name="min10th" min="0" max="100" value="60"/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Min 12th %</label><input class="form-control" type="number" name="min12th" min="0" max="100" value="60"/></div>
+      <div class="col-12">
+        <label class="form-label small fw-semibold">Allowed branches</label>
+        <div class="d-flex flex-wrap gap-2" id="branchChecks"></div>
+      </div>
+      <div class="col-12"><label class="form-label small fw-semibold">Additional notes</label><textarea class="form-control" name="notes" rows="2" placeholder="e.g. No active backlogs, coding assessment mandatory…"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save criteria</button>
+    </div>
+  </form>
+</div></div></div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
-const e=[["Aarav Mehta","21CSE001","CSE","8.92","success"],["Rahul Verma","21IT012","IT","9.10","success"],["Sneha Iyer","21ECE044","ECE","8.40","danger"],["Priya Nair","21CSE018","CSE","7.20","danger"],["Kabir Singh","21IT025","IT","8.55","success"]];
-document.getElementById("er").innerHTML=e.map(x=>`<tr><td><strong>${x[0]}</strong></td><td>${x[1]}</td><td>${x[2]}</td><td>${x[3]}</td><td><span class="badge-soft ${x[4]}">${x[4]==='success'?'Eligible':'Not Eligible'}</span></td></tr>`).join("");
+const user = Auth.user() || demoUserFor('company');
+const companyName = user.companyName || 'Acme Cloud';
+document.getElementById('eligSub').textContent = `${companyName} — define eligibility per role. Other companies set their own criteria independently.`;
+
+CompanyEligibility.seed();
+let selectedDriveId = null;
+
+const PREVIEW_STUDENTS = [
+  { name:'Aarav Mehta', roll:'21CSE001', dept:'CSE', cgpa:8.92, backlogs:0 },
+  { name:'Rahul Verma', roll:'21IT012', dept:'IT', cgpa:9.10, backlogs:0 },
+  { name:'Sneha Iyer', roll:'21ECE044', dept:'ECE', cgpa:8.40, backlogs:1 },
+  { name:'Priya Nair', roll:'21CSE018', dept:'CSE', cgpa:7.20, backlogs:2 },
+  { name:'Kabir Singh', roll:'21IT025', dept:'IT', cgpa:8.55, backlogs:0 },
+  { name:'Vikram Joshi', roll:'21MCA092', dept:'MCA', cgpa:8.30, backlogs:0 },
+];
+
+function isStudentEligible(s, rule) {
+  if (!rule) return false;
+  if (rule.branches?.length && !rule.branches.includes(s.dept)) return false;
+  if (s.cgpa < rule.minCgpa) return false;
+  if (s.backlogs > rule.maxBacklogs) return false;
+  return true;
+}
+
+function updateStats() {
+  const drives = CompanyEligibility.companyDrives();
+  const rules = CompanyEligibility.all();
+  const totalEligible = rules.reduce((n, r) => n + estimateEligibleCount(r), 0);
+  document.getElementById('statRoles').textContent = drives.length;
+  document.getElementById('statRules').textContent = rules.length;
+  document.getElementById('statEligible').textContent = totalEligible.toLocaleString('en-IN');
+}
+
+function renderRoleList() {
+  const drives = CompanyEligibility.companyDrives();
+  const rules = CompanyEligibility.all();
+  if (!drives.length) {
+    document.getElementById('roleList').innerHTML = `<div class="p-4 text-muted-2 small">No drives linked to ${companyName} yet. Contact the placement cell to publish your roles.</div>`;
+    return;
+  }
+  document.getElementById('roleList').innerHTML = drives.map(d => {
+    const rule = rules.find(r => r.driveId === d.id);
+    const active = selectedDriveId === d.id ? 'active' : '';
+    return `<button type="button" class="list-group-item list-group-item-action ${active} d-flex justify-content-between align-items-center" onclick="selectRole('${d.id}')">
+      <div><strong>${d.role}</strong><div class="small text-muted-2">${d.package} · ${d.status}</div></div>
+      ${rule ? '<span class="badge-soft success">Defined</span>' : '<span class="badge-soft warning">Not set</span>'}
+    </button>`;
+  }).join('');
+}
+
+function renderRuleDetail(driveId) {
+  const drive = DRIVE_CATALOG.find(d => d.id === driveId);
+  const rule = CompanyEligibility.forDrive(driveId);
+  const detail = document.getElementById('ruleDetail');
+  const preview = document.getElementById('previewPanel');
+  if (!drive) return;
+
+  if (!rule) {
+    detail.innerHTML = `
+      <h6 class="fw-bold">${drive.role} · ${drive.package}</h6>
+      <p class="text-muted-2 small mb-3">No eligibility criteria set for this role yet.</p>
+      <button class="btn btn-primary btn-sm" onclick="openEditRule('${driveId}')"><i class="bi bi-plus-lg me-1"></i>Add criteria</button>`;
+    preview.style.display = 'none';
+    return;
+  }
+
+  detail.innerHTML = `
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+      <div><h6 class="fw-bold mb-1">${drive.role} · ${drive.package}</h6><small class="text-muted-2">Last updated ${formatDate(rule.updatedAt)}</small></div>
+      <div class="d-flex gap-1">
+        <button class="btn btn-sm btn-outline-primary" onclick="openEditRule('${driveId}')"><i class="bi bi-pencil"></i> Edit</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteRule('${driveId}')"><i class="bi bi-trash"></i></button>
+      </div>
+    </div>
+    <div class="row g-2">
+      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Min CGPA</div><div class="val" style="font-size:1.2rem">${rule.minCgpa}</div></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Max backlogs</div><div class="val" style="font-size:1.2rem">${rule.maxBacklogs}</div></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Branches</div><div class="val" style="font-size:1rem">${rule.branches.join(', ') || 'All'}</div></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Min 10th %</div><div class="val" style="font-size:1.2rem">${rule.min10th}</div></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Min 12th %</div><div class="val" style="font-size:1.2rem">${rule.min12th}</div></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Est. eligible</div><div class="val" style="font-size:1.2rem">~${estimateEligibleCount(rule)}</div></div></div>
+    </div>
+    ${rule.notes ? `<p class="small text-muted-2 mt-3 mb-0"><i class="bi bi-sticky me-1"></i>${rule.notes}</p>` : ''}`;
+
+  preview.style.display = '';
+  document.getElementById('previewRows').innerHTML = PREVIEW_STUDENTS.map(s => {
+    const ok = isStudentEligible(s, rule);
+    return `<tr><td><strong>${s.name}</strong></td><td>${s.roll}</td><td>${s.dept}</td><td>${s.cgpa}</td><td>${s.backlogs}</td>
+      <td><span class="badge-soft ${ok ? 'success' : 'danger'}">${ok ? 'Eligible' : 'Not eligible'}</span></td></tr>`;
+  }).join('');
+}
+
+window.selectRole = driveId => {
+  selectedDriveId = driveId;
+  renderRoleList();
+  renderRuleDetail(driveId);
+};
+
+window.openEditRule = driveId => {
+  const drive = DRIVE_CATALOG.find(d => d.id === driveId);
+  const rule = CompanyEligibility.forDrive(driveId);
+  document.getElementById('ruleModalTitle').textContent = rule ? 'Edit eligibility criteria' : 'Add eligibility criteria';
+  document.getElementById('ruleId').value = rule?.id || '';
+  populateDriveSelect(driveId);
+  document.getElementById('ruleDrive').value = driveId;
+  document.getElementById('ruleDrive').disabled = !!rule;
+  if (rule) {
+    document.querySelector('[name=minCgpa]').value = rule.minCgpa;
+    document.querySelector('[name=maxBacklogs]').value = rule.maxBacklogs;
+    document.querySelector('[name=min10th]').value = rule.min10th;
+    document.querySelector('[name=min12th]').value = rule.min12th;
+    document.querySelector('[name=notes]').value = rule.notes || '';
+    ELIGIBILITY_BRANCHES.forEach(b => {
+      const cb = document.getElementById('br-' + b);
+      if (cb) cb.checked = rule.branches.includes(b);
+    });
+  } else {
+    document.getElementById('ruleForm').reset();
+    document.getElementById('ruleDrive').value = driveId;
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('ruleModal')).show();
+};
+
+window.deleteRule = driveId => {
+  CompanyEligibility.remove(driveId);
+  toast('Eligibility criteria removed.', 'success');
+  selectedDriveId = driveId;
+  updateStats();
+  renderRoleList();
+  renderRuleDetail(driveId);
+};
+
+function populateDriveSelect(selected) {
+  const drives = CompanyEligibility.companyDrives();
+  const existing = new Set(CompanyEligibility.all().map(r => r.driveId));
+  document.getElementById('ruleDrive').innerHTML = drives.map(d =>
+    `<option value="${d.id}" ${d.id === selected ? 'selected' : ''} ${existing.has(d.id) && d.id !== selected ? 'disabled' : ''}>${d.role} · ${d.package}</option>`
+  ).join('');
+}
+
+document.getElementById('branchChecks').innerHTML = ELIGIBILITY_BRANCHES.map(b =>
+  `<div class="form-check"><input class="form-check-input" type="checkbox" name="branches" value="${b}" id="br-${b}" checked><label class="form-check-label small" for="br-${b}">${b}</label></div>`
+).join('');
+
+document.getElementById('ruleForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const drive = DRIVE_CATALOG.find(d => d.id === fd.get('driveId'));
+  const branches = [...document.querySelectorAll('[name=branches]:checked')].map(cb => cb.value);
+  if (!branches.length) { toast('Select at least one branch.', 'warn'); return; }
+  CompanyEligibility.upsert({
+    id: fd.get('id') || undefined,
+    driveId: fd.get('driveId'),
+    role: drive?.role || '',
+    minCgpa: fd.get('minCgpa'),
+    maxBacklogs: fd.get('maxBacklogs'),
+    min10th: fd.get('min10th'),
+    min12th: fd.get('min12th'),
+    branches,
+    notes: fd.get('notes'),
+  });
+  bootstrap.Modal.getInstance(document.getElementById('ruleModal')).hide();
+  toast('Eligibility criteria saved.', 'success');
+  selectedDriveId = fd.get('driveId');
+  updateStats();
+  renderRoleList();
+  renderRuleDetail(selectedDriveId);
+});
+
+document.getElementById('ruleModal').addEventListener('hidden.bs.modal', () => {
+  document.getElementById('ruleDrive').disabled = false;
+  document.getElementById('ruleForm').reset();
+  document.getElementById('branchChecks').querySelectorAll('input').forEach(cb => { cb.checked = true; });
+});
+
+document.getElementById('addRuleBtn').addEventListener('click', () => {
+  document.getElementById('ruleModalTitle').textContent = 'Add eligibility criteria';
+  document.getElementById('ruleId').value = '';
+  populateDriveSelect('');
+});
+
+updateStats();
+renderRoleList();
+const drives = CompanyEligibility.companyDrives();
+if (drives.length) selectRole(drives[0].id);
 </script></body></html>

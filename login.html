@@ -62,7 +62,8 @@
               <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="student">Student</button></div>
               <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="staff">Staff</button></div>
               <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="company">Company</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni">Alumni</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni">Alumni (Working)</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni-seeking">Alumni (Job Seeking)</button></div>
             </div>
           </form>
         </div>
@@ -137,6 +138,12 @@
               </div>
 
               <!-- Alumni -->
+              <div class="col-12 role-field role-alumni">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="isWorking" id="regAlumniWorking" checked>
+                  <label class="form-check-label" for="regAlumniWorking">I am currently employed</label>
+                </div>
+              </div>
               <div class="col-md-6 role-field role-alumni">
                 <label class="form-label small fw-semibold">Current company</label>
                 <input name="company" class="form-control" />
@@ -197,8 +204,10 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
 });
 
 document.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => {
-  Auth.setRole(b.dataset.demo);
-  Auth.set(demoUserFor(b.dataset.demo), 'demo-token');
+  const key = b.dataset.demo;
+  const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
+  Auth.setRole(user.role);
+  Auth.set(user, 'demo-token');
   window.location.href = 'dashboard.html';
 }));
 

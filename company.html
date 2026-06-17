@@ -9,7 +9,7 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Company Portal</h1><p class="page-sub">Post jobs, review applicants, upload results.</p></div>
+  <div><h1 class="page-title">Company Portal</h1><p class="page-sub" id="portalSub">Post jobs, review applicants, upload results.</p></div>
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
 </div>
 
@@ -63,5 +63,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script><script src="js/charts.js"></script>
-<script>Charts.bar(document.getElementById("funnel"),["Applied","Shortlisted","Interview","Offered","Joined"],[1284,420,180,38,32],"Candidates");</script>
+<script>
+const user = Auth.user() || demoUserFor('company');
+const co = user.companyName || 'Acme Cloud';
+document.getElementById('portalSub').textContent = `${co} — manage your job postings and recruitment pipeline`;
+Charts.bar(document.getElementById("funnel"),["Applied","Shortlisted","Interview","Offered","Joined"],[1284,420,180,38,32],"Candidates");
+</script>
 </body></html>

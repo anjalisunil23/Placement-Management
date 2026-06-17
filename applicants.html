@@ -52,21 +52,16 @@
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
-const a=[
- ["Aarav Mehta","21CSE001","CSE","8.92","Shortlisted","success"],
- ["Rahul Verma","21IT012","IT","9.10","Interview","info"],
- ["Sneha Iyer","21ECE044","ECE","8.40","Applied","muted"],
- ["Priya Nair","21CSE018","CSE","8.20","Shortlisted","success"],
- ["Kabir Singh","21IT025","IT","8.55","Offered","success"],
- ["Ananya Rao","21CSE077","CSE","7.95","Rejected","danger"],
- ["Vikram Joshi","21CSE092","CSE","9.32","Interview","info"],
-];
-document.getElementById("ar").innerHTML=a.map(x=>`<tr>
+const user = Auth.user() || demoUserFor('company');
+const co = user.companyName || 'Acme Cloud';
+const apps = companyApplicants(co);
+document.querySelector('.page-sub').textContent = `${co} · ${apps.length} applicants across your open roles`;
+document.getElementById('ar').innerHTML = apps.length ? apps.map(a => `<tr>
  <td><input type="checkbox"/></td>
- <td><div class="d-flex align-items-center gap-2"><div class="avatar" style="width:32px;height:32px;font-size:.72rem">${x[0].split(' ').map(n=>n[0]).join('')}</div><strong>${x[0]}</strong></div></td>
- <td>${x[1]}</td><td>${x[2]}</td><td>${x[3]}</td>
- <td><span class="badge-soft ${x[5]}">${x[4]}</span></td>
- <td><a href="#"><i class="bi bi-file-earmark-pdf-fill text-danger"></i></a></td>
- <td><button class="btn btn-sm btn-outline-primary">View</button></td>
-</tr>`).join("");
+ <td><div class="d-flex align-items-center gap-2"><div class="avatar" style="width:32px;height:32px;font-size:.72rem">${a.name.split(' ').map(n=>n[0]).join('')}</div><strong>${a.name}</strong></div></td>
+ <td>${a.roll || '—'}</td><td>${a.dept}</td><td>${a.cgpa}</td>
+ <td>${appStatusBadge(a.status)}</td>
+ <td><i class="bi bi-file-earmark-pdf-fill text-danger"></i></td>
+ <td><button class="btn btn-sm btn-outline-primary" onclick="toast('Profile view (demo).','info')">View</button></td>
+</tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No applicants yet.</td></tr>';
 </script></body></html>

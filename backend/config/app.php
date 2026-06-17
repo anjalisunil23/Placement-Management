@@ -44,7 +44,7 @@ return [
     'cors' => [
         'allowed_origins' => array_filter(array_map(
             'trim',
-            explode(',', $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:8080')
+            explode(',', $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:8080,http://127.0.0.1:8080')
         )),
     ],
     'roles' => [
@@ -56,11 +56,11 @@ return [
         'placement_officer' => 'Department Placement Officer',
     ],
     'role_dashboards' => [
-        'admin'             => '/frontend/pages/admin/dashboard.html',
-        'student'           => '/frontend/pages/student/dashboard.html',
-        'staff'             => '/frontend/pages/staff/dashboard.html',
-        'company'           => '/frontend/pages/company/dashboard.html',
-        'alumni'            => '/frontend/pages/alumni/dashboard.html',
-        'placement_officer' => '/frontend/pages/officer/dashboard.html',
+        'admin'             => '/dashboard.html',
+        'student'           => '/dashboard.html',
+        'staff'             => '/dashboard.html',
+        'company'           => '/dashboard.html',
+        'alumni'            => '/dashboard.html',
+        'placement_officer' => '/dashboard.html',
     ],
 ];
