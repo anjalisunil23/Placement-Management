@@ -18,87 +18,194 @@
 
       <div class="page-header">
         <div>
-          <h1 class="page-title">Placement Dashboard</h1>
-          <p class="page-sub">Live overview for the 2025–26 placement season.</p>
+          <h1 class="page-title" id="dashTitle">Dashboard</h1>
+          <p class="page-sub" id="dashSub">Welcome back.</p>
         </div>
-        <div class="d-flex gap-2">
-          <button class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i>Export</button>
-          <a class="btn btn-primary" href="create-drive.html"><i class="bi bi-plus-lg me-1"></i>New Drive</a>
-        </div>
+        <div class="d-flex gap-2" id="dashActions"></div>
       </div>
 
-      <!-- Stat cards -->
-      <div class="row g-3">
-        <div class="col-6 col-lg-3"><div class="card-surface stat-card">
-          <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-people-fill"></i></div><span class="badge-soft success">+4.2%</span></div>
-          <div class="val"><span class="counter" data-target="3284">0</span></div><div class="lbl">Total Students</div>
-        </div></div>
-        <div class="col-6 col-lg-3"><div class="card-surface stat-card">
-          <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-briefcase-fill"></i></div><span class="badge-soft info">Live</span></div>
-          <div class="val"><span class="counter" data-target="27">0</span></div><div class="lbl">Active Drives</div>
-        </div></div>
-        <div class="col-6 col-lg-3"><div class="card-surface stat-card">
-          <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check-fill"></i></div><span class="badge-soft success">+12%</span></div>
-          <div class="val"><span class="counter" data-target="2154">0</span></div><div class="lbl">Placed Students</div>
-        </div></div>
-        <div class="col-6 col-lg-3"><div class="card-surface stat-card">
-          <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-graph-up"></i></div><span class="badge-soft success">+2.1%</span></div>
-          <div class="val"><span class="counter" data-target="65.6" data-decimals="1" data-suffix="%">0</span></div><div class="lbl">Placement %</div>
-        </div></div>
-        <div class="col-6 col-lg-3"><div class="card-surface stat-card">
-          <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-trophy-fill"></i></div><span class="badge-soft">All time</span></div>
-          <div class="val"><span class="counter" data-target="68" data-prefix="₹" data-suffix=" LPA">0</span></div><div class="lbl">Highest Package</div>
-        </div></div>
-        <div class="col-6 col-lg-3"><div class="card-surface stat-card">
-          <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-cash-coin"></i></div><span class="badge-soft success">+8%</span></div>
-          <div class="val"><span class="counter" data-target="9.4" data-decimals="1" data-prefix="₹" data-suffix=" LPA">0</span></div><div class="lbl">Average Package</div>
-        </div></div>
-        <div class="col-6 col-lg-3"><div class="card-surface stat-card">
-          <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-building"></i></div><span class="badge-soft">YTD</span></div>
-          <div class="val"><span class="counter" data-target="142">0</span></div><div class="lbl">Companies Visited</div>
-        </div></div>
-        <div class="col-6 col-lg-3"><div class="card-surface stat-card">
-          <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-file-earmark-text"></i></div><span class="badge-soft warning">Pending</span></div>
-          <div class="val"><span class="counter" data-target="186">0</span></div><div class="lbl">Resume Reviews</div>
-        </div></div>
-      </div>
+      <!-- ===== PLACEMENT OFFICER (and ADMIN reuses majority) ===== -->
+      <div data-roles="placement_officer,admin">
+        <div class="row g-3">
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-people-fill"></i></div><span class="badge-soft success">+4.2%</span></div>
+            <div class="val"><span class="counter" data-target="3284">0</span></div><div class="lbl">Total Students</div>
+          </div></div>
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-briefcase-fill"></i></div><span class="badge-soft info">Live</span></div>
+            <div class="val"><span class="counter" data-target="27">0</span></div><div class="lbl">Active Drives</div>
+          </div></div>
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check-fill"></i></div><span class="badge-soft success">+12%</span></div>
+            <div class="val"><span class="counter" data-target="2154">0</span></div><div class="lbl">Placed Students</div>
+          </div></div>
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-graph-up"></i></div><span class="badge-soft success">+2.1%</span></div>
+            <div class="val"><span class="counter" data-target="65.6" data-decimals="1" data-suffix="%">0</span></div><div class="lbl">Placement %</div>
+          </div></div>
+          <div class="col-6 col-lg-3" data-roles="admin"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-hourglass-split"></i></div><span class="badge-soft warning">Action</span></div>
+            <div class="val"><span class="counter" data-target="42">0</span></div><div class="lbl">Pending Approvals</div>
+          </div></div>
+          <div class="col-6 col-lg-3" data-roles="admin"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)"><i class="bi bi-shield-lock-fill"></i></div><span class="badge-soft danger">Blocked</span></div>
+            <div class="val"><span class="counter" data-target="8">0</span></div><div class="lbl">Blocked Users</div>
+          </div></div>
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-trophy-fill"></i></div><span class="badge-soft">All time</span></div>
+            <div class="val"><span class="counter" data-target="68" data-prefix="₹" data-suffix=" LPA">0</span></div><div class="lbl">Highest Package</div>
+          </div></div>
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-cash-coin"></i></div><span class="badge-soft success">+8%</span></div>
+            <div class="val"><span class="counter" data-target="9.4" data-decimals="1" data-prefix="₹" data-suffix=" LPA">0</span></div><div class="lbl">Average Package</div>
+          </div></div>
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-building"></i></div><span class="badge-soft">YTD</span></div>
+            <div class="val"><span class="counter" data-target="142">0</span></div><div class="lbl">Companies Visited</div>
+          </div></div>
+        </div>
 
-      <!-- Charts -->
-      <div class="row g-3 mt-1">
-        <div class="col-12 col-xl-8"><div class="card-surface p-3 p-md-4">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div><h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6><small class="text-muted-2">Offers rolled out across last 12 months</small></div>
-            <select class="form-select form-select-sm w-auto"><option>This year</option><option>Last year</option></select>
+        <div class="row g-3 mt-1">
+          <div class="col-12 col-xl-8"><div class="card-surface p-3 p-md-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div><h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6><small class="text-muted-2">Offers rolled out across last 12 months</small></div>
+              <select class="form-select form-select-sm w-auto"><option>This year</option><option>Last year</option></select>
+            </div>
+            <div style="height:300px"><canvas id="trendChart"></canvas></div>
+          </div></div>
+          <div class="col-12 col-xl-4"><div class="card-surface p-3 p-md-4">
+            <h6 class="fw-bold mb-1">Branch-wise Placement</h6>
+            <small class="text-muted-2">Distribution by department</small>
+            <div style="height:300px" class="mt-2"><canvas id="branchChart"></canvas></div>
+          </div></div>
+        </div>
+
+        <div class="card-surface mt-3">
+          <div class="d-flex justify-content-between align-items-center p-3 p-md-4">
+            <div><h6 class="fw-bold mb-0">Recent Placement Drives</h6><small class="text-muted-2">Latest activity from the last 7 days</small></div>
+            <a href="drives.html" class="btn btn-sm btn-outline-primary">View all</a>
           </div>
-          <div style="height:300px"><canvas id="trendChart"></canvas></div>
-        </div></div>
-        <div class="col-12 col-xl-4"><div class="card-surface p-3 p-md-4">
-          <h6 class="fw-bold mb-1">Branch-wise Placement</h6>
-          <small class="text-muted-2">Distribution by department</small>
-          <div style="height:300px" class="mt-2"><canvas id="branchChart"></canvas></div>
-        </div></div>
-
-        <div class="col-12 col-lg-6"><div class="card-surface p-3 p-md-4">
-          <h6 class="fw-bold mb-3">Top Recruiters by Offers</h6>
-          <div style="height:280px"><canvas id="topCompanies"></canvas></div>
-        </div></div>
-        <div class="col-12 col-lg-6"><div class="card-surface p-3 p-md-4">
-          <h6 class="fw-bold mb-3">Package Distribution</h6>
-          <div style="height:280px"><canvas id="packageChart"></canvas></div>
-        </div></div>
+          <div class="table-wrap">
+            <table class="table-modern">
+              <thead><tr><th>Company</th><th>Role</th><th>Eligible</th><th>Applied</th><th>Package</th><th>Status</th><th>Date</th></tr></thead>
+              <tbody id="recent"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
-      <!-- Recent drives -->
-      <div class="card-surface mt-3">
-        <div class="d-flex justify-content-between align-items-center p-3 p-md-4">
-          <div><h6 class="fw-bold mb-0">Recent Placement Drives</h6><small class="text-muted-2">Latest activity from the last 7 days</small></div>
-          <a href="drives.html" class="btn btn-sm btn-outline-primary">View all</a>
+      <!-- ===== STUDENT ===== -->
+      <div data-roles="student">
+        <div class="row g-3">
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-mortarboard-fill"></i></div><span class="badge-soft success">Good</span></div>
+            <div class="val"><span class="counter" data-target="8.7" data-decimals="1">0</span></div><div class="lbl">Your CGPA</div>
+          </div></div>
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-stack"></i></div><span class="badge-soft info">Tier 1: 2/3</span></div>
+            <div class="val"><span class="counter" data-target="5">0</span></div><div class="lbl">Chances Used</div>
+          </div></div>
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-check2-circle"></i></div><span class="badge-soft success">Signed</span></div>
+            <div class="val" style="font-size:1.4rem">Accepted</div><div class="lbl">Policy Agreement</div>
+          </div></div>
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-file-earmark-person-fill"></i></div><span class="badge-soft warning">Pending</span></div>
+            <div class="val" style="font-size:1.4rem">Under Review</div><div class="lbl">Resume Status</div>
+          </div></div>
         </div>
-        <div class="table-wrap">
-          <table class="table-modern">
-            <thead><tr><th>Company</th><th>Role</th><th>Eligible</th><th>Applied</th><th>Package</th><th>Status</th><th>Date</th></tr></thead>
-            <tbody id="recent"></tbody>
-          </table>
+
+        <div class="row g-3 mt-1">
+          <div class="col-lg-7"><div class="card-surface p-3 p-md-4">
+            <h6 class="fw-bold mb-3">Recommended Drives</h6>
+            <div id="studentDrives"></div>
+            <a href="drives.html" class="btn btn-sm btn-outline-primary mt-2">View all drives</a>
+          </div></div>
+          <div class="col-lg-5"><div class="card-surface p-3 p-md-4">
+            <h6 class="fw-bold mb-3">Latest Notifications</h6>
+            <div id="studentNotifs"></div>
+            <a href="notifications.html" class="btn btn-sm btn-outline-primary mt-2">All notifications</a>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- ===== STAFF ===== -->
+      <div data-roles="staff">
+        <div class="row g-3">
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-building-add"></i></div><span class="badge-soft info">YTD</span></div>
+            <div class="val"><span class="counter" data-target="12">0</span></div><div class="lbl">Companies Recommended</div>
+          </div></div>
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check"></i></div><span class="badge-soft success">Onboarded</span></div>
+            <div class="val"><span class="counter" data-target="7">0</span></div><div class="lbl">Now Onboarded</div>
+          </div></div>
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-hourglass"></i></div><span class="badge-soft warning">Awaiting</span></div>
+            <div class="val"><span class="counter" data-target="5">0</span></div><div class="lbl">Pending Review</div>
+          </div></div>
+        </div>
+        <div class="card-surface p-4 mt-3 d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div><h6 class="mb-1 fw-bold">Recommend a Company</h6><small class="text-muted-2">Help your students by referring a new recruiter to the placement cell.</small></div>
+          <a href="company.html" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Recommend Company</a>
+        </div>
+        <div class="card-surface mt-3">
+          <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Your Recent Recommendations</h6></div>
+          <div class="table-wrap">
+            <table class="table-modern">
+              <thead><tr><th>Company</th><th>Category</th><th>Submitted</th><th>Status</th></tr></thead>
+              <tbody id="staffRecs"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== COMPANY ===== -->
+      <div data-roles="company">
+        <div class="row g-3">
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-person-badge"></i></div><span class="badge-soft success">80%</span></div>
+            <div class="val">80%</div><div class="lbl">Profile Complete</div>
+            <div class="progress mt-2" style="height:6px"><div class="progress-bar" style="width:80%;background:var(--primary)"></div></div>
+          </div></div>
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-briefcase"></i></div><span class="badge-soft info">Active</span></div>
+            <div class="val"><span class="counter" data-target="4">0</span></div><div class="lbl">Jobs Posted</div>
+          </div></div>
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-people-fill"></i></div><span class="badge-soft success">Total</span></div>
+            <div class="val"><span class="counter" data-target="148">0</span></div><div class="lbl">Total Applicants</div>
+          </div></div>
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-hourglass-split"></i></div><span class="badge-soft warning">Decide</span></div>
+            <div class="val"><span class="counter" data-target="22">0</span></div><div class="lbl">Awaiting Decision</div>
+          </div></div>
+        </div>
+        <div class="card-surface p-4 mt-3 d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div><h6 class="mb-1 fw-bold">Review your applicant pipeline</h6><small class="text-muted-2">22 applicants are awaiting your decision across 4 open roles.</small></div>
+          <a href="applicants.html" class="btn btn-primary"><i class="bi bi-arrow-right me-1"></i>Open Applicants</a>
+        </div>
+      </div>
+
+      <!-- ===== ALUMNI ===== -->
+      <div data-roles="alumni">
+        <div class="row g-3">
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-buildings"></i></div><span class="badge-soft info">Current</span></div>
+            <div class="val" style="font-size:1.4rem" id="alumniCo">Google</div><div class="lbl">Working At</div>
+          </div></div>
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-share-fill"></i></div><span class="badge-soft success">+3</span></div>
+            <div class="val"><span class="counter" data-target="11">0</span></div><div class="lbl">Referrals Made</div>
+          </div></div>
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-briefcase-fill"></i></div><span class="badge-soft warning">Open</span></div>
+            <div class="val"><span class="counter" data-target="6">0</span></div><div class="lbl">Eligible Drives Now</div>
+          </div></div>
+        </div>
+        <div class="card-surface p-4 mt-3 d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div><h6 class="mb-1 fw-bold">Lateral & alumni-only drives</h6><small class="text-muted-2">Drives currently open to alumni based on your experience and skills.</small></div>
+          <a href="drives.html" class="btn btn-primary">Browse Drives</a>
         </div>
       </div>
 
@@ -108,33 +215,96 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script src="js/charts.js"></script>
 <script>
-const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-Charts.line(document.getElementById("trendChart"), months, [
-  { label: "Offers", data: [42,58,71,90,120,165,210,245,210,180,150,130] },
-  { label: "Interviews", data: [80,110,140,180,220,260,320,360,310,260,210,170] },
-]);
-Charts.doughnut(document.getElementById("branchChart"),
-  ["CSE","ECE","ME","EE","CE","IT"], [820,540,310,260,180,420]);
-Charts.bar(document.getElementById("topCompanies"),
-  ["TCS","Infosys","Amazon","Google","Microsoft","Deloitte","Wipro"],
-  [210,180,42,28,35,95,160], "Offers");
-Charts.pie(document.getElementById("packageChart"),
-  ["3-6 LPA","6-10 LPA","10-20 LPA","20-40 LPA","40+ LPA"],
-  [820,640,320,140,28]);
+const user = Auth.user() || demoUserFor(Auth.role());
+const role = Auth.role();
+const titles = {
+  admin: ['Administrator Console', 'Institute-wide overview & approvals.'],
+  placement_officer: ['Placement Dashboard', 'Live overview for the 2025–26 placement season.'],
+  student: [`Hi, ${user.name?.split(' ')[0] || 'there'} 👋`, 'Your placement journey at a glance.'],
+  staff: ['Staff Dashboard', 'Track companies you\'ve recommended.'],
+  company: [`${user.companyName || user.name} · Recruiter`, 'Your jobs and applicant pipeline.'],
+  alumni: [`Welcome, ${user.name?.split(' ')[0] || 'Alumnus'}`, 'Stay connected — refer, mentor, apply laterally.'],
+};
+document.getElementById('dashTitle').textContent = titles[role][0];
+document.getElementById('dashSub').textContent = titles[role][1];
 
-const drives = [
-  ["Google","SDE-1","CSE,IT","412","₹42 LPA","success","Today"],
-  ["Amazon","SDE Intern","CSE,ECE","680","₹18 LPA","success","Yesterday"],
-  ["Deloitte","Analyst","All","1240","₹9 LPA","info","2d ago"],
-  ["Infosys","System Engineer","All","2160","₹4.5 LPA","warning","3d ago"],
-  ["Microsoft","SWE","CSE","148","₹52 LPA","success","5d ago"],
-];
-document.getElementById("recent").innerHTML = drives.map(d=>`
-  <tr><td><strong>${d[0]}</strong></td><td>${d[1]}</td><td>${d[2]}</td><td>${d[3]}</td><td>${d[4]}</td>
-  <td><span class="badge-soft ${d[5]}">${d[5]==='success'?'Completed':d[5]==='info'?'Ongoing':'Open'}</span></td><td>${d[6]}</td></tr>`).join("");
+const actions = {
+  admin: '<button class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i>Export</button><a class="btn btn-primary" href="students.html"><i class="bi bi-shield-check me-1"></i>Review Approvals</a>',
+  placement_officer: '<button class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i>Export</button><a class="btn btn-primary" href="create-drive.html"><i class="bi bi-plus-lg me-1"></i>New Drive</a>',
+  student: '<a class="btn btn-outline-secondary" href="settings.html"><i class="bi bi-file-earmark-arrow-up me-1"></i>Upload Resume</a><a class="btn btn-primary" href="drives.html"><i class="bi bi-search me-1"></i>Find Drives</a>',
+  staff: '<a class="btn btn-primary" href="company.html"><i class="bi bi-plus-lg me-1"></i>Recommend Company</a>',
+  company: '<a class="btn btn-outline-secondary" href="company.html"><i class="bi bi-pencil me-1"></i>Edit Profile</a><a class="btn btn-primary" href="company.html"><i class="bi bi-plus-lg me-1"></i>Post a Job</a>',
+  alumni: '<a class="btn btn-outline-secondary" href="settings.html"><i class="bi bi-person-gear me-1"></i>Update Profile</a><a class="btn btn-primary" href="drives.html"><i class="bi bi-briefcase me-1"></i>View Drives</a>',
+};
+document.getElementById('dashActions').innerHTML = actions[role] || '';
+
+/* PO / Admin populated content */
+if (role === 'placement_officer' || role === 'admin') {
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  Charts.line(document.getElementById("trendChart"), months, [
+    { label: "Offers", data: [42,58,71,90,120,165,210,245,210,180,150,130] },
+    { label: "Interviews", data: [80,110,140,180,220,260,320,360,310,260,210,170] },
+  ]);
+  Charts.doughnut(document.getElementById("branchChart"),
+    ["CSE","ECE","ME","EE","CE","IT"], [820,540,310,260,180,420]);
+  const drives = [
+    ["Google","SDE-1","CSE,IT","412","₹42 LPA","success","Today"],
+    ["Amazon","SDE Intern","CSE,ECE","680","₹18 LPA","success","Yesterday"],
+    ["Deloitte","Analyst","All","1240","₹9 LPA","info","2d ago"],
+    ["Infosys","System Engineer","All","2160","₹4.5 LPA","warning","3d ago"],
+    ["Microsoft","SWE","CSE","148","₹52 LPA","success","5d ago"],
+  ];
+  document.getElementById("recent").innerHTML = drives.map(d=>`
+    <tr><td><strong>${d[0]}</strong></td><td>${d[1]}</td><td>${d[2]}</td><td>${d[3]}</td><td>${d[4]}</td>
+    <td><span class="badge-soft ${d[5]}">${d[5]==='success'?'Completed':d[5]==='info'?'Ongoing':'Open'}</span></td><td>${d[6]}</td></tr>`).join("");
+}
+
+/* Student content */
+if (role === 'student') {
+  const sd = [
+    ['Google','SDE-1','Tier 1','₹42 LPA','success','Eligible'],
+    ['Amazon','SDE Intern','Tier 1','₹18 LPA','success','Eligible'],
+    ['TCS Digital','System Engineer','Tier 3','₹7 LPA','warning','Chances exhausted'],
+    ['Deloitte','Analyst','Tier 2','₹9 LPA','success','Eligible'],
+  ];
+  document.getElementById('studentDrives').innerHTML = sd.map(d=>`
+    <div class="d-flex align-items-center justify-content-between py-2 border-bottom" style="border-color:var(--border)!important">
+      <div><strong class="d-block">${d[0]}</strong><small class="text-muted-2">${d[1]} · ${d[2]} · ${d[3]}</small></div>
+      <span class="badge-soft ${d[4]}">${d[5]}</span>
+    </div>`).join('');
+  const notifs = [
+    ['Google drive registration closes today','2h ago','warning'],
+    ['Resume verification: under review','Yesterday','info'],
+    ['Amazon shortlist published','2d ago','success'],
+    ['Placement policy v3 published','5d ago','muted'],
+  ];
+  document.getElementById('studentNotifs').innerHTML = notifs.map(n=>`
+    <div class="d-flex gap-2 py-2 border-bottom" style="border-color:var(--border)!important">
+      <span class="badge-soft ${n[2]}" style="height:fit-content"><i class="bi bi-dot"></i></span>
+      <div class="flex-grow-1"><div class="small">${n[0]}</div><small class="text-muted-2">${n[1]}</small></div>
+    </div>`).join('');
+}
+
+/* Staff recommendations */
+if (role === 'staff') {
+  const rec = [
+    ['Brillio','Service','Nov 14, 2025','success','Onboarded'],
+    ['Postman','Product','Nov 02, 2025','success','Onboarded'],
+    ['Hasura','Startup','Oct 28, 2025','warning','Pending'],
+    ['Razorpay','Product','Oct 20, 2025','info','In review'],
+    ['Freshworks','Product','Oct 10, 2025','success','Onboarded'],
+  ];
+  document.getElementById('staffRecs').innerHTML = rec.map(r=>`
+    <tr><td><strong>${r[0]}</strong></td><td>${r[1]}</td><td>${r[2]}</td><td><span class="badge-soft ${r[3]}">${r[4]}</span></td></tr>`).join('');
+}
+
+if (role === 'alumni') {
+  document.getElementById('alumniCo').textContent = user.company || 'Google';
+}
 </script>
 </body>
 </html>
