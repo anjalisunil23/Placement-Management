@@ -37,10 +37,13 @@ function safeResolve(relativePath) {
   return filePath;
 }
 
+function urlPathname(url) {
+  return decodeURIComponent((url || '/').split('?')[0]);
+}
+
 function urlToRelative(url) {
-  const pathname = decodeURIComponent((url || '/').split('?')[0]);
-  const trimmed = pathname.replace(/^\/+/, '').replace(/\/+$/, '');
-  return trimmed || 'index.html';
+  const trimmed = urlPathname(url).replace(/^\/+/, '').replace(/\/+$/, '');
+  return trimmed || 'public-stats.html';
 }
 
 function candidatesFor(rel) {
@@ -76,11 +79,17 @@ function findFile(rel, cb) {
 
 function send404(res) {
   res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end('<h1>404 — Not found</h1><p><a href="/">Back to home</a></p>');
+  res.end('<h1>404 — Not found</h1><p><a href="/public-stats">Back to home</a></p>');
 }
 
 const server = http.createServer((req, res) => {
   try {
+    const pathname = urlPathname(req.url);
+    if (pathname === '/' || pathname === '/index.html' || pathname === '/index') {
+      res.writeHead(302, { Location: '/public-stats' });
+      return res.end();
+    }
+
     const rel = urlToRelative(req.url);
     findFile(rel, (filePath) => {
       if (!filePath) return send404(res);
