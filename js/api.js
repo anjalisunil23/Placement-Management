@@ -118,11 +118,53 @@ const Auth = {
     localStorage.setItem('ph-role', role);
   },
   clear() {
+    this._sessionReady = false;
     localStorage.removeItem('ph-user');
     localStorage.removeItem('ph-token');
     localStorage.removeItem('ph-role');
   },
   logout() { this.clear(); window.location.href = 'login.html'; },
+  isDemo() {
+    const t = this.token();
+    return !!t && t.startsWith('demo-token');
+  },
+  hasSession() { return this.token() === 'session'; },
+  needsApiSession(page) {
+    return [
+      'reports.html', 'applications.html', 'resumes.html', 'results.html',
+      'students.html', 'users.html', 'departments.html', 'rules.html',
+      'blacklist.html', 'admin-companies.html', 'admin-settings.html',
+      'drives.html', 'create-drive.html',
+    ].includes(page);
+  },
+  async bootstrap() {
+    if (this._sessionReady === true) return true;
+    const res = await apiFetch('/auth/me', { skipAuthRedirect: true, skipAuthRetry: true });
+    if (!res.success || !res.data) {
+      this._sessionReady = false;
+      return false;
+    }
+    const u = res.data;
+    this.set(
+      {
+        id: u.id || u._id || '',
+        name: u.name || '',
+        email: u.email || '',
+        role: u.role || '',
+        department: u.department || '',
+        company: u.company || u.companyName || '',
+        registerNumber: u.registerNumber || '',
+      },
+      'session'
+    );
+    this._sessionReady = true;
+    return true;
+  },
+  async ensureSession() {
+    if (this._sessionReady === true) return true;
+    if (this.isDemo()) return false;
+    return this.bootstrap();
+  },
   isAllowed(page) {
     const role = this.role();
     if (!(PAGE_PERMS[page] || ROLES).includes(role)) return false;
@@ -871,6 +913,13 @@ const UserRegistry = {
   update(id, patch) { this.save(this.all().map(u => u.id === id ? { ...u, ...patch } : u)); },
   remove(id) { this.save(this.all().filter(u => u.id !== id)); },
   async fetch() {
+    if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+      const students = await OfficerApi.fetchStudents();
+      if (!students) return this.all();
+      this._cache = students;
+      localStorage.setItem(USERS_KEY, JSON.stringify(students));
+      return students;
+    }
     const [users, students, companies] = await Promise.all([
       AdminApi.fetchUsers(),
       AdminApi.fetchStudents(),
@@ -907,6 +956,10 @@ const UserRegistry = {
     return u;
   },
   async approve(id) {
+    if (Auth.role() === 'placement_officer') {
+      const res = await api(`/officer/users/${encodeURIComponent(id)}/approve`, { method: 'POST' });
+      if (res.success) { await this.fetch(); return true; }
+    }
     const res = await api(`/admin/users/${encodeURIComponent(id)}/approve`, { method: 'POST' });
     if (res.success) { await this.fetch(); return true; }
     this.update(id, { status:'approved' });
@@ -985,7 +1038,9 @@ const ApplicationPipeline = {
   },
   save(l) { this._cache = l; localStorage.setItem(APPS_KEY, JSON.stringify(l)); },
   async fetch() {
-    const list = await AdminApi.fetchApplications();
+    const list = Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined'
+      ? await OfficerApi.fetchApplications()
+      : await AdminApi.fetchApplications();
     if (list) { this._cache = list; localStorage.setItem(APPS_KEY, JSON.stringify(list)); return list; }
     return this.all();
   },
@@ -1061,12 +1116,15 @@ const RecruitmentResults = {
   },
   save(l) { this._cache = l; localStorage.setItem(RESULTS_KEY, JSON.stringify(l)); },
   async fetch() {
-    const list = await AdminApi.fetchResults();
+    const list = Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined'
+      ? await OfficerApi.fetchResults()
+      : await AdminApi.fetchResults();
     if (list) { this._cache = list; localStorage.setItem(RESULTS_KEY, JSON.stringify(list)); return list; }
     return this.all();
   },
   async upsert(p) {
-    const res = await api('/admin/results', { method: 'POST', body: p });
+    const path = Auth.role() === 'placement_officer' ? '/officer/results' : '/admin/results';
+    const res = await api(path, { method: 'POST', body: p });
     if (res.success) { await this.fetch(); return res.data; }
     const list = this.all();
     const idx = list.findIndex(r => r.registerNumber === p.registerNumber && r.company === p.company);
@@ -1101,14 +1159,19 @@ const ResumeQueue = {
   },
   save(l) { this._cache = l; localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify(l)); },
   async fetch() {
-    const list = await AdminApi.fetchPendingResumes();
+    const list = Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined'
+      ? await OfficerApi.fetchPendingResumes()
+      : await AdminApi.fetchPendingResumes();
     if (list) { this._cache = list; localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify(list)); return list; }
     return this.all();
   },
   async approve(id) {
     const item = this.all().find(x => x.id === id);
     const studentId = item?.studentId || id;
-    const res = await api(`/admin/students/${encodeURIComponent(studentId)}/verify-resume`, { method: 'POST' });
+    const path = Auth.role() === 'placement_officer'
+      ? `/officer/students/${encodeURIComponent(studentId)}/verify-resume`
+      : `/admin/students/${encodeURIComponent(studentId)}/verify-resume`;
+    const res = await api(path, { method: 'POST' });
     if (res.success) { await this.fetch(); return true; }
     this.save(this.all().map(r => r.id === id ? { ...r, status:'approved' } : r));
     return false;
@@ -1337,8 +1400,49 @@ const DriveStore = {
     if (custom) return custom;
     return this.catalogEntry(id);
   },
-  add(p) {
+  allWithCatalog() {
+    if (this._apiCache) return this._apiCache;
+    const hidden = new Set(this.hiddenIds());
+    const overrides = this.overrides();
+    const catalog = DRIVE_CATALOG
+      .filter(d => !hidden.has(d.id))
+      .map(d => {
+        const patch = overrides[d.id] || {};
+        const merged = { ...d, ...patch };
+        if (patch.status) merged.statusCls = driveStatusCls(patch.status);
+        return merged;
+      });
+    return [...this.all(), ...catalog];
+  },
+  async fetch() {
+    if (!canManageDrives()) return this.allWithCatalog();
+    if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+      const list = await OfficerApi.fetchDrives();
+      if (list) {
+        this._apiCache = list;
+        this.save(list);
+        return list;
+      }
+    }
+    return this.allWithCatalog();
+  },
+  async add(p) {
     if (!canManageDrives()) return null;
+    if (Auth.role() === 'placement_officer') {
+      const res = await api('/officer/drives', {
+        method: 'POST',
+        body: {
+          title: p.role || p.title,
+          companyId: p.companyId,
+          type: p.type || 'pooled',
+          date: p.date,
+          time: p.time || '10:00',
+          branches: p.branches ? (Array.isArray(p.branches) ? p.branches : [p.branches]) : [],
+          tier: p.tier || 'Tier 2',
+        },
+      });
+      if (res.success) { await this.fetch(); return res.data; }
+    }
     const d = { id:'drv-'+Date.now(), status:'Open', statusCls:'success', applied:0, profile:'General', ...p };
     this.save([d, ...this.all()]); return d;
   },
@@ -1373,22 +1477,28 @@ const DriveStore = {
     }
     return false;
   },
-  allWithCatalog() {
-    const hidden = new Set(this.hiddenIds());
-    const overrides = this.overrides();
-    const catalog = DRIVE_CATALOG
-      .filter(d => !hidden.has(d.id))
-      .map(d => {
-        const patch = overrides[d.id] || {};
-        const merged = { ...d, ...patch };
-        if (patch.status) merged.statusCls = driveStatusCls(patch.status);
-        return merged;
-      });
-    return [...this.all(), ...catalog];
-  },
 };
 
-function dashboardStats() {
+async function dashboardStats() {
+  if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+    const stats = await OfficerApi.fetchDashboard();
+    if (stats) {
+      return {
+        totalStudents: stats.totalStudents ?? 0,
+        totalCompanies: RegisteredCompanies.all().length,
+        totalStaff: StaffRegistry.all().length,
+        totalAlumni: Math.max(UserRegistry.byRole('alumni').length, 0),
+        totalDrives: stats.activeDrives ?? 0,
+        placedStudents: stats.placedStudents ?? 0,
+        pendingApprovals: stats.pendingApprovals ?? 0,
+        placementPct: stats.placementPercentage ?? 0,
+        salary: { highest:68, lowest:3.5, average:9.4, median:8.2 },
+        branchStats: DEPARTMENT_PLACEMENT,
+        companyStats: activeRecruitingCompanies().slice(0, 8),
+        department: stats.department || null,
+      };
+    }
+  }
   const students = UserRegistry.byRole('student');
   const placed = students.filter(s => s.placementStatus === 'placed').length;
   const total = 3284;
@@ -1423,11 +1533,13 @@ function userStatusBadge(status, blocked) {
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }
 
-/* Generic fetch with bearer, 401 redirect, and { success, message, data } shape */
-async function api(path, opts = {}) {
+/* Generic fetch with session cookies; optional 401 redirect for expired sessions */
+async function apiFetch(path, opts = {}) {
   const token = Auth.token();
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token && token !== 'session' && !token.startsWith('demo-token')) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   const body = opts.body && typeof opts.body !== 'string' ? JSON.stringify(opts.body) : opts.body;
   try {
     const res = await fetch(API_BASE + path, {
@@ -1436,11 +1548,46 @@ async function api(path, opts = {}) {
       body,
       credentials: 'include',
     });
-    if (res.status === 401) { Auth.clear(); window.location.href = 'login.html'; return { success:false, message:'Session expired', data:null }; }
-    const json = await res.json().catch(() => ({ success:false, message:'Bad response', data:null }));
+    if (res.status === 401) {
+      if (!opts.skipAuthRetry && !opts._authRetry) {
+        const restored = await Auth.bootstrap();
+        if (restored) {
+          return apiFetch(path, { ...opts, _authRetry: true });
+        }
+      }
+      if (!opts.skipAuthRedirect && !Auth.isDemo()) {
+        const page = document.body?.dataset?.page;
+        const next = page && page !== 'login.html' ? `?next=${encodeURIComponent(page)}` : '';
+        Auth.clear();
+        window.location.href = `login.html${next}`;
+        return { success: false, message: 'Session expired', data: null, status: 401 };
+      }
+      return {
+        success: false,
+        message: Auth.isDemo()
+          ? 'Sign in with your account to generate reports.'
+          : 'Session expired. Please sign in again.',
+        data: null,
+        status: 401,
+      };
+    }
+    const json = await res.json().catch(() => ({ success: false, message: 'Bad response', data: null }));
+    json.status = res.status;
     return json;
   } catch (e) {
-    return { success:false, message:e.message || 'Network error', data:null, _offline:true };
+    return { success: false, message: e.message || 'Network error', data: null, _offline: true };
+  }
+}
+
+async function api(path, opts = {}) {
+  return apiFetch(path, opts);
+}
+
+function onAppReady(fn) {
+  if (document.body?.dataset?.page && document.body.dataset.page !== 'login.html') {
+    document.addEventListener('ph-ready', fn, { once: true });
+  } else {
+    fn();
   }
 }
 

@@ -23,6 +23,9 @@ use PMS\Models\UserModel;
 use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\EmailService;
 use PMS\Services\NotificationService;
+use PMS\Services\OfficerDataService;
+use PMS\Services\PlacementOfficerContext;
+use PMS\Services\ReportContext;
 use PMS\Services\ReportService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -111,56 +114,18 @@ final class AdminController
     /** GET /api/admin/applications */
     public function listApplications(): void
     {
-        RBACMiddleware::requireAdmin();
+        $scope = (new OfficerDataService())->requireScope();
         $filter = [];
         if (!empty($_GET['status'])) {
             $filter['status'] = $_GET['status'];
         }
-
-        $apps = (new ApplicationModel())->findAll($filter, 500);
-        $studentModel = new StudentModel();
-        $userModel = new UserModel();
-        $companyModel = new CompanyModel();
-        $deptModel = new DepartmentModel();
-        $driveModel = new DriveModel();
-
-        $rows = [];
-        foreach ($apps as $app) {
-            $student = $studentModel->findById((string) ($app['studentId'] ?? ''));
-            $user = $student ? $userModel->findById((string) ($student['userId'] ?? '')) : null;
-            $company = $companyModel->findById((string) ($app['companyId'] ?? ''));
-            $drive = $driveModel->findById((string) ($app['driveId'] ?? ''));
-            $dept = $student ? $deptModel->findById((string) ($student['departmentId'] ?? '')) : null;
-
-            $status = $app['status'] ?? 'applied';
-            $stage = match ($status) {
-                'applied', 'resume_pending' => 'resume_verification',
-                'resume_verified' => 'resume_verification',
-                'officer_approved' => 'approval',
-                'company_review', 'shortlisted' => 'company_selection',
-                'selected' => 'company_selection',
-                'rejected' => 'rejected',
-                default => $status,
-            };
-
-            $row = DocumentHelper::serialize($app) ?? [];
-            $row['studentName'] = $user['name'] ?? '';
-            $row['registerNumber'] = $student['registerNumber'] ?? '';
-            $row['department'] = $dept['code'] ?? $dept['name'] ?? '';
-            $row['company'] = $company['companyName'] ?? '';
-            $row['role'] = $drive['title'] ?? '';
-            $row['stage'] = $stage;
-            $row['appliedAt'] = $row['createdAt'] ?? null;
-            $rows[] = $row;
-        }
-
-        Response::success($rows);
+        Response::success((new OfficerDataService())->listApplications($scope['ctx'], $filter));
     }
 
     /** POST /api/admin/applications/{id}/transition */
     public function transitionApplication(string $appId): void
     {
-        $admin = RBACMiddleware::requireAdmin();
+        $scope = (new OfficerDataService())->requireScope();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $errors = Validator::validate($input, [
             'status' => 'required',
@@ -168,10 +133,12 @@ final class AdminController
         if (!empty($errors)) {
             Response::error('Validation failed.', 422, $errors);
         }
+
+        (new OfficerDataService())->assertApplicationInScope($appId, $scope['ctx']);
         (new ApplicationWorkflowService())->transition(
             $appId,
             (string) $input['status'],
-            (string) $admin['_id'],
+            (string) $scope['user']['_id'],
             (string) ($input['remarks'] ?? '')
         );
         Response::success(null, 'Application updated.');
@@ -483,7 +450,9 @@ final class AdminController
     /** POST /api/admin/students/{id}/verify-resume */
     public function verifyResume(string $studentId): void
     {
-        $admin = RBACMiddleware::requireAdmin();
+        $scope = (new OfficerDataService())->requireScope();
+        PlacementOfficerContext::assertStudentInDepartment($studentId, $scope['ctx']);
+
         $model = new StudentModel();
         $student = $model->findById($studentId);
         if (!$student) {
@@ -492,7 +461,7 @@ final class AdminController
         $resume = $student['resume'] ?? [];
         $resume['verified'] = true;
         $model->update($studentId, ['resume' => $resume]);
-        (new ApplicationWorkflowService())->onResumeVerified($studentId, (string) $admin['_id']);
+        (new ApplicationWorkflowService())->onResumeVerified($studentId, (string) $scope['user']['_id']);
 
         $userId = (string) ($student['userId'] ?? '');
         if ($userId) {
@@ -526,65 +495,58 @@ final class AdminController
 
     // --- Reports ---
 
+    /** GET /api/admin/reports */
+    public function listReports(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $deptId = $scope['ctx']['isAdmin'] ? ($_GET['departmentId'] ?? null) : $scope['ctx']['departmentId'];
+        $service = new ReportService();
+        Response::success($service->listHistory($deptId ? (string) $deptId : null));
+    }
+
     /** POST /api/admin/reports/{type} */
     public function generateReport(string $type): void
     {
-        RBACMiddleware::requireAdmin();
-        $service = new ReportService();
-        $filename = match ($type) {
-            'student' => $service->generateStudentReport(),
-            'company' => $service->generateCompanyReport(),
-            'monthly' => $service->generateMonthlyReport(
-                (int) ($_GET['month'] ?? date('n')),
-                (int) ($_GET['year'] ?? date('Y'))
-            ),
-            default   => null,
-        };
+        $scope = (new OfficerDataService())->requireScope();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
 
-        if ($filename === null) {
-            Response::error('Invalid report type.', 400);
+        $forcedDept = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
+        $ctx = ReportContext::fromInput($input, $forcedDept, (string) $scope['user']['_id']);
+
+        if (!empty($input['dateFrom'])) {
+            $parts = explode('-', (string) $input['dateFrom']);
+            if (count($parts) >= 2) {
+                $ctx->month = (int) $parts[1];
+                $ctx->year = (int) $parts[0];
+            }
         }
 
-        // Email to management and staff
-        $email = new EmailService();
-        $config = require dirname(__DIR__) . '/config/app.php';
-        $reportPath = $config['uploads']['reports_dir'] . '/' . $filename;
-        $recipients = array_filter([
-            $_ENV['MAIL_FROM'] ?? 'admin@college.edu',
-            $_ENV['MAIL_STAFF'] ?? '',
-        ]);
-        $email->sendReportToManagement($recipients, $reportPath, ucfirst($type));
+        try {
+            $result = (new ReportService())->generate($type, $ctx);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 400);
+        }
 
-        Response::success(['filename' => $filename, 'downloadUrl' => '/backend/api/admin/reports/download/' . rawurlencode($filename)], 'Report generated.');
+        if (!empty($input['email'])) {
+            $email = new EmailService();
+            $config = require dirname(__DIR__) . '/config/app.php';
+            $reportPath = $config['uploads']['reports_dir'] . '/' . $result['filename'];
+            $recipients = array_filter([
+                $_ENV['MAIL_FROM'] ?? 'admin@college.edu',
+                $_ENV['MAIL_STAFF'] ?? '',
+                $scope['user']['email'] ?? '',
+            ]);
+            $email->sendReportToManagement($recipients, $reportPath, $result['title']);
+        }
+
+        Response::success($result, 'Report generated.');
     }
 
     /** GET /api/admin/students */
     public function listStudents(): void
     {
-        RBACMiddleware::requireAdmin();
-        $studentModel = new StudentModel();
-        $deptModel = new DepartmentModel();
-        $users = new UserModel();
-
-        $departments = [];
-        foreach ($deptModel->findAll([], 200) as $d) {
-            $departments[(string) $d['_id']] = $d;
-        }
-
-        $rows = [];
-        foreach ($studentModel->findAll([], 500) as $s) {
-            $userId = (string) ($s['userId'] ?? '');
-            $deptId = (string) ($s['departmentId'] ?? '');
-            $u = $userId ? $users->findById($userId) : null;
-            $dept = $departments[$deptId] ?? null;
-
-            $row = DocumentHelper::serialize($s) ?? [];
-            $row['user'] = $u ? DocumentHelper::serialize($u) : null;
-            $row['department'] = $dept ? ['id' => (string) $dept['_id'], 'name' => $dept['name'] ?? '', 'code' => $dept['code'] ?? ''] : null;
-            $rows[] = $row;
-        }
-
-        Response::success($rows);
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->listStudents($scope['ctx']));
     }
 
     /** GET /api/admin/blacklist */
@@ -614,7 +576,7 @@ final class AdminController
     /** GET /api/admin/results */
     public function listResults(): void
     {
-        RBACMiddleware::requireAdmin();
+        $scope = (new OfficerDataService())->requireScope();
         $filter = [];
         if (!empty($_GET['status'])) {
             $filter['status'] = $_GET['status'];
@@ -622,13 +584,13 @@ final class AdminController
         if (!empty($_GET['registerNumber'])) {
             $filter['registerNumber'] = strtoupper(trim((string) $_GET['registerNumber']));
         }
-        Response::success(DocumentHelper::serializeMany((new RecruitmentResultModel())->list($filter, 500)));
+        Response::success((new OfficerDataService())->listResults($scope['ctx'], $filter));
     }
 
     /** POST /api/admin/results */
     public function upsertResult(): void
     {
-        RBACMiddleware::requireAdmin();
+        $scope = (new OfficerDataService())->requireScope();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
 
         $errors = Validator::validate($input, [
@@ -640,6 +602,11 @@ final class AdminController
         ]);
         if (!empty($errors)) {
             Response::error('Validation failed.', 422, $errors);
+        }
+
+        (new OfficerDataService())->assertResultRegisterInScope((string) $input['registerNumber'], $scope['ctx']);
+        if (!$scope['ctx']['isAdmin'] && !empty($scope['ctx']['departmentId'])) {
+            $input['departmentId'] = $scope['ctx']['departmentId'];
         }
 
         try {
@@ -665,7 +632,7 @@ final class AdminController
     /** GET /api/admin/companies */
     public function listCompanies(): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         Response::success(DocumentHelper::serializeMany((new CompanyModel())->findAll([], 200)));
     }
 
@@ -711,14 +678,14 @@ final class AdminController
     /** GET /api/admin/recommendations */
     public function listRecommendations(): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         Response::success((new RecommendationModel())->listEnriched());
     }
 
     /** PUT /api/admin/recommendations/{id}/status */
     public function updateRecommendationStatus(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $status = (string) ($input['status'] ?? '');
         if (!(new RecommendationModel())->updateStatus($id, $status)) {
@@ -730,7 +697,7 @@ final class AdminController
     /** POST /api/admin/companies/register */
     public function registerCompany(): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $errors = Validator::validate($input, [
             'companyName'   => 'required',
@@ -781,35 +748,8 @@ final class AdminController
     /** GET /api/admin/resumes/pending */
     public function listPendingResumes(): void
     {
-        RBACMiddleware::requireAdmin();
-        $studentModel = new StudentModel();
-        $userModel = new UserModel();
-        $deptModel = new DepartmentModel();
-
-        $rows = [];
-        foreach ($studentModel->findAll([], 500) as $student) {
-            $resume = $student['resume'] ?? null;
-            if (!$resume || empty($resume['path'])) {
-                continue;
-            }
-            if (!empty($resume['verified'])) {
-                continue;
-            }
-            $user = $userModel->findById((string) ($student['userId'] ?? ''));
-            $dept = $deptModel->findById((string) ($student['departmentId'] ?? ''));
-            $rows[] = [
-                'id'             => (string) $student['_id'],
-                'studentId'      => (string) $student['_id'],
-                'studentName'    => $user['name'] ?? '',
-                'registerNumber' => $student['registerNumber'] ?? '',
-                'department'     => $dept['code'] ?? $dept['name'] ?? '',
-                'fileName'       => $resume['filename'] ?? basename((string) ($resume['path'] ?? '')),
-                'validFormat'    => true,
-                'status'         => 'pending',
-                'submittedAt'    => $resume['uploadedAt'] ?? null,
-            ];
-        }
-        Response::success(DocumentHelper::serializeMany($rows));
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->listPendingResumes($scope['ctx']));
     }
 
     /** POST /api/admin/blacklist */
@@ -843,14 +783,20 @@ final class AdminController
     /** GET /api/admin/reports/download/{filename} */
     public function downloadReport(string $filename): void
     {
-        RBACMiddleware::requireAdmin();
+        (new OfficerDataService())->requireScope();
         $filename = basename($filename);
+        if (!preg_match('/^[a-z0-9_\-]+\.(pdf|csv)$/i', $filename)) {
+            Response::error('Invalid filename.', 400);
+        }
         $config = require dirname(__DIR__) . '/config/app.php';
         $path = $config['uploads']['reports_dir'] . '/' . $filename;
         if (!is_file($path)) {
             Response::notFound('Report file not found.');
         }
-        header('Content-Type: application/pdf');
+        $mime = str_ends_with(strtolower($filename), '.csv')
+            ? 'text/csv'
+            : 'application/pdf';
+        header('Content-Type: ' . $mime);
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         readfile($path);
         exit;

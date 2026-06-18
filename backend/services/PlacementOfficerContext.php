@@ -84,6 +84,18 @@ final class PlacementOfficerContext
         return array_map(fn ($s) => (string) $s['userId'], $students);
     }
 
+    /**
+     * @return string[]
+     */
+    public static function registerNumbersInDepartment(array $ctx): array
+    {
+        $students = (new StudentModel())->findAll(self::studentCollectionFilter($ctx), 5000);
+        return array_values(array_filter(array_map(
+            fn ($s) => strtoupper((string) ($s['registerNumber'] ?? '')),
+            $students
+        )));
+    }
+
     public static function assertStudentInDepartment(string $studentId, array $ctx): void
     {
         if ($ctx['isAdmin']) {

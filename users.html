@@ -178,5 +178,5 @@ async function initUsersPage() {
   await UserRegistry.fetch();
   render();
 }
-initUsersPage();
+onAppReady(() => initUsersPage());
 </script></body></html>

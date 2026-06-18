@@ -229,8 +229,10 @@ function renderShell(active) {
     e.preventDefault();
     const key = a.dataset.role;
     const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
+    Auth._sessionReady = false;
     Auth.setRole(user.role);
     Auth.set(user, 'demo-token');
+    toast('Preview mode — sign in for live data and reports.', 'info');
     window.location.reload();
   }));
 
@@ -260,9 +262,6 @@ function animateCounters(root = document) {
 
 function enforcePageRole(active) {
   if (!active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html') return true;
-  if (!Auth.isAuthed()) {
-    Auth.setRole(Auth.role());
-  }
   if (!Auth.isAllowed(active)) {
     toast(`This page isn't available for ${ROLE_LABELS[Auth.role()]}.`, 'warn');
     setTimeout(() => window.location.href = 'dashboard.html', 600);
@@ -271,10 +270,21 @@ function enforcePageRole(active) {
   return true;
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const active = document.body.dataset.page;
+  const isPublic = !active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html';
+
+  if (!isPublic) {
+    const hasSession = await Auth.bootstrap();
+    if (!hasSession && !Auth.isAuthed()) {
+      window.location.href = `login.html?next=${encodeURIComponent(active)}`;
+      return;
+    }
+  }
+
   if (!enforcePageRole(active)) return;
   renderShell(active);
   applyRoleVisibility();
   animateCounters();
+  document.dispatchEvent(new CustomEvent('ph-ready'));
 });

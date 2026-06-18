@@ -11,13 +11,14 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\JobModel;
 use PMS\Models\StudentModel;
 use PMS\Schemas\Collections;
+use PMS\Utils\Security;
 
 /**
  * Dashboard analytics aggregation.
  */
 final class AnalyticsService
 {
-    public function getDashboardAnalytics(): array
+    public function getDashboardAnalytics(?string $departmentId = null): array
     {
         $studentModel = new StudentModel();
         $companyModel = new CompanyModel();
@@ -25,16 +26,26 @@ final class AnalyticsService
         $departmentModel = new DepartmentModel();
         $jobModel = new JobModel();
 
-        $totalStudents = $studentModel->count([]);
-        $placedStudents = $studentModel->count(['placed' => true]);
+        $studentFilter = [];
+        $deptOid = $departmentId ? Security::toObjectId($departmentId) : null;
+        if ($deptOid) {
+            $studentFilter['departmentId'] = $deptOid;
+        }
+
+        $totalStudents = $studentModel->count($studentFilter);
+        $placedStudents = $studentModel->count(array_merge($studentFilter, ['placed' => true]));
         $placementPct = $totalStudents > 0
             ? round(($placedStudents / $totalStudents) * 100, 2)
             : 0;
 
-        // Branch statistics
         $branchStats = [];
-        $departments = $departmentModel->findAll([], 50);
+        $departments = $departmentId
+            ? array_filter([$departmentModel->findById($departmentId)])
+            : $departmentModel->findAll([], 50);
         foreach ($departments as $dept) {
+            if (!$dept) {
+                continue;
+            }
             $deptId = (string) $dept['_id'];
             $total = $studentModel->count(['departmentId' => $dept['_id']]);
             $placed = $studentModel->count(['departmentId' => $dept['_id'], 'placed' => true]);
@@ -47,28 +58,50 @@ final class AnalyticsService
             ];
         }
 
-        // Company statistics
+        $studentIds = [];
+        if ($deptOid) {
+            foreach ($studentModel->findAll($studentFilter, 5000) as $s) {
+                $studentIds[] = $s['_id'];
+            }
+        }
+
         $companies = $companyModel->findAll([], 100);
-        $companyStats = array_map(function ($c) use ($applicationModel) {
-            $companyId = (string) $c['_id'];
+        $companyStats = array_map(function ($c) use ($applicationModel, $studentIds, $deptOid) {
+            $appFilter = ['companyId' => $c['_id']];
+            if ($deptOid && $studentIds !== []) {
+                $appFilter['studentId'] = ['$in' => $studentIds];
+            } elseif ($deptOid) {
+                return [
+                    'name'         => $c['companyName'],
+                    'tier'         => $c['tier'],
+                    'applications' => 0,
+                    'selected'     => 0,
+                ];
+            }
             return [
                 'name'         => $c['companyName'],
                 'tier'         => $c['tier'],
-                'applications' => $applicationModel->count(['companyId' => $c['_id']]),
-                'selected'     => $applicationModel->count(['companyId' => $c['_id'], 'status' => 'selected']),
+                'applications' => $applicationModel->count($appFilter),
+                'selected'     => $applicationModel->count(array_merge($appFilter, ['status' => 'selected'])),
             ];
         }, $companies);
 
-        // Salary analytics from jobs
+        $appCountFilter = [];
+        if ($deptOid && $studentIds !== []) {
+            $appCountFilter['studentId'] = ['$in' => $studentIds];
+        } elseif ($deptOid) {
+            $appCountFilter['studentId'] = ['$in' => []];
+        }
+
         $salaries = $this->extractSalaries($jobModel->findAll([], 500));
 
         return [
             'totals' => [
-                'students'           => $totalStudents,
-                'placedStudents'     => $placedStudents,
-                'placementPercentage'=> $placementPct,
-                'companies'          => $companyModel->count([]),
-                'applications'       => $applicationModel->count([]),
+                'students'            => $totalStudents,
+                'placedStudents'      => $placedStudents,
+                'placementPercentage' => $placementPct,
+                'companies'           => $companyModel->count([]),
+                'applications'        => $applicationModel->count($appCountFilter),
             ],
             'branchStatistics'  => $branchStats,
             'companyStatistics' => $companyStats,
