@@ -1,0 +1,137 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Resume Verification · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="resumes.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div><h1 class="page-title">Resume Verification</h1><p class="page-sub">Review uploaded resumes, validate naming conventions, and approve or reject submissions.</p></div>
+</div>
+
+<div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
+  <i class="bi bi-info-circle text-primary mt-1"></i>
+  <div>
+    <strong>Resume naming rule:</strong> <code>Name_RegisterNo_Role.pdf</code>
+    <div class="small text-muted-2 mt-1">Example: <code>John_22MCA101_Developer.pdf</code></div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending</div><div class="val" id="statPending">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Approved</div><div class="val" id="statApproved">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Rejected</div><div class="val" id="statRejected">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Invalid format</div><div class="val" id="statInvalid">0</div></div></div>
+</div>
+
+<div class="card-surface">
+  <ul class="nav nav-tabs px-3 pt-2" role="tablist">
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabPending">Pending <span class="badge-soft warning ms-1" id="pendingBadge">0</span></a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabApproved">Approved</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabRejected">Rejected</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAll">All</a></li>
+  </ul>
+  <div class="tab-content">
+    <div class="tab-pane fade show active" id="tabPending">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Student</th><th>Register No</th><th>Dept</th><th>File name</th><th>Format</th><th>Submitted</th><th>Actions</th>
+      </tr></thead><tbody id="pendingRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="tabApproved">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Student</th><th>Register No</th><th>Dept</th><th>File name</th><th>Format</th><th>Submitted</th>
+      </tr></thead><tbody id="approvedRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="tabRejected">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Student</th><th>Register No</th><th>Dept</th><th>File name</th><th>Format</th><th>Submitted</th>
+      </tr></thead><tbody id="rejectedRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="tabAll">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Student</th><th>Register No</th><th>Dept</th><th>File name</th><th>Format</th><th>Status</th><th>Submitted</th><th>Actions</th>
+      </tr></thead><tbody id="allRows"></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/admin-api.js"></script>
+<script src="js/officer-api.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+function formatBadge(fileName, stored) {
+  const valid = stored != null ? stored : checkResumeFileName(fileName);
+  return valid
+    ? '<span class="badge-soft success">Valid</span>'
+    : '<span class="badge-soft danger">Invalid</span>';
+}
+
+function resumeStatusBadge(status) {
+  const map = { pending:['warning','Pending'], approved:['success','Approved'], rejected:['danger','Rejected'] };
+  const [cls, label] = map[status] || ['muted', status];
+  return `<span class="badge-soft ${cls}">${label}</span>`;
+}
+
+function rowCells(r, showActions) {
+  const actions = showActions && r.status === 'pending' ? `
+    <td><div class="d-flex gap-1">
+      <button class="btn btn-sm btn-success" onclick="approveResume('${r.id}')" title="Approve"><i class="bi bi-check2"></i></button>
+      <button class="btn btn-sm btn-outline-danger" onclick="rejectResume('${r.id}')" title="Reject"><i class="bi bi-x"></i></button>
+    </div></td>` : (showActions ? '<td>—</td>' : '');
+  return `
+    <td><div class="fw-semibold small">${r.studentName}</div></td>
+    <td>${r.registerNumber}</td>
+    <td>${r.department}</td>
+    <td><i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i>${r.fileName}</td>
+    <td>${formatBadge(r.fileName, r.validFormat)}</td>
+    ${showActions ? `<td>${resumeStatusBadge(r.status)}</td>` : ''}
+    <td>${formatDate(r.submittedAt)}</td>
+    ${actions}`;
+}
+
+function approveResume(id) {
+  ResumeQueue.approve(id).then(() => { toast('Resume approved.', 'success'); render(); });
+}
+
+function rejectResume(id) {
+  ResumeQueue.reject(id).then(() => { toast('Resume rejected.', 'warn'); render(); });
+}
+
+function renderTable(id, list, showActions, showStatus) {
+  const cols = showStatus ? 8 : 7;
+  document.getElementById(id).innerHTML = list.length
+    ? list.map(r => `<tr>${rowCells(r, showActions)}</tr>`).join('')
+    : `<tr><td colspan="${cols}" class="text-muted-2 p-4">No resumes in this queue.</td></tr>`;
+}
+
+function render() {
+  const all = ResumeQueue.all();
+  const pending = all.filter(r => r.status === 'pending');
+  const approved = all.filter(r => r.status === 'approved');
+  const rejected = all.filter(r => r.status === 'rejected');
+  const invalid = all.filter(r => !checkResumeFileName(r.fileName));
+
+  document.getElementById('statPending').textContent = pending.length;
+  document.getElementById('statApproved').textContent = approved.length;
+  document.getElementById('statRejected').textContent = rejected.length;
+  document.getElementById('statInvalid').textContent = invalid.length;
+  document.getElementById('pendingBadge').textContent = pending.length;
+
+  renderTable('pendingRows', pending, true, false);
+  renderTable('approvedRows', approved, false, false);
+  renderTable('rejectedRows', rejected, false, false);
+  renderTable('allRows', all, true, true);
+}
+
+async function initResumesPage() {
+  await ResumeQueue.fetch();
+  render();
+}
+onAppReady(() => initResumesPage());
+</script></body></html>

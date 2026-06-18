@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Profile — PMS</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/frontend/assets/css/style.css" rel="stylesheet">
+</head>
+<body data-pms-fallback="/frontend/pages/student/dashboard.html">
+  <nav class="navbar navbar-dark bg-dark">
+    <div class="container-fluid"><a class="navbar-brand" href="dashboard.html">PMS — Profile</a></div>
+  </nav>
+  <div class="container p-4">
+    <h2>Profile Management</h2>
+    <form id="profileForm" class="mt-4">
+      <h5>Academic Details</h5>
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label">UG Marks (%)</label><input type="number" step="0.01" class="form-control" id="ugMarks"></div>
+        <div class="col-md-4"><label class="form-label">MCA Marks (%)</label><input type="number" step="0.01" class="form-control" id="mcaMarks"></div>
+        <div class="col-md-4"><label class="form-label">CGPA</label><input type="number" step="0.01" class="form-control" id="cgpa"></div>
+        <div class="col-md-4"><label class="form-label">Backlogs</label><input type="number" class="form-control" id="backlogs"></div>
+        <div class="col-md-4"><label class="form-label">Phone</label><input type="text" class="form-control" id="phone"></div>
+      </div>
+      <button type="submit" class="btn btn-pms mt-4">Save Profile</button>
+    </form>
+    <hr class="my-4">
+    <h5>Certifications</h5>
+    <div id="certList" class="mb-3"></div>
+    <div class="row g-2 col-md-8">
+      <div class="col-md-4"><input class="form-control" id="certName" placeholder="Certificate name"></div>
+      <div class="col-md-3"><input class="form-control" id="certIssuer" placeholder="Issuer"></div>
+      <div class="col-md-2"><input class="form-control" id="certYear" type="number" placeholder="Year"></div>
+      <div class="col-md-3"><button type="button" class="btn btn-outline-primary w-100" id="addCert">Add Certificate</button></div>
+    </div>
+    <hr class="my-4">
+    <h5>Signed Placement Report</h5>
+    <p class="text-muted">Upload signed placement report PDF (required before applying).</p>
+    <form id="signedForm" class="col-md-6">
+      <input type="file" class="form-control mb-2" id="signedReport" accept=".pdf" required>
+      <button type="submit" class="btn btn-pms">Upload Signed Report</button>
+    </form>
+    <div id="signedStatus" class="mt-2"></div>
+    <hr class="my-4">
+    <h5>Placement Policy</h5>
+    <p class="text-muted">You must accept the placement policy before applying to drives.</p>
+    <button class="btn btn-outline-primary" id="acceptPolicy">Accept Placement Agreement</button>
+    <span id="policyStatus" class="ms-2"></span>
+  </div>
+  <script src="/frontend/assets/js/api.js"></script>
+  <script src="/frontend/assets/js/nav.js"></script>
+  <script>
+    PMS.requireAuth(['student']);
+    let certifications = [];
+    PMS.get('/student/profile').then(res => {
+      const p = res.data;
+      const ac = p.academic || {};
+      certifications = p.certifications || [];
+      renderCerts();
+      document.getElementById('ugMarks').value = ac.ugMarks || '';
+      document.getElementById('mcaMarks').value = ac.mcaMarks || '';
+      document.getElementById('cgpa').value = ac.cgpa || '';
+      document.getElementById('backlogs').value = ac.backlogs || '';
+      document.getElementById('phone').value = (p.personal || {}).phone || '';
+      document.getElementById('policyStatus').textContent = p.policyAccepted ? '✓ Accepted' : 'Not accepted';
+      document.getElementById('signedStatus').innerHTML = p.signedReport ? '<span class="badge bg-success">Signed report uploaded</span>' : '<span class="badge bg-warning">Not uploaded</span>';
+    });
+    function renderCerts() {
+      document.getElementById('certList').innerHTML = certifications.map((c,i) => `<div class="badge bg-secondary me-1">${c.name} (${c.issuer}, ${c.year}) <a href="#" onclick="removeCert(${i});return false;" class="text-white">×</a></div>`).join('') || '<small class="text-muted">No certificates added.</small>';
+    }
+    window.removeCert = i => { certifications.splice(i,1); saveCerts(); };
+    async function saveCerts() { await PMS.put('/student/profile', { certifications }); renderCerts(); }
+    document.getElementById('addCert').addEventListener('click', () => {
+      certifications.push({ name: document.getElementById('certName').value, issuer: document.getElementById('certIssuer').value, year: parseInt(document.getElementById('certYear').value) });
+      document.getElementById('certName').value = document.getElementById('certIssuer').value = document.getElementById('certYear').value = '';
+      saveCerts();
+    });
+    document.getElementById('signedForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const fd = new FormData();
+      fd.append('report', document.getElementById('signedReport').files[0]);
+      await PMS.upload('/student/signed-report', fd);
+      document.getElementById('signedStatus').innerHTML = '<span class="badge bg-success">Signed report uploaded</span>';
+    });
+
+    document.getElementById('profileForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      await PMS.put('/student/profile', {
+        academic: {
+          ugMarks: parseFloat(document.getElementById('ugMarks').value),
+          mcaMarks: parseFloat(document.getElementById('mcaMarks').value),
+          cgpa: parseFloat(document.getElementById('cgpa').value),
+          backlogs: parseInt(document.getElementById('backlogs').value)
+        },
+        personal: { phone: document.getElementById('phone').value }
+      });
+      alert('Profile saved.');
+    });
+
+    document.getElementById('acceptPolicy').addEventListener('click', async () => {
+      await PMS.post('/student/policy/accept');
+      document.getElementById('policyStatus').textContent = '✓ Accepted';
+    });
+  </script>
+</body>
+</html>

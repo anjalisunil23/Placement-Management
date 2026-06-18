@@ -1,0 +1,301 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Hiring Overview ? PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="hiring-overview.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Campus Hiring Overview</h1>
+    <p class="page-sub">Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.</p>
+  </div>
+  <button class="btn btn-outline-secondary" type="button" onclick="toast('Export will be available with backend reports.', 'info')"><i class="bi bi-download me-1"></i>Export</button>
+</div>
+
+<div class="card-surface p-3 p-md-4 mb-3">
+  <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+    <div>
+      <div class="small fw-semibold text-muted-2 mb-1">View</div>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <select class="form-select form-select-sm w-auto" id="deptSelect">
+          <option value="">All departments</option>
+        </select>
+        <span class="badge-soft info" id="deptBadge">Campus</span>
+        <span class="small text-muted-2" id="deptOfficer">?</span>
+      </div>
+    </div>
+    <div class="small text-muted-2">Staff and placement officers see their department automatically.</div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg">
+    <div class="card-surface stat-card h-100" id="companiesCard" role="button" tabindex="0">
+      <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-buildings"></i></div><span class="badge-soft success">Active</span></div>
+      <div class="val"><span class="counter" id="statCompanies" data-target="0">0</span></div>
+      <div class="lbl">Companies currently hiring</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card-surface stat-card h-100">
+      <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-people-fill"></i></div><span class="badge-soft info">Pipeline</span></div>
+      <div class="val"><span class="counter" id="statApplicants" data-target="0">0</span></div>
+      <div class="lbl">Total applicants</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card-surface stat-card h-100">
+      <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-person-check-fill"></i></div><span class="badge-soft primary">Screening</span></div>
+      <div class="val"><span class="counter" id="statShortlisted" data-target="0">0</span></div>
+      <div class="lbl">Shortlisted</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card-surface stat-card h-100">
+      <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-envelope-check-fill"></i></div><span class="badge-soft warning">Offers</span></div>
+      <div class="val"><span class="counter" id="statOffers" data-target="0">0</span></div>
+      <div class="lbl">Offers released</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card-surface stat-card h-100">
+      <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check-fill"></i></div><span class="badge-soft success">Joined</span></div>
+      <div class="val"><span class="counter" id="statHired" data-target="0">0</span></div>
+      <div class="lbl">Hired / placed</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <div class="card-surface p-3 p-md-4 h-100">
+      <h6 class="fw-bold mb-1">Recruitment pipeline</h6>
+      <small class="text-muted-2 d-block mb-3">Campus-wide funnel from applications to final hires</small>
+      <div style="height:300px"><canvas id="pipelineChart"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card-surface p-3 p-md-4 h-100">
+      <h6 class="fw-bold mb-3">Pipeline breakdown</h6>
+      <div class="table-wrap">
+        <table class="table-modern">
+          <thead><tr><th>Stage</th><th>Count</th><th>Share</th></tr></thead>
+          <tbody id="pipelineRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card-surface mb-3">
+  <div class="p-3 p-md-4 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2" id="companiesSection">
+    <div>
+      <h6 class="fw-bold mb-0">Companies currently hiring</h6>
+      <small class="text-muted-2">Recruiters with open or ongoing campus drives</small>
+    </div>
+    <span class="badge-soft success" id="activeCount">0 active</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table-modern">
+      <thead><tr><th>Company</th><th>Open roles</th><th>Applicants</th><th>Shortlisted</th><th>Selected</th><th>Status</th></tr></thead>
+      <tbody id="companyRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card-surface">
+  <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
+    <div><h6 class="fw-bold mb-0">Recent candidate pipeline</h6><small class="text-muted-2">Students at various recruitment stages</small></div>
+    <select class="form-select form-select-sm w-auto" id="statusFilter">
+      <option value="">All statuses</option>
+      <option value="applied">Applied</option>
+      <option value="shortlisted">Shortlisted</option>
+      <option value="selected">Offered / Selected</option>
+      <option value="placed">Hired / Placed</option>
+    </select>
+  </div>
+  <div class="table-wrap">
+    <table class="table-modern">
+      <thead><tr><th>Student</th><th>Roll</th><th>Dept</th><th>Company</th><th>Role</th><th>Status</th></tr></thead>
+      <tbody id="candidateRows"></tbody>
+    </table>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="js/staff-api.js"></script>
+<script src="js/api.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+<script>
+if (!canViewCampusHiring()) {
+  toast('You do not have access to this page.', 'warn');
+  setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
+}
+
+const stats = campusRecruitmentStats();
+let apiHiringData = null;
+
+const user = Auth.user() || demoUserFor(Auth.role());
+const role = Auth.role();
+const deptSelect = document.getElementById('deptSelect');
+DepartmentStore.all().forEach(d => {
+  deptSelect.innerHTML += `<option value="${d.code}">${d.code}</option>`;
+});
+
+function selectedDept() {
+  if (role === 'staff' || role === 'placement_officer') return viewerDepartment();
+  return deptSelect.value || '';
+}
+
+function setDeptUI(dept) {
+  const badge = document.getElementById('deptBadge');
+  if (!dept) { badge.textContent = 'Campus'; badge.className = 'badge-soft info'; }
+  else { badge.textContent = dept; badge.className = 'badge-soft primary'; }
+  const officer = dept ? DeptPlacementOfficers.officerForDept(dept) : null;
+  document.getElementById('deptOfficer').innerHTML = officer
+    ? `Placement officer: <strong>${officer.name || officer.email}</strong> <span class="text-muted-2 small">(${officer.email || '?'})</span>`
+    : (dept ? 'Placement officer: ?' : 'Placement officer: ?');
+  deptSelect.style.display = (role === 'admin') ? '' : 'none';
+}
+
+function renderForDept(dept) {
+  const apiDept = (role === 'staff' && apiHiringData) ? apiHiringData : null;
+  // Counters
+  if (!dept) {
+    setStat('statCompanies', stats.companiesHiring);
+    setStat('statApplicants', stats.applicants);
+    setStat('statShortlisted', stats.shortlisted);
+    setStat('statOffers', stats.offers);
+    setStat('statHired', stats.hired);
+  } else if (apiDept) {
+    setStat('statCompanies', apiDept.totals?.companiesHiring ?? 0);
+    setStat('statApplicants', apiDept.totals?.applicants ?? 0);
+    setStat('statShortlisted', apiDept.totals?.shortlisted ?? 0);
+    setStat('statOffers', apiDept.totals?.offers ?? 0);
+    setStat('statHired', apiDept.totals?.hired ?? 0);
+  } else {
+    const d = departmentHiringOverview(dept);
+    setStat('statCompanies', d.companies.length);
+    setStat('statApplicants', d.applicants);
+    setStat('statShortlisted', d.shortlisted);
+    setStat('statOffers', d.offers);
+    setStat('statHired', d.hired);
+  }
+  animateCounters(document);
+
+  // Companies table
+  if (!dept) {
+    document.getElementById('activeCount').textContent = `${stats.companiesHiring} active`;
+    document.getElementById('companyRows').innerHTML = stats.companies.length
+      ? stats.companies.map(c => `<tr>
+          <td><strong>${c.company}</strong></td>
+          <td>${c.roles.join(', ')}</td>
+          <td>${(companyHiringCounts(c.company).applicants || 0).toLocaleString('en-IN')}</td>
+          <td>${(companyHiringCounts(c.company).shortlisted || 0).toLocaleString('en-IN')}</td>
+          <td>${(companyHiringCounts(c.company).selected || 0).toLocaleString('en-IN')}</td>
+          <td><span class="badge-soft ${c.statusCls}">${c.status}</span></td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-muted-2 p-4">No companies are actively hiring right now.</td></tr>';
+  } else if (apiDept) {
+    document.getElementById('activeCount').textContent = `${(apiDept.companies || []).length} active`;
+    document.getElementById('companyRows').innerHTML = (apiDept.companies || []).length
+      ? apiDept.companies.map(c => `<tr>
+          <td><strong>${c.company}</strong></td>
+          <td><span class="text-muted-2 small">?</span></td>
+          <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
+          <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
+          <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
+          <td><span class="badge-soft ${c.statusCls || 'info'}">${c.status || 'Active'}</span></td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-muted-2 p-4">No active hiring data for this department yet.</td></tr>';
+  } else {
+    const d = departmentHiringOverview(dept);
+    document.getElementById('activeCount').textContent = `${d.companies.length} active`;
+    document.getElementById('companyRows').innerHTML = d.companies.length
+      ? d.companies.map(c => `<tr>
+          <td><strong>${c.company}</strong></td>
+          <td><span class="text-muted-2 small">?</span></td>
+          <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
+          <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
+          <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
+          <td><span class="badge-soft info">Active</span></td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-muted-2 p-4">No active hiring data for this department yet.</td></tr>';
+  }
+
+  // Candidate list
+  const status = document.getElementById('statusFilter').value;
+  const candidatePool = apiDept?.candidates
+    ?? (dept ? departmentHiringOverview(dept).candidates : PLACEMENT_STUDENTS);
+  const list = candidatePool.filter(s => !status || s.status === status);
+  document.getElementById('candidateRows').innerHTML = list.length
+    ? list.map(s => `<tr>
+        <td><strong>${s.name}</strong></td>
+        <td>${s.roll}</td>
+        <td>${s.dept}</td>
+        <td>${s.company}</td>
+        <td>${s.role}</td>
+        <td>${pipelineStatusBadge(s.status)}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" class="text-muted-2 p-4">No candidates match this filter.</td></tr>';
+}
+
+function setStat(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.dataset.target = value;
+  el.dataset.animated = '0';
+}
+
+setStat('statCompanies', stats.companiesHiring);
+setStat('statApplicants', stats.applicants);
+setStat('statShortlisted', stats.shortlisted);
+setStat('statOffers', stats.offers);
+setStat('statHired', stats.hired);
+
+async function initHiringOverview() {
+  if (Auth.hasRealAuth() && role === 'staff') {
+    await Auth.ensureSession();
+    const data = await StaffApi.fetchHiringOverview();
+    if (data) apiHiringData = data;
+  }
+  animateCounters(document);
+  setDeptUI(selectedDept());
+  renderForDept(selectedDept());
+  const pipeline = apiHiringData?.pipeline || stats.pipeline;
+  Charts.bar(
+    document.getElementById('pipelineChart'),
+    pipeline.map(p => p.label),
+    pipeline.map(p => p.value),
+    'Candidates'
+  );
+  const maxPipeline = Math.max(...pipeline.map(p => p.value), 1);
+  document.getElementById('pipelineRows').innerHTML = pipeline.map(p => {
+    const share = ((p.value / maxPipeline) * 100).toFixed(1);
+    return `<tr><td><strong>${p.label}</strong></td><td>${p.value.toLocaleString('en-IN')}</td><td>${share}%</td></tr>`;
+  }).join('');
+}
+
+initHiringOverview();
+
+deptSelect.addEventListener('change', () => { setDeptUI(selectedDept()); renderForDept(selectedDept()); });
+
+function goToCompanies() {
+  document.getElementById('companiesSection')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+document.getElementById('companiesCard')?.addEventListener('click', goToCompanies);
+document.getElementById('companiesCard')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToCompanies(); }
+});
+
+document.getElementById('statusFilter').addEventListener('change', renderCandidates);
+function renderCandidates() { renderForDept(selectedDept()); }
+renderCandidates();
+</script></body></html>

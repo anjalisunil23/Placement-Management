@@ -1,0 +1,140 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Job Posts · PlaceHub Alumni</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="alumni-jobs.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div><h1 class="page-title">Job Posts</h1><p class="page-sub">Share open roles from your company with the alumni network.</p></div>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Active posts</div><div class="val"><span class="counter" id="statActive">0</span></div></div></div>
+  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Views this month</div><div class="val"><span class="counter" id="statViews">0</span></div></div></div>
+  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Referrals received</div><div class="val"><span class="counter" id="statReferrals">0</span></div></div></div>
+</div>
+
+<div class="card-surface">
+  <div class="p-3 p-md-4"><h6 class="fw-bold mb-0">Your job postings</h6></div>
+  <div class="table-wrap">
+    <table class="table-modern"><thead><tr><th>Role</th><th>Company</th><th>Package</th><th>Posted</th><th>Status</th></tr></thead>
+    <tbody id="jobRows"></tbody></table>
+  </div>
+</div>
+
+<div class="modal fade" id="postJob" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Post a new job</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="postJobForm">
+    <div class="modal-body row g-3">
+      <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" name="title" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><input class="form-control" name="company" id="jobCompany" required/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Type</label><select class="form-select" name="type"><option>Full-time</option><option>Internship</option><option>Contract</option></select></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Package (LPA)</label><input class="form-control" name="package"/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location"/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" name="status" id="jobStatus">
+        <option value="open">Open</option>
+        <option value="reviewing">Reviewing</option>
+        <option value="closed">Closed</option>
+      </select></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="4"></textarea></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Post job</button></div>
+  </form>
+</div></div></div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = Auth.user() || demoUserFor('alumni');
+document.getElementById('jobCompany').value = user.company || '';
+
+let jobRows = [];
+let jobsUseApi = false;
+
+function normalizeJobPost(j) {
+  const st = mapApiJobPostStatus(j.status);
+  return {
+    id: String(j._id || j.id || ''),
+    title: j.title || '',
+    company: j.company || '',
+    package: j.package || '—',
+    createdAt: j.createdAt,
+    status: j.status || 'open',
+    statusLabel: j.statusLabel || st.statusLabel,
+    statusCls: j.statusCls || st.statusCls,
+  };
+}
+
+function renderStats(stats) {
+  document.getElementById('statActive').textContent = stats.activePosts ?? 0;
+  document.getElementById('statViews').textContent = stats.viewsThisMonth ?? 0;
+  document.getElementById('statReferrals').textContent = stats.referralsCount ?? 0;
+}
+
+function renderJobs() {
+  document.getElementById('jobRows').innerHTML = jobRows.length ? jobRows.map(j => `
+    <tr>
+      <td><strong>${j.title}</strong></td>
+      <td>${j.company}</td>
+      <td>${j.package}</td>
+      <td>${formatDate(j.createdAt)}</td>
+      <td><span class="badge-soft ${j.statusCls}">${j.statusLabel}</span></td>
+    </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No job posts yet.</td></tr>';
+}
+
+async function loadJobPosts() {
+  jobsUseApi = Auth.hasRealAuth();
+  if (jobsUseApi) {
+    const [dashRes, listRes] = await Promise.all([
+      api('/alumni/dashboard', { noRedirectOn401: true }),
+      api('/alumni/job-posts', { noRedirectOn401: true }),
+    ]);
+    if (dashRes?.success) renderStats(dashRes.data || {});
+    if (listRes?.success) {
+      jobRows = (listRes.data || []).map(normalizeJobPost);
+      return;
+    }
+    jobsUseApi = false;
+  }
+  jobRows = AlumniJobPosts.mine().map(normalizeJobPost);
+  renderStats(AlumniJobPosts.stats());
+}
+
+loadJobPosts().then(renderJobs);
+
+document.getElementById('postJobForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target).entries());
+  if (jobsUseApi) {
+    const res = await api('/alumni/job-posts', { method: 'POST', body: data, noRedirectOn401: true });
+    if (res?.success) {
+      toast('Job posted successfully.', 'success');
+      bootstrap.Modal.getInstance(document.getElementById('postJob')).hide();
+      e.target.reset();
+      document.getElementById('jobCompany').value = user.company || '';
+      document.getElementById('jobStatus').value = 'open';
+      await loadJobPosts();
+      renderJobs();
+      return;
+    }
+    jobsUseApi = false;
+    toast(res?.message || 'Server error — saved locally.', 'warn');
+  }
+  AlumniJobPosts.add(data);
+  toast('Job posted successfully.', 'success');
+  bootstrap.Modal.getInstance(document.getElementById('postJob')).hide();
+  e.target.reset();
+  document.getElementById('jobCompany').value = user.company || '';
+  document.getElementById('jobStatus').value = 'open';
+  await loadJobPosts();
+  renderJobs();
+});
+</script>
+</body></html>

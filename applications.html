@@ -1,0 +1,97 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Applications · PlaceHub</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="applications.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div><h1 class="page-title">Application Pipeline</h1><p class="page-sub">Track student applications through resume verification, approval, and company selection.</p></div>
+</div>
+
+<div class="card-surface p-3 mb-3">
+  <div class="small fw-semibold text-muted-2 mb-2">Workflow</div>
+  <div class="d-flex flex-wrap align-items-center gap-2 small">
+    <span class="badge-soft muted">Student applies</span>
+    <i class="bi bi-arrow-right text-muted-2"></i>
+    <span class="badge-soft warning">Resume verification</span>
+    <i class="bi bi-arrow-right text-muted-2"></i>
+    <span class="badge-soft info">Approval</span>
+    <i class="bi bi-arrow-right text-muted-2"></i>
+    <span class="badge-soft primary">Company selection</span>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Total applications</div><div class="val" id="statTotal">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending review</div><div class="val" id="statPending">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">In company selection</div><div class="val" id="statCompany">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Rejected</div><div class="val" id="statRejected">0</div></div></div>
+</div>
+
+<div class="card-surface">
+  <div class="table-wrap">
+    <table class="table-modern"><thead><tr>
+      <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>Stage</th><th>Status</th><th>Applied</th><th>Actions</th>
+    </tr></thead><tbody id="appRows"></tbody></table>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/admin-api.js"></script>
+<script src="js/officer-api.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+function appStatusBadge(status) {
+  const map = { pending:['warning','Pending'], applied:['info','Applied'], approved:['success','Approved'], shortlisted:['primary','Shortlisted'], rejected:['danger','Rejected'] };
+  const [cls, label] = map[status] || ['muted', status];
+  return `<span class="badge-soft ${cls}">${label}</span>`;
+}
+
+function canAct(a) {
+  return a.stage !== 'rejected' && a.stage !== 'company_selection' && a.status !== 'rejected' && a.status !== 'shortlisted';
+}
+
+function approveApp(id) {
+  ApplicationPipeline.approve(id).then(() => { toast('Application advanced.', 'success'); render(); });
+}
+
+function rejectApp(id) {
+  ApplicationPipeline.reject(id).then(() => { toast('Application rejected.', 'warn'); render(); });
+}
+
+function render() {
+  const all = ApplicationPipeline.all();
+  document.getElementById('statTotal').textContent = all.length;
+  document.getElementById('statPending').textContent = all.filter(a => a.status === 'pending' || a.stage === 'resume_verification' || a.stage === 'approval').length;
+  document.getElementById('statCompany').textContent = all.filter(a => a.stage === 'company_selection').length;
+  document.getElementById('statRejected').textContent = all.filter(a => a.stage === 'rejected' || a.status === 'rejected').length;
+
+  document.getElementById('appRows').innerHTML = all.length ? all.map(a => `
+    <tr>
+      <td class="fw-semibold small">${a.studentName}</td>
+      <td>${a.registerNumber}</td>
+      <td>${a.department}</td>
+      <td>${a.company}</td>
+      <td>${a.role}</td>
+      <td>${stageBadge(a.stage)}</td>
+      <td>${appStatusBadge(a.status)}</td>
+      <td>${formatDate(a.appliedAt)}</td>
+      <td>${canAct(a) ? `<div class="d-flex gap-1">
+        <button class="btn btn-sm btn-success" onclick="approveApp('${a.id}')" title="Approve"><i class="bi bi-check2"></i></button>
+        <button class="btn btn-sm btn-outline-danger" onclick="rejectApp('${a.id}')" title="Reject"><i class="bi bi-x"></i></button>
+      </div>` : '<span class="small text-muted-2">—</span>'}</td>
+    </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No applications in the pipeline.</td></tr>';
+}
+
+async function initApplicationsPage() {
+  await ApplicationPipeline.fetch();
+  render();
+}
+onAppReady(() => initApplicationsPage());
+</script></body></html>

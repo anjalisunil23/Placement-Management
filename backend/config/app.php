@@ -1,0 +1,67 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Application configuration loader.
+ */
+
+$rootPath = dirname(__DIR__, 2);
+
+if (file_exists($rootPath . '/.env')) {
+    $dotenv = Dotenv\Dotenv::createImmutable($rootPath);
+    $dotenv->load();
+}
+
+return [
+    'name'    => $_ENV['APP_NAME'] ?? 'Placement Management System',
+    'env'     => $_ENV['APP_ENV'] ?? 'production',
+    'debug'   => filter_var($_ENV['APP_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN),
+    'url'     => rtrim($_ENV['APP_URL'] ?? 'http://localhost', '/'),
+    'jwt'     => [
+        'secret' => $_ENV['JWT_SECRET'] ?? 'insecure-default-change-me',
+        'expiry' => (int) ($_ENV['JWT_EXPIRY'] ?? 86400),
+    ],
+    'session' => [
+        'lifetime' => (int) ($_ENV['SESSION_LIFETIME'] ?? 7200),
+    ],
+    'mail' => [
+        'host'     => $_ENV['MAIL_HOST'] ?? 'localhost',
+        'port'     => (int) ($_ENV['MAIL_PORT'] ?? 587),
+        'username' => $_ENV['MAIL_USERNAME'] ?? '',
+        'password' => $_ENV['MAIL_PASSWORD'] ?? '',
+        'from'     => $_ENV['MAIL_FROM'] ?? 'noreply@localhost',
+        'from_name'=> $_ENV['MAIL_FROM_NAME'] ?? 'PMS',
+    ],
+    'uploads' => [
+        'max_resume' => (int) ($_ENV['MAX_RESUME_SIZE'] ?? 5242880),
+        'max_jd'     => (int) ($_ENV['MAX_JD_SIZE'] ?? 10485760),
+        'resume_dir' => $rootPath . '/uploads/resumes',
+        'reports_dir'=> $rootPath . '/uploads/reports',
+        'jd_dir'     => $rootPath . '/uploads/jd',
+        'signed_dir' => $rootPath . '/uploads/signed_reports',
+        'photo_dir'  => $rootPath . '/uploads/photos',
+    ],
+    'cors' => [
+        'allowed_origins' => array_filter(array_map(
+            'trim',
+            explode(',', $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:8080,http://127.0.0.1:8080')
+        )),
+    ],
+    'roles' => [
+        'admin'             => 'Admin',
+        'student'           => 'Student',
+        'staff'             => 'Staff',
+        'company'           => 'Company',
+        'alumni'            => 'Alumni',
+        'placement_officer' => 'Department Placement Officer',
+    ],
+    'role_dashboards' => [
+        'admin'             => '/dashboard.html',
+        'student'           => '/dashboard.html',
+        'staff'             => '/dashboard.html',
+        'company'           => '/dashboard.html',
+        'alumni'            => '/dashboard.html',
+        'placement_officer' => '/dashboard.html',
+    ],
+];
