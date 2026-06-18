@@ -63,4 +63,21 @@ class DriveModel extends BaseModel
         }
         return $this->update($driveId, ['attendance' => $attendance]);
     }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function findByCompanyId(string $companyId, int $limit = 100): array
+    {
+        $oid = Security::toObjectId($companyId);
+        if ($oid === null) {
+            return [];
+        }
+        return $this->findAll(['companyId' => $oid], $limit);
+    }
+
+    public function updateEligibility(string $driveId, array $eligibility): bool
+    {
+        return $this->update($driveId, ['eligibility' => $eligibility]);
+    }
 }

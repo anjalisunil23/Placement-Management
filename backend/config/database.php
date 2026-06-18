@@ -110,6 +110,12 @@ class Database
             ['key' => ['createdAt' => -1]],
         ]);
 
+        // resumes
+        $db->selectCollection('resumes')->createIndexes([
+            ['key' => ['studentId' => 1, 'createdAt' => -1]],
+            ['key' => ['studentId' => 1, 'isDefault' => 1]],
+        ]);
+
         // blacklist
         $db->selectCollection('blacklist')->createIndexes([
             ['key' => ['studentId' => 1], 'unique' => true],
@@ -132,6 +138,13 @@ class Database
 
         $db->selectCollection('alumni_referrals')->createIndexes([
             ['key' => ['alumniUserId' => 1]],
+            ['key' => ['createdAt' => -1]],
+        ]);
+
+        $db->selectCollection('alumni_job_posts')->createIndexes([
+            ['key' => ['alumniUserId' => 1]],
+            ['key' => ['status' => 1]],
+            ['key' => ['createdAt' => -1]],
         ]);
 
         // recruitment results

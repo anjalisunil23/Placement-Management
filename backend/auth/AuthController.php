@@ -132,6 +132,34 @@ final class AuthController
         Response::success(AuthMiddleware::userResponse($user));
     }
 
+    /** POST /api/auth/change-password */
+    public function changePassword(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'currentPassword' => 'required',
+            'newPassword'     => 'required|min:8|max:128',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+
+        if (!Security::verifyPassword($input['currentPassword'], $user['password'])) {
+            Response::error('Current password is incorrect.', 403);
+        }
+
+        if (Security::verifyPassword($input['newPassword'], $user['password'])) {
+            Response::error('New password must be different from the current password.', 422);
+        }
+
+        $this->userModel->updateUser((string) $user['_id'], [
+            'password' => $input['newPassword'],
+        ]);
+
+        Response::success(null, 'Password changed successfully.');
+    }
+
     /**
      * @param array<string, mixed> $input
      */

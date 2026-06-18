@@ -13,7 +13,7 @@
     <h1 class="page-title">Eligibility Criteria</h1>
     <p class="page-sub" id="eligSub">Set role-specific eligibility for your company's drives — each company defines its own criteria.</p>
   </div>
-  <button class="btn btn-primary" id="addRuleBtn" data-bs-toggle="modal" data-bs-target="#ruleModal"><i class="bi bi-plus-lg me-1"></i>Add criteria</button>
+  <button type="button" class="btn btn-primary" id="addRuleBtn"><i class="bi bi-plus-lg me-1"></i>Add criteria</button>
 </div>
 
 <div class="alert alert-info small mb-3">
@@ -91,6 +91,27 @@ document.getElementById('eligSub').textContent = `${companyName} — define elig
 
 CompanyEligibility.seed();
 let selectedDriveId = null;
+let useEligApi = false;
+let apiDrives = [];
+let apiJobs = [];
+
+function eligibilityToRule(driveId, e, updatedAt) {
+  if (!e || ((e.minCgpa == null || e.minCgpa <= 0) && !e.branches?.length)) return null;
+  return {
+    driveId,
+    minCgpa: e.minCgpa ?? 0,
+    maxBacklogs: e.maxBacklogs ?? 0,
+    min10th: e.min10th ?? 0,
+    min12th: e.min12th ?? 0,
+    branches: e.branches || [],
+    notes: e.notes || '',
+    updatedAt: updatedAt || new Date().toISOString(),
+  };
+}
+
+function findRoleItem(id) {
+  return driveList().find(d => d.id === id);
+}
 
 const PREVIEW_STUDENTS = [
   { name:'Aarav Mehta', roll:'21CSE001', dept:'CSE', cgpa:8.92, backlogs:0 },
@@ -101,6 +122,62 @@ const PREVIEW_STUDENTS = [
   { name:'Vikram Joshi', roll:'21MCA092', dept:'MCA', cgpa:8.30, backlogs:0 },
 ];
 
+function driveList() {
+  if (useEligApi) {
+    const drives = apiDrives.map(d => ({
+      id: String(d._id || d.id),
+      role: d.title || 'Drive',
+      package: d.tier || d.package || '—',
+      status: d.status || 'scheduled',
+      eligibility: d.eligibility || null,
+      updatedAt: d.updatedAt,
+      kind: 'drive',
+    }));
+    const jobs = apiJobs.map(j => ({
+      id: String(j._id || j.id),
+      role: j.title || 'Job',
+      package: j.package || '—',
+      status: j.status || 'open',
+      eligibility: j.eligibility || null,
+      updatedAt: j.updatedAt,
+      kind: 'job',
+    }));
+    return [...drives, ...jobs];
+  }
+  return CompanyEligibility.companyDrives();
+}
+
+function ruleForDrive(driveId) {
+  if (useEligApi) {
+    const item = findRoleItem(driveId);
+    if (!item) return null;
+    return eligibilityToRule(driveId, item.eligibility, item.updatedAt);
+  }
+  return CompanyEligibility.forDrive(driveId);
+}
+
+async function saveEligibility(roleId, payload) {
+  const item = findRoleItem(roleId);
+  if (!item) return { success: false, message: 'Role not found.' };
+  if (item.kind === 'job') {
+    return api(`/company/jobs/${encodeURIComponent(roleId)}`, {
+      method: 'PUT',
+      body: { eligibility: payload },
+      noRedirectOn401: true,
+    });
+  }
+  return api(`/company/drives/${encodeURIComponent(roleId)}/eligibility`, {
+    method: 'PUT',
+    body: payload,
+    noRedirectOn401: true,
+  });
+}
+
+function allRules() {
+  if (useEligApi) return driveList().map(d => ruleForDrive(d.id)).filter(Boolean);
+  return CompanyEligibility.all();
+}
+
 function isStudentEligible(s, rule) {
   if (!rule) return false;
   if (rule.branches?.length && !rule.branches.includes(s.dept)) return false;
@@ -110,8 +187,8 @@ function isStudentEligible(s, rule) {
 }
 
 function updateStats() {
-  const drives = CompanyEligibility.companyDrives();
-  const rules = CompanyEligibility.all();
+  const drives = driveList();
+  const rules = allRules();
   const totalEligible = rules.reduce((n, r) => n + estimateEligibleCount(r), 0);
   document.getElementById('statRoles').textContent = drives.length;
   document.getElementById('statRules').textContent = rules.length;
@@ -119,14 +196,13 @@ function updateStats() {
 }
 
 function renderRoleList() {
-  const drives = CompanyEligibility.companyDrives();
-  const rules = CompanyEligibility.all();
+  const drives = driveList();
   if (!drives.length) {
     document.getElementById('roleList').innerHTML = `<div class="p-4 text-muted-2 small">No drives linked to ${companyName} yet. Contact the placement cell to publish your roles.</div>`;
     return;
   }
   document.getElementById('roleList').innerHTML = drives.map(d => {
-    const rule = rules.find(r => r.driveId === d.id);
+    const rule = ruleForDrive(d.id);
     const active = selectedDriveId === d.id ? 'active' : '';
     return `<button type="button" class="list-group-item list-group-item-action ${active} d-flex justify-content-between align-items-center" onclick="selectRole('${d.id}')">
       <div><strong>${d.role}</strong><div class="small text-muted-2">${d.package} · ${d.status}</div></div>
@@ -135,11 +211,30 @@ function renderRoleList() {
   }).join('');
 }
 
-function renderRuleDetail(driveId) {
-  const drive = DRIVE_CATALOG.find(d => d.id === driveId);
-  const rule = CompanyEligibility.forDrive(driveId);
-  const detail = document.getElementById('ruleDetail');
+async function renderPreview(rule) {
   const preview = document.getElementById('previewPanel');
+  if (!rule) { preview.style.display = 'none'; return; }
+  preview.style.display = '';
+  let rows = PREVIEW_STUDENTS.map(s => ({ ...s, eligible: isStudentEligible(s, rule) }));
+  if (useEligApi) {
+    const qs = new URLSearchParams({
+      minCgpa: rule.minCgpa,
+      maxBacklogs: rule.maxBacklogs,
+      branches: (rule.branches || []).join(','),
+    });
+    const res = await api(`/company/eligibility/preview?${qs}`, { noRedirectOn401: true });
+    if (res?.success && Array.isArray(res.data)) rows = res.data;
+  }
+  document.getElementById('previewRows').innerHTML = rows.map(s => `
+    <tr><td><strong>${s.name}</strong></td><td>${s.roll}</td><td>${s.dept}</td><td>${s.cgpa}</td><td>${s.backlogs ?? 0}</td>
+      <td><span class="badge-soft ${s.eligible ? 'success' : 'danger'}">${s.eligible ? 'Eligible' : 'Not eligible'}</span></td></tr>`).join('');
+}
+
+async function renderRuleDetail(driveId) {
+  const drives = driveList();
+  const drive = drives.find(d => d.id === driveId) || DRIVE_CATALOG.find(d => d.id === driveId);
+  const rule = ruleForDrive(driveId);
+  const detail = document.getElementById('ruleDetail');
   if (!drive) return;
 
   if (!rule) {
@@ -147,7 +242,7 @@ function renderRuleDetail(driveId) {
       <h6 class="fw-bold">${drive.role} · ${drive.package}</h6>
       <p class="text-muted-2 small mb-3">No eligibility criteria set for this role yet.</p>
       <button class="btn btn-primary btn-sm" onclick="openEditRule('${driveId}')"><i class="bi bi-plus-lg me-1"></i>Add criteria</button>`;
-    preview.style.display = 'none';
+    document.getElementById('previewPanel').style.display = 'none';
     return;
   }
 
@@ -169,28 +264,23 @@ function renderRuleDetail(driveId) {
     </div>
     ${rule.notes ? `<p class="small text-muted-2 mt-3 mb-0"><i class="bi bi-sticky me-1"></i>${rule.notes}</p>` : ''}`;
 
-  preview.style.display = '';
-  document.getElementById('previewRows').innerHTML = PREVIEW_STUDENTS.map(s => {
-    const ok = isStudentEligible(s, rule);
-    return `<tr><td><strong>${s.name}</strong></td><td>${s.roll}</td><td>${s.dept}</td><td>${s.cgpa}</td><td>${s.backlogs}</td>
-      <td><span class="badge-soft ${ok ? 'success' : 'danger'}">${ok ? 'Eligible' : 'Not eligible'}</span></td></tr>`;
-  }).join('');
+  await renderPreview(rule);
 }
 
-window.selectRole = driveId => {
+window.selectRole = async driveId => {
   selectedDriveId = driveId;
   renderRoleList();
-  renderRuleDetail(driveId);
+  await renderRuleDetail(driveId);
 };
 
 window.openEditRule = driveId => {
-  const drive = DRIVE_CATALOG.find(d => d.id === driveId);
-  const rule = CompanyEligibility.forDrive(driveId);
+  const drives = driveList();
+  const drive = drives.find(d => d.id === driveId) || DRIVE_CATALOG.find(d => d.id === driveId);
+  const rule = ruleForDrive(driveId);
   document.getElementById('ruleModalTitle').textContent = rule ? 'Edit eligibility criteria' : 'Add eligibility criteria';
   document.getElementById('ruleId').value = rule?.id || '';
-  populateDriveSelect(driveId);
+  populateDriveSelect(driveId, !!rule);
   document.getElementById('ruleDrive').value = driveId;
-  document.getElementById('ruleDrive').disabled = !!rule;
   if (rule) {
     document.querySelector('[name=minCgpa]').value = rule.minCgpa;
     document.querySelector('[name=maxBacklogs]').value = rule.maxBacklogs;
@@ -203,55 +293,86 @@ window.openEditRule = driveId => {
     });
   } else {
     document.getElementById('ruleForm').reset();
+    populateDriveSelect(driveId, false);
     document.getElementById('ruleDrive').value = driveId;
   }
   bootstrap.Modal.getOrCreateInstance(document.getElementById('ruleModal')).show();
 };
 
-window.deleteRule = driveId => {
-  CompanyEligibility.remove(driveId);
+window.deleteRule = async driveId => {
+  if (useEligApi) {
+    const item = findRoleItem(driveId);
+    const empty = { minCgpa: 0, maxBacklogs: 99, branches: [], notes: '' };
+    const res = item?.kind === 'job'
+      ? await api(`/company/jobs/${encodeURIComponent(driveId)}`, { method: 'PUT', body: { eligibility: {} }, noRedirectOn401: true })
+      : await saveEligibility(driveId, empty);
+    if (!res?.success) { toast(res?.message || 'Could not remove criteria.', 'error'); return; }
+    await loadEligibility();
+  } else {
+    CompanyEligibility.remove(driveId);
+  }
   toast('Eligibility criteria removed.', 'success');
   selectedDriveId = driveId;
   updateStats();
   renderRoleList();
-  renderRuleDetail(driveId);
+  await renderRuleDetail(driveId);
 };
 
-function populateDriveSelect(selected) {
-  const drives = CompanyEligibility.companyDrives();
-  const existing = new Set(CompanyEligibility.all().map(r => r.driveId));
-  document.getElementById('ruleDrive').innerHTML = drives.map(d =>
-    `<option value="${d.id}" ${d.id === selected ? 'selected' : ''} ${existing.has(d.id) && d.id !== selected ? 'disabled' : ''}>${d.role} · ${d.package}</option>`
-  ).join('');
+function populateDriveSelect(selected, lockSelection) {
+  const drives = driveList();
+  const sel = document.getElementById('ruleDrive');
+  sel.disabled = !!lockSelection;
+  if (!drives.length) {
+    sel.innerHTML = '<option value="">No drives or jobs available</option>';
+    return;
+  }
+  const hasSelected = selected && drives.some(d => d.id === selected);
+  const placeholder = hasSelected ? '' : '<option value="">Select role / drive…</option>';
+  sel.innerHTML = placeholder + drives.map(d => {
+    const kind = d.kind === 'job' ? 'Job' : 'Drive';
+    return `<option value="${d.id}" ${d.id === selected ? 'selected' : ''}>${d.role} · ${d.package} (${kind})</option>`;
+  }).join('');
 }
 
 document.getElementById('branchChecks').innerHTML = ELIGIBILITY_BRANCHES.map(b =>
   `<div class="form-check"><input class="form-check-input" type="checkbox" name="branches" value="${b}" id="br-${b}" checked><label class="form-check-label small" for="br-${b}">${b}</label></div>`
 ).join('');
 
-document.getElementById('ruleForm').addEventListener('submit', e => {
+document.getElementById('ruleForm').addEventListener('submit', async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
-  const drive = DRIVE_CATALOG.find(d => d.id === fd.get('driveId'));
+  const driveId = fd.get('driveId');
+  if (!driveId) { toast('Select a job role or drive.', 'warn'); return; }
+  const drives = driveList();
+  const drive = drives.find(d => d.id === driveId) || DRIVE_CATALOG.find(d => d.id === driveId);
   const branches = [...document.querySelectorAll('[name=branches]:checked')].map(cb => cb.value);
   if (!branches.length) { toast('Select at least one branch.', 'warn'); return; }
-  CompanyEligibility.upsert({
-    id: fd.get('id') || undefined,
-    driveId: fd.get('driveId'),
-    role: drive?.role || '',
+  const payload = {
     minCgpa: fd.get('minCgpa'),
     maxBacklogs: fd.get('maxBacklogs'),
     min10th: fd.get('min10th'),
     min12th: fd.get('min12th'),
     branches,
     notes: fd.get('notes'),
-  });
+  };
+  if (useEligApi) {
+    const res = await saveEligibility(driveId, payload);
+    if (!res?.success) { toast(res?.message || 'Could not save criteria.', 'error'); return; }
+    await loadEligibility();
+  } else {
+    CompanyEligibility.upsert({
+      id: fd.get('id') || undefined,
+      driveId,
+      role: drive?.role || '',
+      ...payload,
+    });
+  }
   bootstrap.Modal.getInstance(document.getElementById('ruleModal')).hide();
   toast('Eligibility criteria saved.', 'success');
-  selectedDriveId = fd.get('driveId');
+  selectedDriveId = driveId;
   updateStats();
   renderRoleList();
-  renderRuleDetail(selectedDriveId);
+  await renderRuleDetail(selectedDriveId);
 });
 
 document.getElementById('ruleModal').addEventListener('hidden.bs.modal', () => {
@@ -263,11 +384,47 @@ document.getElementById('ruleModal').addEventListener('hidden.bs.modal', () => {
 document.getElementById('addRuleBtn').addEventListener('click', () => {
   document.getElementById('ruleModalTitle').textContent = 'Add eligibility criteria';
   document.getElementById('ruleId').value = '';
-  populateDriveSelect('');
+  document.getElementById('ruleForm').reset();
+  document.getElementById('branchChecks').querySelectorAll('input').forEach(cb => { cb.checked = true; });
+  const drives = driveList();
+  if (!drives.length) {
+    toast('No drives or jobs linked yet. Post a job or ask the placement cell to publish a drive.', 'warn');
+    return;
+  }
+  const pick = drives.find(d => !ruleForDrive(d.id)) || drives[0];
+  populateDriveSelect(pick.id, false);
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('ruleModal')).show();
 });
 
-updateStats();
-renderRoleList();
-const drives = CompanyEligibility.companyDrives();
-if (drives.length) selectRole(drives[0].id);
+async function loadEligibility() {
+  useEligApi = Auth.hasRealAuth();
+  if (useEligApi) {
+    const [drivesRes, jobsRes] = await Promise.all([
+      api('/company/drives', { noRedirectOn401: true }),
+      api('/company/jobs', { noRedirectOn401: true }),
+    ]);
+    if (drivesRes?.success || jobsRes?.success) {
+      apiDrives = drivesRes?.success ? (drivesRes.data || []) : [];
+      apiJobs = jobsRes?.success ? (jobsRes.data || []) : [];
+      updateStats();
+      renderRoleList();
+      const drives = driveList();
+      if (drives.length && !selectedDriveId) selectedDriveId = drives[0].id;
+      if (selectedDriveId && drives.some(d => d.id === selectedDriveId)) await renderRuleDetail(selectedDriveId);
+      else if (drives.length) {
+        selectedDriveId = drives[0].id;
+        await renderRuleDetail(selectedDriveId);
+      }
+      return;
+    }
+    useEligApi = false;
+  }
+  updateStats();
+  renderRoleList();
+  const drives = driveList();
+  if (drives.length && !selectedDriveId) selectedDriveId = drives[0].id;
+  if (selectedDriveId) await renderRuleDetail(selectedDriveId);
+}
+
+loadEligibility();
 </script></body></html>

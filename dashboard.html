@@ -344,6 +344,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="js/admin-api.js"></script>
 <script src="js/officer-api.js"></script>
+<script src="js/staff-api.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script src="js/charts.js"></script>
@@ -456,56 +457,83 @@ if (role === 'student') {
 
 /* Staff recommendations + department stats */
 if (role === 'staff') {
-  const rec = StaffRecs.mine();
-  const myDept = user.department || 'CSE';
-  const deptRow = DEPARTMENT_PLACEMENT.find(d => d.dept === myDept) || DEPARTMENT_PLACEMENT[0];
-  const hiring = campusRecruitmentStats();
-  const setHiringStat = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) { el.dataset.target = val; el.dataset.animated = '0'; }
-  };
-  setHiringStat('staffHiringCos', hiring.companiesHiring);
-  setHiringStat('staffHiringApps', hiring.applicants);
-  setHiringStat('staffHiringShort', hiring.shortlisted);
-  setHiringStat('staffHiringOffers', hiring.offers);
-  setHiringStat('staffHiringHired', hiring.hired);
+  (async () => {
+    if (Auth.hasRealAuth()) {
+      await Auth.ensureSession();
+      await StaffRecs.fetch();
+    }
+    const rec = StaffRecs.mine();
+    let myDept = (Auth.user() || user).department || 'CSE';
+    let deptRow = DEPARTMENT_PLACEMENT.find(d => d.dept === myDept) || DEPARTMENT_PLACEMENT[0];
+    let hiring = campusRecruitmentStats();
 
-  document.getElementById('staffRecs').innerHTML = rec.length ? rec.map(r => `
-    <tr><td><strong>${r.companyName}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
-    : '<tr><td colspan="3" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
+    if (Auth.hasRealAuth()) {
+      const dash = await StaffApi.fetchDashboard();
+      if (dash) {
+        myDept = dash.department?.code || myDept;
+        deptRow = DEPARTMENT_PLACEMENT.find(d => d.dept === myDept) || deptRow;
+        if (dash.department?.placementPct != null) {
+          deptRow = { ...deptRow, pct: dash.department.placementPct, placed: dash.department.placed ?? deptRow.placed, students: dash.department.students ?? deptRow.students };
+        }
+        if (dash.hiring) {
+          hiring = {
+            companiesHiring: dash.hiring.companiesHiring ?? hiring.companiesHiring,
+            applicants: dash.hiring.applicants ?? hiring.applicants,
+            shortlisted: dash.hiring.shortlisted ?? hiring.shortlisted,
+            offers: dash.hiring.offers ?? hiring.offers,
+            hired: dash.hiring.hired ?? hiring.hired,
+          };
+        }
+      }
+    }
 
-  document.getElementById('staffDeptBadge').textContent = myDept;
-  const deptPctEl = document.getElementById('staffDeptPct');
-  deptPctEl.dataset.target = deptRow.pct;
-  deptPctEl.dataset.animated = '0';
+    const setHiringStat = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) { el.dataset.target = val; el.dataset.animated = '0'; }
+    };
+    setHiringStat('staffHiringCos', hiring.companiesHiring);
+    setHiringStat('staffHiringApps', hiring.applicants);
+    setHiringStat('staffHiringShort', hiring.shortlisted);
+    setHiringStat('staffHiringOffers', hiring.offers);
+    setHiringStat('staffHiringHired', hiring.hired);
 
-  const pending = rec.filter(r => r.status === 'pending').length;
-  document.getElementById('staffRecCount').dataset.target = rec.length;
-  document.getElementById('staffRecCount').dataset.animated = '0';
-  document.getElementById('staffOnboarded').dataset.target = rec.filter(r => r.status === 'registered').length;
-  document.getElementById('staffOnboarded').dataset.animated = '0';
-  document.getElementById('staffPending').dataset.target = pending;
-  document.getElementById('staffPending').dataset.animated = '0';
-  animateCounters(document.querySelector('[data-roles="staff"]'));
+    document.getElementById('staffRecs').innerHTML = rec.length ? rec.map(r => `
+      <tr><td><strong>${r.companyName}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
 
-  document.getElementById('staffDeptRows').innerHTML = DEPARTMENT_PLACEMENT.map(d => `
-    <tr${d.dept === myDept ? ' style="background:color-mix(in srgb,var(--primary) 6%,transparent)"' : ''}>
-      <td><strong>${d.dept}</strong>${d.dept === myDept ? ' <span class="badge-soft info">Your dept.</span>' : ''}</td>
-      <td>${d.students}</td><td>${d.placed}</td><td>${d.pct}%</td><td>₹${d.avgPkg} LPA</td>
-    </tr>`).join('');
+    document.getElementById('staffDeptBadge').textContent = myDept;
+    const deptPctEl = document.getElementById('staffDeptPct');
+    deptPctEl.dataset.target = deptRow.pct;
+    deptPctEl.dataset.animated = '0';
 
-  Charts.bar(document.getElementById('staffDeptChart'),
-    DEPARTMENT_PLACEMENT.map(d => d.dept),
-    DEPARTMENT_PLACEMENT.map(d => d.placed),
-    'Students placed');
-  Charts.bar(document.getElementById('staffDeptPie'),
-    DEPARTMENT_PLACEMENT.map(d => d.dept),
-    DEPARTMENT_PLACEMENT.map(d => d.pct),
-    'Placement %');
+    const pending = rec.filter(r => r.status === 'pending').length;
+    document.getElementById('staffRecCount').dataset.target = rec.length;
+    document.getElementById('staffRecCount').dataset.animated = '0';
+    document.getElementById('staffOnboarded').dataset.target = rec.filter(r => r.status === 'registered').length;
+    document.getElementById('staffOnboarded').dataset.animated = '0';
+    document.getElementById('staffPending').dataset.target = pending;
+    document.getElementById('staffPending').dataset.animated = '0';
+    animateCounters(document.querySelector('[data-roles="staff"]'));
 
-  if (location.hash === '#dept-stats') {
-    document.getElementById('dept-stats')?.scrollIntoView({ behavior: 'smooth' });
-  }
+    document.getElementById('staffDeptRows').innerHTML = DEPARTMENT_PLACEMENT.map(d => `
+      <tr${d.dept === myDept ? ' style="background:color-mix(in srgb,var(--primary) 6%,transparent)"' : ''}>
+        <td><strong>${d.dept}</strong>${d.dept === myDept ? ' <span class="badge-soft info">Your dept.</span>' : ''}</td>
+        <td>${d.students}</td><td>${d.placed}</td><td>${d.pct}%</td><td>₹${d.avgPkg} LPA</td>
+      </tr>`).join('');
+
+    Charts.bar(document.getElementById('staffDeptChart'),
+      DEPARTMENT_PLACEMENT.map(d => d.dept),
+      DEPARTMENT_PLACEMENT.map(d => d.placed),
+      'Students placed');
+    Charts.bar(document.getElementById('staffDeptPie'),
+      DEPARTMENT_PLACEMENT.map(d => d.dept),
+      DEPARTMENT_PLACEMENT.map(d => d.pct),
+      'Placement %');
+
+    if (location.hash === '#dept-stats') {
+      document.getElementById('dept-stats')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  })();
 }
 
 /* Company recruitment overview */

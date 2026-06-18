@@ -216,13 +216,14 @@ function renderShell(active) {
   menuBtn?.addEventListener("click", () => { sidebar?.classList.add("open"); back.classList.add("show"); });
   back.addEventListener("click", () => { sidebar?.classList.remove("open"); back.classList.remove("show"); });
 
-  const saved = localStorage.getItem("ph-theme") || "light";
+  const saved = UserPrefs.theme();
   document.documentElement.setAttribute("data-theme", saved);
+  document.documentElement.setAttribute("data-density", UserPrefs.density());
   document.getElementById("themeBtn")?.addEventListener("click", () => {
-    const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", cur);
-    localStorage.setItem("ph-theme", cur);
-    document.dispatchEvent(new CustomEvent("themechange", { detail: cur }));
+    const cur = UserPrefs.isDark() ? "light" : "dark";
+    UserPrefs.setTheme(cur);
+    const dk = document.getElementById("dk");
+    if (dk) dk.checked = cur === "dark";
   });
 
   document.querySelectorAll('[data-role]').forEach(a => a.addEventListener('click', (e) => {

@@ -7,9 +7,11 @@ namespace PMS\Company;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
+use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\StudentModel;
 use PMS\Services\ApplicationWorkflowService;
+use PMS\Services\CompanyApplicationService;
 use PMS\Services\NotificationService;
 use PMS\Services\PlacementChanceService;
 use PMS\Utils\DocumentHelper;
@@ -55,7 +57,105 @@ final class CompanyController
         $allowed = ['companyName', 'category', 'tier', 'contacts', 'website', 'description', 'comments'];
         $update = array_intersect_key($input, array_flip($allowed));
         $this->companyModel->update((string) $company['_id'], $update);
-        Response::success(null, 'Company profile updated.');
+        $updated = $this->companyModel->findById((string) $company['_id']);
+        Response::success(DocumentHelper::serialize($updated ?? $company), 'Company profile updated.');
+    }
+
+    /** GET /api/company/dashboard */
+    public function dashboard(): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $company = $this->getCompany($user);
+        $companyId = (string) $company['_id'];
+        $jobModel = new JobModel();
+        $appService = new CompanyApplicationService();
+        $counts = $appService->statusCounts($companyId);
+        $jobs = $jobModel->findByCompany($companyId);
+        $activeJobs = count(array_filter(
+            $jobs,
+            static fn (array $j) => in_array($j['status'] ?? 'open', ['open', 'ongoing', 'reviewing'], true)
+        ));
+
+        Response::success([
+            'activeJobs'      => $activeJobs,
+            'totalApplicants' => $counts['total'],
+            'shortlisted'     => $counts['shortlisted'],
+            'offered'         => $counts['offered'],
+            'funnel'          => [
+                'applied'      => $counts['applied'] + $counts['under_review'],
+                'shortlisted'  => $counts['shortlisted'],
+                'interview'    => $counts['interview'],
+                'offered'      => $counts['offered'],
+                'joined'       => $counts['offered'],
+            ],
+        ]);
+    }
+
+    /** GET /api/company/drives */
+    public function listDrives(): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $company = $this->getCompany($user);
+        $drives = (new DriveModel())->findByCompanyId((string) $company['_id']);
+        Response::success(DocumentHelper::serializeMany($drives));
+    }
+
+    /** PUT /api/company/drives/{id}/eligibility */
+    public function updateDriveEligibility(string $driveId): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $company = $this->getCompany($user);
+        $drive = (new DriveModel())->findById($driveId);
+        if (!$drive || (string) ($drive['companyId'] ?? '') !== (string) $company['_id']) {
+            Response::notFound('Drive not found.');
+        }
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $eligibility = [
+            'minCgpa'     => (float) ($input['minCgpa'] ?? 0),
+            'maxBacklogs' => (int) ($input['maxBacklogs'] ?? 0),
+            'min10th'     => (float) ($input['min10th'] ?? 0),
+            'min12th'     => (float) ($input['min12th'] ?? 0),
+            'branches'    => $input['branches'] ?? [],
+            'notes'       => trim((string) ($input['notes'] ?? '')),
+        ];
+        (new DriveModel())->updateEligibility($driveId, $eligibility);
+        Response::success(['eligibility' => $eligibility], 'Eligibility criteria saved.');
+    }
+
+    /** GET /api/company/eligibility/preview */
+    public function eligibilityPreview(): void
+    {
+        RBACMiddleware::requireCompany();
+        $minCgpa = isset($_GET['minCgpa']) ? (float) $_GET['minCgpa'] : 0;
+        $maxBacklogs = isset($_GET['maxBacklogs']) ? (int) $_GET['maxBacklogs'] : 99;
+        $branches = isset($_GET['branches']) ? explode(',', (string) $_GET['branches']) : [];
+
+        $students = (new StudentModel())->filterStudents([
+            'minCgpa'     => $minCgpa > 0 ? $minCgpa : null,
+            'maxBacklogs' => $maxBacklogs,
+        ], 200);
+
+        $deptModel = new \PMS\Models\DepartmentModel();
+        $preview = [];
+        foreach ($students as $student) {
+            $deptId = (string) ($student['departmentId'] ?? '');
+            $dept = $deptId ? $deptModel->findById($deptId) : null;
+            $code = $dept ? (string) ($dept['code'] ?? '') : '';
+            $eligible = true;
+            if ($branches !== [] && $branches[0] !== '' && !in_array($code, $branches, true)) {
+                $eligible = false;
+            }
+            $user = (new \PMS\Models\UserModel())->findById((string) $student['userId']);
+            $preview[] = [
+                'name'      => $user['name'] ?? 'Student',
+                'roll'      => $student['registerNumber'] ?? '',
+                'dept'      => $code,
+                'cgpa'      => (float) ($student['academic']['cgpa'] ?? 0),
+                'backlogs'  => (int) ($student['academic']['backlogs'] ?? 0),
+                'eligible'  => $eligible,
+            ];
+        }
+        Response::success($preview);
     }
 
     /** POST /api/company/jobs */
@@ -107,8 +207,31 @@ final class CompanyController
     {
         $user = RBACMiddleware::requireCompany();
         $company = $this->getCompany($user);
-        $jobs = (new JobModel())->findByCompany((string) $company['_id']);
-        Response::success(DocumentHelper::serializeMany($jobs));
+        $companyId = (string) $company['_id'];
+        $jobs = (new JobModel())->findByCompany($companyId);
+        $appModel = new ApplicationModel();
+        $serialized = array_map(static function (array $job) use ($appModel) {
+            $out = DocumentHelper::serialize($job);
+            $out['applicantCount'] = $appModel->count(['jobId' => $job['_id']]);
+            return $out;
+        }, $jobs);
+        Response::success($serialized);
+    }
+
+    /** PUT /api/company/jobs/{id} */
+    public function updateJob(string $jobId): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $company = $this->getCompany($user);
+        $job = (new JobModel())->findById($jobId);
+        if (!$job || (string) ($job['companyId'] ?? '') !== (string) $company['_id']) {
+            Response::notFound('Job not found.');
+        }
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!(new JobModel())->updateJob($jobId, $input)) {
+            Response::error('No valid fields to update.', 422);
+        }
+        Response::success(null, 'Job updated.');
     }
 
     /** GET /api/company/applications */
@@ -116,31 +239,20 @@ final class CompanyController
     {
         $user = RBACMiddleware::requireCompany();
         $company = $this->getCompany($user);
-        $apps = (new ApplicationModel())->findByCompany((string) $company['_id']);
-        Response::success(DocumentHelper::serializeMany($apps));
+        $filters = [
+            'status'  => $_GET['status'] ?? null,
+            'driveId' => $_GET['driveId'] ?? null,
+            'minCgpa' => $_GET['minCgpa'] ?? null,
+            'branch'  => $_GET['branch'] ?? null,
+        ];
+        $rows = (new CompanyApplicationService())->listEnriched((string) $company['_id'], $filters);
+        Response::success($rows);
     }
 
     /** GET /api/company/applications/filter */
     public function filterApplicants(): void
     {
-        $user = RBACMiddleware::requireCompany();
-        $company = $this->getCompany($user);
-        $apps = (new ApplicationModel())->findByCompany((string) $company['_id']);
-        $studentIds = array_map(fn ($a) => (string) $a['studentId'], $apps);
-
-        $filter = [
-            'minCgpa'      => $_GET['minCgpa'] ?? null,
-            'maxBacklogs'  => $_GET['maxBacklogs'] ?? null,
-            'departmentId' => $_GET['departmentId'] ?? null,
-            'skills'       => $_GET['skills'] ?? null,
-        ];
-        $filter = array_filter($filter, fn ($v) => $v !== null && $v !== '');
-
-        $studentModel = new StudentModel();
-        $students = $studentModel->filterStudents($filter, 200);
-        $students = array_filter($students, fn ($s) => in_array((string) $s['_id'], $studentIds, true));
-
-        Response::success(DocumentHelper::serializeMany(array_values($students)));
+        $this->applications();
     }
 
     /** POST /api/company/applications/{id}/review */

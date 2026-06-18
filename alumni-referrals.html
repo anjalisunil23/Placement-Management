@@ -46,24 +46,86 @@
 const user = Auth.user() || demoUserFor('alumni');
 document.getElementById('refCompany').value = user.company || '';
 
+let referralRows = [];
+let refsUseApi = Auth.hasRealAuth();
+let referralsReady = false;
+
+function normalizeReferral(r) {
+  const raw = String(r.status || 'submitted').toLowerCase();
+  const st = ['submitted', 'in_review', 'accepted'].includes(raw)
+    ? mapApiReferralStatus(raw)
+    : { status: r.status || 'Submitted', statusCls: r.statusCls || 'success' };
+  return {
+    jobTitle: r.jobTitle || '',
+    companyName: r.companyName || '',
+    companyWebsite: r.companyWebsite || r.link || '',
+    package: r.package || '',
+    status: st.status,
+    statusCls: st.statusCls,
+    submittedAt: r.submittedAt || r.createdAt,
+  };
+}
+
 function renderReferrals() {
-  const list = AlumniReferrals.mine();
+  const list = referralRows;
   document.getElementById('referRows').innerHTML = list.length ? list.map(r => `
     <tr>
       <td><strong>${r.jobTitle}</strong></td>
       <td>${r.companyName}</td>
-      <td>${r.companyWebsite ? `<a href="${r.companyWebsite}" target="_blank" rel="noopener">${r.companyWebsite.replace(/^https?:\\/\\//,'')}</a>` : '<span class="text-muted-2 small">—</span>'}</td>
+      <td>${r.companyWebsite ? `<a href="${r.companyWebsite}" target="_blank" rel="noopener" class="link-info">${stripUrlProtocol(r.companyWebsite)}</a>` : '<span class="text-muted-2 small">—</span>'}</td>
       <td>${r.package || '—'}</td>
       <td><span class="badge-soft ${r.statusCls || 'success'}">${r.status || 'Submitted'}</span></td>
       <td>${formatDate(r.submittedAt)}</td>
     </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No referrals yet.</td></tr>';
 }
 
-renderReferrals();
-document.getElementById('referForm').addEventListener('submit', e => {
+async function loadReferrals() {
+  refsUseApi = Auth.hasRealAuth();
+  if (refsUseApi) {
+    const res = await api('/alumni/referrals', { noRedirectOn401: true });
+    if (res?.success) {
+      referralRows = (res.data || []).map(normalizeReferral);
+      referralsReady = true;
+      return;
+    }
+    refsUseApi = false;
+  }
+  referralRows = AlumniReferrals.mine().map(normalizeReferral);
+  referralsReady = true;
+}
+
+loadReferrals().then(renderReferrals);
+
+document.getElementById('referForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if (!referralsReady) await loadReferrals();
+
   const data = Object.fromEntries(new FormData(e.target).entries());
+  const useApi = Auth.hasRealAuth();
+
+  if (useApi) {
+    const res = await api('/alumni/jobs/refer', { method: 'POST', body: data, noRedirectOn401: true });
+    if (res?.success) {
+      toast('Referral submitted successfully.', 'success');
+      e.target.reset();
+      document.getElementById('refCompany').value = user.company || '';
+      referralRows.unshift(normalizeReferral({
+        ...data,
+        link: data.companyWebsite,
+        status: 'submitted',
+        createdAt: new Date().toISOString(),
+      }));
+      renderReferrals();
+      await loadReferrals();
+      renderReferrals();
+      return;
+    }
+    toast(res?.message || 'Could not submit referral.', 'error');
+    return;
+  }
+
   AlumniReferrals.add(data);
+  referralRows = AlumniReferrals.mine().map(normalizeReferral);
   toast('Referral submitted successfully.', 'success');
   e.target.reset();
   document.getElementById('refCompany').value = user.company || '';

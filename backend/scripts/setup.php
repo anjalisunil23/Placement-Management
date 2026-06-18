@@ -37,18 +37,24 @@ if (!extension_loaded('mongodb')) {
 require dirname(__DIR__) . '/config/app.php';
 
 use PMS\Config\Database;
+use PMS\Models\AlumniJobPostModel;
+use PMS\Models\AlumniModel;
+use PMS\Models\AlumniReferralModel;
 use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
+use PMS\Models\JobModel;
+use PMS\Models\NotificationModel;
 use PMS\Models\PlacementNewsModel;
 use PMS\Models\PlacementOfficerModel;
 use PMS\Models\PublicPageContentModel;
+use PMS\Models\RecommendationModel;
 use PMS\Models\RuleModel;
+use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
-use PMS\Utils\Security;
 
 echo "PMS Setup — Creating indexes...\n";
 Database::setupIndexes();
@@ -267,6 +273,171 @@ if ($existingDrives === [] && isset($deptIds['MCA'])) {
     }
 } else {
     echo "Demo drive already exists.\n";
+}
+
+// --- Alumni and company recruiter demo accounts ---
+function seedAlumniUser(UserModel $userModel, string $email, array $profile): void
+{
+    if ($userModel->findByEmail($email)) {
+        echo "Alumni user already exists: {$email}\n";
+        return;
+    }
+    $userId = $userModel->createUser([
+        'name' => $profile['name'], 'email' => $email, 'password' => $profile['password'],
+        'role' => 'alumni', 'status' => 'active', 'approved' => true,
+    ]);
+    (new AlumniModel())->createProfile($userId, $profile);
+    echo "Alumni user created: {$email} / {$profile['password']}\n";
+}
+
+seedAlumniUser($userModel, 'rohan.v@alumni.edu', [
+    'name' => 'Rohan Verma', 'password' => 'Alumni@123456', 'company' => 'Google',
+    'title' => 'SWE II', 'experience' => 3, 'skills' => ['Java', 'Go'], 'isWorking' => true,
+]);
+seedAlumniUser($userModel, 'priya.v@alumni.edu', [
+    'name' => 'Priya Nair', 'password' => 'Alumni@123456', 'company' => '',
+    'title' => '', 'experience' => 2, 'skills' => ['Python'], 'isWorking' => false,
+]);
+
+$rohan = $userModel->findByEmail('rohan.v@alumni.edu');
+if ($rohan) {
+    $rohanId = (string) $rohan['_id'];
+    $jobPostModel = new AlumniJobPostModel();
+    if ($jobPostModel->findByAlumni($rohanId) === []) {
+        $jobPostModel->createPost($rohanId, [
+            'title' => 'Senior SDE', 'company' => 'Google', 'type' => 'Full-time',
+            'package' => '₹38 LPA', 'location' => 'Bengaluru', 'description' => 'Backend role.',
+        ]);
+        echo "Sample alumni job posts seeded for rohan.v@alumni.edu\n";
+    }
+    $refModel = new AlumniReferralModel();
+    if ($refModel->findByAlumni($rohanId) === []) {
+        $refModel->createReferral($rohanId, [
+            'jobTitle' => 'SDE-2', 'companyName' => 'Google',
+            'companyWebsite' => 'https://careers.google.com', 'package' => '₹38 LPA',
+            'type' => 'Either', 'description' => 'Backend role.',
+        ]);
+        echo "Sample alumni referral seeded for rohan.v@alumni.edu\n";
+    }
+}
+
+if (!$userModel->findByEmail('neha@acme.io')) {
+    $companyUserId = $userModel->createUser([
+        'name' => 'Neha Sharma', 'email' => 'neha@acme.io', 'password' => 'Company@123456',
+        'role' => 'company', 'status' => 'active', 'approved' => true,
+    ]);
+    $linkedCompany = (new CompanyModel())->findByUserId($companyUserId);
+    if (!$linkedCompany) {
+        (new CompanyModel())->createCompany([
+            'userId' => $companyUserId, 'companyName' => 'Acme Cloud', 'category' => 'Software',
+            'tier' => 'Tier 1', 'associationStatus' => 'active', 'website' => 'https://acme.example.com',
+        ]);
+    }
+    echo "Company user created: neha@acme.io / Company@123456\n";
+} else {
+    echo "Company user already exists: neha@acme.io\n";
+}
+
+$nehaCompany = (new CompanyModel())->findAll(['companyName' => 'Acme Cloud'], 1);
+if ($nehaCompany) {
+    $nehaCompanyId = (string) $nehaCompany[0]['_id'];
+    $jobModel = new JobModel();
+    if ($jobModel->findByCompany($nehaCompanyId) === []) {
+        $jobModel->createJob([
+            'companyId' => $nehaCompanyId, 'title' => 'SDE-1', 'package' => '₹18 LPA',
+            'location' => 'Bengaluru', 'jobType' => 'Full-time', 'status' => 'open',
+            'description' => 'Backend and platform engineering role.',
+        ]);
+        echo "Sample company jobs seeded for Acme Cloud\n";
+    }
+}
+
+// --- Staff (faculty) demo account ---
+$cseDept = $deptModel->findByCode('CSE');
+$cseDeptId = $cseDept ? (string) $cseDept['_id'] : ($deptIds['CSE'] ?? null);
+if (!$userModel->findByEmail('ravi.iyer@college.edu') && $cseDeptId) {
+    $staffUserId = $userModel->createUser([
+        'name' => 'Prof. Ravi Iyer', 'email' => 'ravi.iyer@college.edu', 'password' => 'Staff@123456',
+        'role' => 'staff', 'status' => 'active', 'approved' => true,
+    ]);
+    (new StaffModel())->createProfile($staffUserId, [
+        'departmentId' => $cseDeptId,
+        'designation'  => 'Associate Professor',
+    ]);
+    $recModel = new RecommendationModel();
+    if ($recModel->findByStaffUserId($staffUserId) === []) {
+        $recModel->createRecommendation($staffUserId, [
+            'companyName'    => 'Brillio',
+            'companyWebsite' => 'https://brillio.com/careers',
+            'category'       => 'Software',
+            'reason'         => 'Strong campus partnership potential.',
+            'contact'        => [
+                'name'  => 'Anita Desai',
+                'email' => 'anita.desai@brillio.com',
+                'phone' => '+91 98765 43210',
+            ],
+        ]);
+        $recModel->createRecommendation($staffUserId, [
+            'companyName'    => 'Postman',
+            'companyWebsite' => 'https://postman.com/careers',
+            'category'       => 'Product',
+            'reason'         => 'API tooling company with intern pipeline.',
+            'contact'        => [
+                'name'  => 'Kunal Shah',
+                'email' => 'kunal@postman.com',
+                'phone' => '+91 91234 56780',
+            ],
+        ]);
+        $recs = $recModel->findByStaffUserId($staffUserId);
+        if (isset($recs[0]['_id'])) {
+            $recModel->updateStatus((string) $recs[0]['_id'], 'registered');
+        }
+        if (isset($recs[1]['_id'])) {
+            $recModel->updateStatus((string) $recs[1]['_id'], 'contacted');
+        }
+    }
+    echo "Staff user created: ravi.iyer@college.edu / Staff@123456\n";
+} else {
+    echo "Staff user already exists or CSE department missing.\n";
+}
+
+// --- Sample in-app notifications (unread + read) for demo accounts ---
+$notifModel = new NotificationModel();
+$seedNotifs = [
+    ['email' => 'admin@college.edu', 'items' => [
+        ['type' => 'drive_announcement', 'title' => 'New drive published', 'message' => 'Google SDE-1 is now open for registrations.', 'read' => false],
+        ['type' => 'offer', 'title' => 'Offer accepted', 'message' => 'Kabir Singh accepted Amazon SDE Intern offer.', 'read' => false],
+        ['type' => 'resume_review', 'title' => 'Resume needs review', 'message' => '18 new resumes pending verification.', 'read' => false],
+    ]],
+    ['email' => 'riya@college.edu', 'items' => [
+        ['type' => 'drive_announcement', 'title' => 'MCA drive scheduled', 'message' => 'Infosys MCA drive is scheduled for next week.', 'read' => false],
+        ['type' => 'application_update', 'title' => 'Applications pending review', 'message' => '12 MCA applications await officer approval.', 'read' => false],
+    ]],
+    ['email' => 'ravi.iyer@college.edu', 'items' => [
+        ['type' => 'recommendation_update', 'title' => 'Recommendation under review', 'message' => 'Your Brillio referral is being reviewed by the placement cell.', 'read' => false],
+        ['type' => 'drive_announcement', 'title' => 'New drive: Google SDE-1', 'message' => 'CSE students can register for the Google SDE-1 drive.', 'read' => false],
+    ]],
+    ['email' => 'rahul.v@college.edu', 'items' => [
+        ['type' => 'job_poster', 'title' => 'New drive: Google SDE-1', 'message' => 'Registration is open. Package ₹42 LPA. Deadline Dec 28.', 'read' => false],
+        ['type' => 'application_update', 'title' => 'Microsoft SWE — Under review', 'message' => 'Your application is being reviewed by the placement cell.', 'read' => true],
+    ]],
+];
+foreach ($seedNotifs as $group) {
+    $u = $userModel->findByEmail($group['email']);
+    if (!$u) {
+        continue;
+    }
+    $uid = (string) $u['_id'];
+    if ($notifModel->findByUser($uid) !== []) {
+        continue;
+    }
+    foreach ($group['items'] as $item) {
+        $id = $notifModel->notify($uid, $item['type'], $item['title'], $item['message']);
+        if (!empty($item['read'])) {
+            $notifModel->markRead($id);
+        }
+    }
+    echo "Notifications seeded for {$group['email']}\n";
 }
 
 // Create upload directories

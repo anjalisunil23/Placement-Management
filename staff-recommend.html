@@ -40,6 +40,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/staff-api.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
@@ -49,11 +50,21 @@ function renderMine() {
     <tr><td><strong>${r.companyName}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
     : '<tr><td colspan="3" class="text-muted-2 p-4">No recommendations yet. Submit your first company above.</td></tr>';
 }
-renderMine();
-document.getElementById('recommendForm').addEventListener('submit', e => {
+(async () => {
+  if (Auth.role() === 'staff' && Auth.hasRealAuth()) {
+    await Auth.ensureSession();
+    await StaffRecs.fetch();
+  }
+  renderMine();
+})();
+document.getElementById('recommendForm').addEventListener('submit', async e => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
-  StaffRecs.add(data);
+  const res = await StaffRecs.add(data);
+  if (!res) {
+    toast('Could not save recommendation. Sign in as staff and ensure your profile exists in the database.', 'error');
+    return;
+  }
   toast('Company recommended. The admin will review and contact them.', 'success');
   e.target.reset();
   renderMine();

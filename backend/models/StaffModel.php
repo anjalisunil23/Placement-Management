@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 declare(strict_types=1);
 
@@ -33,7 +33,42 @@ class StaffModel extends BaseModel
             'userId'       => Security::toObjectId($userId),
             'departmentId' => isset($data['departmentId']) ? Security::toObjectId($data['departmentId']) : null,
             'designation'  => $data['designation'] ?? 'Staff',
+            'phone'        => $data['phone'] ?? '',
         ];
         return $this->insert($doc);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function updateProfile(string $id, array $data): bool
+    {
+        $allowed = ['departmentId', 'designation', 'phone'];
+        $update = array_intersect_key($data, array_flip($allowed));
+        if (isset($update['departmentId'])) {
+            $update['departmentId'] = Security::toObjectId((string) $update['departmentId']);
+        }
+        if ($update === []) {
+            return false;
+        }
+        return $this->update($id, $update);
+    }
+
+    /**
+     * @param array<string, mixed>|null $profile
+     * @param array<string, mixed>|null $department
+     * @return array<string, mixed>
+     */
+    public static function profileToUserFields(?array $profile, ?array $department = null): array
+    {
+        if ($profile === null) {
+            return [];
+        }
+        return [
+            'staffId'     => (string) ($profile['_id'] ?? ''),
+            'department'  => (string) ($department['code'] ?? ''),
+            'departmentId'=> (string) ($profile['departmentId'] ?? ''),
+            'designation' => (string) ($profile['designation'] ?? ''),
+        ];
     }
 }

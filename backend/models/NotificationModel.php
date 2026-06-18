@@ -46,4 +46,26 @@ class NotificationModel extends BaseModel
     {
         return $this->update($id, ['read' => true]);
     }
+
+    public function markAllRead(string $userId): int
+    {
+        $oid = Security::toObjectId($userId);
+        if ($oid === null) {
+            return 0;
+        }
+        $result = $this->collection->updateMany(
+            ['userId' => $oid, 'read' => false],
+            ['$set' => ['read' => true]]
+        );
+        return (int) $result->getModifiedCount();
+    }
+
+    public function countUnread(string $userId): int
+    {
+        $oid = Security::toObjectId($userId);
+        if ($oid === null) {
+            return 0;
+        }
+        return (int) $this->collection->countDocuments(['userId' => $oid, 'read' => false]);
+    }
 }
