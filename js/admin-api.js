@@ -224,3 +224,40 @@ const AdminApi = {
     return this.mapRule(res.data);
   },
 };
+
+const ReportCenter = {
+  async list() {
+    const res = await api('/admin/reports', { skipAuthRedirect: true });
+    return res.success && Array.isArray(res.data) ? res.data : [];
+  },
+
+  async generate(type, opts = {}) {
+    return api(`/admin/reports/${encodeURIComponent(type)}`, {
+      method: 'POST',
+      body: opts,
+      skipAuthRedirect: true,
+    });
+  },
+
+  downloadHref(downloadUrl) {
+    if (!downloadUrl) return '#';
+    if (downloadUrl.startsWith('http')) return downloadUrl;
+    return downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`;
+  },
+
+  formatLabel(fmt) {
+    return (fmt || 'pdf').toUpperCase();
+  },
+
+  typeLabel(type) {
+    const map = {
+      student: 'Student Placement Status',
+      department: 'Department Placement',
+      company: 'Company Recruitment',
+      monthly: 'Monthly Placement',
+      annual: 'Annual Placement',
+      selection: 'Selection Count',
+    };
+    return map[type] || type;
+  },
+};

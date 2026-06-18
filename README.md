@@ -78,3 +78,18 @@ php -S localhost:8080 router.php
 Then open:
 - `http://localhost:8080/public-stats.html`
 
+### Default accounts (after setup)
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | `admin@college.edu` | `Admin@123456` |
+| Placement Officer (MCA) | `riya@college.edu` | `Officer@123456` |
+
+Placement officers are linked to one department via the `placement_officers` collection. PO API routes under `/officer/*` are department-scoped.
+
+Smoke tests:
+```powershell
+php backend/scripts/smoke-admin.php
+php backend/scripts/smoke-officer.php
+```
+

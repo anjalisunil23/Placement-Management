@@ -37,9 +37,15 @@ if (!extension_loaded('mongodb')) {
 require dirname(__DIR__) . '/config/app.php';
 
 use PMS\Config\Database;
+use PMS\Models\ApplicationModel;
+use PMS\Models\CompanyModel;
+use PMS\Models\DepartmentModel;
+use PMS\Models\DriveModel;
 use PMS\Models\PlacementNewsModel;
+use PMS\Models\PlacementOfficerModel;
 use PMS\Models\PublicPageContentModel;
 use PMS\Models\RuleModel;
+use PMS\Models\StudentModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
 use PMS\Utils\Security;
@@ -116,6 +122,151 @@ if (!(new RuleModel())->getActiveRule()) {
         'policyVersion' => 'v1.0',
     ]);
     echo "Placement rules seeded.\n";
+}
+
+// --- Departments & placement officer demo data ---
+$deptModel = new DepartmentModel();
+$departments = [
+    ['name' => 'Computer Science & Engineering', 'code' => 'CSE'],
+    ['name' => 'Information Technology', 'code' => 'IT'],
+    ['name' => 'Master of Computer Applications', 'code' => 'MCA'],
+];
+$deptIds = [];
+foreach ($departments as $d) {
+    $existing = $deptModel->findByCode($d['code']);
+    if ($existing) {
+        $deptIds[$d['code']] = (string) $existing['_id'];
+    } else {
+        $deptIds[$d['code']] = $deptModel->createDepartment($d);
+        echo "Department created: {$d['code']}\n";
+    }
+}
+
+$poUser = $userModel->findByEmail('riya@college.edu');
+if (!$poUser) {
+    $poUserId = $userModel->createUser([
+        'name'     => 'Riya Ahuja',
+        'email'    => 'riya@college.edu',
+        'password' => 'Officer@123456',
+        'role'     => 'placement_officer',
+        'status'   => 'active',
+        'approved' => true,
+    ]);
+    try {
+        (new PlacementOfficerModel())->createProfile($poUserId, [
+            'departmentId' => $deptIds['MCA'],
+            'designation'  => 'MCA Placement Officer',
+        ]);
+        echo "Placement officer created (riya@college.edu / Officer@123456) for MCA\n";
+    } catch (\Throwable $e) {
+        echo "Placement officer profile: {$e->getMessage()}\n";
+    }
+} else {
+    echo "Placement officer user already exists.\n";
+    $profile = (new PlacementOfficerModel())->findByUserId((string) $poUser['_id']);
+    if (!$profile && isset($deptIds['MCA'])) {
+        try {
+            (new PlacementOfficerModel())->createProfile((string) $poUser['_id'], [
+                'departmentId' => $deptIds['MCA'],
+                'designation'  => 'MCA Placement Officer',
+            ]);
+            echo "Linked existing PO user to MCA department.\n";
+        } catch (\Throwable $e) {
+            echo "PO profile link: {$e->getMessage()}\n";
+        }
+    }
+}
+
+$studentModel = new StudentModel();
+$seedStudents = [
+    [
+        'name' => 'Karthik Subramanian', 'email' => 'karthik.s@college.edu', 'password' => 'Student@123456',
+        'registerNumber' => '22MCA047', 'departmentId' => $deptIds['MCA'], 'cgpa' => 8.7, 'backlogs' => 0,
+    ],
+    [
+        'name' => 'Ananya Reddy', 'email' => 'ananya.r@college.edu', 'password' => 'Student@123456',
+        'registerNumber' => '22MCA018', 'departmentId' => $deptIds['MCA'], 'cgpa' => 8.2, 'backlogs' => 0,
+    ],
+    [
+        'name' => 'Rahul Verma', 'email' => 'rahul.v@college.edu', 'password' => 'Student@123456',
+        'registerNumber' => '21CSE012', 'departmentId' => $deptIds['CSE'], 'cgpa' => 7.9, 'backlogs' => 0,
+    ],
+];
+
+$studentIds = [];
+foreach ($seedStudents as $s) {
+    if ($studentModel->findByRegisterNumber($s['registerNumber'])) {
+        continue;
+    }
+    if ($userModel->findByEmail($s['email'])) {
+        continue;
+    }
+    $uid = $userModel->createUser([
+        'name'     => $s['name'],
+        'email'    => $s['email'],
+        'password' => $s['password'],
+        'role'     => 'student',
+        'status'   => 'active',
+        'approved' => true,
+    ]);
+    $sid = $studentModel->createProfile($uid, [
+        'registerNumber' => $s['registerNumber'],
+        'departmentId'   => $s['departmentId'],
+        'classBatch'     => '2022-26',
+        'academic'       => ['cgpa' => $s['cgpa'], 'backlogs' => $s['backlogs']],
+    ]);
+    $studentIds[$s['registerNumber']] = $sid;
+    echo "Student seeded: {$s['registerNumber']}\n";
+}
+
+$companyModel = new CompanyModel();
+$company = $companyModel->findAll(['companyName' => 'Acme Cloud'], 1);
+$companyId = $company ? (string) $company[0]['_id'] : $companyModel->createCompany([
+    'companyName' => 'Acme Cloud',
+    'category'    => 'Product',
+    'tier'        => 'Tier 1',
+    'website'     => 'https://acme.example.com',
+    'contacts'    => [['name' => 'Neha Sharma', 'email' => 'neha@acme.io', 'phone' => '+91 98765 43210']],
+]);
+if (!$company) {
+    echo "Demo company seeded: Acme Cloud\n";
+}
+
+$driveModel = new DriveModel();
+$existingDrives = $driveModel->findAll(['title' => 'SDE Intern — Acme Cloud'], 1);
+if ($existingDrives === [] && isset($deptIds['MCA'])) {
+    $admin = $userModel->findByEmail('admin@college.edu');
+    $createdBy = $admin ? (string) $admin['_id'] : '';
+    $driveId = $driveModel->createDrive([
+        'title'        => 'SDE Intern — Acme Cloud',
+        'companyId'    => $companyId,
+        'type'         => 'pooled',
+        'date'         => '2026-03-15',
+        'time'         => '10:00',
+        'branches'     => ['MCA'],
+        'departmentId' => $deptIds['MCA'],
+        'eligibility'  => ['minCgpa' => 7.5, 'maxBacklogs' => 0],
+        'tier'         => 'Tier 1',
+        'status'       => 'scheduled',
+    ], $createdBy);
+    echo "Demo drive seeded for MCA\n";
+
+    $mcaStudent = $studentModel->findByRegisterNumber('22MCA047');
+    if ($mcaStudent) {
+        $appModel = new ApplicationModel();
+        $studentOid = (string) $mcaStudent['_id'];
+        if (!$appModel->findByStudentAndDrive($studentOid, $driveId)) {
+            $appModel->createApplication([
+                'studentId' => $studentOid,
+                'driveId'   => $driveId,
+                'companyId' => $companyId,
+                'status'    => 'applied',
+            ]);
+            echo "Demo application seeded for 22MCA047\n";
+        }
+    }
+} else {
+    echo "Demo drive already exists.\n";
 }
 
 // Create upload directories

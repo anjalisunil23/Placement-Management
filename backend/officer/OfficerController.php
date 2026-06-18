@@ -16,13 +16,17 @@ use PMS\Models\ApplicationModel;
 
 use PMS\Models\DriveModel;
 
+use PMS\Models\RecruitmentResultModel;
+
+use PMS\Models\StudentModel;
+
 use PMS\Models\UserModel;
 
 use PMS\Services\ApplicationWorkflowService;
-
 use PMS\Services\NotificationService;
-
+use PMS\Services\OfficerDataService;
 use PMS\Services\PlacementOfficerContext;
+use PMS\Services\AnalyticsService;
 
 use PMS\Utils\DocumentHelper;
 
@@ -353,50 +357,130 @@ final class OfficerController
 
 
 
-    /** GET /api/officer/applications/pending */
-
-    public function pendingApplications(): void
-
+    /** GET /api/officer/dashboard */
+    public function dashboard(): void
     {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->dashboardStats($scope['ctx']));
+    }
 
-        $user = RBACMiddleware::requirePlacementOfficer();
+    /** GET /api/officer/students */
+    public function listStudents(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->listStudents($scope['ctx']));
+    }
 
-        $ctx = PlacementOfficerContext::resolve($user);
+    /** GET /api/officer/applications */
+    public function listApplications(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $filter = [];
+        if (!empty($_GET['status'])) {
+            $filter['status'] = $_GET['status'];
+        }
+        Response::success((new OfficerDataService())->listApplications($scope['ctx'], $filter));
+    }
 
+    /** GET /api/officer/resumes/pending */
+    public function listPendingResumes(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->listPendingResumes($scope['ctx']));
+    }
 
+    /** POST /api/officer/students/{id}/verify-resume */
+    public function verifyResume(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        PlacementOfficerContext::assertStudentInDepartment($studentId, $scope['ctx']);
 
-        $filter = ['status' => ['$in' => ['applied', 'resume_verified']]];
-
-        if (!$ctx['isAdmin']) {
-
-            $studentIds = PlacementOfficerContext::studentIdsInDepartment($ctx);
-
-            if (empty($studentIds)) {
-
-                Response::success([]);
-
-                return;
-
-            }
-
-            $oids = array_values(array_filter(array_map(
-
-                fn (string $id) => Security::toObjectId($id),
-
-                $studentIds
-
-            )));
-
-            $filter['studentId'] = ['$in' => $oids];
-
+        $model = new StudentModel();
+        $student = $model->findById($studentId);
+        if (!$student) {
+            Response::notFound('Student not found.');
         }
 
+        $resume = $student['resume'] ?? [];
+        $resume['verified'] = true;
+        $model->update($studentId, ['resume' => $resume]);
+        (new ApplicationWorkflowService())->onResumeVerified($studentId, (string) $scope['user']['_id']);
 
+        $userId = (string) ($student['userId'] ?? '');
+        if ($userId) {
+            (new NotificationService())->notifyUser(
+                $userId,
+                'resume_verified',
+                'Resume Verified',
+                'Your resume has been verified. Your application will proceed to placement officer review.'
+            );
+        }
+        Response::success(null, 'Resume verified.');
+    }
 
-        $apps = (new ApplicationModel())->findAll($filter, 200);
+    /** GET /api/officer/results */
+    public function listResults(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $filter = [];
+        if (!empty($_GET['status'])) {
+            $filter['status'] = $_GET['status'];
+        }
+        Response::success((new OfficerDataService())->listResults($scope['ctx'], $filter));
+    }
 
-        Response::success(DocumentHelper::serializeMany($apps));
+    /** POST /api/officer/results */
+    public function upsertResult(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'studentName'    => 'required|min:2',
+            'registerNumber' => 'required',
+            'company'        => 'required',
+            'role'           => 'required',
+            'status'         => 'required|in:selected,rejected',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
 
+        (new OfficerDataService())->assertResultRegisterInScope((string) $input['registerNumber'], $scope['ctx']);
+        if (!$scope['ctx']['isAdmin'] && !empty($scope['ctx']['departmentId'])) {
+            $input['departmentId'] = $scope['ctx']['departmentId'];
+        }
+
+        try {
+            $id = (new RecruitmentResultModel())->upsertByRegisterCompany($input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+        Response::success(['id' => $id], 'Result saved.');
+    }
+
+    /** GET /api/officer/analytics */
+    public function analytics(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $deptId = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
+        Response::success((new AnalyticsService())->getDashboardAnalytics($deptId));
+    }
+
+    /** POST /api/officer/applications/{id}/reject */
+    public function rejectApplication(string $appId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->assertApplicationInScope($appId, $scope['ctx']);
+        (new ApplicationWorkflowService())->transition($appId, 'rejected', (string) $scope['user']['_id']);
+        Response::success(null, 'Application rejected.');
+    }
+
+    /** GET /api/officer/applications/pending */
+    public function pendingApplications(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $filter = ['status' => ['$in' => ['applied', 'resume_verified']]];
+        Response::success((new OfficerDataService())->listApplications($scope['ctx'], $filter));
     }
 
 

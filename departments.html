@@ -110,5 +110,5 @@ async function initDepartmentsPage() {
   await DepartmentStore.fetch();
   render();
 }
-initDepartmentsPage();
+onAppReady(() => initDepartmentsPage());
 </script></body></html>

@@ -7,7 +7,9 @@ namespace PMS\Api;
 use PMS\Models\PlacementNewsModel;
 use PMS\Models\PublicPageContentModel;
 use PMS\Models\SystemSettingsModel;
+use PMS\Middleware\RBACMiddleware;
 use PMS\Services\AnalyticsService;
+use PMS\Services\PlacementOfficerContext;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 
@@ -42,8 +44,13 @@ final class PublicController
     /** GET /api/analytics/dashboard */
     public function analyticsDashboard(): void
     {
-        \PMS\Middleware\RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $departmentId = null;
+        if (($user['role'] ?? '') === 'placement_officer') {
+            $ctx = PlacementOfficerContext::resolve($user);
+            $departmentId = $ctx['departmentId'];
+        }
         $service = new AnalyticsService();
-        Response::success($service->getDashboardAnalytics());
+        Response::success($service->getDashboardAnalytics($departmentId));
     }
 }

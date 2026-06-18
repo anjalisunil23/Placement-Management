@@ -100,5 +100,5 @@ async function initRulesPage() {
   await PlacementRules.fetch();
   loadRules();
 }
-initRulesPage();
+onAppReady(() => initRulesPage());
 </script></body></html>

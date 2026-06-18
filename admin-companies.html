@@ -143,6 +143,6 @@ async function initCompaniesPage() {
   await Promise.all([StaffRecs.fetch(), RegisteredCompanies.fetch()]);
   render();
 }
-initCompaniesPage();
+onAppReady(() => initCompaniesPage());
 </script>
 </body></html>

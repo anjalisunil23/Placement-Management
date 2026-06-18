@@ -45,14 +45,15 @@
           <form id="loginForm">
             <div class="mb-3">
               <label class="form-label small fw-semibold">Email</label>
-              <input name="email" type="email" class="form-control" value="riya@college.edu" required />
+              <input name="email" type="email" class="form-control" value="admin@college.edu" required />
             </div>
             <div class="mb-2">
               <label class="form-label small fw-semibold d-flex justify-content-between">
                 <span>Password</span><a href="#" class="text-decoration-none small">Forgot?</a>
               </label>
-              <input name="password" type="password" class="form-control" value="demo1234" required />
+              <input name="password" type="password" class="form-control" value="Admin@123456" required />
             </div>
+            <p class="small text-muted-2 mb-3">Use your college account. Preview buttons below are UI-only and cannot load reports.</p>
             <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="r" checked><label class="form-check-label small" for="r">Keep me signed in</label></div>
             <button class="btn btn-primary w-100 py-2 fw-semibold" type="submit">Sign in</button>
             <div class="text-center my-3 text-muted-2 small">or preview as a role</div>
@@ -195,19 +196,31 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = fd(e.target);
   let res = await api('/auth/login', { method:'POST', body: data });
-  if (!res.success) res = await mockAuth('login', data);
+  if (!res.success && res._offline) res = await mockAuth('login', data);
   if (res.success) {
-    Auth.set(res.data.user, res.data.token || '');
-    toast('Welcome back, ' + res.data.user.name, 'success');
-    setTimeout(()=>window.location.href='dashboard.html', 400);
+    const user = res.data?.user || res.data;
+    const token = res.data?.token || 'session';
+    Auth.set(user, token);
+    if (!Auth.isDemo()) {
+      const sessionOk = await Auth.bootstrap();
+      if (!sessionOk) {
+        toast('Sign-in succeeded but the session could not be verified. Open the app at http://localhost:8080', 'error');
+        return;
+      }
+    }
+    toast('Welcome back, ' + (user?.name || ''), 'success');
+    const next = new URLSearchParams(location.search).get('next') || 'dashboard.html';
+    setTimeout(() => window.location.href = next, 400);
   } else { toast(res.message || 'Sign-in failed', 'error'); }
 });
 
 document.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => {
   const key = b.dataset.demo;
   const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
+  Auth._sessionReady = false;
   Auth.setRole(user.role);
   Auth.set(user, 'demo-token');
+  toast('Preview mode — sign in with your account for reports and live data.', 'info');
   window.location.href = 'dashboard.html';
 }));
 
@@ -215,12 +228,13 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
   e.preventDefault();
   const data = fd(e.target);
   let res = await api('/auth/register', { method:'POST', body: data });
-  if (!res.success) res = await mockAuth('register', data);
+  if (!res.success && res._offline) res = await mockAuth('register', data);
   if (res.success) {
     if (data.role === 'student' || data.role === 'company') {
       toast('Registered. Your account is pending approval.', 'success');
     } else {
-      Auth.set(res.data.user, res.data.token);
+      const user = res.data?.user || res.data;
+      Auth.set(user, res.data?.token);
       toast('Account created. Welcome!', 'success');
       setTimeout(()=>window.location.href='dashboard.html', 400);
     }

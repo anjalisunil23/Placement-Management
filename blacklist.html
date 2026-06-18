@@ -88,5 +88,5 @@ async function initBlacklistPage() {
   await BlacklistStore.fetch();
   render();
 }
-initBlacklistPage();
+onAppReady(() => initBlacklistPage());
 </script></body></html>

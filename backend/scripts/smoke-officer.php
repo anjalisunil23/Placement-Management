@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 $base = 'http://localhost:8080/backend/api';
-$cookie = tempnam(sys_get_temp_dir(), 'pms_cookie');
+$cookie = tempnam(sys_get_temp_dir(), 'pms_po_cookie');
 
 function req(string $url, string $method = 'GET', ?array $body = null, bool $useCookie = true): array {
     global $cookie;
@@ -23,18 +23,28 @@ function req(string $url, string $method = 'GET', ?array $body = null, bool $use
     return ['code' => $code, 'raw' => $raw, 'json' => json_decode($raw ?: '', true)];
 }
 
-echo "PMS Admin smoke test\n";
-$login = req($base . '/auth/login', 'POST', ['email' => 'admin@college.edu', 'password' => 'Admin@123456']);
+echo "PMS Placement Officer smoke test\n";
+$login = req($base . '/auth/login', 'POST', ['email' => 'riya@college.edu', 'password' => 'Officer@123456']);
 echo 'Login: HTTP ' . $login['code'] . ' success=' . (($login['json']['success'] ?? false) ? 'yes' : 'no') . "\n";
 if (!($login['json']['success'] ?? false)) {
     echo substr($login['raw'], 0, 400) . "\n";
+    echo "Hint: run php backend/scripts/setup.php to seed PO user.\n";
     exit(1);
 }
 
 $paths = [
-    '/admin/users', '/admin/students', '/admin/departments', '/admin/rules/active',
-    '/admin/recommendations', '/admin/companies', '/admin/blacklist', '/admin/applications',
-    '/admin/results', '/admin/resumes/pending', '/admin/settings/system',     '/admin/placement-news',
+    '/officer/profile',
+    '/officer/dashboard',
+    '/officer/students',
+    '/officer/students/pending',
+    '/officer/applications',
+    '/officer/applications/pending',
+    '/officer/resumes/pending',
+    '/officer/results',
+    '/officer/drives',
+    '/officer/analytics',
+    '/admin/applications',
+    '/admin/students',
     '/admin/reports',
 ];
 foreach ($paths as $path) {
@@ -43,10 +53,7 @@ foreach ($paths as $path) {
     $count = is_array($r['json']['data'] ?? null) ? count($r['json']['data']) : (isset($r['json']['data']) ? 1 : 0);
     echo ($ok ? 'OK  ' : 'FAIL') . " $path (HTTP {$r['code']}, items=$count)\n";
     if (!$ok) {
-        echo '  ' . substr($r['raw'], 0, 120) . "\n";
+        echo '  ' . substr($r['raw'], 0, 160) . "\n";
     }
 }
-
-$gen = req($base . '/admin/reports/student', 'POST', ['format' => 'pdf']);
-echo ($gen['json']['success'] ?? false ? 'OK  ' : 'FAIL') . ' POST /admin/reports/student (HTTP ' . $gen['code'] . ")\n";
 echo "Done.\n";
