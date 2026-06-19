@@ -45,6 +45,7 @@ use PMS\Models\RecommendationModel;
 use PMS\Models\RuleModel;
 use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
+use PMS\Models\SuccessStoryModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
 use PMS\Utils\Security;
@@ -384,11 +385,25 @@ if ($rohan) {
     $refModel = new AlumniReferralModel();
     if ($refModel->findByAlumni($rohanId) === []) {
         $refModel->createReferral($rohanId, [
-            'jobTitle' => 'SDE-2', 'companyName' => 'Google',
-            'companyWebsite' => 'https://careers.google.com', 'package' => '₹38 LPA',
-            'type' => 'Either', 'description' => 'Backend role.',
+            'companyName' => 'Google',
+            'companyWebsite' => 'https://careers.google.com',
+            'hrName' => 'Priya Menon',
+            'hrEmail' => 'priya.menon@google.com',
+            'contactNumber' => '+91 98765 43210',
         ]);
         echo "Sample alumni referral seeded for rohan.v@alumni.edu\n";
+    }
+
+    $storyModel = new SuccessStoryModel();
+    if ($storyModel->findByAlumni($rohanId) === []) {
+        $storyModel->createStory($rohanId, 'Rohan Verma', [
+            'name'    => 'Rohan Verma',
+            'company' => 'Google',
+            'role'    => 'SWE II',
+            'package' => '38 LPA',
+            'quote'   => 'PlaceHub connected me with mentors and mock interviews that made the Google process feel achievable. Grateful for the placement cell team.',
+        ]);
+        echo "Sample alumni success story seeded for rohan.v@alumni.edu\n";
     }
 }
 

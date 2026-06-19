@@ -17,29 +17,9 @@ const NAV = [
   },
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
-  {
-    group: 'student',
-    icon: 'bi-people-fill',
-    label: 'Student',
-    roles: ['admin','placement_officer','staff'],
-    children: [
-      { href: 'student-overview.html', label: 'Overview', roles: ['admin','placement_officer','staff'] },
-      {
-        group: 'student-management',
-        label: 'Management',
-        href: 'students.html',
-        roles: ['admin','placement_officer'],
-        children: [
-          { href: 'resumes.html', label: 'Resume', roles: ['admin','placement_officer'] },
-          { href: 'applications.html', label: 'Application', roles: ['admin','placement_officer'] },
-          { href: 'blacklist.html', label: 'Blacklist', roles: ['admin'] },
-        ],
-      },
-    ],
-  },
+  { href: "students.html", icon: "bi-people-fill", label: "Student", roles: ['admin','placement_officer','staff'] },
   { href: "hiring-overview.html", icon: "bi-building-check", label: "Hiring Overview", roles: ['admin','placement_officer','staff'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
-  { href: "departments.html", icon: "bi-diagram-3", label: "Departments", roles: ['admin'] },
   { href: "tracking.html", icon: "bi-graph-up-arrow", label: "Placement Tracking", roles: ['admin','placement_officer'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin','placement_officer'] },
   { href: "analytics.html", icon: "bi-bar-chart-fill", label: "Analytics", roles: ['placement_officer'] },
@@ -49,6 +29,7 @@ const NAV = [
   { section: "Alumni", roles: ['alumni'], alumniEmployed: true },
   { href: "alumni-jobs.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['alumni'], alumniEmployed: true },
   { href: "alumni-referrals.html", icon: "bi-share-fill", label: "Referrals", roles: ['alumni'], alumniEmployed: true },
+  { href: "alumni-success-stories.html", icon: "bi-star-fill", label: "Success Stories", roles: ['alumni'], alumniEmployed: true },
 
   { section: "Staff", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
@@ -75,10 +56,9 @@ const PAGE_LABELS = {
   'drives.html': 'Placement Drives',
   'create-drive.html': 'Create Drive',
   'placement-console.html': 'Placement Drives · Console',
-  'student-overview.html': 'Student · Overview',
+  'students.html': 'Student',
   'hiring-overview.html': 'Hiring Overview',
   'tracking.html': 'Placement Tracking',
-  'students.html': 'Student · Management',
   'eligibility.html': 'Eligibility Criteria',
   'company.html': 'Company Portal',
   'admin-companies.html': 'Staff Recommendations',
@@ -90,12 +70,12 @@ const PAGE_LABELS = {
   'public-stats.html': 'Public Portal',
   'alumni-jobs.html': 'Job Posts',
   'alumni-referrals.html': 'Referrals',
+  'alumni-success-stories.html': 'Success Stories',
   'staff-recommend.html': 'Recommend Company',
   'users.html': 'User Management',
   'departments.html': 'Departments',
   'rules.html': 'Placement Rules',
   'applications.html': 'Student · Management · Application',
-  'resumes.html': 'Student · Management · Resume',
   'blacklist.html': 'Student · Management · Blacklist',
   'results.html': 'Recruitment Results',
   'admin-settings.html': 'System Settings',
@@ -292,7 +272,7 @@ function renderShell(active) {
       staff: '<button type="button" onclick="ReferralModals.openStaff()" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Recommend Co.</button>',
       company: '<a href="company.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Portal</a><a href="applicants.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Applicants</a>',
       alumni: alumniIsWorking()
-        ? '<a href="alumni-jobs.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Post Job</a>'
+        ? '<button type="button" onclick="ReferralModals.openAlumni()" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Recommend Co.</button><a href="alumni-jobs.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex ms-2">Post Job</a>'
         : '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Apply</a>',
     }[role] || '';
 
@@ -510,23 +490,23 @@ const ReferralModals = {
     <div class="modal-content">
       <form id="alumniReferralModalForm">
         <div class="modal-header">
-          <h5 class="modal-title fw-bold" id="alumniReferralModalLabel">Create a referral</h5>
+          <h5 class="modal-title fw-bold" id="alumniReferralModalLabel">Recommend a Company</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body" style="max-height:min(70vh,640px);overflow-y:auto">
-          <p class="small text-muted-2 mb-3">Share an open role from your network for students or fellow alumni.</p>
+          <p class="small text-muted-2 mb-3">Share recruiter details for the placement cell. Only the admin can view HR contact information.</p>
           <div class="row g-3">
-            <div class="col-12"><label class="form-label small fw-semibold">Job title</label><input class="form-control" name="jobTitle" required/></div>
-            <div class="col-12"><label class="form-label small fw-semibold">Company</label><input class="form-control" name="companyName" id="alumniRefCompany" required/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" required placeholder="e.g. Razorpay"/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Company website (optional)</label><input class="form-control" name="companyWebsite" placeholder="https://company.com/careers"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Package</label><input class="form-control" name="package" placeholder="e.g. ₹18 LPA"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Referral type</label><select class="form-select" name="type"><option>Student</option><option>Alumni</option><option>Either</option></select></div>
-            <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="4" placeholder="Role requirements, team, and referral notes"></textarea></div>
+            <div class="col-12"><label class="form-label small fw-semibold">HR name</label><input class="form-control" name="hrName" required placeholder="e.g. Priya Menon"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">HR email</label><input class="form-control" type="email" name="hrEmail" required placeholder="hr@company.com"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Contact number</label><input class="form-control" name="contactNumber" required placeholder="+91 98765 43210"/></div>
           </div>
+          <div class="alert alert-info small mt-3 mb-0">Only the admin can view HR contact details and follow up with the company.</div>
         </div>
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary px-4"><i class="bi bi-share me-1"></i>Submit Referral</button>
+          <button type="submit" class="btn btn-primary px-4"><i class="bi bi-send me-1"></i>Submit Recommendation</button>
         </div>
       </form>
     </div>
@@ -537,10 +517,8 @@ const ReferralModals = {
       const data = Object.fromEntries(new FormData(e.target).entries());
       await AlumniReferrals.add(data);
       bootstrap.Modal.getInstance(document.getElementById('alumniReferralModal'))?.hide();
-      toast('Referral submitted successfully.', 'success');
+      toast('Company recommended. The admin will review and contact them.', 'success');
       e.target.reset();
-      const u = Auth.user() || demoUserFor('alumni');
-      document.getElementById('alumniRefCompany').value = u.company || '';
       document.dispatchEvent(new CustomEvent('ph-alumni-referral-added'));
     });
   },
@@ -556,10 +534,8 @@ const ReferralModals = {
   openAlumni() {
     if (Auth.role() !== 'alumni') return;
     this.mountAlumni();
-    const u = Auth.user() || demoUserFor('alumni');
     const form = document.getElementById('alumniReferralModalForm');
     form.reset();
-    document.getElementById('alumniRefCompany').value = u.company || '';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('alumniReferralModal')).show();
   },
 

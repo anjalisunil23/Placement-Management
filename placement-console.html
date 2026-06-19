@@ -33,7 +33,7 @@
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist">
   <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabDept">Dept. Statistics</a></li>
   <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabStaff">Staff</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabReferrals">Staff Referrals</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabReferrals">Recommendations</a></li>
   <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabJobs">Job Posts</a></li>
   <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabRecruiting">Recruiting Companies</a></li>
   <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabApplicants">Applicants</a></li>
@@ -95,10 +95,13 @@
     </div>
   </div>
 
-  <!-- Staff referrals -->
+  <!-- Staff & alumni referrals -->
   <div class="tab-pane fade" id="tabReferrals">
     <div class="card-surface">
-      <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Staff company referrals</h6><small class="text-muted-2">Recommendations submitted by faculty for new recruiters</small></div>
+      <div class="p-3 p-md-4 pb-0 d-flex flex-wrap gap-2 justify-content-between align-items-center">
+        <div><h6 class="fw-bold mb-0">Company recommendations</h6><small class="text-muted-2">Submitted by faculty and alumni</small></div>
+        <a href="admin-companies.html" class="btn btn-sm btn-outline-primary">View all</a>
+      </div>
       <div class="table-wrap">
         <table class="table-modern">
           <thead><tr><th>Company</th><th>HR contact</th><th>Recommended by</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
@@ -200,6 +203,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/admin-api.js"></script>
 <script src="js/api.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/app.js"></script>
@@ -258,8 +262,24 @@ window.removeStaff = id => {
   renderStaff();
 };
 
+function allConsoleRecommendations() {
+  const staff = StaffRecs.all().map(r => ({
+    ...r,
+    source: 'staff',
+    recommenderName: r.staffName || '',
+    recommenderEmail: r.staffEmail || '',
+  }));
+  const alumni = AlumniReferrals.all().map(r => ({
+    ...r,
+    source: 'alumni',
+    recommenderName: r.alumniName || '',
+    recommenderEmail: r.alumniEmail || '',
+  }));
+  return [...staff, ...alumni].sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+}
+
 function renderReferrals() {
-  const recs = StaffRecs.all();
+  const recs = allConsoleRecommendations();
   document.getElementById('referralRows').innerHTML = recs.length ? recs.map(r => `
     <tr>
       <td>
@@ -269,24 +289,41 @@ function renderReferrals() {
           ${r.hrName} · <a href="mailto:${r.hrEmail}">${r.hrEmail}</a>
         </div>
       </td>
-      <td><a href="tel:${r.contactNumber.replace(/\s/g,'')}">${r.contactNumber}</a></td>
-      <td>${r.staffName}<div class="small text-muted-2">${r.staffEmail}</div></td>
+      <td><a href="tel:${(r.contactNumber || '').replace(/\s/g,'')}">${r.contactNumber}</a></td>
+      <td>${r.recommenderName}<div class="small text-muted-2">${r.recommenderEmail} · ${r.source === 'alumni' ? 'Alumni' : 'Staff'}</div></td>
       <td>${formatDate(r.submittedAt)}</td>
       <td>${recStatusBadge(r.status)}</td>
       <td><div class="d-flex gap-1 flex-wrap">
-        ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${r.id}')">Contacted</button>` : ''}
-        ${r.status !== 'registered' ? `<button class="btn btn-sm btn-primary" onclick="openRegister('${r.id}')">Register</button>` : ''}
+        ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${r.id}', '${r.source}')">Contacted</button>` : ''}
+        ${r.status !== 'registered' && r.source === 'staff' ? `<button class="btn btn-sm btn-primary" onclick="openRegister('${r.id}')">Register</button>` : ''}
+        ${r.status !== 'registered' && r.source === 'alumni' ? `<button class="btn btn-sm btn-primary" onclick="openRegisterAlumni('${r.id}')">Register</button>` : ''}
       </div></td>
-    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No referrals yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
 }
 
-window.markContacted = id => { StaffRecs.updateStatus(id, 'contacted'); toast('Marked contacted.', 'success'); renderReferrals(); };
+window.markContacted = (id, source = 'staff') => {
+  const update = source === 'alumni'
+    ? AlumniReferrals.updateStatus(id, 'contacted')
+    : StaffRecs.updateStatus(id, 'contacted');
+  update.then(() => { toast('Marked contacted.', 'success'); renderReferrals(); });
+};
 
 const registerModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('registerModal'));
 window.openRegister = id => {
   const rec = StaffRecs.all().find(r => r.id === id);
   if (!rec) return;
   document.getElementById('sourceRecId').value = rec.id;
+  document.getElementById('regCompanyName').value = rec.companyName;
+  document.getElementById('regCompanyWebsite').value = rec.companyWebsite || '';
+  document.getElementById('regHrName').value = rec.hrName;
+  document.getElementById('regHrEmail').value = rec.hrEmail;
+  document.getElementById('regContact').value = rec.contactNumber;
+  registerModal().show();
+};
+window.openRegisterAlumni = id => {
+  const rec = AlumniReferrals.all().find(r => r.id === id);
+  if (!rec) return;
+  document.getElementById('sourceRecId').value = '';
   document.getElementById('regCompanyName').value = rec.companyName;
   document.getElementById('regCompanyWebsite').value = rec.companyWebsite || '';
   document.getElementById('regHrName').value = rec.hrName;
@@ -363,6 +400,7 @@ if (!isAdmin) {
 
 onAppReady(async () => {
   await ensureDepartmentsLoaded();
+  await Promise.all([StaffRecs.fetch(), AlumniReferrals.fetch()]);
   fillDepartmentCodeSelect(document.getElementById('staffDeptSelect'));
   const appFilter = document.getElementById('appDeptFilter');
   if (appFilter) {
@@ -371,6 +409,7 @@ onAppReady(async () => {
       appFilter.innerHTML += `<option value="${code}">${code}</option>`;
     });
   }
+  renderReferrals();
 });
 
 document.getElementById('resumeVerifyToggle').checked = resumeVerificationOn();

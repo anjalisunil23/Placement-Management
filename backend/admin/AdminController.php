@@ -858,17 +858,20 @@ final class AdminController
     /** GET /api/admin/alumni-referrals */
     public function listAlumniReferrals(): void
     {
-        RBACMiddleware::requireAdmin();
-        $userModel = $this->userModel;
-        $rows = [];
-        foreach ((new AlumniReferralModel())->findAll([], 200) as $ref) {
-            $user = $userModel->findById((string) ($ref['alumniUserId'] ?? ''));
-            $row = DocumentHelper::serialize($ref) ?? [];
-            $row['alumniName'] = $user['name'] ?? '';
-            $row['alumniEmail'] = $user['email'] ?? '';
-            $rows[] = $row;
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        Response::success((new AlumniReferralModel())->listEnriched());
+    }
+
+    /** PUT /api/admin/alumni-referrals/{id}/status */
+    public function updateAlumniReferralStatus(string $id): void
+    {
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $status = (string) ($input['status'] ?? '');
+        if (!(new AlumniReferralModel())->updateStatus($id, $status)) {
+            Response::error('Invalid status or alumni recommendation not found.', 422);
         }
-        Response::success($rows);
+        Response::success(null, 'Alumni recommendation status updated.');
     }
 
     /** GET /api/admin/resumes/pending */

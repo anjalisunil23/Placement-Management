@@ -32,6 +32,7 @@ final class Collections
     public const SYSTEM_SETTINGS = 'system_settings';
     public const PUBLIC_PAGE_CONTENT = 'public_page_content';
     public const PLACEMENT_NEWS = 'placement_news';
+    public const SUCCESS_STORIES = 'success_stories';
 
     /** Valid user roles */
     public const ROLES = [
@@ -373,6 +374,19 @@ final class Collections
                 'link'      => 'string',
                 'createdAt' => 'UTCDateTime',
                 'updatedAt' => 'UTCDateTime',
+            ],
+            self::SUCCESS_STORIES => [
+                '_id'          => 'ObjectId',
+                'alumniUserId' => 'ObjectId',
+                'alumniName'   => 'string',
+                'name'         => 'string',
+                'company'      => 'string',
+                'role'         => 'string',
+                'package'      => 'string',
+                'quote'        => 'string',
+                'status'       => 'string (published)',
+                'createdAt'    => 'UTCDateTime',
+                'updatedAt'    => 'UTCDateTime',
             ],
         ];
     }

@@ -164,7 +164,7 @@ async function renderPublicPage() {
       <span class="badge-soft success mb-2">${escHtml(s.package)}</span>
       <p class="text-muted-2 small mb-0">${escHtml(s.quote)}</p>
     </div></div>`).join('')
-    : '<div class="col-12"><p class="text-center text-muted-2 mb-0">Success stories appear here when students are selected in placement drives.</p></div>';
+    : '<div class="col-12"><p class="text-center text-muted-2 mb-0">Alumni and placed students can share stories from their dashboard. Check back soon for inspiring journeys.</p></div>';
 
   const news = PlacementNewsStore.published();
   document.getElementById('newsRow').innerHTML = news.length ? news.map(n => {

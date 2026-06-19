@@ -11,6 +11,7 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\StudentModel;
+use PMS\Models\SuccessStoryModel;
 use PMS\Models\UserModel;
 use PMS\Schemas\Collections;
 use PMS\Utils\Security;
@@ -159,7 +160,7 @@ final class AnalyticsService
             'branchStats'         => $branchStats,
             'offersByBranch'      => $offersByBranch,
             'sectorDistribution'  => $this->getSectorDistribution(),
-            'successStories'      => $this->getSuccessStories(3),
+            'successStories'      => $this->getSuccessStories(6),
             'topOffers'           => $topOffers,
         ];
     }
@@ -206,8 +207,30 @@ final class AnalyticsService
     /**
      * @return array<int, array{name: string, role: string, package: string, quote: string}>
      */
-    private function getSuccessStories(int $limit = 3): array
+    private function getSuccessStories(int $limit = 6): array
     {
+        $stories = [];
+        foreach ((new SuccessStoryModel())->published($limit) as $row) {
+            $stories[] = SuccessStoryModel::toPublicCard($row);
+        }
+        if (count($stories) >= $limit) {
+            return array_slice($stories, 0, $limit);
+        }
+
+        $remaining = $limit - count($stories);
+        $placementStories = $this->getPlacementSuccessStories($remaining);
+        return array_merge($stories, $placementStories);
+    }
+
+    /**
+     * @return array<int, array{name: string, role: string, package: string, quote: string}>
+     */
+    private function getPlacementSuccessStories(int $limit): array
+    {
+        if ($limit <= 0) {
+            return [];
+        }
+
         $applicationModel = new ApplicationModel();
         $studentModel = new StudentModel();
         $userModel = new UserModel();

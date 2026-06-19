@@ -13,6 +13,7 @@ use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\StudentModel;
+use PMS\Models\SuccessStoryModel;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\NotificationService;
 use PMS\Utils\DocumentHelper;
@@ -104,14 +105,7 @@ final class AlumniController
   public function listReferrals(): void
   {
     $user = RBACMiddleware::requireAlumni();
-    $refs = (new AlumniReferralModel())->findByAlumni((string) $user['_id']);
-    $serialized = array_map(static function (array $ref) {
-      $out = DocumentHelper::serialize($ref);
-      $out['companyWebsite'] = $out['link'] ?? '';
-      $out['type'] = $out['referralType'] ?? 'Either';
-      return $out;
-    }, $refs);
-    Response::success($serialized);
+    Response::success((new AlumniReferralModel())->listEnrichedForAlumni((string) $user['_id']));
   }
 
   /** POST /api/alumni/jobs/refer */
@@ -120,14 +114,16 @@ final class AlumniController
     $user = RBACMiddleware::requireAlumni();
     $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
     $errors = Validator::validate($input, [
-      'jobTitle'    => 'required',
-      'companyName' => 'required',
+      'companyName'   => 'required',
+      'hrName'        => 'required',
+      'hrEmail'       => 'required|email',
+      'contactNumber' => 'required',
     ]);
     if (!empty($errors)) {
       Response::error('Validation failed.', 422, $errors);
     }
     $id = (new AlumniReferralModel())->createReferral((string) $user['_id'], $input);
-    Response::success(['id' => $id], 'Job referral submitted.', 201);
+    Response::success(['id' => $id], 'Company recommended successfully.', 201);
   }
 
   /** GET /api/alumni/drives */
@@ -225,5 +221,74 @@ final class AlumniController
     $user = RBACMiddleware::requireAlumni();
     $count = (new NotificationModel())->markAllRead((string) $user['_id']);
     Response::success(['updated' => $count], 'All notifications marked as read.');
+  }
+
+  /** GET /api/alumni/success-stories */
+  public function listSuccessStories(): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $rows = (new SuccessStoryModel())->findByAlumni((string) $user['_id']);
+    Response::success(DocumentHelper::serializeMany($rows));
+  }
+
+  /** POST /api/alumni/success-stories */
+  public function createSuccessStory(): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+    $errors = Validator::validate($input, [
+      'company' => 'required',
+      'role'    => 'required',
+      'quote'   => 'required',
+    ]);
+    if (!empty($errors)) {
+      Response::error('Validation failed.', 422, $errors);
+    }
+
+    $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
+    $company = trim((string) ($input['company'] ?? ''));
+    if ($company === '' && $profile) {
+      $company = trim((string) ($profile['company'] ?? ''));
+    }
+    $role = trim((string) ($input['role'] ?? ''));
+    if ($role === '' && $profile) {
+      $role = trim((string) ($profile['role'] ?? ''));
+    }
+
+    $id = (new SuccessStoryModel())->createStory(
+      (string) $user['_id'],
+      (string) ($user['name'] ?? 'Alumni'),
+      [
+        'name'    => trim((string) ($input['name'] ?? $user['name'] ?? '')),
+        'company' => $company,
+        'role'    => $role,
+        'package' => trim((string) ($input['package'] ?? '')),
+        'quote'   => trim((string) ($input['quote'] ?? '')),
+      ]
+    );
+    Response::success(['id' => $id], 'Success story published on the public portal.', 201);
+  }
+
+  /** PUT /api/alumni/success-stories/{id} */
+  public function updateSuccessStory(string $id): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+    $model = new SuccessStoryModel();
+    if (!$model->updateStory($id, (string) $user['_id'], $input)) {
+      Response::error('Story not found or no valid fields to update.', 404);
+    }
+    $updated = $model->findById($id);
+    Response::success(DocumentHelper::serialize($updated ?? []), 'Success story updated.');
+  }
+
+  /** DELETE /api/alumni/success-stories/{id} */
+  public function deleteSuccessStory(string $id): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    if (!(new SuccessStoryModel())->deleteStory($id, (string) $user['_id'])) {
+      Response::notFound('Story not found.');
+    }
+    Response::success(null, 'Success story removed.');
   }
 }

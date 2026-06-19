@@ -103,6 +103,7 @@ $routes = [
     ['GET',    '/admin/recommendations',            [AdminController::class, 'listRecommendations']],
     ['PUT',    '/admin/recommendations/{id}/status', [AdminController::class, 'updateRecommendationStatus']],
     ['GET',    '/admin/alumni-referrals',           [AdminController::class, 'listAlumniReferrals']],
+    ['PUT',    '/admin/alumni-referrals/{id}/status', [AdminController::class, 'updateAlumniReferralStatus']],
     ['GET',    '/admin/resumes/pending',            [AdminController::class, 'listPendingResumes']],
     ['POST',   '/admin/blacklist',                  [AdminController::class, 'addBlacklist']],
     ['DELETE', '/admin/blacklist/{id}',             [AdminController::class, 'removeBlacklistEntry']],
@@ -191,6 +192,10 @@ $routes = [
     ['GET',  '/alumni/notifications', [AlumniController::class, 'notifications']],
     ['POST', '/alumni/notifications/read-all', [AlumniController::class, 'markAllNotificationsRead']],
     ['POST', '/alumni/notifications/{id}/read', [AlumniController::class, 'markNotificationRead']],
+    ['GET',  '/alumni/success-stories', [AlumniController::class, 'listSuccessStories']],
+    ['POST', '/alumni/success-stories', [AlumniController::class, 'createSuccessStory']],
+    ['PUT',  '/alumni/success-stories/{id}', [AlumniController::class, 'updateSuccessStory']],
+    ['DELETE', '/alumni/success-stories/{id}', [AlumniController::class, 'deleteSuccessStory']],
 
     // Placement Officer
     ['GET',  '/officer/profile',                   [OfficerController::class, 'profile']],

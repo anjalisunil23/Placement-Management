@@ -9,7 +9,7 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Companies</h1><p class="page-sub">Review staff recommendations, contact recruiters, and register companies.</p></div>
+  <div><h1 class="page-title">Companies</h1><p class="page-sub">Review staff and alumni recommendations, contact recruiters, and register companies.</p></div>
   <div class="d-flex gap-2 flex-wrap">
     <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#quickAddModal"><i class="bi bi-plus-lg me-1"></i>Add company</button>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#registerModal"><i class="bi bi-building-add me-1"></i>Register with HR</button>
@@ -17,14 +17,14 @@
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Staff recommendations</div><div class="val" id="statRecs">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Recommendations</div><div class="val" id="statRecs">0</div></div></div>
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending contact</div><div class="val" id="statPending">0</div></div></div>
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Contacted</div><div class="val" id="statContacted">0</div></div></div>
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registered</div><div class="val" id="statRegistered">0</div></div></div>
 </div>
 
 <ul class="nav nav-tabs mb-3" role="tablist">
-  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabRecs">Staff Recommendations</a></li>
+  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabRecs">Recommendations</a></li>
   <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabRegistered">Registered Companies</a></li>
 </ul>
 
@@ -87,10 +87,25 @@
 <script>
 const registerModal = () => bootstrap.Modal.getInstance(document.getElementById('registerModal')) || new bootstrap.Modal(document.getElementById('registerModal'));
 
-function openRegisterFromRec(id) {
-  const rec = StaffRecs.all().find(r => r.id === id);
+function allRecommendations() {
+  const staff = StaffRecs.all().map(r => ({
+    ...r,
+    source: 'staff',
+    recommenderName: r.staffName || '',
+    recommenderEmail: r.staffEmail || '',
+  }));
+  const alumni = AlumniReferrals.all().map(r => ({
+    ...r,
+    source: 'alumni',
+    recommenderName: r.alumniName || '',
+    recommenderEmail: r.alumniEmail || '',
+  }));
+  return [...staff, ...alumni].sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+}
+
+function openRegisterFromRec(rec) {
   if (!rec) return;
-  document.getElementById('sourceRecId').value = rec.id;
+  document.getElementById('sourceRecId').value = rec.source === 'staff' ? rec.id : '';
   document.getElementById('regCompanyName').value = rec.companyName;
   document.getElementById('regCompanyWebsite').value = rec.companyWebsite || '';
   document.getElementById('regHrName').value = rec.hrName;
@@ -100,7 +115,7 @@ function openRegisterFromRec(id) {
 }
 
 function render() {
-  const recs = StaffRecs.all();
+  const recs = allRecommendations();
   const regs = RegisteredCompanies.all();
   document.getElementById('statRecs').textContent = recs.length;
   document.getElementById('statPending').textContent = recs.filter(r => r.status === 'pending').length;
@@ -113,19 +128,23 @@ function render() {
       <td>${r.companyWebsite ? `<a href="${r.companyWebsite}" target="_blank" rel="noopener">${r.companyWebsite.replace(/^https?:\/\//,'')}</a>` : '<span class="text-muted-2 small">—</span>'}</td>
       <td>${r.hrName}</td>
       <td><a href="mailto:${r.hrEmail}">${r.hrEmail}</a></td>
-      <td><a href="tel:${r.contactNumber.replace(/\s/g,'')}">${r.contactNumber}</a></td>
-      <td>${r.staffName}<div class="small text-muted-2">${r.staffEmail}</div></td>
+      <td><a href="tel:${(r.contactNumber || '').replace(/\s/g,'')}">${r.contactNumber}</a></td>
+      <td>
+        ${r.recommenderName}
+        <div class="small text-muted-2">${r.recommenderEmail}</div>
+        <span class="badge-soft ${r.source === 'alumni' ? 'info' : 'muted'}">${r.source === 'alumni' ? 'Alumni' : 'Staff'}</span>
+      </td>
       <td>${formatDate(r.submittedAt)}</td>
       <td>${recStatusBadge(r.status)}</td>
       <td>
         <div class="d-flex flex-wrap gap-1">
           <a class="btn btn-sm btn-outline-primary" href="mailto:${r.hrEmail}?subject=Campus%20Placement%20Partnership%20-%20PlaceHub"><i class="bi bi-envelope"></i></a>
-          <a class="btn btn-sm btn-outline-secondary" href="tel:${r.contactNumber.replace(/\s/g,'')}"><i class="bi bi-telephone"></i></a>
-          ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${r.id}')">Mark contacted</button>` : ''}
-          ${r.status !== 'registered' ? `<button class="btn btn-sm btn-primary" onclick="openRegisterFromRec('${r.id}')">Register</button>` : ''}
+          <a class="btn btn-sm btn-outline-secondary" href="tel:${(r.contactNumber || '').replace(/\s/g,'')}"><i class="bi bi-telephone"></i></a>
+          ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${r.id}', '${r.source}')">Mark contacted</button>` : ''}
+          ${r.status !== 'registered' ? `<button class="btn btn-sm btn-primary" onclick="openRegisterFromRecId('${r.id}', '${r.source}')">Register</button>` : ''}
         </div>
       </td>
-    </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No staff recommendations yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
 
   document.getElementById('regRows').innerHTML = regs.length ? regs.map(c => `
     <tr>
@@ -140,7 +159,15 @@ function render() {
     </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No registered companies yet.</td></tr>';
 }
 
-window.markContacted = id => { StaffRecs.updateStatus(id, 'contacted').then(() => { toast('Marked as contacted.', 'success'); render(); }); };
+window.markContacted = (id, source) => {
+  const update = source === 'alumni'
+    ? AlumniReferrals.updateStatus(id, 'contacted')
+    : StaffRecs.updateStatus(id, 'contacted');
+  update.then(() => { toast('Marked as contacted.', 'success'); render(); });
+};
+window.openRegisterFromRecId = (id, source) => {
+  openRegisterFromRec(allRecommendations().find(r => r.id === id && r.source === source));
+};
 window.openRegisterFromRec = openRegisterFromRec;
 
 document.getElementById('registerForm').addEventListener('submit', async e => {
@@ -168,7 +195,7 @@ document.getElementById('quickAddForm').addEventListener('submit', async e => {
 });
 
 async function initCompaniesPage() {
-  await Promise.all([StaffRecs.fetch(), RegisteredCompanies.fetch()]);
+  await Promise.all([StaffRecs.fetch(), RegisteredCompanies.fetch(), AlumniReferrals.fetch()]);
   render();
 }
 onAppReady(() => initCompaniesPage());

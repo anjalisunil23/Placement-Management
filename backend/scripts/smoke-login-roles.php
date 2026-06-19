@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-$base = getenv('PMS_API_BASE') ?: 'http://127.0.0.1:8080/backend/api';
+$base = getenv('PMS_API_BASE') ?: 'http://localhost:8080/backend/api';
 $accounts = [
     ['admin@college.edu', 'Admin@123456', 'admin', '/dashboard.html'],
     ['riya@college.edu', 'Officer@123456', 'placement_officer', '/placement-console.html'],

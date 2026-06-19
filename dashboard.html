@@ -295,15 +295,15 @@
             <a href="alumni-jobs.html" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Post a Job</a>
           </div></div>
           <div class="col-lg-6"><div class="card-surface p-4 h-100 d-flex flex-wrap gap-3 align-items-center justify-content-between">
-            <div><h6 class="mb-1 fw-bold">Create a referral</h6><small class="text-muted-2">Refer current students or fellow alumni to open roles.</small></div>
-            <button type="button" class="btn btn-outline-primary" onclick="ReferralModals.openAlumni()"><i class="bi bi-share me-1"></i>Create Referral</button>
+            <div><h6 class="mb-1 fw-bold">Recommend a company</h6><small class="text-muted-2">Refer a recruiter to the placement cell.</small></div>
+            <button type="button" class="btn btn-outline-primary" onclick="ReferralModals.openAlumni()"><i class="bi bi-building-add me-1"></i>Recommend Company</button>
           </div></div>
         </div>
         <div class="card-surface mt-3">
           <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Recent referrals</h6></div>
           <div class="table-wrap">
             <table class="table-modern">
-              <thead><tr><th>Role</th><th>Company</th><th>Package</th><th>Status</th></tr></thead>
+              <thead><tr><th>Company</th><th>Submitted</th><th>Status</th></tr></thead>
               <tbody id="alumniReferrals"></tbody>
             </table>
           </div>
@@ -569,12 +569,12 @@ if (role === 'alumni') {
   if (alumniIsWorking()) {
     document.getElementById('alumniCo').textContent = user.company || '—';
     const refs = [
-      ['SDE-2','Google','₹38 LPA','success','Submitted'],
-      ['Product Analyst','Razorpay','₹22 LPA','info','In review'],
-      ['Backend Engineer','Flipkart','₹28 LPA','success','Accepted'],
+      ['Google','2025-12-14','pending'],
+      ['Razorpay','2025-11-30','contacted'],
+      ['Flipkart','2025-11-18','registered'],
     ];
     document.getElementById('alumniReferrals').innerHTML = refs.map(r=>`
-      <tr><td><strong>${r[0]}</strong></td><td>${r[1]}</td><td>${r[2]}</td><td><span class="badge-soft ${r[3]}">${r[4]}</span></td></tr>`).join('');
+      <tr><td><strong>${r[0]}</strong></td><td>${formatDate(r[1])}</td><td>${recStatusBadge(r[2])}</td></tr>`).join('');
   } else {
     const drives = [
       ['Microsoft','SWE — Lateral','₹52 LPA','success','Eligible'],

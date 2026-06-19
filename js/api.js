@@ -26,7 +26,7 @@ const PAGE_PERMS = {
   'drives.html':        ['admin','placement_officer','student','alumni','staff'],
   'create-drive.html':  ['admin','placement_officer'],
   'tracking.html':      ['admin','placement_officer'],
-  'students.html':      ['admin','placement_officer'],
+  'students.html':      ['admin','placement_officer','staff'],
   'eligibility.html':   ['company'],
   'company.html':       ['company'],
   'applicants.html':    ['company'],
@@ -36,6 +36,7 @@ const PAGE_PERMS = {
   'settings.html':      ['admin','placement_officer','student','staff','alumni','company'],
   'alumni-jobs.html':       ['alumni'],
   'alumni-referrals.html':  ['alumni'],
+  'alumni-success-stories.html': ['alumni'],
   'staff-recommend.html':   ['staff'],
   'admin-companies.html':   ['admin','placement_officer'],
   'placement-console.html': ['admin','placement_officer'],
@@ -51,10 +52,10 @@ const PAGE_PERMS = {
   'admin-settings.html':    ['admin'],
 };
 
-const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
-const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'drives.html', 'student-overview.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'drives.html', 'students.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'notifications.html', 'settings.html'];
 
 /** Default landing page per role after sign-in */
@@ -631,9 +632,9 @@ const ALUMNI_REF_KEY = 'ph-alumni-referrals';
 function seedAlumniReferrals() {
   if (localStorage.getItem(ALUMNI_REF_KEY)) return;
   localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify([
-    { id:'ar-1', jobTitle:'SDE-2', companyName:'Google', companyWebsite:'https://careers.google.com', package:'₹38 LPA', type:'Either', description:'Backend role in Ads infra. Strong DSA + systems.', status:'Submitted', statusCls:'success', submittedAt:'2025-12-14T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
-    { id:'ar-2', jobTitle:'Product Analyst', companyName:'Razorpay', companyWebsite:'https://razorpay.com/careers', package:'₹22 LPA', type:'Student', description:'Product analytics + SQL + stakeholder management.', status:'In review', statusCls:'info', submittedAt:'2025-11-30T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
-    { id:'ar-3', jobTitle:'Backend Engineer', companyName:'Flipkart', companyWebsite:'', package:'₹28 LPA', type:'Either', description:'Microservices and distributed systems experience.', status:'Accepted', statusCls:'success', submittedAt:'2025-11-18T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
+    { id:'ar-1', companyName:'Google', companyWebsite:'https://careers.google.com', hrName:'Priya Menon', hrEmail:'priya.menon@google.com', contactNumber:'+91 98765 43210', status:'pending', submittedAt:'2025-12-14T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu', alumniName:'Rohan Verma' },
+    { id:'ar-2', companyName:'Razorpay', companyWebsite:'https://razorpay.com/careers', hrName:'Arjun Nair', hrEmail:'arjun@razorpay.com', contactNumber:'+91 91234 56789', status:'contacted', submittedAt:'2025-11-30T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu', alumniName:'Rohan Verma' },
+    { id:'ar-3', companyName:'Flipkart', companyWebsite:'', hrName:'Meera K', hrEmail:'meera@flipkart.com', contactNumber:'+91 99887 76655', status:'registered', submittedAt:'2025-11-18T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu', alumniName:'Rohan Verma' },
   ]));
 }
 
@@ -647,57 +648,150 @@ const AlumniReferrals = {
     return this.all().filter(r => (r.alumniEmail || '').toLowerCase() === email);
   },
   async fetch() {
-    const res = await api('/alumni/referrals');
-    if (res.success && Array.isArray(res.data)) {
-      this._cache = res.data.map(r => ({
-        id: r.id || r._id,
-        jobTitle: r.jobTitle,
-        companyName: r.companyName,
-        companyWebsite: r.companyWebsite || r.link || '',
-        package: r.package || '',
-        type: r.referralType || r.type || 'Either',
-        description: r.description || '',
-        status: r.status || 'Submitted',
-        statusCls: 'success',
-        submittedAt: r.createdAt || '',
-        alumniEmail: Auth.user()?.email || '',
-      }));
-      localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify(this._cache));
-      return this._cache;
+    const role = Auth.role();
+    if ((role === 'admin' || role === 'placement_officer') && Auth.hasRealAuth() && typeof AdminApi !== 'undefined') {
+      const list = await AdminApi.fetchAlumniReferrals();
+      if (list) {
+        this._cache = list;
+        localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify(list));
+        return list;
+      }
+    }
+    if (role === 'alumni') {
+      const res = await api('/alumni/referrals');
+      if (res.success && Array.isArray(res.data)) {
+        this._cache = res.data.map(r => {
+          const raw = String(r.status || 'pending').toLowerCase();
+          const status = raw === 'submitted' ? 'pending' : raw === 'in_review' ? 'contacted' : raw === 'accepted' ? 'registered' : raw;
+          return {
+            id: r.id || r._id,
+            companyName: r.companyName || r.jobTitle || '',
+            companyWebsite: r.companyWebsite || r.link || '',
+            hrName: r.hrName || r.contact?.name || '',
+            hrEmail: r.hrEmail || r.contact?.email || '',
+            contactNumber: r.contactNumber || r.contact?.phone || '',
+            status,
+            submittedAt: r.submittedAt || r.createdAt || '',
+            alumniEmail: Auth.user()?.email || r.alumniEmail || '',
+            alumniName: Auth.user()?.name || r.alumniName || '',
+          };
+        });
+        localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify(this._cache));
+        return this._cache;
+      }
     }
     return this.all();
   },
   async add(payload) {
-    const res = await api('/alumni/jobs/refer', {
-      method: 'POST',
-      body: {
-        jobTitle: payload.jobTitle,
-        companyName: payload.companyName,
-        companyWebsite: payload.companyWebsite || '',
-        link: payload.companyWebsite || '',
-        package: payload.package || '',
-        type: payload.type || 'Either',
-        description: payload.description || '',
+    const body = {
+      companyName: payload.companyName,
+      companyWebsite: payload.companyWebsite || '',
+      hrName: payload.hrName,
+      hrEmail: payload.hrEmail,
+      contactNumber: payload.contactNumber,
+      contact: {
+        name: payload.hrName,
+        email: payload.hrEmail,
+        phone: payload.contactNumber,
       },
-    });
+    };
+    const res = await api('/alumni/jobs/refer', { method: 'POST', body });
     if (res.success) { await this.fetch(); return res.data; }
     const u = Auth.user();
     const row = {
       id: 'ar-' + Date.now(),
-      jobTitle: payload.jobTitle?.trim(),
       companyName: payload.companyName?.trim(),
       companyWebsite: payload.companyWebsite?.trim() || '',
-      package: payload.package?.trim() || '',
-      type: payload.type || 'Either',
-      description: payload.description?.trim() || '',
-      status: 'Submitted',
-      statusCls: 'success',
+      hrName: payload.hrName?.trim(),
+      hrEmail: payload.hrEmail?.trim(),
+      contactNumber: payload.contactNumber?.trim(),
+      status: 'pending',
       submittedAt: new Date().toISOString(),
       alumniEmail: u?.email || '',
       alumniName: u?.name || 'Alumni',
     };
     this.save([row, ...this.all()]);
     return row;
+  },
+  async updateStatus(id, status) {
+    const res = await api(`/admin/alumni-referrals/${encodeURIComponent(id)}/status`, { method: 'PUT', body: { status } });
+    if (res.success) { await this.fetch(); return true; }
+    this.save(this.all().map(r => r.id === id ? { ...r, status } : r));
+    return false;
+  },
+};
+
+const ALUMNI_STORIES_KEY = 'ph-alumni-success-stories';
+
+function seedAlumniSuccessStories() {
+  if (localStorage.getItem(ALUMNI_STORIES_KEY)) return;
+  localStorage.setItem(ALUMNI_STORIES_KEY, JSON.stringify([
+    { id:'as-1', name:'Rohan Verma', company:'Google', role:'SWE II', package:'₹38 LPA', quote:'PlaceHub connected me with mentors and mock interviews that made the Google process feel achievable.', status:'published', createdAt:'2025-12-01T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
+  ]));
+}
+
+const AlumniSuccessStories = {
+  _cache: null,
+  normalizeItem(s) {
+    return {
+      id: s.id || s._id,
+      name: s.name || '',
+      company: s.company || '',
+      role: s.role || '',
+      package: s.package || '',
+      quote: s.quote || '',
+      status: s.status || 'published',
+      createdAt: s.createdAt || '',
+      alumniEmail: s.alumniEmail || '',
+    };
+  },
+  all() {
+    seedAlumniSuccessStories();
+    if (this._cache) return this._cache;
+    try { return JSON.parse(localStorage.getItem(ALUMNI_STORIES_KEY) || '[]'); } catch { return []; }
+  },
+  save(list) { this._cache = list; localStorage.setItem(ALUMNI_STORIES_KEY, JSON.stringify(list)); },
+  mine() {
+    const email = (Auth.user()?.email || '').toLowerCase();
+    if (!email) return this.all().map(s => this.normalizeItem(s));
+    return this.all().filter(s => (s.alumniEmail || '').toLowerCase() === email).map(s => this.normalizeItem(s));
+  },
+  async fetch() {
+    if (Auth.role() !== 'alumni') return this.all();
+    const res = await api('/alumni/success-stories');
+    if (res.success && Array.isArray(res.data)) {
+      const email = Auth.user()?.email || '';
+      this._cache = res.data.map(s => this.normalizeItem({ ...s, alumniEmail: email }));
+      localStorage.setItem(ALUMNI_STORIES_KEY, JSON.stringify(this._cache));
+      return this._cache;
+    }
+    return this.all();
+  },
+  async add(payload) {
+    const res = await api('/alumni/success-stories', { method: 'POST', body: payload });
+    if (res.success) { await this.fetch(); return true; }
+    const u = Auth.user();
+    const row = {
+      id: 'as-' + Date.now(),
+      ...payload,
+      status: 'published',
+      createdAt: new Date().toISOString(),
+      alumniEmail: u?.email || '',
+    };
+    this.save([row, ...this.all()]);
+    return true;
+  },
+  async update(id, payload) {
+    const res = await api(`/alumni/success-stories/${encodeURIComponent(id)}`, { method: 'PUT', body: payload });
+    if (res.success) { await this.fetch(); return true; }
+    this.save(this.all().map(s => s.id === id ? { ...s, ...payload } : s));
+    return true;
+  },
+  async remove(id) {
+    const res = await api(`/alumni/success-stories/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res.success) { await this.fetch(); return true; }
+    this.save(this.all().filter(s => s.id !== id));
+    return true;
   },
 };
 
@@ -1443,7 +1537,7 @@ const DEPT_OFFICER_KEY = 'ph-dept-placement-officers';
 const ROLE_SCOPED_CACHE_KEYS = [
   USERS_KEY, APPS_KEY, DRIVES_STORE_KEY, DRIVE_HIDDEN_KEY, DRIVE_OVERRIDES_KEY,
   STAFF_REC_KEY, REG_COMPANIES_KEY, RESUME_QUEUE_KEY, BLACKLIST_KEY, RESULTS_KEY,
-  RULES_KEY, DEPTS_KEY, PLACEMENT_NEWS_KEY, STAFF_REGISTRY_KEY, ALUMNI_JOBS_KEY, ALUMNI_REF_KEY,
+  RULES_KEY, DEPTS_KEY, PLACEMENT_NEWS_KEY, STAFF_REGISTRY_KEY, ALUMNI_JOBS_KEY, ALUMNI_REF_KEY, ALUMNI_STORIES_KEY,
 ];
 
 const COMPANY_CATEGORIES = ['Software', 'Chemical', 'Food', 'Production', 'Mechanical', 'Consulting', 'Product'];
@@ -2311,6 +2405,7 @@ function clearRoleScopedCaches() {
   StaffRecs._cache = null;
   RegisteredCompanies._cache = null;
   AlumniReferrals._cache = null;
+  AlumniSuccessStories._cache = null;
   DepartmentStore._cache = null;
   PlacementRules._cache = null;
   ApplicationPipeline._cache = null;

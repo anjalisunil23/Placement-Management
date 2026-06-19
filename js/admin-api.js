@@ -71,6 +71,23 @@ const AdminApi = {
     };
   },
 
+  mapAlumniReferral(r) {
+    const raw = String(r.status || 'pending').toLowerCase();
+    const status = raw === 'submitted' ? 'pending' : raw === 'in_review' ? 'contacted' : raw === 'accepted' ? 'registered' : raw;
+    return {
+      id: this.id(r),
+      companyName: r.companyName || r.jobTitle || '',
+      companyWebsite: r.companyWebsite || r.link || '',
+      hrName: r.hrName || r.contact?.name || '',
+      hrEmail: r.hrEmail || r.contact?.email || '',
+      contactNumber: r.contactNumber || r.contact?.phone || '',
+      alumniName: r.alumniName || '',
+      alumniEmail: r.alumniEmail || '',
+      submittedAt: r.submittedAt || r.createdAt || '',
+      status,
+    };
+  },
+
   mapCompany(c) {
     const contact = (c.contacts && c.contacts[0]) || {};
     const userId = String(c.userId || '');
@@ -233,6 +250,12 @@ const AdminApi = {
     const res = await api('/admin/recommendations');
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(r => this.mapRecommendation(r));
+  },
+
+  async fetchAlumniReferrals() {
+    const res = await api('/admin/alumni-referrals');
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(r => this.mapAlumniReferral(r));
   },
 
   async fetchBlacklist() {
