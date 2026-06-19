@@ -8,8 +8,10 @@ use PMS\Config\Database;
 use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
+use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\StudentModel;
+use PMS\Models\UserModel;
 use PMS\Schemas\Collections;
 use PMS\Utils\Security;
 
@@ -113,23 +115,191 @@ final class AnalyticsService
     public function getPublicStats(): array
     {
         $analytics = $this->getDashboardAnalytics();
-        $companyModel = new CompanyModel();
+        $salary = $analytics['salaryAnalytics'];
 
-        $topCompanies = array_slice(
-            array_values(array_filter($analytics['companyStatistics'], fn ($c) => $c['selected'] > 0)),
-            0,
-            10
+        $companyStats = array_values(array_filter(
+            $analytics['companyStatistics'],
+            static fn (array $c): bool => ($c['selected'] ?? 0) > 0
+        ));
+        usort($companyStats, static fn (array $a, array $b): int => ($b['selected'] ?? 0) <=> ($a['selected'] ?? 0));
+        $topCompanies = array_slice($companyStats, 0, 12);
+
+        $topRecruiters = array_map(
+            static fn (array $c): string => (string) ($c['name'] ?? ''),
+            $topCompanies
         );
+        if ($topRecruiters === []) {
+            $topRecruiters = array_map(
+                static fn (array $c): string => (string) ($c['companyName'] ?? ''),
+                (new CompanyModel())->findAll([], 12)
+            );
+        }
+        $topRecruiters = array_values(array_unique(array_filter($topRecruiters)));
+
+        $branchStats = $analytics['branchStatistics'];
+        $offersByBranch = [
+            'labels' => array_map(static fn (array $b): string => (string) ($b['code'] ?: $b['department']), $branchStats),
+            'values' => array_map(static fn (array $b): int => (int) ($b['placed'] ?? 0), $branchStats),
+        ];
+
+        $topOffers = $this->getTopJobOffers(2);
 
         return [
             'placementPercentage' => $analytics['totals']['placementPercentage'],
             'totalPlaced'         => $analytics['totals']['placedStudents'],
             'totalStudents'       => $analytics['totals']['students'],
             'totalCompanies'      => $analytics['totals']['companies'],
-            'salaryHighlights'    => $analytics['salaryAnalytics'],
+            'salaryHighlights'    => $salary,
+            'highestPkg'          => $salary['highest'],
+            'avgPkg'              => $salary['average'],
+            'medianPkg'           => $salary['median'],
+            'lowestPkg'           => $salary['lowest'],
             'topCompanies'        => $topCompanies,
-            'branchStats'         => $analytics['branchStatistics'],
+            'topRecruiters'       => array_values(array_filter($topRecruiters)),
+            'branchStats'         => $branchStats,
+            'offersByBranch'      => $offersByBranch,
+            'sectorDistribution'  => $this->getSectorDistribution(),
+            'successStories'      => $this->getSuccessStories(3),
+            'topOffers'           => $topOffers,
         ];
+    }
+
+    /**
+     * @return array{labels: array<int, string>, values: array<int, int>}
+     */
+    private function getSectorDistribution(): array
+    {
+        $companyModel = new CompanyModel();
+        $applicationModel = new ApplicationModel();
+        $sectors = [];
+
+        foreach ($companyModel->findAll([], 200) as $company) {
+            $category = trim((string) ($company['category'] ?? 'Other'));
+            if ($category === '') {
+                $category = 'Other';
+            }
+            $selected = $applicationModel->count([
+                'companyId' => $company['_id'],
+                'status'    => 'selected',
+            ]);
+            $sectors[$category] = ($sectors[$category] ?? 0) + $selected;
+        }
+
+        if (array_sum($sectors) === 0) {
+            foreach ($companyModel->findAll([], 200) as $company) {
+                $category = trim((string) ($company['category'] ?? 'Other'));
+                if ($category === '') {
+                    $category = 'Other';
+                }
+                $sectors[$category] = ($sectors[$category] ?? 0) + 1;
+            }
+        }
+
+        arsort($sectors);
+
+        return [
+            'labels' => array_keys($sectors),
+            'values' => array_values($sectors),
+        ];
+    }
+
+    /**
+     * @return array<int, array{name: string, role: string, package: string, quote: string}>
+     */
+    private function getSuccessStories(int $limit = 3): array
+    {
+        $applicationModel = new ApplicationModel();
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+        $companyModel = new CompanyModel();
+        $jobModel = new JobModel();
+        $driveModel = new DriveModel();
+
+        $apps = $applicationModel->findAll(['status' => 'selected'], $limit, 0, ['updatedAt' => -1]);
+        if ($apps === []) {
+            foreach ($studentModel->findAll(['placed' => true], $limit) as $student) {
+                $user = $userModel->findById((string) ($student['userId'] ?? ''));
+                if (!$user) {
+                    continue;
+                }
+                $apps[] = ['studentId' => $student['_id'], 'companyId' => null, 'jobId' => null, 'driveId' => null];
+            }
+        }
+
+        $stories = [];
+        foreach ($apps as $app) {
+            $student = $studentModel->findById((string) ($app['studentId'] ?? ''));
+            if (!$student) {
+                continue;
+            }
+            $user = $userModel->findById((string) ($student['userId'] ?? ''));
+            $name = (string) ($user['name'] ?? 'Student');
+
+            $companyName = 'Campus recruiter';
+            if (!empty($app['companyId'])) {
+                $company = $companyModel->findById((string) $app['companyId']);
+                $companyName = (string) ($company['companyName'] ?? $companyName);
+            }
+
+            $roleTitle = '';
+            $package = '';
+            if (!empty($app['jobId'])) {
+                $job = $jobModel->findById((string) $app['jobId']);
+                $roleTitle = (string) ($job['title'] ?? '');
+                $package = (string) ($job['package'] ?? '');
+            } elseif (!empty($app['driveId'])) {
+                $drive = $driveModel->findById((string) $app['driveId']);
+                $roleTitle = (string) ($drive['title'] ?? '');
+                $package = (string) ($drive['tier'] ?? '');
+            }
+
+            $stories[] = [
+                'name'    => $name,
+                'role'    => $roleTitle !== '' ? "{$companyName} · {$roleTitle}" : $companyName,
+                'package' => $this->formatPackageLabel($package),
+                'quote'   => 'Selected through the campus placement process on PlaceHub.',
+            ];
+            if (count($stories) >= $limit) {
+                break;
+            }
+        }
+
+        return $stories;
+    }
+
+    /**
+     * @return array<int, array{package: float, company: string, role: string}>
+     */
+    private function getTopJobOffers(int $limit = 2): array
+    {
+        $jobModel = new JobModel();
+        $companyModel = new CompanyModel();
+        $ranked = [];
+
+        foreach ($jobModel->findAll([], 500) as $job) {
+            $pkg = $job['package'] ?? '';
+            if (!preg_match('/[\d.]+/', (string) $pkg, $m)) {
+                continue;
+            }
+            $company = $companyModel->findById((string) ($job['companyId'] ?? ''));
+            $ranked[] = [
+                'package' => (float) $m[0],
+                'company' => (string) ($company['companyName'] ?? ''),
+                'role'    => (string) ($job['title'] ?? ''),
+            ];
+        }
+
+        usort($ranked, static fn (array $a, array $b): int => $b['package'] <=> $a['package']);
+
+        return array_slice($ranked, 0, $limit);
+    }
+
+    private function formatPackageLabel(string $package): string
+    {
+        if (preg_match('/[\d.]+/', $package, $m)) {
+            return '₹' . $m[0] . ' LPA';
+        }
+        return $package !== '' ? $package : '—';
     }
 
     /**

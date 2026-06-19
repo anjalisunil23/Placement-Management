@@ -1965,11 +1965,12 @@ const SystemSettings = {
 
 const PublicPageContent = {
   _cache: null,
+  _liveStats: null,
   defaults() {
     return {
-      season:'2025-26', placed:2154, highestPkg:68, avgPkg:9.4, medianPkg:8.2, lowestPkg:3.5,
-      companies:142, headline:'Where ambition meets opportunity',
-      achievements:'Record ₹68 LPA international offer · 92.5% MCA placement rate',
+      season:'2025-26', placed:0, highestPkg:0, avgPkg:0, medianPkg:0, lowestPkg:0,
+      companies:0, placementRate:0, headline:'Where ambition meets opportunity',
+      achievements:'Placement statistics are computed live from campus data.',
     };
   },
   get() {
@@ -1977,6 +1978,9 @@ const PublicPageContent = {
     try {
       return JSON.parse(localStorage.getItem(PUBLIC_PAGE_KEY) || JSON.stringify(this.defaults()));
     } catch { return this.defaults(); }
+  },
+  liveStats() {
+    return this._liveStats;
   },
   set(p) {
     const n = { ...this.get(), ...p };
@@ -2061,6 +2065,7 @@ const PlacementNewsStore = {
       }
       if (res.data.publicPage) {
         PublicPageContent._cache = res.data.publicPage;
+        PublicPageContent._liveStats = res.data.liveStats || null;
         localStorage.setItem(PUBLIC_PAGE_KEY, JSON.stringify(res.data.publicPage));
       }
       this._cache = (res.data.news || []).map(n => this.normalizeItem(n));
@@ -2291,6 +2296,7 @@ function clearRoleScopedCaches() {
   ResumeQueue._cache = null;
   SystemSettings._cache = null;
   PublicPageContent._cache = null;
+  PublicPageContent._liveStats = null;
   PlacementNewsStore._cache = null;
   DriveStore._apiCache = null;
 }

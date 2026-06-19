@@ -1,11 +1,14 @@
 <?php
 declare(strict_types=1);
 
-$base = 'http://localhost:8080/backend/api';
+$base = getenv('PMS_API_BASE') ?: 'http://127.0.0.1:8080/backend/api';
 $accounts = [
     ['admin@college.edu', 'Admin@123456', 'admin', '/dashboard.html'],
     ['riya@college.edu', 'Officer@123456', 'placement_officer', '/placement-console.html'],
     ['ravi.iyer@college.edu', 'Staff@123456', 'staff', '/staff-recommend.html'],
+    ['rahul.v@college.edu', 'Student@123456', 'student', '/drives.html'],
+    ['rohan.v@alumni.edu', 'Alumni@123456', 'alumni', '/dashboard.html'],
+    ['neha@acme.io', 'Company@123456', 'company', '/company.html'],
 ];
 
 function req(string $url, string $method = 'GET', ?array $body = null, ?string $cookie = null): array

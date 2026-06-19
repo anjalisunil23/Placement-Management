@@ -56,14 +56,14 @@ class PublicPageContentModel extends BaseModel
     {
         $defaults = [
             'season'       => '2025-26',
-            'placed'       => 2154,
-            'companies'    => 142,
-            'highestPkg'   => 68.0,
-            'avgPkg'       => 9.4,
-            'medianPkg'    => 8.2,
-            'lowestPkg'    => 3.5,
+            'placed'       => 0,
+            'companies'    => 0,
+            'highestPkg'   => 0.0,
+            'avgPkg'       => 0.0,
+            'medianPkg'    => 0.0,
+            'lowestPkg'    => 0.0,
             'headline'     => 'Where ambition meets opportunity',
-            'achievements' => 'Record ₹68 LPA international offer · 92.5% MCA placement rate',
+            'achievements' => 'Placement statistics are computed live from campus data.',
         ];
 
         foreach ($defaults as $key => $value) {

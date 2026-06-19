@@ -10,7 +10,9 @@ deployment:
     - /bin/cp index.php $DEPLOYPATH/index.php
     - /bin/cp composer.json $DEPLOYPATH/composer.json
     - /bin/cp composer.lock $DEPLOYPATH/composer.lock
-    - /bin/mkdir -p $DEPLOYPATH/uploads/resumes $DEPLOYPATH/uploads/reports $DEPLOYPATH/uploads/jd $DEPLOYPATH/uploads/signed_reports
+    - /bin/cp .env.production.example $DEPLOYPATH/.env.production.example
+    - /bin/mkdir -p $DEPLOYPATH/uploads/resumes $DEPLOYPATH/uploads/reports $DEPLOYPATH/uploads/jd $DEPLOYPATH/uploads/signed_reports $DEPLOYPATH/uploads/photos
     - /bin/chmod -R 775 $DEPLOYPATH/uploads
-    - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader 2>/dev/null || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
+    - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
+    - test -f $DEPLOYPATH/.env || /bin/cp $DEPLOYPATH/.env.production.example $DEPLOYPATH/.env
     - cd $DEPLOYPATH && php backend/scripts/setup.php

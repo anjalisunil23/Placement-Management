@@ -57,14 +57,28 @@ final class PublicController
     public function siteContent(): void
     {
         $system = (new SystemSettingsModel())->get();
-        $public = (new PublicPageContentModel())->get();
+        $editorial = (new PublicPageContentModel())->get();
+        $live = (new AnalyticsService())->getPublicStats();
+        $salary = $live['salaryHighlights'];
+
+        $public = array_merge($editorial, [
+            'placed'          => $live['totalPlaced'],
+            'companies'       => $live['totalCompanies'],
+            'highestPkg'      => $salary['highest'],
+            'avgPkg'          => $salary['average'],
+            'medianPkg'       => $salary['median'],
+            'lowestPkg'       => $salary['lowest'],
+            'placementRate'   => $live['placementPercentage'],
+        ]);
         if (empty($public['season']) && !empty($system['placementYear'])) {
             $public['season'] = $system['placementYear'];
         }
+
         $news = DocumentHelper::serializeMany((new PlacementNewsModel())->published(50));
         Response::success([
             'system'     => $system,
             'publicPage' => $public,
+            'liveStats'  => $live,
             'news'       => $news,
         ]);
     }

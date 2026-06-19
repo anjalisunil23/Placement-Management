@@ -1,8 +1,15 @@
+<IfModule mod_rewrite.c>
 RewriteEngine On
+RewriteBase /
+
+# Avoid Apache content-negotiation breaking extensionless HTML routes
+Options -MultiViews
+
+DirectoryIndex index.php public-stats.html index.html
 
 # API → PHP router
-RewriteRule ^backend/api(/.*)?$ backend/api/index.php [L,QSA]
-RewriteRule ^api(/.*)?$ backend/api/index.php [L,QSA]
+RewriteRule ^backend/api(?:/index\.php)?(/.*)?$ backend/api/index.php [L,QSA]
+RewriteRule ^api(?:/index\.php)?(/.*)?$ backend/api/index.php [L,QSA]
 
 # Root → public landing page
 RewriteRule ^$ public-stats.html [L]
@@ -12,3 +19,4 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME}.html -f
 RewriteRule ^(.+?)/?$ $1.html [L]
+</IfModule>
