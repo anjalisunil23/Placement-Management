@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace PMS\Models;
 
-use MongoDB\BSON\ObjectId;
 use PMS\Schemas\Collections;
 use PMS\Utils\Security;
 
@@ -20,18 +19,16 @@ class StudentModel extends BaseModel
 
     public function findByUserId(string $userId): ?array
     {
-        $oid = Security::toObjectId($userId);
-        if ($oid === null) {
+        $id = Security::toObjectId($userId);
+        if ($id === null) {
             return null;
         }
-        $doc = $this->collection->findOne(['userId' => $oid]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['userId' => $id]);
     }
 
     public function findByRegisterNumber(string $registerNumber): ?array
     {
-        $doc = $this->collection->findOne(['registerNumber' => strtoupper(trim($registerNumber))]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['registerNumber' => strtoupper(trim($registerNumber))]);
     }
 
     public function deleteByUserId(string $userId): bool
@@ -48,13 +45,13 @@ class StudentModel extends BaseModel
      */
     public function createProfile(string $userId, array $data): string
     {
-        $userOid = Security::toObjectId($userId);
-        $deptOid = Security::toObjectId($data['departmentId']);
+        $userId = Security::toObjectId($userId);
+        $deptId = Security::toObjectId($data['departmentId']);
 
         $doc = [
-            'userId'         => $userOid,
+            'userId'         => $userId,
             'registerNumber' => strtoupper(trim($data['registerNumber'])),
-            'departmentId'   => $deptOid,
+            'departmentId'   => $deptId,
             'classBatch'     => $data['classBatch'] ?? '',
             'personal'       => $data['personal'] ?? [],
             'academic'       => array_merge([
@@ -90,9 +87,9 @@ class StudentModel extends BaseModel
             $query['academic.backlogs'] = ['$lte' => (int) $filter['maxBacklogs']];
         }
         if (!empty($filter['departmentId'])) {
-            $oid = Security::toObjectId($filter['departmentId']);
-            if ($oid) {
-                $query['departmentId'] = $oid;
+            $id = Security::toObjectId($filter['departmentId']);
+            if ($id) {
+                $query['departmentId'] = $id;
             }
         }
         if (!empty($filter['skills'])) {
@@ -103,11 +100,10 @@ class StudentModel extends BaseModel
                 if ($skill === '') {
                     continue;
                 }
-                $regex = new \MongoDB\BSON\Regex(preg_quote($skill), 'i');
                 $skillConditions[] = [
                     '$or' => [
-                        ['academic.skills' => $regex],
-                        ['certifications.name' => $regex],
+                        ['academic.skills' => ['$regex' => '%' . $skill . '%']],
+                        ['certifications.name' => ['$regex' => '%' . $skill . '%']],
                     ],
                 ];
             }

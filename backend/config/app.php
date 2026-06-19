@@ -12,6 +12,10 @@ if (file_exists($rootPath . '/.env')) {
     $dotenv = Dotenv\Dotenv::createImmutable($rootPath);
     $dotenv->load();
 }
+if (file_exists($rootPath . '/.env.local')) {
+    $dotenv = Dotenv\Dotenv::createMutable($rootPath, '.env.local');
+    $dotenv->load();
+}
 
 return [
     'name'    => $_ENV['APP_NAME'] ?? 'Placement Management System',

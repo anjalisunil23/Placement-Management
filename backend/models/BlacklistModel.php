@@ -20,15 +20,14 @@ class BlacklistModel extends BaseModel
 
     public function isBlacklisted(string $studentId): bool
     {
-        $oid = Security::toObjectId($studentId);
-        if ($oid === null) {
+        $id = Security::toObjectId($studentId);
+        if ($id === null) {
             return false;
         }
-        $doc = $this->collection->findOne([
-            'studentId' => $oid,
+        return $this->findOne([
+            'studentId' => $id,
             'removedAt' => null,
-        ]);
-        return $doc !== null;
+        ]) !== null;
     }
 
     public function blacklist(string $studentId, string $reason, string $by): string
@@ -43,15 +42,14 @@ class BlacklistModel extends BaseModel
 
     public function removeBlacklist(string $studentId): bool
     {
-        $oid = Security::toObjectId($studentId);
-        if ($oid === null) {
+        $id = Security::toObjectId($studentId);
+        if ($id === null) {
             return false;
         }
-        $result = $this->collection->updateOne(
-            ['studentId' => $oid, 'removedAt' => null],
-            ['$set' => ['removedAt' => DocumentHelper::now()]]
-        );
-        return $result->getModifiedCount() > 0;
+        return $this->updateMany(
+            ['studentId' => $id, 'removedAt' => null],
+            ['removedAt' => DocumentHelper::now()]
+        ) > 0;
     }
 
     /**
@@ -62,4 +60,3 @@ class BlacklistModel extends BaseModel
         return $this->findAll(['removedAt' => null], $limit);
     }
 }
-

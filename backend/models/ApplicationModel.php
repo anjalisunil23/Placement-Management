@@ -41,13 +41,12 @@ class ApplicationModel extends BaseModel
 
     public function findByStudentAndDrive(string $studentId, string $driveId): ?array
     {
-        $sOid = Security::toObjectId($studentId);
-        $dOid = Security::toObjectId($driveId);
-        if ($sOid === null || $dOid === null) {
+        $sId = Security::toObjectId($studentId);
+        $dId = Security::toObjectId($driveId);
+        if ($sId === null || $dId === null) {
             return null;
         }
-        $doc = $this->collection->findOne(['studentId' => $sOid, 'driveId' => $dOid]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['studentId' => $sId, 'driveId' => $dId]);
     }
 
     /**

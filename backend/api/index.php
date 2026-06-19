@@ -213,8 +213,10 @@ $routes = [
     ['DELETE','/officer/drives/{id}',              [OfficerController::class, 'deleteDrive']],
     ['POST', '/officer/drives/{id}/attendance',    [OfficerController::class, 'markAttendance']],
 
-    // Public & Analytics
-    ['GET', '/public/placement-stats', [PublicController::class, 'placementStats']],
+    // Health & public
+    ['GET', '/health',                  [PublicController::class, 'health']],
+    ['GET', '/public/departments',      [PublicController::class, 'listDepartments']],
+    ['GET', '/public/placement-stats',  [PublicController::class, 'placementStats']],
     ['GET', '/public/site-content',    [PublicController::class, 'siteContent']],
     ['GET', '/analytics/dashboard',    [PublicController::class, 'analyticsDashboard']],
 ];

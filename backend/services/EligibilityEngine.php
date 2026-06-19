@@ -184,7 +184,7 @@ final class EligibilityEngine
         if (is_array($value)) {
             return $value;
         }
-        if ($value instanceof \MongoDB\Model\BSONDocument || $value instanceof \ArrayObject) {
+        if ($value instanceof \ArrayObject || (is_object($value) && method_exists($value, 'getArrayCopy'))) {
             return (array) $value;
         }
         return [];

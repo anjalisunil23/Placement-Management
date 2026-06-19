@@ -1,10 +1,9 @@
-﻿<?php
+<?php
 
 declare(strict_types=1);
 
 namespace PMS\Services;
 
-use MongoDB\BSON\ObjectId;
 use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
@@ -130,11 +129,8 @@ final class StaffService
             $apps = $appModel->findAll(['companyId' => Security::toObjectId($companyId)], 500);
             if ($departmentId !== null) {
                 $apps = array_values(array_filter($apps, function (array $app) use ($studentOids) {
-                    $sid = $app['studentId'] ?? null;
-                    if ($sid instanceof ObjectId) {
-                        return in_array($sid, $studentOids, true);
-                    }
-                    return false;
+                    $sid = (string) ($app['studentId'] ?? '');
+                    return $sid !== '' && in_array($sid, $studentOids, true);
                 }));
             }
             if ($apps === []) {
@@ -267,22 +263,22 @@ final class StaffService
     }
 
     /**
-     * @return array<int, ObjectId>
+     * @return array<int, string>
      */
     private function studentObjectIdsForDepartment(?string $departmentId): array
     {
         if ($departmentId === null) {
             return [];
         }
-        $oid = Security::toObjectId($departmentId);
-        if ($oid === null) {
+        $id = Security::toObjectId($departmentId);
+        if ($id === null) {
             return [];
         }
-        $students = (new StudentModel())->findAll(['departmentId' => $oid], 5000);
+        $students = (new StudentModel())->findAll(['departmentId' => $id], 5000);
         $ids = [];
         foreach ($students as $student) {
-            if ($student['_id'] instanceof ObjectId) {
-                $ids[] = $student['_id'];
+            if (!empty($student['_id'])) {
+                $ids[] = (string) $student['_id'];
             }
         }
         return $ids;

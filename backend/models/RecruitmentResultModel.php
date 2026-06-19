@@ -57,7 +57,7 @@ class RecruitmentResultModel extends BaseModel
         $driveIdRaw = trim((string) ($data['driveId'] ?? ''));
         if ($driveIdRaw !== '') {
             $set['driveId'] = $driveIdRaw;
-            $existing = $this->collection->findOne([
+            $existing = $this->findOne([
                 'registerNumber' => $register,
                 'driveId'        => $driveIdRaw,
             ]);
@@ -69,7 +69,7 @@ class RecruitmentResultModel extends BaseModel
             return $this->insert($set);
         }
 
-        $existing = $this->collection->findOne(['registerNumber' => $register, 'company' => $company]);
+        $existing = $this->findOne(['registerNumber' => $register, 'company' => $company]);
         if ($existing) {
             $id = (string) ($existing['_id'] ?? '');
             $this->update($id, $set);
@@ -79,4 +79,3 @@ class RecruitmentResultModel extends BaseModel
         return $this->insert($set);
     }
 }
-

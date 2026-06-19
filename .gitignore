@@ -5,6 +5,8 @@ npm-debug.log*
 
 # PHP / Composer
 .env
+.env.local
+.env.cpanel
 vendor/
 composer.phar
 uploads/**/*

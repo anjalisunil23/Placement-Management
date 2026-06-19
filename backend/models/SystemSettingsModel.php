@@ -21,8 +21,8 @@ class SystemSettingsModel extends BaseModel
      */
     public function get(): array
     {
-        $doc = $this->collection->findOne(['key' => self::DOC_KEY]);
-        return $this->normalize($doc ? (array) $doc : []);
+        $doc = $this->findOne(['key' => self::DOC_KEY]);
+        return $this->normalize($doc ?? []);
     }
 
     /**
@@ -36,13 +36,10 @@ class SystemSettingsModel extends BaseModel
         $update['key'] = self::DOC_KEY;
         $update['updatedAt'] = DocumentHelper::now();
 
-        $this->collection->updateOne(
+        $this->upsert(
             ['key' => self::DOC_KEY],
-            [
-                '$set'         => $update,
-                '$setOnInsert' => ['createdAt' => DocumentHelper::now()],
-            ],
-            ['upsert' => true]
+            $update,
+            ['createdAt' => DocumentHelper::now()]
         );
 
         return $this->get();

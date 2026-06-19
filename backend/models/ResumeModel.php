@@ -20,22 +20,24 @@ final class ResumeModel extends BaseModel
      */
     public function findByStudent(string $studentId, int $limit = 50): array
     {
-        $oid = Security::toObjectId($studentId);
-        if ($oid === null) {
+        $id = Security::toObjectId($studentId);
+        if ($id === null) {
             return [];
         }
-        return $this->findAll(['studentId' => $oid], $limit);
+        return $this->findAll(['studentId' => $id], $limit);
     }
 
     public function setDefault(string $studentId, string $resumeId): void
     {
-        $sOid = Security::toObjectId($studentId);
-        $rOid = Security::toObjectId($resumeId);
-        if ($sOid === null || $rOid === null) {
+        $sId = Security::toObjectId($studentId);
+        $rId = Security::toObjectId($resumeId);
+        if ($sId === null || $rId === null) {
             return;
         }
-        $this->collection->updateMany(['studentId' => $sOid], ['$set' => ['isDefault' => false, 'updatedAt' => DocumentHelper::now()]]);
-        $this->collection->updateOne(['_id' => $rOid, 'studentId' => $sOid], ['$set' => ['isDefault' => true, 'updatedAt' => DocumentHelper::now()]]);
+        $this->updateMany(['studentId' => $sId], ['isDefault' => false, 'updatedAt' => DocumentHelper::now()]);
+        $resume = $this->findById($rId);
+        if ($resume && (string) ($resume['studentId'] ?? '') === $sId) {
+            $this->update($rId, ['isDefault' => true, 'updatedAt' => DocumentHelper::now()]);
+        }
     }
 }
-

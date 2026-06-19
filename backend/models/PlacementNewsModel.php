@@ -18,15 +18,7 @@ class PlacementNewsModel extends BaseModel
      */
     public function published(int $limit = 50): array
     {
-        $cursor = $this->collection->find(
-            [],
-            ['limit' => $limit, 'sort' => ['date' => -1, 'createdAt' => -1]]
-        );
-        $results = [];
-        foreach ($cursor as $doc) {
-            $results[] = (array) $doc;
-        }
-        return $results;
+        return $this->findAll([], $limit, 0, ['date' => -1, 'createdAt' => -1]);
     }
 
     /**

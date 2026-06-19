@@ -15,8 +15,7 @@ class DepartmentModel extends BaseModel
 
     public function findByCode(string $code): ?array
     {
-        $doc = $this->collection->findOne(['code' => strtoupper(trim($code))]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['code' => strtoupper(trim($code))]);
     }
 
     /**

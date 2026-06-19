@@ -1,51 +1,26 @@
 ## Placement Pulse (PlaceHub) — Local setup (Windows / XAMPP)
 
 ### Requirements
-- **PHP 8.2+ (XAMPP)** (this repo currently uses `C:\xampp\php\php.exe`)
+- **PHP 8.2+** (XAMPP or standalone PHP)
 - **Composer**
-- **MongoDB server** (local or remote)
-- **PHP MongoDB extension** (**ext-mongodb**) enabled for your PHP
+- **MariaDB / MySQL** (local or remote — cPanel includes MariaDB)
+- **PHP extensions**: `pdo`, `pdo_mysql`
 
-### 1) Enable `ext-mongodb` for XAMPP PHP 8.2 (Windows)
-Composer and the app require the PHP MongoDB extension.
+### 1) Database
 
-1. Check your PHP build:
+Create an empty database (example):
+
+```sql
+CREATE DATABASE pms_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Or run:
 
 ```powershell
-php -v
-php -i | findstr /I "Thread Safety Architecture"
+php backend/scripts/create-db.php
 ```
 
-You typically need **Thread Safety: enabled (TS)** and **x64** for XAMPP.
-
-2. Download the matching `php_mongodb.dll` from PECL.
-- Search for: **"PECL mongodb php 8.2 windows dll"**
-- Pick the build that matches your PHP:
-  - PHP **8.2.x**
-  - **TS**
-  - **x64**
-
-3. Copy the DLL to:
-- `C:\xampp\php\ext\`
-
-4. Enable it in:
-- `C:\xampp\php\php.ini`
-
-Add this line (or uncomment if present):
-
-```ini
-extension=mongodb
-```
-
-5. Restart Apache (XAMPP Control Panel) and re-open your terminal.
-
-6. Verify:
-
-```powershell
-php -m | findstr /I mongodb
-```
-
-It should print `mongodb`.
+(Update `DB_USERNAME` / `DB_PASSWORD` in `.env` first if your MariaDB root user has a password.)
 
 ### 2) Install PHP dependencies
 
@@ -55,45 +30,39 @@ composer install
 ```
 
 ### 3) Configure environment
-Copy `.env.example` to `.env` (if present) and set your MongoDB connection string.
 
-If you don’t have an env file yet, check `backend/config/app.php` for defaults.
+Copy `.env.example` to `.env` and set MariaDB credentials:
 
-### 4) Setup DB (indexes + default admin)
+```env
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=pms_db
+DB_USERNAME=root
+DB_PASSWORD=your_password
+```
+
+### 4) Setup DB (tables + default admin)
 
 ```powershell
 php backend/scripts/setup.php
 ```
 
-This creates indexes and a default admin:
+This creates tables and a default admin:
 - **Email**: `admin@college.edu`
 - **Password**: `Admin@123456`
 
-### 5) Start the app (PHP built-in server)
+### 5) Run locally
 
 ```powershell
 php -S localhost:8080 router.php
 ```
 
-Then open:
-- `http://localhost:8080/public-stats.html`
+Open: http://localhost:8080
 
-### Default accounts (after setup)
+### cPanel / production
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | `admin@college.edu` | `Admin@123456` |
-| Placement Officer (MCA) | `riya@college.edu` | `Officer@123456` |
-| Staff (CSE) | `ravi.iyer@college.edu` | `Staff@123456` |
+1. Create a MariaDB database and user in cPanel → **MySQL Databases**
+2. Copy `.env.production.example` → `.env` on the server with your DB credentials
+3. Deploy code and run once: `php backend/scripts/setup.php`
 
-Placement officers are linked to one department via the `placement_officers` collection. PO API routes under `/officer/*` are department-scoped.
-
-Staff faculty are linked via the `staff` collection. Staff API routes under `/staff/*` provide department-scoped read access and company recommendations.
-
-Smoke tests:
-```powershell
-php backend/scripts/smoke-admin.php
-php backend/scripts/smoke-officer.php
-php backend/scripts/smoke-staff.php
-```
-
+No MongoDB or `ext-mongodb` is required.

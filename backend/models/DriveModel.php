@@ -45,10 +45,10 @@ class DriveModel extends BaseModel
             return false;
         }
         $attendance = $drive['attendance'] ?? [];
-        $studentOid = (string) Security::toObjectId($studentId);
+        $studentId = Security::toObjectId($studentId);
         $found = false;
         foreach ($attendance as &$entry) {
-            if ((string) ($entry['studentId'] ?? '') === $studentOid) {
+            if ((string) ($entry['studentId'] ?? '') === (string) $studentId) {
                 $entry['present'] = $present;
                 $found = true;
                 break;

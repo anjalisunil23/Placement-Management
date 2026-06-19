@@ -55,7 +55,7 @@ final class PlacementOfficerContext
     }
 
     /**
-     * @return array<string, mixed> MongoDB filter for students collection
+     * @return array<string, mixed> Filter for students table queries
      */
     public static function studentCollectionFilter(array $ctx): array
     {

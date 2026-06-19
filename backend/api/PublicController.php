@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Api;
 
+use PMS\Config\Database;
 use PMS\Models\DepartmentModel;
 use PMS\Models\PlacementNewsModel;
 use PMS\Models\PlacementOfficerModel;
@@ -20,6 +21,31 @@ use PMS\Utils\Response;
  */
 final class PublicController
 {
+    /** GET /api/health — database connectivity check */
+    public function health(): void
+    {
+        $db = Database::status();
+        $tables = [];
+        if ($db['ok']) {
+            try {
+                $tables = Database::pdo()->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
+            } catch (\Throwable) {
+                $tables = [];
+            }
+        }
+        Response::success([
+            'status'   => $db['ok'] ? 'ok' : 'error',
+            'database' => [
+                'connected' => $db['ok'],
+                'driver'    => 'mariadb',
+                'version'   => $db['version'],
+                'database'  => $_ENV['DB_DATABASE'] ?? null,
+                'tables'    => count($tables),
+                'error'     => $db['error'],
+            ],
+        ], $db['ok'] ? 'OK' : 'Database unavailable', $db['ok'] ? 200 : 503);
+    }
+
     /** GET /api/public/placement-stats */
     public function placementStats(): void
     {

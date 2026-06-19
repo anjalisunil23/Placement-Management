@@ -9,7 +9,7 @@ use PMS\Utils\DocumentHelper;
 use PMS\Utils\Security;
 
 /**
- * Generated report metadata stored in MongoDB.
+ * Generated report metadata.
  */
 class ReportModel extends BaseModel
 {
@@ -42,21 +42,17 @@ class ReportModel extends BaseModel
     {
         $filter = [];
         if ($departmentId !== null && $departmentId !== '') {
-            $oid = Security::toObjectId($departmentId);
-            if ($oid) {
-                $filter['departmentId'] = $oid;
+            $id = Security::toObjectId($departmentId);
+            if ($id) {
+                $filter['departmentId'] = $id;
             }
         }
 
-        $cursor = $this->collection->find(
-            $filter,
-            ['sort' => ['createdAt' => -1], 'limit' => $limit]
-        );
+        $rows = $this->findAll($filter, $limit, 0, ['createdAt' => -1]);
 
-        $rows = [];
-        foreach ($cursor as $doc) {
-            $rows[] = DocumentHelper::serialize((array) $doc) ?? [];
-        }
-        return $rows;
+        return array_map(
+            static fn (array $doc) => DocumentHelper::serialize($doc) ?? [],
+            $rows
+        );
     }
 }

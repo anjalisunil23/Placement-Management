@@ -31,11 +31,11 @@ class NotificationModel extends BaseModel
      */
     public function findByUser(string $userId, bool $unreadOnly = false): array
     {
-        $oid = Security::toObjectId($userId);
-        if ($oid === null) {
+        $id = Security::toObjectId($userId);
+        if ($id === null) {
             return [];
         }
-        $filter = ['userId' => $oid];
+        $filter = ['userId' => $id];
         if ($unreadOnly) {
             $filter['read'] = false;
         }
@@ -49,23 +49,22 @@ class NotificationModel extends BaseModel
 
     public function markAllRead(string $userId): int
     {
-        $oid = Security::toObjectId($userId);
-        if ($oid === null) {
+        $id = Security::toObjectId($userId);
+        if ($id === null) {
             return 0;
         }
-        $result = $this->collection->updateMany(
-            ['userId' => $oid, 'read' => false],
-            ['$set' => ['read' => true]]
+        return $this->updateMany(
+            ['userId' => $id, 'read' => false],
+            ['read' => true]
         );
-        return (int) $result->getModifiedCount();
     }
 
     public function countUnread(string $userId): int
     {
-        $oid = Security::toObjectId($userId);
-        if ($oid === null) {
+        $id = Security::toObjectId($userId);
+        if ($id === null) {
             return 0;
         }
-        return (int) $this->collection->countDocuments(['userId' => $oid, 'read' => false]);
+        return $this->count(['userId' => $id, 'read' => false]);
     }
 }

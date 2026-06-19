@@ -43,36 +43,35 @@ class AlumniJobPostModel extends BaseModel
      */
     public function findByAlumni(string $alumniUserId): array
     {
-        $oid = Security::toObjectId($alumniUserId);
-        if ($oid === null) {
+        $id = Security::toObjectId($alumniUserId);
+        if ($id === null) {
             return [];
         }
-        return $this->findAll(['alumniUserId' => $oid]);
+        return $this->findAll(['alumniUserId' => $id]);
     }
 
     public function countActiveByAlumni(string $alumniUserId): int
     {
-        $oid = Security::toObjectId($alumniUserId);
-        if ($oid === null) {
+        $id = Security::toObjectId($alumniUserId);
+        if ($id === null) {
             return 0;
         }
-        return $this->count(['alumniUserId' => $oid, 'status' => ['$in' => ['open', 'reviewing']]]);
+        return $this->count(['alumniUserId' => $id, 'status' => ['$in' => ['open', 'reviewing']]]);
     }
 
     public function sumViewsByAlumni(string $alumniUserId): int
     {
-        $oid = Security::toObjectId($alumniUserId);
-        if ($oid === null) {
+        $id = Security::toObjectId($alumniUserId);
+        if ($id === null) {
             return 0;
         }
-        $pipeline = [
-            ['$match' => ['alumniUserId' => $oid]],
-            ['$group' => ['_id' => null, 'total' => ['$sum' => '$views']]],
-        ];
-        $cursor = $this->collection->aggregate($pipeline);
-        foreach ($cursor as $doc) {
-            return (int) ($doc['total'] ?? 0);
-        }
-        return 0;
+
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.views')) AS UNSIGNED)), 0)
+             FROM `{$this->table}`
+             WHERE JSON_UNQUOTE(JSON_EXTRACT(payload, '$.alumniUserId')) = ?"
+        );
+        $stmt->execute([$id]);
+        return (int) $stmt->fetchColumn();
     }
 }

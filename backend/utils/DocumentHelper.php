@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace PMS\Utils;
 
-use MongoDB\BSON\ObjectId;
-use MongoDB\BSON\UTCDateTime;
-
 /**
  * Common document serialization helpers.
  */
@@ -40,11 +37,8 @@ final class DocumentHelper
 
     private static function serializeValue(mixed $value): mixed
     {
-        if ($value instanceof ObjectId) {
-            return (string) $value;
-        }
-        if ($value instanceof UTCDateTime) {
-            return $value->toDateTime()->format('c');
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('c');
         }
         if (is_array($value)) {
             return array_map(fn ($v) => self::serializeValue($v), $value);
@@ -52,12 +46,15 @@ final class DocumentHelper
         if (is_object($value) && method_exists($value, 'getArrayCopy')) {
             return self::serialize($value->getArrayCopy());
         }
+        if (is_object($value) && method_exists($value, '__toString')) {
+            return (string) $value;
+        }
         return $value;
     }
 
-    public static function now(): UTCDateTime
+    public static function now(): string
     {
-        return new UTCDateTime();
+        return (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u');
     }
 
     /**

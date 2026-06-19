@@ -260,11 +260,11 @@ final class ReportService
         $apps = $this->applicationModel->findAll($filter, 2000);
         return array_values(array_filter($apps, function ($app) use ($start, $end) {
             $at = $app['updatedAt'] ?? $app['createdAt'] ?? null;
-            if ($at instanceof \MongoDB\BSON\UTCDateTime) {
-                $dt = $at->toDateTime();
-                return $dt >= $start && $dt <= $end;
+            $dt = self::parseDateTime($at);
+            if ($dt === null) {
+                return true;
             }
-            return true;
+            return $dt >= $start && $dt <= $end;
         }));
     }
 
@@ -279,10 +279,7 @@ final class ReportService
             $student = $this->studentModel->findById((string) ($app['studentId'] ?? ''));
             $user = $student ? $this->userModel->findById((string) ($student['userId'] ?? '')) : null;
             $company = $this->companyModel->findById((string) ($app['companyId'] ?? ''));
-            $at = $app['updatedAt'] ?? $app['createdAt'] ?? null;
-            $date = $at instanceof \MongoDB\BSON\UTCDateTime
-                ? $at->toDateTime()->format('Y-m-d')
-                : date('Y-m-d');
+            $date = self::formatDate($app['updatedAt'] ?? $app['createdAt'] ?? null);
 
             $rows[] = [
                 $user['name'] ?? '',
@@ -343,8 +340,7 @@ final class ReportService
     }
 
     /**
-     * @return \MongoDB\BSON\ObjectId[]|null null = all students
-     * @return array<int, \MongoDB\BSON\ObjectId>|null
+     * @return array<int, string>|null null = all students
      */
     private function scopedStudentObjectIds(ReportContext $ctx): ?array
     {
@@ -352,13 +348,34 @@ final class ReportService
             return null;
         }
         $students = $this->studentModel->findAll($this->studentFilter($ctx), 5000);
-        $oids = [];
+        $ids = [];
         foreach ($students as $s) {
             if (!empty($s['_id'])) {
-                $oids[] = $s['_id'];
+                $ids[] = (string) $s['_id'];
             }
         }
-        return $oids;
+        return $ids;
+    }
+
+    private static function parseDateTime(mixed $value): ?\DateTimeImmutable
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return \DateTimeImmutable::createFromInterface($value);
+        }
+        try {
+            return new \DateTimeImmutable((string) $value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private static function formatDate(mixed $value): string
+    {
+        $dt = self::parseDateTime($value);
+        return $dt ? $dt->format('Y-m-d') : date('Y-m-d');
     }
 
     /**

@@ -13,3 +13,4 @@ deployment:
     - /bin/mkdir -p $DEPLOYPATH/uploads/resumes $DEPLOYPATH/uploads/reports $DEPLOYPATH/uploads/jd $DEPLOYPATH/uploads/signed_reports
     - /bin/chmod -R 775 $DEPLOYPATH/uploads
     - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader 2>/dev/null || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
+    - cd $DEPLOYPATH && php backend/scripts/setup.php

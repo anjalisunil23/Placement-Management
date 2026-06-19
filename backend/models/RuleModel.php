@@ -15,8 +15,7 @@ class RuleModel extends BaseModel
 
     public function getActiveRule(): ?array
     {
-        $doc = $this->collection->findOne(['active' => true], ['sort' => ['createdAt' => -1]]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['active' => true], ['sort' => ['createdAt' => -1]]);
     }
 
     /**
@@ -25,7 +24,7 @@ class RuleModel extends BaseModel
     public function createRule(array $data): string
     {
         if (!empty($data['active'])) {
-            $this->collection->updateMany(['active' => true], ['$set' => ['active' => false]]);
+            $this->updateMany(['active' => true], ['active' => false]);
         }
         return $this->insert([
             'name'                => $data['name'] ?? 'Placement Rules',
@@ -51,7 +50,7 @@ class RuleModel extends BaseModel
      */
     public function saveActiveRule(array $data): array
     {
-        $this->collection->updateMany(['active' => true], ['$set' => ['active' => false]]);
+        $this->updateMany(['active' => true], ['active' => false]);
         $this->createRule(array_merge($data, ['active' => true, 'name' => 'Active Placement Rules']));
         return $this->getActiveRule() ?? [];
     }

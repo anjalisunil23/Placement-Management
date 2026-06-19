@@ -19,42 +19,30 @@ class PlacementOfficerModel extends BaseModel
 
     public function findByUserId(string $userId): ?array
     {
-        $oid = Security::toObjectId($userId);
-        if ($oid === null) {
+        $id = Security::toObjectId($userId);
+        if ($id === null) {
             return null;
         }
-        $doc = $this->collection->findOne(['userId' => $oid]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['userId' => $id]);
     }
 
     public function findByDepartment(string $departmentId): ?array
     {
-        $oid = Security::toObjectId($departmentId);
-        if ($oid === null) {
+        $id = Security::toObjectId($departmentId);
+        if ($id === null) {
             return null;
         }
-        $doc = $this->collection->findOne(['departmentId' => $oid]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['departmentId' => $id]);
     }
 
     public function deleteByUserId(string $userId): bool
     {
-        $oid = Security::toObjectId($userId);
-        if ($oid === null) {
-            return false;
-        }
-        $result = $this->collection->deleteOne(['userId' => $oid]);
-        return $result->getDeletedCount() > 0;
+        return $this->deleteMany(['userId' => Security::toObjectId($userId)]) > 0;
     }
 
     public function deleteByDepartment(string $departmentId): bool
     {
-        $oid = Security::toObjectId($departmentId);
-        if ($oid === null) {
-            return false;
-        }
-        $result = $this->collection->deleteOne(['departmentId' => $oid]);
-        return $result->getDeletedCount() > 0;
+        return $this->deleteMany(['departmentId' => Security::toObjectId($departmentId)]) > 0;
     }
 
     /**
@@ -108,12 +96,12 @@ class PlacementOfficerModel extends BaseModel
      */
     public function createProfile(string $userId, array $data): string
     {
-        $deptOid = Security::toObjectId($data['departmentId'] ?? '');
-        if ($deptOid === null) {
+        $deptId = Security::toObjectId($data['departmentId'] ?? '');
+        if ($deptId === null) {
             throw new \InvalidArgumentException('Valid departmentId is required.');
         }
 
-        if ($this->findByDepartment((string) $deptOid)) {
+        if ($this->findByDepartment((string) $deptId)) {
             throw new \RuntimeException('This department already has a placement officer. Each department can have only one.');
         }
 
@@ -123,16 +111,8 @@ class PlacementOfficerModel extends BaseModel
 
         return $this->insert([
             'userId'       => Security::toObjectId($userId),
-            'departmentId' => $deptOid,
-            'designation'  => $data['designation'] ?? 'Department Placement Officer',
+            'departmentId' => $deptId,
+            'designation'  => $data['designation'] ?? '',
         ]);
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    public function findAllWithDepartments(int $limit = 100): array
-    {
-        return $this->findAll([], $limit);
     }
 }

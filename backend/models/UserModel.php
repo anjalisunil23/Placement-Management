@@ -20,8 +20,7 @@ class UserModel extends BaseModel
 
     public function findByEmail(string $email): ?array
     {
-        $doc = $this->collection->findOne(['email' => strtolower(trim($email))]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['email' => strtolower(trim($email))]);
     }
 
     /**

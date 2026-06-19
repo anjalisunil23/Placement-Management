@@ -13,7 +13,6 @@ const NAV = [
     roles: ['admin','placement_officer','staff'],
     children: [
       { href: 'placement-console.html', label: 'Console', roles: ['admin','placement_officer'] },
-      { href: 'rules.html', label: 'Placement Rules', roles: ['admin'] },
     ],
   },
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
@@ -94,7 +93,7 @@ const PAGE_LABELS = {
   'staff-recommend.html': 'Recommend Company',
   'users.html': 'User Management',
   'departments.html': 'Departments',
-  'rules.html': 'Placement Drives · Placement Rules',
+  'rules.html': 'Placement Rules',
   'applications.html': 'Student · Management · Application',
   'resumes.html': 'Student · Management · Resume',
   'blacklist.html': 'Student · Management · Blacklist',

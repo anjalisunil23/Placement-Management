@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Utils;
 
-use MongoDB\BSON\ObjectId;
-
 /**
- * Security utilities: password hashing, session, MongoDB safe IDs.
+ * Security utilities: password hashing, session, document IDs.
  */
 final class Security
 {
@@ -74,20 +72,25 @@ final class Security
         return $_SESSION['user'] ?? null;
     }
 
-    public static function toObjectId(string $id): ?ObjectId
+    public static function generateId(): string
     {
-        if (!preg_match('/^[a-f\d]{24}$/i', $id)) {
-            return null;
-        }
-        try {
-            return new ObjectId($id);
-        } catch (\Throwable) {
-            return null;
-        }
+        return bin2hex(random_bytes(12));
+    }
+
+    public static function isValidId(string $id): bool
+    {
+        return (bool) preg_match('/^[a-f\d]{24}$/i', $id);
+    }
+
+    /** @deprecated Use isValidId(); kept for call-site compatibility — returns normalized ID string. */
+    public static function toObjectId(string $id): ?string
+    {
+        $id = trim($id);
+        return self::isValidId($id) ? strtolower($id) : null;
     }
 
     /**
-     * Prevent NoSQL injection — allow whitelisted MongoDB operators.
+     * Sanitize filter values for query building.
      *
      * @param mixed $value
      */
@@ -96,11 +99,8 @@ final class Security
         if (is_string($value) || is_int($value) || is_float($value) || is_bool($value) || $value === null) {
             return $value;
         }
-        if ($value instanceof ObjectId) {
-            return $value;
-        }
         if (is_array($value)) {
-            $allowedOps = ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin', '$and', '$or'];
+            $allowedOps = ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin', '$and', '$or', '$regex'];
             $safe = [];
             foreach ($value as $k => $v) {
                 if (is_string($k) && str_starts_with($k, '$') && !in_array($k, $allowedOps, true)) {
@@ -109,6 +109,9 @@ final class Security
                 $safe[$k] = self::sanitizeFilterValue($v);
             }
             return $safe;
+        }
+        if (is_object($value) && method_exists($value, '__toString')) {
+            return (string) $value;
         }
         return null;
     }

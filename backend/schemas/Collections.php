@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace PMS\Schemas;
 
 /**
- * MongoDB collection schemas and field definitions.
+ * Collection/table schemas and field definitions (MariaDB JSON document storage).
  * Used for validation and documentation.
  */
 final class Collections

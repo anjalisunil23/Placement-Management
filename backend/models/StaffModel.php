@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 declare(strict_types=1);
 
@@ -16,12 +16,11 @@ class StaffModel extends BaseModel
 
     public function findByUserId(string $userId): ?array
     {
-        $oid = Security::toObjectId($userId);
-        if ($oid === null) {
+        $id = Security::toObjectId($userId);
+        if ($id === null) {
             return null;
         }
-        $doc = $this->collection->findOne(['userId' => $oid]);
-        return $doc ? (array) $doc : null;
+        return $this->findOne(['userId' => $id]);
     }
 
     /**
