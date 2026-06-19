@@ -1,0 +1,15 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/placementsajce/public_html
+    - /bin/cp -R backend $DEPLOYPATH/backend
+    - /bin/cp -R css $DEPLOYPATH/css
+    - /bin/cp -R js $DEPLOYPATH/js
+    - /bin/cp *.html $DEPLOYPATH/
+    - /bin/cp .htaccess $DEPLOYPATH/.htaccess
+    - /bin/cp index.php $DEPLOYPATH/index.php
+    - /bin/cp composer.json $DEPLOYPATH/composer.json
+    - /bin/cp composer.lock $DEPLOYPATH/composer.lock
+    - /bin/mkdir -p $DEPLOYPATH/uploads/resumes $DEPLOYPATH/uploads/reports $DEPLOYPATH/uploads/jd $DEPLOYPATH/uploads/signed_reports
+    - /bin/chmod -R 775 $DEPLOYPATH/uploads
+    - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader 2>/dev/null || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
