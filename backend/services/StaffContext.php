@@ -11,35 +11,31 @@ use PMS\Utils\Response;
 use PMS\Utils\Security;
 
 /**
- * Resolves department scope for faculty / staff users.
+ * Resolves staff profile and department scope.
  */
 final class StaffContext
 {
     /**
      * @return array{
-     *   departmentId: string,
-     *   department: array<string, mixed>|null,
-     *   profile: array<string, mixed>
+     *   profile: array<string, mixed>,
+     *   departmentId: string|null,
+     *   department: array<string, mixed>|null
      * }
      */
     public static function resolve(array $user): array
     {
-        if (($user['role'] ?? '') !== 'staff') {
-            Response::forbidden('Staff access required.');
-        }
-
         $profile = (new StaffModel())->findByUserId((string) $user['_id']);
-        if (!$profile || empty($profile['departmentId'])) {
-            Response::forbidden('Your account is not linked to a department. Contact admin.');
+        if (!$profile) {
+            Response::notFound('Staff profile not found.');
         }
 
-        $departmentId = (string) $profile['departmentId'];
-        $department = (new DepartmentModel())->findById($departmentId);
+        $departmentId = !empty($profile['departmentId']) ? (string) $profile['departmentId'] : null;
+        $department = $departmentId ? (new DepartmentModel())->findById($departmentId) : null;
 
         return [
+            'profile'      => $profile,
             'departmentId' => $departmentId,
             'department'   => $department,
-            'profile'      => $profile,
         ];
     }
 
@@ -53,7 +49,7 @@ final class StaffContext
     {
         return [
             'isAdmin'      => false,
-            'departmentId' => $staffCtx['departmentId'],
+            'departmentId' => $staffCtx['departmentId'] ?? '',
             'department'   => $staffCtx['department'],
             'profile'      => $staffCtx['profile'],
         ];
@@ -65,6 +61,9 @@ final class StaffContext
      */
     public static function studentCollectionFilter(array $ctx): array
     {
+        if (empty($ctx['departmentId'])) {
+            return [];
+        }
         $oid = Security::toObjectId($ctx['departmentId']);
         return $oid ? ['departmentId' => $oid] : [];
     }

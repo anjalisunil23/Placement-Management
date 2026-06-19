@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Middleware;
 
+use PMS\Models\AlumniModel;
+use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\PlacementOfficerModel;
 use PMS\Models\StaffModel;
@@ -85,30 +87,40 @@ final class AuthMiddleware
   public static function userResponse(array $user, ?string $token = null): array
   {
     $config = require dirname(__DIR__) . '/config/app.php';
-        $data = DocumentHelper::serialize($user);
-        $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
-        if (($user['role'] ?? '') === 'staff') {
-            $profile = (new StaffModel())->findByUserId((string) $user['_id']);
-            if ($profile) {
-                $dept = !empty($profile['departmentId'])
-                    ? (new DepartmentModel())->findById((string) $profile['departmentId'])
-                    : null;
-                $data['designation'] = $profile['designation'] ?? '';
-                $data['department'] = $dept['code'] ?? $dept['name'] ?? '';
-                $data['departmentId'] = $dept ? (string) $dept['_id'] : '';
-            }
-        }
-        if (($user['role'] ?? '') === 'placement_officer') {
-            $profile = (new PlacementOfficerModel())->findByUserId((string) $user['_id']);
-            if ($profile) {
-                $dept = !empty($profile['departmentId'])
-                    ? (new DepartmentModel())->findById((string) $profile['departmentId'])
-                    : null;
-                $data['department'] = $dept['code'] ?? $dept['name'] ?? '';
-                $data['departmentId'] = $dept ? (string) $dept['_id'] : '';
-            }
-        }
-        if ($token !== null) {
+    $data = DocumentHelper::serialize($user);
+    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
+    if (($user['role'] ?? '') === 'alumni') {
+      $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
+      if ($profile) {
+        $data = array_merge($data, AlumniModel::profileToUserFields($profile));
+      }
+    }
+    if (($user['role'] ?? '') === 'company') {
+      $company = (new CompanyModel())->findByUserId((string) $user['_id']);
+      if ($company) {
+        $data = array_merge($data, CompanyModel::profileToUserFields($company));
+      }
+    }
+    if (($user['role'] ?? '') === 'staff') {
+      $profile = (new StaffModel())->findByUserId((string) $user['_id']);
+      if ($profile) {
+        $dept = !empty($profile['departmentId'])
+          ? (new DepartmentModel())->findById((string) $profile['departmentId'])
+          : null;
+        $data = array_merge($data, StaffModel::profileToUserFields($profile, $dept));
+      }
+    }
+    if (($user['role'] ?? '') === 'placement_officer') {
+      $profile = (new PlacementOfficerModel())->findByUserId((string) $user['_id']);
+      if ($profile) {
+        $dept = !empty($profile['departmentId'])
+          ? (new DepartmentModel())->findById((string) $profile['departmentId'])
+          : null;
+        $data['department'] = $dept['code'] ?? $dept['name'] ?? '';
+        $data['departmentId'] = $dept ? (string) $dept['_id'] : '';
+      }
+    }
+    if ($token !== null) {
       $data['token'] = $token;
     }
     return $data;

@@ -7,6 +7,7 @@ namespace PMS\Admin;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\AlumniModel;
 use PMS\Models\BlacklistModel;
+use PMS\Models\NotificationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
@@ -282,12 +283,7 @@ final class AdminController
 
         if ($input['role'] === 'alumni') {
             try {
-                (new AlumniModel())->createProfile($id, [
-                    'company'    => $input['company'] ?? '',
-                    'role'       => $input['alumniRole'] ?? $input['jobRole'] ?? '',
-                    'experience' => (int) ($input['experience'] ?? 0),
-                    'skills'     => $input['skills'] ?? [],
-                ]);
+                (new AlumniModel())->createProfile($id, $input);
             } catch (\InvalidArgumentException $e) {
                 $this->userModel->delete($id);
                 Response::error($e->getMessage(), 422);
@@ -301,10 +297,11 @@ final class AdminController
             }
             (new CompanyModel())->createCompany([
                 'userId'            => $id,
-                'companyName'       => $input['companyName'],
-                'category'          => $input['category'] ?? 'Product',
+                'companyName'       => trim((string) $input['companyName']),
+                'category'          => $input['category'] ?? 'Software',
                 'tier'              => $input['tier'] ?? 'Tier 2',
                 'website'           => $input['website'] ?? $input['companyWebsite'] ?? '',
+                'description'       => $input['description'] ?? '',
                 'contacts'          => [[
                     'name'  => $input['name'],
                     'email' => $input['email'],
@@ -807,14 +804,14 @@ final class AdminController
     /** GET /api/admin/recommendations */
     public function listRecommendations(): void
     {
-        RBACMiddleware::requirePlacementOfficer();
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
         Response::success((new RecommendationModel())->listEnriched());
     }
 
     /** PUT /api/admin/recommendations/{id}/status */
     public function updateRecommendationStatus(string $id): void
     {
-        RBACMiddleware::requirePlacementOfficer();
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $status = (string) ($input['status'] ?? '');
         if (!(new RecommendationModel())->updateStatus($id, $status)) {
@@ -1041,5 +1038,33 @@ final class AdminController
             Response::notFound('News item not found.');
         }
         Response::success(null, 'Placement news removed.');
+    }
+
+    /** GET /api/admin/notifications */
+    public function notifications(): void
+    {
+        $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $notifs = (new NotificationModel())->findByUser((string) $user['_id']);
+        Response::success(DocumentHelper::serializeMany($notifs));
+    }
+
+    /** POST /api/admin/notifications/{id}/read */
+    public function markNotificationRead(string $id): void
+    {
+        $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $notif = (new NotificationModel())->findById($id);
+        if (!$notif || (string) ($notif['userId'] ?? '') !== (string) $user['_id']) {
+            Response::notFound();
+        }
+        (new NotificationModel())->markRead($id);
+        Response::success(null, 'Notification marked as read.');
+    }
+
+    /** POST /api/admin/notifications/read-all */
+    public function markAllNotificationsRead(): void
+    {
+        $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $count = (new NotificationModel())->markAllRead((string) $user['_id']);
+        Response::success(['updated' => $count], 'All notifications marked as read.');
     }
 }

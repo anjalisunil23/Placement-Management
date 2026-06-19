@@ -263,7 +263,109 @@ const Auth = {
     return true;
   },
   isAuthed() { return !!this.user(); },
+  hasRealAuth() {
+    const t = this.token();
+    return !!t && !String(t).startsWith('demo-token');
+  },
 };
+
+const UserPrefs = {
+  storageKey: 'ph-user-prefs',
+  read() {
+    try { return JSON.parse(localStorage.getItem(this.storageKey) || '{}'); } catch { return {}; }
+  },
+  write(prefs) {
+    localStorage.setItem(this.storageKey, JSON.stringify(prefs));
+    return prefs;
+  },
+  theme() {
+    return localStorage.getItem('ph-theme') || this.read().theme || 'light';
+  },
+  setTheme(theme) {
+    const t = theme === 'dark' ? 'dark' : 'light';
+    localStorage.setItem('ph-theme', t);
+    document.documentElement.setAttribute('data-theme', t);
+    const prefs = this.read();
+    prefs.theme = t;
+    prefs.darkMode = t === 'dark';
+    this.write(prefs);
+    document.dispatchEvent(new CustomEvent('themechange', { detail: t }));
+    return t;
+  },
+  density() {
+    return localStorage.getItem('ph-density') || this.read().density || 'comfortable';
+  },
+  setDensity(density) {
+    const d = density === 'compact' ? 'compact' : 'comfortable';
+    localStorage.setItem('ph-density', d);
+    document.documentElement.setAttribute('data-density', d);
+    const prefs = this.read();
+    prefs.density = d;
+    prefs.compactDensity = d === 'compact';
+    this.write(prefs);
+    return d;
+  },
+  notificationPrefs() {
+    return this.read().notifications || {};
+  },
+  setNotificationPrefs(notifications) {
+    const prefs = this.read();
+    prefs.notifications = notifications;
+    this.write(prefs);
+  },
+  integrationUserKey() {
+    return (Auth.user()?.email || 'anonymous').toLowerCase();
+  },
+  defaultIntegrations() {
+    return {
+      google_workspace: { connected: true },
+      slack: { connected: true },
+      zoom: { connected: false },
+      outlook: { connected: false },
+    };
+  },
+  integrationPrefs() {
+    const byUser = this.read().integrationsByUser || {};
+    const saved = byUser[this.integrationUserKey()];
+    if (saved) return { ...this.defaultIntegrations(), ...saved };
+    return this.defaultIntegrations();
+  },
+  setIntegrationPrefs(integrations) {
+    const prefs = this.read();
+    prefs.integrationsByUser = prefs.integrationsByUser || {};
+    prefs.integrationsByUser[this.integrationUserKey()] = integrations;
+    this.write(prefs);
+    return integrations;
+  },
+  setIntegrationConnected(key, connected) {
+    const state = this.integrationPrefs();
+    state[key] = {
+      connected: !!connected,
+      connectedAt: connected ? new Date().toISOString() : null,
+    };
+    return this.setIntegrationPrefs(state);
+  },
+  isIntegrationConnected(key) {
+    return !!this.integrationPrefs()[key]?.connected;
+  },
+  apply() {
+    document.documentElement.setAttribute('data-theme', this.theme());
+    document.documentElement.setAttribute('data-density', this.density());
+  },
+  isDark() { return this.theme() === 'dark'; },
+  isCompact() { return this.density() === 'compact'; },
+};
+
+if (typeof document !== 'undefined') {
+  UserPrefs.apply();
+}
+
+const INTEGRATION_CATALOG = [
+  { key: 'google_workspace', name: 'Google Workspace', icon: 'bi-google', desc: 'Sync calendar invites and drive announcements' },
+  { key: 'slack', name: 'Slack', icon: 'bi-slack', desc: 'Post placement alerts to your team channel' },
+  { key: 'zoom', name: 'Zoom', icon: 'bi-camera-video-fill', desc: 'Schedule interviews and virtual drives' },
+  { key: 'outlook', name: 'Outlook', icon: 'bi-microsoft', desc: 'Send offer letters and updates via Microsoft 365' },
+];
 
 function demoUserFor(role) {
   const map = {
@@ -300,13 +402,21 @@ const StaffRecs = {
   },
   save(list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); },
   async fetch() {
-    if (Auth.role() === 'staff' && typeof StaffApi !== 'undefined') {
+    if (Auth.role() === 'staff' && Auth.hasRealAuth() && typeof StaffApi !== 'undefined') {
       const list = await StaffApi.fetchRecommendations();
-      if (list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); return list; }
+      if (list) {
+        this._cache = list;
+        localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list));
+        return list;
+      }
     }
     if (Auth.role() === 'admin' || Auth.role() === 'placement_officer') {
       const list = await AdminApi.fetchRecommendations();
-      if (list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); return list; }
+      if (list) {
+        this._cache = list;
+        localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list));
+        return list;
+      }
     }
     return this.all();
   },
@@ -315,17 +425,45 @@ const StaffRecs = {
     return this.all().filter(r => r.staffEmail === email);
   },
   async add(payload) {
-    const res = await api('/staff/recommendations', {
-      method: 'POST',
-      body: {
-        companyName: payload.companyName,
-        companyWebsite: payload.companyWebsite || '',
-        category: payload.category || 'Software',
-        reason: payload.reason || payload.hrName || 'Staff recommendation',
-        contact: { name: payload.hrName, email: payload.hrEmail, phone: payload.contactNumber },
+    const body = {
+      companyName: payload.companyName,
+      companyWebsite: payload.companyWebsite || '',
+      category: payload.category || 'Software',
+      reason: payload.reason || 'Referred by faculty for campus recruitment.',
+      hrName: payload.hrName,
+      hrEmail: payload.hrEmail,
+      contactNumber: payload.contactNumber,
+      contact: {
+        name: payload.hrName,
+        email: payload.hrEmail,
+        phone: payload.contactNumber,
       },
-    });
-    if (res.success) { await this.fetch(); return res.data; }
+    };
+    const res = await api('/staff/recommendations', { method: 'POST', body });
+    if (res.success) {
+      if (Auth.role() === 'staff' && Auth.hasRealAuth()) {
+        await this.fetch();
+      } else {
+        const u = Auth.user();
+        const rec = {
+          id: res.data?.id || ('rec-' + Date.now()),
+          companyName: payload.companyName?.trim(),
+          companyWebsite: payload.companyWebsite?.trim() || '',
+          hrName: payload.hrName?.trim(),
+          hrEmail: payload.hrEmail?.trim(),
+          contactNumber: payload.contactNumber?.trim(),
+          staffName: u?.name || 'Staff',
+          staffEmail: u?.email || '',
+          submittedAt: new Date().toISOString(),
+          status: 'pending',
+        };
+        this.save([rec, ...this.all()]);
+      }
+      return res.data;
+    }
+    if (Auth.role() === 'staff' && Auth.hasRealAuth()) {
+      return null;
+    }
     const u = Auth.user();
     const rec = {
       id: 'rec-' + Date.now(),
@@ -392,6 +530,79 @@ const RegisteredCompanies = {
   },
 };
 
+const ALUMNI_JOBS_KEY = 'ph-alumni-job-posts';
+
+function seedAlumniJobPosts() {
+  if (localStorage.getItem(ALUMNI_JOBS_KEY)) return;
+  localStorage.setItem(ALUMNI_JOBS_KEY, JSON.stringify([
+    { id:'aj-1', title:'Senior SDE', company:'Google', type:'Full-time', package:'₹38 LPA', location:'Bengaluru', description:'Backend role in Ads infra.', status:'open', statusLabel:'Open', statusCls:'success', views:120, createdAt:'2025-12-12T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
+    { id:'aj-2', title:'Product Manager', company:'Google', type:'Full-time', package:'₹32 LPA', location:'Hyderabad', description:'PM role for consumer products.', status:'reviewing', statusLabel:'Reviewing', statusCls:'info', views:86, createdAt:'2025-11-28T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
+    { id:'aj-3', title:'Data Engineer', company:'Google', type:'Full-time', package:'₹30 LPA', location:'Bengaluru', description:'Data platform engineering.', status:'closed', statusLabel:'Closed', statusCls:'muted', views:42, createdAt:'2025-11-10T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
+  ]));
+}
+
+const AlumniJobPosts = {
+  all() { seedAlumniJobPosts(); try { return JSON.parse(localStorage.getItem(ALUMNI_JOBS_KEY) || '[]'); } catch { return []; } },
+  save(list) { localStorage.setItem(ALUMNI_JOBS_KEY, JSON.stringify(list)); },
+  mine() {
+    const email = Auth.user()?.email || '';
+    return this.all().filter(j => j.alumniEmail === email);
+  },
+  add(payload) {
+    const u = Auth.user();
+    const status = String(payload.status || 'open').toLowerCase();
+    const st = mapApiJobPostStatus(status);
+    const row = {
+      id: 'aj-' + Date.now(),
+      title: payload.title?.trim(),
+      company: payload.company?.trim(),
+      type: payload.type || 'Full-time',
+      package: payload.package?.trim() || '',
+      location: payload.location?.trim() || '',
+      description: payload.description?.trim() || '',
+      status,
+      statusLabel: st.statusLabel,
+      statusCls: st.statusCls,
+      views: 0,
+      createdAt: new Date().toISOString(),
+      alumniEmail: u?.email || '',
+    };
+    const list = this.all();
+    list.unshift(row);
+    this.save(list);
+    return row;
+  },
+  stats() {
+    const mine = this.mine();
+    return {
+      activePosts: mine.filter(j => j.status === 'open' || j.status === 'reviewing').length,
+      viewsThisMonth: mine.reduce((n, j) => n + (j.views || 0), 0),
+      referralsCount: AlumniReferrals.mine().length,
+    };
+  },
+};
+
+function mapApiReferralStatus(status) {
+  const map = {
+    submitted: ['Submitted', 'success'],
+    in_review: ['In review', 'info'],
+    accepted: ['Accepted', 'success'],
+  };
+  const [label, cls] = map[(status || '').toLowerCase()] || ['Submitted', 'success'];
+  return { status: label, statusCls: cls };
+}
+
+function mapApiJobPostStatus(status) {
+  const map = {
+    open: ['Open', 'success'],
+    reviewing: ['Reviewing', 'info'],
+    closed: ['Closed', 'muted'],
+  };
+  const [label, cls] = map[(status || '').toLowerCase()] || ['Open', 'success'];
+  return { statusLabel: label, statusCls: cls };
+}
+
+
 const ALUMNI_REF_KEY = 'ph-alumni-referrals';
 
 function seedAlumniReferrals() {
@@ -408,8 +619,9 @@ const AlumniReferrals = {
   all() { seedAlumniReferrals(); if (this._cache) return this._cache; try { return JSON.parse(localStorage.getItem(ALUMNI_REF_KEY) || '[]'); } catch { return []; } },
   save(list) { this._cache = list; localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify(list)); },
   mine() {
-    const email = Auth.user()?.email || '';
-    return this.all().filter(r => r.alumniEmail === email);
+    const email = (Auth.user()?.email || '').toLowerCase();
+    if (!email) return this.all();
+    return this.all().filter(r => (r.alumniEmail || '').toLowerCase() === email);
   },
   async fetch() {
     const res = await api('/alumni/referrals');
@@ -543,6 +755,10 @@ function pipelineStatusBadge(status) {
 
 function formatDate(iso) {
   try { return new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }); } catch { return '—'; }
+}
+
+function stripUrlProtocol(url) {
+  return String(url || '').replace(/^https?:\/\//i, '');
 }
 
 function recStatusBadge(status) {
@@ -827,9 +1043,89 @@ const StudentNotifs = {
     this.save(list);
     return item;
   },
-  markRead(id) { this.save(this.all().map(n => n.id === id ? { ...n, read: true } : n)); },
+  markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
   markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
   unreadCount() { return this.all().filter(n => !n.read).length; },
+};
+
+function userKey(suffix) {
+  const email = Auth.user()?.email || 'anonymous';
+  return `ph-user-${suffix}-${email}`;
+}
+
+const AlumniNotifs = {
+  all() {
+    try { return JSON.parse(localStorage.getItem(userKey('notifications')) || '[]'); } catch { return []; }
+  },
+  save(list) { localStorage.setItem(userKey('notifications'), JSON.stringify(list)); },
+  seed() {
+    if (this.all().length) return;
+    this.save([
+      { id:'an1', type:'referral', title:'Referral received', body:'Your SDE-2 referral at Google was submitted successfully.', read:false, createdAt: new Date(Date.now()-1800000).toISOString() },
+      { id:'an2', type:'job_post', title:'Job post live', body:'Your Senior SDE posting is now visible to the alumni network.', read:false, createdAt: new Date(Date.now()-7200000).toISOString() },
+      { id:'an3', type:'application_update', title:'Application update', body:'Your drive application status was updated.', read:true, createdAt: new Date(Date.now()-86400000).toISOString() },
+    ]);
+  },
+  markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
+  markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
+};
+
+const StaffNotifs = {
+  all() {
+    try { return JSON.parse(localStorage.getItem(userKey('staff-notifications')) || '[]'); } catch { return []; }
+  },
+  save(list) { localStorage.setItem(userKey('staff-notifications'), JSON.stringify(list)); },
+  seed() {
+    if (this.all().length) return;
+    this.save([
+      { id:'sn1', type:'recommendation_update', title:'Recommendation under review', body:'Your Brillio referral is being reviewed by the placement cell.', read:false, createdAt: new Date(Date.now()-120000).toISOString() },
+      { id:'sn2', type:'drive_announcement', title:'New drive: Google SDE-1', body:'CSE students can register for the Google SDE-1 drive.', read:false, createdAt: new Date(Date.now()-3600000).toISOString() },
+      { id:'sn3', type:'application_update', title:'Postman referral contacted', body:'The placement team has contacted Postman HR.', read:true, createdAt: new Date(Date.now()-86400000).toISOString() },
+    ]);
+  },
+  markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
+  markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
+};
+
+const AdminNotifs = {
+  all() {
+    try { return JSON.parse(localStorage.getItem(userKey('admin-notifications')) || '[]'); } catch { return []; }
+  },
+  save(list) { localStorage.setItem(userKey('admin-notifications'), JSON.stringify(list)); },
+  seed() {
+    if (this.all().length) return;
+    this.save([
+      { id:'adm1', type:'drive_announcement', title:'New drive published', body:'Google SDE-1 is now open for registrations.', read:false, createdAt: new Date(Date.now()-120000).toISOString() },
+      { id:'adm2', type:'offer', title:'Offer accepted', body:'Kabir Singh accepted Amazon SDE Intern offer.', read:false, createdAt: new Date(Date.now()-720000).toISOString() },
+      { id:'adm3', type:'resume_review', title:'Resume needs review', body:'18 new resumes pending verification.', read:false, createdAt: new Date(Date.now()-3600000).toISOString() },
+      { id:'adm4', type:'application_update', title:'Broadcast delivered', body:'Placement drive announcement email reached 1,240 students.', read:true, createdAt: new Date(Date.now()-86400000).toISOString() },
+    ]);
+  },
+  markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
+  markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
+};
+
+const NotificationInbox = {
+  apiBase(role) {
+    const map = {
+      student: '/student/notifications',
+      alumni: '/alumni/notifications',
+      staff: '/staff/notifications',
+      admin: '/admin/notifications',
+      placement_officer: '/admin/notifications',
+    };
+    return map[role] || null;
+  },
+  store(role) {
+    const map = {
+      student: StudentNotifs,
+      alumni: AlumniNotifs,
+      staff: StaffNotifs,
+      admin: AdminNotifs,
+      placement_officer: AdminNotifs,
+    };
+    return map[role] || null;
+  },
 };
 
 function appStatusBadge(status) {
@@ -839,9 +1135,21 @@ function appStatusBadge(status) {
     shortlisted: ['success','Shortlisted'],
     rejected: ['danger','Not selected'],
     offered: ['success','Offered'],
+    interview: ['info','Interview'],
   };
-  const [cls, label] = map[status] || ['muted', status];
+  const [cls, label] = map[status] || ['muted', String(status || '').replace(/_/g, ' ')];
   return `<span class="badge-soft ${cls}">${label}</span>`;
+}
+
+function mapCompanyJobStatus(status) {
+  const map = {
+    open: ['Open', 'success'],
+    reviewing: ['Reviewing', 'warning'],
+    closed: ['Closed', 'muted'],
+    ongoing: ['Ongoing', 'info'],
+  };
+  const [label, cls] = map[String(status || 'open').toLowerCase()] || ['Open', 'success'];
+  return { statusLabel: label, statusCls: cls };
 }
 
 const DRIVE_CATALOG = [
@@ -1109,6 +1417,12 @@ const DRIVE_HIDDEN_KEY = 'ph-drives-hidden';
 const DRIVE_OVERRIDES_KEY = 'ph-drives-overrides';
 const DEPT_OFFICER_KEY = 'ph-dept-placement-officers';
 
+const ROLE_SCOPED_CACHE_KEYS = [
+  USERS_KEY, APPS_KEY, DRIVES_STORE_KEY, DRIVE_HIDDEN_KEY, DRIVE_OVERRIDES_KEY,
+  STAFF_REC_KEY, REG_COMPANIES_KEY, RESUME_QUEUE_KEY, BLACKLIST_KEY, RESULTS_KEY,
+  RULES_KEY, DEPTS_KEY, PLACEMENT_NEWS_KEY, STAFF_REGISTRY_KEY, ALUMNI_JOBS_KEY, ALUMNI_REF_KEY,
+];
+
 const COMPANY_CATEGORIES = ['Software', 'Chemical', 'Food', 'Production', 'Mechanical', 'Consulting', 'Product'];
 const COMPANY_TIERS = ['Tier 1', 'Tier 2', 'Tier 3'];
 const DRIVE_TYPES = ['Exclusive', 'Pooled', 'Company Direct'];
@@ -1235,9 +1549,11 @@ const UserRegistry = {
     if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
       const students = await OfficerApi.fetchStudents();
       if (!students) return this.all();
-      this._cache = students;
-      localStorage.setItem(USERS_KEY, JSON.stringify(students));
-      return students;
+      const kept = this.all().filter(u => u.role !== 'student');
+      const list = [...students, ...kept];
+      this._cache = list;
+      localStorage.setItem(USERS_KEY, JSON.stringify(list));
+      return list;
     }
     const [users, students, companies] = await Promise.all([
       AdminApi.fetchUsers(),
@@ -1877,7 +2193,7 @@ const DriveStore = {
   },
   async fetch() {
     if (!canManageDrives()) return this.allWithCatalog();
-    if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+    if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined' && Auth.hasRealAuth()) {
       const list = await OfficerApi.fetchDrives();
       if (list) {
         this._apiCache = list;
@@ -1885,7 +2201,7 @@ const DriveStore = {
         return list;
       }
     }
-    if (Auth.role() === 'admin') {
+    if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
       const res = await api('/admin/drives');
       if (res.success && Array.isArray(res.data) && typeof OfficerApi !== 'undefined') {
         const list = res.data.map(d => OfficerApi.mapDrive(d));
@@ -1893,13 +2209,21 @@ const DriveStore = {
         this.save(list);
         return list;
       }
+      if (typeof AdminApi !== 'undefined') {
+        const list = await AdminApi.fetchDrives();
+        if (list) {
+          this._apiCache = list;
+          this.save(list);
+          return list;
+        }
+      }
     }
     return this.allWithCatalog();
   },
   async add(p) {
     if (!canManageDrives()) return null;
     if (!(await requireWriteSession())) return null;
-    const body = {
+    const driveBody = {
       title: p.role || p.title,
       companyId: p.companyId,
       type: p.type || 'pooled',
@@ -1908,12 +2232,12 @@ const DriveStore = {
       branches: p.branches ? (Array.isArray(p.branches) ? p.branches : String(p.branches).split(',').map(s => s.trim()).filter(Boolean)) : [],
       tier: p.tier || 'Tier 2',
     };
-    if (Auth.role() === 'placement_officer') {
-      const res = await api('/officer/drives', { method: 'POST', body });
+    if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
+      const res = await api('/officer/drives', { method: 'POST', body: driveBody });
       if (res.success) { await this.fetch(); return res.data; }
     }
-    if (Auth.role() === 'admin') {
-      const res = await api('/admin/drives', { method: 'POST', body });
+    if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
+      const res = await api('/admin/drives', { method: 'POST', body: driveBody });
       if (res.success) { await this.fetch(); return res.data; }
       toast(res.message || 'Could not create drive.', 'error');
       return null;
@@ -1953,8 +2277,26 @@ const DriveStore = {
   },
 };
 
+function clearRoleScopedCaches() {
+  ROLE_SCOPED_CACHE_KEYS.forEach(k => localStorage.removeItem(k));
+  UserRegistry._cache = null;
+  StaffRecs._cache = null;
+  RegisteredCompanies._cache = null;
+  AlumniReferrals._cache = null;
+  DepartmentStore._cache = null;
+  PlacementRules._cache = null;
+  ApplicationPipeline._cache = null;
+  BlacklistStore._cache = null;
+  RecruitmentResults._cache = null;
+  ResumeQueue._cache = null;
+  SystemSettings._cache = null;
+  PublicPageContent._cache = null;
+  PlacementNewsStore._cache = null;
+  DriveStore._apiCache = null;
+}
+
 async function dashboardStats() {
-  if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+  if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined' && Auth.hasRealAuth()) {
     const stats = await OfficerApi.fetchDashboard();
     if (stats) {
       return {
@@ -1970,6 +2312,32 @@ async function dashboardStats() {
         branchStats: DEPARTMENT_PLACEMENT,
         companyStats: activeRecruitingCompanies().slice(0, 8),
         department: stats.department || null,
+      };
+    }
+  }
+  if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined' && Auth.hasRealAuth()) {
+    const [stats, drives] = await Promise.all([
+      AdminApi.fetchDashboard(),
+      AdminApi.fetchDrives(),
+    ]);
+    if (stats) {
+      const total = stats.totalStudents ?? 0;
+      const placed = stats.placedStudents ?? 0;
+      const activeDrives = drives
+        ? drives.filter(d => String(d.status || '').toLowerCase() !== 'closed').length
+        : 0;
+      return {
+        totalStudents: total,
+        totalCompanies: stats.totalCompanies ?? 0,
+        totalStaff: StaffRegistry.all().length,
+        totalAlumni: Math.max(UserRegistry.byRole('alumni').length, 0),
+        totalDrives: activeDrives,
+        placedStudents: placed,
+        pendingApprovals: stats.pendingApprovals ?? 0,
+        placementPct: total ? ((placed / total) * 100).toFixed(1) : 0,
+        salary: { highest:68, lowest:3.5, average:9.4, median:8.2 },
+        branchStats: DEPARTMENT_PLACEMENT,
+        companyStats: activeRecruitingCompanies().slice(0, 8),
       };
     }
   }
@@ -2009,6 +2377,9 @@ function userStatusBadge(status, blocked) {
 
 /* Generic fetch with session cookies; optional 401 redirect for expired sessions */
 async function apiFetch(path, opts = {}) {
+  if (opts.noRedirectOn401 && opts.skipAuthRedirect === undefined) {
+    opts = { ...opts, skipAuthRedirect: true };
+  }
   const token = Auth.token();
   const headers = { ...(opts.headers || {}) };
   if (token && token !== 'session' && !token.startsWith('demo-token')) {
@@ -2128,3 +2499,16 @@ function applyRoleVisibility(root = document) {
     el.style.display = (role === 'alumni' && !employed) ? '' : 'none';
   });
 }
+
+(function patchAuthCacheIsolation() {
+  const origClear = Auth.clear.bind(Auth);
+  const origSetRole = Auth.setRole.bind(Auth);
+  Auth.clear = function () {
+    clearRoleScopedCaches();
+    return origClear();
+  };
+  Auth.setRole = function (role) {
+    clearRoleScopedCaches();
+    return origSetRole(role);
+  };
+})();

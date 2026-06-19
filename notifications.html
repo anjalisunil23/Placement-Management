@@ -44,57 +44,178 @@
 <script>
 const role = Auth.role();
 const isStudent = role === 'student';
+const isAlumni = role === 'alumni';
+const isStaff = role === 'staff';
+const isAdminLike = role === 'admin' || role === 'placement_officer';
+const hasInbox = !!NotificationInbox.store(role);
+const notifStore = NotificationInbox.store(role);
+const notifApiBase = NotificationInbox.apiBase(role);
 
-if (isStudent) {
-  StudentNotifs.seed();
-  document.getElementById('notifTitle').textContent = 'Notifications';
-  document.getElementById('notifSub').textContent = 'Job posters and updates from your applied drives.';
-  document.getElementById('notifActions').innerHTML = '<button class="btn btn-outline-secondary" id="markAllRead"><i class="bi bi-check2-all me-1"></i>Mark all read</button>';
+const pageCopy = {
+  student: ['Notifications', 'Job posters and updates from your applied drives.'],
+  alumni: ['Notifications', 'Referrals, job posts, and application updates.'],
+  staff: ['Notifications', 'Department alerts, drives, and recommendation updates.'],
+  admin: ['Notifications Center', 'Alerts, email status and broadcast history.'],
+  placement_officer: ['Notifications', 'Department placement alerts and drive updates.'],
+};
+const [pageTitle, pageSub] = pageCopy[role] || ['Notifications', 'Your inbox.'];
+document.getElementById('notifTitle').textContent = pageTitle;
+document.getElementById('notifSub').textContent = pageSub;
+
+if (!isAdminLike) {
   document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');
-} else {
+}
+if (!isStudent) {
   document.querySelectorAll('[data-student-only]').forEach(el => el.style.display = 'none');
+}
+if (!isAdminLike) {
+  document.getElementById('notifActions').innerHTML =
+    '<button class="btn btn-outline-secondary" id="markAllRead"><i class="bi bi-check2-all me-1"></i>Mark all read</button>';
+}
+
+function notifIcon(type) {
+  const t = String(type || '').toLowerCase();
+  if (['job_poster', 'job_post', 'drive_announcement'].includes(t)) return ['primary', 'bi-briefcase-fill'];
+  if (['application_update', 'selection_update', 'referral', 'recommendation_update'].includes(t)) return ['info', 'bi-send-check-fill'];
+  if (['resume_review', 'warning'].includes(t)) return ['warning', 'bi-exclamation-triangle-fill'];
+  if (['offer', 'success'].includes(t)) return ['success', 'bi-check-circle-fill'];
+  return ['primary', 'bi-bell-fill'];
 }
 
 function notifCard(n) {
-  const icon = n.type === 'job_poster' ? ['primary','bi-briefcase-fill'] : ['info','bi-send-check-fill'];
+  const icon = notifIcon(n.type);
   const ago = formatDate(n.createdAt);
-  return `<div class="notif-card ${n.read ? '' : 'unread'}" data-id="${n.id}">
+  return `<div class="notif-card ${n.read ? '' : 'unread'}" data-id="${n.id}" role="button" tabindex="0" style="cursor:pointer">
     <div class="notif-ic" style="background:color-mix(in srgb,var(--${icon[0]}) 15%,transparent);color:var(--${icon[0]})"><i class="bi ${icon[1]}"></i></div>
     <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${n.title}</strong><small class="text-muted-2">${ago}</small></div>
     <p class="mb-0 small text-muted-2">${n.body}</p></div>
   </div>`;
 }
 
-function adminCard(x) {
-  return `<div class="notif-card unread">
-    <div class="notif-ic" style="background:color-mix(in srgb,var(--${x[0]==='primary'?'primary':x[0]}) 15%,transparent);color:var(--${x[0]==='primary'?'primary':x[0]})"><i class="bi ${x[1]}"></i></div>
-    <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${x[2]}</strong><small class="text-muted-2">${x[4]}</small></div>
-    <p class="mb-0 small text-muted-2">${x[3]}</p></div>
-  </div>`;
+function mapApiNotifType(type) {
+  const t = (type || '').toLowerCase();
+  if (t === 'drive_announcement' || t === 'job_poster' || t === 'job_post') return 'job_poster';
+  if (['application_update', 'selection_update', 'application_submitted', 'officer_approved', 'registration_approved', 'referral', 'recommendation_update'].includes(t)) return 'application_update';
+  if (t === 'resume_review') return 'resume_review';
+  if (t === 'offer') return 'offer';
+  return 'general';
 }
 
-function renderStudentNotifs() {
-  const all = StudentNotifs.all();
-  document.getElementById('unreadBadge').textContent = StudentNotifs.unreadCount();
+function normalizeNotif(n) {
+  return {
+    id: String(n._id || n.id || ''),
+    type: n.type === 'job_poster' || n.type === 'application_update' ? n.type : mapApiNotifType(n.type),
+    title: n.title || 'Notification',
+    body: n.body || n.message || '',
+    read: !!n.read,
+    createdAt: n.createdAt,
+    driveId: n.driveId || n.metadata?.driveId,
+  };
+}
+
+let notificationRows = [];
+
+async function loadNotifications() {
+  if (Auth.hasRealAuth() && notifApiBase) {
+    const res = await api(notifApiBase, { skipAuthRedirect: true });
+    if (res?.success) {
+      notificationRows = (res.data || []).map(normalizeNotif);
+      return;
+    }
+  }
+  notifStore?.seed();
+  notificationRows = (notifStore?.all() || []).map(normalizeNotif);
+}
+
+function renderInbox() {
+  const all = notificationRows;
+  document.getElementById('unreadBadge').textContent = all.filter(n => !n.read).length;
   document.getElementById('nlistUnread').innerHTML = all.filter(n => !n.read).map(notifCard).join('') || '<p class="text-muted-2">No unread notifications.</p>';
   document.getElementById('nlistRead').innerHTML = all.filter(n => n.read).map(notifCard).join('') || '<p class="text-muted-2">No read notifications yet.</p>';
-  document.getElementById('nlistJobs').innerHTML = all.filter(n => n.type === 'job_poster').map(notifCard).join('') || '<p class="text-muted-2">No job posters yet.</p>';
-  document.getElementById('nlistApps').innerHTML = all.filter(n => n.type === 'application_update').map(notifCard).join('') || '<p class="text-muted-2">No application updates yet.</p>';
+  if (isStudent) {
+    document.getElementById('nlistJobs').innerHTML = all.filter(n => n.type === 'job_poster').map(notifCard).join('') || '<p class="text-muted-2">No job posters yet.</p>';
+    document.getElementById('nlistApps').innerHTML = all.filter(n => n.type === 'application_update').map(notifCard).join('') || '<p class="text-muted-2">No application updates yet.</p>';
+  }
 }
 
-if (isStudent) {
-  renderStudentNotifs();
-  document.getElementById('markAllRead')?.addEventListener('click', () => { StudentNotifs.markAllRead(); renderStudentNotifs(); toast('All marked as read.', 'success'); });
-} else {
-  const n = [
-    ['primary','bi-briefcase-fill','New drive published','Google SDE-1 is now open for registrations.','2 min ago'],
-    ['success','bi-check-circle-fill','Offer accepted','Kabir Singh accepted Amazon SDE Intern offer.','12 min ago'],
-    ['warning','bi-exclamation-triangle-fill','Resume needs review','18 new resumes pending verification.','1h ago'],
-  ];
-  document.getElementById('unreadBadge').textContent = '3';
-  document.getElementById('nlistUnread').innerHTML = n.map(adminCard).join('');
-  document.getElementById('nlistRead').innerHTML = '<p class="text-muted-2">204 read notifications.</p>';
-  document.getElementById('markAllRead')?.addEventListener('click', () => toast('All marked as read.', 'success'));
+function showReadTab() {
+  const readTab = document.querySelector('#notifTabs a[href="#read"]');
+  if (readTab && typeof bootstrap !== 'undefined') bootstrap.Tab.getOrCreateInstance(readTab).show();
+}
+
+async function openNotification(id) {
+  const sid = String(id);
+  const idx = notificationRows.findIndex(n => String(n.id) === sid);
+  if (idx < 0) return;
+  const notif = notificationRows[idx];
+  if (notif.read) {
+    showReadTab();
+    return;
+  }
+
+  notificationRows[idx] = { ...notif, read: true };
+  renderInbox();
+  showReadTab();
+
+  if (Auth.hasRealAuth() && notifApiBase) {
+    const res = await api(`${notifApiBase}/${encodeURIComponent(sid)}/read`, { method: 'POST', skipAuthRedirect: true });
+    if (!res?.success) {
+      notificationRows[idx] = notif;
+      renderInbox();
+      toast(res?.message || 'Could not mark as read.', 'error');
+      return;
+    }
+    await loadNotifications();
+    renderInbox();
+  } else if (notifStore) {
+    notifStore.markRead(sid);
+    notificationRows = notifStore.all().map(normalizeNotif);
+    renderInbox();
+  }
+  toast('Marked as read.', 'success');
+}
+
+function bindNotificationClicks() {
+  const listIds = isStudent ? ['nlistUnread', 'nlistRead', 'nlistJobs', 'nlistApps'] : ['nlistUnread', 'nlistRead'];
+  listIds.forEach(listId => {
+    const el = document.getElementById(listId);
+    if (!el || el.dataset.bound === '1') return;
+    el.dataset.bound = '1';
+    el.addEventListener('click', e => {
+      const card = e.target.closest('.notif-card[data-id]');
+      if (card) openNotification(card.dataset.id);
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const card = e.target.closest('.notif-card[data-id]');
+      if (card) { e.preventDefault(); openNotification(card.dataset.id); }
+    });
+  });
+}
+
+if (hasInbox) {
+  loadNotifications().then(() => {
+    renderInbox();
+    bindNotificationClicks();
+  });
+  document.getElementById('markAllRead')?.addEventListener('click', async () => {
+    if (Auth.hasRealAuth() && notifApiBase) {
+      const res = await api(`${notifApiBase}/read-all`, { method: 'POST', skipAuthRedirect: true });
+      if (!res?.success) {
+        toast(res?.message || 'Could not mark all as read.', 'error');
+        return;
+      }
+    } else if (notifStore) {
+      notifStore.markAllRead();
+    }
+    await loadNotifications();
+    renderInbox();
+    showReadTab();
+    toast('All marked as read.', 'success');
+  });
+}
+
+if (isAdminLike) {
   document.querySelector('#notifActions .btn-primary')?.addEventListener('click', () => {
     const title = prompt('Broadcast title:', 'New placement drive announced');
     if (!title) return;

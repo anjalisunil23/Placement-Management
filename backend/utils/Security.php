@@ -130,6 +130,12 @@ final class Security
         return ['pdf', 'doc', 'docx'];
     }
 
+    /** @return string[] */
+    public static function allowedPhotoExtensions(): array
+    {
+        return ['jpg', 'jpeg', 'png', 'webp'];
+    }
+
     public static function validateUploadedFile(array $file, int $maxSize, array $allowedExtensions): ?string
     {
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -145,9 +151,13 @@ final class Security
         $finfo = new \finfo(FILEINFO_MIME_TYPE);
         $mime = $finfo->file($file['tmp_name']);
         $allowedMimes = [
-            'pdf'  => ['application/pdf'],
+            'pdf'  => ['application/pdf', 'application/octet-stream', 'application/x-pdf'],
             'doc'  => ['application/msword'],
             'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            'jpg'  => ['image/jpeg'],
+            'jpeg' => ['image/jpeg'],
+            'png'  => ['image/png'],
+            'webp' => ['image/webp'],
         ];
         $validMimes = [];
         foreach ($allowedExtensions as $e) {

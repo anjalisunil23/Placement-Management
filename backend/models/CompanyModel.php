@@ -54,4 +54,22 @@ class CompanyModel extends BaseModel
         }
         return $this->delete((string) $profile['_id']);
     }
+
+    /**
+     * @param array<string, mixed>|null $company
+     * @return array<string, mixed>
+     */
+    public static function profileToUserFields(?array $company): array
+    {
+        if ($company === null) {
+            return [];
+        }
+        return [
+            'companyId'   => (string) ($company['_id'] ?? ''),
+            'companyName' => (string) ($company['companyName'] ?? ''),
+            'category'    => (string) ($company['category'] ?? ''),
+            'tier'        => (string) ($company['tier'] ?? ''),
+            'website'     => (string) ($company['website'] ?? ''),
+        ];
+    }
 }

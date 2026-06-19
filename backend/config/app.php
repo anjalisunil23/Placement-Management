@@ -40,6 +40,7 @@ return [
         'reports_dir'=> $rootPath . '/uploads/reports',
         'jd_dir'     => $rootPath . '/uploads/jd',
         'signed_dir' => $rootPath . '/uploads/signed_reports',
+        'photo_dir'  => $rootPath . '/uploads/photos',
     ],
     'cors' => [
         'allowed_origins' => array_filter(array_map(

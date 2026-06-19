@@ -19,16 +19,19 @@ class AlumniReferralModel extends BaseModel
      */
     public function createReferral(string $alumniUserId, array $data): string
     {
+        $link = trim((string) ($data['link'] ?? $data['companyWebsite'] ?? ''));
+        $type = trim((string) ($data['referralType'] ?? $data['type'] ?? 'Either'));
+
         return $this->insert([
-            'alumniUserId'  => Security::toObjectId($alumniUserId),
-            'jobTitle'      => $data['jobTitle'] ?? '',
-            'companyName'   => $data['companyName'] ?? '',
-            'companyWebsite'=> $data['companyWebsite'] ?? $data['link'] ?? '',
-            'description'   => $data['description'] ?? '',
-            'link'          => $data['link'] ?? $data['companyWebsite'] ?? '',
-            'package'       => $data['package'] ?? '',
-            'referralType'  => $data['type'] ?? $data['referralType'] ?? 'Either',
-            'status'        => 'submitted',
+            'alumniUserId'   => Security::toObjectId($alumniUserId),
+            'jobTitle'       => trim((string) ($data['jobTitle'] ?? '')),
+            'companyName'    => trim((string) ($data['companyName'] ?? '')),
+            'companyWebsite' => trim((string) ($data['companyWebsite'] ?? $link)),
+            'description'    => trim((string) ($data['description'] ?? '')),
+            'link'           => $link,
+            'package'        => trim((string) ($data['package'] ?? '')),
+            'referralType'   => $type !== '' ? $type : 'Either',
+            'status'         => 'submitted',
         ]);
     }
 
@@ -42,5 +45,14 @@ class AlumniReferralModel extends BaseModel
             return [];
         }
         return $this->findAll(['alumniUserId' => $oid]);
+    }
+
+    public function countByAlumni(string $alumniUserId): int
+    {
+        $oid = Security::toObjectId($alumniUserId);
+        if ($oid === null) {
+            return 0;
+        }
+        return $this->count(['alumniUserId' => $oid]);
     }
 }

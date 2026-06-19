@@ -1,17 +1,19 @@
 /**
- * Staff API helpers — department-scoped read access and recommendations.
+ * Staff API helpers — department-scoped faculty endpoints.
  */
 const StaffApi = {
   id(doc) { return doc?.id || doc?._id || ''; },
 
   mapRecommendation(row) {
+    if (typeof AdminApi !== 'undefined') return AdminApi.mapRecommendation(row);
+    const contact = row.contact || {};
     return {
       id: StaffApi.id(row),
       companyName: row.companyName || '',
       companyWebsite: row.companyWebsite || '',
-      hrName: row.hrName || row.contact?.name || '',
-      hrEmail: row.hrEmail || row.contact?.email || '',
-      contactNumber: row.contactNumber || row.contact?.phone || '',
+      hrName: row.hrName || contact.name || '',
+      hrEmail: row.hrEmail || contact.email || '',
+      contactNumber: row.contactNumber || contact.phone || '',
       staffName: row.staffName || '',
       staffEmail: row.staffEmail || '',
       submittedAt: row.submittedAt || row.createdAt || '',
@@ -21,17 +23,19 @@ const StaffApi = {
   },
 
   mapStudentRow(row) {
-    const u = row.user || {};
-    const dept = row.department || {};
     return {
-      id: StaffApi.id(u) || StaffApi.id(row),
-      studentId: StaffApi.id(row),
-      name: u.name || '',
-      email: u.email || '',
+      id: row.id || StaffApi.id(row),
+      studentId: row.id || StaffApi.id(row),
+      name: row.name || '',
+      email: row.email || '',
       registerNumber: row.registerNumber || '',
-      department: dept.code || dept.name || '',
-      cgpa: row.academic?.cgpa ?? null,
-      placementStatus: row.placed ? 'placed' : 'registered',
+      department: row.department || '',
+      classBatch: row.classBatch || '',
+      cgpa: row.cgpa ?? null,
+      placementStatus: row.placementStatus || 'seeking',
+      status: row.status || 'active',
+      blacklisted: !!row.blacklisted,
+      blocked: !!row.blocked,
     };
   },
 
@@ -41,7 +45,7 @@ const StaffApi = {
     return {
       id: StaffApi.id(d),
       company: d.companyName || d.company || '',
-      role: d.title || '',
+      role: d.title || d.role || '',
       type: d.type || 'pooled',
       date: d.date || '',
       branches: Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || ''),
@@ -88,6 +92,12 @@ const StaffApi = {
     const res = await api('/staff/students');
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => StaffApi.mapStudentRow(s));
+  },
+
+  async fetchStudentPipeline(studentId) {
+    const res = await api(`/staff/students/${encodeURIComponent(studentId)}/pipeline`);
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data;
   },
 
   async fetchDrives() {

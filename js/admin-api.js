@@ -300,6 +300,39 @@ const AdminApi = {
     if (!res.success) return null;
     return this.mapRule(res.data);
   },
+
+  mapDrive(d) {
+    if (typeof OfficerApi !== 'undefined') return OfficerApi.mapDrive(d);
+    const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
+    const status = statusMap[(d.status || '').toLowerCase()] || d.status || 'Open';
+    return {
+      id: this.id(d),
+      company: d.companyName || d.company || '',
+      companyId: d.companyId || '',
+      role: d.title || '',
+      title: d.title || '',
+      type: d.type || 'pooled',
+      date: d.date || '',
+      time: d.time || '',
+      branches: Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || ''),
+      tier: d.tier || 'Tier 2',
+      status,
+      statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
+      applied: d.applied ?? 0,
+      profile: d.profile || 'General',
+    };
+  },
+
+  async fetchDashboard() {
+    const res = await api('/admin/dashboard');
+    return res.success ? res.data : null;
+  },
+
+  async fetchDrives() {
+    const res = await api('/admin/drives');
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(d => this.mapDrive(d));
+  },
 };
 
 const ReportCenter = {

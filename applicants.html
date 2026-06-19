@@ -9,40 +9,44 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Applicant Management</h1><p class="page-sub">Google · SDE-1 · 412 applicants</p></div>
-  <div class="d-flex gap-2"><button class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i>Export</button><button class="btn btn-primary"><i class="bi bi-check2-square me-1"></i>Shortlist selected</button></div>
+  <div><h1 class="page-title">Applicant Management</h1><p class="page-sub" id="pageSub">Applicants</p></div>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-secondary" id="exportBtn"><i class="bi bi-download me-1"></i>Export</button>
+    <button type="button" class="btn btn-primary" id="shortlistBtn"><i class="bi bi-check2-square me-1"></i>Shortlist selected</button>
+  </div>
 </div>
 
 <div class="row g-3">
   <div class="col-lg-3">
     <div class="card-surface p-3 mb-3">
       <h6 class="fw-bold mb-3">Filters</h6>
-      <div class="mb-3"><label class="form-label small fw-semibold">CGPA range</label><input type="range" class="form-range" min="5" max="10" step="0.1" value="7.5"/><div class="small text-muted-2">≥ 7.5</div></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Min CGPA</label><input type="range" class="form-range" id="cgpaRange" min="5" max="10" step="0.1" value="7.5"/><div class="small text-muted-2">≥ <span id="cgpaVal">7.5</span></div></div>
       <div class="mb-3"><label class="form-label small fw-semibold">Branch</label>
-        <div class="form-check"><input class="form-check-input" type="checkbox" checked id="b1"><label for="b1" class="small">CSE (218)</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" checked id="b2"><label for="b2" class="small">IT (124)</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" id="b3"><label for="b3" class="small">ECE (70)</label></div>
+        <select class="form-select form-select-sm" id="branchFilter"><option value="">All branches</option></select>
       </div>
       <div class="mb-3"><label class="form-label small fw-semibold">Status</label>
-        <select class="form-select form-select-sm"><option>All</option><option>Applied</option><option>Shortlisted</option><option>Interview</option><option>Offered</option><option>Rejected</option></select>
+        <select class="form-select form-select-sm" id="statusFilter">
+          <option value="">All</option>
+          <option value="applied">Applied</option>
+          <option value="officer_approved">Under review</option>
+          <option value="shortlisted">Shortlisted</option>
+          <option value="selected">Offered</option>
+          <option value="rejected">Rejected</option>
+        </select>
       </div>
-      <button class="btn btn-outline-secondary w-100 btn-sm">Reset</button>
+      <button type="button" class="btn btn-outline-secondary w-100 btn-sm" id="resetFilters">Reset</button>
     </div>
     <div class="card-surface p-3">
       <h6 class="fw-bold mb-2">Quick stats</h6>
-      <div class="d-flex justify-content-between mb-1 small"><span>Applied</span><strong>412</strong></div>
-      <div class="d-flex justify-content-between mb-1 small"><span>Shortlisted</span><strong>148</strong></div>
-      <div class="d-flex justify-content-between mb-1 small"><span>Interviewed</span><strong>62</strong></div>
-      <div class="d-flex justify-content-between small"><span>Offered</span><strong class="text-success">14</strong></div>
+      <div id="quickStats"></div>
     </div>
   </div>
   <div class="col-lg-9">
     <div class="card-surface">
       <div class="p-3 d-flex gap-2 align-items-center">
-        <div class="position-relative flex-grow-1"><i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i><input class="form-control ps-4" placeholder="Search applicants…"/></div>
-        <select class="form-select w-auto"><option>Sort: CGPA ↓</option><option>Name</option><option>Applied date</option></select>
+        <div class="position-relative flex-grow-1"><i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i><input class="form-control ps-4" id="searchInput" placeholder="Search applicants…"/></div>
       </div>
-      <div class="table-wrap"><table class="table-modern"><thead><tr><th><input type="checkbox"/></th><th>Candidate</th><th>Roll</th><th>Branch</th><th>CGPA</th><th>Status</th><th>Resume</th><th></th></tr></thead><tbody id="ar"></tbody></table></div>
+      <div class="table-wrap"><table class="table-modern"><thead><tr><th><input type="checkbox" id="selectAll"/></th><th>Candidate</th><th>Roll</th><th>Branch</th><th>CGPA</th><th>Status</th><th>Resume</th><th></th></tr></thead><tbody id="ar"></tbody></table></div>
     </div>
   </div>
 </div>
@@ -54,14 +58,140 @@
 <script>
 const user = Auth.user() || demoUserFor('company');
 const co = user.companyName || 'Acme Cloud';
-const apps = companyApplicants(co);
-document.querySelector('.page-sub').textContent = `${co} · ${apps.length} applicants across your open roles`;
-document.getElementById('ar').innerHTML = apps.length ? apps.map(a => `<tr>
- <td><input type="checkbox"/></td>
- <td><div class="d-flex align-items-center gap-2"><div class="avatar" style="width:32px;height:32px;font-size:.72rem">${a.name.split(' ').map(n=>n[0]).join('')}</div><strong>${a.name}</strong></div></td>
- <td>${a.roll || '—'}</td><td>${a.dept}</td><td>${a.cgpa}</td>
- <td>${appStatusBadge(a.status)}</td>
- <td><i class="bi bi-file-earmark-pdf-fill text-danger"></i></td>
- <td><button class="btn btn-sm btn-outline-primary" onclick="toast('Profile view (demo).','info')">View</button></td>
-</tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No applicants yet.</td></tr>';
+let applicantRows = [];
+let useApi = false;
+
+['CSE','IT','ECE','ME','EE','CE','MCA'].forEach(b => {
+  const o = document.createElement('option');
+  o.value = b; o.textContent = b;
+  document.getElementById('branchFilter').appendChild(o);
+});
+
+function normalizeApplicant(a) {
+  if (a.student) {
+    return {
+      id: String(a._id || a.id),
+      name: a.student.name,
+      roll: a.student.registerNumber,
+      dept: a.student.department,
+      cgpa: a.student.cgpa,
+      status: a.uiStatus || a.status,
+      rawStatus: a.status,
+      hasResume: a.student.hasResume,
+    };
+  }
+  return { ...a, id: a.id || ('demo-' + a.roll), rawStatus: a.status };
+}
+
+function renderQuickStats(rows) {
+  const counts = { applied: 0, shortlisted: 0, interview: 0, offered: 0 };
+  rows.forEach(r => {
+    const s = r.status;
+    if (s === 'shortlisted') counts.shortlisted++;
+    else if (s === 'offered') counts.offered++;
+    else if (s === 'interview') counts.interview++;
+    else counts.applied++;
+  });
+  document.getElementById('quickStats').innerHTML = `
+    <div class="d-flex justify-content-between mb-1 small"><span>Applied</span><strong>${counts.applied}</strong></div>
+    <div class="d-flex justify-content-between mb-1 small"><span>Shortlisted</span><strong>${counts.shortlisted}</strong></div>
+    <div class="d-flex justify-content-between mb-1 small"><span>Interviewed</span><strong>${counts.interview}</strong></div>
+    <div class="d-flex justify-content-between small"><span>Offered</span><strong class="text-success">${counts.offered}</strong></div>`;
+}
+
+function filteredRows() {
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  return applicantRows.filter(r => {
+    if (q && !`${r.name} ${r.roll} ${r.dept}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function renderTable() {
+  const rows = filteredRows();
+  document.getElementById('pageSub').textContent = `${co} · ${applicantRows.length} applicants across your open roles`;
+  renderQuickStats(applicantRows);
+  document.getElementById('ar').innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td><input type="checkbox" class="app-check" data-id="${r.id}"/></td>
+      <td><div class="d-flex align-items-center gap-2"><div class="avatar" style="width:32px;height:32px;font-size:.72rem">${(r.name||'?').split(' ').map(n=>n[0]).join('').slice(0,2)}</div><strong>${r.name}</strong></div></td>
+      <td>${r.roll || '—'}</td><td>${r.dept || '—'}</td><td>${r.cgpa ?? '—'}</td>
+      <td>${appStatusBadge(r.status)}</td>
+      <td>${r.hasResume !== false ? '<i class="bi bi-file-earmark-pdf-fill text-danger"></i>' : '<span class="text-muted-2">—</span>'}</td>
+      <td>
+        <div class="btn-group btn-group-sm">
+          <button type="button" class="btn btn-outline-primary" data-action="review" data-id="${r.id}">Review</button>
+          <button type="button" class="btn btn-outline-success" data-action="shortlist" data-id="${r.id}">Shortlist</button>
+        </div>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No applicants yet.</td></tr>';
+}
+
+async function loadApplicants() {
+  const minCgpa = document.getElementById('cgpaRange').value;
+  const branch = document.getElementById('branchFilter').value;
+  const status = document.getElementById('statusFilter').value;
+  useApi = Auth.hasRealAuth();
+  if (useApi) {
+    const qs = new URLSearchParams();
+    if (minCgpa) qs.set('minCgpa', minCgpa);
+    if (branch) qs.set('branch', branch);
+    if (status) qs.set('status', status);
+    const res = await api(`/company/applications?${qs}`, { noRedirectOn401: true });
+    if (res?.success) {
+      applicantRows = (res.data || []).map(normalizeApplicant);
+      renderTable();
+      return;
+    }
+    useApi = false;
+  }
+  applicantRows = companyApplicants(co).map(normalizeApplicant);
+  const min = parseFloat(minCgpa);
+  applicantRows = applicantRows.filter(r => !min || (r.cgpa >= min));
+  if (branch) applicantRows = applicantRows.filter(r => r.dept === branch);
+  renderTable();
+}
+
+async function appAction(id, action) {
+  if (!useApi) { toast(`${action} recorded (demo).`, 'success'); return; }
+  const path = action === 'review' ? 'review' : action === 'shortlist' ? 'shortlist' : 'result';
+  const body = action === 'result' ? { status: 'selected' } : undefined;
+  const res = await api(`/company/applications/${encodeURIComponent(id)}/${path}`, { method: 'POST', body, noRedirectOn401: true });
+  if (res?.success) { toast('Updated.', 'success'); await loadApplicants(); }
+  else toast(res?.message || 'Action failed.', 'error');
+}
+
+document.getElementById('ar').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  appAction(btn.dataset.id, btn.dataset.action);
+});
+
+document.getElementById('cgpaRange').addEventListener('input', e => {
+  document.getElementById('cgpaVal').textContent = e.target.value;
+});
+document.getElementById('cgpaRange').addEventListener('change', loadApplicants);
+document.getElementById('branchFilter').addEventListener('change', loadApplicants);
+document.getElementById('statusFilter').addEventListener('change', loadApplicants);
+document.getElementById('searchInput').addEventListener('input', renderTable);
+document.getElementById('resetFilters').addEventListener('click', () => {
+  document.getElementById('cgpaRange').value = 7.5;
+  document.getElementById('cgpaVal').textContent = '7.5';
+  document.getElementById('branchFilter').value = '';
+  document.getElementById('statusFilter').value = '';
+  loadApplicants();
+});
+
+document.getElementById('shortlistBtn').addEventListener('click', async () => {
+  const ids = [...document.querySelectorAll('.app-check:checked')].map(cb => cb.dataset.id);
+  if (!ids.length) { toast('Select applicants first.', 'warn'); return; }
+  for (const id of ids) await appAction(id, 'shortlist');
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => toast('Export started (demo).', 'info'));
+document.getElementById('selectAll').addEventListener('change', e => {
+  document.querySelectorAll('.app-check').forEach(cb => { cb.checked = e.target.checked; });
+});
+
+loadApplicants();
 </script></body></html>

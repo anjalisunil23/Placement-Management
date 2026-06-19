@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace PMS\Models;
 
 use PMS\Schemas\Collections;
-use PMS\Utils\DocumentHelper;
-use PMS\Utils\Security;
 
 class RuleModel extends BaseModel
 {
@@ -26,7 +24,6 @@ class RuleModel extends BaseModel
      */
     public function createRule(array $data): string
     {
-        // Deactivate other rules if this one is active
         if (!empty($data['active'])) {
             $this->collection->updateMany(['active' => true], ['$set' => ['active' => false]]);
         }

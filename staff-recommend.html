@@ -44,7 +44,6 @@ async function renderMine() {
     <tr><td><strong>${r.companyName}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
     : '<tr><td colspan="3" class="text-muted-2 p-4">No recommendations yet. <button type="button" class="btn btn-link btn-sm p-0 align-baseline" onclick="ReferralModals.openStaff()">Submit your first company</button></td></tr>';
 }
-
 onAppReady(() => renderMine());
 document.addEventListener('ph-staff-recommend-added', () => renderMine());
 </script>
