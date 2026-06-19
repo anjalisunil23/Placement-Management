@@ -62,9 +62,9 @@ const NAV = [
   { section: "Insights", roles: ['staff'] },
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['staff'] },
 
-  { section: "Account", roles: ['admin','placement_officer','student','staff','alumni'] },
-  { href: "notifications.html", icon: "bi-bell-fill", label: "Notifications", roles: ['admin','placement_officer','student','staff','alumni'] },
-  { href: "settings.html", icon: "bi-gear-fill", label: "Settings", roles: ['admin','placement_officer','staff','alumni'] },
+  { section: "Account", roles: ['admin','placement_officer','student','staff','alumni','company'] },
+  { href: "notifications.html", icon: "bi-bell-fill", label: "Notifications", roles: ['admin','placement_officer','student','staff','alumni','company'] },
+  { href: "settings.html", icon: "bi-gear-fill", label: "Settings", roles: ['admin','placement_officer','staff','alumni','company'] },
   { href: "settings.html", icon: "bi-person-badge", label: "Profile & Resumes", roles: ['student'], studentOnly: true },
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['admin','placement_officer','alumni'] },
 ];
@@ -318,8 +318,8 @@ function renderShell(active) {
           </ul>
         </div>` : `<span class="badge badge-soft ${ROLE_BADGES[role] || 'muted'} d-none d-sm-inline-flex align-items-center gap-1 px-2 py-1"><i class="bi bi-person-badge"></i>${ROLE_LABELS[role]}</span>`}
         <button class="icon-btn" id="themeBtn" title="Theme"><i class="bi bi-moon-stars"></i></button>
-        ${role !== 'company' ? '<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>' : ''}
-        ${role !== 'company' ? '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Settings"><i class="bi bi-gear"></i></a>' : ''}
+        ${'<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>'}
+        ${role !== 'student' ? '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Settings"><i class="bi bi-gear"></i></a>' : '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Profile & Resumes"><i class="bi bi-person-badge"></i></a>'}
         <div class="avatar">${initials(user.name)}</div>
       </div>`;
   }

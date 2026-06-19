@@ -9,6 +9,7 @@ use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\PlacementOfficerModel;
 use PMS\Models\StaffModel;
+use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -118,6 +119,15 @@ final class AuthMiddleware
           : null;
         $data['department'] = $dept['code'] ?? $dept['name'] ?? '';
         $data['departmentId'] = $dept ? (string) $dept['_id'] : '';
+      }
+    }
+    if (($user['role'] ?? '') === 'student') {
+      $profile = (new StudentModel())->findByUserId((string) $user['_id']);
+      if ($profile) {
+        $dept = !empty($profile['departmentId'])
+          ? (new DepartmentModel())->findById((string) $profile['departmentId'])
+          : null;
+        $data = array_merge($data, StudentModel::profileToUserFields($profile, $dept));
       }
     }
     if ($token !== null) {

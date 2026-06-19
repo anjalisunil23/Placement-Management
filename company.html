@@ -128,7 +128,7 @@ async function loadPortal() {
   renderJobs();
 }
 
-loadPortal();
+onAppReady(() => { loadPortal(); });
 
 document.getElementById('postJobForm').addEventListener('submit', async e => {
   e.preventDefault();

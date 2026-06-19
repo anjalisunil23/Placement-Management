@@ -114,4 +114,32 @@ class StudentModel extends BaseModel
 
         return $this->findAll($query, $limit);
     }
+
+    /**
+     * @param array<string, mixed>|null $profile
+     * @param array<string, mixed>|null $department
+     * @return array<string, mixed>
+     */
+    public static function profileToUserFields(?array $profile, ?array $department = null): array
+    {
+        if ($profile === null) {
+            return [];
+        }
+
+        $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+
+        return [
+            'studentId'      => (string) ($profile['_id'] ?? ''),
+            'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
+            'departmentId'   => (string) ($profile['departmentId'] ?? ''),
+            'department'     => $department
+                ? (string) ($department['code'] ?? $department['name'] ?? '')
+                : '',
+            'departmentName' => $department ? (string) ($department['name'] ?? '') : '',
+            'classBatch'     => (string) ($profile['classBatch'] ?? ''),
+            'cgpa'           => (float) ($academic['cgpa'] ?? 0),
+            'backlogs'       => (int) ($academic['backlogs'] ?? 0),
+            'placed'         => (bool) ($profile['placed'] ?? false),
+        ];
+    }
 }

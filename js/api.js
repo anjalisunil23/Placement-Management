@@ -31,9 +31,9 @@ const PAGE_PERMS = {
   'company.html':       ['company'],
   'applicants.html':    ['company'],
   'reports.html':       ['admin','placement_officer'],
-  'notifications.html': ['admin','placement_officer','student','staff','alumni'],
+  'notifications.html': ['admin','placement_officer','student','staff','alumni','company'],
   'public-stats.html':  ROLES,
-  'settings.html':      ['admin','placement_officer','student','staff','alumni'],
+  'settings.html':      ['admin','placement_officer','student','staff','alumni','company'],
   'alumni-jobs.html':       ['alumni'],
   'alumni-referrals.html':  ['alumni'],
   'staff-recommend.html':   ['staff'],
@@ -53,7 +53,7 @@ const PAGE_PERMS = {
 
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'settings.html', 'notifications.html', 'public-stats.html'];
-const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html'];
+const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'drives.html', 'student-overview.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'notifications.html', 'settings.html'];
 
@@ -150,7 +150,10 @@ const QUICK_LOGIN_ACCOUNTS = {
   admin: { email: 'admin@college.edu', password: 'Admin@123456' },
   placement_officer: { email: 'riya@college.edu', password: 'Officer@123456' },
   staff: { email: 'ravi.iyer@college.edu', password: 'Staff@123456' },
-  student: { email: 'karthik.s@college.edu', password: 'Student@123456' },
+  student: { email: 'rahul.v@college.edu', password: 'Student@123456' },
+  company: { email: 'neha@acme.io', password: 'Company@123456' },
+  alumni: { email: 'rohan.v@alumni.edu', password: 'Alumni@123456' },
+  'alumni-seeking': { email: 'priya.v@alumni.edu', password: 'Alumni@123456' },
 };
 
 const Auth = {
@@ -163,6 +166,9 @@ const Auth = {
   homePage(role) {
     const u = this.user();
     const r = role || this.role();
+    if (r === 'alumni' && u && typeof u.isWorking === 'boolean' && !u.isWorking) {
+      return 'drives.html';
+    }
     if (u?.dashboard) {
       const page = String(u.dashboard).replace(/^\//, '').split('#')[0];
       if (page && this.isAllowed(page)) return page;
@@ -181,18 +187,35 @@ const Auth = {
   },
   applySessionUser(u) {
     if (!u) return;
+    const prev = this.user() || {};
     this.set(
       {
-        id: u.id || u._id || '',
-        name: u.name || '',
-        email: u.email || '',
-        role: u.role || '',
-        department: u.department || '',
-        departmentId: u.departmentId || '',
-        designation: u.designation || '',
-        company: u.company || u.companyName || '',
-        registerNumber: u.registerNumber || '',
-        dashboard: u.dashboard || '',
+        ...prev,
+        id: u.id || u._id || prev.id || '',
+        name: u.name || prev.name || '',
+        email: u.email || prev.email || '',
+        role: u.role || prev.role || '',
+        department: u.department || prev.department || '',
+        departmentId: u.departmentId || prev.departmentId || '',
+        departmentName: u.departmentName || prev.departmentName || '',
+        designation: u.designation || prev.designation || '',
+        company: u.company ?? prev.company ?? '',
+        companyName: u.companyName ?? prev.companyName ?? '',
+        companyId: u.companyId || prev.companyId || '',
+        registerNumber: u.registerNumber || prev.registerNumber || '',
+        studentId: u.studentId || prev.studentId || '',
+        classBatch: u.classBatch || prev.classBatch || '',
+        cgpa: u.cgpa ?? prev.cgpa,
+        backlogs: u.backlogs ?? prev.backlogs,
+        placed: u.placed ?? prev.placed,
+        title: u.title ?? prev.title ?? '',
+        experience: u.experience ?? prev.experience,
+        isWorking: u.isWorking ?? prev.isWorking,
+        skills: u.skills || prev.skills || [],
+        category: u.category || prev.category || '',
+        tier: u.tier || prev.tier || '',
+        website: u.website || prev.website || '',
+        dashboard: u.dashboard || prev.dashboard || '',
       },
       'session'
     );

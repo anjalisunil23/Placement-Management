@@ -54,18 +54,17 @@
               </label>
               <input name="password" type="password" class="form-control" placeholder="Your password" required />
             </div>
-            <p class="small text-muted-2 mb-2">Quick sign-in: <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="admin">Admin</button> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="placement_officer">Placement officer</button> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="staff">Staff</button></p>
+            <p class="small text-muted-2 mb-2">Quick sign-in: <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="admin">Admin</button> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="placement_officer">Placement officer</button> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="staff">Staff</button> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="student">Student</button> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="company">Company</button> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="alumni">Alumni</button></p>
             <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="r" checked><label class="form-check-label small" for="r">Keep me signed in</label></div>
             <button class="btn btn-primary w-100 py-2 fw-semibold" type="submit">Sign in</button>
-            <div class="text-center my-3 text-muted-2 small">or quick sign-in / UI preview</div>
+            <div class="text-center my-3 text-muted-2 small">or one-click sign-in</div>
             <div class="row g-2">
               <div class="col-4"><button type="button" class="btn btn-primary w-100 btn-sm" data-quick-login="admin">Admin</button></div>
               <div class="col-4"><button type="button" class="btn btn-outline-primary w-100 btn-sm" data-quick-login="placement_officer">Placement officer</button></div>
               <div class="col-4"><button type="button" class="btn btn-outline-primary w-100 btn-sm" data-quick-login="staff">Staff</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="student">Preview Student</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="company">Preview Company</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni">Preview Alumni</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni-seeking">Preview Alumni (Seeking)</button></div>
+              <div class="col-4"><button type="button" class="btn btn-outline-info w-100 btn-sm" data-quick-login="student">Student</button></div>
+              <div class="col-4"><button type="button" class="btn btn-outline-success w-100 btn-sm" data-quick-login="company">Company</button></div>
+              <div class="col-4"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-quick-login="alumni">Alumni</button></div>
             </div>
           </form>
         </div>
@@ -209,6 +208,9 @@ const DEMO_ACCOUNTS = {
   admin: { email: 'admin@college.edu', password: 'Admin@123456' },
   placement_officer: { email: 'riya@college.edu', password: 'Officer@123456' },
   staff: { email: 'ravi.iyer@college.edu', password: 'Staff@123456' },
+  student: { email: 'rahul.v@college.edu', password: 'Student@123456' },
+  company: { email: 'neha@acme.io', password: 'Company@123456' },
+  alumni: { email: 'rohan.v@alumni.edu', password: 'Alumni@123456' },
 };
 
 document.querySelectorAll('[data-fill]').forEach(b => b.addEventListener('click', () => {
