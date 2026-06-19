@@ -14,7 +14,7 @@
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Active postings</div><div class="val" id="statActive">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Job postings</div><div class="val" id="statTotalJobs">0</div><div class="small text-muted-2" id="statActiveMeta">0 active</div></div></div>
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Applicants</div><div class="val" id="statApplicants">0</div></div></div>
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Shortlisted</div><div class="val" id="statShortlisted">0</div></div></div>
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Offered</div><div class="val" id="statOffered">0</div></div></div>
@@ -23,7 +23,7 @@
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="card-surface">
-      <div class="p-3 p-md-4 d-flex justify-content-between"><h6 class="fw-bold mb-0">Your job postings</h6><a href="applicants.html" class="btn btn-sm btn-outline-primary">View applicants</a></div>
+      <div class="p-3 p-md-4 d-flex justify-content-between"><h6 class="fw-bold mb-0">Your job postings <span class="badge-soft muted ms-1" id="jobCountBadge">0</span></h6><a href="applicants.html" class="btn btn-sm btn-outline-primary">View applicants</a></div>
       <div class="table-wrap"><table class="table-modern"><thead><tr><th>Role</th><th>Type</th><th>Applicants</th><th>Status</th><th></th></tr></thead>
       <tbody id="jobRows"></tbody></table></div>
     </div>
@@ -85,12 +85,32 @@ function normalizeJob(j) {
   };
 }
 
+function countActiveJobs(rows) {
+  return rows.filter(j => ['open', 'ongoing', 'reviewing'].includes(String(j.status || '').toLowerCase())).length;
+}
+
+function statsFromJobs(rows) {
+  const applicantTotal = rows.reduce((sum, j) => sum + (Number(j.applicantCount) || 0), 0);
+  return {
+    totalJobs: rows.length,
+    activeJobs: countActiveJobs(rows),
+    totalApplicants: applicantTotal,
+    shortlisted: 0,
+    offered: 0,
+    funnel: { applied: applicantTotal, shortlisted: 0, interview: 0, offered: 0, joined: 0 },
+  };
+}
+
 function renderStats(dash) {
-  document.getElementById('statActive').textContent = dash?.activeJobs ?? jobRows.filter(j => j.status === 'open').length;
-  document.getElementById('statApplicants').textContent = dash?.totalApplicants ?? companyApplicants(co).length;
+  const totalJobs = dash?.totalJobs ?? jobRows.length;
+  const activeJobs = dash?.activeJobs ?? countActiveJobs(jobRows);
+  document.getElementById('statTotalJobs').textContent = totalJobs;
+  document.getElementById('statActiveMeta').textContent = `${activeJobs} active`;
+  document.getElementById('statApplicants').textContent = dash?.totalApplicants ?? jobRows.reduce((s, j) => s + (Number(j.applicantCount) || 0), 0);
   document.getElementById('statShortlisted').textContent = dash?.shortlisted ?? 0;
   document.getElementById('statOffered').textContent = dash?.offered ?? 0;
-  const f = dash?.funnel || { applied: 1284, shortlisted: 420, interview: 180, offered: 38, joined: 32 };
+  document.getElementById('jobCountBadge').textContent = String(totalJobs);
+  const f = dash?.funnel || { applied: 0, shortlisted: 0, interview: 0, offered: 0, joined: 0 };
   if (funnelChart) funnelChart.destroy();
   funnelChart = Charts.bar(document.getElementById('funnel'), ['Applied','Shortlisted','Interview','Offered','Joined'], [f.applied, f.shortlisted, f.interview, f.offered, f.joined], 'Candidates');
 }
@@ -112,9 +132,12 @@ async function loadPortal() {
       api('/company/dashboard', { noRedirectOn401: true }),
       api('/company/jobs', { noRedirectOn401: true }),
     ]);
-    if (jobsRes?.success) jobRows = (jobsRes.data || []).map(normalizeJob);
-    if (dashRes?.success) {
-      renderStats(dashRes.data);
+    if (jobsRes?.success) {
+      jobRows = (jobsRes.data || []).map(normalizeJob);
+    }
+    if (jobsRes?.success || dashRes?.success) {
+      const stats = dashRes?.success ? { ...statsFromJobs(jobRows), ...dashRes.data } : statsFromJobs(jobRows);
+      renderStats(stats);
       renderJobs();
       return;
     }
@@ -124,7 +147,7 @@ async function loadPortal() {
     { title:'SDE Intern', jobType:'Internship', applicantCount:680, location:'Remote', status:'ongoing', statusLabel:'Ongoing', statusCls:'info', createdAt: new Date().toISOString() },
     { title:'Product Analyst', jobType:'Full-time', applicantCount:192, location:'Bengaluru', status:'reviewing', statusLabel:'Reviewing', statusCls:'warning', createdAt: new Date().toISOString() },
   ];
-  renderStats(null);
+  renderStats(statsFromJobs(jobRows));
   renderJobs();
 }
 

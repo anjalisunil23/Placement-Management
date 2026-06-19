@@ -47,6 +47,7 @@ use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
+use PMS\Utils\Security;
 
 echo "PMS Setup — Creating database tables...\n";
 Database::setupIndexes();
@@ -398,27 +399,66 @@ if (!$userModel->findByEmail('neha@acme.io')) {
     ]);
     $linkedCompany = (new CompanyModel())->findByUserId($companyUserId);
     if (!$linkedCompany) {
-        (new CompanyModel())->createCompany([
-            'userId' => $companyUserId, 'companyName' => 'Acme Cloud', 'category' => 'Software',
-            'tier' => 'Tier 1', 'associationStatus' => 'active', 'website' => 'https://acme.example.com',
-        ]);
+        $existingAcme = $companyModel->findAll(['companyName' => 'Acme Cloud'], 1);
+        if ($existingAcme !== [] && empty($existingAcme[0]['userId'])) {
+            $companyModel->update((string) $existingAcme[0]['_id'], [
+                'userId' => Security::toObjectId($companyUserId),
+            ]);
+        } else {
+            (new CompanyModel())->createCompany([
+                'userId' => $companyUserId, 'companyName' => 'Acme Cloud', 'category' => 'Software',
+                'tier' => 'Tier 1', 'associationStatus' => 'active', 'website' => 'https://acme.example.com',
+            ]);
+        }
     }
     echo "Company user created: neha@acme.io / Company@123456\n";
 } else {
     echo "Company user already exists: neha@acme.io\n";
 }
 
-$nehaCompany = (new CompanyModel())->findAll(['companyName' => 'Acme Cloud'], 1);
-if ($nehaCompany) {
-    $nehaCompanyId = (string) $nehaCompany[0]['_id'];
-    $jobModel = new JobModel();
-    if ($jobModel->findByCompany($nehaCompanyId) === []) {
-        $jobModel->createJob([
-            'companyId' => $nehaCompanyId, 'title' => 'SDE-1', 'package' => '₹18 LPA',
-            'location' => 'Bengaluru', 'jobType' => 'Full-time', 'status' => 'open',
-            'description' => 'Backend and platform engineering role.',
+$nehaUser = $userModel->findByEmail('neha@acme.io');
+$nehaCompanyId = null;
+$jobModel = new JobModel();
+if ($nehaUser) {
+    $linked = $companyModel->findByUserId((string) $nehaUser['_id']);
+    $allAcme = $companyModel->findAll(['companyName' => 'Acme Cloud'], 10);
+    $withJobs = null;
+    foreach ($allAcme as $row) {
+        if ($jobModel->findByCompany((string) $row['_id']) !== []) {
+            $withJobs = $row;
+            break;
+        }
+    }
+    if ($withJobs && (!$linked || (string) $linked['_id'] !== (string) $withJobs['_id'])) {
+        $companyModel->update((string) $withJobs['_id'], [
+            'userId' => Security::toObjectId((string) $nehaUser['_id']),
         ]);
-        echo "Sample company jobs seeded for Acme Cloud\n";
+        $linked = $withJobs;
+        echo "Relinked neha@acme.io to Acme Cloud company with job postings.\n";
+    }
+    if ($linked) {
+        $nehaCompanyId = (string) $linked['_id'];
+    }
+}
+if (!$nehaCompanyId && $company) {
+    $nehaCompanyId = (string) $company[0]['_id'];
+}
+if ($nehaCompanyId && $jobModel->findByCompany($nehaCompanyId) === []) {
+    $jobModel->createJob([
+        'companyId' => $nehaCompanyId, 'title' => 'SDE-1', 'package' => '₹18 LPA',
+        'location' => 'Bengaluru', 'jobType' => 'Full-time', 'status' => 'open',
+        'description' => 'Backend and platform engineering role.',
+    ]);
+    echo "Sample company jobs seeded for Acme Cloud\n";
+} elseif ($nehaUser && !$nehaCompanyId) {
+    foreach ($companyModel->findAll(['companyName' => 'Acme Cloud'], 5) as $row) {
+        if (empty($row['userId'])) {
+            $companyModel->update((string) $row['_id'], [
+                'userId' => Security::toObjectId((string) $nehaUser['_id']),
+            ]);
+            echo "Linked existing Acme Cloud company to neha@acme.io\n";
+            break;
+        }
     }
 }
 

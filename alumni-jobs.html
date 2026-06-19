@@ -14,13 +14,13 @@
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Active posts</div><div class="val"><span class="counter" id="statActive">0</span></div></div></div>
-  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Views this month</div><div class="val"><span class="counter" id="statViews">0</span></div></div></div>
-  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Referrals received</div><div class="val"><span class="counter" id="statReferrals">0</span></div></div></div>
+  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Active posts</div><div class="val" id="statActive">0</div></div></div>
+  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Views this month</div><div class="val" id="statViews">0</div></div></div>
+  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Referrals received</div><div class="val" id="statReferrals">0</div></div></div>
 </div>
 
 <div class="card-surface">
-  <div class="p-3 p-md-4"><h6 class="fw-bold mb-0">Your job postings</h6></div>
+  <div class="p-3 p-md-4"><h6 class="fw-bold mb-0">Your job postings <span class="badge-soft muted ms-1" id="jobCountBadge">0</span></h6></div>
   <div class="table-wrap">
     <table class="table-modern"><thead><tr><th>Role</th><th>Company</th><th>Package</th><th>Posted</th><th>Status</th></tr></thead>
     <tbody id="jobRows"></tbody></table>
@@ -58,13 +58,35 @@ document.getElementById('jobCompany').value = user.company || '';
 let jobRows = [];
 let jobsUseApi = false;
 
+function fmtAlumniPackage(pkg) {
+  const s = String(pkg ?? '').trim();
+  if (!s) return '—';
+  if (/₹|LPA/i.test(s)) return s;
+  if (/^\d+(\.\d+)?$/.test(s)) return `₹${s} LPA`;
+  return s;
+}
+
+function countActiveJobPosts(rows) {
+  return rows.filter(j => ['open', 'reviewing'].includes(String(j.status || '').toLowerCase())).length;
+}
+
+function statsFromJobRows(rows) {
+  return {
+    activePosts: countActiveJobPosts(rows),
+    totalPosts: rows.length,
+    viewsThisMonth: rows.reduce((sum, j) => sum + (Number(j.views) || 0), 0),
+    referralsCount: 0,
+  };
+}
+
 function normalizeJobPost(j) {
   const st = mapApiJobPostStatus(j.status);
   return {
     id: String(j._id || j.id || ''),
     title: j.title || '',
     company: j.company || '',
-    package: j.package || '—',
+    package: fmtAlumniPackage(j.package),
+    views: Number(j.views) || 0,
     createdAt: j.createdAt,
     status: j.status || 'open',
     statusLabel: j.statusLabel || st.statusLabel,
@@ -73,9 +95,12 @@ function normalizeJobPost(j) {
 }
 
 function renderStats(stats) {
-  document.getElementById('statActive').textContent = stats.activePosts ?? 0;
+  const active = stats.activePosts ?? countActiveJobPosts(jobRows);
+  const total = stats.totalPosts ?? jobRows.length;
+  document.getElementById('statActive').textContent = active;
   document.getElementById('statViews').textContent = stats.viewsThisMonth ?? 0;
   document.getElementById('statReferrals').textContent = stats.referralsCount ?? 0;
+  document.getElementById('jobCountBadge').textContent = String(total);
 }
 
 function renderJobs() {
@@ -96,18 +121,28 @@ async function loadJobPosts() {
       api('/alumni/dashboard', { noRedirectOn401: true }),
       api('/alumni/job-posts', { noRedirectOn401: true }),
     ]);
-    if (dashRes?.success) renderStats(dashRes.data || {});
     if (listRes?.success) {
       jobRows = (listRes.data || []).map(normalizeJobPost);
+    }
+    if (listRes?.success || dashRes?.success) {
+      const stats = {
+        ...statsFromJobRows(jobRows),
+        ...(dashRes?.success ? dashRes.data : {}),
+        totalPosts: jobRows.length,
+        activePosts: dashRes?.success
+          ? (dashRes.data?.activePosts ?? countActiveJobPosts(jobRows))
+          : countActiveJobPosts(jobRows),
+      };
+      renderStats(stats);
       return;
     }
     jobsUseApi = false;
   }
   jobRows = AlumniJobPosts.mine().map(normalizeJobPost);
-  renderStats(AlumniJobPosts.stats());
+  renderStats({ ...AlumniJobPosts.stats(), totalPosts: jobRows.length });
 }
 
-loadJobPosts().then(renderJobs);
+onAppReady(() => { loadJobPosts().then(renderJobs); });
 
 document.getElementById('postJobForm').addEventListener('submit', async e => {
   e.preventDefault();

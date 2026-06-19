@@ -61,6 +61,7 @@ final class AlumniController
     $refModel = new AlumniReferralModel();
 
     Response::success([
+      'totalPosts'       => count($jobModel->findByAlumni($userId)),
       'activePosts'      => $jobModel->countActiveByAlumni($userId),
       'viewsThisMonth'   => $jobModel->sumViewsByAlumni($userId),
       'referralsCount'   => $refModel->countByAlumni($userId),

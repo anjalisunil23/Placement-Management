@@ -77,6 +77,7 @@ final class CompanyController
         ));
 
         Response::success([
+            'totalJobs'       => count($jobs),
             'activeJobs'      => $activeJobs,
             'totalApplicants' => $counts['total'],
             'shortlisted'     => $counts['shortlisted'],
