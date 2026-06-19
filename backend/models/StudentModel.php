@@ -34,6 +34,15 @@ class StudentModel extends BaseModel
         return $doc ? (array) $doc : null;
     }
 
+    public function deleteByUserId(string $userId): bool
+    {
+        $profile = $this->findByUserId($userId);
+        if (!$profile) {
+            return false;
+        }
+        return $this->delete((string) $profile['_id']);
+    }
+
     /**
      * @param array<string, mixed> $data
      */

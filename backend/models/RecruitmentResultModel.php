@@ -54,6 +54,21 @@ class RecruitmentResultModel extends BaseModel
             $set['departmentId'] = Security::toObjectId((string) $data['departmentId']);
         }
 
+        $driveIdRaw = trim((string) ($data['driveId'] ?? ''));
+        if ($driveIdRaw !== '') {
+            $set['driveId'] = $driveIdRaw;
+            $existing = $this->collection->findOne([
+                'registerNumber' => $register,
+                'driveId'        => $driveIdRaw,
+            ]);
+            if ($existing) {
+                $id = (string) ($existing['_id'] ?? '');
+                $this->update($id, $set);
+                return $id;
+            }
+            return $this->insert($set);
+        }
+
         $existing = $this->collection->findOne(['registerNumber' => $register, 'company' => $company]);
         if ($existing) {
             $id = (string) ($existing['_id'] ?? '');

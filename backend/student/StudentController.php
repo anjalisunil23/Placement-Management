@@ -402,11 +402,25 @@ final class StudentController
     $drives = (new DriveModel())->findAll(['status' => ['$ne' => 'completed']], 50);
     $engine = new EligibilityEngine();
     $studentId = (string) $profile['_id'];
+    $companyModel = new CompanyModel();
+    $appModel = new ApplicationModel();
 
-    $result = array_map(function ($drive) use ($engine, $studentId) {
+    $result = array_map(function ($drive) use ($engine, $studentId, $companyModel, $appModel) {
       $eligibility = $engine->checkForDrive($studentId, (string) $drive['_id']);
       $serialized = DocumentHelper::serialize($drive);
       $serialized['eligibility'] = $eligibility;
+
+      $company = $companyModel->findById((string) ($drive['companyId'] ?? ''));
+      $companyName = (string) ($company['companyName'] ?? '');
+      if ($companyName === '') {
+        $title = (string) ($drive['title'] ?? '');
+        if (str_contains($title, '—')) {
+          $companyName = trim((string) (explode('—', $title, 2)[1] ?? ''));
+        }
+      }
+      $serialized['companyName'] = $companyName;
+      $serialized['applied'] = (bool) $appModel->findByStudentAndDrive($studentId, (string) $drive['_id']);
+
       return $serialized;
     }, $drives);
 
@@ -501,13 +515,35 @@ final class StudentController
       Response::error('Already applied to this drive.', 409);
     }
 
-    $appId = $appModel->createApplication([
+    $resume = null;
+    if (!empty($input['resumePath']) || !empty($input['resumeFileName'])) {
+      $resume = [
+        'resumeId'   => (string) ($input['resumeId'] ?? ''),
+        'label'      => (string) ($input['resumeLabel'] ?? ''),
+        'fileName'   => (string) ($input['resumeFileName'] ?? ''),
+        'path'       => (string) ($input['resumePath'] ?? ''),
+      ];
+    } elseif (!empty($profile['resume']['path'])) {
+      $resume = [
+        'resumeId' => '',
+        'label'    => 'Uploaded resume',
+        'fileName' => (string) ($profile['resume']['filename'] ?? basename((string) $profile['resume']['path'])),
+        'path'     => (string) $profile['resume']['path'],
+      ];
+    }
+
+    $createData = [
       'studentId' => $studentId,
       'driveId'   => $driveId,
       'companyId' => (string) $drive['companyId'],
       'jobId'     => $input['jobId'] ?? null,
       'status'    => ($profile['resume']['verified'] ?? false) ? 'resume_verified' : 'applied',
-    ]);
+    ];
+    if ($resume !== null) {
+      $createData['resume'] = $resume;
+    }
+
+    $appId = $appModel->createApplication($createData);
 
     (new NotificationService())->notifyUser(
       (string) $user['_id'],

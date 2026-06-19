@@ -183,6 +183,84 @@ if (!$poUser) {
     }
 }
 
+$staffUser = $userModel->findByEmail('ravi.iyer@college.edu');
+if (!$staffUser) {
+    $staffUserId = $userModel->createUser([
+        'name'     => 'Prof. Ravi Iyer',
+        'email'    => 'ravi.iyer@college.edu',
+        'password' => 'Staff@123456',
+        'role'     => 'staff',
+        'status'   => 'active',
+        'approved' => true,
+    ]);
+    try {
+        (new StaffModel())->createProfile($staffUserId, [
+            'departmentId' => $deptIds['CSE'],
+            'designation'  => 'Associate Professor',
+        ]);
+        echo "Staff user created (ravi.iyer@college.edu / Staff@123456) for CSE\n";
+    } catch (\Throwable $e) {
+        echo "Staff profile: {$e->getMessage()}\n";
+    }
+    $staffUser = $userModel->findByEmail('ravi.iyer@college.edu');
+} else {
+    echo "Staff user already exists.\n";
+    $staffProfile = (new StaffModel())->findByUserId((string) $staffUser['_id']);
+    if (!$staffProfile && isset($deptIds['CSE'])) {
+        try {
+            (new StaffModel())->createProfile((string) $staffUser['_id'], [
+                'departmentId' => $deptIds['CSE'],
+                'designation'  => 'Associate Professor',
+            ]);
+            echo "Linked existing staff user to CSE department.\n";
+        } catch (\Throwable $e) {
+            echo "Staff profile link: {$e->getMessage()}\n";
+        }
+    }
+}
+
+if ($staffUser) {
+    $recModel = new RecommendationModel();
+    $existingRecs = $recModel->findByStaffId((string) $staffUser['_id'], 1);
+    if ($existingRecs === []) {
+        $seedRecs = [
+            [
+                'companyName' => 'Brillio',
+                'companyWebsite' => 'https://brillio.com',
+                'category' => 'Software',
+                'reason' => 'Strong campus partnership potential for CSE batch.',
+                'contact' => ['name' => 'Anita Desai', 'email' => 'anita.desai@brillio.com', 'phone' => '+91 98765 43210'],
+                'status' => 'registered',
+            ],
+            [
+                'companyName' => 'Postman',
+                'companyWebsite' => 'https://postman.com',
+                'category' => 'Software',
+                'reason' => 'API tooling company with active lateral hiring.',
+                'contact' => ['name' => 'Kunal Shah', 'email' => 'kunal@postman.com', 'phone' => '+91 91234 56780'],
+                'status' => 'contacted',
+            ],
+            [
+                'companyName' => 'Hasura',
+                'companyWebsite' => 'https://hasura.io',
+                'category' => 'Software',
+                'reason' => 'GraphQL platform hiring full-stack engineers.',
+                'contact' => ['name' => 'Meera Nambiar', 'email' => 'meera@hasura.io', 'phone' => '+91 99887 76655'],
+                'status' => 'pending',
+            ],
+        ];
+        foreach ($seedRecs as $rec) {
+            $status = $rec['status'];
+            unset($rec['status']);
+            $id = $recModel->createRecommendation((string) $staffUser['_id'], $rec);
+            $recModel->updateStatus($id, $status);
+        }
+        echo "Staff recommendations seeded.\n";
+    } else {
+        echo "Staff recommendations already exist.\n";
+    }
+}
+
 $studentModel = new StudentModel();
 $seedStudents = [
     [

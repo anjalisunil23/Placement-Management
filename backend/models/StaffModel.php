@@ -25,6 +25,18 @@ class StaffModel extends BaseModel
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function findByDepartmentId(string $departmentId, int $limit = 200): array
+    {
+        $oid = Security::toObjectId($departmentId);
+        if ($oid === null) {
+            return [];
+        }
+        return $this->findAll(['departmentId' => $oid], $limit);
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     public function createProfile(string $userId, array $data): string
@@ -54,6 +66,24 @@ class StaffModel extends BaseModel
         return $this->update($id, $update);
     }
 
+    public function updateProfileByUserId(string $userId, array $data): bool
+    {
+        $profile = $this->findByUserId($userId);
+        if (!$profile) {
+            return false;
+        }
+        return $this->updateProfile((string) $profile['_id'], $data);
+    }
+
+    public function deleteByUserId(string $userId): bool
+    {
+        $profile = $this->findByUserId($userId);
+        if (!$profile) {
+            return false;
+        }
+        return $this->delete((string) $profile['_id']);
+    }
+
     /**
      * @param array<string, mixed>|null $profile
      * @param array<string, mixed>|null $department
@@ -65,10 +95,10 @@ class StaffModel extends BaseModel
             return [];
         }
         return [
-            'staffId'     => (string) ($profile['_id'] ?? ''),
-            'department'  => (string) ($department['code'] ?? ''),
-            'departmentId'=> (string) ($profile['departmentId'] ?? ''),
-            'designation' => (string) ($profile['designation'] ?? ''),
+            'staffId'      => (string) ($profile['_id'] ?? ''),
+            'department'   => (string) ($department['code'] ?? ''),
+            'departmentId' => (string) ($profile['departmentId'] ?? ''),
+            'designation'  => (string) ($profile['designation'] ?? ''),
         ];
     }
 }

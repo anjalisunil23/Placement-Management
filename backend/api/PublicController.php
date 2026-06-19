@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace PMS\Api;
 
+use PMS\Models\DepartmentModel;
 use PMS\Models\PlacementNewsModel;
+use PMS\Models\PlacementOfficerModel;
 use PMS\Models\PublicPageContentModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Middleware\RBACMiddleware;
@@ -39,6 +41,31 @@ final class PublicController
             'publicPage' => $public,
             'news'       => $news,
         ]);
+    }
+
+    /** GET /api/public/departments — for registration and forms (no auth) */
+    public function listDepartments(): void
+    {
+        $departments = (new DepartmentModel())->findAll([], 200);
+        $assignedDeptIds = [];
+        foreach ((new PlacementOfficerModel())->findAll([], 200) as $profile) {
+            $deptId = (string) ($profile['departmentId'] ?? '');
+            if ($deptId !== '') {
+                $assignedDeptIds[$deptId] = true;
+            }
+        }
+
+        $rows = array_map(static function (array $dept) use ($assignedDeptIds) {
+            $serialized = DocumentHelper::serialize($dept);
+            $id = $serialized['id'] ?? $serialized['_id'] ?? '';
+            return [
+                'id'         => $id,
+                'name'       => $serialized['name'] ?? '',
+                'code'       => $serialized['code'] ?? '',
+                'hasOfficer' => isset($assignedDeptIds[$id]),
+            ];
+        }, $departments);
+        Response::success($rows);
     }
 
     /** GET /api/analytics/dashboard */

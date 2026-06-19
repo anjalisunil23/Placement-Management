@@ -74,9 +74,7 @@
           <form id="addStaffForm" class="row g-2">
             <div class="col-12"><label class="form-label small fw-semibold">Full name</label><input class="form-control" name="name" required/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Email</label><input class="form-control" type="email" name="email" required/></div>
-            <div class="col-6"><label class="form-label small fw-semibold">Department</label><select class="form-select" name="department" required>
-              <option>CSE</option><option>IT</option><option>ECE</option><option>ME</option><option>EE</option><option>CE</option><option>MCA</option>
-            </select></div>
+            <div class="col-6"><label class="form-label small fw-semibold">Department</label><select class="form-select" name="department" id="staffDeptSelect" required></select></div>
             <div class="col-6"><label class="form-label small fw-semibold">Designation</label><input class="form-control" name="designation" placeholder="Professor"/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Phone</label><input class="form-control" name="phone"/></div>
             <div class="col-12"><button type="submit" class="btn btn-primary w-100"><i class="bi bi-person-plus me-1"></i>Add staff</button></div>
@@ -363,8 +361,16 @@ if (!isAdmin) {
   document.querySelectorAll('.admin-only-col').forEach(el => el.style.display = 'none');
 }
 
-DEPARTMENT_PLACEMENT.forEach(d => {
-  document.getElementById('appDeptFilter').innerHTML += `<option value="${d.dept}">${d.dept}</option>`;
+onAppReady(async () => {
+  await ensureDepartmentsLoaded();
+  fillDepartmentCodeSelect(document.getElementById('staffDeptSelect'));
+  const appFilter = document.getElementById('appDeptFilter');
+  if (appFilter) {
+    appFilter.innerHTML = '<option value="">All depts</option>';
+    departmentCodes().forEach(code => {
+      appFilter.innerHTML += `<option value="${code}">${code}</option>`;
+    });
+  }
 });
 
 document.getElementById('resumeVerifyToggle').checked = resumeVerificationOn();

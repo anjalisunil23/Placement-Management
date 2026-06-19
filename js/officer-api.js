@@ -30,11 +30,12 @@ const OfficerApi = {
   mapDrive(d) {
     const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
     const status = statusMap[(d.status || '').toLowerCase()] || d.status || 'Open';
+    const meta = typeof driveResultMeta === 'function' ? driveResultMeta(d) : { company: d.companyName || d.company || '', role: d.title || d.role || '' };
     return {
       id: OfficerApi.id(d),
-      company: d.companyName || d.company || '',
+      company: meta.company || d.companyName || d.company || '',
       companyId: d.companyId || '',
-      role: d.title || '',
+      role: meta.role || d.title || '',
       title: d.title || '',
       type: d.type || 'pooled',
       date: d.date || '',
@@ -48,9 +49,41 @@ const OfficerApi = {
     };
   },
 
-  mapApplication(a) {
+  mapResumeRow(r) {
+    const id = OfficerApi.id(r);
+    const applicationId = r.applicationId ?? null;
+    const studentId = r.studentId || '';
+    let resumeUrl = '';
+    if (r.hasResume !== false && (applicationId || studentId)) {
+      resumeUrl = applicationId
+        ? `${API_BASE}/officer/applications/${encodeURIComponent(applicationId)}/resume`
+        : `${API_BASE}/officer/students/${encodeURIComponent(studentId)}/resume`;
+    }
     return {
-      id: OfficerApi.id(a),
+      id,
+      applicationId,
+      studentId,
+      studentName: r.studentName || '',
+      registerNumber: r.registerNumber || '',
+      department: r.department || '',
+      company: r.company || '—',
+      role: r.role || '—',
+      fileName: r.fileName || '',
+      validFormat: r.validFormat !== false,
+      status: r.status || 'pending',
+      applicationStatus: r.applicationStatus || '',
+      submittedAt: r.submittedAt || '',
+      hasResume: r.hasResume !== false,
+      resumeUrl,
+    };
+  },
+
+  mapApplication(a) {
+    const id = OfficerApi.id(a);
+    const hasResume = !!(a.hasResume || a.resumePath || a.resumeFileName);
+    return {
+      id,
+      driveId: a.driveId || '',
       studentName: a.studentName || '',
       registerNumber: a.registerNumber || '',
       department: a.department || '',
@@ -59,6 +92,10 @@ const OfficerApi = {
       stage: a.stage || a.status || '',
       status: a.status || 'pending',
       appliedAt: a.appliedAt || a.createdAt || '',
+      resumeLabel: a.resumeLabel || '',
+      resumeFileName: a.resumeFileName || '',
+      hasResume,
+      resumeUrl: hasResume ? `${API_BASE}/officer/applications/${encodeURIComponent(id)}/resume` : '',
     };
   },
 
@@ -84,8 +121,12 @@ const OfficerApi = {
     return res.data.map(u => AdminApi.mapUser(u));
   },
 
-  async fetchApplications() {
-    const res = await api('/officer/applications');
+  async fetchApplications(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.driveId) qs.set('driveId', params.driveId);
+    if (params.status) qs.set('status', params.status);
+    const q = qs.toString();
+    const res = await api('/officer/applications' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(a => OfficerApi.mapApplication(a));
   },
@@ -99,14 +140,19 @@ const OfficerApi = {
   async fetchPendingResumes() {
     const res = await api('/officer/resumes/pending');
     if (!res.success || !Array.isArray(res.data)) return null;
-    return res.data;
+    return res.data.map(r => OfficerApi.mapResumeRow(r));
   },
 
-  async fetchResults() {
-    const res = await api('/officer/results');
+  async fetchResumeQueue() {
+    const res = await api('/officer/resumes');
     if (!res.success || !Array.isArray(res.data)) return null;
-    return res.data.map(r => ({
+    return res.data.map(r => OfficerApi.mapResumeRow(r));
+  },
+
+  mapResult(r) {
+    return {
       id: OfficerApi.id(r),
+      driveId: r.driveId || '',
       studentName: r.studentName || '',
       registerNumber: r.registerNumber || '',
       company: r.company || '',
@@ -114,7 +160,19 @@ const OfficerApi = {
       package: r.package || '',
       status: r.status || '',
       joiningDate: r.joiningDate || '',
-    }));
+    };
+  },
+
+  async fetchResults(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.driveId) qs.set('driveId', params.driveId);
+    if (params.company) qs.set('company', params.company);
+    if (params.role) qs.set('role', params.role);
+    if (params.status) qs.set('status', params.status);
+    const q = qs.toString();
+    const res = await api('/officer/results' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(r => OfficerApi.mapResult(r));
   },
 
   async fetchAnalytics() {

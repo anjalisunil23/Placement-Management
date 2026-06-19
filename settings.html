@@ -66,6 +66,7 @@
           <div class="col-md-4"><label class="form-label small fw-semibold">Job profile</label><select class="form-select" name="profileType" id="resumeProfileType" required></select></div>
           <div class="col-md-4"><label class="form-label small fw-semibold">PDF / DOC file</label><input class="form-control" type="file" name="file" accept=".pdf,.doc,.docx" required/></div>
           <div class="col-12"><button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up me-1"></i>Upload to bucket</button></div>
+          <div class="col-12"><small class="text-muted-2">For server upload, name your file <code>Name_RegisterNo_Resume.pdf</code> (we auto-rename if needed). Any job profile can be selected — all uploaded resumes appear when you apply.</small></div>
         </form>
         <div class="table-wrap">
           <table class="table-modern"><thead><tr><th>Label</th><th>Job profile</th><th>File</th><th>Storage</th><th>Uploaded</th><th></th></tr></thead>
@@ -116,6 +117,12 @@ if (isStudent) {
   document.getElementById('settingsTitle').textContent = 'Profile & Resumes';
   document.getElementById('settingsSub').textContent = 'Update your profile and manage resumes in the storage bucket.';
   document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');
+  onAppReady(async () => {
+    await ResumeBucket.fetch();
+    if (Auth.isDemo()) ResumeBucket.seed();
+    document.getElementById('resumeProfileType').innerHTML = RESUME_PROFILES.map(p => `<option>${p}</option>`).join('');
+    renderResumes();
+  });
 } else {
   document.querySelector('[href="#resumes"]')?.remove();
   document.getElementById('resumes')?.remove();
@@ -156,6 +163,10 @@ if (isStudent) {
   document.getElementById('profDept').value = user.department || '';
   document.getElementById('profCgpa').value = user.cgpa || '';
   document.getElementById('resumeProfileType').innerHTML = RESUME_PROFILES.map(p => `<option>${p}</option>`).join('');
+  onAppReady(async () => {
+    await ResumeBucket.fetch();
+    renderResumes();
+  });
 }
 
 // Profile photo menu (students) or focus fields (other roles)

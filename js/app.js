@@ -5,24 +5,45 @@ const NAV = [
   { href: "dashboard.html", icon: "bi-grid-1x2-fill", label: "Dashboard", roles: ROLES },
 
   { section: "Placement", roles: ['admin','placement_officer','student','staff','alumni'] },
-  { href: "drives.html", icon: "bi-briefcase-fill", label: "Placement Drives", roles: ['admin','placement_officer','staff'] },
+  {
+    group: 'placement-drives',
+    icon: 'bi-briefcase-fill',
+    label: 'Placement Drives',
+    href: 'drives.html',
+    roles: ['admin','placement_officer','staff'],
+    children: [
+      { href: 'placement-console.html', label: 'Console', roles: ['admin','placement_officer'] },
+      { href: 'rules.html', label: 'Placement Rules', roles: ['admin'] },
+    ],
+  },
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
-  { href: "placement-console.html", icon: "bi-sliders", label: "Placement Console", roles: ['admin','placement_officer'] },
-  { href: "student-overview.html", icon: "bi-person-vcard", label: "Student Overview", roles: ['admin','placement_officer','staff'] },
+  {
+    group: 'student',
+    icon: 'bi-people-fill',
+    label: 'Student',
+    roles: ['admin','placement_officer','staff'],
+    children: [
+      { href: 'student-overview.html', label: 'Overview', roles: ['admin','placement_officer','staff'] },
+      {
+        group: 'student-management',
+        label: 'Management',
+        href: 'students.html',
+        roles: ['admin','placement_officer'],
+        children: [
+          { href: 'resumes.html', label: 'Resume', roles: ['admin','placement_officer'] },
+          { href: 'applications.html', label: 'Application', roles: ['admin','placement_officer'] },
+          { href: 'blacklist.html', label: 'Blacklist', roles: ['admin'] },
+        ],
+      },
+    ],
+  },
   { href: "hiring-overview.html", icon: "bi-building-check", label: "Hiring Overview", roles: ['admin','placement_officer','staff'] },
-  { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin','placement_officer'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
-  { href: "resumes.html", icon: "bi-file-earmark-check", label: "Resume Verification", roles: ['admin','placement_officer'] },
-  { href: "applications.html", icon: "bi-send-check", label: "Applications", roles: ['admin','placement_officer'] },
-  { href: "create-drive.html", icon: "bi-plus-square", label: "Create Drive", roles: ['admin','placement_officer'] },
-  { href: "rules.html", icon: "bi-check2-square", label: "Placement Rules", roles: ['admin'] },
   { href: "departments.html", icon: "bi-diagram-3", label: "Departments", roles: ['admin'] },
-  { href: "blacklist.html", icon: "bi-slash-circle", label: "Blacklist", roles: ['admin'] },
-  { href: "results.html", icon: "bi-trophy", label: "Recruitment Results", roles: ['admin','placement_officer'] },
   { href: "tracking.html", icon: "bi-graph-up-arrow", label: "Placement Tracking", roles: ['admin','placement_officer'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin','placement_officer'] },
-  { href: "analytics.html", icon: "bi-bar-chart-fill", label: "Analytics", roles: ['admin','placement_officer'] },
+  { href: "analytics.html", icon: "bi-bar-chart-fill", label: "Analytics", roles: ['placement_officer'] },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin','placement_officer'] },
   { href: "admin-settings.html", icon: "bi-gear-wide-connected", label: "System Settings", roles: ['admin'] },
 
@@ -54,11 +75,11 @@ const PAGE_LABELS = {
   'analytics.html': 'Analytics',
   'drives.html': 'Placement Drives',
   'create-drive.html': 'Create Drive',
-  'placement-console.html': 'Placement Console',
-  'student-overview.html': 'Student Overview',
+  'placement-console.html': 'Placement Drives · Console',
+  'student-overview.html': 'Student · Overview',
   'hiring-overview.html': 'Hiring Overview',
   'tracking.html': 'Placement Tracking',
-  'students.html': 'Student Registration',
+  'students.html': 'Student · Management',
   'eligibility.html': 'Eligibility Criteria',
   'company.html': 'Company Portal',
   'admin-companies.html': 'Staff Recommendations',
@@ -73,10 +94,10 @@ const PAGE_LABELS = {
   'staff-recommend.html': 'Recommend Company',
   'users.html': 'User Management',
   'departments.html': 'Departments',
-  'rules.html': 'Placement Rules',
-  'applications.html': 'Applications',
-  'resumes.html': 'Resume Verification',
-  'blacklist.html': 'Blacklist',
+  'rules.html': 'Placement Drives · Placement Rules',
+  'applications.html': 'Student · Management · Application',
+  'resumes.html': 'Student · Management · Resume',
+  'blacklist.html': 'Student · Management · Blacklist',
   'results.html': 'Recruitment Results',
   'admin-settings.html': 'System Settings',
 };
@@ -95,6 +116,7 @@ function initials(name='') {
 }
 
 function navItemVisible(n, role) {
+  if (n.studentOnly && role !== 'student') return false;
   if (!n.roles.includes(role)) return false;
   if (role !== 'alumni') return true;
   if (n.alumniEmployed) return alumniIsWorking();
@@ -102,19 +124,75 @@ function navItemVisible(n, role) {
   return true;
 }
 
+function visibleGroupChildren(group, role) {
+  return (group.children || []).filter(c => {
+    if (c.group) {
+      if (!navItemVisible(c, role)) return false;
+      if (c.href) return true;
+      return visibleGroupChildren(c, role).length > 0;
+    }
+    return navItemVisible(c, role);
+  });
+}
+
+function isGroupActive(group, active) {
+  const base = (active || '').split('#')[0];
+  if (group.href && group.href.split('#')[0] === base) return true;
+  return (group.children || []).some(c => {
+    if (c.group) return isGroupActive(c, active);
+    return (c.href || '').split('#')[0] === base;
+  });
+}
+
+function renderNavChildren(children, active, role, depth = 1) {
+  return visibleGroupChildren({ children }, role).map(c => {
+    if (c.group) {
+      const open = isGroupActive(c, active);
+      const subKids = visibleGroupChildren(c, role);
+      const headActive = c.href ? isNavActive(c, active) : open;
+      return `
+        <div class="nav-sub-group ${open ? 'open' : ''}" data-nav-group="${c.group}">
+          <div class="nav-sub-group-row">
+            ${c.href
+              ? `<a class="nav-item nav-sub-item ${headActive ? 'active' : ''}" href="${c.href}"><span>${c.label}</span></a>`
+              : `<button type="button" class="nav-item nav-sub-group-toggle ${headActive ? 'active' : ''}" aria-expanded="${open}"><span>${c.label}</span></button>`}
+            ${subKids.length
+              ? `<button type="button" class="nav-sub-chevron-btn" aria-label="Toggle ${c.label}"><i class="bi bi-chevron-down nav-chevron"></i></button>`
+              : ''}
+          </div>
+          ${subKids.length
+            ? `<div class="nav-sub-nested">${renderNavChildren(subKids, active, role, depth + 1)}</div>`
+            : ''}
+        </div>`;
+    }
+    const cls = depth > 1 ? 'nav-sub-item nav-sub-item-deep' : 'nav-sub-item';
+    return `<a class="nav-item ${cls} ${isNavActive(c, active) ? 'active' : ''}" href="${c.href}"><span>${c.label}</span></a>`;
+  }).join('');
+}
+
+function groupNavVisible(group, role) {
+  if (!navItemVisible(group, role)) return false;
+  return !!(group.href || visibleGroupChildren(group, role).length);
+}
+
 function filteredNav() {
   const role = Auth.role();
   const out = [];
   for (let i = 0; i < NAV.length; i++) {
     const n = NAV[i];
-    if (!navItemVisible(n, role)) continue;
     if (n.section) {
+      if (!navItemVisible(n, role)) continue;
       let hasChild = false;
       for (let j = i + 1; j < NAV.length && !NAV[j].section; j++) {
-        if (navItemVisible(NAV[j], role)) { hasChild = true; break; }
+        const child = NAV[j];
+        if (child.group) {
+          if (groupNavVisible(child, role)) { hasChild = true; break; }
+        } else if (navItemVisible(child, role)) { hasChild = true; break; }
       }
       if (hasChild) out.push(n);
-    } else {
+    } else if (n.group) {
+      if (groupNavVisible(n, role)) out.push(n);
+    } else if (navItemVisible(n, role)) {
       out.push(n);
     }
   }
@@ -126,6 +204,51 @@ function isNavActive(n, active) {
   const base = n.href.split('#')[0];
   const activeBase = (active || '').split('#')[0];
   return base === activeBase;
+}
+
+function renderNavEntry(n, active, role) {
+  if (n.section) return `<div class="nav-label">${n.section}</div>`;
+  if (n.group) {
+    const kids = visibleGroupChildren(n, role);
+    if (!kids.length && !n.href) return '';
+    const open = isGroupActive(n, active);
+    const headActive = n.href ? isNavActive(n, active) : open;
+
+    if (!kids.length && n.href) {
+      return `<a class="nav-item ${headActive ? 'active' : ''}" href="${n.href}">
+        <i class="bi ${n.icon}"></i><span>${n.label}</span>
+      </a>`;
+    }
+
+    if (!n.href) {
+      return `
+      <div class="nav-group ${open ? 'open' : ''}" data-nav-group="${n.group}">
+        <button type="button" class="nav-item nav-group-toggle ${open ? 'active' : ''}" aria-expanded="${open}">
+          <i class="bi ${n.icon}"></i><span>${n.label}</span>
+          <i class="bi bi-chevron-down nav-chevron ms-auto"></i>
+        </button>
+        <div class="nav-sub">
+          ${renderNavChildren(kids, active, role)}
+        </div>
+      </div>`;
+    }
+
+    return `
+      <div class="nav-group ${open ? 'open' : ''}" data-nav-group="${n.group}">
+        <div class="nav-group-row">
+          ${n.href
+            ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span></a>`
+            : `<button type="button" class="nav-item nav-group-toggle ${open ? 'active' : ''}" aria-expanded="${open}"><i class="bi ${n.icon}"></i><span>${n.label}</span></button>`}
+          <button type="button" class="nav-group-chevron-btn" aria-label="Toggle ${n.label}"><i class="bi bi-chevron-down nav-chevron"></i></button>
+        </div>
+        <div class="nav-sub">
+          ${renderNavChildren(kids, active, role)}
+        </div>
+      </div>`;
+  }
+  return `<a class="nav-item ${isNavActive(n, active) ? 'active' : ''}" href="${n.href}">
+    <i class="bi ${n.icon}"></i><span>${n.label}</span>
+  </a>`;
 }
 
 function renderShell(active) {
@@ -142,18 +265,13 @@ function renderShell(active) {
     const navItems = filteredNav();
     sidebar.innerHTML = `
       <div class="brand">
-        <a href="dashboard.html" class="d-flex align-items-center gap-2 text-decoration-none text-reset">
+        <a href="${Auth.homePage()}" class="d-flex align-items-center gap-2 text-decoration-none text-reset">
           <div class="brand-mark">P</div>
           <div>PlaceHub<div style="font-size:.7rem;color:var(--muted);font-weight:500">Placement Suite</div></div>
         </a>
       </div>
       <div class="nav-section">
-        ${navItems.length ? navItems.map(n => n.section
-          ? `<div class="nav-label">${n.section}</div>`
-          : `<a class="nav-item ${isNavActive(n, active) ? "active" : ""}" href="${n.href}">
-               <i class="bi ${n.icon}"></i><span>${n.label}</span>
-             </a>`
-        ).join("") : `<div class="p-3 small text-muted-2">No navigation items for this role.</div>`}
+        ${navItems.length ? navItems.map(n => renderNavEntry(n, active, role)).join('') : `<div class="p-3 small text-muted-2">No navigation items for this role.</div>`}
       </div>
       <div style="padding:1rem;border-top:1px solid var(--border)">
         <div class="d-flex align-items-center gap-2">
@@ -172,7 +290,7 @@ function renderShell(active) {
       admin: '<a href="placement-console.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Console</a><a href="students.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Approvals</a>',
       placement_officer: '<a href="placement-console.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Placement Console</a>',
       student: '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Browse Drives</a><a href="settings.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Upload Resume</a>',
-      staff: '<a href="staff-recommend.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Recommend Co.</a>',
+      staff: '<button type="button" onclick="ReferralModals.openStaff()" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Recommend Co.</button>',
       company: '<a href="company.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Portal</a><a href="applicants.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Applicants</a>',
       alumni: alumniIsWorking()
         ? '<a href="alumni-jobs.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Post Job</a>'
@@ -191,7 +309,7 @@ function renderShell(active) {
       </div>
       <div class="ms-auto d-flex align-items-center gap-2">
         ${quickLinks}
-        <div class="dropdown">
+        ${Auth.isDemo() ? `<div class="dropdown">
           <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Preview as role">
             <i class="bi bi-person-badge me-1"></i><span class="d-none d-sm-inline">${ROLE_LABELS[role]}</span>
           </button>
@@ -199,7 +317,7 @@ function renderShell(active) {
             <li><h6 class="dropdown-header">Preview as role</h6></li>
             ${ROLES.map(r => `<li><a class="dropdown-item ${r===role?'active':''}" href="#" data-role="${r}">${ROLE_LABELS[r]}</a></li>`).join('')}
           </ul>
-        </div>
+        </div>` : `<span class="badge badge-soft ${ROLE_BADGES[role] || 'muted'} d-none d-sm-inline-flex align-items-center gap-1 px-2 py-1"><i class="bi bi-person-badge"></i>${ROLE_LABELS[role]}</span>`}
         <button class="icon-btn" id="themeBtn" title="Theme"><i class="bi bi-moon-stars"></i></button>
         ${role !== 'company' ? '<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>' : ''}
         ${role !== 'company' ? '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Settings"><i class="bi bi-gear"></i></a>' : ''}
@@ -229,15 +347,56 @@ function renderShell(active) {
   document.querySelectorAll('[data-role]').forEach(a => a.addEventListener('click', (e) => {
     e.preventDefault();
     const key = a.dataset.role;
+    if (key === 'admin') {
+      window.location.href = `login.html?next=${encodeURIComponent('dashboard.html')}`;
+      return;
+    }
     const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
-    Auth._sessionReady = false;
-    Auth.setRole(user.role);
+    Auth.clear();
     Auth.set(user, 'demo-token');
-    toast('Preview mode — sign in for live data and reports.', 'info');
+    toast('Preview mode — sign in with your account for live data and saving changes.', 'info');
     window.location.reload();
   }));
 
   document.getElementById('logoutBtn')?.addEventListener('click', () => Auth.logout());
+
+  sidebar?.querySelectorAll('.nav-group-chevron-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const group = btn.closest('.nav-group');
+      if (!group) return;
+      const willOpen = !group.classList.contains('open');
+      group.classList.toggle('open', willOpen);
+      group.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+  });
+
+  sidebar?.querySelectorAll('.nav-group-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group = btn.closest('.nav-group');
+      if (!group) return;
+      const willOpen = !group.classList.contains('open');
+      sidebar.querySelectorAll('.nav-group.open').forEach(g => {
+        if (g !== group) {
+          g.classList.remove('open');
+          g.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded', 'false');
+        }
+      });
+      group.classList.toggle('open', willOpen);
+      btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+  });
+
+  sidebar?.querySelectorAll('.nav-sub-chevron-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const group = btn.closest('.nav-sub-group');
+      if (!group) return;
+      group.classList.toggle('open');
+    });
+  });
 }
 
 /* Animated counters */
@@ -263,9 +422,10 @@ function animateCounters(root = document) {
 
 function enforcePageRole(active) {
   if (!active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html') return true;
-  if (!Auth.isAllowed(active)) {
-    toast(`This page isn't available for ${ROLE_LABELS[Auth.role()]}.`, 'warn');
-    setTimeout(() => window.location.href = 'dashboard.html', 600);
+  const page = active.split('#')[0];
+  if (!Auth.isAllowed(page)) {
+    toast(`This page isn't available for ${ROLE_LABELS[Auth.role()] || 'your role'}.`, 'warn');
+    setTimeout(() => { window.location.href = Auth.homePage(); }, 600);
     return false;
   }
   return true;
@@ -277,9 +437,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (!isPublic) {
     const hasSession = await Auth.bootstrap();
-    if (!hasSession && !Auth.isAuthed()) {
-      window.location.href = `login.html?next=${encodeURIComponent(active)}`;
+    if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
+      window.location.replace(`login.html?next=${encodeURIComponent(active)}`);
       return;
+    }
+    if (!hasSession) {
+      if (Auth.isDemo()) {
+        // preview mode — read-only dashboards only
+      } else {
+        Auth.clear();
+        window.location.href = `login.html?next=${encodeURIComponent(active)}`;
+        return;
+      }
     }
   }
 
@@ -288,4 +457,120 @@ document.addEventListener("DOMContentLoaded", async () => {
   applyRoleVisibility();
   animateCounters();
   document.dispatchEvent(new CustomEvent('ph-ready'));
+  ReferralModals.init();
 });
+
+/** Shared staff / alumni referral modals — open from any page */
+const ReferralModals = {
+  mountStaff() {
+    if (document.getElementById('staffRecommendModal')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+<div class="modal fade" id="staffRecommendModal" tabindex="-1" aria-labelledby="staffRecommendModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <form id="staffRecommendModalForm">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold" id="staffRecommendModalLabel">Recommend a Company</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" style="max-height:min(70vh,640px);overflow-y:auto">
+          <p class="small text-muted-2 mb-3">Share recruiter details for the placement cell. Only the admin can view HR contact information.</p>
+          <div class="row g-3">
+            <div class="col-12"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" required placeholder="e.g. Razorpay"/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Company website (optional)</label><input class="form-control" name="companyWebsite" placeholder="https://company.com/careers"/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">HR name</label><input class="form-control" name="hrName" required placeholder="e.g. Priya Menon"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">HR email</label><input class="form-control" type="email" name="hrEmail" required placeholder="hr@company.com"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Contact number</label><input class="form-control" name="contactNumber" required placeholder="+91 98765 43210"/></div>
+          </div>
+          <div class="alert alert-info small mt-3 mb-0">Only the admin can view HR contact details and follow up with the company.</div>
+        </div>
+        <div class="modal-footer border-top">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary px-4"><i class="bi bi-send me-1"></i>Submit Recommendation</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>`);
+    document.getElementById('staffRecommendModalForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target).entries());
+      await StaffRecs.add(data);
+      bootstrap.Modal.getInstance(document.getElementById('staffRecommendModal'))?.hide();
+      toast('Company recommended. The admin will review and contact them.', 'success');
+      e.target.reset();
+      document.dispatchEvent(new CustomEvent('ph-staff-recommend-added'));
+    });
+  },
+
+  mountAlumni() {
+    if (document.getElementById('alumniReferralModal')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+<div class="modal fade" id="alumniReferralModal" tabindex="-1" aria-labelledby="alumniReferralModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <form id="alumniReferralModalForm">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold" id="alumniReferralModalLabel">Create a referral</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" style="max-height:min(70vh,640px);overflow-y:auto">
+          <p class="small text-muted-2 mb-3">Share an open role from your network for students or fellow alumni.</p>
+          <div class="row g-3">
+            <div class="col-12"><label class="form-label small fw-semibold">Job title</label><input class="form-control" name="jobTitle" required/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Company</label><input class="form-control" name="companyName" id="alumniRefCompany" required/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Company website (optional)</label><input class="form-control" name="companyWebsite" placeholder="https://company.com/careers"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Package</label><input class="form-control" name="package" placeholder="e.g. ₹18 LPA"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Referral type</label><select class="form-select" name="type"><option>Student</option><option>Alumni</option><option>Either</option></select></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="4" placeholder="Role requirements, team, and referral notes"></textarea></div>
+          </div>
+        </div>
+        <div class="modal-footer border-top">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary px-4"><i class="bi bi-share me-1"></i>Submit Referral</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>`);
+    document.getElementById('alumniReferralModalForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target).entries());
+      await AlumniReferrals.add(data);
+      bootstrap.Modal.getInstance(document.getElementById('alumniReferralModal'))?.hide();
+      toast('Referral submitted successfully.', 'success');
+      e.target.reset();
+      const u = Auth.user() || demoUserFor('alumni');
+      document.getElementById('alumniRefCompany').value = u.company || '';
+      document.dispatchEvent(new CustomEvent('ph-alumni-referral-added'));
+    });
+  },
+
+  openStaff() {
+    if (Auth.role() !== 'staff') return;
+    this.mountStaff();
+    const form = document.getElementById('staffRecommendModalForm');
+    form.reset();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('staffRecommendModal')).show();
+  },
+
+  openAlumni() {
+    if (Auth.role() !== 'alumni') return;
+    this.mountAlumni();
+    const u = Auth.user() || demoUserFor('alumni');
+    const form = document.getElementById('alumniReferralModalForm');
+    form.reset();
+    document.getElementById('alumniRefCompany').value = u.company || '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('alumniReferralModal')).show();
+  },
+
+  init() {
+    if (location.hash !== '#create') return;
+    const role = Auth.role();
+    if (role === 'staff') this.openStaff();
+    else if (role === 'alumni' && alumniIsWorking()) this.openAlumni();
+  },
+};
+
+window.openStaffRecommendModal = () => ReferralModals.openStaff();
+window.openReferralModal = () => ReferralModals.openAlumni();

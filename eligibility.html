@@ -287,14 +287,12 @@ window.openEditRule = driveId => {
     document.querySelector('[name=min10th]').value = rule.min10th;
     document.querySelector('[name=min12th]').value = rule.min12th;
     document.querySelector('[name=notes]').value = rule.notes || '';
-    ELIGIBILITY_BRANCHES.forEach(b => {
-      const cb = document.getElementById('br-' + b);
-      if (cb) cb.checked = rule.branches.includes(b);
-    });
+    renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: false, selected: rule.branches || [] });
   } else {
     document.getElementById('ruleForm').reset();
     populateDriveSelect(driveId, false);
     document.getElementById('ruleDrive').value = driveId;
+    renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: true });
   }
   bootstrap.Modal.getOrCreateInstance(document.getElementById('ruleModal')).show();
 };
@@ -334,9 +332,7 @@ function populateDriveSelect(selected, lockSelection) {
   }).join('');
 }
 
-document.getElementById('branchChecks').innerHTML = ELIGIBILITY_BRANCHES.map(b =>
-  `<div class="form-check"><input class="form-check-input" type="checkbox" name="branches" value="${b}" id="br-${b}" checked><label class="form-check-label small" for="br-${b}">${b}</label></div>`
-).join('');
+document.getElementById('branchChecks').innerHTML = '';
 
 document.getElementById('ruleForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -345,7 +341,7 @@ document.getElementById('ruleForm').addEventListener('submit', async e => {
   if (!driveId) { toast('Select a job role or drive.', 'warn'); return; }
   const drives = driveList();
   const drive = drives.find(d => d.id === driveId) || DRIVE_CATALOG.find(d => d.id === driveId);
-  const branches = [...document.querySelectorAll('[name=branches]:checked')].map(cb => cb.value);
+  const branches = readCheckedBranchCodes(document.getElementById('branchChecks'));
   if (!branches.length) { toast('Select at least one branch.', 'warn'); return; }
   const payload = {
     minCgpa: fd.get('minCgpa'),
@@ -378,7 +374,7 @@ document.getElementById('ruleForm').addEventListener('submit', async e => {
 document.getElementById('ruleModal').addEventListener('hidden.bs.modal', () => {
   document.getElementById('ruleDrive').disabled = false;
   document.getElementById('ruleForm').reset();
-  document.getElementById('branchChecks').querySelectorAll('input').forEach(cb => { cb.checked = true; });
+  renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: true });
 });
 
 document.getElementById('addRuleBtn').addEventListener('click', () => {
@@ -426,5 +422,9 @@ async function loadEligibility() {
   if (selectedDriveId) await renderRuleDetail(selectedDriveId);
 }
 
-loadEligibility();
+onAppReady(async () => {
+  await ensureDepartmentsLoaded();
+  renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: true });
+  await loadEligibility();
+});
 </script></body></html>

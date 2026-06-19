@@ -44,6 +44,15 @@ class AlumniModel extends BaseModel
         return $this->insert($doc);
     }
 
+    public function deleteByUserId(string $userId): bool
+    {
+        $profile = $this->findByUserId($userId);
+        if (!$profile) {
+            return false;
+        }
+        return $this->delete((string) $profile['_id']);
+    }
+
     /**
      * @param array<string, mixed> $input
      */
@@ -75,8 +84,6 @@ class AlumniModel extends BaseModel
     }
 
     /**
-     * Map alumni profile fields for auth / frontend user object.
-     *
      * @param array<string, mixed>|null $profile
      * @return array<string, mixed>
      */

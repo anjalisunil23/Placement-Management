@@ -10,7 +10,10 @@
 
 <div class="page-header">
   <div><h1 class="page-title">Companies</h1><p class="page-sub">Review staff recommendations, contact recruiters, and register companies.</p></div>
-  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#registerModal"><i class="bi bi-building-add me-1"></i>Register Company</button>
+  <div class="d-flex gap-2 flex-wrap">
+    <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#quickAddModal"><i class="bi bi-plus-lg me-1"></i>Add company</button>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#registerModal"><i class="bi bi-building-add me-1"></i>Register with HR</button>
+  </div>
 </div>
 
 <div class="row g-3 mb-3">
@@ -60,6 +63,19 @@
       <div class="col-md-6"><label class="form-label small fw-semibold">Tier</label><select class="form-select" name="tier"><option>Tier 1</option><option>Tier 2</option><option>Tier 3</option></select></div>
     </div>
     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Register company</button></div>
+  </form>
+</div></div></div>
+
+<div class="modal fade" id="quickAddModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Add company</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="quickAddForm">
+    <div class="modal-body row g-3">
+      <div class="col-12"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" required/></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Website (optional)</label><input class="form-control" name="website" placeholder="https://company.com"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Category</label><select class="form-select" name="category"><option>Product</option><option>Service</option><option>Startup</option><option>Consulting</option></select></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Tier</label><select class="form-select" name="tier"><option>Tier 1</option><option>Tier 2</option><option>Tier 3</option></select></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Add company</button></div>
   </form>
 </div></div></div>
 
@@ -131,11 +147,23 @@ document.getElementById('registerForm').addEventListener('submit', async e => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
   if (!data.sourceRecommendationId) delete data.sourceRecommendationId;
-  await RegisteredCompanies.register(data);
+  const ok = await RegisteredCompanies.register(data);
+  if (!ok) return;
   toast('Company registered successfully.', 'success');
   registerModal().hide();
   e.target.reset();
   document.getElementById('sourceRecId').value = '';
+  render();
+});
+
+document.getElementById('quickAddForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target).entries());
+  const ok = await RegisteredCompanies.addSimple(data);
+  if (!ok) return;
+  toast('Company added.', 'success');
+  bootstrap.Modal.getInstance(document.getElementById('quickAddModal'))?.hide();
+  e.target.reset();
   render();
 });
 

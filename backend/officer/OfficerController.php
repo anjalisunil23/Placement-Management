@@ -214,7 +214,7 @@ final class OfficerController
 
 
 
-        Response::success(DocumentHelper::serializeMany($drives));
+        Response::success((new OfficerDataService())->enrichDrivesWithCompany($drives));
 
     }
 
@@ -379,6 +379,12 @@ final class OfficerController
         if (!empty($_GET['status'])) {
             $filter['status'] = $_GET['status'];
         }
+        if (!empty($_GET['driveId'])) {
+            $driveOid = Security::toObjectId((string) $_GET['driveId']);
+            if ($driveOid) {
+                $filter['driveId'] = $driveOid;
+            }
+        }
         Response::success((new OfficerDataService())->listApplications($scope['ctx'], $filter));
     }
 
@@ -387,6 +393,20 @@ final class OfficerController
     {
         $scope = (new OfficerDataService())->requireScope();
         Response::success((new OfficerDataService())->listPendingResumes($scope['ctx']));
+    }
+
+    /** GET /api/officer/resumes */
+    public function listResumes(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->listResumeQueue($scope['ctx']));
+    }
+
+    /** GET /api/officer/students/{id}/resume */
+    public function downloadStudentResume(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->streamStudentResume($studentId, $scope['ctx']);
     }
 
     /** POST /api/officer/students/{id}/verify-resume */
@@ -422,10 +442,7 @@ final class OfficerController
     public function listResults(): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        $filter = [];
-        if (!empty($_GET['status'])) {
-            $filter['status'] = $_GET['status'];
-        }
+        $filter = (new OfficerDataService())->resultFilterFromRequest();
         Response::success((new OfficerDataService())->listResults($scope['ctx'], $filter));
     }
 
@@ -473,6 +490,13 @@ final class OfficerController
         (new OfficerDataService())->assertApplicationInScope($appId, $scope['ctx']);
         (new ApplicationWorkflowService())->transition($appId, 'rejected', (string) $scope['user']['_id']);
         Response::success(null, 'Application rejected.');
+    }
+
+    /** GET /api/officer/applications/{id}/resume */
+    public function downloadApplicationResume(string $appId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->streamApplicationResume($appId, $scope['ctx']);
     }
 
     /** GET /api/officer/applications/pending */

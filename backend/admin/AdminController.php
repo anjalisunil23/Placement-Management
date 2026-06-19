@@ -16,10 +16,10 @@ use PMS\Models\AlumniReferralModel;
 use PMS\Models\PlacementNewsModel;
 use PMS\Models\RecommendationModel;
 use PMS\Models\PlacementOfficerModel;
+use PMS\Models\StaffModel;
 use PMS\Models\PublicPageContentModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\RuleModel;
-use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
@@ -50,6 +50,7 @@ final class AdminController
 
     /** GET /api/admin/dashboard */
     public function dashboard(): void
+
     {
         RBACMiddleware::requireAdmin();
         Response::success($this->userModel->getDashboardStats());
@@ -65,7 +66,7 @@ final class AdminController
         if (!empty($_GET['status'])) {
             $filter['status'] = $_GET['status'];
         }
-        Response::success(DocumentHelper::serializeMany((new DriveModel())->findAll($filter, 300)));
+        Response::success((new OfficerDataService())->enrichDrivesWithCompany((new DriveModel())->findAll($filter, 300)));
     }
 
     /** POST /api/admin/drives */
@@ -122,6 +123,12 @@ final class AdminController
         if (!empty($_GET['status'])) {
             $filter['status'] = $_GET['status'];
         }
+        if (!empty($_GET['driveId'])) {
+            $driveOid = Security::toObjectId((string) $_GET['driveId']);
+            if ($driveOid) {
+                $filter['driveId'] = $driveOid;
+            }
+        }
         Response::success((new OfficerDataService())->listApplications($scope['ctx'], $filter));
     }
 
@@ -147,6 +154,13 @@ final class AdminController
         Response::success(null, 'Application updated.');
     }
 
+    /** GET /api/admin/applications/{id}/resume */
+    public function downloadApplicationResume(string $appId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->streamApplicationResume($appId, $scope['ctx']);
+    }
+
     /** GET /api/admin/users */
     public function listUsers(): void
     {
@@ -154,7 +168,61 @@ final class AdminController
         $role = $_GET['role'] ?? null;
         $filter = $role ? ['role' => $role] : [];
         $users = $this->userModel->findAll($filter, 200);
-        Response::success(DocumentHelper::serializeMany($users));
+        $enriched = array_map(fn (array $u) => $this->enrichUserRow($u), $users);
+        Response::success(DocumentHelper::serializeMany($enriched));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function enrichUserRow(array $user): array
+    {
+        $row = $user;
+        $userId = (string) ($user['_id'] ?? '');
+
+        if (($user['role'] ?? '') === 'staff') {
+            $profile = (new StaffModel())->findByUserId($userId);
+            if ($profile) {
+                $dept = (new DepartmentModel())->findById((string) ($profile['departmentId'] ?? ''));
+                $row['departmentId'] = (string) ($profile['departmentId'] ?? '');
+                $row['department'] = $dept['code'] ?? $dept['name'] ?? '';
+                $row['designation'] = $profile['designation'] ?? '';
+            }
+        }
+
+        if (($user['role'] ?? '') === 'placement_officer') {
+            $profile = (new PlacementOfficerModel())->findByUserId($userId);
+            if ($profile) {
+                $dept = (new DepartmentModel())->findById((string) ($profile['departmentId'] ?? ''));
+                $row['departmentId'] = (string) ($profile['departmentId'] ?? '');
+                $row['department'] = $dept['code'] ?? $dept['name'] ?? '';
+                $row['designation'] = $profile['designation'] ?? '';
+            }
+        }
+
+        if (($user['role'] ?? '') === 'alumni') {
+            $profile = (new AlumniModel())->findByUserId($userId);
+            if ($profile) {
+                $row['company'] = $profile['company'] ?? '';
+                $row['alumniRole'] = $profile['role'] ?? '';
+            }
+        }
+
+        if (($user['role'] ?? '') === 'company') {
+            $profile = (new CompanyModel())->findByUserId($userId);
+            if ($profile) {
+                $contact = is_array($profile['contacts'] ?? null) ? ($profile['contacts'][0] ?? []) : [];
+                $row['companyId'] = (string) ($profile['_id'] ?? '');
+                $row['companyName'] = $profile['companyName'] ?? '';
+                $row['category'] = $profile['category'] ?? '';
+                $row['tier'] = $profile['tier'] ?? '';
+                $row['associationStatus'] = $profile['associationStatus'] ?? '';
+                $row['phone'] = $contact['phone'] ?? '';
+            }
+        }
+
+        return $row;
     }
 
     /** POST /api/admin/users */
@@ -201,28 +269,46 @@ final class AdminController
             }
         }
 
+        if ($input['role'] === 'staff') {
+            if (empty($input['departmentId'])) {
+                Response::error('departmentId is required when creating staff.', 422);
+            }
+            try {
+                (new StaffModel())->createProfile($id, $input);
+            } catch (\InvalidArgumentException $e) {
+                $this->userModel->delete($id);
+                Response::error($e->getMessage(), 422);
+            }
+        }
+
         if ($input['role'] === 'alumni') {
-            (new AlumniModel())->createProfile($id, $input);
+            try {
+                (new AlumniModel())->createProfile($id, $input);
+            } catch (\InvalidArgumentException $e) {
+                $this->userModel->delete($id);
+                Response::error($e->getMessage(), 422);
+            }
         }
 
         if ($input['role'] === 'company') {
             if (empty($input['companyName'])) {
                 $this->userModel->delete($id);
-                Response::error('companyName is required when creating a company recruiter.', 422);
+                Response::error('companyName is required when creating a company user.', 422);
             }
             (new CompanyModel())->createCompany([
                 'userId'            => $id,
                 'companyName'       => trim((string) $input['companyName']),
                 'category'          => $input['category'] ?? 'Software',
                 'tier'              => $input['tier'] ?? 'Tier 2',
-                'associationStatus' => $input['associationStatus'] ?? 'active',
-                'website'           => $input['website'] ?? '',
+                'website'           => $input['website'] ?? $input['companyWebsite'] ?? '',
                 'description'       => $input['description'] ?? '',
+                'contacts'          => [[
+                    'name'  => $input['name'],
+                    'email' => $input['email'],
+                    'phone' => $input['phone'] ?? $input['contactNumber'] ?? '',
+                ]],
+                'associationStatus' => $input['associationStatus'] ?? 'active',
             ]);
-        }
-
-        if ($input['role'] === 'staff') {
-            (new StaffModel())->createProfile($id, $input);
         }
 
         Response::success(['id' => $id], 'User created.', 201);
@@ -258,6 +344,18 @@ final class AdminController
         }
         if (($user['role'] ?? '') === 'placement_officer') {
             (new PlacementOfficerModel())->deleteByUserId($id);
+        }
+        if (($user['role'] ?? '') === 'staff') {
+            (new StaffModel())->deleteByUserId($id);
+        }
+        if (($user['role'] ?? '') === 'alumni') {
+            (new AlumniModel())->deleteByUserId($id);
+        }
+        if (($user['role'] ?? '') === 'company') {
+            (new CompanyModel())->deleteByUserId($id);
+        }
+        if (($user['role'] ?? '') === 'student') {
+            (new StudentModel())->deleteByUserId($id);
         }
         if (!$this->userModel->delete($id)) {
             Response::notFound('User not found.');
@@ -604,13 +702,7 @@ final class AdminController
     public function listResults(): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        $filter = [];
-        if (!empty($_GET['status'])) {
-            $filter['status'] = $_GET['status'];
-        }
-        if (!empty($_GET['registerNumber'])) {
-            $filter['registerNumber'] = strtoupper(trim((string) $_GET['registerNumber']));
-        }
+        $filter = (new OfficerDataService())->resultFilterFromRequest();
         Response::success((new OfficerDataService())->listResults($scope['ctx'], $filter));
     }
 
@@ -694,8 +786,15 @@ final class AdminController
     public function deleteCompany(string $id): void
     {
         RBACMiddleware::requireAdmin();
-        if (!(new CompanyModel())->delete($id)) {
+        $model = new CompanyModel();
+        $company = $model->findById($id);
+        if (!$company) {
             Response::notFound();
+        }
+        $userId = (string) ($company['userId'] ?? '');
+        $model->delete($id);
+        if ($userId !== '') {
+            $this->userModel->delete($userId);
         }
         Response::success(null, 'Company deleted.');
     }
@@ -777,6 +876,20 @@ final class AdminController
     {
         $scope = (new OfficerDataService())->requireScope();
         Response::success((new OfficerDataService())->listPendingResumes($scope['ctx']));
+    }
+
+    /** GET /api/admin/resumes */
+    public function listResumes(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->listResumeQueue($scope['ctx']));
+    }
+
+    /** GET /api/admin/students/{id}/resume */
+    public function downloadStudentResume(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->streamStudentResume($studentId, $scope['ctx']);
     }
 
     /** POST /api/admin/blacklist */

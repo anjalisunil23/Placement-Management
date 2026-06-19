@@ -58,6 +58,7 @@ class Database
         // staff
         $db->selectCollection('staff')->createIndexes([
             ['key' => ['userId' => 1], 'unique' => true],
+            ['key' => ['departmentId' => 1]],
         ]);
 
         // department-wise placement officers
@@ -133,6 +134,8 @@ class Database
 
         $db->selectCollection('recommendations')->createIndexes([
             ['key' => ['staffId' => 1]],
+            ['key' => ['status' => 1]],
+            ['key' => ['staffId' => 1, 'createdAt' => -1]],
             ['key' => ['createdAt' => -1]],
         ]);
 
@@ -151,6 +154,8 @@ class Database
         $db->selectCollection('recruitment_results')->createIndexes([
             ['key' => ['registerNumber' => 1]],
             ['key' => ['company' => 1]],
+            ['key' => ['driveId' => 1]],
+            ['key' => ['registerNumber' => 1, 'driveId' => 1]],
             ['key' => ['status' => 1]],
             ['key' => ['departmentId' => 1]],
             ['key' => ['classBatch' => 1]],
