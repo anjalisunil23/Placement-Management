@@ -84,12 +84,16 @@ Then open:
 |------|-------|----------|
 | Admin | `admin@college.edu` | `Admin@123456` |
 | Placement Officer (MCA) | `riya@college.edu` | `Officer@123456` |
+| Staff (CSE) | `ravi.iyer@college.edu` | `Staff@123456` |
 
 Placement officers are linked to one department via the `placement_officers` collection. PO API routes under `/officer/*` are department-scoped.
+
+Staff faculty are linked via the `staff` collection. Staff API routes under `/staff/*` provide department-scoped read access and company recommendations.
 
 Smoke tests:
 ```powershell
 php backend/scripts/smoke-admin.php
 php backend/scripts/smoke-officer.php
+php backend/scripts/smoke-staff.php
 ```
 

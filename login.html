@@ -42,29 +42,29 @@
         <div class="tab-pane fade show active" id="tab-login">
           <h2 class="fw-bold mb-1">Welcome back</h2>
           <p class="text-muted-2 mb-4">Sign in to your PlaceHub account</p>
+          <div id="signedInBanner" class="alert alert-secondary small py-2 mb-3" style="display:none"></div>
           <form id="loginForm">
             <div class="mb-3">
               <label class="form-label small fw-semibold">Email</label>
-              <input name="email" type="email" class="form-control" value="admin@college.edu" required />
+              <input name="email" type="email" class="form-control" placeholder="you@college.edu" required />
             </div>
             <div class="mb-2">
               <label class="form-label small fw-semibold d-flex justify-content-between">
                 <span>Password</span><a href="#" class="text-decoration-none small">Forgot?</a>
               </label>
-              <input name="password" type="password" class="form-control" value="Admin@123456" required />
+              <input name="password" type="password" class="form-control" placeholder="Your password" required />
             </div>
-            <p class="small text-muted-2 mb-3">Use your college account. Preview buttons below are UI-only and cannot load reports.</p>
+            <p class="small text-muted-2 mb-2">Quick sign-in: <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="admin">Admin</button> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="placement_officer">Placement officer</button></p>
             <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="r" checked><label class="form-check-label small" for="r">Keep me signed in</label></div>
             <button class="btn btn-primary w-100 py-2 fw-semibold" type="submit">Sign in</button>
-            <div class="text-center my-3 text-muted-2 small">or preview as a role</div>
+            <div class="text-center my-3 text-muted-2 small">or quick sign-in / UI preview</div>
             <div class="row g-2">
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="admin">Admin</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="placement_officer">Placement Officer</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="student">Student</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="staff">Staff</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="company">Company</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni">Alumni (Working)</button></div>
-              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni-seeking">Alumni (Job Seeking)</button></div>
+              <div class="col-6"><button type="button" class="btn btn-primary w-100 btn-sm" data-quick-login="admin">Admin</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-primary w-100 btn-sm" data-quick-login="placement_officer">Placement officer</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="student">Preview Student</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="company">Preview Company</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni">Preview Alumni</button></div>
+              <div class="col-6"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-demo="alumni-seeking">Preview Alumni (Seeking)</button></div>
             </div>
           </form>
         </div>
@@ -104,13 +104,8 @@
               </div>
               <div class="col-md-6 role-field role-student role-staff">
                 <label class="form-label small fw-semibold">Department</label>
-                <select name="departmentId" class="form-select">
-                  <option value="1">Computer Science (CSE)</option>
-                  <option value="2">Information Technology (IT)</option>
-                  <option value="3">Electronics (ECE)</option>
-                  <option value="4">Mechanical (ME)</option>
-                  <option value="5">Civil (CE)</option>
-                  <option value="6">MCA</option>
+                <select name="departmentId" class="form-select" id="registerDepartment">
+                  <option value="">Loading departments…</option>
                 </select>
               </div>
 
@@ -190,38 +185,75 @@ function showRoleFields() {
 document.getElementById('roleSel').addEventListener('change', showRoleFields);
 showRoleFields();
 
+(async () => {
+  const next = new URLSearchParams(location.search).get('next');
+  Auth._sessionReady = false;
+  const ok = await Auth.bootstrap();
+  if (!ok) return;
+  if (next) {
+    window.location.replace(Auth.resolveRedirect(next));
+    return;
+  }
+  const u = Auth.user();
+  const banner = document.getElementById('signedInBanner');
+  if (banner && u?.role) {
+    banner.style.display = '';
+    banner.innerHTML = `Signed in as <strong>${u.name}</strong> (${ROLE_LABELS[u.role] || u.role}). <a href="${Auth.homePage()}">Go to your workspace</a> — or sign in below to switch accounts.`;
+  }
+})();
+
 function fd(form) { return Object.fromEntries(new FormData(form).entries()); }
+
+const DEMO_ACCOUNTS = {
+  admin: { email: 'admin@college.edu', password: 'Admin@123456' },
+  placement_officer: { email: 'riya@college.edu', password: 'Officer@123456' },
+  staff: { email: 'ravi.iyer@college.edu', password: 'Staff@123456' },
+};
+
+document.querySelectorAll('[data-fill]').forEach(b => b.addEventListener('click', () => {
+  const creds = DEMO_ACCOUNTS[b.dataset.fill];
+  if (!creds) return;
+  const form = document.getElementById('loginForm');
+  form.email.value = creds.email;
+  form.password.value = creds.password;
+}));
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = fd(e.target);
-  let res = await api('/auth/login', { method:'POST', body: data });
-  if (!res.success && res._offline) res = await mockAuth('login', data);
-  if (res.success) {
-    const user = res.data?.user || res.data;
-    const token = res.data?.token || 'session';
-    Auth.set(user, token);
-    if (!Auth.isDemo()) {
-      const sessionOk = await Auth.bootstrap();
-      if (!sessionOk) {
-        toast('Sign-in succeeded but the session could not be verified. Open the app at http://localhost:8080', 'error');
-        return;
-      }
-    }
-    toast('Welcome back, ' + (user?.name || ''), 'success');
-    const next = new URLSearchParams(location.search).get('next') || 'dashboard.html';
-    setTimeout(() => window.location.href = next, 400);
-  } else { toast(res.message || 'Sign-in failed', 'error'); }
+  const next = new URLSearchParams(location.search).get('next') || '';
+  const result = await performServerLogin(data.email, data.password, next);
+  if (result.success) {
+    toast('Welcome back, ' + (Auth.user()?.name || ''), 'success');
+    setTimeout(() => { window.location.href = result.redirect; }, 400);
+  } else {
+    toast(result.message || 'Sign-in failed', 'error');
+  }
 });
+
+document.querySelectorAll('[data-quick-login]').forEach(b => b.addEventListener('click', async () => {
+  const key = b.dataset.quickLogin;
+  const creds = QUICK_LOGIN_ACCOUNTS[key];
+  if (!creds) return;
+  b.disabled = true;
+  const next = new URLSearchParams(location.search).get('next') || '';
+  const result = await performServerLogin(creds.email, creds.password, next);
+  b.disabled = false;
+  if (result.success) {
+    toast('Welcome back!', 'success');
+    setTimeout(() => { window.location.href = result.redirect; }, 300);
+  } else {
+    toast(result.message || 'Sign-in failed', 'error');
+  }
+}));
 
 document.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => {
   const key = b.dataset.demo;
   const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
-  Auth._sessionReady = false;
-  Auth.setRole(user.role);
+  Auth.clear();
   Auth.set(user, 'demo-token');
-  toast('Preview mode — sign in with your account for reports and live data.', 'info');
-  window.location.href = 'dashboard.html';
+  toast('Preview mode — sign in with your account for live data and saving changes.', 'info');
+  window.location.href = Auth.resolveRedirect('');
 }));
 
 document.getElementById('registerForm').addEventListener('submit', async (e) => {
@@ -234,12 +266,19 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
       toast('Registered. Your account is pending approval.', 'success');
     } else {
       const user = res.data?.user || res.data;
-      Auth.set(user, res.data?.token);
+      localStorage.setItem('ph-token', 'session');
+      Auth._sessionReady = false;
+      await Auth.bootstrap();
       toast('Account created. Welcome!', 'success');
-      setTimeout(()=>window.location.href='dashboard.html', 400);
+      setTimeout(() => window.location.href = Auth.homePage(), 400);
     }
   } else { toast(res.message || 'Registration failed', 'error'); }
 });
+
+(async () => {
+  await ensureDepartmentsLoaded();
+  fillDepartmentIdSelect(document.getElementById('registerDepartment'));
+})();
 </script>
 </body>
 </html>

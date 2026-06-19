@@ -12,6 +12,7 @@
   <div><h1 class="page-title">Departments</h1><p class="page-sub">Manage academic departments and branch codes used across placement drives.</p></div>
   <button class="btn btn-primary" id="btnAdd"><i class="bi bi-plus-lg me-1"></i>Add department</button>
 </div>
+<div id="deptSessionBanner" class="d-none alert alert-warning mb-3"></div>
 
 <div class="row g-3 mb-3">
   <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Total departments</div><div class="val" id="statTotal">0</div></div></div>
@@ -92,6 +93,7 @@ document.getElementById('btnAdd').addEventListener('click', openAdd);
 
 document.getElementById('deptForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if (!(await requireWriteSession())) return;
   const name = document.getElementById('deptName').value.trim();
   const code = document.getElementById('deptCode').value.trim();
   if (!name || !code) return;
@@ -99,7 +101,8 @@ document.getElementById('deptForm').addEventListener('submit', async e => {
     await DepartmentStore.update(editingId, { name, code: code.toUpperCase() });
     toast('Department updated.', 'success');
   } else {
-    await DepartmentStore.add({ name, code });
+    const created = await DepartmentStore.add({ name, code });
+    if (!created) return;
     toast('Department added.', 'success');
   }
   deptModal().hide();
@@ -107,6 +110,17 @@ document.getElementById('deptForm').addEventListener('submit', async e => {
 });
 
 async function initDepartmentsPage() {
+  Auth._sessionReady = false;
+  const live = await Auth.bootstrap();
+  const banner = document.getElementById('deptSessionBanner');
+  if (banner) {
+    if (live) {
+      banner.classList.add('d-none');
+    } else {
+      banner.classList.remove('d-none');
+      banner.innerHTML = '<strong>Not connected to the server.</strong> Sign in to add or edit departments. <a href="login.html?next=departments.html" class="alert-link">Sign in now</a>';
+    }
+  }
   await DepartmentStore.fetch();
   render();
 }

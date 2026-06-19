@@ -30,7 +30,6 @@ class CompanyModel extends BaseModel
     public function createCompany(array $data): string
     {
         $doc = [
-            'userId'             => isset($data['userId']) ? Security::toObjectId($data['userId']) : null,
             'companyName'        => $data['companyName'],
             'category'           => $data['category'] ?? 'Software',
             'tier'               => $data['tier'] ?? 'Tier 2',
@@ -41,6 +40,18 @@ class CompanyModel extends BaseModel
             'website'            => $data['website'] ?? '',
             'description'        => $data['description'] ?? '',
         ];
+        if (!empty($data['userId'])) {
+            $doc['userId'] = Security::toObjectId($data['userId']);
+        }
         return $this->insert($doc);
+    }
+
+    public function deleteByUserId(string $userId): bool
+    {
+        $profile = $this->findByUserId($userId);
+        if (!$profile) {
+            return false;
+        }
+        return $this->delete((string) $profile['_id']);
     }
 }

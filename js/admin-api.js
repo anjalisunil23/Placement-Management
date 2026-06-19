@@ -16,6 +16,7 @@ const AdminApi = {
       department: u.department || u.departmentName || '',
       designation: u.designation || '',
       company: u.company || u.companyName || '',
+      alumniRole: u.alumniRole || '',
       companyName: u.companyName || '',
       category: u.category || '',
       tier: u.tier || '',
@@ -72,8 +73,14 @@ const AdminApi = {
 
   mapCompany(c) {
     const contact = (c.contacts && c.contacts[0]) || {};
+    const userId = String(c.userId || '');
+    const companyId = this.id(c);
+    const hasLogin = !!userId;
     return {
-      id: this.id(c),
+      id: userId || companyId,
+      userId: userId || null,
+      companyId,
+      hasLogin,
       companyName: c.companyName || '',
       companyWebsite: c.website || c.companyWebsite || '',
       hrName: contact.name || '',
@@ -93,6 +100,23 @@ const AdminApi = {
     };
   },
 
+  mergeCompanyUser(user, company) {
+    if (!user) return company;
+    if (!company) return { ...user, role: 'company', hasLogin: true, companyId: null };
+    return {
+      ...company,
+      id: user.id,
+      userId: user.id,
+      companyId: company.companyId || company.id,
+      hasLogin: true,
+      name: user.name || company.name,
+      email: user.email || company.email,
+      contactPerson: user.name || company.contactPerson,
+      status: user.status,
+      blocked: user.blocked,
+    };
+  },
+
   mapBlacklistRow(row) {
     const student = row.student || {};
     const user = row.user || {};
@@ -107,9 +131,47 @@ const AdminApi = {
     };
   },
 
-  mapApplication(a) {
+  mapResumeRow(r) {
+    const id = this.id(r);
+    const applicationId = r.applicationId ?? null;
+    const studentId = r.studentId || '';
+    const resumeBase = (typeof Auth !== 'undefined' && Auth.role() === 'placement_officer')
+      ? '/officer'
+      : '/admin';
+    let resumeUrl = '';
+    if (r.hasResume !== false && (applicationId || studentId)) {
+      resumeUrl = applicationId
+        ? `${API_BASE}${resumeBase}/applications/${encodeURIComponent(applicationId)}/resume`
+        : `${API_BASE}${resumeBase}/students/${encodeURIComponent(studentId)}/resume`;
+    }
     return {
-      id: this.id(a),
+      id,
+      applicationId,
+      studentId,
+      studentName: r.studentName || '',
+      registerNumber: r.registerNumber || '',
+      department: r.department || '',
+      company: r.company || '—',
+      role: r.role || '—',
+      fileName: r.fileName || '',
+      validFormat: r.validFormat !== false,
+      status: r.status || 'pending',
+      applicationStatus: r.applicationStatus || '',
+      submittedAt: r.submittedAt || '',
+      hasResume: r.hasResume !== false,
+      resumeUrl,
+    };
+  },
+
+  mapApplication(a) {
+    const id = this.id(a);
+    const resumeBase = (typeof Auth !== 'undefined' && Auth.role() === 'placement_officer')
+      ? '/officer/applications/'
+      : '/admin/applications/';
+    const hasResume = !!(a.hasResume || a.resumePath || a.resumeFileName);
+    return {
+      id,
+      driveId: a.driveId || '',
       studentName: a.studentName || '',
       registerNumber: a.registerNumber || '',
       department: a.department || '',
@@ -118,6 +180,10 @@ const AdminApi = {
       stage: a.stage || a.status || '',
       status: a.status || 'pending',
       appliedAt: a.appliedAt || a.createdAt || '',
+      resumeLabel: a.resumeLabel || '',
+      resumeFileName: a.resumeFileName || '',
+      hasResume,
+      resumeUrl: hasResume ? `${API_BASE}${resumeBase}${encodeURIComponent(id)}/resume` : '',
     };
   },
 
@@ -175,17 +241,20 @@ const AdminApi = {
     return res.data.map(r => this.mapBlacklistRow(r));
   },
 
-  async fetchApplications() {
-    const res = await api('/admin/applications');
+  async fetchApplications(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.driveId) qs.set('driveId', params.driveId);
+    if (params.status) qs.set('status', params.status);
+    const q = qs.toString();
+    const res = await api('/admin/applications' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(a => this.mapApplication(a));
   },
 
-  async fetchResults() {
-    const res = await api('/admin/results');
-    if (!res.success || !Array.isArray(res.data)) return null;
-    return res.data.map(r => ({
+  mapResult(r) {
+    return {
       id: this.id(r),
+      driveId: r.driveId || '',
       studentName: r.studentName || '',
       registerNumber: r.registerNumber || '',
       company: r.company || '',
@@ -193,23 +262,31 @@ const AdminApi = {
       package: r.package || '',
       status: r.status || '',
       joiningDate: r.joiningDate || '',
-    }));
+    };
+  },
+
+  async fetchResults(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.driveId) qs.set('driveId', params.driveId);
+    if (params.company) qs.set('company', params.company);
+    if (params.role) qs.set('role', params.role);
+    if (params.status) qs.set('status', params.status);
+    const q = qs.toString();
+    const res = await api('/admin/results' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(r => this.mapResult(r));
   },
 
   async fetchPendingResumes() {
     const res = await api('/admin/resumes/pending');
     if (!res.success || !Array.isArray(res.data)) return null;
-    return res.data.map(r => ({
-      id: this.id(r),
-      studentId: r.studentId || this.id(r),
-      studentName: r.studentName || '',
-      registerNumber: r.registerNumber || '',
-      department: r.department || '',
-      fileName: r.fileName || '',
-      validFormat: r.validFormat !== false,
-      status: r.status || 'pending',
-      submittedAt: r.submittedAt || '',
-    }));
+    return res.data.map(r => this.mapResumeRow(r));
+  },
+
+  async fetchResumeQueue() {
+    const res = await api('/admin/resumes');
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(r => this.mapResumeRow(r));
   },
 
   async fetchDepartments() {

@@ -51,9 +51,10 @@ final class EligibilityEngine
             return ['eligible' => false, 'reasons' => ['This drive has been completed.']];
         }
 
-        $criteria = $drive['eligibility'] ?? [];
+        $criteria = $this->toPlainArray($drive['eligibility'] ?? []);
+        $branches = $this->toPlainArray($drive['branches'] ?? []);
         $tier = $drive['tier'] ?? 'Tier 2';
-        return $this->evaluate($student, $criteria, $drive['branches'] ?? [], $tier);
+        return $this->evaluate($student, $criteria, $branches, (string) $tier);
     }
 
     /**
@@ -69,7 +70,7 @@ final class EligibilityEngine
             return ['eligible' => false, 'reasons' => ['Student or job not found.']];
         }
 
-        $criteria = $job['eligibility'] ?? [];
+        $criteria = $this->toPlainArray($job['eligibility'] ?? []);
         $branches = [];
         if (!empty($criteria['departments'])) {
             foreach ($criteria['departments'] as $deptId) {
@@ -173,5 +174,19 @@ final class EligibilityEngine
             'eligible' => empty($reasons),
             'reasons'  => $reasons,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toPlainArray(mixed $value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+        if ($value instanceof \MongoDB\Model\BSONDocument || $value instanceof \ArrayObject) {
+            return (array) $value;
+        }
+        return [];
     }
 }

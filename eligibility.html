@@ -197,13 +197,11 @@ window.openEditRule = driveId => {
     document.querySelector('[name=min10th]').value = rule.min10th;
     document.querySelector('[name=min12th]').value = rule.min12th;
     document.querySelector('[name=notes]').value = rule.notes || '';
-    ELIGIBILITY_BRANCHES.forEach(b => {
-      const cb = document.getElementById('br-' + b);
-      if (cb) cb.checked = rule.branches.includes(b);
-    });
+    renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: false, selected: rule.branches || [] });
   } else {
     document.getElementById('ruleForm').reset();
     document.getElementById('ruleDrive').value = driveId;
+    renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: true });
   }
   bootstrap.Modal.getOrCreateInstance(document.getElementById('ruleModal')).show();
 };
@@ -225,15 +223,13 @@ function populateDriveSelect(selected) {
   ).join('');
 }
 
-document.getElementById('branchChecks').innerHTML = ELIGIBILITY_BRANCHES.map(b =>
-  `<div class="form-check"><input class="form-check-input" type="checkbox" name="branches" value="${b}" id="br-${b}" checked><label class="form-check-label small" for="br-${b}">${b}</label></div>`
-).join('');
+document.getElementById('branchChecks').innerHTML = '';
 
 document.getElementById('ruleForm').addEventListener('submit', e => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const drive = DRIVE_CATALOG.find(d => d.id === fd.get('driveId'));
-  const branches = [...document.querySelectorAll('[name=branches]:checked')].map(cb => cb.value);
+  const branches = readCheckedBranchCodes(document.getElementById('branchChecks'));
   if (!branches.length) { toast('Select at least one branch.', 'warn'); return; }
   CompanyEligibility.upsert({
     id: fd.get('id') || undefined,
@@ -257,7 +253,7 @@ document.getElementById('ruleForm').addEventListener('submit', e => {
 document.getElementById('ruleModal').addEventListener('hidden.bs.modal', () => {
   document.getElementById('ruleDrive').disabled = false;
   document.getElementById('ruleForm').reset();
-  document.getElementById('branchChecks').querySelectorAll('input').forEach(cb => { cb.checked = true; });
+  renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: true });
 });
 
 document.getElementById('addRuleBtn').addEventListener('click', () => {
@@ -266,8 +262,12 @@ document.getElementById('addRuleBtn').addEventListener('click', () => {
   populateDriveSelect('');
 });
 
-updateStats();
-renderRoleList();
-const drives = CompanyEligibility.companyDrives();
-if (drives.length) selectRole(drives[0].id);
+onAppReady(async () => {
+  await ensureDepartmentsLoaded();
+  renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: true });
+  updateStats();
+  renderRoleList();
+  const drives = CompanyEligibility.companyDrives();
+  if (drives.length) selectRole(drives[0].id);
+});
 </script></body></html>

@@ -67,6 +67,9 @@ class ApplicationModel extends BaseModel
                 ['status' => 'applied', 'at' => $now, 'by' => $data['studentId']],
             ],
         ];
+        if (!empty($data['resume']) && is_array($data['resume'])) {
+            $doc['resume'] = $data['resume'];
+        }
         return $this->insert($doc);
     }
 

@@ -6,21 +6,46 @@ namespace PMS\Staff;
 
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\RecommendationModel;
+use PMS\Services\StaffDataService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Validator;
 
 /**
- * Staff module — company recommendations.
+ * Staff module — department-scoped views and company recommendations.
  */
 final class StaffController
 {
+    /** GET /api/staff/profile */
+    public function profile(): void
+    {
+        $scope = (new StaffDataService())->requireScope();
+
+        Response::success([
+            'user'        => DocumentHelper::serialize($scope['user']),
+            'department'  => $scope['ctx']['department']
+                ? DocumentHelper::serialize($scope['ctx']['department'])
+                : null,
+            'designation' => $scope['ctx']['profile']['designation'] ?? null,
+        ]);
+    }
+
+    /** GET /api/staff/dashboard */
+    public function dashboard(): void
+    {
+        $scope = (new StaffDataService())->requireScope();
+        Response::success((new StaffDataService())->dashboardStats(
+            $scope['officerCtx'],
+            (string) $scope['user']['_id']
+        ));
+    }
+
     /** GET /api/staff/recommendations */
     public function listRecommendations(): void
     {
-        RBACMiddleware::requireStaff();
-        $model = new RecommendationModel();
-        Response::success(DocumentHelper::serializeMany($model->findAll([], 100)));
+        $user = RBACMiddleware::requireStaff();
+        $rows = (new StaffDataService())->listMyRecommendations((string) $user['_id']);
+        Response::success($rows);
     }
 
     /** POST /api/staff/recommendations */
@@ -49,5 +74,26 @@ final class StaffController
 
         $id = (new RecommendationModel())->createRecommendation((string) $user['_id'], $input);
         Response::success(['id' => $id], 'Company recommended.', 201);
+    }
+
+    /** GET /api/staff/students */
+    public function listStudents(): void
+    {
+        $scope = (new StaffDataService())->requireScope();
+        Response::success((new StaffDataService())->listStudents($scope['officerCtx']));
+    }
+
+    /** GET /api/staff/drives */
+    public function listDrives(): void
+    {
+        $scope = (new StaffDataService())->requireScope();
+        Response::success((new StaffDataService())->listDrives($scope['ctx']));
+    }
+
+    /** GET /api/staff/hiring-overview */
+    public function hiringOverview(): void
+    {
+        $scope = (new StaffDataService())->requireScope();
+        Response::success((new StaffDataService())->hiringOverview($scope['ctx'], $scope['officerCtx']));
     }
 }

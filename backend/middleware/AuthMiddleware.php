@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace PMS\Middleware;
 
+use PMS\Models\DepartmentModel;
+use PMS\Models\PlacementOfficerModel;
+use PMS\Models\StaffModel;
 use PMS\Models\UserModel;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -32,7 +35,10 @@ final class AuthMiddleware
     $session = Security::getSessionUser();
     if ($session !== null) {
       $user = $userModel->findById($session['id']);
-      if ($user && ($user['status'] ?? '') === 'active' && ($user['approved'] ?? false)) {
+      $role = $user['role'] ?? '';
+      $active = ($user['status'] ?? '') === 'active';
+      $approved = ($user['approved'] ?? false) || $role === 'admin';
+      if ($user && $active && $approved) {
         self::$currentUser = $user;
         return $user;
       }
@@ -79,9 +85,30 @@ final class AuthMiddleware
   public static function userResponse(array $user, ?string $token = null): array
   {
     $config = require dirname(__DIR__) . '/config/app.php';
-    $data = DocumentHelper::serialize($user);
-    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
-    if ($token !== null) {
+        $data = DocumentHelper::serialize($user);
+        $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
+        if (($user['role'] ?? '') === 'staff') {
+            $profile = (new StaffModel())->findByUserId((string) $user['_id']);
+            if ($profile) {
+                $dept = !empty($profile['departmentId'])
+                    ? (new DepartmentModel())->findById((string) $profile['departmentId'])
+                    : null;
+                $data['designation'] = $profile['designation'] ?? '';
+                $data['department'] = $dept['code'] ?? $dept['name'] ?? '';
+                $data['departmentId'] = $dept ? (string) $dept['_id'] : '';
+            }
+        }
+        if (($user['role'] ?? '') === 'placement_officer') {
+            $profile = (new PlacementOfficerModel())->findByUserId((string) $user['_id']);
+            if ($profile) {
+                $dept = !empty($profile['departmentId'])
+                    ? (new DepartmentModel())->findById((string) $profile['departmentId'])
+                    : null;
+                $data['department'] = $dept['code'] ?? $dept['name'] ?? '';
+                $data['departmentId'] = $dept ? (string) $dept['_id'] : '';
+            }
+        }
+        if ($token !== null) {
       $data['token'] = $token;
     }
     return $data;

@@ -25,6 +25,18 @@ class StaffModel extends BaseModel
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function findByDepartmentId(string $departmentId, int $limit = 200): array
+    {
+        $oid = Security::toObjectId($departmentId);
+        if ($oid === null) {
+            return [];
+        }
+        return $this->findAll(['departmentId' => $oid], $limit);
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     public function createProfile(string $userId, array $data): string
@@ -35,5 +47,38 @@ class StaffModel extends BaseModel
             'designation'  => $data['designation'] ?? 'Staff',
         ];
         return $this->insert($doc);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function updateProfile(string $userId, array $data): bool
+    {
+        $profile = $this->findByUserId($userId);
+        if (!$profile) {
+            return false;
+        }
+
+        $update = [];
+        if (isset($data['departmentId'])) {
+            $update['departmentId'] = Security::toObjectId($data['departmentId']);
+        }
+        if (isset($data['designation'])) {
+            $update['designation'] = $data['designation'];
+        }
+        if ($update === []) {
+            return true;
+        }
+
+        return $this->update((string) $profile['_id'], $update);
+    }
+
+    public function deleteByUserId(string $userId): bool
+    {
+        $profile = $this->findByUserId($userId);
+        if (!$profile) {
+            return false;
+        }
+        return $this->delete((string) $profile['_id']);
     }
 }

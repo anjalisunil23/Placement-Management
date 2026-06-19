@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Resume Verification · PlaceHub</title>
+<title>Student · Management · Resume · PlaceHub</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -9,7 +9,7 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Resume Verification</h1><p class="page-sub">Review uploaded resumes, validate naming conventions, and approve or reject submissions.</p></div>
+  <div><h1 class="page-title">Resume</h1><p class="page-sub">Review application resumes, validate naming conventions, and approve or reject submissions.</p></div>
 </div>
 
 <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
@@ -37,22 +37,22 @@
   <div class="tab-content">
     <div class="tab-pane fade show active" id="tabPending">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
-        <th>Student</th><th>Register No</th><th>Dept</th><th>File name</th><th>Format</th><th>Submitted</th><th>Actions</th>
+        <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Submitted</th><th>Actions</th>
       </tr></thead><tbody id="pendingRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabApproved">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
-        <th>Student</th><th>Register No</th><th>Dept</th><th>File name</th><th>Format</th><th>Submitted</th>
+        <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Submitted</th>
       </tr></thead><tbody id="approvedRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabRejected">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
-        <th>Student</th><th>Register No</th><th>Dept</th><th>File name</th><th>Format</th><th>Submitted</th>
+        <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Submitted</th>
       </tr></thead><tbody id="rejectedRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabAll">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
-        <th>Student</th><th>Register No</th><th>Dept</th><th>File name</th><th>Format</th><th>Status</th><th>Submitted</th><th>Actions</th>
+        <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Status</th><th>Submitted</th><th>Actions</th>
       </tr></thead><tbody id="allRows"></tbody></table></div>
     </div>
   </div>
@@ -78,16 +78,27 @@ function resumeStatusBadge(status) {
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }
 
+function viewResumeLink(r) {
+  if (!r.resumeUrl) return '';
+  const label = r.fileName || 'View';
+  return `<a href="${r.resumeUrl}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Open resume"><i class="bi bi-box-arrow-up-right"></i></a>`;
+}
+
 function rowCells(r, showActions) {
-  const actions = showActions && r.status === 'pending' ? `
+  const canAct = showActions && r.status === 'pending';
+  const actions = canAct ? `
     <td><div class="d-flex gap-1">
+      ${viewResumeLink(r)}
       <button class="btn btn-sm btn-success" onclick="approveResume('${r.id}')" title="Approve"><i class="bi bi-check2"></i></button>
-      <button class="btn btn-sm btn-outline-danger" onclick="rejectResume('${r.id}')" title="Reject"><i class="bi bi-x"></i></button>
-    </div></td>` : (showActions ? '<td>—</td>' : '');
+      <button class="btn btn-sm btn-outline-danger" onclick="rejectResume('${r.id}')" title="Reject" ${r.applicationId ? '' : 'disabled'}><i class="bi bi-x"></i></button>
+    </div></td>` : (showActions ? `<td>${viewResumeLink(r) || '—'}</td>` : '');
+  const appHint = r.applicationId ? '' : '<div class="small text-muted-2">Profile upload</div>';
   return `
-    <td><div class="fw-semibold small">${r.studentName}</div></td>
+    <td><div class="fw-semibold small">${r.studentName}</div>${appHint}</td>
     <td>${r.registerNumber}</td>
     <td>${r.department}</td>
+    <td>${r.company || '—'}</td>
+    <td>${r.role || '—'}</td>
     <td><i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i>${r.fileName}</td>
     <td>${formatBadge(r.fileName, r.validFormat)}</td>
     ${showActions ? `<td>${resumeStatusBadge(r.status)}</td>` : ''}
@@ -96,15 +107,21 @@ function rowCells(r, showActions) {
 }
 
 function approveResume(id) {
-  ResumeQueue.approve(id).then(() => { toast('Resume approved.', 'success'); render(); });
+  ResumeQueue.approve(id).then(ok => {
+    if (ok) { toast('Resume approved.', 'success'); render(); }
+    else toast('Could not approve resume.', 'error');
+  });
 }
 
 function rejectResume(id) {
-  ResumeQueue.reject(id).then(() => { toast('Resume rejected.', 'warn'); render(); });
+  ResumeQueue.reject(id).then(ok => {
+    if (ok) { toast('Application rejected.', 'warn'); render(); }
+    else toast('Could not reject application.', 'error');
+  });
 }
 
 function renderTable(id, list, showActions, showStatus) {
-  const cols = showStatus ? 8 : 7;
+  const cols = showStatus ? 10 : 9;
   document.getElementById(id).innerHTML = list.length
     ? list.map(r => `<tr>${rowCells(r, showActions)}</tr>`).join('')
     : `<tr><td colspan="${cols}" class="text-muted-2 p-4">No resumes in this queue.</td></tr>`;
@@ -115,7 +132,7 @@ function render() {
   const pending = all.filter(r => r.status === 'pending');
   const approved = all.filter(r => r.status === 'approved');
   const rejected = all.filter(r => r.status === 'rejected');
-  const invalid = all.filter(r => !checkResumeFileName(r.fileName));
+  const invalid = all.filter(r => r.validFormat === false);
 
   document.getElementById('statPending').textContent = pending.length;
   document.getElementById('statApproved').textContent = approved.length;

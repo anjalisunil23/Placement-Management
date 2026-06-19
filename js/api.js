@@ -22,7 +22,7 @@ const ROLE_BADGES = {
 /* Which roles can visit which page. Page = filename. */
 const PAGE_PERMS = {
   'dashboard.html':     ROLES,
-  'analytics.html':     ['admin','placement_officer'],
+  'analytics.html':     ['placement_officer'],
   'drives.html':        ['admin','placement_officer','student','alumni','staff'],
   'create-drive.html':  ['admin','placement_officer'],
   'tracking.html':      ['admin','placement_officer'],
@@ -56,6 +56,20 @@ const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'settings.html', 
 const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'drives.html', 'student-overview.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'notifications.html', 'settings.html'];
+
+/** Default landing page per role after sign-in */
+const ROLE_HOME = {
+  admin: 'dashboard.html',
+  placement_officer: 'placement-console.html',
+  staff: 'staff-recommend.html',
+  student: 'drives.html',
+  company: 'company.html',
+  alumni: 'dashboard.html',
+};
+
+const ADMIN_ONLY_PAGES = [
+  'users.html', 'departments.html', 'rules.html', 'blacklist.html', 'admin-settings.html',
+];
 
 const RESUME_PROFILES = ['General', 'SDE / Full Stack', 'Data / ML', 'Product / Business', 'Core Engineering'];
 const RESUME_BUCKET = 'placehub-resumes';
@@ -98,12 +112,90 @@ const API_BASE =
   localStorage.getItem('ph-api-base') ||
   '/backend/api';
 
+/** Ensure a live server session before admin writes; redirects to login when needed. */
+async function requireWriteSession() {
+  Auth._sessionReady = false;
+  if (await Auth.ensureSession()) return true;
+  const page = document.body?.dataset?.page || 'dashboard.html';
+  window.location.href = `login.html?next=${encodeURIComponent(page)}`;
+  return false;
+}
+
+/** Real API login — returns { success, message?, redirect? } */
+async function performServerLogin(email, password, next = '') {
+  Auth.clear();
+  const res = await api('/auth/login', {
+    method: 'POST',
+    body: { email, password },
+    skipAuthRedirect: true,
+    skipAuthRetry: true,
+  });
+  if (!res.success) {
+    if (res._offline) {
+      return { success: false, message: 'Cannot reach the server. Run: php -S localhost:8080 router.php' };
+    }
+    return { success: false, message: res.message || 'Sign-in failed' };
+  }
+  const user = res.data;
+  if (!user || !user.role) {
+    return { success: false, message: 'Sign-in response was invalid.' };
+  }
+  localStorage.setItem('ph-token', 'session');
+  Auth.applySessionUser(user);
+  Auth._sessionReady = true;
+  return { success: true, redirect: Auth.resolveRedirect(next) };
+}
+
+const QUICK_LOGIN_ACCOUNTS = {
+  admin: { email: 'admin@college.edu', password: 'Admin@123456' },
+  placement_officer: { email: 'riya@college.edu', password: 'Officer@123456' },
+  staff: { email: 'ravi.iyer@college.edu', password: 'Staff@123456' },
+  student: { email: 'karthik.s@college.edu', password: 'Student@123456' },
+};
+
 const Auth = {
   user() { try { return JSON.parse(localStorage.getItem('ph-user') || 'null'); } catch { return null; } },
   token() { return localStorage.getItem('ph-token') || ''; },
   role() {
     const u = this.user();
-    return (u && u.role) || localStorage.getItem('ph-role') || 'placement_officer';
+    return (u && u.role) ? u.role : '';
+  },
+  homePage(role) {
+    const u = this.user();
+    const r = role || this.role();
+    if (u?.dashboard) {
+      const page = String(u.dashboard).replace(/^\//, '').split('#')[0];
+      if (page && this.isAllowed(page)) return page;
+    }
+    return ROLE_HOME[r] || 'dashboard.html';
+  },
+  resolveRedirect(next) {
+    const raw = (next || '').trim();
+    if (!raw) return this.homePage();
+    const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
+    const hash = raw.includes('#') ? raw.slice(raw.indexOf('#')) : '';
+    if (page && page !== 'login.html' && this.isAllowed(page)) {
+      return page + hash;
+    }
+    return this.homePage();
+  },
+  applySessionUser(u) {
+    if (!u) return;
+    this.set(
+      {
+        id: u.id || u._id || '',
+        name: u.name || '',
+        email: u.email || '',
+        role: u.role || '',
+        department: u.department || '',
+        departmentId: u.departmentId || '',
+        designation: u.designation || '',
+        company: u.company || u.companyName || '',
+        registerNumber: u.registerNumber || '',
+        dashboard: u.dashboard || '',
+      },
+      'session'
+    );
   },
   set(user, token) {
     if (user) localStorage.setItem('ph-user', JSON.stringify(user));
@@ -123,7 +215,11 @@ const Auth = {
     localStorage.removeItem('ph-token');
     localStorage.removeItem('ph-role');
   },
-  logout() { this.clear(); window.location.href = 'login.html'; },
+  logout() {
+    apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
+    this.clear();
+    window.location.href = 'login.html';
+  },
   isDemo() {
     const t = this.token();
     return !!t && t.startsWith('demo-token');
@@ -140,38 +236,30 @@ const Auth = {
   async bootstrap() {
     if (this._sessionReady === true) return true;
     const res = await apiFetch('/auth/me', { skipAuthRedirect: true, skipAuthRetry: true });
-    if (!res.success || !res.data) {
+    if (!res.success || !res.data || !res.data.role) {
       this._sessionReady = false;
       return false;
     }
-    const u = res.data;
-    this.set(
-      {
-        id: u.id || u._id || '',
-        name: u.name || '',
-        email: u.email || '',
-        role: u.role || '',
-        department: u.department || '',
-        company: u.company || u.companyName || '',
-        registerNumber: u.registerNumber || '',
-      },
-      'session'
-    );
+    this.applySessionUser(res.data);
     this._sessionReady = true;
     return true;
   },
   async ensureSession() {
     if (this._sessionReady === true) return true;
-    if (this.isDemo()) return false;
     return this.bootstrap();
   },
+  hasLiveSession() { return this._sessionReady === true; },
   isAllowed(page) {
     const role = this.role();
-    if (!(PAGE_PERMS[page] || ROLES).includes(role)) return false;
-    if (role === 'alumni') return alumniPageAllowed(page);
-    if (role === 'company') return COMPANY_PAGES.includes(page);
-    if (role === 'staff') return STAFF_PAGES.includes(page);
-    if (role === 'student') return STUDENT_PAGES.includes(page);
+    if (!role) return false;
+    const base = (page || '').split('#')[0].split('?')[0];
+    if (!(PAGE_PERMS[base] || ROLES).includes(role)) return false;
+    if (role === 'placement_officer' && ADMIN_ONLY_PAGES.includes(base)) return false;
+    if (role === 'staff' && ADMIN_ONLY_PAGES.includes(base)) return false;
+    if (role === 'alumni') return alumniPageAllowed(base);
+    if (role === 'company') return COMPANY_PAGES.includes(base);
+    if (role === 'staff') return STAFF_PAGES.includes(base);
+    if (role === 'student') return STUDENT_PAGES.includes(base);
     return true;
   },
   isAuthed() { return !!this.user(); },
@@ -212,8 +300,14 @@ const StaffRecs = {
   },
   save(list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); },
   async fetch() {
-    const list = await AdminApi.fetchRecommendations();
-    if (list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); return list; }
+    if (Auth.role() === 'staff' && typeof StaffApi !== 'undefined') {
+      const list = await StaffApi.fetchRecommendations();
+      if (list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); return list; }
+    }
+    if (Auth.role() === 'admin' || Auth.role() === 'placement_officer') {
+      const list = await AdminApi.fetchRecommendations();
+      if (list) { this._cache = list; localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list)); return list; }
+    }
     return this.all();
   },
   mine() {
@@ -269,26 +363,32 @@ const RegisteredCompanies = {
     return this.all();
   },
   async register(payload) {
+    if (!(await requireWriteSession())) return null;
     const res = await api('/admin/companies/register', { method: 'POST', body: payload });
     if (res.success) {
       await Promise.all([this.fetch(), StaffRecs.fetch()]);
       return res.data;
     }
-    const company = {
-      id: 'co-' + Date.now(),
-      companyName: payload.companyName?.trim(),
-      companyWebsite: payload.companyWebsite?.trim() || '',
-      hrName: payload.hrName?.trim(),
-      hrEmail: payload.hrEmail?.trim(),
-      contactNumber: payload.contactNumber?.trim(),
-      category: payload.category || 'Product',
-      tier: payload.tier || 'Tier 2',
-      registeredAt: new Date().toISOString(),
-      sourceRecommendationId: payload.sourceRecommendationId || null,
-    };
-    this.save([company, ...this.all()]);
-    if (payload.sourceRecommendationId) StaffRecs.updateStatus(payload.sourceRecommendationId, 'registered');
-    return company;
+    toast(res.message || 'Could not register company.', 'error');
+    return null;
+  },
+  async addSimple(payload) {
+    if (!(await requireWriteSession())) return null;
+    const res = await api('/admin/companies', {
+      method: 'POST',
+      body: {
+        companyName: payload.companyName,
+        category: payload.category || 'Product',
+        tier: payload.tier || 'Tier 2',
+        website: payload.website || payload.companyWebsite || '',
+      },
+    });
+    if (res.success) {
+      await this.fetch();
+      return res.data;
+    }
+    toast(res.message || 'Could not add company.', 'error');
+    return null;
   },
 };
 
@@ -452,8 +552,27 @@ function recStatusBadge(status) {
 }
 
 function studentKey(suffix) {
-  const email = Auth.user()?.email || 'anonymous';
-  return `ph-student-${suffix}-${email}`;
+  const u = Auth.user();
+  const id = u?.id || u?._id || u?.email || 'anonymous';
+  return `ph-student-${suffix}-${id}`;
+}
+
+function resumeUploadFileName(file, user) {
+  const safeName = (user?.name || 'Student').replace(/[^a-zA-Z0-9]/g, '') || 'Student';
+  const reg = user?.registerNumber || 'student';
+  const ext = (String(file?.name || '').match(/\.[^.]+$/) || ['.pdf'])[0];
+  return `${safeName}_${reg}_Resume${ext}`;
+}
+
+function normalizeProfileType(value) {
+  return String(value || 'General').trim().toLowerCase();
+}
+
+function profileTypesMatch(a, b) {
+  const x = normalizeProfileType(a);
+  const y = normalizeProfileType(b);
+  if (!x || !y || x === 'general' || y === 'general') return true;
+  return x === y;
 }
 
 const ResumeBucket = {
@@ -462,7 +581,7 @@ const ResumeBucket = {
   },
   save(list) { localStorage.setItem(studentKey('resumes'), JSON.stringify(list)); },
   seed() {
-    if (this.all().length) return;
+    if ((Auth.hasSession() && !Auth.isDemo()) || this.all().length) return;
     const u = Auth.user() || demoUserFor('student');
     const reg = u.registerNumber || 'student';
     const now = new Date().toISOString();
@@ -473,15 +592,81 @@ const ResumeBucket = {
     ];
     this.save(demo);
   },
-  upload(file, profileType, label) {
-    const u = Auth.user();
+  profileToEntry(profile) {
+    const resume = profile?.resume;
+    if (!resume || (!resume.filename && !resume.path)) return null;
+    const reg = profile.registerNumber || Auth.user()?.registerNumber || 'student';
+    return {
+      id: `res-profile-${reg}`,
+      label: 'Uploaded resume',
+      profileType: 'General',
+      fileName: resume.filename || String(resume.path).split(/[/\\]/).pop(),
+      fileSize: resume.size || 0,
+      bucketPath: resume.path
+        ? (String(resume.path).startsWith('s3://') ? resume.path : `uploads://${resume.path}`)
+        : '',
+      uploadedAt: resume.uploadedAt || new Date().toISOString(),
+      verified: !!resume.verified,
+      fromProfile: true,
+    };
+  },
+  mergeProfileResume(list, profile) {
+    const entry = this.profileToEntry(profile);
+    if (!entry) return list;
+    const rest = list.filter(r => r.id !== entry.id);
+    const existing = list.find(r => r.id === entry.id);
+    return [{ ...existing, ...entry }, ...rest];
+  },
+  async fetch() {
+    if (Auth.role() !== 'student' || Auth.isDemo()) return this.all();
+    const res = await apiFetch('/student/profile', { skipAuthRedirect: true });
+    if (!res.success || !res.data) return this.all();
+    const profile = res.data;
+    if (profile.registerNumber) {
+      const u = Auth.user();
+      if (u && u.registerNumber !== profile.registerNumber) {
+        Auth.set({ ...u, registerNumber: profile.registerNumber }, Auth.token());
+      }
+    }
+    const merged = this.mergeProfileResume(this.all(), profile);
+    this.save(merged);
+    return merged;
+  },
+  async upload(file, profileType, label) {
+    const u = Auth.user() || {};
+    const type = profileType || 'General';
+    if (Auth.role() === 'student' && Auth.hasSession() && !Auth.isDemo() && file instanceof File) {
+      const uploadName = resumeUploadFileName(file, u);
+      const fd = new FormData();
+      fd.append('resume', file, uploadName);
+      const res = await apiFetch('/student/resume', { method: 'POST', body: fd, skipAuthRedirect: true });
+      if (res.success) {
+        await this.fetch();
+        const fromProfile = this.all().find(r => r.fromProfile);
+        if (fromProfile) {
+          const bucketPath = `s3://${RESUME_BUCKET}/${u.registerNumber || u.email || 'student'}/${normalizeProfileType(type).replace(/\s+/g, '-')}/${fromProfile.fileName}`;
+          const tagged = {
+            ...fromProfile,
+            label: label || type,
+            profileType: type,
+            bucketPath,
+          };
+          const list = this.all().map(r => (r.id === tagged.id ? tagged : r));
+          if (!list.some(r => r.id === tagged.id)) list.unshift(tagged);
+          this.save(list);
+          return tagged;
+        }
+      } else if (res.message) {
+        toast(res.message, 'warn');
+      }
+    }
     const id = 'res-' + Date.now();
     const safeName = (file.name || 'resume.pdf').replace(/[^\w.\-]/g, '_');
-    const bucketPath = `s3://${RESUME_BUCKET}/${u?.registerNumber || u?.email || 'student'}/${profileType.replace(/\s+/g, '-').toLowerCase()}/${id}-${safeName}`;
+    const bucketPath = `s3://${RESUME_BUCKET}/${u.registerNumber || u.email || 'student'}/${normalizeProfileType(type).replace(/\s+/g, '-')}/${id}-${safeName}`;
     const entry = {
       id,
-      label: label || profileType,
-      profileType,
+      label: label || type,
+      profileType: type,
       fileName: file.name,
       fileSize: file.size,
       bucketPath,
@@ -494,7 +679,20 @@ const ResumeBucket = {
   },
   remove(id) { this.save(this.all().filter(r => r.id !== id)); },
   forProfile(profileType) {
-    return this.all().filter(r => r.profileType === profileType || r.profileType === 'General');
+    const all = this.all();
+    if (!all.length) return [];
+    const wanted = profileType || 'General';
+    const matched = all.filter(r => profileTypesMatch(r.profileType, wanted));
+    const list = matched.length ? matched : all;
+    return [...list].sort((a, b) => {
+      const score = (r) => {
+        if (r.profileType === wanted) return 0;
+        if (normalizeProfileType(r.profileType) === normalizeProfileType(wanted)) return 1;
+        if (r.profileType === 'General' || r.fromProfile) return 2;
+        return 3;
+      };
+      return score(a) - score(b);
+    });
   },
 };
 
@@ -505,9 +703,67 @@ const StudentApps = {
   save(list) { localStorage.setItem(studentKey('applications'), JSON.stringify(list)); },
   hasApplied(driveId) { return this.all().some(a => a.driveId === driveId); },
   get(driveId) { return this.all().find(a => a.driveId === driveId); },
-  apply(drive, resumeId) {
+  resumePathForApply(resume) {
+    if (!resume) return '';
+    const bp = String(resume.bucketPath || '');
+    if (bp.startsWith('uploads://')) return bp.slice('uploads://'.length);
+    if (bp && !bp.startsWith('s3://')) return bp;
+    return '';
+  },
+  async fetch() {
+    if (Auth.role() !== 'student' || Auth.isDemo()) return this.all();
+    const res = await api('/student/applications');
+    if (!res.success || !Array.isArray(res.data)) return this.all();
+    const mapped = res.data.map(a => ({
+      id: a._id || a.id,
+      driveId: a.driveId || '',
+      status: a.status || 'applied',
+      appliedAt: a.createdAt || a.appliedAt || '',
+    }));
+    this.save(mapped);
+    return mapped;
+  },
+  async apply(drive, resumeId) {
     if (this.hasApplied(drive.id)) return null;
     const resume = ResumeBucket.all().find(r => r.id === resumeId);
+    const resumePath = this.resumePathForApply(resume);
+
+    if (Auth.role() === 'student' && Auth.hasSession() && !Auth.isDemo()) {
+      const res = await api('/student/apply', {
+        method: 'POST',
+        body: {
+          driveId: drive.id,
+          resumeId: resumeId || '',
+          resumeLabel: resume?.label || '',
+          resumeFileName: resume?.fileName || '',
+          resumePath,
+        },
+      });
+      if (!res.success) {
+        toast(res.message || 'Application failed.', 'error');
+        return null;
+      }
+      const app = {
+        id: res.data?.applicationId || res.data?._id || ('app-' + Date.now()),
+        driveId: drive.id,
+        company: drive.company,
+        role: drive.role,
+        package: drive.package,
+        resumeId,
+        resumeLabel: resume?.label || '—',
+        status: 'applied',
+        appliedAt: new Date().toISOString(),
+      };
+      await this.fetch();
+      StudentNotifs.add({
+        type: 'application_update',
+        title: 'Application submitted',
+        body: `Your application for ${drive.company} · ${drive.role} was submitted successfully.`,
+        driveId: drive.id,
+      });
+      return app;
+    }
+
     const app = {
       id: 'app-' + Date.now(),
       driveId: drive.id,
@@ -732,6 +988,53 @@ function companyEligibilityKey() {
 
 const ELIGIBILITY_BRANCHES = ['CSE', 'IT', 'ECE', 'ME', 'EE', 'CE', 'MCA'];
 
+function departmentList() {
+  return DepartmentStore.all();
+}
+
+function departmentCodes() {
+  const codes = departmentList().map(d => String(d.code || '').trim().toUpperCase()).filter(Boolean);
+  return codes.length ? [...new Set(codes)] : ELIGIBILITY_BRANCHES;
+}
+
+function fillDepartmentIdSelect(selectEl, selectedId = '') {
+  if (!selectEl) return;
+  const depts = departmentList();
+  selectEl.innerHTML = '<option value="">Select department…</option>' +
+    depts.map(d => `<option value="${d.id}"${d.id === selectedId ? ' selected' : ''}>${d.name} (${d.code})</option>`).join('');
+}
+
+function fillDepartmentCodeSelect(selectEl, { includeAll = false, selected = '' } = {}) {
+  if (!selectEl) return;
+  const codes = departmentCodes();
+  let html = includeAll ? '<option value="">All branches</option>' : '<option value="">Select department…</option>';
+  html += codes.map(c => `<option value="${c}"${c === selected ? ' selected' : ''}>${c}</option>`).join('');
+  selectEl.innerHTML = html;
+}
+
+function renderDepartmentBranchCheckboxes(container, { name = 'branches', checkedAll = true, selected = null } = {}) {
+  if (!container) return;
+  const codes = departmentCodes();
+  const selectedSet = selected instanceof Set ? selected : (Array.isArray(selected) ? new Set(selected) : null);
+  container.innerHTML = codes.length
+    ? codes.map(code => {
+        const checked = selectedSet ? selectedSet.has(code) : checkedAll;
+        const id = `br-${code}-${Math.random().toString(36).slice(2, 7)}`;
+        return `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="${name}" value="${code}" id="${id}"${checked ? ' checked' : ''}><label class="form-check-label small" for="${id}">${code}</label></div>`;
+      }).join('')
+    : '<span class="small text-muted-2">No departments configured.</span>';
+}
+
+function readCheckedBranchCodes(container) {
+  if (!container) return [];
+  return [...container.querySelectorAll('input[name="branches"]:checked')].map(cb => cb.value);
+}
+
+async function ensureDepartmentsLoaded() {
+  await DepartmentStore.fetch();
+  return departmentList();
+}
+
 const CompanyEligibility = {
   all() {
     try { return JSON.parse(localStorage.getItem(companyEligibilityKey()) || '[]'); } catch { return []; }
@@ -829,27 +1132,43 @@ const DepartmentStore = {
   },
   save(l) { this._cache = l; localStorage.setItem(DEPTS_KEY, JSON.stringify(l)); },
   async fetch() {
-    const list = await AdminApi.fetchDepartments();
+    let list = null;
+    if (Auth.role() === 'admin') {
+      list = await AdminApi.fetchDepartments();
+    }
+    if (!list) {
+      const res = await apiFetch('/public/departments', { skipAuthRedirect: true });
+      if (res.success && Array.isArray(res.data)) {
+        list = res.data.map(d => ({
+          id: d.id || d._id,
+          name: d.name || '',
+          code: d.code || '',
+          hasOfficer: !!d.hasOfficer,
+        }));
+      }
+    }
     if (list) { this._cache = list; localStorage.setItem(DEPTS_KEY, JSON.stringify(list)); return list; }
     return this.all();
   },
   async add(p) {
+    if (!(await requireWriteSession())) return null;
     const res = await api('/admin/departments', { method: 'POST', body: { name: p.name, code: p.code } });
     if (res.success) { await this.fetch(); return res.data; }
-    const d = { id:'d-'+Date.now(), name:p.name?.trim(), code:p.code?.trim().toUpperCase() };
-    this.save([...this.all(), d]);
-    return d;
+    toast(res.message || 'Could not add department.', 'error');
+    return null;
   },
   async update(id, p) {
+    if (!(await requireWriteSession())) return false;
     const res = await api(`/admin/departments/${encodeURIComponent(id)}`, { method: 'PUT', body: p });
     if (res.success) { await this.fetch(); return true; }
-    this.save(this.all().map(d => d.id === id ? { ...d, ...p } : d));
+    toast(res.message || 'Could not update department.', 'error');
     return false;
   },
   async remove(id) {
+    if (!(await requireWriteSession())) return false;
     const res = await api(`/admin/departments/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (res.success) { await this.fetch(); return true; }
-    this.save(this.all().filter(d => d.id !== id));
+    toast(res.message || 'Could not delete department.', 'error');
     return false;
   },
 };
@@ -929,31 +1248,57 @@ const UserRegistry = {
     const list = [];
     if (students) list.push(...students);
     const studentIds = new Set(students?.map(s => s.id) || []);
+    const companyByUserId = new Map();
+    const companyRows = companies || [];
+    companyRows.forEach(c => {
+      if (c.userId) companyByUserId.set(c.userId, c);
+    });
+    const seenCompanyIds = new Set();
     users?.forEach(u => {
       if (u.role === 'student' && studentIds.has(u.id)) return;
-      if (u.role === 'company') return;
+      if (u.role === 'company') {
+        const company = companyByUserId.get(u.id);
+        const row = typeof AdminApi !== 'undefined' && AdminApi.mergeCompanyUser
+          ? AdminApi.mergeCompanyUser(u, company)
+          : { ...u, role: 'company', hasLogin: true };
+        list.push(row);
+        if (company?.companyId) seenCompanyIds.add(company.companyId);
+        return;
+      }
       list.push(u);
     });
-    companies?.forEach(c => list.push({ ...c, role: 'company' }));
+    companyRows.forEach(c => {
+      const cid = c.companyId || c.id;
+      if (!seenCompanyIds.has(cid)) list.push(c);
+    });
     this._cache = list;
     localStorage.setItem(USERS_KEY, JSON.stringify(list));
     return list;
   },
   async add(p) {
-    const res = await api('/admin/users', {
-      method: 'POST',
-      body: {
-        name: p.name,
-        email: p.email,
-        password: p.password || 'Staff@123456',
-        role: p.role || 'staff',
-        approved: false,
-      },
-    });
+    if (!(await requireWriteSession())) return null;
+    const body = {
+      name: p.name,
+      email: p.email,
+      password: p.password || ({ staff: 'Staff@123456', placement_officer: 'Officer@123456', alumni: 'Alumni@123456', company: 'Company@123456' }[p.role] || 'Staff@123456'),
+      role: p.role || 'staff',
+      approved: p.approved !== false,
+    };
+    if (p.departmentId) body.departmentId = p.departmentId;
+    if (p.designation) body.designation = p.designation;
+    if (p.company) body.company = p.company;
+    if (p.alumniRole || p.jobRole) body.alumniRole = p.alumniRole || p.jobRole;
+    if (p.experience != null) body.experience = p.experience;
+    if (p.companyName) body.companyName = p.companyName;
+    if (p.category) body.category = p.category;
+    if (p.tier) body.tier = p.tier;
+    if (p.phone || p.contactNumber) body.phone = p.phone || p.contactNumber;
+    if (p.website || p.companyWebsite) body.website = p.website || p.companyWebsite;
+
+    const res = await api('/admin/users', { method: 'POST', body });
     if (res.success) { await this.fetch(); return res.data; }
-    const u = { id:'u-'+Date.now(), status:'pending', blocked:false, blacklisted:false, ...p };
-    this.save([u, ...this.all()]);
-    return u;
+    toast(res.message || 'Could not create user.', 'error');
+    return null;
   },
   async approve(id) {
     if (Auth.role() === 'placement_officer') {
@@ -973,7 +1318,16 @@ const UserRegistry = {
     return false;
   },
   async removeUser(id) {
-    const res = await api(`/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const row = this.get(id) || this.all().find(u =>
+      u.id === id || u.userId === id || u.companyId === id
+    );
+    if (row?.role === 'company' && row.companyId && !row.hasLogin) {
+      const res = await api(`/admin/companies/${encodeURIComponent(row.companyId)}`, { method: 'DELETE' });
+      if (res.success) { await this.fetch(); return true; }
+      return false;
+    }
+    const userId = row?.userId || row?.id || id;
+    const res = await api(`/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
     if (res.success) { await this.fetch(); return true; }
     this.remove(id);
     return false;
@@ -1008,6 +1362,7 @@ const PlacementRules = {
     return this.get();
   },
   async save(p) {
+    if (!(await requireWriteSession())) return { ok: false, data: this.get() };
     const res = await api('/admin/rules/active', { method: 'PUT', body: p });
     if (res.success && res.data) {
       const mapped = AdminApi.mapRule(res.data);
@@ -1015,7 +1370,8 @@ const PlacementRules = {
       localStorage.setItem(RULES_KEY, JSON.stringify(mapped));
       return { ok: true, data: mapped };
     }
-    return { ok: false, data: this.set(p) };
+    toast(res.message || 'Could not save rules.', 'error');
+    return { ok: false, data: this.get() };
   },
 };
 
@@ -1044,17 +1400,33 @@ const ApplicationPipeline = {
     if (list) { this._cache = list; localStorage.setItem(APPS_KEY, JSON.stringify(list)); return list; }
     return this.all();
   },
+  async fetchByDrive(driveId) {
+    const list = Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined'
+      ? await OfficerApi.fetchApplications({ driveId })
+      : await AdminApi.fetchApplications({ driveId });
+    return list || [];
+  },
   async transition(id, status, remarks = '') {
     const res = await api(`/admin/applications/${encodeURIComponent(id)}/transition`, { method: 'POST', body: { status, remarks } });
     if (res.success) { await this.fetch(); return true; }
     return false;
   },
   async approve(id) {
+    if (Auth.role() === 'placement_officer') {
+      const res = await api(`/officer/applications/${encodeURIComponent(id)}/approve`, { method: 'POST' });
+      if (res.success) { await this.fetch(); return true; }
+      return false;
+    }
     if (await this.transition(id, 'officer_approved')) return true;
     this.save(this.all().map(a => a.id === id ? { ...a, stage:'company_selection', status:'approved' } : a));
     return false;
   },
   async reject(id) {
+    if (Auth.role() === 'placement_officer') {
+      const res = await api(`/officer/applications/${encodeURIComponent(id)}/reject`, { method: 'POST', body: {} });
+      if (res.success) { await this.fetch(); return true; }
+      return false;
+    }
     if (await this.transition(id, 'rejected')) return true;
     this.save(this.all().map(a => a.id === id ? { ...a, stage:'rejected', status:'rejected' } : a));
     return false;
@@ -1082,18 +1454,19 @@ const BlacklistStore = {
     return this.all();
   },
   async add(p) {
+    if (!(await requireWriteSession())) return false;
     const res = await api('/admin/blacklist', { method: 'POST', body: { registerNumber: p.registerNumber, reason: p.reason } });
     if (res.success) { await this.fetch(); return true; }
-    const e = { id:'bl-'+Date.now(), active:true, addedAt:new Date().toISOString(), ...p };
-    this.save([e, ...this.all()]);
+    toast(res.message || 'Could not add to blacklist.', 'error');
     return false;
   },
   async remove(id) {
+    if (!(await requireWriteSession())) return false;
     const row = this.all().find(b => b.id === id);
     const studentId = row?.studentId || id;
     const res = await api(`/admin/blacklist/${encodeURIComponent(studentId)}`, { method: 'DELETE' });
     if (res.success) { await this.fetch(); return true; }
-    this.save(this.all().map(b => b.id === id ? { ...b, active:false } : b));
+    toast(res.message || 'Could not remove from blacklist.', 'error');
     return false;
   },
 };
@@ -1105,6 +1478,20 @@ function seedResults() {
     { id:'res-2', studentName:'Kabir Singh', registerNumber:'21IT025', company:'Adobe', role:'Product Intern', package:'₹22 LPA', status:'selected', joiningDate:'2026-06-01' },
     { id:'res-3', studentName:'Aarav Mehta', registerNumber:'21CSE001', company:'Infosys', role:'SE', package:'₹9 LPA', status:'rejected', joiningDate:'' },
   ]));
+}
+
+function driveResultMeta(d) {
+  if (!d) return { company: '', role: '' };
+  let company = String(d.company || d.companyName || '').trim();
+  let role = String(d.role || '').trim();
+  const title = String(d.title || '').trim();
+  if (!role && title && !title.includes('—')) role = title;
+  if (title.includes('—')) {
+    const parts = title.split('—').map(s => s.trim());
+    if (!role) role = parts[0] || '';
+    if (!company) company = parts[1] || '';
+  }
+  return { company, role };
 }
 
 const RecruitmentResults = {
@@ -1122,12 +1509,32 @@ const RecruitmentResults = {
     if (list) { this._cache = list; localStorage.setItem(RESULTS_KEY, JSON.stringify(list)); return list; }
     return this.all();
   },
+  async fetchByDrive(driveId, meta = {}) {
+    const company = meta.company || '';
+    const role = meta.role || '';
+    const list = Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined'
+      ? await OfficerApi.fetchResults({ driveId, company, role })
+      : await AdminApi.fetchResults({ driveId, company, role });
+    const fromApi = list || [];
+    const matchesDrive = r => {
+      if (r.driveId && r.driveId === driveId) return true;
+      if (!company || !role) return false;
+      return r.company === company && r.role === role;
+    };
+    const fromLocal = this.all().filter(matchesDrive);
+    const merged = new Map();
+    [...fromApi, ...fromLocal].forEach(r => { if (r?.id) merged.set(r.id, r); });
+    return [...merged.values()];
+  },
   async upsert(p) {
+    if (!(await requireWriteSession())) return null;
     const path = Auth.role() === 'placement_officer' ? '/officer/results' : '/admin/results';
     const res = await api(path, { method: 'POST', body: p });
     if (res.success) { await this.fetch(); return res.data; }
     const list = this.all();
-    const idx = list.findIndex(r => r.registerNumber === p.registerNumber && r.company === p.company);
+    const idx = list.findIndex(r => p.driveId
+      ? r.driveId === p.driveId && r.registerNumber === p.registerNumber
+      : r.registerNumber === p.registerNumber && r.company === p.company);
     const row = { id: p.id || 'res-'+Date.now(), ...p };
     if (idx >= 0) list[idx] = { ...list[idx], ...row }; else list.unshift(row);
     this.save(list);
@@ -1160,8 +1567,8 @@ const ResumeQueue = {
   save(l) { this._cache = l; localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify(l)); },
   async fetch() {
     const list = Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined'
-      ? await OfficerApi.fetchPendingResumes()
-      : await AdminApi.fetchPendingResumes();
+      ? await OfficerApi.fetchResumeQueue()
+      : await AdminApi.fetchResumeQueue();
     if (list) { this._cache = list; localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify(list)); return list; }
     return this.all();
   },
@@ -1177,6 +1584,21 @@ const ResumeQueue = {
     return false;
   },
   async reject(id) {
+    const item = this.all().find(x => x.id === id);
+    if (!item) return false;
+    if (item.applicationId) {
+      if (Auth.role() === 'placement_officer') {
+        const res = await api(`/officer/applications/${encodeURIComponent(item.applicationId)}/reject`, { method: 'POST', body: {} });
+        if (res.success) { await this.fetch(); return true; }
+        return false;
+      }
+      const res = await api(`/admin/applications/${encodeURIComponent(item.applicationId)}/transition`, {
+        method: 'POST',
+        body: { status: 'rejected', remarks: 'Resume rejected during verification' },
+      });
+      if (res.success) { await this.fetch(); return true; }
+      return false;
+    }
     this.save(this.all().map(r => r.id === id ? { ...r, status:'rejected' } : r));
     return true;
   },
@@ -1213,6 +1635,7 @@ const SystemSettings = {
     return this.get();
   },
   async save(payload) {
+    if (!(await requireWriteSession())) return { ok: false, data: this.get() };
     const res = await api('/admin/settings/system', { method: 'PUT', body: payload });
     if (res.success && res.data) {
       this._cache = res.data;
@@ -1255,6 +1678,7 @@ const PublicPageContent = {
     return this.get();
   },
   async save(payload) {
+    if (!(await requireWriteSession())) return { ok: false, data: this.get() };
     const res = await api('/admin/settings/public', { method: 'PUT', body: payload });
     if (res.success && res.data) {
       this._cache = res.data;
@@ -1330,31 +1754,33 @@ const PlacementNewsStore = {
     return null;
   },
   async add(payload) {
+    if (!(await requireWriteSession())) return null;
     const res = await api('/admin/placement-news', { method: 'POST', body: payload });
     if (res.success) {
       await this.fetch();
       return res.data;
     }
-    const item = { id:'news-'+Date.now(), link:'', createdAt:new Date().toISOString(), ...payload };
-    this.save([item, ...this.all()]);
-    return item;
+    toast(res.message || 'Could not add news item.', 'error');
+    return null;
   },
   async update(id, payload) {
+    if (!(await requireWriteSession())) return false;
     const res = await api('/admin/placement-news/' + encodeURIComponent(id), { method: 'PUT', body: payload });
     if (res.success) {
       await this.fetch();
       return true;
     }
-    this.save(this.all().map(n => n.id === id ? { ...n, ...payload, updatedAt:new Date().toISOString() } : n));
+    toast(res.message || 'Could not update news item.', 'error');
     return false;
   },
   async remove(id) {
+    if (!(await requireWriteSession())) return false;
     const res = await api('/admin/placement-news/' + encodeURIComponent(id), { method: 'DELETE' });
     if (res.success) {
       await this.fetch();
       return true;
     }
-    this.save(this.all().filter(n => n.id !== id));
+    toast(res.message || 'Could not delete news item.', 'error');
     return false;
   },
   published() {
@@ -1396,9 +1822,44 @@ const DriveStore = {
     return merged;
   },
   get(id) {
+    if (this._studentCache) {
+      const fromStudent = this._studentCache.find(d => d.id === id);
+      if (fromStudent) return fromStudent;
+    }
     const custom = this.all().find(d => d.id === id);
     if (custom) return custom;
     return this.catalogEntry(id);
+  },
+  mapStudentDrive(d) {
+    const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
+    const rawStatus = (d.status || '').toLowerCase();
+    const status = statusMap[rawStatus] || d.status || 'Open';
+    let company = d.companyName || d.company || '';
+    if (!company && d.title && String(d.title).includes('—')) {
+      company = String(d.title).split('—').pop().trim();
+    }
+    const branches = Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '');
+    return {
+      id: d._id || d.id,
+      company: company || '—',
+      role: d.title || d.role || '—',
+      package: d.package || d.eligibility?.package || '—',
+      branches,
+      status,
+      statusCls: driveStatusCls(status),
+      deadline: d.date || d.deadline || '—',
+      profile: d.profile || 'General',
+      applied: d.applied ? 1 : 0,
+      eligible: d.eligibility?.eligible !== false,
+      _fromApi: true,
+    };
+  },
+  async fetchStudentDrives() {
+    if (Auth.role() !== 'student' || Auth.isDemo()) return null;
+    const res = await api('/student/drives');
+    if (!res.success || !Array.isArray(res.data)) return null;
+    this._studentCache = res.data.map(d => this.mapStudentDrive(d));
+    return this._studentCache;
   },
   allWithCatalog() {
     if (this._apiCache) return this._apiCache;
@@ -1424,27 +1885,40 @@ const DriveStore = {
         return list;
       }
     }
+    if (Auth.role() === 'admin') {
+      const res = await api('/admin/drives');
+      if (res.success && Array.isArray(res.data) && typeof OfficerApi !== 'undefined') {
+        const list = res.data.map(d => OfficerApi.mapDrive(d));
+        this._apiCache = list;
+        this.save(list);
+        return list;
+      }
+    }
     return this.allWithCatalog();
   },
   async add(p) {
     if (!canManageDrives()) return null;
+    if (!(await requireWriteSession())) return null;
+    const body = {
+      title: p.role || p.title,
+      companyId: p.companyId,
+      type: p.type || 'pooled',
+      date: p.date,
+      time: p.time || '10:00',
+      branches: p.branches ? (Array.isArray(p.branches) ? p.branches : String(p.branches).split(',').map(s => s.trim()).filter(Boolean)) : [],
+      tier: p.tier || 'Tier 2',
+    };
     if (Auth.role() === 'placement_officer') {
-      const res = await api('/officer/drives', {
-        method: 'POST',
-        body: {
-          title: p.role || p.title,
-          companyId: p.companyId,
-          type: p.type || 'pooled',
-          date: p.date,
-          time: p.time || '10:00',
-          branches: p.branches ? (Array.isArray(p.branches) ? p.branches : [p.branches]) : [],
-          tier: p.tier || 'Tier 2',
-        },
-      });
+      const res = await api('/officer/drives', { method: 'POST', body });
       if (res.success) { await this.fetch(); return res.data; }
     }
-    const d = { id:'drv-'+Date.now(), status:'Open', statusCls:'success', applied:0, profile:'General', ...p };
-    this.save([d, ...this.all()]); return d;
+    if (Auth.role() === 'admin') {
+      const res = await api('/admin/drives', { method: 'POST', body });
+      if (res.success) { await this.fetch(); return res.data; }
+      toast(res.message || 'Could not create drive.', 'error');
+      return null;
+    }
+    return null;
   },
   update(id, p) {
     if (!canManageDrives()) return null;
@@ -1536,11 +2010,19 @@ function userStatusBadge(status, blocked) {
 /* Generic fetch with session cookies; optional 401 redirect for expired sessions */
 async function apiFetch(path, opts = {}) {
   const token = Auth.token();
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  const headers = { ...(opts.headers || {}) };
   if (token && token !== 'session' && !token.startsWith('demo-token')) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const body = opts.body && typeof opts.body !== 'string' ? JSON.stringify(opts.body) : opts.body;
+  let body = opts.body;
+  if (body instanceof FormData) {
+    // Let the browser set multipart boundary.
+  } else if (body != null && typeof body !== 'string') {
+    body = JSON.stringify(body);
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  } else if (body != null && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
   try {
     const res = await fetch(API_BASE + path, {
       method: opts.method || 'GET',
@@ -1565,7 +2047,7 @@ async function apiFetch(path, opts = {}) {
       return {
         success: false,
         message: Auth.isDemo()
-          ? 'Sign in with your account to generate reports.'
+          ? 'Sign in with your account on the login page to save changes. Preview mode is read-only.'
           : 'Session expired. Please sign in again.',
         data: null,
         status: 401,
@@ -1591,12 +2073,23 @@ function onAppReady(fn) {
   }
 }
 
+function mockAuthRoleFromEmail(email = '') {
+  const e = String(email).toLowerCase();
+  if (e.includes('admin@')) return 'admin';
+  if (e.includes('riya@') || e.includes('officer@')) return 'placement_officer';
+  if (e.includes('iyer@') || e.includes('staff@') || e.includes('prof.')) return 'staff';
+  if (e.includes('student') || e.includes('karthik')) return 'student';
+  if (e.includes('alumni')) return 'alumni';
+  if (e.includes('company') || e.includes('acme')) return 'company';
+  return 'student';
+}
+
 /* Mock login/register for the preview when no backend is reachable */
 async function mockAuth(kind, payload) {
   await new Promise(r => setTimeout(r, 300));
-  const role = payload.role || (payload.email?.includes('admin') ? 'admin' : 'placement_officer');
+  const role = payload.role || mockAuthRoleFromEmail(payload.email);
   const user = { ...demoUserFor(role), ...payload, role };
-  return { success:true, message: kind==='register' ? 'Registered. Pending approval.' : 'Logged in', data: { user, token: 'demo-token-' + Date.now() } };
+  return { success:true, message: kind==='register' ? 'Registered. Pending approval.' : 'Logged in', data: { user, token: 'demo-token-' + Date.now() }, _offline: true };
 }
 
 /* Toasts */

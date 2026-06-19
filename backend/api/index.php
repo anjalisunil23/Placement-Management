@@ -85,6 +85,7 @@ $routes = [
     ['PUT',    '/admin/drives/{id}',            [AdminController::class, 'updateDrive']],
     ['DELETE', '/admin/drives/{id}',            [AdminController::class, 'deleteDrive']],
     ['GET',    '/admin/applications',           [AdminController::class, 'listApplications']],
+    ['GET',    '/admin/applications/{id}/resume', [AdminController::class, 'downloadApplicationResume']],
     ['POST',   '/admin/applications/{id}/transition', [AdminController::class, 'transitionApplication']],
     ['POST',   '/admin/students/{id}/verify-resume', [AdminController::class, 'verifyResume']],
     ['POST',   '/admin/students/{id}/blacklist',     [AdminController::class, 'blacklistStudent']],
@@ -103,6 +104,8 @@ $routes = [
     ['PUT',    '/admin/recommendations/{id}/status', [AdminController::class, 'updateRecommendationStatus']],
     ['GET',    '/admin/alumni-referrals',           [AdminController::class, 'listAlumniReferrals']],
     ['GET',    '/admin/resumes/pending',            [AdminController::class, 'listPendingResumes']],
+    ['GET',    '/admin/resumes',                    [AdminController::class, 'listResumes']],
+    ['GET',    '/admin/students/{id}/resume',       [AdminController::class, 'downloadStudentResume']],
     ['POST',   '/admin/blacklist',                  [AdminController::class, 'addBlacklist']],
     ['DELETE', '/admin/blacklist/{id}',             [AdminController::class, 'removeBlacklistEntry']],
     ['GET',    '/admin/reports',                     [AdminController::class, 'listReports']],
@@ -144,8 +147,13 @@ $routes = [
     ['POST', '/company/applications/{id}/result', [CompanyController::class, 'updateResult']],
 
     // Staff
-    ['GET',  '/staff/recommendations', [StaffController::class, 'listRecommendations']],
-    ['POST', '/staff/recommendations', [StaffController::class, 'createRecommendation']],
+    ['GET',  '/staff/profile',          [StaffController::class, 'profile']],
+    ['GET',  '/staff/dashboard',        [StaffController::class, 'dashboard']],
+    ['GET',  '/staff/students',         [StaffController::class, 'listStudents']],
+    ['GET',  '/staff/drives',           [StaffController::class, 'listDrives']],
+    ['GET',  '/staff/hiring-overview',  [StaffController::class, 'hiringOverview']],
+    ['GET',  '/staff/recommendations',   [StaffController::class, 'listRecommendations']],
+    ['POST', '/staff/recommendations',   [StaffController::class, 'createRecommendation']],
 
     // Alumni
     ['GET',  '/alumni/profile',     [AlumniController::class, 'getProfile']],
@@ -164,9 +172,12 @@ $routes = [
     ['POST', '/officer/users/{id}/approve',        [OfficerController::class, 'approveStudent']],
     ['GET',  '/officer/applications',              [OfficerController::class, 'listApplications']],
     ['GET',  '/officer/applications/pending',     [OfficerController::class, 'pendingApplications']],
+    ['GET',  '/officer/applications/{id}/resume', [OfficerController::class, 'downloadApplicationResume']],
     ['POST', '/officer/applications/{id}/approve', [OfficerController::class, 'approveApplication']],
     ['POST', '/officer/applications/{id}/reject',  [OfficerController::class, 'rejectApplication']],
     ['GET',  '/officer/resumes/pending',           [OfficerController::class, 'listPendingResumes']],
+    ['GET',  '/officer/resumes',                   [OfficerController::class, 'listResumes']],
+    ['GET',  '/officer/students/{id}/resume',      [OfficerController::class, 'downloadStudentResume']],
     ['POST', '/officer/students/{id}/verify-resume', [OfficerController::class, 'verifyResume']],
     ['GET',  '/officer/results',                   [OfficerController::class, 'listResults']],
     ['POST', '/officer/results',                   [OfficerController::class, 'upsertResult']],
@@ -180,6 +191,7 @@ $routes = [
     // Public & Analytics
     ['GET', '/public/placement-stats', [PublicController::class, 'placementStats']],
     ['GET', '/public/site-content',    [PublicController::class, 'siteContent']],
+    ['GET', '/public/departments',     [PublicController::class, 'listDepartments']],
     ['GET', '/analytics/dashboard',    [PublicController::class, 'analyticsDashboard']],
 ];
 

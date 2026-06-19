@@ -166,6 +166,10 @@ document.getElementById('resultForm').addEventListener('submit', async e => {
 document.getElementById('btnCancel').addEventListener('click', resetForm);
 
 async function initResultsPage() {
+  if (typeof canManageDrives === 'function' && canManageDrives()) {
+    window.location.replace('drives.html');
+    return;
+  }
   await RecruitmentResults.fetch();
   render();
 }

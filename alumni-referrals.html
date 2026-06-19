@@ -9,32 +9,22 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Referrals</h1><p class="page-sub">Refer students or alumni to roles in your network.</p></div>
+  <div>
+    <h1 class="page-title">Referrals</h1>
+    <p class="page-sub">Refer students or alumni to roles in your network.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-primary" onclick="ReferralModals.openAlumni()"><i class="bi bi-plus-lg me-1"></i>Create Referral</button>
+  </div>
 </div>
 
-<div class="row g-3">
-  <div class="col-lg-5">
-    <div class="card-surface p-4">
-      <h5 class="fw-bold mb-3">Create a referral</h5>
-      <form id="referForm" class="row g-3">
-        <div class="col-12"><label class="form-label small fw-semibold">Job title</label><input class="form-control" name="jobTitle" required/></div>
-        <div class="col-12"><label class="form-label small fw-semibold">Company</label><input class="form-control" name="companyName" id="refCompany" required/></div>
-        <div class="col-12"><label class="form-label small fw-semibold">Company website (optional)</label><input class="form-control" name="companyWebsite" placeholder="https://company.com/careers"/></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold">Package</label><input class="form-control" name="package" placeholder="e.g. ₹18 LPA"/></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold">Referral type</label><select class="form-select" name="type"><option>Student</option><option>Alumni</option><option>Either</option></select></div>
-        <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="4" placeholder="Role requirements, team, and referral notes"></textarea></div>
-        <div class="col-12"><button type="submit" class="btn btn-primary w-100"><i class="bi bi-share me-1"></i>Submit Referral</button></div>
-      </form>
-    </div>
-  </div>
-  <div class="col-lg-7">
-    <div class="card-surface">
-      <div class="p-3 p-md-4"><h6 class="fw-bold mb-0">My referrals</h6></div>
-      <div class="table-wrap">
-        <table class="table-modern"><thead><tr><th>Role</th><th>Company</th><th>Website</th><th>Package</th><th>Status</th><th>Date</th></tr></thead>
-        <tbody id="referRows"></tbody></table>
-      </div>
-    </div>
+<div class="card-surface">
+  <div class="p-3 p-md-4"><h6 class="fw-bold mb-0">My referrals</h6></div>
+  <div class="table-wrap">
+    <table class="table-modern">
+      <thead><tr><th>Role</th><th>Company</th><th>Website</th><th>Package</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody id="referRows"></tbody>
+    </table>
   </div>
 </div>
 
@@ -43,9 +33,6 @@
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
-const user = Auth.user() || demoUserFor('alumni');
-document.getElementById('refCompany').value = user.company || '';
-
 function renderReferrals() {
   const list = AlumniReferrals.mine();
   document.getElementById('referRows').innerHTML = list.length ? list.map(r => `
@@ -56,18 +43,10 @@ function renderReferrals() {
       <td>${r.package || '—'}</td>
       <td><span class="badge-soft ${r.statusCls || 'success'}">${r.status || 'Submitted'}</span></td>
       <td>${formatDate(r.submittedAt)}</td>
-    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No referrals yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No referrals yet. <button type="button" class="btn btn-link btn-sm p-0 align-baseline" onclick="ReferralModals.openAlumni()">Create your first referral</button></td></tr>';
 }
 
-renderReferrals();
-document.getElementById('referForm').addEventListener('submit', e => {
-  e.preventDefault();
-  const data = Object.fromEntries(new FormData(e.target).entries());
-  AlumniReferrals.add(data);
-  toast('Referral submitted successfully.', 'success');
-  e.target.reset();
-  document.getElementById('refCompany').value = user.company || '';
-  renderReferrals();
-});
+onAppReady(() => renderReferrals());
+document.addEventListener('ph-alumni-referral-added', () => renderReferrals());
 </script>
 </body></html>

@@ -45,6 +45,40 @@ class RecommendationModel extends BaseModel
     /**
      * @return array<int, array<string, mixed>>
      */
+    public function findByStaffId(string $staffUserId, int $limit = 100): array
+    {
+        $oid = Security::toObjectId($staffUserId);
+        if ($oid === null) {
+            return [];
+        }
+        return $this->findAll(['staffId' => $oid], $limit);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listEnrichedForStaff(string $staffUserId, int $limit = 100): array
+    {
+        $userModel = new UserModel();
+        $staff = $userModel->findById($staffUserId);
+        $rows = [];
+        foreach ($this->findByStaffId($staffUserId, $limit) as $rec) {
+            $contact = $rec['contact'] ?? [];
+            $row = DocumentHelper::serialize($rec) ?? [];
+            $row['staffName'] = $staff['name'] ?? '';
+            $row['staffEmail'] = $staff['email'] ?? '';
+            $row['hrName'] = $contact['name'] ?? '';
+            $row['hrEmail'] = $contact['email'] ?? '';
+            $row['contactNumber'] = $contact['phone'] ?? '';
+            $row['submittedAt'] = $row['createdAt'] ?? null;
+            $rows[] = $row;
+        }
+        return $rows;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
     public function listEnriched(int $limit = 200): array
     {
         $userModel = new UserModel();

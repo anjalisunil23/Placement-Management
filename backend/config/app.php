@@ -57,10 +57,10 @@ return [
     ],
     'role_dashboards' => [
         'admin'             => '/dashboard.html',
-        'student'           => '/dashboard.html',
-        'staff'             => '/dashboard.html',
-        'company'           => '/dashboard.html',
+        'student'           => '/drives.html',
+        'staff'             => '/staff-recommend.html',
+        'company'           => '/company.html',
         'alumni'            => '/dashboard.html',
-        'placement_officer' => '/dashboard.html',
+        'placement_officer' => '/placement-console.html',
     ],
 ];
