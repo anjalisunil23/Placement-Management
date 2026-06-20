@@ -7,6 +7,7 @@ namespace PMS\Admin;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\AlumniModel;
 use PMS\Models\BlacklistModel;
+use PMS\Models\BroadcastLogModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
@@ -27,6 +28,9 @@ use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\EmailService;
 use PMS\Services\NotificationService;
 use PMS\Services\OfficerDataService;
+use PMS\Services\AnalyticsService;
+use PMS\Services\RecruitingService;
+use PMS\Services\TrackingService;
 use PMS\Services\PlacementOfficerContext;
 use PMS\Services\ReportContext;
 use PMS\Services\ReportService;
@@ -85,6 +89,10 @@ final class AdminController
             Response::error('Validation failed.', 422, $errors);
         }
         $id = (new DriveModel())->createDrive($input, (string) $admin['_id']);
+        (new NotificationService())->announceDrive(
+            (string) $input['title'],
+            (string) $input['date']
+        );
         Response::success(['id' => $id], 'Drive created.', 201);
     }
 
@@ -1069,5 +1077,93 @@ final class AdminController
         $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
         $count = (new NotificationModel())->markAllRead((string) $user['_id']);
         Response::success(['updated' => $count], 'All notifications marked as read.');
+    }
+
+    /** POST /api/admin/broadcast */
+    public function broadcast(): void
+    {
+        $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, [
+            'title'   => 'required',
+            'message' => 'required',
+            'audience'=> 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+
+        $audience = (string) $input['audience'];
+        $departmentId = !empty($input['departmentId']) ? (string) $input['departmentId'] : null;
+        $sendEmail = array_key_exists('sendEmail', $input) ? (bool) $input['sendEmail'] : true;
+        $role = (string) ($user['role'] ?? '');
+
+        if ($role === 'placement_officer') {
+            $ctx = PlacementOfficerContext::resolve($user);
+            if (!$ctx['isAdmin']) {
+                if (!in_array($audience, ['students'], true)) {
+                    Response::error('Placement officers can only broadcast to students in their department.', 403);
+                }
+                $departmentId = $ctx['departmentId'];
+            }
+        } elseif ($role === 'admin' && $audience === 'students' && $departmentId) {
+            // Admin may target a specific department.
+        } elseif ($role === 'admin' && $audience === 'everyone') {
+            // Admin-only audience.
+        } elseif ($role === 'admin') {
+            // Other admin audiences allowed.
+        }
+
+        if ($role !== 'admin' && in_array($audience, ['everyone', 'officers', 'companies'], true)) {
+            Response::error('You do not have permission to broadcast to this audience.', 403);
+        }
+
+        $result = (new NotificationService())->broadcast(
+            $user,
+            trim((string) $input['title']),
+            trim((string) $input['message']),
+            $audience,
+            $departmentId,
+            $sendEmail
+        );
+
+        Response::success($result, "Broadcast sent to {$result['recipientCount']} recipient(s).", 201);
+    }
+
+    /** GET /api/admin/broadcasts */
+    public function listBroadcasts(): void
+    {
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $rows = (new BroadcastLogModel())->recent(100);
+        Response::success(DocumentHelper::serializeMany($rows));
+    }
+
+    /** GET /api/admin/tracking */
+    public function placementTracking(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $limit = isset($_GET['limit']) ? min(500, max(1, (int) $_GET['limit'])) : 100;
+        Response::success((new TrackingService())->getOverview(null, $limit));
+    }
+
+    /** GET /api/admin/analytics/extended */
+    public function extendedAnalytics(): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new AnalyticsService())->getExtendedAnalytics(null));
+    }
+
+    /** GET /api/admin/placement-console */
+    public function placementConsole(): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new AnalyticsService())->getPlacementConsole(null));
+    }
+
+    /** GET /api/admin/recruiting */
+    public function recruitingOverview(): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new RecruitingService())->getCampusOverview(null));
     }
 }

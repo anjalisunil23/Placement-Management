@@ -22,7 +22,6 @@ const NAV = [
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
   { href: "tracking.html", icon: "bi-graph-up-arrow", label: "Placement Tracking", roles: ['admin','placement_officer'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin','placement_officer'] },
-  { href: "analytics.html", icon: "bi-bar-chart-fill", label: "Analytics", roles: ['placement_officer'] },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin','placement_officer'] },
   { href: "admin-settings.html", icon: "bi-gear-wide-connected", label: "System Settings", roles: ['admin'] },
 
@@ -33,11 +32,11 @@ const NAV = [
 
   { section: "Staff", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
-  { href: "dashboard.html#dept-stats", icon: "bi-bar-chart-line-fill", label: "Dept. Statistics", roles: ['staff'] },
 
   { section: "Company", roles: ['admin','placement_officer','company'] },
   { href: "company.html", icon: "bi-building", label: "Company Portal", roles: ['company'] },
   { href: "applicants.html", icon: "bi-person-lines-fill", label: "Applicants", roles: ['company'] },
+  { href: "recruiting.html", icon: "bi-diagram-3-fill", label: "Recruitment", roles: ['company'] },
   { href: "eligibility.html", icon: "bi-check2-square", label: "Eligibility Criteria", roles: ['company'] },
 
   { section: "Insights", roles: ['staff'] },
@@ -226,7 +225,7 @@ function renderNavEntry(n, active, role) {
       </div>`;
   }
   return `<a class="nav-item ${isNavActive(n, active) ? 'active' : ''}" href="${n.href}">
-    <i class="bi ${n.icon}"></i><span>${n.label}</span>
+    <i class="bi ${n.icon}"></i><span>${n.label}</span>${n.href === 'notifications.html' ? '<span class="badge-soft danger nav-badge ms-auto" style="display:none;font-size:.65rem;padding:.15rem .45rem">0</span>' : ''}
   </a>`;
 }
 
@@ -423,6 +422,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!hasSession) {
       if (Auth.isDemo()) {
         // preview mode — read-only dashboards only
+      } else if (Auth.hasSession() && Auth.user()?.role) {
+        // Client session from login — avoid bouncing back to login when cookie is slow/missing on mobile.
+        Auth._sessionReady = true;
       } else {
         Auth.clear();
         window.location.href = `login.html?next=${encodeURIComponent(active)}`;
@@ -435,6 +437,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderShell(active);
   applyRoleVisibility();
   animateCounters();
+  NotificationInbox.refreshBadge?.();
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();
 });

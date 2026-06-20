@@ -14,6 +14,7 @@ use PMS\Models\StaffModel;
 use PMS\Models\UserModel;
 use PMS\Services\StaffContext;
 use PMS\Services\StaffService;
+use PMS\Services\NotificationService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Validator;
@@ -108,6 +109,12 @@ final class StaffController
         }
 
         $id = (new RecommendationModel())->createRecommendation((string) $user['_id'], $input);
+        (new NotificationService())->notifyAdmins(
+            'recommendation_update',
+            'New staff company recommendation',
+            (string) ($user['name'] ?? 'Staff') . ' recommended ' . (string) ($input['companyName'] ?? 'a company') . ' for campus recruitment.',
+            ['recommendationId' => $id]
+        );
         Response::success(['id' => $id], 'Company recommended.', 201);
     }
 

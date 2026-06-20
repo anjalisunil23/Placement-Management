@@ -33,6 +33,7 @@ final class Collections
     public const PUBLIC_PAGE_CONTENT = 'public_page_content';
     public const PLACEMENT_NEWS = 'placement_news';
     public const SUCCESS_STORIES = 'success_stories';
+    public const BROADCAST_LOGS = 'broadcast_logs';
 
     /** Valid user roles */
     public const ROLES = [

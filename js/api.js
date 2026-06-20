@@ -22,7 +22,7 @@ const ROLE_BADGES = {
 /* Which roles can visit which page. Page = filename. */
 const PAGE_PERMS = {
   'dashboard.html':     ROLES,
-  'analytics.html':     ['placement_officer'],
+  'analytics.html':     ['admin','placement_officer'],
   'drives.html':        ['admin','placement_officer','student','alumni','staff'],
   'create-drive.html':  ['admin','placement_officer'],
   'tracking.html':      ['admin','placement_officer'],
@@ -40,6 +40,7 @@ const PAGE_PERMS = {
   'staff-recommend.html':   ['staff'],
   'admin-companies.html':   ['admin','placement_officer'],
   'placement-console.html': ['admin','placement_officer'],
+  'recruiting.html':        ['admin','placement_officer','company'],
   'student-overview.html':  ['admin','placement_officer','staff'],
   'hiring-overview.html':   ['admin','placement_officer','staff'],
   'users.html':             ['admin'],
@@ -54,7 +55,7 @@ const PAGE_PERMS = {
 
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'settings.html', 'notifications.html', 'public-stats.html'];
-const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
+const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html', 'recruiting.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'drives.html', 'students.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'notifications.html', 'settings.html'];
 
@@ -133,7 +134,7 @@ async function performServerLogin(email, password, next = '') {
   });
   if (!res.success) {
     if (res._offline) {
-      return { success: false, message: 'Cannot reach the server. Run: php -S localhost:8080 router.php' };
+      return { success: false, message: 'Cannot reach the server. Start it with: php -S 0.0.0.0:8080 router.php' };
     }
     return { success: false, message: res.message || 'Sign-in failed' };
   }
@@ -143,7 +144,12 @@ async function performServerLogin(email, password, next = '') {
   }
   localStorage.setItem('ph-token', 'session');
   Auth.applySessionUser(user);
-  Auth._sessionReady = true;
+  Auth._sessionReady = false;
+  const verified = await Auth.bootstrap();
+  if (!verified) {
+    // Keep localStorage user so app pages can load; cookie may lag on some mobile browsers.
+    Auth._sessionReady = true;
+  }
   return { success: true, redirect: Auth.resolveRedirect(next) };
 }
 
@@ -874,6 +880,46 @@ function formatDate(iso) {
   try { return new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }); } catch { return '—'; }
 }
 
+function formatRelativeTime(iso) {
+  if (!iso) return '—';
+  try {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (Number.isNaN(ms)) return '—';
+    if (ms < 60000) return 'just now';
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    return formatDate(iso);
+  } catch { return '—'; }
+}
+
+function destroyChart(canvas) {
+  if (!canvas || typeof Chart === 'undefined') return;
+  const existing = Chart.getChart(canvas);
+  if (existing) existing.destroy();
+}
+
+function showPageAlert(id, type, message) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (type === 'hide') {
+    el.classList.add('d-none');
+    el.textContent = '';
+    return;
+  }
+  el.classList.remove('d-none');
+  if (type === 'info') {
+    el.className = 'alert alert-info d-flex align-items-center gap-2';
+    el.innerHTML = `<span class="spinner-border spinner-border-sm"></span><span>${message}</span>`;
+  } else if (type === 'danger') {
+    el.className = 'alert alert-danger';
+    el.textContent = message;
+  }
+}
+
 function stripUrlProtocol(url) {
   return String(url || '').replace(/^https?:\/\//i, '');
 }
@@ -1222,6 +1268,68 @@ const AdminNotifs = {
   markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
 };
 
+const CompanyNotifs = {
+  all() {
+    try { return JSON.parse(localStorage.getItem(userKey('company-notifications')) || '[]'); } catch { return []; }
+  },
+  save(list) { localStorage.setItem(userKey('company-notifications'), JSON.stringify(list)); },
+  seed() {
+    if (this.all().length) return;
+    this.save([
+      { id:'cn1', type:'application_update', title:'New application received', body:'A student applied to your SDE drive.', read:false, createdAt: new Date(Date.now()-1800000).toISOString() },
+      { id:'cn2', type:'application_update', title:'Resume verified', body:'Placement cell verified a candidate resume for review.', read:false, createdAt: new Date(Date.now()-7200000).toISOString() },
+    ]);
+  },
+  markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
+  markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
+};
+
+const BroadcastStore = {
+  _cache: null,
+  normalize(row) {
+    return {
+      id: row.id || row._id,
+      title: row.title || '',
+      message: row.message || '',
+      audience: row.audience || '',
+      audienceLabel: row.audienceLabel || row.audience || '',
+      recipientCount: row.recipientCount ?? 0,
+      emailSentCount: row.emailSentCount ?? 0,
+      sendEmail: row.sendEmail !== false,
+      status: row.status || 'delivered',
+      sentByName: row.sentByName || '',
+      createdAt: row.createdAt || '',
+    };
+  },
+  all() {
+    if (this._cache) return this._cache;
+    try { return JSON.parse(localStorage.getItem('ph-broadcast-logs') || '[]'); } catch { return []; }
+  },
+  save(list) {
+    this._cache = list;
+    localStorage.setItem('ph-broadcast-logs', JSON.stringify(list));
+  },
+  async fetch() {
+    const res = await api('/admin/broadcasts', { skipAuthRedirect: true });
+    if (res?.success && Array.isArray(res.data)) {
+      this._cache = res.data.map(r => this.normalize(r));
+      this.save(this._cache);
+      return this._cache;
+    }
+    return this.all();
+  },
+  async send(payload) {
+    if (!(await requireWriteSession())) return null;
+    const res = await api('/admin/broadcast', { method: 'POST', body: payload });
+    if (res.success) {
+      await this.fetch();
+      return res.data;
+    }
+    toast(res.message || 'Broadcast failed.', 'error');
+    return null;
+  },
+};
+
 const NotificationInbox = {
   apiBase(role) {
     const map = {
@@ -1230,6 +1338,7 @@ const NotificationInbox = {
       staff: '/staff/notifications',
       admin: '/admin/notifications',
       placement_officer: '/admin/notifications',
+      company: '/company/notifications',
     };
     return map[role] || null;
   },
@@ -1240,8 +1349,31 @@ const NotificationInbox = {
       staff: StaffNotifs,
       admin: AdminNotifs,
       placement_officer: AdminNotifs,
+      company: CompanyNotifs,
     };
     return map[role] || null;
+  },
+  async unreadCount(role) {
+    const base = this.apiBase(role);
+    if (Auth.hasRealAuth() && base) {
+      const res = await api(base, { skipAuthRedirect: true });
+      if (res?.success) return (res.data || []).filter(n => !n.read).length;
+    }
+    const store = this.store(role);
+    store?.seed?.();
+    return (store?.all() || []).filter(n => !n.read).length;
+  },
+  async refreshBadge() {
+    const role = Auth.role();
+    const count = await this.unreadCount(role);
+    document.querySelectorAll('a.icon-btn[href="notifications.html"] .dot').forEach(dot => {
+      dot.style.display = count > 0 ? '' : 'none';
+    });
+    document.querySelectorAll('#sidebar a[href="notifications.html"] .nav-badge').forEach(badge => {
+      badge.textContent = count > 99 ? '99+' : String(count);
+      badge.style.display = count > 0 ? '' : 'none';
+    });
+    return count;
   },
 };
 
@@ -2492,6 +2624,106 @@ function stageBadge(stage) {
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }
 
+const TrackingStore = {
+  async fetch(limit = 100) {
+    if (!Auth.hasRealAuth()) return null;
+    const role = Auth.role();
+    if (role !== 'admin' && role !== 'placement_officer') return null;
+    const path = role === 'admin'
+      ? `/admin/tracking?limit=${encodeURIComponent(limit)}`
+      : `/officer/tracking?limit=${encodeURIComponent(limit)}`;
+    const res = await api(path);
+    return res.success ? res.data : null;
+  },
+};
+
+const RecruitingStore = {
+  async fetch() {
+    if (!Auth.hasRealAuth()) return null;
+    const paths = {
+      company: '/company/recruiting',
+      admin: '/admin/recruiting',
+      placement_officer: '/officer/recruiting',
+    };
+    const path = paths[Auth.role()];
+    if (!path) return null;
+    const res = await api(path);
+    return res.success ? res.data : null;
+  },
+
+  mapActiveCompany(row, mineName = '') {
+    const openRoles = row.openRoles ?? 0;
+    return {
+      company: row.company || '',
+      companyId: row.companyId || '',
+      roles: openRoles > 0 ? [`${openRoles} open role${openRoles === 1 ? '' : 's'}`] : ['—'],
+      openRoles,
+      package: row.package || '—',
+      applicants: row.applicants ?? 0,
+      status: row.status || 'open',
+      statusCls: { scheduled: 'info', open: 'success', ongoing: 'info', reviewing: 'warning' }[String(row.status || '').toLowerCase()] || 'success',
+      mine: !!(mineName && row.company === mineName),
+    };
+  },
+
+  mapApplicant(row) {
+    const st = row.student || {};
+    const job = row.job || {};
+    const drive = row.drive || {};
+    return {
+      id: row.id || row._id || '',
+      name: st.name || row.studentName || 'Student',
+      roll: st.registerNumber || row.registerNumber || '',
+      dept: st.department || row.department || '',
+      cgpa: parseFloat(st.cgpa ?? row.cgpa ?? 0) || 0,
+      role: job.title || drive?.title || row.role || '—',
+      status: row.uiStatus || row.status || 'applied',
+      appliedAt: row.createdAt || row.appliedAt || '',
+    };
+  },
+
+  mapDeptRow(row) {
+    return {
+      dept: row.department || '',
+      count: row.applicants ?? 0,
+      share: row.share ?? 0,
+    };
+  },
+};
+
+const AnalyticsStore = {
+  async fetchExtended() {
+    if (!Auth.hasRealAuth()) return null;
+    const role = Auth.role();
+    if (role !== 'admin' && role !== 'placement_officer') return null;
+    const res = await api('/analytics/extended');
+    return res.success ? res.data : null;
+  },
+};
+
+const PlacementConsoleStore = {
+  async fetch() {
+    if (!Auth.hasRealAuth()) return null;
+    const role = Auth.role();
+    if (role !== 'admin' && role !== 'placement_officer') return null;
+    const res = await api('/analytics/placement-console');
+    return res.success ? res.data : null;
+  },
+
+  mapDepartment(row) {
+    return {
+      dept: row.code || row.department || '',
+      students: row.students ?? 0,
+      applicants: row.applicants ?? 0,
+      shortlisted: row.shortlisted ?? 0,
+      selected: row.selected ?? 0,
+      placed: row.placed ?? 0,
+      pct: row.placementPct ?? 0,
+      avgPkg: row.avgPackage ?? 0,
+    };
+  },
+};
+
 function userStatusBadge(status, blocked) {
   if (blocked) return '<span class="badge-soft danger">Blocked</span>';
   const map = { approved:['success','Approved'], pending:['warning','Pending'], rejected:['danger','Rejected'] };
@@ -2594,6 +2826,9 @@ function toast(msg, kind='info') {
     host = document.createElement('div');
     host.id = 'ph-toasts';
     host.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem;max-width:340px';
+    if (window.matchMedia('(max-width:575px)').matches) {
+      host.style.cssText = 'position:fixed;left:1rem;right:1rem;bottom:calc(1rem + env(safe-area-inset-bottom,0px));top:auto;z-index:9999;display:flex;flex-direction:column;gap:.5rem;max-width:none';
+    }
     document.body.appendChild(host);
   }
   const el = document.createElement('div');

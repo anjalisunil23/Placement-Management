@@ -356,6 +356,26 @@ const AdminApi = {
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(d => this.mapDrive(d));
   },
+
+  async fetchTracking(limit = 100) {
+    const res = await api(`/admin/tracking?limit=${encodeURIComponent(limit)}`);
+    return res.success ? res.data : null;
+  },
+
+  async fetchRecruiting() {
+    const res = await api('/admin/recruiting');
+    return res.success ? res.data : null;
+  },
+
+  async fetchPlacementConsole() {
+    const res = await api('/admin/placement-console');
+    return res.success ? res.data : null;
+  },
+
+  async fetchExtendedAnalytics() {
+    const res = await api('/admin/analytics/extended');
+    return res.success ? res.data : null;
+  },
 };
 
 const ReportCenter = {

@@ -120,4 +120,28 @@ final class PublicController
         $service = new AnalyticsService();
         Response::success($service->getDashboardAnalytics($departmentId));
     }
+
+    /** GET /api/analytics/extended */
+    public function extendedAnalytics(): void
+    {
+        $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $departmentId = null;
+        if (($user['role'] ?? '') === 'placement_officer') {
+            $ctx = PlacementOfficerContext::resolve($user);
+            $departmentId = $ctx['departmentId'];
+        }
+        Response::success((new AnalyticsService())->getExtendedAnalytics($departmentId));
+    }
+
+    /** GET /api/analytics/placement-console */
+    public function placementConsole(): void
+    {
+        $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $departmentId = null;
+        if (($user['role'] ?? '') === 'placement_officer') {
+            $ctx = PlacementOfficerContext::resolve($user);
+            $departmentId = $ctx['departmentId'];
+        }
+        Response::success((new AnalyticsService())->getPlacementConsole($departmentId));
+    }
 }

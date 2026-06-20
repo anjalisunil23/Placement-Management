@@ -179,4 +179,24 @@ const OfficerApi = {
     const res = await api('/officer/analytics');
     return res.success ? res.data : null;
   },
+
+  async fetchTracking(limit = 100) {
+    const res = await api(`/officer/tracking?limit=${encodeURIComponent(limit)}`);
+    return res.success ? res.data : null;
+  },
+
+  async fetchRecruiting() {
+    const res = await api('/officer/recruiting');
+    return res.success ? res.data : null;
+  },
+
+  async fetchPlacementConsole() {
+    const res = await api('/analytics/placement-console');
+    return res.success ? res.data : null;
+  },
+
+  async fetchExtendedAnalytics() {
+    const res = await api('/analytics/extended');
+    return res.success ? res.data : null;
+  },
 };

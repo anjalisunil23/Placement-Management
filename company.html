@@ -9,8 +9,10 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Company Portal</h1><p class="page-sub" id="portalSub">Post jobs, review applicants, upload results.</p></div>
-  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
+  <div class="flex-grow-1 min-w-0"><h1 class="page-title">Company Portal</h1><p class="page-sub" id="portalSub">Post jobs, review applicants, upload results.</p></div>
+  <div class="page-header-actions">
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
+  </div>
 </div>
 
 <div class="row g-3 mb-3">
@@ -41,13 +43,13 @@
   </div>
 </div>
 
-<div class="modal fade" id="postJob" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+<div class="modal fade" id="postJob" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title fw-bold">Post a new job</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
   <form id="postJobForm">
     <div class="modal-body row g-3">
       <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" name="title" required/></div>
-      <div class="col-md-3"><label class="form-label small fw-semibold">Type</label><select class="form-select" name="jobType"><option>Full-time</option><option>Internship</option></select></div>
-      <div class="col-md-3"><label class="form-label small fw-semibold">CTC (LPA)</label><input class="form-control" name="package" required/></div>
+      <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Type</label><select class="form-select" name="jobType"><option>Full-time</option><option>Internship</option></select></div>
+      <div class="col-6 col-md-3"><label class="form-label small fw-semibold">CTC (LPA)</label><input class="form-control" name="package" required/></div>
       <div class="col-md-6"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location" required/></div>
       <div class="col-md-6"><label class="form-label small fw-semibold">Openings</label><input class="form-control" name="openings" type="number" min="0"/></div>
       <div class="col-12"><label class="form-label small fw-semibold">JD</label><textarea class="form-control" name="description" rows="5"></textarea></div>

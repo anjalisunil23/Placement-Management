@@ -18,6 +18,8 @@
   </div>
 </div>
 
+<div id="recruitingAlert" class="alert alert-info d-flex align-items-center gap-2 d-none"></div>
+
 <div class="row g-3 mb-3">
   <div class="col-md-4 col-6"><div class="card-surface stat-card">
     <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-buildings"></i></div><span class="badge-soft success">Campus</span></div>
@@ -25,7 +27,7 @@
   </div></div>
   <div class="col-md-4 col-6"><div class="card-surface stat-card">
     <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-people-fill"></i></div><span class="badge-soft info" id="myCoBadge">Your co.</span></div>
-    <div class="val"><span class="counter" id="statApplicants" data-target="0">0</span></div><div class="lbl">Your applicants</div>
+    <div class="val"><span class="counter" id="statApplicants" data-target="0">0</span></div><div class="lbl" id="applicantStatLbl">Your applicants</div>
   </div></div>
   <div class="col-md-4 col-6"><div class="card-surface stat-card">
     <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-diagram-3-fill"></i></div><span class="badge-soft muted" id="deptCountBadge">—</span></div>
@@ -33,7 +35,6 @@
   </div></div>
 </div>
 
-<!-- Active recruiting companies -->
 <div class="card-surface mb-3">
   <div class="p-3 p-md-4 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
     <div><h6 class="fw-bold mb-0">Active recruiting companies</h6><small class="text-muted-2">Companies with open or ongoing drives on campus</small></div>
@@ -47,7 +48,6 @@
   </div>
 </div>
 
-<!-- Department-wise applicants -->
 <div class="row g-3 mb-3">
   <div class="col-lg-7">
     <div class="card-surface p-3 p-md-4 h-100">
@@ -69,7 +69,6 @@
   </div>
 </div>
 
-<!-- Applicant list -->
 <div class="card-surface">
   <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
     <div><h6 class="fw-bold mb-0">Applicant list</h6><small class="text-muted-2" id="applicantListSub">All candidates who applied to your drives</small></div>
@@ -103,52 +102,82 @@
 <script src="js/charts.js"></script>
 <script src="js/app.js"></script>
 <script>
+const role = Auth.role();
 const user = Auth.user() || demoUserFor('company');
-const companyName = user.companyName || 'Acme Cloud';
-document.getElementById('recruitingSub').textContent = `${companyName} — campus recruitment snapshot`;
-document.getElementById('myCoBadge').textContent = companyName;
+const companyName = user.companyName || user.company || 'Acme Cloud';
+let active = [];
+let apps = [];
+let byDept = [];
+let totalApps = 0;
+let scopeLabel = companyName;
 
-const active = activeRecruitingCompanies();
-const apps = companyApplicants(companyName);
-const byDept = applicantsByDepartment(companyName);
-const totalApps = apps.length;
-
-document.getElementById('statCompanies').dataset.target = active.length;
-document.getElementById('statApplicants').dataset.target = totalApps;
-document.getElementById('statDepts').dataset.target = byDept.length;
-document.getElementById('deptCountBadge').textContent = byDept.length + ' depts';
-document.getElementById('activeCount').textContent = active.length + ' active';
-['statCompanies','statApplicants','statDepts'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.dataset.animated = '0';
-});
-animateCounters(document);
-
-document.getElementById('activeCompanies').innerHTML = active.map(c => {
-  const mine = c.company === companyName;
-  return `<tr${mine ? ' style="background:color-mix(in srgb,var(--primary) 6%,transparent)"' : ''}>
-    <td><strong>${c.company}</strong>${mine ? ' <span class="badge-soft info">You</span>' : ''}</td>
-    <td>${c.roles.join(', ')}</td>
-    <td>${c.package}</td>
-    <td>${c.applicants.toLocaleString('en-IN')}</td>
-    <td><span class="badge-soft ${c.statusCls}">${c.status}</span></td>
-  </tr>`;
-}).join('');
-
-document.getElementById('deptSub').textContent = `Breakdown for ${companyName} (${totalApps} applicants)`;
-document.getElementById('deptRows').innerHTML = byDept.length ? byDept.map(d => {
-  const pct = totalApps ? Math.round((d.count / totalApps) * 100) : 0;
-  return `<tr><td><strong>${d.dept}</strong></td><td>${d.count}</td><td>
-    <div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1" style="height:6px"><div class="progress-bar" style="width:${pct}%"></div></div><small class="text-muted-2">${pct}%</small></div>
-  </td></tr>`;
-}).join('') : '<tr><td colspan="3" class="text-muted-2 p-4">No applicants yet.</td></tr>';
-
-if (byDept.length) {
-  Charts.bar(document.getElementById('deptChart'), byDept.map(d => d.dept), byDept.map(d => d.count), 'Applicants');
+function renderDemoRecruiting() {
+  scopeLabel = companyName;
+  active = activeRecruitingCompanies();
+  apps = companyApplicants(companyName);
+  totalApps = apps.length;
+  byDept = applicantsByDepartment(companyName).map(d => ({
+    dept: d.dept,
+    count: d.count,
+    share: totalApps ? Math.round((d.count / totalApps) * 100) : 0,
+  }));
+  paintRecruiting();
 }
 
-const deptFilter = document.getElementById('deptFilter');
-byDept.forEach(d => { deptFilter.innerHTML += `<option value="${d.dept}">${d.dept}</option>`; });
+function paintRecruiting() {
+  const isCampus = role === 'admin' || role === 'placement_officer';
+  document.getElementById('recruitingSub').textContent = isCampus
+    ? 'Campus-wide recruiting snapshot'
+    : `${scopeLabel} — campus recruitment snapshot`;
+  document.getElementById('myCoBadge').textContent = isCampus ? 'Campus' : scopeLabel;
+  document.getElementById('applicantStatLbl').textContent = isCampus ? 'Total applicants' : 'Your applicants';
+  document.getElementById('applicantListSub').textContent = isCampus
+    ? 'All campus applicants in scope'
+    : 'All candidates who applied to your drives';
+
+  document.getElementById('statCompanies').dataset.target = active.length;
+  document.getElementById('statApplicants').dataset.target = totalApps;
+  document.getElementById('statDepts').dataset.target = byDept.length;
+  document.getElementById('deptCountBadge').textContent = byDept.length + ' depts';
+  document.getElementById('activeCount').textContent = active.length + ' active';
+  ['statCompanies','statApplicants','statDepts'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.dataset.animated = '0';
+  });
+  animateCounters(document);
+
+  document.getElementById('activeCompanies').innerHTML = active.length ? active.map(c => {
+    const mine = c.mine || c.company === companyName;
+    return `<tr${mine ? ' style="background:color-mix(in srgb,var(--primary) 6%,transparent)"' : ''}>
+      <td><strong>${c.company}</strong>${mine ? ' <span class="badge-soft info">You</span>' : ''}</td>
+      <td>${(c.roles || []).join(', ')}</td>
+      <td>${c.package}</td>
+      <td>${Number(c.applicants || 0).toLocaleString('en-IN')}</td>
+      <td><span class="badge-soft ${c.statusCls}">${c.status}</span></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No active recruiting companies.</td></tr>';
+
+  document.getElementById('deptSub').textContent = isCampus
+    ? `Campus breakdown (${totalApps} applicants)`
+    : `Breakdown for ${scopeLabel} (${totalApps} applicants)`;
+  document.getElementById('deptRows').innerHTML = byDept.length ? byDept.map(d => {
+    const pct = d.share ?? (totalApps ? Math.round((d.count / totalApps) * 100) : 0);
+    return `<tr><td><strong>${d.dept}</strong></td><td>${d.count}</td><td>
+      <div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1" style="height:6px"><div class="progress-bar" style="width:${pct}%"></div></div><small class="text-muted-2">${pct}%</small></div>
+    </td></tr>`;
+  }).join('') : '<tr><td colspan="3" class="text-muted-2 p-4">No applicants yet.</td></tr>';
+
+  destroyChart(document.getElementById('deptChart'));
+  if (byDept.length) {
+    Charts.bar(document.getElementById('deptChart'), byDept.map(d => d.dept), byDept.map(d => d.count), 'Applicants');
+  }
+
+  const deptFilter = document.getElementById('deptFilter');
+  deptFilter.innerHTML = '<option value="">All departments</option>';
+  byDept.forEach(d => { deptFilter.innerHTML += `<option value="${d.dept}">${d.dept}</option>`; });
+
+  renderApplicants();
+}
 
 function renderApplicants() {
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
@@ -168,7 +197,7 @@ function renderApplicants() {
       </div></td>
       <td>${a.roll}</td>
       <td>${a.dept}</td>
-      <td>${a.cgpa.toFixed(2)}</td>
+      <td>${Number(a.cgpa || 0).toFixed(2)}</td>
       <td>${a.role}</td>
       <td>${formatDate(a.appliedAt)}</td>
       <td>${appStatusBadge(a.status)}</td>
@@ -176,9 +205,32 @@ function renderApplicants() {
     : '<tr><td colspan="7" class="text-muted-2 p-4">No applicants match your filters.</td></tr>';
 }
 
-renderApplicants();
 document.getElementById('searchInput').addEventListener('input', renderApplicants);
 document.getElementById('deptFilter').addEventListener('change', renderApplicants);
 document.getElementById('statusFilter').addEventListener('change', renderApplicants);
-document.getElementById('exportBtn').addEventListener('click', () => toast('Export started (demo).', 'info'));
+document.getElementById('exportBtn').addEventListener('click', () => toast('Export started.', 'info'));
+
+onAppReady(async () => {
+  showPageAlert('recruitingAlert', 'info', 'Loading recruitment overview…');
+  try {
+    const data = await RecruitingStore.fetch();
+    if (data) {
+      showPageAlert('recruitingAlert', 'hide');
+      scopeLabel = data.companyName || companyName;
+      const stats = data.stats || {};
+      active = (data.activeCompanies || []).map(c => RecruitingStore.mapActiveCompany(c, scopeLabel));
+      apps = (data.applicants || []).map(a => RecruitingStore.mapApplicant(a));
+      byDept = (data.applicantsByDept || []).map(d => RecruitingStore.mapDeptRow(d));
+      totalApps = stats.applicants ?? apps.length;
+      paintRecruiting();
+    } else {
+      showPageAlert('recruitingAlert', 'hide');
+      renderDemoRecruiting();
+      if (Auth.hasRealAuth()) toast('Using demo data — recruiting API unavailable.', 'warn');
+    }
+  } catch (e) {
+    showPageAlert('recruitingAlert', 'danger', 'Failed to load recruitment data. Showing demo snapshot.');
+    renderDemoRecruiting();
+  }
+});
 </script></body></html>

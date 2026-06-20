@@ -123,6 +123,12 @@ final class AlumniController
       Response::error('Validation failed.', 422, $errors);
     }
     $id = (new AlumniReferralModel())->createReferral((string) $user['_id'], $input);
+    (new NotificationService())->notifyAdmins(
+      'recommendation_update',
+      'New alumni company referral',
+      (string) ($user['name'] ?? 'Alumni') . ' referred ' . (string) ($input['companyName'] ?? 'a company') . ' to the placement cell.',
+      ['referralId' => $id]
+    );
     Response::success(['id' => $id], 'Company recommended successfully.', 201);
   }
 

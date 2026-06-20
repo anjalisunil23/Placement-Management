@@ -12,7 +12,7 @@
   <div><h1 class="page-title" id="notifTitle">Notifications Center</h1><p class="page-sub" id="notifSub">Alerts, email status and broadcast history.</p></div>
   <div class="d-flex gap-2" id="notifActions">
     <button class="btn btn-outline-secondary" id="markAllRead"><i class="bi bi-check2-all me-1"></i>Mark all read</button>
-    <button class="btn btn-primary"><i class="bi bi-megaphone me-1"></i>New broadcast</button>
+    <button class="btn btn-primary" id="btnNewBroadcast" type="button"><i class="bi bi-megaphone me-1"></i>New broadcast</button>
   </div>
 </div>
 
@@ -30,9 +30,49 @@
     <div class="tab-pane fade" id="jobposters"><div id="nlistJobs" class="d-flex flex-column gap-2"></div></div>
     <div class="tab-pane fade" id="appupdates"><div id="nlistApps" class="d-flex flex-column gap-2"></div></div>
     <div class="tab-pane fade" id="email">
-      <div class="table-wrap"><table class="table-modern"><thead><tr><th>Subject</th><th>Recipients</th><th>Sent</th><th>Opens</th><th>Status</th></tr></thead><tbody>
-        <tr><td><strong>Google SDE Drive — Registration Open</strong></td><td>1,240</td><td>2h ago</td><td>892 (72%)</td><td><span class="badge-soft success">Delivered</span></td></tr>
-      </tbody></table></div>
+      <div class="table-wrap"><table class="table-modern"><thead><tr><th>Subject</th><th>Audience</th><th>Recipients</th><th>Sent</th><th>Email</th><th>Status</th></tr></thead><tbody id="broadcastRows"></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="broadcastModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content card-surface border-0">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold">New broadcast</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="broadcastForm" class="modal-body pt-2">
+        <p class="small text-muted-2">Send an in-app alert and optional email to the selected audience.</p>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Audience</label>
+            <select class="form-select" id="broadcastAudience" required></select>
+          </div>
+          <div class="col-md-6 d-none" id="broadcastDeptWrap">
+            <label class="form-label small fw-semibold">Department</label>
+            <select class="form-select" id="broadcastDepartment"><option value="">All students</option></select>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Title</label>
+            <input class="form-control" id="broadcastTitle" required placeholder="e.g. Google SDE drive registration open"/>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Message</label>
+            <textarea class="form-control" id="broadcastMessage" rows="4" required placeholder="Write the announcement students and staff should see…"></textarea>
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="broadcastSendEmail" checked/>
+              <label class="form-check-label small" for="broadcastSendEmail">Also send email notification</label>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-end gap-2 mt-4">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="broadcastSubmitBtn"><i class="bi bi-send me-1"></i>Send broadcast</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -56,7 +96,8 @@ const pageCopy = {
   alumni: ['Notifications', 'Referrals, job posts, and application updates.'],
   staff: ['Notifications', 'Department alerts, drives, and recommendation updates.'],
   admin: ['Notifications Center', 'Alerts, email status and broadcast history.'],
-  placement_officer: ['Notifications', 'Department placement alerts and drive updates.'],
+  placement_officer: ['Notifications Center', 'Send department broadcasts and track delivery.'],
+  company: ['Notifications', 'Application updates and candidate pipeline alerts.'],
 };
 const [pageTitle, pageSub] = pageCopy[role] || ['Notifications', 'Your inbox.'];
 document.getElementById('notifTitle').textContent = pageTitle;
@@ -75,8 +116,8 @@ if (!isAdminLike) {
 
 function notifIcon(type) {
   const t = String(type || '').toLowerCase();
-  if (['job_poster', 'job_post', 'drive_announcement'].includes(t)) return ['primary', 'bi-briefcase-fill'];
-  if (['application_update', 'selection_update', 'referral', 'recommendation_update'].includes(t)) return ['info', 'bi-send-check-fill'];
+  if (['job_poster', 'job_post', 'drive_announcement', 'broadcast'].includes(t)) return ['primary', 'bi-briefcase-fill'];
+  if (['application_update', 'selection_update', 'referral', 'recommendation_update', 'application_submitted', 'registration_approved', 'officer_approved', 'resume_verified'].includes(t)) return ['info', 'bi-send-check-fill'];
   if (['resume_review', 'warning'].includes(t)) return ['warning', 'bi-exclamation-triangle-fill'];
   if (['offer', 'success'].includes(t)) return ['success', 'bi-check-circle-fill'];
   return ['primary', 'bi-bell-fill'];
@@ -94,7 +135,7 @@ function notifCard(n) {
 
 function mapApiNotifType(type) {
   const t = (type || '').toLowerCase();
-  if (t === 'drive_announcement' || t === 'job_poster' || t === 'job_post') return 'job_poster';
+  if (t === 'drive_announcement' || t === 'job_poster' || t === 'job_post' || t === 'broadcast') return 'job_poster';
   if (['application_update', 'selection_update', 'application_submitted', 'officer_approved', 'registration_approved', 'referral', 'recommendation_update'].includes(t)) return 'application_update';
   if (t === 'resume_review') return 'resume_review';
   if (t === 'offer') return 'offer';
@@ -120,11 +161,76 @@ async function loadNotifications() {
     const res = await api(notifApiBase, { skipAuthRedirect: true });
     if (res?.success) {
       notificationRows = (res.data || []).map(normalizeNotif);
+      NotificationInbox.refreshBadge?.();
       return;
     }
   }
   notifStore?.seed();
   notificationRows = (notifStore?.all() || []).map(normalizeNotif);
+  NotificationInbox.refreshBadge?.();
+}
+
+async function loadBroadcastHistory() {
+  if (!isAdminLike) return;
+  await BroadcastStore.fetch();
+  const rows = BroadcastStore.all();
+  document.getElementById('broadcastRows').innerHTML = rows.length ? rows.map(b => `
+    <tr>
+      <td><strong>${escHtml(b.title)}</strong><div class="small text-muted-2 text-truncate" style="max-width:280px">${escHtml(b.message)}</div></td>
+      <td>${escHtml(b.audienceLabel || b.audience)}</td>
+      <td>${b.recipientCount ?? 0}</td>
+      <td>${b.createdAt ? formatDate(b.createdAt) : '—'}</td>
+      <td>${b.sendEmail ? (b.emailSentCount ?? 0) : '—'}</td>
+      <td><span class="badge-soft success">${escHtml(b.status || 'Delivered')}</span></td>
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No broadcasts sent yet.</td></tr>';
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
+
+let broadcastModal;
+let broadcastDepartments = [];
+
+function audienceOptions() {
+  if (role === 'placement_officer') {
+    return [{ value: 'students', label: 'Students in my department' }];
+  }
+  return [
+    { value: 'students', label: 'All students' },
+    { value: 'staff', label: 'All staff' },
+    { value: 'alumni', label: 'All alumni' },
+    { value: 'officers', label: 'Placement officers' },
+    { value: 'companies', label: 'Company recruiters' },
+    { value: 'everyone', label: 'All users' },
+  ];
+}
+
+function syncBroadcastForm() {
+  const audience = document.getElementById('broadcastAudience').value;
+  const deptWrap = document.getElementById('broadcastDeptWrap');
+  if (role === 'admin') {
+    deptWrap.classList.toggle('d-none', audience !== 'students');
+  } else {
+    deptWrap.classList.add('d-none');
+  }
+}
+
+async function openBroadcastModal() {
+  if (!(await requireWriteSession())) return;
+  document.getElementById('broadcastForm').reset();
+  document.getElementById('broadcastSendEmail').checked = true;
+  const sel = document.getElementById('broadcastAudience');
+  sel.innerHTML = audienceOptions().map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+  if (role === 'admin') {
+    await DepartmentStore.fetch();
+    broadcastDepartments = DepartmentStore.all();
+    document.getElementById('broadcastDepartment').innerHTML =
+      '<option value="">All students</option>' +
+      broadcastDepartments.map(d => `<option value="${d.id}">${d.name} (${d.code})</option>`).join('');
+  }
+  syncBroadcastForm();
+  broadcastModal.show();
 }
 
 function renderInbox() {
@@ -165,8 +271,9 @@ async function openNotification(id) {
       toast(res?.message || 'Could not mark as read.', 'error');
       return;
     }
-    await loadNotifications();
+  await loadNotifications();
     renderInbox();
+    NotificationInbox.refreshBadge?.();
   } else if (notifStore) {
     notifStore.markRead(sid);
     notificationRows = notifStore.all().map(normalizeNotif);
@@ -197,6 +304,7 @@ if (hasInbox) {
   loadNotifications().then(() => {
     renderInbox();
     bindNotificationClicks();
+    if (isAdminLike) loadBroadcastHistory();
   });
   document.getElementById('markAllRead')?.addEventListener('click', async () => {
     if (Auth.hasRealAuth() && notifApiBase) {
@@ -216,11 +324,31 @@ if (hasInbox) {
 }
 
 if (isAdminLike) {
-  document.querySelector('#notifActions .btn-primary')?.addEventListener('click', () => {
-    const title = prompt('Broadcast title:', 'New placement drive announced');
-    if (!title) return;
-    const body = prompt('Message:', 'Registration is now open. Check drives page.');
-    if (body) toast(`Broadcast sent: "${title}" (demo)`, 'success');
+  broadcastModal = new bootstrap.Modal(document.getElementById('broadcastModal'));
+  document.getElementById('btnNewBroadcast')?.addEventListener('click', openBroadcastModal);
+  document.getElementById('broadcastAudience')?.addEventListener('change', syncBroadcastForm);
+  document.getElementById('broadcastForm')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!(await requireWriteSession())) return;
+    const audience = document.getElementById('broadcastAudience').value;
+    const payload = {
+      title: document.getElementById('broadcastTitle').value.trim(),
+      message: document.getElementById('broadcastMessage').value.trim(),
+      audience,
+      sendEmail: document.getElementById('broadcastSendEmail').checked,
+    };
+    if (role === 'admin' && audience === 'students') {
+      const deptId = document.getElementById('broadcastDepartment').value;
+      if (deptId) payload.departmentId = deptId;
+    }
+    const btn = document.getElementById('broadcastSubmitBtn');
+    btn.disabled = true;
+    const result = await BroadcastStore.send(payload);
+    btn.disabled = false;
+    if (!result) return;
+    broadcastModal.hide();
+    toast(`Broadcast sent to ${result.recipientCount || 0} recipient(s).`, 'success');
+    await loadBroadcastHistory();
   });
 }
 </script></body></html>

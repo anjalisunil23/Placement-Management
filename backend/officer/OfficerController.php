@@ -16,6 +16,8 @@ use PMS\Models\ApplicationModel;
 
 use PMS\Models\DriveModel;
 
+use PMS\Models\NotificationModel;
+
 use PMS\Models\RecruitmentResultModel;
 
 use PMS\Models\StudentModel;
@@ -27,6 +29,8 @@ use PMS\Services\NotificationService;
 use PMS\Services\OfficerDataService;
 use PMS\Services\PlacementOfficerContext;
 use PMS\Services\AnalyticsService;
+use PMS\Services\RecruitingService;
+use PMS\Services\TrackingService;
 
 use PMS\Utils\DocumentHelper;
 
@@ -351,6 +355,15 @@ final class OfficerController
 
         (new ApplicationWorkflowService())->transition($appId, 'officer_approved', (string) $user['_id']);
 
+        $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
+        if ($student && !empty($student['userId'])) {
+            (new NotificationService())->notifyApplicationUpdate(
+                (string) $student['userId'],
+                'Application Approved',
+                'Your application has been approved by the placement officer and is moving forward in the pipeline.'
+            );
+        }
+
         Response::success(null, 'Application approved by placement officer.');
 
     }
@@ -488,7 +501,18 @@ final class OfficerController
     {
         $scope = (new OfficerDataService())->requireScope();
         (new OfficerDataService())->assertApplicationInScope($appId, $scope['ctx']);
+        $app = (new ApplicationModel())->findById($appId);
         (new ApplicationWorkflowService())->transition($appId, 'rejected', (string) $scope['user']['_id']);
+        if ($app) {
+            $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
+            if ($student && !empty($student['userId'])) {
+                (new NotificationService())->notifyApplicationUpdate(
+                    (string) $student['userId'],
+                    'Application Rejected',
+                    'Your application was rejected by the placement officer. Contact the placement cell for details.'
+                );
+            }
+        }
         Response::success(null, 'Application rejected.');
     }
 
@@ -615,6 +639,67 @@ final class OfficerController
 
         Response::success(DocumentHelper::serializeMany($users));
 
+    }
+
+    /** GET /api/officer/tracking */
+    public function placementTracking(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $deptId = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
+        $limit = isset($_GET['limit']) ? min(500, max(1, (int) $_GET['limit'])) : 100;
+        Response::success((new TrackingService())->getOverview($deptId, $limit));
+    }
+
+    /** GET /api/officer/analytics/extended */
+    public function extendedAnalytics(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $deptId = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
+        Response::success((new AnalyticsService())->getExtendedAnalytics($deptId));
+    }
+
+    /** GET /api/officer/placement-console */
+    public function placementConsole(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $deptId = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
+        Response::success((new AnalyticsService())->getPlacementConsole($deptId));
+    }
+
+    /** GET /api/officer/recruiting */
+    public function recruitingOverview(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $deptId = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
+        Response::success((new RecruitingService())->getCampusOverview($deptId));
+    }
+
+    /** GET /api/officer/notifications */
+    public function notifications(): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $notifs = (new NotificationModel())->findByUser((string) $user['_id']);
+        Response::success(DocumentHelper::serializeMany($notifs));
+    }
+
+    /** POST /api/officer/notifications/{id}/read */
+    public function markNotificationRead(string $id): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $notif = (new NotificationModel())->findById($id);
+        if (!$notif || (string) ($notif['userId'] ?? '') !== (string) $user['_id']) {
+            Response::notFound();
+        }
+        (new NotificationModel())->markRead($id);
+        Response::success(null, 'Notification marked as read.');
+    }
+
+    /** POST /api/officer/notifications/read-all */
+    public function markAllNotificationsRead(): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $count = (new NotificationModel())->markAllRead((string) $user['_id']);
+        Response::success(['updated' => $count], 'All notifications marked as read.');
     }
 
 }

@@ -19,6 +19,9 @@ if ($origin !== '' && in_array($origin, $allowed, true)) {
 } elseif ($origin !== '' && preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#', $origin)) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Vary: Origin');
+} elseif ($origin !== '' && preg_match('#^https?://(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$#', $origin)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
 }
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
@@ -38,6 +41,7 @@ use PMS\Officer\OfficerController;
 use PMS\Staff\StaffController;
 use PMS\Student\StudentController;
 use PMS\Utils\Response;
+use PMS\Utils\ApiExceptionHandler;
 
 $uri    = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 
@@ -121,6 +125,12 @@ $routes = [
     ['GET',    '/admin/notifications',               [AdminController::class, 'notifications']],
     ['POST',   '/admin/notifications/read-all',      [AdminController::class, 'markAllNotificationsRead']],
     ['POST',   '/admin/notifications/{id}/read',     [AdminController::class, 'markNotificationRead']],
+    ['POST',   '/admin/broadcast',                   [AdminController::class, 'broadcast']],
+    ['GET',    '/admin/broadcasts',                  [AdminController::class, 'listBroadcasts']],
+    ['GET',    '/admin/tracking',                    [AdminController::class, 'placementTracking']],
+    ['GET',    '/admin/analytics/extended',          [AdminController::class, 'extendedAnalytics']],
+    ['GET',    '/admin/placement-console',           [AdminController::class, 'placementConsole']],
+    ['GET',    '/admin/recruiting',                  [AdminController::class, 'recruitingOverview']],
 
     // Student
     ['GET',  '/student/dashboard',         [StudentController::class, 'dashboard']],
@@ -163,6 +173,10 @@ $routes = [
     ['POST', '/company/applications/{id}/review',   [CompanyController::class, 'startReview']],
     ['POST', '/company/applications/{id}/shortlist', [CompanyController::class, 'shortlist']],
     ['POST', '/company/applications/{id}/result', [CompanyController::class, 'updateResult']],
+    ['GET',  '/company/notifications',              [CompanyController::class, 'notifications']],
+    ['POST', '/company/notifications/read-all',     [CompanyController::class, 'markAllNotificationsRead']],
+    ['POST', '/company/notifications/{id}/read',    [CompanyController::class, 'markNotificationRead']],
+    ['GET',  '/company/recruiting',                   [CompanyController::class, 'recruitingOverview']],
 
     // Staff
     ['GET',  '/staff/profile',                    [StaffController::class, 'profile']],
@@ -217,6 +231,13 @@ $routes = [
     ['PUT',  '/officer/drives/{id}',               [OfficerController::class, 'updateDrive']],
     ['DELETE','/officer/drives/{id}',              [OfficerController::class, 'deleteDrive']],
     ['POST', '/officer/drives/{id}/attendance',    [OfficerController::class, 'markAttendance']],
+    ['GET',  '/officer/tracking',                    [OfficerController::class, 'placementTracking']],
+    ['GET',  '/officer/analytics/extended',          [OfficerController::class, 'extendedAnalytics']],
+    ['GET',  '/officer/placement-console',           [OfficerController::class, 'placementConsole']],
+    ['GET',  '/officer/recruiting',                  [OfficerController::class, 'recruitingOverview']],
+    ['GET',  '/officer/notifications',               [OfficerController::class, 'notifications']],
+    ['POST', '/officer/notifications/read-all',      [OfficerController::class, 'markAllNotificationsRead']],
+    ['POST', '/officer/notifications/{id}/read',     [OfficerController::class, 'markNotificationRead']],
 
     // Health & public
     ['GET', '/health',                  [PublicController::class, 'health']],
@@ -224,8 +245,11 @@ $routes = [
     ['GET', '/public/placement-stats',  [PublicController::class, 'placementStats']],
     ['GET', '/public/site-content',    [PublicController::class, 'siteContent']],
     ['GET', '/analytics/dashboard',    [PublicController::class, 'analyticsDashboard']],
+    ['GET', '/analytics/extended',     [PublicController::class, 'extendedAnalytics']],
+    ['GET', '/analytics/placement-console', [PublicController::class, 'placementConsole']],
 ];
 
+ApiExceptionHandler::run(static function () use ($routes, $method, $uri): void {
 foreach ($routes as [$routeMethod, $pattern, $handler]) {
     if ($routeMethod !== $method) {
         continue;
@@ -249,3 +273,4 @@ foreach ($routes as [$routeMethod, $pattern, $handler]) {
 }
 
 Response::notFound('API endpoint not found.');
+});

@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace PMS\Company;
 
 use PMS\Middleware\RBACMiddleware;
-use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
+use PMS\Models\NotificationModel;
 use PMS\Models\StudentModel;
 use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\CompanyApplicationService;
 use PMS\Services\NotificationService;
 use PMS\Services\PlacementChanceService;
+use PMS\Services\RecruitingService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\OwnershipHelper;
 use PMS\Utils\Response;
@@ -209,11 +210,13 @@ final class CompanyController
         $user = RBACMiddleware::requireCompany();
         $company = $this->getCompany($user);
         $companyId = (string) $company['_id'];
-        $jobs = (new JobModel())->findByCompany($companyId);
-        $appModel = new ApplicationModel();
-        $serialized = array_map(static function (array $job) use ($appModel) {
+        $jobModel = new JobModel();
+        $jobs = $jobModel->findByCompany($companyId);
+        $counts = $jobModel->countApplicantsByJob($companyId);
+        $serialized = array_map(static function (array $job) use ($counts) {
+            $jobId = (string) $job['_id'];
             $out = DocumentHelper::serialize($job);
-            $out['applicantCount'] = $appModel->count(['jobId' => $job['_id']]);
+            $out['applicantCount'] = $counts[$jobId] ?? 0;
             return $out;
         }, $jobs);
         Response::success($serialized);
@@ -260,8 +263,17 @@ final class CompanyController
     public function startReview(string $appId): void
     {
         $user = RBACMiddleware::requireCompany();
-        OwnershipHelper::requireCompanyApplication($appId, $user);
+        $app = OwnershipHelper::requireCompanyApplication($appId, $user);
+        $company = $this->getCompany($user);
         (new ApplicationWorkflowService())->transition($appId, 'company_review', (string) $user['_id']);
+        $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
+        if ($student && !empty($student['userId'])) {
+            (new NotificationService())->notifyApplicationUpdate(
+                (string) $student['userId'],
+                'Application Under Review',
+                'Your application is now under review at ' . (string) ($company['companyName'] ?? 'the company') . '.'
+            );
+        }
         Response::success(null, 'Application marked under company review.');
     }
 
@@ -269,8 +281,17 @@ final class CompanyController
     public function shortlist(string $appId): void
     {
         $user = RBACMiddleware::requireCompany();
-        OwnershipHelper::requireCompanyApplication($appId, $user);
+        $app = OwnershipHelper::requireCompanyApplication($appId, $user);
+        $company = $this->getCompany($user);
         (new ApplicationWorkflowService())->transition($appId, 'shortlisted', (string) $user['_id']);
+        $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
+        if ($student && !empty($student['userId'])) {
+            (new NotificationService())->notifyApplicationUpdate(
+                (string) $student['userId'],
+                'Shortlisted',
+                'Congratulations! You have been shortlisted by ' . (string) ($company['companyName'] ?? 'the company') . '.'
+            );
+        }
         Response::success(null, 'Student shortlisted.');
     }
 
@@ -294,10 +315,11 @@ final class CompanyController
 
         $student = (new StudentModel())->findById((string) $app['studentId']);
         if ($student) {
+            $company = $this->getCompany($user);
             $notifier = new NotificationService();
             $notifier->notifySelectionUpdate(
                 (string) $student['userId'],
-                'Company',
+                (string) ($company['companyName'] ?? 'Company'),
                 $status
             );
             if ($status === 'selected') {
@@ -314,5 +336,41 @@ final class CompanyController
         }
 
         Response::success(null, 'Result updated.');
+    }
+
+    /** GET /api/company/notifications */
+    public function notifications(): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $notifs = (new NotificationModel())->findByUser((string) $user['_id']);
+        Response::success(DocumentHelper::serializeMany($notifs));
+    }
+
+    /** POST /api/company/notifications/{id}/read */
+    public function markNotificationRead(string $id): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $notif = (new NotificationModel())->findById($id);
+        if (!$notif || (string) ($notif['userId'] ?? '') !== (string) $user['_id']) {
+            Response::notFound();
+        }
+        (new NotificationModel())->markRead($id);
+        Response::success(null, 'Notification marked as read.');
+    }
+
+    /** POST /api/company/notifications/read-all */
+    public function markAllNotificationsRead(): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $count = (new NotificationModel())->markAllRead((string) $user['_id']);
+        Response::success(['updated' => $count], 'All notifications marked as read.');
+    }
+
+    /** GET /api/company/recruiting */
+    public function recruitingOverview(): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $company = $this->getCompany($user);
+        Response::success((new RecruitingService())->getCompanyOverview((string) $company['_id']));
     }
 }

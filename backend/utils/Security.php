@@ -24,14 +24,14 @@ final class Security
         if (session_status() === PHP_SESSION_NONE) {
             $config = require dirname(__DIR__) . '/config/app.php';
             ini_set('session.cookie_httponly', '1');
-            ini_set('session.cookie_samesite', 'Strict');
+            ini_set('session.cookie_samesite', 'Lax');
             ini_set('session.use_strict_mode', '1');
             session_set_cookie_params([
                 'lifetime' => $config['session']['lifetime'],
                 'path'     => '/',
                 'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
                 'httponly' => true,
-                'samesite' => 'Strict',
+                'samesite' => 'Lax',
             ]);
             session_start();
         }
@@ -64,7 +64,7 @@ final class Security
                 'domain'   => $params['domain'] ?? '',
                 'secure'   => $params['secure'] ?? false,
                 'httponly' => $params['httponly'] ?? true,
-                'samesite' => $params['samesite'] ?? 'Strict',
+                'samesite' => $params['samesite'] ?? 'Lax',
             ]);
         }
         session_destroy();

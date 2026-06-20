@@ -356,4 +356,302 @@ final class AnalyticsService
             'count'   => $count,
         ];
     }
+
+    /**
+     * Extended analytics for analytics.html charts.
+     *
+     * @return array<string, mixed>
+     */
+    public function getExtendedAnalytics(?string $departmentId = null): array
+    {
+        $base = $this->getDashboardAnalytics($departmentId);
+        $jobModel = new JobModel();
+        $jobs = $jobModel->findAll([], 500);
+
+        return [
+            'totals'           => $base['totals'],
+            'branchStatistics' => $base['branchStatistics'],
+            'companyStatistics'=> $base['companyStatistics'],
+            'salaryAnalytics'  => $base['salaryAnalytics'],
+            'hiringTrend'      => $this->getHiringTrend($departmentId),
+            'branchPlacement'  => [
+                'labels' => array_map(
+                    static fn (array $b): string => (string) ($b['code'] ?: $b['department']),
+                    $base['branchStatistics']
+                ),
+                'values' => array_map(
+                    static fn (array $b): int => (int) ($b['placed'] ?? 0),
+                    $base['branchStatistics']
+                ),
+            ],
+            'packageBands'     => $this->getPackageBands($jobs),
+            'jobTypeSplit'     => $this->getJobTypeSplit($jobs),
+            'topCompanyOffers' => $this->getTopCompanyOffers($base['companyStatistics']),
+        ];
+    }
+
+    /**
+     * Department pipeline stats for placement-console.html.
+     *
+     * @return array<string, mixed>
+     */
+    public function getPlacementConsole(?string $departmentId = null): array
+    {
+        $tracking = (new TrackingService())->getOverview($departmentId, 50);
+        $recruiting = (new RecruitingService())->getCampusOverview($departmentId);
+        $departments = $this->getDepartmentPipeline($departmentId);
+        $jobCount = (new JobModel())->count([]);
+
+        return [
+            'summary' => [
+                'applicants'   => $tracking['summary']['applied'] ?? 0,
+                'shortlisted'  => $tracking['summary']['shortlisted'] ?? 0,
+                'selected'     => $tracking['summary']['offered'] ?? 0,
+                'placed'       => $tracking['summary']['joined'] ?? 0,
+                'companies'    => $recruiting['stats']['activeCompanies'] ?? 0,
+                'jobPosts'     => $jobCount,
+            ],
+            'departments' => $departments,
+            'tracking'    => $tracking,
+            'recruiting'  => $recruiting,
+        ];
+    }
+
+    /**
+     * @return array{labels: array<int, string>, series: array<int, array{label: string, data: array<int, int>}>}
+     */
+    private function getHiringTrend(?string $departmentId): array
+    {
+        $months = [];
+        for ($i = 11; $i >= 0; $i--) {
+            $months[] = date('Y-m', strtotime("-{$i} months"));
+        }
+
+        $counts = array_fill_keys($months, 0);
+        $studentIds = $this->studentIdsForDepartment($departmentId);
+        $apps = (new ApplicationModel())->findAll(['status' => 'selected'], 5000);
+
+        foreach ($apps as $app) {
+            if ($studentIds !== null) {
+                $sid = (string) ($app['studentId'] ?? '');
+                if (!isset($studentIds[$sid])) {
+                    continue;
+                }
+            }
+            $timeline = $app['timeline'] ?? [];
+            $selectedAt = (string) ($app['updatedAt'] ?? $app['createdAt'] ?? '');
+            foreach ($timeline as $entry) {
+                if (($entry['status'] ?? '') === 'selected' && !empty($entry['at'])) {
+                    $selectedAt = (string) $entry['at'];
+                    break;
+                }
+            }
+            $monthKey = date('Y-m', strtotime($selectedAt) ?: time());
+            if (isset($counts[$monthKey])) {
+                $counts[$monthKey]++;
+            }
+        }
+
+        return [
+            'labels' => array_map(
+                static fn (string $ym): string => date('M', strtotime($ym . '-01')),
+                $months
+            ),
+            'series' => [[
+                'label' => 'Offers',
+                'data'  => array_values($counts),
+            ]],
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $jobs
+     * @return array{labels: array<int, string>, values: array<int, int>}
+     */
+    private function getPackageBands(array $jobs): array
+    {
+        $bands = [
+            '3-6'   => 0,
+            '6-10'  => 0,
+            '10-20' => 0,
+            '20-40' => 0,
+            '40+'   => 0,
+        ];
+
+        foreach ($jobs as $job) {
+            $pkg = $job['package'] ?? '';
+            if (!preg_match('/[\d.]+/', (string) $pkg, $m)) {
+                continue;
+            }
+            $value = (float) $m[0];
+            if ($value < 6) {
+                $bands['3-6']++;
+            } elseif ($value < 10) {
+                $bands['6-10']++;
+            } elseif ($value < 20) {
+                $bands['10-20']++;
+            } elseif ($value < 40) {
+                $bands['20-40']++;
+            } else {
+                $bands['40+']++;
+            }
+        }
+
+        return [
+            'labels' => array_keys($bands),
+            'values' => array_values($bands),
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $jobs
+     * @return array{labels: array<int, string>, values: array<int, int>}
+     */
+    private function getJobTypeSplit(array $jobs): array
+    {
+        $types = [];
+        foreach ($jobs as $job) {
+            $type = trim((string) ($job['jobType'] ?? $job['type'] ?? 'Full-time'));
+            if ($type === '') {
+                $type = 'Full-time';
+            }
+            $types[$type] = ($types[$type] ?? 0) + 1;
+        }
+
+        if ($types === []) {
+            return ['labels' => ['Full-time'], 'values' => [0]];
+        }
+
+        return [
+            'labels' => array_keys($types),
+            'values' => array_values($types),
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $companyStats
+     * @return array{labels: array<int, string>, values: array<int, int>}
+     */
+    private function getTopCompanyOffers(array $companyStats): array
+    {
+        $sorted = $companyStats;
+        usort($sorted, static fn (array $a, array $b): int => ($b['selected'] ?? 0) <=> ($a['selected'] ?? 0));
+        $top = array_slice($sorted, 0, 10);
+
+        return [
+            'labels' => array_map(static fn (array $c): string => (string) ($c['name'] ?? ''), $top),
+            'values' => array_map(static fn (array $c): int => (int) ($c['selected'] ?? 0), $top),
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function getDepartmentPipeline(?string $departmentId): array
+    {
+        $departmentModel = new DepartmentModel();
+        $studentModel = new StudentModel();
+        $applicationModel = new ApplicationModel();
+        $jobModel = new JobModel();
+
+        $departments = $departmentId
+            ? array_filter([$departmentModel->findById($departmentId)])
+            : $departmentModel->findAll([], 50);
+
+        $rows = [];
+        foreach ($departments as $dept) {
+            if (!$dept) {
+                continue;
+            }
+            $deptId = $dept['_id'];
+            $studentFilter = ['departmentId' => $deptId];
+            $students = $studentModel->findAll($studentFilter, 5000);
+            $studentIds = array_map(static fn (array $s) => $s['_id'], $students);
+            $studentIdStrings = array_map(static fn ($oid) => (string) $oid, $studentIds);
+
+            $applicants = 0;
+            $shortlisted = 0;
+            $selected = 0;
+            $placed = $studentModel->count(array_merge($studentFilter, ['placed' => true]));
+
+            if ($studentIds !== []) {
+                $apps = $applicationModel->findAll(['studentId' => ['$in' => $studentIds]], 5000);
+                foreach ($apps as $app) {
+                    $status = (string) ($app['status'] ?? '');
+                    if (in_array($status, ['rejected', 'withdrawn'], true)) {
+                        continue;
+                    }
+                    $applicants++;
+                    if (in_array($status, ['officer_approved', 'company_review', 'shortlisted', 'selected'], true)) {
+                        $shortlisted++;
+                    }
+                    if ($status === 'selected') {
+                        $selected++;
+                    }
+                }
+            }
+
+            $avgPackage = $this->averagePackageForStudents($studentIdStrings, $jobModel);
+
+            $total = count($students);
+            $rows[] = [
+                'department'   => (string) ($dept['name'] ?? ''),
+                'code'         => (string) ($dept['code'] ?? ''),
+                'students'     => $total,
+                'applicants'   => $applicants,
+                'shortlisted'  => $shortlisted,
+                'selected'     => $selected,
+                'placed'       => $placed,
+                'placementPct' => $total > 0 ? round(($placed / $total) * 100, 1) : 0,
+                'avgPackage'   => $avgPackage,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<int, string> $studentIdStrings
+     */
+    private function averagePackageForStudents(array $studentIdStrings, JobModel $jobModel): float
+    {
+        if ($studentIdStrings === []) {
+            return 0;
+        }
+
+        $lookup = array_flip($studentIdStrings);
+        $values = [];
+        foreach ((new ApplicationModel())->findAll(['status' => 'selected'], 5000) as $app) {
+            $sid = (string) ($app['studentId'] ?? '');
+            if (!isset($lookup[$sid]) || empty($app['jobId'])) {
+                continue;
+            }
+            $job = $jobModel->findById((string) $app['jobId']);
+            $pkg = $job['package'] ?? '';
+            if (preg_match('/[\d.]+/', (string) $pkg, $m)) {
+                $values[] = (float) $m[0];
+            }
+        }
+
+        return $values === [] ? 0 : round(array_sum($values) / count($values), 2);
+    }
+
+    /**
+     * @return array<string, true>|null
+     */
+    private function studentIdsForDepartment(?string $departmentId): ?array
+    {
+        if ($departmentId === null || $departmentId === '') {
+            return null;
+        }
+        $deptOid = Security::toObjectId($departmentId);
+        if ($deptOid === null) {
+            return [];
+        }
+        $map = [];
+        foreach ((new StudentModel())->findAll(['departmentId' => $deptOid], 5000) as $student) {
+            $map[(string) $student['_id']] = true;
+        }
+        return $map;
+    }
 }

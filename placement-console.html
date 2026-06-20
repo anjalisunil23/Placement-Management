@@ -27,8 +27,10 @@
   <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Selected</div><div class="val"><span class="counter" id="tSelected" data-target="0">0</span></div></div></div>
   <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Placements</div><div class="val"><span class="counter" id="tPlaced" data-target="0">0</span></div></div></div>
   <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Recruiting cos.</div><div class="val"><span class="counter" id="tCompanies" data-target="0">0</span></div></div></div>
-  <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Job posts</div><div class="val"><span class="counter" id="tJobs" data-target="0">0</span></div></div></div>
+  <div class="col-6 col-lg-2"><div class="card-surface stat-card"><div class="lbl">Job posts</div><div class="val"><span class="counter" id="tJobs" data-target="0">0</span></div></div>  </div>
 </div>
+
+<div id="consoleAlert" class="alert alert-info d-flex align-items-center gap-2 d-none mx-0"></div>
 
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist">
   <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabDept">Dept. Statistics</a></li>
@@ -210,9 +212,42 @@
 <script>
 const role = Auth.role();
 const isAdmin = role === 'admin';
-const totals = placementDeptTotals();
-const activeCos = activeRecruitingCompanies();
-const openJobs = DRIVE_CATALOG.filter(d => d.status !== 'Closed');
+
+let deptData = DEPARTMENT_PLACEMENT;
+let totals = placementDeptTotals();
+let activeCos = activeRecruitingCompanies();
+let openJobs = DRIVE_CATALOG.filter(d => d.status !== 'Closed');
+let pipelineStudents = PLACEMENT_STUDENTS;
+
+function mapAppToPipeline(a) {
+  const raw = String(a.status || a.stage || 'applied').toLowerCase();
+  let status = 'applied';
+  if (raw === 'selected') status = 'selected';
+  else if (raw === 'placed') status = 'placed';
+  else if (['shortlisted', 'company_review', 'officer_approved', 'company_selection'].includes(raw)) status = 'shortlisted';
+  else if (raw === 'rejected') status = 'rejected';
+  return {
+    id: a.id || a.applicationId || '',
+    name: a.studentName || a.name || 'Student',
+    roll: a.registerNumber || a.roll || '',
+    dept: a.department || a.dept || '',
+    cgpa: parseFloat(a.cgpa ?? 0) || 0,
+    company: a.company || '',
+    role: a.role || '',
+    status,
+    resumePath: a.resumePath || a.resumeFileName || (a.hasResume ? 'Resume on file' : ''),
+    resumeUrl: a.resumeUrl || '',
+  };
+}
+
+function refreshConsoleViews() {
+  updateTopStats();
+  renderDeptStats();
+  renderStaff();
+  renderJobs();
+  renderRecruiting();
+  renderApplicants();
+}
 
 function updateTopStats() {
   document.getElementById('tApplicants').dataset.target = totals.applicants;
@@ -229,19 +264,23 @@ function updateTopStats() {
 }
 
 function renderDeptStats() {
-  document.getElementById('deptStatsRows').innerHTML = DEPARTMENT_PLACEMENT.map(d => `
+  document.getElementById('deptStatsRows').innerHTML = deptData.map(d => `
     <tr>
       <td><strong>${d.dept}</strong></td>
       <td>${d.students}</td><td>${d.applicants}</td><td>${d.shortlisted}</td>
       <td>${d.selected}</td><td>${d.placed}</td>
       <td>${d.pct}%</td><td>₹${d.avgPkg} LPA</td>
     </tr>`).join('');
+  const studentTotal = totals.students ?? deptData.reduce((t, d) => t + (d.students || 0), 0);
+  const placedPct = studentTotal ? (((totals.placed ?? totals.placedStudents ?? 0) / studentTotal) * 100).toFixed(1) : '0.0';
   document.getElementById('deptStatsFoot').innerHTML = `<tr class="fw-bold" style="background:var(--surface-2)">
-    <td>Total</td><td>${totals.students}</td><td>${totals.applicants}</td><td>${totals.shortlisted}</td>
-    <td>${totals.selected}</td><td>${totals.placed}</td>
-    <td>${((totals.placed / totals.students) * 100).toFixed(1)}%</td><td>—</td></tr>`;
-  Charts.bar(document.getElementById('deptPlacedChart'), DEPARTMENT_PLACEMENT.map(d => d.dept), DEPARTMENT_PLACEMENT.map(d => d.placed), 'Placed');
-  Charts.bar(document.getElementById('deptPipelineChart'), DEPARTMENT_PLACEMENT.map(d => d.dept), DEPARTMENT_PLACEMENT.map(d => d.shortlisted), 'Shortlisted');
+    <td>Total</td><td>${studentTotal}</td><td>${totals.applicants ?? 0}</td><td>${totals.shortlisted ?? 0}</td>
+    <td>${totals.selected ?? 0}</td><td>${totals.placed ?? 0}</td>
+    <td>${placedPct}%</td><td>—</td></tr>`;
+  destroyChart(document.getElementById('deptPlacedChart'));
+  destroyChart(document.getElementById('deptPipelineChart'));
+  Charts.bar(document.getElementById('deptPlacedChart'), deptData.map(d => d.dept), deptData.map(d => d.placed), 'Placed');
+  Charts.bar(document.getElementById('deptPipelineChart'), deptData.map(d => d.dept), deptData.map(d => d.shortlisted), 'Shortlisted');
 }
 
 function renderStaff() {
@@ -337,7 +376,7 @@ function renderJobs() {
     <tr>
       <td><strong>${d.company}</strong></td><td>${d.role}</td><td>${d.package}</td>
       <td>${d.branches}</td><td>${d.applied}</td>
-      <td><span class="badge-soft ${d.statusCls}">${d.status}</span></td><td>${d.deadline}</td>
+      <td><span class="badge-soft ${d.statusCls}">${d.status}</span></td><td>${d.deadline || d.date || '—'}</td>
     </tr>`).join('');
 }
 
@@ -366,7 +405,7 @@ function renderApplicants() {
   const q = document.getElementById('appSearch').value.trim().toLowerCase();
   const status = document.getElementById('appStatusFilter').value;
   const dept = document.getElementById('appDeptFilter').value;
-  const filtered = PLACEMENT_STUDENTS.filter(s => {
+  const filtered = pipelineStudents.filter(s => {
     if (status && s.status !== status) return false;
     if (dept && s.dept !== dept) return false;
     if (q && !`${s.name} ${s.roll} ${s.dept} ${s.company}`.toLowerCase().includes(q)) return false;
@@ -384,11 +423,11 @@ function renderApplicants() {
 
 window.viewResume = id => {
   if (!resumeVerificationOn()) { toast('Enable resume verification to view resumes.', 'warn'); return; }
-  const s = PLACEMENT_STUDENTS.find(x => x.id === id);
+  const s = pipelineStudents.find(x => x.id === id);
   if (!s) return;
   document.getElementById('resumeStudentName').textContent = s.name;
   document.getElementById('resumeStudentRoll').textContent = s.roll + ' · ' + s.dept;
-  document.getElementById('resumePath').textContent = s.resumePath;
+  document.getElementById('resumePath').textContent = s.resumeUrl || s.resumePath || '—';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('resumeModal')).show();
 };
 
@@ -399,6 +438,7 @@ if (!isAdmin) {
 }
 
 onAppReady(async () => {
+  showPageAlert('consoleAlert', 'info', 'Loading placement console…');
   await ensureDepartmentsLoaded();
   await Promise.all([StaffRecs.fetch(), AlumniReferrals.fetch()]);
   fillDepartmentCodeSelect(document.getElementById('staffDeptSelect'));
@@ -410,6 +450,49 @@ onAppReady(async () => {
     });
   }
   renderReferrals();
+
+  try {
+    if (Auth.hasRealAuth()) {
+      const consolePromise = PlacementConsoleStore.fetch();
+      const drivesPromise = isAdmin && typeof AdminApi !== 'undefined'
+        ? AdminApi.fetchDrives()
+        : (typeof OfficerApi !== 'undefined' ? OfficerApi.fetchDrives() : null);
+      const appsPromise = isAdmin && typeof AdminApi !== 'undefined'
+        ? AdminApi.fetchApplications()
+        : (typeof OfficerApi !== 'undefined' ? OfficerApi.fetchApplications() : null);
+      const [console, drives, applications] = await Promise.all([
+        consolePromise,
+        drivesPromise || Promise.resolve(null),
+        appsPromise || Promise.resolve(null),
+      ]);
+
+      if (console) {
+        const summary = console.summary || {};
+        totals = {
+          students: (console.departments || []).reduce((t, d) => t + (d.students || 0), 0),
+          applicants: summary.applicants ?? 0,
+          shortlisted: summary.shortlisted ?? 0,
+          selected: summary.selected ?? 0,
+          placed: summary.placed ?? 0,
+        };
+        deptData = (console.departments || []).map(d => PlacementConsoleStore.mapDepartment(d));
+        activeCos = (console.recruiting?.activeCompanies || []).map(c => RecruitingStore.mapActiveCompany(c));
+      }
+      if (drives && drives.length) {
+        openJobs = drives.filter(d => String(d.status || '').toLowerCase() !== 'closed');
+      }
+      if (applications && applications.length) {
+        pipelineStudents = applications.map(a => mapAppToPipeline(a));
+      }
+      showPageAlert('consoleAlert', 'hide');
+    } else {
+      showPageAlert('consoleAlert', 'hide');
+    }
+  } catch (e) {
+    showPageAlert('consoleAlert', 'danger', 'Failed to load live console data. Showing demo snapshot.');
+  }
+
+  refreshConsoleViews();
 });
 
 document.getElementById('resumeVerifyToggle').checked = resumeVerificationOn();
@@ -443,12 +526,4 @@ document.getElementById('registerForm').addEventListener('submit', e => {
   document.getElementById(id).addEventListener('input', renderApplicants);
   document.getElementById(id).addEventListener('change', renderApplicants);
 });
-
-updateTopStats();
-renderDeptStats();
-renderStaff();
-renderReferrals();
-renderJobs();
-renderRecruiting();
-renderApplicants();
 </script></body></html>
