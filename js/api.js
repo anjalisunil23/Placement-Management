@@ -1,4 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
+const APP_SCRIPT_VERSION = '20260619b';
 const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 const ROLE_LABELS = {
@@ -151,12 +152,19 @@ async function performServerLogin(email, password, next = '') {
   }
   const redirect = Auth.resolveRedirect(next);
   if (user.role === 'company' && !Auth.isAllowed(redirect.split('#')[0])) {
-    return { success: true, redirect: Auth.homePage('company') };
+    return { success: true, redirect: absAppPath(Auth.homePage('company')) };
   }
   if (user.role === 'alumni' && !Auth.isAllowed(redirect.split('#')[0])) {
-    return { success: true, redirect: Auth.homePage('alumni') };
+    return { success: true, redirect: absAppPath(Auth.homePage('alumni')) };
   }
-  return { success: true, redirect };
+  return { success: true, redirect: absAppPath(redirect) };
+}
+
+/** Root-relative app path for reliable redirects from extensionless URLs. */
+function absAppPath(path) {
+  const raw = String(path || '').trim();
+  if (!raw) return '/' + (ROLE_HOME[Auth.role()] || 'dashboard.html');
+  return raw.startsWith('/') ? raw : '/' + raw;
 }
 
 const QUICK_LOGIN_ACCOUNTS = {
