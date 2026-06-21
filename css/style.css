@@ -447,27 +447,32 @@ body.login-page{
   row-gap:.35rem;
 }
 .public-nav-brand{grid-area:brand;min-width:0}
-.public-nav-login-outside{grid-area:login;justify-self:end}
+.public-nav-login{grid-area:login;justify-self:end}
 .public-nav .navbar-toggler{grid-area:toggle;justify-self:end}
 .public-nav-collapse{grid-column:1 / -1}
 @media (min-width:992px){
   .public-nav-bar{
     display:flex;
-    flex-wrap:wrap;
+    flex-wrap:nowrap;
     align-items:center;
     gap:.75rem;
   }
+  .public-nav-brand{margin-right:auto}
   .public-nav-collapse{
-    flex:1 1 auto;
-    order:2;
+    flex:0 1 auto;
+    width:auto;
     grid-column:auto;
   }
-  .public-nav-login-outside{
-    order:3;
-    margin-left:.25rem;
+  .public-nav-login{
+    order:2;
+    margin-right:.15rem;
+    flex-shrink:0;
   }
-  .public-nav-brand{order:1}
-  .public-nav .navbar-toggler{order:4}
+  .public-nav-collapse{order:3}
+  .public-nav-menu{
+    flex-direction:row;
+    align-items:center;
+  }
 }
 .public-nav-menu .nav-link{
   font-weight:500;color:var(--text)!important;padding:.45rem .85rem;border-radius:8px;
