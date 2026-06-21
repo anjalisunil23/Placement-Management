@@ -40,9 +40,10 @@
         </div>
         <div class="login-nav-actions d-flex align-items-center gap-2 flex-shrink-0" role="tablist">
           <button type="button" class="btn btn-primary btn-sm login-nav-tab active" id="tabBtnLogin" data-bs-toggle="pill" data-bs-target="#tab-login" role="tab">Sign in</button>
-          <button type="button" class="btn btn-link login-nav-tab login-nav-tab-link" id="tabBtnRegister" data-bs-toggle="pill" data-bs-target="#tab-register" role="tab">Register</button>
+          <button type="button" class="btn btn-primary btn-sm login-nav-tab" id="tabBtnRegister" data-bs-toggle="pill" data-bs-target="#tab-register" role="tab">Register</button>
         </div>
       </div>
+      <hr class="login-card-divider" aria-hidden="true" />
       <div class="tab-content">
         <!-- LOGIN -->
         <div class="tab-pane fade show active" id="tab-login">
@@ -207,15 +208,9 @@ showRoleFields();
   const registerBtn = document.getElementById('tabBtnRegister');
   if (!signInBtn || !registerBtn) return;
   const primaryCls = 'btn btn-primary btn-sm login-nav-tab';
-  const linkCls = 'btn btn-link login-nav-tab login-nav-tab-link p-0 text-decoration-none';
   function setActive(which) {
-    if (which === 'register') {
-      registerBtn.className = primaryCls + ' active';
-      signInBtn.className = linkCls;
-    } else {
-      signInBtn.className = primaryCls + ' active';
-      registerBtn.className = linkCls;
-    }
+    signInBtn.className = primaryCls + (which === 'login' ? ' active' : '');
+    registerBtn.className = primaryCls + (which === 'register' ? ' active' : '');
   }
   signInBtn.addEventListener('shown.bs.tab', () => setActive('login'));
   registerBtn.addEventListener('shown.bs.tab', () => setActive('register'));
