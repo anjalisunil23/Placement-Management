@@ -293,12 +293,14 @@ body.login-page{
 .login-top-row{display:none}
 .login-tabs{
   background:var(--surface-2);gap:.25rem;margin:0;flex-shrink:0;
+  display:flex;flex-direction:row;flex-wrap:nowrap;width:auto;
 }
+.login-tabs .nav-item{flex:0 0 auto}
 .login-tabs .nav-link{
   font-size:.85rem;padding:.45rem .85rem;white-space:nowrap;border-radius:8px;
 }
 .login-mobile-brand{
-  display:flex;align-items:center;gap:.5rem;min-width:0;
+  display:flex;flex-direction:row;align-items:center;gap:.5rem;min-width:0;
 }
 .login-mobile-brand .brand-mark{
   width:32px;height:32px;font-size:.85rem;
@@ -319,6 +321,18 @@ body.login-page{
   transform:rotate(45deg);transition:transform .2s ease;
 }
 .login-quick-panel[open] summary::after{transform:rotate(-135deg);margin-top:.55rem}
+.login-quick-btn{
+  color:var(--primary)!important;
+  border-color:color-mix(in srgb,var(--primary) 35%,var(--border))!important;
+  background:var(--surface)!important;
+  font-weight:600;
+}
+.login-quick-btn:hover,
+.login-quick-btn:focus{
+  color:var(--primary)!important;
+  background:var(--surface-2)!important;
+  border-color:var(--primary)!important;
+}
 @media (max-width:900px){
   .login-wrap{grid-template-columns:1fr}
   .login-aside{display:none}
@@ -338,9 +352,11 @@ body.login-page{
   }
   .login-top-row{
     display:flex;
+    flex-direction:row;
+    flex-wrap:nowrap;
     align-items:center;
     justify-content:space-between;
-    gap:.75rem;
+    gap:.5rem;
     position:sticky;
     top:0;
     z-index:40;
@@ -352,7 +368,8 @@ body.login-page{
     border-bottom:1px solid var(--border);
   }
   [data-theme="dark"] .login-top-row{background:rgba(18,24,51,.96)}
-  .login-tabs .nav-link{font-size:.78rem;padding:.38rem .7rem}
+  .login-tabs{width:auto;max-width:52%}
+  .login-tabs .nav-link{font-size:.78rem;padding:.38rem .65rem}
   .login-card{
     flex:1;
     padding:1rem .95rem calc(1.25rem + env(safe-area-inset-bottom,0px));
@@ -377,8 +394,9 @@ body.login-page{
   }
 }
 @media (max-width:575px){
-  .login-tabs .nav-link{font-size:.72rem;padding:.34rem .55rem}
-  .login-mobile-brand strong{font-size:.88rem}
+  .login-tabs .nav-link{font-size:.7rem;padding:.32rem .5rem}
+  .login-mobile-brand strong{font-size:.85rem}
+  .login-mobile-brand .brand-mark{width:28px;height:28px;font-size:.8rem}
 }
 @media (min-width:901px){
   .login-form-shell{
@@ -389,7 +407,8 @@ body.login-page{
     padding:2rem;
   }
   .login-top-row{
-    display:block;
+    display:flex;
+    flex-direction:column;
     margin-bottom:1.25rem;
   }
   .login-mobile-brand{display:none}
@@ -419,6 +438,37 @@ body.login-page{
 [data-theme="dark"] .public-nav{background:rgba(18,24,51,.92)}
 .public-nav .navbar-brand{margin-right:0;padding-top:.35rem;padding-bottom:.35rem}
 .public-nav-brand .brand-mark{flex-shrink:0}
+.public-nav-bar{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  grid-template-areas:"brand login toggle";
+  align-items:center;
+  column-gap:.5rem;
+  row-gap:.35rem;
+}
+.public-nav-brand{grid-area:brand;min-width:0}
+.public-nav-login-outside{grid-area:login;justify-self:end}
+.public-nav .navbar-toggler{grid-area:toggle;justify-self:end}
+.public-nav-collapse{grid-column:1 / -1}
+@media (min-width:992px){
+  .public-nav-bar{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:.75rem;
+  }
+  .public-nav-collapse{
+    flex:1 1 auto;
+    order:2;
+    grid-column:auto;
+  }
+  .public-nav-login-outside{
+    order:3;
+    margin-left:.25rem;
+  }
+  .public-nav-brand{order:1}
+  .public-nav .navbar-toggler{order:4}
+}
 .public-nav-menu .nav-link{
   font-weight:500;color:var(--text)!important;padding:.45rem .85rem;border-radius:8px;
 }
