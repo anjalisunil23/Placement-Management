@@ -170,6 +170,7 @@ $routes = [
     ['PUT',  '/company/jobs/{id}',                [CompanyController::class, 'updateJob']],
     ['GET',  '/company/applications',             [CompanyController::class, 'applications']],
     ['GET',  '/company/applications/filter',      [CompanyController::class, 'filterApplicants']],
+    ['POST', '/company/applications/upload-results', [CompanyController::class, 'uploadResults']],
     ['POST', '/company/applications/{id}/review',   [CompanyController::class, 'startReview']],
     ['POST', '/company/applications/{id}/shortlist', [CompanyController::class, 'shortlist']],
     ['POST', '/company/applications/{id}/result', [CompanyController::class, 'updateResult']],

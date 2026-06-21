@@ -33,8 +33,14 @@
   <div class="col-lg-5">
     <div class="card-surface p-4 mb-3">
       <h6 class="fw-bold mb-3">Upload offer results</h6>
-      <div class="dropzone"><i class="bi bi-file-earmark-arrow-up display-6 d-block mb-1"></i>Drop CSV of selected candidates</div>
-      <button type="button" class="btn btn-primary w-100 mt-3" id="uploadResultsBtn">Upload results</button>
+      <div class="dropzone" id="resultsDropzone" role="button" tabindex="0" aria-label="Upload CSV of selected candidates">
+        <input type="file" id="resultsCsvInput" accept=".csv,text/csv" hidden />
+        <i class="bi bi-file-earmark-arrow-up display-6 d-block mb-1"></i>
+        <span id="resultsDropLabel">Drop CSV of selected candidates</span>
+        <div class="small text-muted-2 mt-2">Columns: register_number, status, remarks</div>
+        <div class="small fw-semibold mt-2 text-primary" id="resultsFileName" style="display:none"></div>
+      </div>
+      <button type="button" class="btn btn-primary w-100 mt-3" id="uploadResultsBtn" disabled>Upload results</button>
     </div>
     <div class="card-surface p-4">
       <h6 class="fw-bold mb-3">Recruitment funnel</h6>
@@ -175,6 +181,95 @@ document.getElementById('postJobForm').addEventListener('submit', async e => {
   e.target.reset();
 });
 
-document.getElementById('uploadResultsBtn').addEventListener('click', () => toast('Bulk CSV upload will be available in a future release.', 'info'));
+document.getElementById('uploadResultsBtn').addEventListener('click', uploadResultsCsv);
+
+const resultsDropzone = document.getElementById('resultsDropzone');
+const resultsCsvInput = document.getElementById('resultsCsvInput');
+const resultsFileName = document.getElementById('resultsFileName');
+const resultsDropLabel = document.getElementById('resultsDropLabel');
+const uploadResultsBtn = document.getElementById('uploadResultsBtn');
+let selectedResultsFile = null;
+
+function setResultsFile(file) {
+  selectedResultsFile = file && file.name ? file : null;
+  if (selectedResultsFile) {
+    resultsFileName.style.display = '';
+    resultsFileName.textContent = selectedResultsFile.name;
+    resultsDropLabel.textContent = 'CSV ready to upload';
+    resultsDropzone.classList.add('has-file');
+    uploadResultsBtn.disabled = false;
+  } else {
+    resultsFileName.style.display = 'none';
+    resultsFileName.textContent = '';
+    resultsDropLabel.textContent = 'Drop CSV of selected candidates';
+    resultsDropzone.classList.remove('has-file');
+    uploadResultsBtn.disabled = true;
+  }
+}
+
+resultsDropzone?.addEventListener('click', () => resultsCsvInput?.click());
+resultsDropzone?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resultsCsvInput?.click(); }
+});
+resultsCsvInput?.addEventListener('change', () => setResultsFile(resultsCsvInput.files?.[0] || null));
+
+resultsDropzone?.addEventListener('dragover', e => { e.preventDefault(); resultsDropzone.classList.add('dragover'); });
+resultsDropzone?.addEventListener('dragleave', () => resultsDropzone.classList.remove('dragover'));
+resultsDropzone?.addEventListener('drop', e => {
+  e.preventDefault();
+  resultsDropzone.classList.remove('dragover');
+  const file = e.dataTransfer?.files?.[0];
+  if (!file) return;
+  if (!/\.csv$/i.test(file.name) && file.type !== 'text/csv') {
+    toast('Please choose a CSV file.', 'warn');
+    return;
+  }
+  setResultsFile(file);
+});
+
+async function uploadResultsCsv() {
+  if (!selectedResultsFile) {
+    toast('Choose a CSV file first.', 'warn');
+    return;
+  }
+  if (!(await requireWriteSession())) return;
+
+  uploadResultsBtn.disabled = true;
+  uploadResultsBtn.textContent = 'Uploading…';
+
+  if (Auth.hasRealAuth()) {
+    const fd = new FormData();
+    fd.append('file', selectedResultsFile);
+    const res = await api('/company/applications/upload-results', {
+      method: 'POST',
+      body: fd,
+      noRedirectOn401: true,
+    });
+    uploadResultsBtn.disabled = false;
+    uploadResultsBtn.textContent = 'Upload results';
+
+    if (!res?.success) {
+      toast(res?.message || 'Upload failed.', 'error');
+      return;
+    }
+
+    const data = res.data || {};
+    const failed = Number(data.failed || 0);
+    const errors = Array.isArray(data.errors) ? data.errors : [];
+    if (failed > 0 && errors.length) {
+      toast(`${res.message || 'Upload complete.'} ${errors.slice(0, 2).join(' ')}`, failed === data.updated ? 'warn' : 'success');
+    } else {
+      toast(res.message || 'Results uploaded.', 'success');
+    }
+    setResultsFile(null);
+    if (resultsCsvInput) resultsCsvInput.value = '';
+    await loadPortal();
+    return;
+  }
+
+  uploadResultsBtn.disabled = false;
+  uploadResultsBtn.textContent = 'Upload results';
+  toast('Sign in with your company account to upload results.', 'warn');
+}
 </script>
 </body></html>

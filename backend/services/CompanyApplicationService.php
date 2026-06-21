@@ -166,4 +166,187 @@ final class CompanyApplicationService
         $serialized['uiStatus'] = $this->uiStatus($app['status'] ?? 'applied');
         return $serialized;
     }
+
+    /**
+     * Bulk-update application results from a CSV upload.
+     *
+     * Expected columns (case-insensitive): register_number, status, remarks
+     *
+     * @return array{updated:int, failed:int, errors:array<int,string>}
+     */
+    public function uploadResultsCsv(string $companyId, string $byUserId, string $csvContent): array
+    {
+        $rows = $this->parseCsvRows($csvContent);
+        if ($rows === []) {
+            return ['updated' => 0, 'failed' => 0, 'errors' => ['CSV file is empty or could not be parsed.']];
+        }
+
+        $apps = (new ApplicationModel())->findByCompany($companyId);
+        $appsByStudent = [];
+        foreach ($apps as $app) {
+            $sid = (string) ($app['studentId'] ?? '');
+            if ($sid !== '') {
+                $appsByStudent[$sid][] = $app;
+            }
+        }
+
+        $studentModel = new StudentModel();
+        $workflow = new ApplicationWorkflowService();
+        $notifier = new NotificationService();
+        $placement = new PlacementChanceService();
+        $company = (new \PMS\Models\CompanyModel())->findById($companyId);
+        $companyName = (string) ($company['companyName'] ?? 'Company');
+
+        $updated = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($rows as $index => $row) {
+            $line = $index + 2;
+            $roll = $this->csvField($row, ['register_number', 'registernumber', 'roll', 'roll_no', 'register', 'register no']);
+            $statusRaw = $this->csvField($row, ['status', 'result', 'outcome', 'selection']);
+            $remarks = $this->csvField($row, ['remarks', 'comment', 'notes', 'remark']);
+
+            if ($roll === '') {
+                $errors[] = "Row {$line}: register number is required.";
+                $failed++;
+                continue;
+            }
+
+            $status = $this->normalizeUploadStatus($statusRaw);
+            if ($status === null) {
+                $errors[] = "Row {$line}: invalid status \"{$statusRaw}\".";
+                $failed++;
+                continue;
+            }
+
+            $student = $studentModel->findByRegisterNumber($roll);
+            if (!$student) {
+                $errors[] = "Row {$line}: student \"{$roll}\" not found.";
+                $failed++;
+                continue;
+            }
+
+            $studentApps = $appsByStudent[(string) $student['_id']] ?? [];
+            if ($studentApps === []) {
+                $errors[] = "Row {$line}: no application found for \"{$roll}\" at your company.";
+                $failed++;
+                continue;
+            }
+
+            $rowUpdated = false;
+            foreach ($studentApps as $app) {
+                $appId = (string) ($app['_id'] ?? '');
+                if ($appId === '') {
+                    continue;
+                }
+                if (!$workflow->transition($appId, $status, $byUserId, $remarks, false)) {
+                    continue;
+                }
+                $rowUpdated = true;
+                $userId = (string) ($student['userId'] ?? '');
+                if ($userId !== '') {
+                    if ($status === 'shortlisted') {
+                        $notifier->notifyApplicationUpdate(
+                            $userId,
+                            'Shortlisted',
+                            'Congratulations! You have been shortlisted by ' . $companyName . '.'
+                        );
+                    } else {
+                        $notifier->notifySelectionUpdate($userId, $companyName, $status);
+                    }
+                }
+                if ($status === 'selected') {
+                    $placement->consumeOnSelection(
+                        (string) $student['_id'],
+                        (string) ($app['driveId'] ?? ''),
+                        [
+                            'companyId'     => (string) ($app['companyId'] ?? ''),
+                            'driveId'       => (string) ($app['driveId'] ?? ''),
+                            'applicationId' => $appId,
+                        ]
+                    );
+                }
+            }
+
+            if ($rowUpdated) {
+                $updated++;
+            } else {
+                $errors[] = "Row {$line}: could not update \"{$roll}\" (status transition not allowed).";
+                $failed++;
+            }
+        }
+
+        return ['updated' => $updated, 'failed' => $failed, 'errors' => $errors];
+    }
+
+    /**
+     * @return array<int, array<string, string>>
+     */
+    private function parseCsvRows(string $csvContent): array
+    {
+        $csvContent = preg_replace('/^\xEF\xBB\xBF/', '', $csvContent) ?? $csvContent;
+        $lines = preg_split('/\r\n|\r|\n/', trim($csvContent)) ?: [];
+        if ($lines === []) {
+            return [];
+        }
+
+        $headerLine = array_shift($lines);
+        if ($headerLine === null || trim($headerLine) === '') {
+            return [];
+        }
+
+        $headers = str_getcsv($headerLine);
+        $headers = array_map(static fn ($h) => strtolower(trim(preg_replace('/[\s\-]+/', '_', (string) $h) ?? '')), $headers);
+
+        $rows = [];
+        foreach ($lines as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+            $cells = str_getcsv($line);
+            $row = [];
+            foreach ($headers as $i => $key) {
+                if ($key === '') {
+                    continue;
+                }
+                $row[$key] = trim((string) ($cells[$i] ?? ''));
+            }
+            if ($row !== []) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, string> $row
+     * @param string[] $keys
+     */
+    private function csvField(array $row, array $keys): string
+    {
+        foreach ($keys as $key) {
+            $normalized = strtolower(preg_replace('/[\s\-]+/', '_', $key) ?? $key);
+            if (!empty($row[$normalized])) {
+                return trim($row[$normalized]);
+            }
+        }
+        return '';
+    }
+
+    private function normalizeUploadStatus(string $raw): ?string
+    {
+        $value = strtolower(trim($raw));
+        if ($value === '') {
+            return 'selected';
+        }
+
+        return match (true) {
+            in_array($value, ['selected', 'select', 'offered', 'offer', 'hired', 'joined', 'yes', 'y'], true) => 'selected',
+            in_array($value, ['rejected', 'reject', 'not_selected', 'not selected', 'no', 'n'], true) => 'rejected',
+            in_array($value, ['shortlisted', 'shortlist'], true) => 'shortlisted',
+            default => null,
+        };
+    }
 }

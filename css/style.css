@@ -545,6 +545,8 @@ body.login-page{
   color:var(--muted);background:var(--surface-2);cursor:pointer;
 }
 .dropzone:hover{border-color:var(--primary);color:var(--primary)}
+.dropzone.dragover,
+.dropzone.has-file{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 6%,var(--surface-2))}
 
 .notif-card{display:flex;gap:.9rem;padding:1rem;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
 .notif-card.unread{border-left:3px solid var(--primary);background:color-mix(in srgb,var(--primary) 5%,var(--surface))}

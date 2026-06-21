@@ -295,6 +295,45 @@ final class CompanyController
         Response::success(null, 'Student shortlisted.');
     }
 
+    /** POST /api/company/applications/upload-results */
+    public function uploadResults(): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $company = $this->getCompany($user);
+
+        if (empty($_FILES['file']) || !is_array($_FILES['file'])) {
+            Response::error('CSV file is required.', 400);
+        }
+
+        $file = $_FILES['file'];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            Response::error('File upload failed.', 400);
+        }
+
+        $name = (string) ($file['name'] ?? '');
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        if ($ext !== 'csv') {
+            Response::error('Only CSV files are allowed.', 400);
+        }
+
+        $content = file_get_contents((string) ($file['tmp_name'] ?? ''));
+        if ($content === false || trim($content) === '') {
+            Response::error('CSV file is empty.', 400);
+        }
+
+        $result = (new CompanyApplicationService())->uploadResultsCsv(
+            (string) $company['_id'],
+            (string) $user['_id'],
+            $content
+        );
+
+        $message = $result['updated'] > 0
+            ? "Updated {$result['updated']} candidate(s)."
+            : 'No candidates were updated.';
+
+        Response::success($result, $message);
+    }
+
     /** POST /api/company/applications/{id}/result */
     public function updateResult(string $appId): void
     {
