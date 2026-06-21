@@ -413,23 +413,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   const active = document.body.dataset.page;
   const isPublic = !active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html';
 
-  if (!isPublic) {
-    const hasSession = await Auth.bootstrap();
-    if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
-      window.location.replace(`login.html?next=${encodeURIComponent(active)}`);
+  if (isPublic) {
+    document.documentElement.setAttribute('data-theme', UserPrefs.theme());
+    document.documentElement.setAttribute('data-density', UserPrefs.density());
+    animateCounters();
+    document.dispatchEvent(new CustomEvent('ph-ready'));
+    return;
+  }
+
+  const hasSession = await Auth.bootstrap();
+  if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
+    window.location.replace(`login.html?next=${encodeURIComponent(active)}`);
+    return;
+  }
+  if (!hasSession) {
+    if (Auth.isDemo()) {
+      // preview mode — read-only dashboards only
+    } else if (Auth.hasSession() && Auth.user()?.role) {
+      // Client session from login — avoid bouncing back to login when cookie is slow/missing on mobile.
+      Auth._sessionReady = true;
+    } else {
+      Auth.clear();
+      window.location.href = `login.html?next=${encodeURIComponent(active)}`;
       return;
-    }
-    if (!hasSession) {
-      if (Auth.isDemo()) {
-        // preview mode — read-only dashboards only
-      } else if (Auth.hasSession() && Auth.user()?.role) {
-        // Client session from login — avoid bouncing back to login when cookie is slow/missing on mobile.
-        Auth._sessionReady = true;
-      } else {
-        Auth.clear();
-        window.location.href = `login.html?next=${encodeURIComponent(active)}`;
-        return;
-      }
     }
   }
 

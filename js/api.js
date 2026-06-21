@@ -138,7 +138,7 @@ async function performServerLogin(email, password, next = '') {
     }
     return { success: false, message: res.message || 'Sign-in failed' };
   }
-  const user = res.data;
+  const user = res.data?.user || res.data;
   if (!user || !user.role) {
     return { success: false, message: 'Sign-in response was invalid.' };
   }
@@ -147,10 +147,16 @@ async function performServerLogin(email, password, next = '') {
   Auth._sessionReady = false;
   const verified = await Auth.bootstrap();
   if (!verified) {
-    // Keep localStorage user so app pages can load; cookie may lag on some mobile browsers.
     Auth._sessionReady = true;
   }
-  return { success: true, redirect: Auth.resolveRedirect(next) };
+  const redirect = Auth.resolveRedirect(next);
+  if (user.role === 'company' && !Auth.isAllowed(redirect.split('#')[0])) {
+    return { success: true, redirect: Auth.homePage('company') };
+  }
+  if (user.role === 'alumni' && !Auth.isAllowed(redirect.split('#')[0])) {
+    return { success: true, redirect: Auth.homePage('alumni') };
+  }
+  return { success: true, redirect };
 }
 
 const QUICK_LOGIN_ACCOUNTS = {
