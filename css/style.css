@@ -290,22 +290,38 @@ body.login-page{
 .login-form-shell{
   width:100%;max-width:420px;margin:auto 0;
 }
-.login-top-row{display:none}
-.login-tabs{
-  background:var(--surface-2);gap:.25rem;margin:0;flex-shrink:0;
-  display:flex;flex-direction:row;flex-wrap:nowrap;width:auto;
+.login-top-row{
+  display:flex;
+  flex-direction:row;
+  flex-wrap:nowrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  margin-bottom:1.25rem;
 }
-.login-tabs .nav-item{flex:0 0 auto}
-.login-tabs .nav-link{
-  font-size:.85rem;padding:.45rem .85rem;white-space:nowrap;border-radius:8px;
-}
-.login-mobile-brand{
+.login-brand{
   display:flex;flex-direction:row;align-items:center;gap:.5rem;min-width:0;
 }
-.login-mobile-brand .brand-mark{
+.login-brand .brand-mark{
   width:32px;height:32px;font-size:.85rem;
 }
-.login-mobile-brand strong{font-size:.95rem}
+.login-brand strong{font-size:.95rem;font-weight:700}
+.login-nav-actions{gap:.65rem!important}
+.login-nav-tab{
+  font-size:.875rem;font-weight:600;line-height:1.2;
+  border-radius:8px;padding:.45rem .95rem;white-space:nowrap;
+}
+.login-nav-tab-link{
+  color:var(--primary)!important;
+  border:none!important;
+  box-shadow:none!important;
+  min-width:auto;
+}
+.login-nav-tab-link:hover,
+.login-nav-tab-link:focus{
+  color:#4a4ac4!important;
+  text-decoration:none!important;
+}
 .login-quick-mobile{display:none}
 .login-card{
   width:100%;background:var(--surface);padding:2rem;border-radius:18px;
@@ -351,16 +367,11 @@ body.login-page{
     flex-direction:column;
   }
   .login-top-row{
-    display:flex;
-    flex-direction:row;
-    flex-wrap:nowrap;
-    align-items:center;
-    justify-content:space-between;
-    gap:.5rem;
     position:sticky;
     top:0;
     z-index:40;
     flex-shrink:0;
+    margin-bottom:0;
     padding:.65rem .85rem;
     padding-top:calc(.65rem + env(safe-area-inset-top,0px));
     background:rgba(255,255,255,.96);
@@ -368,8 +379,7 @@ body.login-page{
     border-bottom:1px solid var(--border);
   }
   [data-theme="dark"] .login-top-row{background:rgba(18,24,51,.96)}
-  .login-tabs{width:auto;max-width:52%}
-  .login-tabs .nav-link{font-size:.78rem;padding:.38rem .65rem}
+  .login-nav-tab{font-size:.8125rem;padding:.4rem .85rem}
   .login-card{
     flex:1;
     padding:1rem .95rem calc(1.25rem + env(safe-area-inset-bottom,0px));
@@ -394,9 +404,9 @@ body.login-page{
   }
 }
 @media (max-width:575px){
-  .login-tabs .nav-link{font-size:.7rem;padding:.32rem .5rem}
-  .login-mobile-brand strong{font-size:.85rem}
-  .login-mobile-brand .brand-mark{width:28px;height:28px;font-size:.8rem}
+  .login-nav-tab{font-size:.78rem;padding:.38rem .75rem}
+  .login-brand strong{font-size:.85rem}
+  .login-brand .brand-mark{width:28px;height:28px;font-size:.8rem}
 }
 @media (min-width:901px){
   .login-form-shell{
@@ -407,18 +417,13 @@ body.login-page{
     padding:2rem;
   }
   .login-top-row{
-    display:flex;
-    flex-direction:column;
     margin-bottom:1.25rem;
+    padding:0;
+    position:static;
+    background:transparent;
+    backdrop-filter:none;
+    border-bottom:none;
   }
-  .login-mobile-brand{display:none}
-  .login-tabs{
-    display:flex;
-    width:100%;
-    margin-bottom:0;
-  }
-  .login-tabs .nav-item{flex:1}
-  .login-tabs .nav-link{width:100%;text-align:center}
   .login-card{
     padding:0;
     border:none;
@@ -447,7 +452,7 @@ body.login-page{
   row-gap:.35rem;
 }
 .public-nav-brand{grid-area:brand;min-width:0}
-.public-nav-login{grid-area:login;justify-self:end}
+.public-nav-login-mobile{grid-area:login;justify-self:end}
 .public-nav .navbar-toggler{grid-area:toggle;justify-self:end}
 .public-nav-collapse{grid-column:1 / -1}
 @media (min-width:992px){
@@ -457,22 +462,15 @@ body.login-page{
     align-items:center;
     gap:.75rem;
   }
-  .public-nav-brand{margin-right:auto}
   .public-nav-collapse{
-    flex:0 1 auto;
-    width:auto;
+    flex:1 1 auto;
     grid-column:auto;
   }
-  .public-nav-login{
-    order:2;
-    margin-right:.15rem;
-    flex-shrink:0;
-  }
-  .public-nav-collapse{order:3}
   .public-nav-menu{
     flex-direction:row;
     align-items:center;
   }
+  .public-nav-login-desktop{margin-right:.25rem}
 }
 .public-nav-menu .nav-link{
   font-weight:500;color:var(--text)!important;padding:.45rem .85rem;border-radius:8px;

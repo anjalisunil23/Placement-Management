@@ -238,6 +238,7 @@ function renderShell(active) {
   const pageLabel = role === 'student' && activeBase === 'settings.html'
     ? 'Profile & Resumes'
     : (PAGE_LABELS[activeBase] || 'PlaceHub');
+  const showTopbarTitle = activeBase !== 'staff-recommend.html';
 
   if (sidebar) {
     const navItems = filteredNav();
@@ -268,7 +269,7 @@ function renderShell(active) {
       admin: '<a href="placement-console.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Console</a><a href="students.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Approvals</a>',
       placement_officer: '<a href="placement-console.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Placement Console</a>',
       student: '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Browse Drives</a><a href="settings.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Upload Resume</a>',
-      staff: '<button type="button" onclick="ReferralModals.openStaff()" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Recommend Co.</button>',
+      staff: '',
       company: '<a href="company.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Portal</a><a href="applicants.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Applicants</a>',
       alumni: alumniIsWorking()
         ? '<button type="button" onclick="ReferralModals.openAlumni()" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Recommend Co.</button><a href="alumni-jobs.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex ms-2">Post Job</a>'
@@ -277,10 +278,10 @@ function renderShell(active) {
 
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
-      <div class="d-none d-md-block">
+      ${showTopbarTitle ? `<div class="d-none d-md-block">
         <div class="fw-semibold" style="font-size:.95rem;line-height:1.2">${pageLabel}</div>
         <div class="small text-muted-2">${ROLE_LABELS[role]} workspace</div>
-      </div>
+      </div>` : ''}
       <div class="search ms-md-3">
         <i class="bi bi-search"></i>
         <input placeholder="${TOPBAR_SEARCH[role] || 'Search…'}" />

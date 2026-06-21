@@ -546,6 +546,19 @@ $seedNotifs = [
         ['type' => 'job_poster', 'title' => 'New drive: Google SDE-1', 'message' => 'Registration is open. Package ₹42 LPA. Deadline Dec 28.', 'read' => false],
         ['type' => 'application_update', 'title' => 'Microsoft SWE — Under review', 'message' => 'Your application is being reviewed by the placement cell.', 'read' => true],
     ]],
+    ['email' => 'neha@acme.io', 'items' => [
+        ['type' => 'application_submitted', 'title' => 'New application received', 'message' => 'A student applied to your SDE drive.', 'read' => false],
+        ['type' => 'resume_verified', 'title' => 'Resume verified', 'message' => 'Placement cell verified a candidate resume for review.', 'read' => false],
+    ]],
+    ['email' => 'rohan.v@alumni.edu', 'items' => [
+        ['type' => 'referral', 'title' => 'Referral received', 'message' => 'Your SDE-2 referral at Google was submitted successfully.', 'read' => false],
+        ['type' => 'job_post', 'title' => 'Job post live', 'message' => 'Your Senior SDE posting is now visible to the alumni network.', 'read' => false],
+        ['type' => 'application_update', 'title' => 'Application update', 'message' => 'Your drive application status was updated.', 'read' => true],
+    ]],
+    ['email' => 'priya.v@alumni.edu', 'items' => [
+        ['type' => 'drive_announcement', 'title' => 'New drive open', 'message' => 'A drive matching your profile is open for alumni applications.', 'read' => false],
+        ['type' => 'application_update', 'title' => 'Application under review', 'message' => 'Your application is being reviewed by the placement cell.', 'read' => false],
+    ]],
 ];
 foreach ($seedNotifs as $group) {
     $u = $userModel->findByEmail($group['email']);
