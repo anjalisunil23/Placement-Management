@@ -454,6 +454,23 @@ final class OfficerDataService
                 $company = $companyModel->findById($companyId);
                 $row['companyName'] = (string) ($company['companyName'] ?? '');
             }
+
+            $elig = is_array($row['eligibility'] ?? null) ? $row['eligibility'] : [];
+            $package = trim((string) ($elig['package'] ?? $row['package'] ?? ''));
+            $deadline = trim((string) ($elig['deadline'] ?? $row['deadline'] ?? ''));
+            $jobType = trim((string) ($elig['jobType'] ?? $row['jobType'] ?? ''));
+            if ($deadline === '' && !empty($row['date'])) {
+                $deadline = (string) $row['date'];
+            }
+            $row['package'] = $package;
+            $row['deadline'] = $deadline;
+            $row['jobType'] = $jobType;
+            $row['eligibility'] = array_merge($elig, [
+                'package'  => $package,
+                'deadline' => $deadline,
+                'jobType'  => $jobType,
+            ]);
+
             $rows[] = $row;
         }
         return $rows;

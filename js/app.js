@@ -93,6 +93,7 @@ function initials(name='') {
 }
 
 function navItemVisible(n, role) {
+  if (n.href === 'departments.html') return false;
   if (n.studentOnly && role !== 'student') return false;
   if (!n.roles.includes(role)) return false;
   if (role !== 'alumni') return true;
@@ -103,6 +104,7 @@ function navItemVisible(n, role) {
 
 function visibleGroupChildren(group, role) {
   return (group.children || []).filter(c => {
+    if (c.href === 'departments.html') return false;
     if (c.group) {
       if (!navItemVisible(c, role)) return false;
       if (c.href) return true;

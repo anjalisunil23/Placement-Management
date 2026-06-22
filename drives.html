@@ -36,15 +36,11 @@
 
   <div class="row g-2">
 
-    <div class="col-md-4"><div class="position-relative"><i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i><input class="form-control ps-4" id="driveSearch" placeholder="Search by company, role…"/></div></div>
+    <div class="col-md-5"><div class="position-relative"><i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i><input class="form-control ps-4" id="driveSearch" placeholder="Search by company, role…"/></div></div>
 
-    <div class="col-6 col-md-2"><select class="form-select" id="driveStatusFilter"><option value="">All Status</option><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
+    <div class="col-6 col-md-3"><select class="form-select" id="driveStatusFilter"><option value="">All Status</option><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
 
-    <div class="col-6 col-md-2"><select class="form-select" id="driveBranchFilter"><option value="">All Branches</option></select></div>
-
-    <div class="col-6 col-md-2"><select class="form-select"><option>All Roles</option><option>Full-time</option><option>Internship</option></select></div>
-
-    <div class="col-6 col-md-2"><input type="date" class="form-control"/></div>
+    <div class="col-6 col-md-4"><select class="form-select" id="driveJobTypeFilter"><option value="">All job types</option><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
 
   </div>
 
@@ -146,6 +142,8 @@
         <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="editRole" required/></div>
 
         <div class="col-md-4"><label class="form-label small fw-semibold">Package</label><input class="form-control" id="editPackage" placeholder="e.g. ₹12 LPA"/></div>
+
+        <div class="col-md-4"><label class="form-label small fw-semibold">Job type</label><select class="form-select" id="editJobType"><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
 
         <div class="col-12"><label class="form-label small fw-semibold">Eligible branches</label><div id="editDriveBranches" class="d-flex flex-wrap gap-2 border rounded p-2"></div></div>
 
@@ -328,6 +326,7 @@ const DRIVE_TABLE_HEADS = {
     { label: '', key: 'select', class: 'drives-manage-col' },
     { label: 'Company', key: 'company' },
     { label: 'Role', key: 'role' },
+    { label: 'Job type', key: 'jobType' },
     { label: 'Package', key: 'package' },
     { label: 'Eligible', key: 'eligible', class: 'drives-detail-col' },
     { label: 'Applied', key: 'applied', class: 'drives-detail-col' },
@@ -338,6 +337,7 @@ const DRIVE_TABLE_HEADS = {
   apply: [
     { label: 'Company', key: 'company' },
     { label: 'Role', key: 'role' },
+    { label: 'Job type', key: 'jobType' },
     { label: 'Package', key: 'package' },
     { label: 'Status', key: 'status' },
     { label: 'Deadline', key: 'deadline' },
@@ -346,6 +346,7 @@ const DRIVE_TABLE_HEADS = {
   browse: [
     { label: 'Company', key: 'company' },
     { label: 'Role', key: 'role' },
+    { label: 'Job type', key: 'jobType' },
     { label: 'Package', key: 'package' },
     { label: 'Eligible', key: 'eligible' },
     { label: 'Applied', key: 'applied' },
@@ -383,6 +384,7 @@ function driveRowCells(d) {
     select: `<td class="drives-manage-col"><input type="checkbox" data-drive-id="${d.id}"/></td>`,
     company: companyCell(d),
     role: roleCell(d),
+    jobType: `<td>${d.jobType && d.jobType !== '—' ? d.jobType : '—'}</td>`,
     package: `<td>${d.package || '—'}</td>`,
     eligible: `<td class="drives-detail-col">${d.branches || '—'}</td>`,
     applied: `<td class="drives-detail-col">${d.applied ?? 0}</td>`,
@@ -433,20 +435,17 @@ function filteredDrives() {
   const q = (document.getElementById('driveSearch')?.value || '').trim().toLowerCase();
 
   const status = document.getElementById('driveStatusFilter')?.value || '';
-  const branch = document.getElementById('driveBranchFilter')?.value || '';
+  const jobType = document.getElementById('driveJobTypeFilter')?.value || '';
 
   return allDrives.filter(d => {
 
-    const hay = `${d.company} ${d.role} ${d.package}`.toLowerCase();
+    const hay = `${d.company} ${d.role} ${d.package} ${d.jobType || ''}`.toLowerCase();
 
     if (q && !hay.includes(q)) return false;
 
     if (status && d.status !== status) return false;
 
-    if (branch) {
-      const branches = String(d.branches || '').split(/,\s*/).map(b => b.trim().toUpperCase());
-      if (!branches.includes(branch)) return false;
-    }
+    if (jobType && (d.jobType || '') !== jobType) return false;
 
     return true;
 
@@ -801,12 +800,13 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     title: role ? `${companyName} — ${role}` : companyName,
     driveType: fd.get('driveType'),
     type: driveTypeMap[fd.get('driveType')] || 'pooled',
+    jobType: String(fd.get('jobType') || 'Full-time').trim(),
     package: pkg.toString().includes('LPA') ? pkg : `₹${pkg} LPA`,
     branches: branchCodes,
     minCgpa: fd.get('minCgpa'),
     maxBacklogs: fd.get('maxBacklogs'),
     location: fd.get('location'),
-    deadline: deadline || 'TBD',
+    deadline: deadline || '',
     date: recruitmentDate || deadline,
     time: '10:00',
     recruitmentDate,
@@ -819,7 +819,7 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
   bootstrap.Modal.getInstance(document.getElementById('createModal'))?.hide();
   toast('Drive published successfully.', 'success');
   await DriveStore.fetch();
-  loadDrives();
+  await loadDrives();
 });
 
 window.openEditDrive = id => {
@@ -838,6 +838,12 @@ window.openEditDrive = id => {
   document.getElementById('editRole').value = d.role || '';
 
   document.getElementById('editPackage').value = (d.package && d.package !== '—') ? d.package : '';
+
+  const jobTypeSel = document.getElementById('editJobType');
+  if (jobTypeSel) {
+    const jt = (d.jobType && d.jobType !== '—') ? d.jobType : (d.eligibility?.jobType || 'Full-time');
+    jobTypeSel.value = [...jobTypeSel.options].some(o => o.value === jt) ? jt : 'Full-time';
+  }
 
   const branchList = String(d.branches || '').split(/,\s*/).filter(Boolean);
   renderDepartmentBranchCheckboxes(document.getElementById('editDriveBranches'), { checkedAll: false, selected: branchList });
@@ -887,6 +893,8 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
     role: document.getElementById('editRole').value.trim(),
 
     package: document.getElementById('editPackage').value.trim(),
+
+    jobType: document.getElementById('editJobType')?.value || '',
 
     branches: readCheckedBranchCodes(document.getElementById('editDriveBranches')).join(', '),
 
@@ -991,7 +999,7 @@ document.getElementById('driveSearch')?.addEventListener('input', renderRows);
 
 document.getElementById('driveStatusFilter')?.addEventListener('change', renderRows);
 
-document.getElementById('driveBranchFilter')?.addEventListener('change', renderRows);
+document.getElementById('driveJobTypeFilter')?.addEventListener('change', renderRows);
 
 document.getElementById('rows')?.addEventListener('click', e => {
   if (!canManage) return;
@@ -1074,7 +1082,6 @@ document.getElementById('driveResultForm')?.addEventListener('submit', async e =
 onAppReady(async () => {
   setupDrivesChrome();
   await ensureDepartmentsLoaded();
-  fillDepartmentCodeSelect(document.getElementById('driveBranchFilter'), { includeAll: true });
   renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), { checkedAll: true });
   if (isStudent && !Auth.isDemo()) await StudentApps.fetch();
   if (alumniSeeking && !Auth.isDemo()) await AlumniApps.fetch();

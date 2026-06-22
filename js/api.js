@@ -2578,14 +2578,19 @@ const DriveStore = {
     const title = company && role ? `${company} — ${role}` : String(existing?.title || role || company).trim();
     const branches = this._normalizeBranches(p.branches ?? existing?.branches);
     const companyId = await this._resolveCompanyId(company, existing?.companyId || null);
-    const prevElig = existing?.eligibility || {};
-    const packageVal = String(p.package ?? existing?.package ?? '').trim();
-    const deadlineVal = String(p.deadline ?? existing?.deadline ?? '').trim();
+    const prevElig = existing?.eligibility && typeof existing.eligibility === 'object'
+      ? existing.eligibility
+      : {};
+    const packageVal = String(p.package ?? prevElig.package ?? existing?.package ?? '').trim();
+    const deadlineVal = String(p.deadline ?? prevElig.deadline ?? existing?.deadline ?? '').trim();
+    const jobTypeVal = String(p.jobType ?? prevElig.jobType ?? existing?.jobType ?? '').trim();
     const eligibility = {
       ...prevElig,
-      package: packageVal === '—' ? '' : packageVal,
-      deadline: !deadlineVal || deadlineVal === '—' ? '' : deadlineVal,
-      description: String(p.description ?? existing?.description ?? '').trim(),
+      package: !packageVal || packageVal === '—' ? '' : packageVal,
+      deadline: !deadlineVal || deadlineVal === '—' || deadlineVal === 'TBD' ? '' : deadlineVal,
+      jobType: jobTypeVal === '—' ? '' : jobTypeVal,
+      description: String(p.description ?? prevElig.description ?? existing?.description ?? '').trim(),
+      location: String(p.location ?? prevElig.location ?? '').trim(),
     };
     const body = {
       title,
@@ -2609,15 +2614,20 @@ const DriveStore = {
       company = String(d.title).split('—').pop().trim();
     }
     const branches = Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '');
+    const elig = (d.eligibility && typeof d.eligibility === 'object') ? d.eligibility : {};
+    const pkg = String(elig.package || d.package || '').trim();
+    const deadline = String(elig.deadline || d.deadline || '').trim();
+    const jobType = String(elig.jobType || d.jobType || '').trim();
     return {
       id: d._id || d.id,
       company: company || '—',
       role: d.title || d.role || '—',
-      package: d.package || d.eligibility?.package || '—',
+      package: pkg || '—',
+      jobType: jobType || '—',
       branches,
       status,
       statusCls: driveStatusCls(status),
-      deadline: d.date || d.deadline || '—',
+      deadline: (deadline && deadline !== 'TBD') ? deadline : (d.date || '—'),
       profile: d.profile || 'General',
       applied: d.applied ? 1 : 0,
       applicationStatus: d.applicationStatus || null,
@@ -2733,8 +2743,9 @@ const DriveStore = {
         minCgpa: parseFloat(p.minCgpa) || 0,
         maxBacklogs: parseInt(p.maxBacklogs, 10) || 0,
         package: p.package || '',
+        jobType: p.jobType || '',
         location: p.location || '',
-        deadline: p.deadline || '',
+        deadline: (p.deadline && p.deadline !== 'TBD') ? p.deadline : '',
         description: p.description || '',
       },
     };
@@ -2776,13 +2787,21 @@ const DriveStore = {
       const body = await this._buildUpdateBody(p, existing);
       if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
         const res = await api(`/officer/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
-        if (res.success) { await this.fetch(); return this.get(id); }
+        if (res.success) {
+          this._apiCache = null;
+          await this.fetch();
+          return this.get(id);
+        }
         toast(formatErrors(res), 'error');
         return null;
       }
       if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
         const res = await api(`/admin/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
-        if (res.success) { await this.fetch(); return this.get(id); }
+        if (res.success) {
+          this._apiCache = null;
+          await this.fetch();
+          return this.get(id);
+        }
         toast(formatErrors(res), 'error');
         return null;
       }

@@ -31,9 +31,10 @@ const OfficerApi = {
     const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
     const status = statusMap[(d.status || '').toLowerCase()] || d.status || 'Open';
     const meta = typeof driveResultMeta === 'function' ? driveResultMeta(d) : { company: d.companyName || d.company || '', role: d.title || d.role || '' };
-    const elig = d.eligibility || {};
+    const elig = (d.eligibility && typeof d.eligibility === 'object') ? d.eligibility : {};
     const pkg = String(elig.package || d.package || '').trim();
-    const deadline = String(elig.deadline || '').trim();
+    const deadline = String(elig.deadline || d.deadline || '').trim();
+    const jobType = String(elig.jobType || d.jobType || '').trim();
     return {
       id: OfficerApi.id(d),
       company: meta.company || d.companyName || d.company || '',
@@ -46,14 +47,15 @@ const OfficerApi = {
     })() || d.role || '',
       title: d.title || '',
       type: d.type || 'pooled',
+      jobType: jobType || '—',
       date: d.date || '',
       time: d.time || '10:00',
       package: pkg || '—',
-      deadline: deadline && deadline !== 'TBD' ? deadline : '—',
+      deadline: (deadline && deadline !== 'TBD') ? deadline : '—',
       description: String(elig.description || d.description || '').trim(),
       branches: Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || ''),
       tier: d.tier || 'Tier 2',
-      eligibility: elig,
+      eligibility: { ...elig, package: pkg, deadline, jobType },
       status,
       statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
       applied: d.applied ?? 0,

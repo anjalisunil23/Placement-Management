@@ -42,16 +42,25 @@ const StaffApi = {
   mapDrive(d) {
     const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
     const status = statusMap[(d.status || '').toLowerCase()] || d.status || 'Open';
+    const elig = (d.eligibility && typeof d.eligibility === 'object') ? d.eligibility : {};
+    const pkg = String(elig.package || d.package || '').trim();
+    const deadline = String(elig.deadline || d.deadline || '').trim();
+    const jobType = String(elig.jobType || d.jobType || '').trim();
     return {
       id: StaffApi.id(d),
       company: d.companyName || d.company || '',
       role: d.title || d.role || '',
       type: d.type || 'pooled',
+      jobType: jobType || '—',
       date: d.date || '',
+      package: pkg || '—',
+      deadline: (deadline && deadline !== 'TBD') ? deadline : '—',
       branches: Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || ''),
       tier: d.tier || 'Tier 2',
+      eligibility: { ...elig, package: pkg, deadline, jobType },
       status,
       statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
+      _fromApi: true,
     };
   },
 

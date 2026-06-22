@@ -20,9 +20,9 @@ RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME}.html -f
 RewriteRule ^(.+?)/?$ $1.html [L]
 
-# Always fetch latest auth client (avoid stale cached api.js breaking role logins)
+# Always fetch latest auth/shell clients (avoid stale cached JS breaking logins and nav)
 <IfModule mod_headers.c>
-  <FilesMatch "^api\.js$">
+  <FilesMatch "^(api|app|officer-api|admin-api)\.js$">
     Header set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
 </IfModule>
