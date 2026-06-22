@@ -20,7 +20,7 @@ RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME}.html -f
 RewriteRule ^(.+?)/?$ $1.html [L]
 
-# Always fetch latest JS/CSS (avoid stale sidebar and drive fixes on production)
+# Always fetch latest JS/CSS (avoid stale sidebar, nav, and drive fixes on production)
 <IfModule mod_headers.c>
   <FilesMatch "\.(js|css)$">
     Header set Cache-Control "no-cache, must-revalidate"

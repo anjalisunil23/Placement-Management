@@ -65,4 +65,10 @@ Open: http://localhost:8080
 2. Copy `.env.production.example` → `.env` on the server with your DB credentials
 3. Deploy code and run once: `php backend/scripts/setup.php`
 
-No MongoDB or `ext-mongodb` is required.
+**Update the live site after pushing to GitHub** (SSH or cPanel Terminal, from the site root):
+
+```bash
+git pull origin main
+```
+
+If the sidebar or other UI still looks old after `git pull`, hard-refresh the browser (`Ctrl+Shift+R`). Frontend scripts use `?v=` cache keys and `.htaccess` sends `no-cache` for `.js` / `.css` files.
