@@ -41,7 +41,7 @@ final class PublicController
         }
         $eligibilityFile = $root . '/backend/services/EligibilityEngine.php';
         $legacyPolicyRules = is_readable($eligibilityFile)
-            && str_contains((string) file_get_contents($eligibilityFile), 'Placement policy not accepted');
+            && strpos((string) file_get_contents($eligibilityFile), 'Placement policy not accepted') !== false;
 
         Response::success([
             'status'   => $db['ok'] ? 'ok' : 'error',

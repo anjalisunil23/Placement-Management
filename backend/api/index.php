@@ -4,16 +4,71 @@ declare(strict_types=1);
 
 /**
  * REST API entry point and router.
+ * inline API router — no ApiExceptionHandler dependency (Linux/cPanel safe).
  */
 
 $root = dirname(__DIR__, 2);
-require_once $root . '/vendor/autoload.php';
-$config = require dirname(__DIR__) . '/config/app.php';
+
+$emitJsonError = static function (string $message, int $status = 500): void {
+    if (!headers_sent()) {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        header('X-Content-Type-Options: nosniff');
+    }
+    echo json_encode(
+        ['success' => false, 'message' => $message, 'data' => null],
+        JSON_UNESCAPED_UNICODE
+    );
+    exit;
+};
+
+register_shutdown_function(static function () use ($emitJsonError): void {
+    $err = error_get_last();
+    if ($err === null) {
+        return;
+    }
+    $fatal = [E_ERROR, E_PARSE, E_COMPILE_ERROR, E_CORE_ERROR];
+    if (!in_array($err['type'], $fatal, true)) {
+        return;
+    }
+    $emitJsonError('Server error: ' . ($err['message'] ?? 'fatal error'));
+});
+
+$autoload = $root . '/vendor/autoload.php';
+if (!is_readable($autoload)) {
+    $emitJsonError('Server is missing PHP dependencies. Run composer install in the site root.');
+}
+
+require_once $autoload;
+
+// Linux/cPanel: PSR-4 may not resolve backend/utils (lowercase) — load utils explicitly.
+$utilsDir = dirname(__DIR__) . '/utils';
+foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php', 'JwtHelper.php', 'OwnershipHelper.php', 'ApiExceptionHandler.php'] as $utilFile) {
+    $path = $utilsDir . '/' . $utilFile;
+    if (is_readable($path)) {
+        require_once $path;
+    }
+}
+if (!class_exists(\PMS\Utils\Response::class, false)) {
+    $emitJsonError('Server autoload error: Response utility missing. Redeploy from latest main.');
+}
+
+try {
+    $config = require dirname(__DIR__) . '/config/app.php';
+} catch (\Throwable $e) {
+    $emitJsonError('Configuration failed: ' . $e->getMessage());
+}
+
+// Start session before any output headers (login stores session user).
+\PMS\Utils\Security::startSession();
 
 // CORS — allow configured origins (supports localhost and 127.0.0.1 in dev)
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 $allowed = $config['cors']['allowed_origins'] ?? ['http://localhost:8080', 'http://127.0.0.1:8080'];
 if ($origin !== '' && in_array($origin, $allowed, true)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+} elseif ($origin !== '' && !empty($config['url']) && rtrim($origin, '/') === rtrim((string) $config['url'], '/')) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Vary: Origin');
 } elseif ($origin !== '' && preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#', $origin)) {
@@ -41,7 +96,6 @@ use PMS\Officer\OfficerController;
 use PMS\Staff\StaffController;
 use PMS\Student\StudentController;
 use PMS\Utils\Response;
-use PMS\Utils\ApiExceptionHandler;
 
 $uri    = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 
@@ -259,28 +313,40 @@ $routes = [
     ['GET', '/analytics/placement-console', [PublicController::class, 'placementConsole']],
 ];
 
-ApiExceptionHandler::run(static function () use ($routes, $method, $uri): void {
-foreach ($routes as [$routeMethod, $pattern, $handler]) {
-    if ($routeMethod !== $method) {
-        continue;
-    }
-
-    $regex = preg_replace('/\{([a-zA-Z]+)\}/', '(?P<$1>[^/]+)', $pattern);
-    $regex = '#^' . $regex . '$#';
-
-    if (preg_match($regex, $uri, $matches)) {
-        $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
-        [$class, $action] = $handler;
-        $controller = new $class();
-
-        if (empty($params)) {
-            $controller->$action();
-        } else {
-            $controller->$action(...array_values($params));
+try {
+    foreach ($routes as [$routeMethod, $pattern, $handler]) {
+        if ($routeMethod !== $method) {
+            continue;
         }
-        exit;
-    }
-}
 
-Response::notFound('API endpoint not found.');
-});
+        $regex = preg_replace('/\{([a-zA-Z]+)\}/', '(?P<$1>[^/]+)', $pattern);
+        $regex = '#^' . $regex . '$#';
+
+        if (preg_match($regex, $uri, $matches)) {
+            $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+            [$class, $action] = $handler;
+            $controller = new $class();
+
+            if (empty($params)) {
+                $controller->$action();
+            } else {
+                $controller->$action(...array_values($params));
+            }
+            exit;
+        }
+    }
+
+    Response::notFound('API endpoint not found.');
+} catch (\InvalidArgumentException $e) {
+    Response::error($e->getMessage(), 422);
+} catch (\RuntimeException $e) {
+    $code = $e->getCode();
+    $status = is_int($code) && $code >= 400 && $code < 600 ? $code : 500;
+    Response::error($e->getMessage(), $status);
+} catch (\Throwable $e) {
+    $message = 'An unexpected server error occurred.';
+    if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
+        $message = $e->getMessage();
+    }
+    Response::error($message, 500);
+}

@@ -203,10 +203,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260622b"></script>
-<script src="js/api.js?v=20260622b"></script>
-<script src="js/charts.js?v=20260622b"></script>
-<script src="js/app.js?v=20260622b"></script>
+<script src="js/admin-api.js?v=20260622d"></script>
+<script src="js/officer-api.js?v=20260622d"></script>
+<script src="js/api.js?v=20260622d"></script>
+<script src="js/charts.js?v=20260622d"></script>
+<script src="js/app.js?v=20260622d"></script>
 <script>
 const role = Auth.role();
 const isAdmin = role === 'admin';
@@ -554,11 +555,19 @@ async function loadLiveConsoleData() {
   }
 
   if (!console && !drives && !applications) {
-    showPageAlert('consoleAlert', 'danger', 'Could not load live placement data. Check your connection and try again.');
+    const role = Auth.role();
+    const hint = role === 'placement_officer'
+      ? 'Could not load live placement data. Check that your officer account is approved and try signing in again.'
+      : 'Could not load live placement data. Check your connection and try again.';
+    showPageAlert('consoleAlert', 'danger', hint);
     return false;
   }
 
-  showPageAlert('consoleAlert', 'hide');
+  if (!console) {
+    showPageAlert('consoleAlert', 'warn', 'Some dashboard stats could not be loaded. Drive and applicant lists may still be available below.');
+  } else {
+    showPageAlert('consoleAlert', 'hide');
+  }
   return true;
 }
 
@@ -573,6 +582,13 @@ onAppReady(async () => {
 
   renderReferrals();
   refreshConsoleViews();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !Auth.hasRealAuth()) return;
+  loadLiveConsoleData()
+    .then(ok => { if (ok) refreshConsoleViews(); })
+    .catch(() => {});
 });
 
 document.getElementById('resumeVerifyToggle').checked = resumeVerificationOn();

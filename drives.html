@@ -299,11 +299,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-<script src="js/admin-api.js?v=20260622b"></script>
-<script src="js/officer-api.js?v=20260622b"></script>
-<script src="js/api.js?v=20260622b"></script>
+<script src="js/admin-api.js?v=20260622d"></script>
+<script src="js/officer-api.js?v=20260622d"></script>
+<script src="js/api.js?v=20260622d"></script>
 
-<script src="js/app.js?v=20260622b"></script>
+<script src="js/app.js?v=20260622d"></script>
 
 <script>
 
@@ -1095,6 +1095,15 @@ onAppReady(async () => {
   if (location.hash === '#create' && canManage) {
     openCreateDrive();
     history.replaceState(null, '', 'drives.html');
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || Auth.isDemo()) return;
+  if (isStudent) {
+    StudentApps.fetch().then(() => loadDrives()).catch(() => {});
+  } else if (alumniSeeking || canManage) {
+    loadDrives().catch(() => {});
   }
 });
 

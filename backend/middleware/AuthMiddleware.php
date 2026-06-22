@@ -12,6 +12,7 @@ use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Utils\DocumentHelper;
+use PMS\Utils\JwtHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
 
