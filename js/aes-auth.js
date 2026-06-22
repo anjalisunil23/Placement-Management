@@ -65,14 +65,17 @@ function postAesCallback(params) {
   form.submit();
 }
 
-async function submitAesLogin(username, password) {
+async function submitAesCheckLogin(dataOrPromise, isSocial) {
   const btn = document.getElementById('aesLoginSubmit');
+  const socialBtns = document.querySelectorAll('.aes-social-btn');
   if (btn) btn.disabled = true;
+  socialBtns.forEach((b) => { b.disabled = true; });
   showAesLoginError('');
   try {
+    const data = dataOrPromise instanceof Promise ? await dataOrPromise : dataOrPromise;
     const res = await api('/aes/check-login', {
       method: 'POST',
-      body: { username, password },
+      body: data,
       skipAuthRedirect: true,
     });
     if (!res.success) {
@@ -83,10 +86,18 @@ async function submitAesLogin(username, password) {
     }
     postAesCallback(res.data || {});
   } catch (e) {
-    showAesLoginError(e.message || 'Could not sign in');
+    const msg = isSocial && e.code === 'auth/popup-closed-by-user'
+      ? ''
+      : (e.message || 'Could not sign in');
+    if (msg) showAesLoginError(msg);
   } finally {
     if (btn) btn.disabled = false;
+    socialBtns.forEach((b) => { b.disabled = false; });
   }
+}
+
+async function submitAesLogin(username, password) {
+  return submitAesCheckLogin({ username, password }, false);
 }
 
 function wirePortalAesLoginButtons() {
@@ -107,6 +118,29 @@ function wirePortalAesLoginButtons() {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(form).entries());
       submitAesLogin(String(data.username || '').trim(), String(data.password || ''));
+    });
+  }
+
+  const bindSocial = (id, fnName) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.aesBound) return;
+    el.dataset.aesBound = '1';
+    el.addEventListener('click', () => {
+      const fn = window[fnName];
+      if (typeof fn === 'function') fn();
+      else showAesLoginError('Social sign-in is still loading. Please try again.');
+    });
+  };
+  bindSocial('aesBtnGoogle', 'aesLoginWithGoogle');
+  bindSocial('aesBtnMicrosoft', 'aesLoginWithMicrosoft');
+  bindSocial('aesBtnWhatsapp', 'aesLoginWithWhatsapp');
+
+  const waClose = document.getElementById('aesWaOtpClose');
+  if (waClose && !waClose.dataset.aesBound) {
+    waClose.dataset.aesBound = '1';
+    waClose.addEventListener('click', () => {
+      const panel = document.getElementById('aesWaOtpPanel');
+      if (panel) panel.hidden = true;
     });
   }
 }
@@ -167,3 +201,5 @@ if (document.readyState === 'loading') {
 }
 
 window.openAesLoginModal = openAesLoginModal;
+window.showAesLoginError = showAesLoginError;
+window.submitAesCheckLogin = submitAesCheckLogin;
