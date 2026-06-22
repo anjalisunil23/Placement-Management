@@ -1,7 +1,7 @@
 /* AES login modal — matches login.aesajce.in card */
 #aesLoginModal.aes-login-modal .modal-backdrop.show{opacity:.4}
 #aesLoginModal .aes-login-dialog{
-  max-width:360px;
+  max-width:380px;
   margin:1rem auto;
 }
 #aesLoginModal .modal-content.aes-login-card{
@@ -16,11 +16,13 @@
 }
 #aesLoginModal .aes-login-close{display:none}
 #aesLoginModal .aes-login-body{
-  padding:22px 26px 20px!important;
+  padding:24px 28px 22px!important;
+  margin:0!important;
 }
 #aesLoginModal .aes-login-brand{
   text-align:center;
-  margin:0 0 18px;
+  margin:0 0 22px;
+  padding:0;
 }
 #aesLoginModal .aes-login-logo{
   display:block;
@@ -29,8 +31,13 @@
   max-width:100%;
   height:auto;
 }
+#aesLoginModal .aes-login-panel{
+  width:100%;
+  margin:0;
+  padding:0;
+}
 #aesLoginModal .aes-login-error{
-  margin:0 0 12px;
+  margin:0 0 14px;
   padding:8px 10px;
   border-radius:4px;
   background:#fde8e8;
@@ -39,11 +46,22 @@
   font-size:13px;
   line-height:1.35;
 }
-#aesLoginModal .aes-form-group{margin:0 0 12px}
+#aesLoginModal .aes-login-form{
+  margin:0;
+  padding:0;
+  width:100%;
+}
+#aesLoginModal .aes-form-group{
+  margin:0 0 10px;
+  padding:0;
+}
+#aesLoginModal .aes-form-group:last-of-type{
+  margin-bottom:14px;
+}
 #aesLoginModal .aes-login-input{
   display:block;
   width:100%;
-  height:42px;
+  height:40px;
   box-sizing:border-box;
   -webkit-appearance:none;
   appearance:none;
@@ -55,6 +73,7 @@
   line-height:1.4;
   color:#222!important;
   box-shadow:none!important;
+  margin:0!important;
 }
 #aesLoginModal .aes-login-input:focus{
   outline:0!important;
@@ -69,8 +88,8 @@
   box-sizing:border-box;
   -webkit-appearance:none;
   appearance:none;
-  margin:0;
-  padding:11px 16px;
+  margin:0!important;
+  padding:10px 16px;
   border:1px solid #2e6da4!important;
   border-radius:4px!important;
   background:#337ab7!important;
@@ -89,13 +108,15 @@
 }
 #aesLoginModal .aes-login-submit:disabled{opacity:.7;cursor:not-allowed}
 #aesLoginModal .aes-login-forgot-wrap{
-  margin:12px 0 0;
-  text-align:center;
+  margin:10px 0 0;
+  padding:0;
+  text-align:left;
 }
 #aesLoginModal .aes-login-forgot{
   color:#333;
   font-size:14px;
   text-decoration:none;
+  display:inline-block;
 }
 #aesLoginModal .aes-login-forgot:hover{color:#337ab7;text-decoration:underline}
 #aesLoginModal .aes-login-or{
@@ -108,7 +129,7 @@
   font-weight:500;
   color:#6b7280;
   margin:0;
-  padding:10px 0;
+  padding:14px 0 12px;
   text-transform:uppercase;
 }
 #aesLoginModal .aes-login-or::before,
@@ -116,25 +137,30 @@
   content:"";
   border-bottom:1px solid #c2c8d0;
   flex:1 0 auto;
-  height:.8em;
+  height:.75em;
 }
 #aesLoginModal .aes-login-or span{
-  flex:0.2 0 auto;
-  padding:0 8px;
+  flex:0 0 auto;
+  padding:0 10px;
   text-align:center;
 }
 #aesLoginModal .aes-social-row{
   display:flex;
   flex-direction:row;
-  gap:6px;
+  align-items:stretch;
+  gap:5px;
+  margin:0;
+  padding:0;
 }
 #aesLoginModal .aes-social-btn{
   flex:1 1 0;
   min-width:0;
+  min-height:34px;
   display:inline-flex;
   flex-direction:row;
   align-items:stretch;
   padding:0!important;
+  margin:0!important;
   border:0!important;
   border-radius:4px!important;
   overflow:hidden;
@@ -151,13 +177,14 @@
   display:flex;
   align-items:center;
   justify-content:center;
-  flex:0 0 auto;
-  padding:8px 7px;
+  flex:0 0 32px;
+  width:32px;
+  padding:0;
   background:rgba(0,0,0,.15);
-  color:rgba(255,255,255,.85)!important;
+  color:rgba(255,255,255,.9)!important;
 }
 #aesLoginModal .aes-social-icon i{
-  font-size:13px;
+  font-size:14px;
   line-height:1;
   color:inherit!important;
 }
@@ -167,7 +194,7 @@
   justify-content:center;
   flex:1;
   min-width:0;
-  padding:8px 4px;
+  padding:0 6px;
   color:#fff!important;
   font-size:11px;
   font-weight:600;
@@ -185,7 +212,7 @@
   background:#007500!important;
 }
 #aesLoginModal .aes-wa-otp-panel{
-  margin-top:12px;
+  margin-top:14px;
   padding:12px;
   border:1px dashed #7eb8e8;
   border-radius:4px;
@@ -223,7 +250,7 @@
 }
 
 @media (max-width:419px){
-  #aesLoginModal .aes-login-body{padding:18px 16px 16px!important}
-  #aesLoginModal .aes-social-text{font-size:10px;padding:8px 2px}
-  #aesLoginModal .aes-social-icon{padding:8px 5px}
+  #aesLoginModal .aes-login-body{padding:20px 18px 18px!important}
+  #aesLoginModal .aes-social-icon{flex:0 0 28px;width:28px}
+  #aesLoginModal .aes-social-text{font-size:10px;padding:0 3px}
 }
