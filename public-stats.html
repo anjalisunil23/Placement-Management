@@ -19,13 +19,13 @@
     </button>
     <div class="collapse navbar-collapse public-nav-collapse" id="publicNavMenu">
       <ul class="navbar-nav ms-lg-auto align-items-lg-center gap-lg-1 public-nav-menu">
-        <li class="nav-item public-nav-login-desktop d-none d-lg-flex align-items-center me-lg-2">
-          <a href="login.html" class="btn btn-primary btn-sm public-nav-login">Login</a>
-        </li>
         <li class="nav-item"><a class="nav-link" href="#stats">Stats</a></li>
         <li class="nav-item"><a class="nav-link" href="#recruiters">Recruiters</a></li>
         <li class="nav-item"><a class="nav-link" href="#stories">Stories</a></li>
         <li class="nav-item"><a class="nav-link" href="#news">News</a></li>
+        <li class="nav-item public-nav-login-desktop d-none d-lg-flex align-items-center ms-lg-2">
+          <a href="login.html" class="btn btn-primary btn-sm public-nav-login">Login</a>
+        </li>
       </ul>
     </div>
   </div>
@@ -33,9 +33,9 @@
 
 <section class="hero">
   <div class="container text-center">
-    <span class="badge-soft mb-3">Placement Season 2025–26</span>
+    <span class="badge-soft mb-3">Placement Season</span>
     <h1>Where ambition <span class="gradient-text">meets opportunity</span></h1>
-    <p class="lead text-muted-2 mx-auto mt-3" style="max-width:680px">2,154 students placed across 142 recruiters with a record-breaking ₹68 LPA highest package this year.</p>
+    <p class="lead text-muted-2 mx-auto mt-3" style="max-width:680px" id="heroLead">Loading placement statistics…</p>
     <div class="d-flex justify-content-center gap-2 mt-4">
       <a href="#stats" class="btn btn-primary btn-lg">Explore stats</a>
       <a href="#recruiters" class="btn btn-outline-secondary btn-lg">Our recruiters</a>
@@ -46,16 +46,17 @@
 <section id="stats" class="py-5">
   <div class="container">
     <div class="row g-3">
-      <div class="col-6 col-md-3"><div class="card-surface stat-card text-center"><div class="val gradient-text"><span class="counter" data-target="2154">0</span></div><div class="lbl">Students placed</div></div></div>
-      <div class="col-6 col-md-3"><div class="card-surface stat-card text-center"><div class="val gradient-text"><span class="counter" data-target="68" data-prefix="₹" data-suffix=" LPA">0</span></div><div class="lbl">Highest package</div></div></div>
-      <div class="col-6 col-md-3"><div class="card-surface stat-card text-center"><div class="val gradient-text"><span class="counter" data-target="9.4" data-decimals="1" data-prefix="₹" data-suffix=" LPA">0</span></div><div class="lbl">Average package</div></div></div>
-      <div class="col-6 col-md-3"><div class="card-surface stat-card text-center"><div class="val gradient-text"><span class="counter" data-target="142">0</span></div><div class="lbl">Recruiting companies</div></div></div>
+      <div class="col-6 col-md-3"><div class="card-surface stat-card text-center"><div class="val gradient-text"><span class="counter" id="statPlaced" data-target="0">0</span></div><div class="lbl">Students placed</div></div></div>
+      <div class="col-6 col-md-3"><div class="card-surface stat-card text-center"><div class="val gradient-text"><span class="counter" id="statRate" data-target="0" data-decimals="1" data-suffix="%">0</span></div><div class="lbl">Placement rate</div></div></div>
+      <div class="col-6 col-md-3"><div class="card-surface stat-card text-center"><div class="val gradient-text"><span class="counter" id="statHighest" data-target="0" data-prefix="₹" data-suffix=" LPA">0</span></div><div class="lbl">Highest package</div></div></div>
+      <div class="col-6 col-md-3"><div class="card-surface stat-card text-center"><div class="val gradient-text"><span class="counter" id="statCompanies" data-target="0">0</span></div><div class="lbl">Recruiting companies</div></div></div>
     </div>
 
     <div class="row g-3 mt-4">
       <div class="col-lg-7"><div class="card-surface p-4"><h5 class="fw-bold" id="branchChartTitle">Placements by branch</h5><div style="height:320px"><canvas id="pubBar"></canvas></div></div></div>
       <div class="col-lg-5"><div class="card-surface p-4"><h5 class="fw-bold">Sector distribution</h5><div style="height:320px"><canvas id="pubPie"></canvas></div></div></div>
     </div>
+    <div class="row g-3 mt-3" id="branchStatsRow"></div>
   </div>
 </section>
 
@@ -99,51 +100,105 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/api.js?v=20260620a"></script>
-<script src="js/app.js?v=20260620a"></script><script src="js/charts.js?v=20260620a"></script>
+<script src="js/api.js?v=20260622a"></script>
+<script src="js/app.js?v=20260622a"></script><script src="js/charts.js?v=20260622a"></script>
 <script>
+let pubBarChart = null;
+let pubPieChart = null;
+
 function fmtPkg(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? `₹${n % 1 ? n.toFixed(1) : n} LPA` : '—';
+}
+
+function pickStat(liveVal, pubVal) {
+  const live = Number(liveVal);
+  if (Number.isFinite(live) && live > 0) return live;
+  const pub = Number(pubVal);
+  return Number.isFinite(pub) && pub > 0 ? pub : 0;
 }
 
 function escHtml(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
+function setCounter(el, value, opts = {}) {
+  if (!el) return;
+  const n = Number(value);
+  const safe = Number.isFinite(n) ? n : 0;
+  el.dataset.target = String(safe);
+  if (opts.decimals != null) el.dataset.decimals = String(opts.decimals);
+  if (opts.prefix != null) el.dataset.prefix = opts.prefix;
+  if (opts.suffix != null) el.dataset.suffix = opts.suffix;
+  el.dataset.animated = '0';
+}
+
+async function loadPublicLiveStats() {
+  await PlacementNewsStore.fetchPublic().catch(() => null);
+  const live = { ...(PublicPageContent.liveStats() || {}) };
+  try {
+    const res = await api('/public/placement-stats', { skipAuthRedirect: true });
+    if (res?.success && res.data) Object.assign(live, res.data);
+  } catch (_) {}
+  return live;
+}
+
 async function renderPublicPage() {
-  await PlacementNewsStore.fetchPublic();
+  const live = await loadPublicLiveStats();
   const pub = PublicPageContent.get();
-  const live = PublicPageContent.liveStats() || {};
-  const placed = live.totalPlaced ?? pub.placed ?? 0;
-  const companies = live.totalCompanies ?? pub.companies ?? 0;
-  const highestPkg = live.highestPkg ?? pub.highestPkg ?? 0;
-  const avgPkg = live.avgPkg ?? pub.avgPkg ?? 0;
-  const medianPkg = live.medianPkg ?? pub.medianPkg ?? 0;
+  const salary = live.salaryHighlights || {};
+  const placed = Number(pub.placed) || pickStat(live.totalPlaced, 0);
+  const companies = Number(pub.companies) || pickStat(live.totalCompanies, 0);
+  const highestPkg = Number(pub.highestPkg) || pickStat(live.highestPkg ?? salary.highest, 0);
+  const avgPkg = Number(pub.avgPkg) || pickStat(live.avgPkg ?? salary.average, 0);
+  const medianPkg = Number(pub.medianPkg) || pickStat(live.medianPkg ?? salary.median, 0);
   const season = pub.season || '2025-26';
+  const rate = Number(pub.placementRate) || pickStat(live.placementPercentage, 0);
 
   document.querySelector('.hero .badge-soft').textContent = `Placement Season ${season}`;
-  const rate = live.placementPercentage ?? pub.placementRate ?? 0;
-  document.querySelector('.hero .lead').textContent = placed > 0
-    ? `${placed} students placed across ${companies} recruiters${highestPkg > 0 ? ` with a highest package of ${fmtPkg(highestPkg)}` : ''}${rate > 0 ? ` (${rate}% placement rate)` : ''}.`
-    : `${companies} partner recruiters · placement season ${season}. Statistics update live as students are placed.`;
+  const hero = document.getElementById('heroLead');
+  if (hero) {
+    hero.textContent = placed > 0
+      ? `${placed} students placed across ${companies} recruiters${highestPkg > 0 ? ` with a highest package of ${fmtPkg(highestPkg)}` : ''}${rate > 0 ? ` (${rate % 1 ? rate.toFixed(1) : rate}% placement rate)` : ''}.`
+      : `${companies > 0 ? `${companies} partner recruiters` : 'Campus placement season'} · ${season}. Statistics update live as students are placed.`;
+  }
 
-  document.querySelectorAll('#stats .counter').forEach((el, i) => {
-    const vals = [placed, highestPkg, avgPkg, companies];
-    if (vals[i] != null) el.dataset.target = vals[i];
-  });
-  document.querySelectorAll('#stats .val .counter').forEach(el => { el.dataset.animated = '0'; });
+  setCounter(document.getElementById('statPlaced'), placed);
+  setCounter(document.getElementById('statRate'), rate, { decimals: 1, suffix: '%' });
+  setCounter(document.getElementById('statHighest'), highestPkg, { prefix: '₹', suffix: ' LPA' });
+  setCounter(document.getElementById('statCompanies'), companies);
   if (typeof animateCounters === 'function') animateCounters(document.getElementById('stats'));
 
-  const branch = live.offersByBranch || { labels: [], values: [] };
-  const branchLabels = branch.labels?.length ? branch.labels : ['No data'];
+  const branchStats = (live.branchStats || []).filter(b => (b.placed ?? 0) > 0 || (b.total ?? 0) > 0);
+  const branch = live.offersByBranch || {
+    labels: branchStats.map(b => b.code || b.department),
+    values: branchStats.map(b => b.placed ?? 0),
+  };
+  const branchLabels = branch.labels?.length ? branch.labels : ['No branch data yet'];
   const branchValues = branch.values?.length ? branch.values : [0];
-  Charts.bar(document.getElementById('pubBar'), branchLabels, branchValues, 'Placed');
+  if (pubBarChart) pubBarChart.destroy();
+  pubBarChart = Charts.bar(document.getElementById('pubBar'), branchLabels, branchValues, 'Placed');
 
   const sector = live.sectorDistribution || { labels: [], values: [] };
   const sectorLabels = sector.labels?.length ? sector.labels : ['No placements yet'];
   const sectorValues = sector.values?.length ? sector.values : [1];
-  Charts.doughnut(document.getElementById('pubPie'), sectorLabels, sectorValues);
+  if (pubPieChart) pubPieChart.destroy();
+  pubPieChart = Charts.doughnut(document.getElementById('pubPie'), sectorLabels, sectorValues);
+
+  const branchRow = document.getElementById('branchStatsRow');
+  if (branchRow) {
+    branchRow.innerHTML = branchStats.length
+      ? branchStats.map(b => `
+        <div class="col-6 col-md-4 col-lg-3">
+          <div class="card-surface p-3 h-100 text-center">
+            <div class="fw-bold">${escHtml(b.code || b.department)}</div>
+            <div class="small text-muted-2 mb-1">${escHtml(b.department || b.code)}</div>
+            <div class="fs-5 fw-bold gradient-text">${b.placed ?? 0}<span class="text-muted-2 fs-6 fw-normal"> / ${b.total ?? 0}</span></div>
+            <div class="small text-muted-2">${Number(b.percentage ?? 0).toFixed(1)}% placed</div>
+          </div>
+        </div>`).join('')
+      : '<div class="col-12"><p class="text-center text-muted-2 mb-0">Branch statistics appear when students are assigned to departments and marked placed.</p></div>';
+  }
 
   const recruiters = live.topRecruiters?.length
     ? live.topRecruiters
@@ -152,15 +207,19 @@ async function renderPublicPage() {
     ? recruiters.map(n => `<div class="col"><div class="recruiter-logo">${escHtml(n)}</div></div>`).join('')
     : '<div class="col-12"><p class="text-center text-muted-2 mb-0">Recruiter list updates when companies join campus drives.</p></div>';
 
-  const topOffers = live.topOffers || [];
+  const topOffers = [...(live.topOffers || [])].sort((a, b) => (b.package || 0) - (a.package || 0));
   document.getElementById('salaryHighest').textContent = fmtPkg(highestPkg);
-  document.getElementById('salaryHighestMeta').textContent = topOffers[0]
+  document.getElementById('salaryHighestMeta').textContent = topOffers[0] && topOffers[0].package >= highestPkg
     ? `Highest offer · ${topOffers[0].company || 'Campus recruiter'}${topOffers[0].role ? ` · ${topOffers[0].role}` : ''}`
-    : 'Highest package from active job postings';
-  document.getElementById('salarySecond').textContent = topOffers[1] ? fmtPkg(topOffers[1].package) : fmtPkg(avgPkg);
-  document.getElementById('salarySecondMeta').textContent = topOffers[1]
-    ? `${topOffers[1].company || 'Recruiter'}${topOffers[1].role ? ` · ${topOffers[1].role}` : ''}`
-    : 'Average package';
+    : (highestPkg > 0 ? 'Highest package from campus placement season' : 'Highest package');
+  const runner = topOffers[1];
+  const secondPkg = runner?.package > 0 && runner.package >= Math.max(avgPkg, highestPkg * 0.2)
+    ? runner.package
+    : avgPkg;
+  document.getElementById('salarySecond').textContent = fmtPkg(secondPkg);
+  document.getElementById('salarySecondMeta').textContent = runner?.package > 0 && runner.package === secondPkg
+    ? `${runner.company || 'Recruiter'}${runner.role ? ` · ${runner.role}` : ''}`
+    : (avgPkg > 0 ? 'Average package across active offers' : 'Next highest offer');
   document.getElementById('salaryMedian').textContent = fmtPkg(medianPkg);
 
   const stories = live.successStories || [];
@@ -175,6 +234,9 @@ async function renderPublicPage() {
     </div></div>`).join('')
     : '<div class="col-12"><p class="text-center text-muted-2 mb-0">Alumni and placed students can share stories from their dashboard. Check back soon for inspiring journeys.</p></div>';
 
+  if (!PlacementNewsStore._cache) {
+    await PlacementNewsStore.fetchPublic().catch(() => null);
+  }
   const news = PlacementNewsStore.published();
   document.getElementById('newsRow').innerHTML = news.length ? news.map(n => {
     const more = n.link

@@ -91,6 +91,7 @@ echo "System settings initialized.\n";
     'avgPkg'       => 9.4,
     'medianPkg'    => 8.2,
     'lowestPkg'    => 3.5,
+    'placementRate'=> 65.6,
     'headline'     => 'Where ambition meets opportunity',
     'achievements' => 'Record ₹68 LPA international offer · 92.5% MCA placement rate',
 ]);

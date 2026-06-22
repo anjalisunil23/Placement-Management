@@ -61,14 +61,21 @@ final class PublicController
         $live = (new AnalyticsService())->getPublicStats();
         $salary = $live['salaryHighlights'];
 
+        $pick = static function (float|int $liveVal, float|int $editorialVal): float|int {
+            return $liveVal > 0 ? $liveVal : $editorialVal;
+        };
+        $pickMax = static function (float|int $liveVal, float|int $editorialVal): float|int {
+            return max($liveVal, $editorialVal);
+        };
+
         $public = array_merge($editorial, [
-            'placed'          => $live['totalPlaced'],
-            'companies'       => $live['totalCompanies'],
-            'highestPkg'      => $salary['highest'],
-            'avgPkg'          => $salary['average'],
-            'medianPkg'       => $salary['median'],
-            'lowestPkg'       => $salary['lowest'],
-            'placementRate'   => $live['placementPercentage'],
+            'placed'          => $pick($live['totalPlaced'], (int) ($editorial['placed'] ?? 0)),
+            'companies'       => $pickMax($live['totalCompanies'], (int) ($editorial['companies'] ?? 0)),
+            'highestPkg'      => $pickMax($salary['highest'], (float) ($editorial['highestPkg'] ?? 0)),
+            'avgPkg'          => $pick($salary['average'], (float) ($editorial['avgPkg'] ?? 0)) ?: (float) ($editorial['avgPkg'] ?? 0),
+            'medianPkg'       => $pick($salary['median'], (float) ($editorial['medianPkg'] ?? 0)) ?: (float) ($editorial['medianPkg'] ?? 0),
+            'lowestPkg'       => $pick($salary['lowest'], (float) ($editorial['lowestPkg'] ?? 0)),
+            'placementRate'   => $pick($live['placementPercentage'], (float) ($editorial['placementRate'] ?? 0)),
         ]);
         if (empty($public['season']) && !empty($system['placementYear'])) {
             $public['season'] = $system['placementYear'];

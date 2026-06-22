@@ -63,6 +63,10 @@
           <input type="number" class="form-control" id="medianPkg" step="0.1" min="0" required/>
         </div>
         <div class="col-md-6">
+          <label class="form-label small fw-semibold">Placement rate (%)</label>
+          <input type="number" class="form-control" id="placementRate" step="0.1" min="0" max="100" required/>
+        </div>
+        <div class="col-md-6">
           <label class="form-label small fw-semibold">Lowest package (LPA)</label>
           <input type="number" class="form-control" id="lowestPkg" step="0.1" min="0" required/>
         </div>
@@ -123,6 +127,7 @@ function loadPublic() {
   document.getElementById('highestPkg').value = p.highestPkg ?? 0;
   document.getElementById('avgPkg').value = p.avgPkg ?? 0;
   document.getElementById('medianPkg').value = p.medianPkg ?? 0;
+  document.getElementById('placementRate').value = p.placementRate ?? 0;
   document.getElementById('lowestPkg').value = p.lowestPkg ?? 0;
   document.getElementById('achievements').value = p.achievements || '';
 }
@@ -143,6 +148,7 @@ document.getElementById('btnSavePublic').addEventListener('click', async () => {
     highestPkg: parseFloat(document.getElementById('highestPkg').value) || 0,
     avgPkg: parseFloat(document.getElementById('avgPkg').value) || 0,
     medianPkg: parseFloat(document.getElementById('medianPkg').value) || 0,
+    placementRate: parseFloat(document.getElementById('placementRate').value) || 0,
     lowestPkg: parseFloat(document.getElementById('lowestPkg').value) || 0,
     achievements: document.getElementById('achievements').value.trim(),
     season: SystemSettings.get().placementYear || PublicPageContent.get().season,

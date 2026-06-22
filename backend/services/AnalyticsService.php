@@ -96,7 +96,10 @@ final class AnalyticsService
             $appCountFilter['studentId'] = ['$in' => []];
         }
 
-        $salaries = $this->extractSalaries($jobModel->findAll([], 500));
+        $salaries = $this->extractSalariesFromSources(
+            $jobModel->findAll([], 500),
+            (new DriveModel())->findAll([], 500)
+        );
 
         return [
             'totals' => [
@@ -296,25 +299,51 @@ final class AnalyticsService
     private function getTopJobOffers(int $limit = 2): array
     {
         $jobModel = new JobModel();
+        $driveModel = new DriveModel();
         $companyModel = new CompanyModel();
         $ranked = [];
 
         foreach ($jobModel->findAll([], 500) as $job) {
-            $pkg = $job['package'] ?? '';
-            if (!preg_match('/[\d.]+/', (string) $pkg, $m)) {
+            $pkg = $this->parsePackageValue($job['package'] ?? '');
+            if ($pkg <= 0) {
                 continue;
             }
             $company = $companyModel->findById((string) ($job['companyId'] ?? ''));
             $ranked[] = [
-                'package' => (float) $m[0],
+                'package' => $pkg,
                 'company' => (string) ($company['companyName'] ?? ''),
                 'role'    => (string) ($job['title'] ?? ''),
             ];
         }
 
+        foreach ($driveModel->findAll([], 500) as $drive) {
+            $elig = is_array($drive['eligibility'] ?? null) ? $drive['eligibility'] : [];
+            $pkg = $this->parsePackageValue($elig['package'] ?? ($drive['tier'] ?? ''));
+            if ($pkg <= 0) {
+                continue;
+            }
+            $company = $companyModel->findById((string) ($drive['companyId'] ?? ''));
+            $ranked[] = [
+                'package' => $pkg,
+                'company' => (string) ($company['companyName'] ?? ($drive['companyName'] ?? '')),
+                'role'    => (string) ($drive['title'] ?? ''),
+            ];
+        }
+
         usort($ranked, static fn (array $a, array $b): int => $b['package'] <=> $a['package']);
 
-        return array_slice($ranked, 0, $limit);
+        $seen = [];
+        $unique = [];
+        foreach ($ranked as $row) {
+            $key = $row['company'] . '|' . $row['role'] . '|' . $row['package'];
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $unique[] = $row;
+        }
+
+        return array_slice($unique, 0, $limit);
     }
 
     private function formatPackageLabel(string $package): string
@@ -327,17 +356,27 @@ final class AnalyticsService
 
     /**
      * @param array<int, array<string, mixed>> $jobs
+     * @param array<int, array<string, mixed>> $drives
      * @return array{highest: float, lowest: float, average: float, median: float, count: int}
      */
-    private function extractSalaries(array $jobs): array
+    private function extractSalariesFromSources(array $jobs, array $drives = []): array
     {
         $values = [];
         foreach ($jobs as $job) {
-            $pkg = $job['package'] ?? '';
-            if (preg_match('/[\d.]+/', (string) $pkg, $m)) {
-                $values[] = (float) $m[0];
+            $pkg = $this->parsePackageValue($job['package'] ?? '');
+            if ($pkg > 0) {
+                $values[] = $pkg;
             }
         }
+        foreach ($drives as $drive) {
+            $elig = is_array($drive['eligibility'] ?? null) ? $drive['eligibility'] : [];
+            $pkg = $this->parsePackageValue($elig['package'] ?? ($drive['tier'] ?? ''));
+            if ($pkg > 0) {
+                $values[] = $pkg;
+            }
+        }
+
+        $values = array_values(array_unique($values));
         sort($values);
         $count = count($values);
         if ($count === 0) {
@@ -355,6 +394,18 @@ final class AnalyticsService
             'median'  => round($median, 2),
             'count'   => $count,
         ];
+    }
+
+    private function parsePackageValue(mixed $package): float
+    {
+        if (is_numeric($package)) {
+            return (float) $package;
+        }
+        if (preg_match('/[\d.]+/', (string) $package, $m)) {
+            return (float) $m[0];
+        }
+
+        return 0.0;
     }
 
     /**

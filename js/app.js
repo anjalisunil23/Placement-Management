@@ -425,7 +425,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (isPublic) {
     document.documentElement.setAttribute('data-theme', UserPrefs.theme());
     document.documentElement.setAttribute('data-density', UserPrefs.density());
-    animateCounters();
+    if (active !== 'public-stats.html') {
+      animateCounters();
+    }
     document.dispatchEvent(new CustomEvent('ph-ready'));
     return;
   }

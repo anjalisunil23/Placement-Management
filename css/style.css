@@ -474,7 +474,7 @@ body.login-page{
     flex-direction:row;
     align-items:center;
   }
-  .public-nav-login-desktop{margin-right:.25rem}
+  .public-nav-login-desktop{margin-left:.25rem}
 }
 .public-nav-menu .nav-link{
   font-weight:500;color:var(--text)!important;padding:.45rem .85rem;border-radius:8px;

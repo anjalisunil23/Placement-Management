@@ -2415,7 +2415,7 @@ const PlacementNewsStore = {
     return this.all();
   },
   async fetchPublic() {
-    const res = await api('/public/site-content');
+    const res = await api('/public/site-content', { skipAuthRedirect: true });
     if (res.success && res.data) {
       if (res.data.system) {
         SystemSettings._cache = res.data.system;

@@ -33,7 +33,7 @@ class PublicPageContentModel extends BaseModel
     {
         $allowed = [
             'season', 'placed', 'companies', 'highestPkg', 'avgPkg',
-            'medianPkg', 'lowestPkg', 'headline', 'achievements',
+            'medianPkg', 'lowestPkg', 'placementRate', 'headline', 'achievements',
         ];
         $update = array_intersect_key($data, array_flip($allowed));
         $update['key'] = self::DOC_KEY;
@@ -62,6 +62,7 @@ class PublicPageContentModel extends BaseModel
             'avgPkg'       => 0.0,
             'medianPkg'    => 0.0,
             'lowestPkg'    => 0.0,
+            'placementRate'=> 0.0,
             'headline'     => 'Where ambition meets opportunity',
             'achievements' => 'Placement statistics are computed live from campus data.',
         ];
