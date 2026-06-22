@@ -102,13 +102,13 @@
           <p class="small text-muted-2 mb-3">Fill in the details to publish a new opportunity.</p>
           <h6 class="fw-bold mb-3">Basic information</h6>
           <div class="row g-3 mb-4">
-            <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="company" placeholder="e.g. Google" required/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><select class="form-select" name="companyId" id="createDriveCompany" required><option value="">Select company…</option></select><div class="form-text">Add companies under Admin → Companies if not listed.</div></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Job role</label><input class="form-control" name="role" placeholder="e.g. SDE-1" required/></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Drive type</label><select class="form-select" name="driveType" required><option>Exclusive</option><option selected>Pooled</option><option>Company Direct</option></select></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Job type</label><select class="form-select" name="jobType"><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">CTC (LPA)</label><input class="form-control" name="package" placeholder="e.g. 12" required/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location" placeholder="e.g. Bengaluru"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Recruitment date</label><input type="date" class="form-control" name="recruitmentDate"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Recruitment date</label><input type="date" class="form-control" name="recruitmentDate" required/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="3" placeholder="Role overview, responsibilities…"></textarea></div>
           </div>
           <h6 class="fw-bold mb-3">Eligibility & schedule</h6>
@@ -735,12 +735,31 @@ async function loadDrives() {
 
 
 
-window.openCreateDrive = () => {
+window.openCreateDrive = async () => {
   if (!canManage) return;
   document.getElementById('createDriveForm')?.reset();
   renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), { checkedAll: true });
+  await populateCreateDriveCompanies();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('createModal')).show();
 };
+
+async function populateCreateDriveCompanies() {
+  const sel = document.getElementById('createDriveCompany');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Loading companies…</option>';
+  const list = (typeof RegisteredCompanies !== 'undefined' && Auth.hasRealAuth())
+    ? await RegisteredCompanies.fetch().catch(() => RegisteredCompanies.all())
+    : (typeof RegisteredCompanies !== 'undefined' ? RegisteredCompanies.all() : []);
+  if (!list.length) {
+    sel.innerHTML = '<option value="">No companies registered yet</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">Select company…</option>' + list.map(c => {
+    const id = c.companyId || c.id || '';
+    const name = String(c.companyName || c.company || '').replace(/"/g, '&quot;');
+    return `<option value="${id}">${name}</option>`;
+  }).join('');
+}
 
 document.getElementById('createDriveForm')?.addEventListener('submit', async e => {
   e.preventDefault();
@@ -749,24 +768,44 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
   const pkg = fd.get('package');
   const driveTypeMap = { 'Exclusive': 'exclusive', 'Pooled': 'pooled', 'Company Direct': 'direct' };
   const branchCodes = readCheckedBranchCodes(document.getElementById('createDriveBranches'));
-  await DriveStore.add({
-    company: fd.get('company'),
-    role: fd.get('role'),
+  const companySel = document.getElementById('createDriveCompany');
+  const companyId = String(fd.get('companyId') || '').trim();
+  const companyName = companySel?.selectedOptions?.[0]?.text?.trim() || '';
+  const role = String(fd.get('role') || '').trim();
+  const recruitmentDate = String(fd.get('recruitmentDate') || '').trim();
+  const deadline = String(fd.get('deadline') || '').trim();
+
+  if (!companyId) {
+    toast('Select a registered company for this drive.', 'warn');
+    return;
+  }
+  if (!recruitmentDate) {
+    toast('Recruitment date is required.', 'warn');
+    return;
+  }
+
+  const result = await DriveStore.add({
+    companyId,
+    company: companyName,
+    role,
+    title: role ? `${companyName} — ${role}` : companyName,
     driveType: fd.get('driveType'),
     type: driveTypeMap[fd.get('driveType')] || 'pooled',
     package: pkg.toString().includes('LPA') ? pkg : `₹${pkg} LPA`,
-    branches: branchCodes.join(', '),
+    branches: branchCodes,
     minCgpa: fd.get('minCgpa'),
     maxBacklogs: fd.get('maxBacklogs'),
     location: fd.get('location'),
-    deadline: fd.get('deadline') || 'TBD',
-    date: fd.get('recruitmentDate') || fd.get('deadline') || '',
-    recruitmentDate: fd.get('recruitmentDate'),
+    deadline: deadline || 'TBD',
+    date: recruitmentDate || deadline,
+    time: '10:00',
+    recruitmentDate,
     description: fd.get('description') || '',
     profile: 'General',
     status: 'Open',
     statusCls: 'success',
   });
+  if (!result) return;
   bootstrap.Modal.getInstance(document.getElementById('createModal'))?.hide();
   toast('Drive published successfully.', 'success');
   await DriveStore.fetch();
@@ -784,12 +823,12 @@ window.openEditDrive = id => {
 
   document.getElementById('editRole').value = d.role || '';
 
-  document.getElementById('editPackage').value = d.package || '';
+  document.getElementById('editPackage').value = (d.package && d.package !== '—') ? d.package : '';
 
   const branchList = String(d.branches || '').split(/,\s*/).filter(Boolean);
   renderDepartmentBranchCheckboxes(document.getElementById('editDriveBranches'), { checkedAll: false, selected: branchList });
 
-  document.getElementById('editDeadline').value = d.deadline || '';
+  document.getElementById('editDeadline').value = (d.deadline && d.deadline !== '—' && d.deadline !== 'TBD') ? d.deadline : '';
 
   document.getElementById('editStatus').value = d.status || 'Open';
 
@@ -801,24 +840,23 @@ window.openEditDrive = id => {
 
 
 
-window.deleteDrive = id => {
+window.deleteDrive = async id => {
   if (!canManage) return;
   const d = DriveStore.get(id);
   if (!d) return;
 
   if (!confirm(`Delete drive "${d.company} · ${d.role}"?`)) return;
 
-  DriveStore.remove(id);
+  const ok = await DriveStore.remove(id);
+  if (!ok) return;
 
   toast('Drive deleted.', 'success');
-
-  loadDrives();
-
+  await loadDrives();
 };
 
 
 
-document.getElementById('editDriveForm')?.addEventListener('submit', e => {
+document.getElementById('editDriveForm')?.addEventListener('submit', async e => {
 
   e.preventDefault();
 
@@ -826,7 +864,7 @@ document.getElementById('editDriveForm')?.addEventListener('submit', e => {
 
   const id = document.getElementById('editDriveId').value;
 
-  DriveStore.update(id, {
+  const result = await DriveStore.update(id, {
 
     company: document.getElementById('editCompany').value.trim(),
 
@@ -844,11 +882,13 @@ document.getElementById('editDriveForm')?.addEventListener('submit', e => {
 
   });
 
+  if (!result) return;
+
   bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
 
   toast('Drive updated.', 'success');
 
-  loadDrives();
+  await loadDrives();
 
 });
 

@@ -88,6 +88,12 @@ final class AdminController
         if (!empty($errors)) {
             Response::error('Validation failed.', 422, $errors);
         }
+        if (isset($input['eligibility']) && is_string($input['eligibility'])) {
+            $input['eligibility'] = json_decode($input['eligibility'], true) ?? [];
+        }
+        if (isset($input['branches']) && is_string($input['branches'])) {
+            $input['branches'] = json_decode($input['branches'], true) ?? [];
+        }
         $id = (new DriveModel())->createDrive($input, (string) $admin['_id']);
         (new NotificationService())->announceDrive(
             (string) $input['title'],
@@ -105,6 +111,12 @@ final class AdminController
             Response::notFound('Drive not found.');
         }
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (isset($input['eligibility']) && is_string($input['eligibility'])) {
+            $input['eligibility'] = json_decode($input['eligibility'], true) ?? [];
+        }
+        if (isset($input['branches']) && is_string($input['branches'])) {
+            $input['branches'] = json_decode($input['branches'], true) ?? [];
+        }
         $allowed = ['title','companyId','type','date','time','branches','eligibility','tier','jdFile','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
         $model->update($id, $update);

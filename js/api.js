@@ -2064,11 +2064,23 @@ function driveResultMeta(d) {
   let company = String(d.company || d.companyName || '').trim();
   let role = String(d.role || '').trim();
   const title = String(d.title || '').trim();
-  if (!role && title && !title.includes('—')) role = title;
-  if (title.includes('—')) {
-    const parts = title.split('—').map(s => s.trim());
-    if (!role) role = parts[0] || '';
-    if (!company) company = parts[1] || '';
+  if (!role && title && !title.includes('—') && !title.includes(' - ')) role = title;
+  if (title.includes('—') || title.includes(' - ')) {
+    const sep = title.includes('—') ? '—' : ' - ';
+    const parts = title.split(sep).map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const knownCompany = String(d.companyName || d.company || '').trim();
+      if (knownCompany && parts[0] === knownCompany) {
+        if (!company) company = parts[0];
+        if (!role) role = parts[1];
+      } else if (knownCompany && parts[1] === knownCompany) {
+        if (!company) company = parts[1];
+        if (!role) role = parts[0];
+      } else {
+        if (!company) company = parts[0];
+        if (!role) role = parts[1];
+      }
+    }
   }
   return { company, role };
 }
@@ -2396,7 +2408,18 @@ const DriveStore = {
   },
   saveOverrides(map) { localStorage.setItem(DRIVE_OVERRIDES_KEY, JSON.stringify(map)); },
   isCatalog(id) { return DRIVE_CATALOG.some(d => d.id === id); },
-  isCustom(id) { return this.all().some(d => d.id === id); },
+  isCustom(id) {
+    const d = this.all().find(x => x.id === id);
+    return !!d && !d._fromApi;
+  },
+  isApiDrive(id) {
+    if (this.isCatalog(id)) return false;
+    const fromCache = this._apiCache?.find(d => d.id === id);
+    if (fromCache?._fromApi) return true;
+    const stored = this.all().find(d => d.id === id);
+    if (stored?._fromApi) return true;
+    return Auth.hasRealAuth() && canManageDrives() && /^[a-f0-9]{24}$/i.test(String(id));
+  },
   catalogEntry(id) {
     const base = DRIVE_CATALOG.find(d => d.id === id);
     if (!base || this.hiddenIds().includes(id)) return null;
@@ -2410,9 +2433,61 @@ const DriveStore = {
       const fromStudent = this._studentCache.find(d => d.id === id);
       if (fromStudent) return fromStudent;
     }
-    const custom = this.all().find(d => d.id === id);
-    if (custom) return custom;
+    if (this._apiCache) {
+      const fromApi = this._apiCache.find(d => d.id === id);
+      if (fromApi) return fromApi;
+    }
+    const stored = this.all().find(d => d.id === id);
+    if (stored) return stored;
     return this.catalogEntry(id);
+  },
+  _driveStatusToApi(status) {
+    const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed' };
+    return map[status] || String(status || '').toLowerCase();
+  },
+  _normalizeBranches(branches) {
+    if (!branches) return [];
+    return Array.isArray(branches)
+      ? branches.map(s => String(s).trim()).filter(Boolean)
+      : String(branches).split(',').map(s => s.trim()).filter(Boolean);
+  },
+  async _resolveCompanyId(companyName, existingId) {
+    if (existingId) return existingId;
+    const name = String(companyName || '').trim().toLowerCase();
+    if (!name || typeof RegisteredCompanies === 'undefined') return null;
+    const list = RegisteredCompanies._cache || await RegisteredCompanies.fetch().catch(() => RegisteredCompanies.all());
+    const match = (list || []).find(c =>
+      String(c.companyName || c.company || '').trim().toLowerCase() === name
+    );
+    return match?.companyId || match?.id || null;
+  },
+  async _buildUpdateBody(p, existing) {
+    const company = String(p.company ?? existing?.company ?? '').trim();
+    const role = String(p.role ?? existing?.role ?? '').trim();
+    const title = company && role ? `${company} — ${role}` : String(existing?.title || role || company).trim();
+    const branches = this._normalizeBranches(p.branches ?? existing?.branches);
+    const companyId = await this._resolveCompanyId(company, existing?.companyId || null);
+    const prevElig = existing?.eligibility || {};
+    const packageVal = String(p.package ?? existing?.package ?? '').trim();
+    const deadlineVal = String(p.deadline ?? existing?.deadline ?? '').trim();
+    const eligibility = {
+      ...prevElig,
+      package: packageVal === '—' ? '' : packageVal,
+      deadline: !deadlineVal || deadlineVal === '—' ? '' : deadlineVal,
+      description: String(p.description ?? existing?.description ?? '').trim(),
+    };
+    const body = {
+      title,
+      branches,
+      eligibility,
+      type: existing?.type || 'pooled',
+      time: existing?.time || '10:00',
+    };
+    if (companyId) body.companyId = companyId;
+    const recruitmentDate = String(p.date ?? p.recruitmentDate ?? existing?.date ?? '').trim();
+    if (recruitmentDate && recruitmentDate !== '—' && recruitmentDate !== 'TBD') body.date = recruitmentDate;
+    if (p.status) body.status = this._driveStatusToApi(p.status);
+    return body;
   },
   mapStudentDrive(d) {
     const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
@@ -2491,29 +2566,108 @@ const DriveStore = {
   async add(p) {
     if (!canManageDrives()) return null;
     if (!(await requireWriteSession())) return null;
+
+    let companyId = p.companyId || null;
+    if (!companyId && p.company && typeof RegisteredCompanies !== 'undefined') {
+      const list = RegisteredCompanies._cache || await RegisteredCompanies.fetch().catch(() => RegisteredCompanies.all());
+      const name = String(p.company).trim().toLowerCase();
+      const match = (list || []).find(c =>
+        String(c.companyName || c.company || '').trim().toLowerCase() === name
+      );
+      companyId = match?.companyId || match?.id || null;
+    }
+
+    const role = String(p.role || p.title || '').trim();
+    const company = String(p.company || '').trim();
+    const title = String(p.title || (company && role ? `${company} — ${role}` : role || company)).trim();
+    const date = String(p.date || p.recruitmentDate || p.deadline || '').trim();
+    const time = String(p.time || '10:00').trim();
+
+    if (!companyId) {
+      toast('Select a registered company. Add it under Admin → Companies first.', 'error');
+      return null;
+    }
+    if (!title) {
+      toast('Job role is required.', 'error');
+      return null;
+    }
+    if (!date) {
+      toast('Recruitment date is required.', 'error');
+      return null;
+    }
+
+    const branches = p.branches
+      ? (Array.isArray(p.branches) ? p.branches : String(p.branches).split(',').map(s => s.trim()).filter(Boolean))
+      : [];
+
     const driveBody = {
-      title: p.role || p.title,
-      companyId: p.companyId,
+      title,
+      companyId,
       type: p.type || 'pooled',
-      date: p.date,
-      time: p.time || '10:00',
-      branches: p.branches ? (Array.isArray(p.branches) ? p.branches : String(p.branches).split(',').map(s => s.trim()).filter(Boolean)) : [],
+      date,
+      time,
+      branches,
       tier: p.tier || 'Tier 2',
+      eligibility: {
+        minCgpa: parseFloat(p.minCgpa) || 0,
+        maxBacklogs: parseInt(p.maxBacklogs, 10) || 0,
+        package: p.package || '',
+        location: p.location || '',
+        deadline: p.deadline || '',
+        description: p.description || '',
+      },
     };
+
+    const formatErrors = (res) => {
+      if (res?.errors && typeof res.errors === 'object') {
+        return Object.values(res.errors).join(' ');
+      }
+      return res?.message || 'Could not create drive.';
+    };
+
     if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
       const res = await api('/officer/drives', { method: 'POST', body: driveBody });
       if (res.success) { await this.fetch(); return res.data; }
+      toast(formatErrors(res), 'error');
+      return null;
     }
     if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
       const res = await api('/admin/drives', { method: 'POST', body: driveBody });
       if (res.success) { await this.fetch(); return res.data; }
-      toast(res.message || 'Could not create drive.', 'error');
+      toast(formatErrors(res), 'error');
       return null;
     }
     return null;
   },
-  update(id, p) {
+  async update(id, p) {
     if (!canManageDrives()) return null;
+    if (!(await requireWriteSession())) return null;
+
+    const formatErrors = (res) => {
+      if (res?.errors && typeof res.errors === 'object') {
+        return Object.values(res.errors).join(' ');
+      }
+      return res?.message || 'Could not update drive.';
+    };
+
+    if (this.isApiDrive(id)) {
+      const existing = this.get(id) || {};
+      const body = await this._buildUpdateBody(p, existing);
+      if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
+        const res = await api(`/officer/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
+        if (res.success) { await this.fetch(); return this.get(id); }
+        toast(formatErrors(res), 'error');
+        return null;
+      }
+      if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
+        const res = await api(`/admin/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
+        if (res.success) { await this.fetch(); return this.get(id); }
+        toast(formatErrors(res), 'error');
+        return null;
+      }
+      return null;
+    }
+
     const next = { ...p };
     if (p.status) next.statusCls = driveStatusCls(p.status);
     if (this.isCustom(id)) {
@@ -2527,8 +2681,28 @@ const DriveStore = {
     }
     return null;
   },
-  remove(id) {
+  async remove(id) {
     if (!canManageDrives()) return false;
+    if (!(await requireWriteSession())) return false;
+
+    const formatErrors = (res) => res?.message || 'Could not delete drive.';
+
+    if (this.isApiDrive(id)) {
+      if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
+        const res = await api(`/officer/drives/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (res.success) { await this.fetch(); return true; }
+        toast(formatErrors(res), 'error');
+        return false;
+      }
+      if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
+        const res = await api(`/admin/drives/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (res.success) { await this.fetch(); return true; }
+        toast(formatErrors(res), 'error');
+        return false;
+      }
+      return false;
+    }
+
     if (this.isCustom(id)) {
       this.save(this.all().filter(d => d.id !== id));
       return true;
