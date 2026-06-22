@@ -1,13 +1,18 @@
 /**
- * AES login modal for the public portal (login.aesajce.in).
- * Uses PORTAL_AUTH_PAGE / portalAuthUrl from api.js — do not redeclare them here.
+ * AES login gate for the public portal — sign in on every site entry.
+ * Uses PORTAL_AUTH_PAGE / portalAuthUrl from api.js.
  */
 let aesLoginModal = null;
 
 function getAesLoginModal() {
   const node = document.getElementById('aesLoginModal');
   if (!node || typeof bootstrap === 'undefined') return null;
-  if (!aesLoginModal) aesLoginModal = bootstrap.Modal.getOrCreateInstance(node);
+  if (!aesLoginModal) {
+    aesLoginModal = bootstrap.Modal.getOrCreateInstance(node, {
+      backdrop: 'static',
+      keyboard: false,
+    });
+  }
   return aesLoginModal;
 }
 
@@ -84,14 +89,7 @@ async function submitAesLogin(username, password) {
   }
 }
 
-function wirePortalAesLogin() {
-  const params = new URLSearchParams(location.search);
-  const aesErr = params.get('aes_error');
-  if (aesErr) {
-    showAesLoginError(decodeURIComponent(aesErr.replace(/\+/g, ' ')));
-    openAesLoginModal();
-  }
-
+function wirePortalAesLoginButtons() {
   if (!window.__portalAesLoginBound) {
     window.__portalAesLoginBound = true;
     document.addEventListener('click', (e) => {
@@ -111,23 +109,9 @@ function wirePortalAesLogin() {
       submitAesLogin(String(data.username || '').trim(), String(data.password || ''));
     });
   }
-
-  if (params.get('login') === '1' && !aesErr) {
-    setTimeout(() => openAesLoginModal(), 300);
-  }
 }
 
-async function initPortalSessionRedirect() {
-  if (typeof Auth === 'undefined') return false;
-  const params = new URLSearchParams(location.search);
-  const next = params.get('next');
-  Auth._sessionReady = false;
-  const ok = await Auth.bootstrap();
-  if (!ok) return false;
-  if (next) {
-    window.location.replace(Auth.resolveRedirect(next));
-    return true;
-  }
+function wireLoggedInPortalButton() {
   document.querySelectorAll('.portal-aes-login').forEach((btn) => {
     const home = Auth.homePage();
     btn.innerHTML = '<i class="bi bi-grid me-1"></i>Open portal';
@@ -137,12 +121,43 @@ async function initPortalSessionRedirect() {
       window.location.href = home.startsWith('/') ? home : '/' + home;
     });
   });
-  return params.get('login') === '1';
+}
+
+function promptAesLoginGate() {
+  const params = new URLSearchParams(location.search);
+  const aesErr = params.get('aes_error');
+  if (aesErr) {
+    showAesLoginError(decodeURIComponent(aesErr.replace(/\+/g, ' ')));
+  }
+  wirePortalAesLoginButtons();
+  setTimeout(() => openAesLoginModal(), aesErr ? 100 : 350);
 }
 
 async function bootPortalAesLogin() {
-  const skipAesPrompt = await initPortalSessionRedirect();
-  if (!skipAesPrompt) wirePortalAesLogin();
+  const params = new URLSearchParams(location.search);
+  const viewPublic = params.get('view') === 'public';
+  const next = params.get('next');
+
+  if (typeof Auth !== 'undefined') {
+    Auth._sessionReady = false;
+    const hasSession = await Auth.bootstrap();
+    if (hasSession) {
+      if (next) {
+        window.location.replace(Auth.resolveRedirect(next));
+        return;
+      }
+      if (!viewPublic) {
+        const home = Auth.homePage();
+        window.location.replace(home.startsWith('/') ? home : '/' + home);
+        return;
+      }
+      wireLoggedInPortalButton();
+      return;
+    }
+    Auth.clear();
+  }
+
+  promptAesLoginGate();
 }
 
 if (document.readyState === 'loading') {
@@ -151,5 +166,4 @@ if (document.readyState === 'loading') {
   bootPortalAesLogin();
 }
 
-// Expose for inline debugging on production.
 window.openAesLoginModal = openAesLoginModal;

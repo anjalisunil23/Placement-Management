@@ -271,7 +271,7 @@ const Auth = {
   logout() {
     apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
     this.clear();
-    window.location.href = PORTAL_AUTH_PAGE;
+    window.location.href = portalAuthUrl('');
   },
   isDemo() {
     const t = this.token();
