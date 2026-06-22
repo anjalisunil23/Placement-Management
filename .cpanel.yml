@@ -16,6 +16,8 @@ deployment:
     - /bin/cp -f js/*.js $DEPLOYPATH/js/
     - /bin/cp -f .htaccess $DEPLOYPATH/.htaccess
     - /bin/cp -f index.php $DEPLOYPATH/index.php
+    - /bin/cp -f callback.php $DEPLOYPATH/callback.php
+    - /bin/cp -f aes-callback.php $DEPLOYPATH/aes-callback.php
     - /bin/cp -f composer.json $DEPLOYPATH/composer.json
     - /bin/cp -f composer.lock $DEPLOYPATH/composer.lock
     - /bin/cp -f .env.production.example $DEPLOYPATH/.env.production.example
