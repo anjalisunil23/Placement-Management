@@ -39,8 +39,17 @@ final class PlacementOfficerContext
         }
 
         $profile = (new PlacementOfficerModel())->findByUserId((string) $user['_id']);
-        if (!$profile || empty($profile['departmentId'])) {
-            Response::forbidden('Your account is not linked to a department. Contact admin.');
+        if (!$profile) {
+            Response::forbidden('Placement officer profile not found. Contact admin.');
+        }
+
+        if (empty($profile['departmentId'])) {
+            return [
+                'isAdmin'      => false,
+                'departmentId' => null,
+                'department'   => null,
+                'profile'      => $profile,
+            ];
         }
 
         $departmentId = (string) $profile['departmentId'];
@@ -98,7 +107,7 @@ final class PlacementOfficerContext
 
     public static function assertStudentInDepartment(string $studentId, array $ctx): void
     {
-        if ($ctx['isAdmin']) {
+        if ($ctx['isAdmin'] || empty($ctx['departmentId'])) {
             return;
         }
         $student = (new StudentModel())->findById($studentId);
@@ -109,7 +118,7 @@ final class PlacementOfficerContext
 
     public static function assertUserStudentInDepartment(string $userId, array $ctx): void
     {
-        if ($ctx['isAdmin']) {
+        if ($ctx['isAdmin'] || empty($ctx['departmentId'])) {
             return;
         }
         $student = (new StudentModel())->findByUserId($userId);
@@ -123,7 +132,7 @@ final class PlacementOfficerContext
      */
     public static function driveMatchesDepartment(array $drive, array $ctx): bool
     {
-        if ($ctx['isAdmin']) {
+        if ($ctx['isAdmin'] || empty($ctx['departmentId'])) {
             return true;
         }
         $branches = $drive['branches'] ?? [];
@@ -140,7 +149,7 @@ final class PlacementOfficerContext
      */
     public static function applyDepartmentToDriveInput(array $input, array $ctx): array
     {
-        if ($ctx['isAdmin']) {
+        if ($ctx['isAdmin'] || empty($ctx['departmentId'])) {
             return $input;
         }
         $deptCode = $ctx['department']['code'] ?? '';

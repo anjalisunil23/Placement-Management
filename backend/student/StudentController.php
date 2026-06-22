@@ -430,7 +430,7 @@ final class StudentController
       if ($companyName === '') {
         $title = (string) ($drive['title'] ?? '');
         if (str_contains($title, '—')) {
-          $companyName = trim((string) (explode('—', $title, 2)[1] ?? ''));
+          $companyName = trim((string) (explode('—', $title, 2)[0] ?? ''));
         }
       }
       $serialized['companyName'] = $companyName;
@@ -440,6 +440,26 @@ final class StudentController
 
       return $serialized;
     }, $drives);
+
+    $register = (string) ($profile['registerNumber'] ?? '');
+    if ($register !== '') {
+      $lookupRows = array_map(static fn (array $row): array => [
+        'driveId' => (string) ($row['id'] ?? $row['_id'] ?? ''),
+        'company' => (string) ($row['companyName'] ?? ''),
+        'status'  => (string) ($row['applicationStatus'] ?? ''),
+        'package' => '',
+      ], $result);
+      $merged = (new RecruitmentResultService())->mergeIntoApplicationRows($lookupRows, $register);
+      foreach ($result as $i => &$row) {
+        if (!empty($merged[$i]['resultStatus'])) {
+          $row['applicationStatus'] = $merged[$i]['resultStatus'];
+        }
+        if (!empty($merged[$i]['resultPackage'])) {
+          $row['package'] = $merged[$i]['resultPackage'];
+        }
+      }
+      unset($row);
+    }
 
     Response::success($result);
   }

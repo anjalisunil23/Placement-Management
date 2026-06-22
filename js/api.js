@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260622b';
+const APP_SCRIPT_VERSION = '20260622c';
 const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 const ROLE_LABELS = {
