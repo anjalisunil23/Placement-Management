@@ -34,5 +34,6 @@ deployment:
     - cd $DEPLOYPATH && (/usr/local/bin/composer dump-autoload -o || /opt/cpanel/composer/bin/composer dump-autoload -o)
     - /bin/grep -q "inline API router" $DEPLOYPATH/backend/api/index.php || (echo "DEPLOY FAILED - backend/api/index.php is stale. Re-deploy from latest main." >&2; exit 1)
     - test -f $DEPLOYPATH/backend/bootstrap-aes.php || (echo "DEPLOY FAILED - backend/bootstrap-aes.php missing." >&2; exit 1)
+    - test -f $DEPLOYPATH/css/aes-login.css || (echo "DEPLOY FAILED - css/aes-login.css missing." >&2; exit 1)
     - test -f $DEPLOYPATH/backend/services/AesLoginService.php || (echo "DEPLOY FAILED - AesLoginService.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/.env || /bin/cp $DEPLOYPATH/.env.production.example $DEPLOYPATH/.env
