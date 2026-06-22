@@ -1,23 +1,8 @@
 /**
  * AES login modal for the public portal (login.aesajce.in).
+ * Uses PORTAL_AUTH_PAGE / portalAuthUrl from api.js — do not redeclare them here.
  */
-const PORTAL_AUTH_PAGE = 'public-stats.html';
-
 let aesLoginModal = null;
-
-function portalAuthUrl(next = '', autoLogin = true) {
-  const params = new URLSearchParams();
-  if (next) params.set('next', next);
-  if (autoLogin) params.set('login', '1');
-  const qs = params.toString();
-  return qs ? `${PORTAL_AUTH_PAGE}?${qs}` : PORTAL_AUTH_PAGE;
-}
-
-function storeAesNextRedirect(next) {
-  const raw = String(next || '').trim();
-  if (!raw) return;
-  document.cookie = 'ph-aes-next=' + encodeURIComponent(raw) + '; path=/; SameSite=Lax';
-}
 
 function getAesLoginModal() {
   const node = document.getElementById('aesLoginModal');
@@ -41,11 +26,21 @@ function showAesLoginError(msg) {
   el.style.display = '';
 }
 
+function storeAesNextFromUrl() {
+  const next = new URLSearchParams(location.search).get('next') || '';
+  if (!next) return;
+  document.cookie = 'ph-aes-next=' + encodeURIComponent(next) + '; path=/; SameSite=Lax';
+}
+
 function openAesLoginModal() {
   showAesLoginError('');
-  const params = new URLSearchParams(location.search);
-  storeAesNextRedirect(params.get('next') || '');
-  getAesLoginModal()?.show();
+  storeAesNextFromUrl();
+  const modal = getAesLoginModal();
+  if (!modal) {
+    showAesLoginError('Sign-in dialog could not open. Please refresh the page.');
+    return;
+  }
+  modal.show();
   setTimeout(() => document.getElementById('aesUsername')?.focus(), 300);
 }
 
@@ -97,19 +92,25 @@ function wirePortalAesLogin() {
     openAesLoginModal();
   }
 
-  document.querySelectorAll('.portal-aes-login').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+  if (!window.__portalAesLoginBound) {
+    window.__portalAesLoginBound = true;
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.portal-aes-login');
+      if (!btn) return;
       e.preventDefault();
       openAesLoginModal();
     });
-  });
+  }
 
   const form = document.getElementById('aesLoginForm');
-  form?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(form).entries());
-    submitAesLogin(String(data.username || '').trim(), String(data.password || ''));
-  });
+  if (form && !form.dataset.aesBound) {
+    form.dataset.aesBound = '1';
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(form).entries());
+      submitAesLogin(String(data.username || '').trim(), String(data.password || ''));
+    });
+  }
 
   if (params.get('login') === '1' && !aesErr) {
     setTimeout(() => openAesLoginModal(), 300);
@@ -131,14 +132,24 @@ async function initPortalSessionRedirect() {
     const home = Auth.homePage();
     btn.innerHTML = '<i class="bi bi-grid me-1"></i>Open portal';
     btn.classList.remove('portal-aes-login');
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
       window.location.href = home.startsWith('/') ? home : '/' + home;
     });
   });
   return params.get('login') === '1';
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function bootPortalAesLogin() {
   const skipAesPrompt = await initPortalSessionRedirect();
   if (!skipAesPrompt) wirePortalAesLogin();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootPortalAesLogin);
+} else {
+  bootPortalAesLogin();
+}
+
+// Expose for inline debugging on production.
+window.openAesLoginModal = openAesLoginModal;
