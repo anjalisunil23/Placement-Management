@@ -1,18 +1,21 @@
 ---
+# cPanel Git Version Control → "Deploy HEAD Commit" runs these tasks.
+# Pull/update alone only changes ~/repositories/... — NOT public_html.
 deployment:
   tasks:
     - export DEPLOYPATH=/home/placementsajce/public_html
-    - /bin/cp -R backend $DEPLOYPATH/backend
-    - /bin/cp -R css $DEPLOYPATH/css
-    - /bin/cp -R js $DEPLOYPATH/js
-    - /bin/cp *.html $DEPLOYPATH/
-    - /bin/cp .htaccess $DEPLOYPATH/.htaccess
-    - /bin/cp index.php $DEPLOYPATH/index.php
-    - /bin/cp composer.json $DEPLOYPATH/composer.json
-    - /bin/cp composer.lock $DEPLOYPATH/composer.lock
-    - /bin/cp .env.production.example $DEPLOYPATH/.env.production.example
+    - export REPOPATH=$(pwd)
+    # Sync app files into the live web root (overwrite stale copies)
+    - /bin/cp -Rf backend $DEPLOYPATH/backend
+    - /bin/cp -Rf css $DEPLOYPATH/css
+    - /bin/cp -Rf js $DEPLOYPATH/js
+    - /bin/cp -f .htaccess $DEPLOYPATH/.htaccess
+    - /bin/cp -f index.php $DEPLOYPATH/index.php
+    - /bin/cp -f composer.json $DEPLOYPATH/composer.json
+    - /bin/cp -f composer.lock $DEPLOYPATH/composer.lock
+    - /bin/cp -f .env.production.example $DEPLOYPATH/.env.production.example
+    - /bin/cp -f *.html $DEPLOYPATH/
     - /bin/mkdir -p $DEPLOYPATH/uploads/resumes $DEPLOYPATH/uploads/reports $DEPLOYPATH/uploads/jd $DEPLOYPATH/uploads/signed_reports $DEPLOYPATH/uploads/photos
     - /bin/chmod -R 775 $DEPLOYPATH/uploads
-    - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
+    - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader 2>/dev/null || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
     - test -f $DEPLOYPATH/.env || /bin/cp $DEPLOYPATH/.env.production.example $DEPLOYPATH/.env
-    - cd $DEPLOYPATH && php backend/scripts/setup.php
