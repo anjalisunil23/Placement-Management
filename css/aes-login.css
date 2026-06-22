@@ -1,32 +1,26 @@
-/* AES login modal — scoped styles (loads with public-stats.html) */
-#aesLoginModal.aes-login-modal .modal-backdrop.show{opacity:.35}
+/* AES login modal — matches login.aesajce.in card */
+#aesLoginModal.aes-login-modal .modal-backdrop.show{opacity:.4}
 #aesLoginModal .aes-login-dialog{
-  max-width:400px;
+  max-width:360px;
   margin:1rem auto;
 }
 #aesLoginModal .modal-content.aes-login-card{
-  border-radius:8px!important;
-  border:1px solid #c5cdd8!important;
+  border-radius:4px!important;
+  border:1px solid #b8c0cc!important;
   background:#fff!important;
-  box-shadow:0 8px 28px rgba(15,23,42,.14)!important;
+  box-shadow:0 2px 12px rgba(0,0,0,.08)!important;
   position:relative;
-  font-family:'Open Sans',system-ui,-apple-system,Segoe UI,sans-serif;
+  font-family:'Open Sans',Arial,Helvetica,sans-serif;
+  font-size:14px;
   color:#333;
-  overflow:hidden;
 }
-#aesLoginModal .aes-login-close{
-  position:absolute;
-  top:.7rem;
-  right:.7rem;
-  z-index:2;
-  opacity:.4;
-}
+#aesLoginModal .aes-login-close{display:none}
 #aesLoginModal .aes-login-body{
-  padding:1.85rem 2rem 1.75rem!important;
+  padding:22px 26px 20px!important;
 }
 #aesLoginModal .aes-login-brand{
   text-align:center;
-  margin:0 0 1.35rem;
+  margin:0 0 18px;
 }
 #aesLoginModal .aes-login-logo{
   display:block;
@@ -36,38 +30,39 @@
   height:auto;
 }
 #aesLoginModal .aes-login-error{
-  margin:0 0 .85rem;
-  padding:.5rem .65rem;
+  margin:0 0 12px;
+  padding:8px 10px;
   border-radius:4px;
   background:#fde8e8;
   border:1px solid #f5c2c2;
   color:#b42318;
-  font-size:.82rem;
+  font-size:13px;
   line-height:1.35;
 }
-#aesLoginModal .aes-form-group{margin:0 0 .9rem}
+#aesLoginModal .aes-form-group{margin:0 0 12px}
 #aesLoginModal .aes-login-input{
   display:block;
   width:100%;
+  height:42px;
   box-sizing:border-box;
   -webkit-appearance:none;
   appearance:none;
   background:#eef6fc!important;
   border:1px solid #7eb8e8!important;
-  border-radius:6px!important;
-  padding:.65rem .9rem!important;
-  font-size:1rem;
+  border-radius:4px!important;
+  padding:8px 12px!important;
+  font-size:15px;
   line-height:1.4;
-  color:#1a1a1a!important;
+  color:#222!important;
   box-shadow:none!important;
 }
 #aesLoginModal .aes-login-input:focus{
   outline:0!important;
   background:#e8f3fb!important;
-  border-color:#5aa8db!important;
+  border-color:#6aabde!important;
   box-shadow:none!important;
 }
-#aesLoginModal .aes-login-input::placeholder{color:#6b7280;opacity:1}
+#aesLoginModal .aes-login-input::placeholder{color:#7a8699;opacity:1}
 #aesLoginModal .aes-login-submit{
   display:block;
   width:100%;
@@ -75,34 +70,34 @@
   -webkit-appearance:none;
   appearance:none;
   margin:0;
-  padding:.75rem 1rem;
-  border:1px solid #1d7fc3!important;
-  border-radius:6px!important;
-  background:#1d7fc3!important;
+  padding:11px 16px;
+  border:1px solid #2e6da4!important;
+  border-radius:4px!important;
+  background:#337ab7!important;
   color:#fff!important;
-  font-size:1.125rem;
-  font-weight:600;
-  line-height:1.2;
+  font-size:18px;
+  font-weight:400;
+  line-height:1.33;
   cursor:pointer;
   text-align:center;
 }
 #aesLoginModal .aes-login-submit:hover:not(:disabled),
 #aesLoginModal .aes-login-submit:focus:not(:disabled){
-  background:#1a72b0!important;
-  border-color:#1a72b0!important;
+  background:#2e6da4!important;
+  border-color:#2b669a!important;
   color:#fff!important;
 }
 #aesLoginModal .aes-login-submit:disabled{opacity:.7;cursor:not-allowed}
 #aesLoginModal .aes-login-forgot-wrap{
-  margin:.9rem 0 0;
-  text-align:left;
+  margin:12px 0 0;
+  text-align:center;
 }
 #aesLoginModal .aes-login-forgot{
-  color:#4b5563;
-  font-size:.95rem;
+  color:#333;
+  font-size:14px;
   text-decoration:none;
 }
-#aesLoginModal .aes-login-forgot:hover{color:#1d7fc3;text-decoration:underline}
+#aesLoginModal .aes-login-forgot:hover{color:#337ab7;text-decoration:underline}
 #aesLoginModal .aes-login-or{
   width:100%;
   display:flex;
@@ -113,7 +108,7 @@
   font-weight:500;
   color:#6b7280;
   margin:0;
-  padding:.75rem 0 .65rem;
+  padding:10px 0;
   text-transform:uppercase;
 }
 #aesLoginModal .aes-login-or::before,
@@ -124,29 +119,29 @@
   height:.8em;
 }
 #aesLoginModal .aes-login-or span{
-  flex:0 0 auto;
-  padding:0 .65rem;
+  flex:0.2 0 auto;
+  padding:0 8px;
   text-align:center;
 }
 #aesLoginModal .aes-social-row{
   display:flex;
-  gap:8px;
+  flex-direction:row;
+  gap:6px;
 }
 #aesLoginModal .aes-social-btn{
   flex:1 1 0;
   min-width:0;
-  display:flex;
+  display:inline-flex;
   flex-direction:row;
-  align-items:center;
-  justify-content:center;
-  gap:.35rem;
-  padding:.55rem .35rem;
+  align-items:stretch;
+  padding:0!important;
   border:0!important;
-  border-radius:6px!important;
+  border-radius:4px!important;
+  overflow:hidden;
   color:#fff!important;
-  font-size:.75rem;
-  font-weight:600;
-  line-height:1.1;
+  font-size:12px;
+  font-weight:400;
+  line-height:1.2;
   cursor:pointer;
   -webkit-appearance:none;
   appearance:none;
@@ -156,57 +151,79 @@
   display:flex;
   align-items:center;
   justify-content:center;
-  background:transparent;
-  padding:0;
+  flex:0 0 auto;
+  padding:8px 7px;
+  background:rgba(0,0,0,.15);
+  color:rgba(255,255,255,.85)!important;
 }
-#aesLoginModal .aes-social-icon i{font-size:1rem;line-height:1;color:#fff!important}
+#aesLoginModal .aes-social-icon i{
+  font-size:13px;
+  line-height:1;
+  color:inherit!important;
+}
 #aesLoginModal .aes-social-text{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:1;
+  min-width:0;
+  padding:8px 4px;
   color:#fff!important;
+  font-size:11px;
+  font-weight:600;
   white-space:nowrap;
 }
-#aesLoginModal .aes-social-btn:hover:not(:disabled){filter:brightness(1.06)}
+#aesLoginModal .aes-social-btn:hover:not(:disabled){filter:brightness(1.04)}
 #aesLoginModal .aes-social-btn:disabled{opacity:.65;cursor:not-allowed}
-#aesLoginModal .aes-social-google{background:#db4437!important}
-#aesLoginModal .aes-social-microsoft{background:#0078d4!important}
-#aesLoginModal .aes-social-whatsapp{background:#25d366!important}
+#aesLoginModal .aes-social-google{background:#d9534f!important}
+#aesLoginModal .aes-social-microsoft{background:#337ab7!important}
+#aesLoginModal .aes-social-whatsapp{
+  background:green!important;
+  border:1px solid green!important;
+}
+#aesLoginModal .aes-social-whatsapp:hover:not(:disabled){
+  background:#007500!important;
+}
 #aesLoginModal .aes-wa-otp-panel{
-  margin-top:.85rem;
-  padding:.85rem;
+  margin-top:12px;
+  padding:12px;
   border:1px dashed #7eb8e8;
-  border-radius:6px;
+  border-radius:4px;
   background:#f4faff;
   text-align:center;
 }
 #aesLoginModal .aes-wa-otp-title{
   font-weight:700;
   color:#1e293b;
-  margin:0 0 .35rem;
-  font-size:.95rem;
+  margin:0 0 6px;
+  font-size:14px;
 }
 #aesLoginModal .aes-wa-otp-hint{
-  margin:0 0 .5rem;
-  font-size:.78rem;
+  margin:0 0 8px;
+  font-size:12px;
   color:#64748b;
 }
 #aesLoginModal .aes-wa-otp-code{
   font-family:ui-monospace,Menlo,monospace;
-  font-size:1.6rem;
+  font-size:26px;
   font-weight:700;
   letter-spacing:.1em;
-  color:#1d7fc3;
+  color:#337ab7;
   margin:0;
 }
 #aesLoginModal .aes-wa-otp-cancel{
-  margin-top:.65rem;
-  padding:.3rem .75rem;
+  margin-top:10px;
+  padding:5px 12px;
   border:1px solid #cbd5e1;
   border-radius:4px;
   background:#fff;
   color:#475569;
-  font-size:.8rem;
+  font-size:13px;
   cursor:pointer;
 }
-@media (max-width:575px){
-  #aesLoginModal .aes-login-body{padding:1.4rem 1.2rem 1.3rem!important}
-  #aesLoginModal .aes-social-btn{font-size:.68rem;gap:.2rem;padding:.5rem .2rem}
+
+@media (max-width:419px){
+  #aesLoginModal .aes-login-body{padding:18px 16px 16px!important}
+  #aesLoginModal .aes-social-text{font-size:10px;padding:8px 2px}
+  #aesLoginModal .aes-social-icon{padding:8px 5px}
 }
