@@ -17,8 +17,8 @@ use PMS\Models\ApplicationModel;
 use PMS\Models\DriveModel;
 
 use PMS\Models\NotificationModel;
-
 use PMS\Models\RecruitmentResultModel;
+use PMS\Services\RecruitmentResultService;
 
 use PMS\Models\StudentModel;
 
@@ -491,7 +491,29 @@ final class OfficerController
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         }
+
+        (new RecruitmentResultService())->syncAfterSave($input, $id, (string) $scope['user']['_id']);
         Response::success(['id' => $id], 'Result saved.');
+    }
+
+    /** DELETE /api/officer/results/{id} */
+    public function deleteResult(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $result = (new RecruitmentResultModel())->findById($id);
+        if (!$result) {
+            Response::notFound();
+        }
+        if (!$scope['ctx']['isAdmin']) {
+            (new OfficerDataService())->assertResultRegisterInScope(
+                (string) ($result['registerNumber'] ?? ''),
+                $scope['ctx']
+            );
+        }
+        if (!(new RecruitmentResultModel())->delete($id)) {
+            Response::notFound();
+        }
+        Response::success(null, 'Result deleted.');
     }
 
     /** GET /api/officer/analytics */

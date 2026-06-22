@@ -382,7 +382,7 @@ document.getElementById('dashActions').innerHTML = actions[role] || '';
 /* PO / Admin populated content */
 if (role === 'placement_officer' || role === 'admin') {
   (async () => {
-    if (role === 'placement_officer') {
+    if ((role === 'admin' || role === 'placement_officer') && Auth.hasRealAuth() && !Auth.isDemo()) {
       await Promise.all([UserRegistry.fetch(), DriveStore.fetch()]);
     }
     const s = await dashboardStats();
@@ -421,43 +421,49 @@ if (role === 'placement_officer' || role === 'admin') {
 
 /* Student content */
 if (role === 'student') {
-  StudentNotifs.seed();
-  ResumeBucket.seed();
-  const apps = StudentApps.all();
-  const resumes = ResumeBucket.all();
-  const unread = StudentNotifs.unreadCount();
+  (async () => {
+    StudentNotifs.seed();
+    ResumeBucket.seed();
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      await StudentApps.fetch();
+      await DriveStore.fetchStudentDrives();
+    }
+    const apps = StudentApps.all();
+    const resumes = ResumeBucket.all();
+    const unread = await NotificationInbox.unreadCount('student');
 
-  document.getElementById('studentCgpa').dataset.target = user.cgpa || 8.7;
-  document.getElementById('studentApps').dataset.target = apps.length;
-  document.getElementById('studentResumes').dataset.target = resumes.length;
-  document.getElementById('studentNotifCount').dataset.target = unread;
-  document.getElementById('studentResumeCount').textContent = resumes.length + ' files';
-  document.getElementById('studentUnreadBadge').textContent = unread ? unread + ' new' : 'None';
-  ['studentCgpa','studentApps','studentResumes','studentNotifCount'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.dataset.animated = '0';
-  });
-  animateCounters(document.querySelector('[data-roles="student"]'));
+    document.getElementById('studentCgpa').dataset.target = user.cgpa || 8.7;
+    document.getElementById('studentApps').dataset.target = apps.length;
+    document.getElementById('studentResumes').dataset.target = resumes.length;
+    document.getElementById('studentNotifCount').dataset.target = unread;
+    document.getElementById('studentResumeCount').textContent = resumes.length + ' files';
+    document.getElementById('studentUnreadBadge').textContent = unread ? unread + ' new' : 'None';
+    ['studentCgpa','studentApps','studentResumes','studentNotifCount'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.dataset.animated = '0';
+    });
+    animateCounters(document.querySelector('[data-roles="student"]'));
 
-  const openDrives = DRIVE_CATALOG.filter(d => d.status !== 'Closed').slice(0, 4);
-  document.getElementById('studentDrives').innerHTML = openDrives.map(d => {
-    const applied = StudentApps.hasApplied(d.id);
-    return `<div class="d-flex align-items-center justify-content-between py-2 border-bottom" style="border-color:var(--border)!important">
-      <div><strong class="d-block">${d.company}</strong><small class="text-muted-2">${d.role} · ${d.package} · ${d.profile}</small></div>
-      ${applied ? appStatusBadge(StudentApps.get(d.id).status) : `<a href="drives.html" class="btn btn-sm btn-outline-primary">Apply</a>`}
-    </div>`;
-  }).join('');
+    const openDrives = (DriveStore._studentCache || DRIVE_CATALOG).filter(d => d.status !== 'Closed').slice(0, 4);
+    document.getElementById('studentDrives').innerHTML = openDrives.map(d => {
+      const applied = StudentApps.hasApplied(d.id);
+      return `<div class="d-flex align-items-center justify-content-between py-2 border-bottom" style="border-color:var(--border)!important">
+        <div><strong class="d-block">${d.company}</strong><small class="text-muted-2">${d.role} · ${d.package} · ${d.profile}</small></div>
+        ${applied ? appStatusBadge(StudentApps.get(d.id).status) : `<a href="drives.html" class="btn btn-sm btn-outline-primary">Apply</a>`}
+      </div>`;
+    }).join('');
 
-  const notifs = StudentNotifs.all().slice(0, 5);
-  document.getElementById('studentNotifs').innerHTML = notifs.length ? notifs.map(n => `
-    <div class="d-flex gap-2 py-2 border-bottom" style="border-color:var(--border)!important">
-      <span class="badge-soft ${n.type === 'job_poster' ? 'info' : 'warning'}" style="height:fit-content"><i class="bi bi-dot"></i></span>
-      <div class="flex-grow-1"><div class="small fw-semibold">${n.title}</div><small class="text-muted-2">${n.body}</small></div>
-    </div>`).join('') : '<p class="text-muted-2 small mb-0">No notifications yet.</p>';
+    const notifs = StudentNotifs.all().slice(0, 5);
+    document.getElementById('studentNotifs').innerHTML = notifs.length ? notifs.map(n => `
+      <div class="d-flex gap-2 py-2 border-bottom" style="border-color:var(--border)!important">
+        <span class="badge-soft ${n.type === 'job_poster' ? 'info' : 'warning'}" style="height:fit-content"><i class="bi bi-dot"></i></span>
+        <div class="flex-grow-1"><div class="small fw-semibold">${n.title}</div><small class="text-muted-2">${n.body}</small></div>
+      </div>`).join('') : '<p class="text-muted-2 small mb-0">No notifications yet.</p>';
 
-  document.getElementById('studentAppRows').innerHTML = apps.length ? apps.map(a => `
-    <tr><td><strong>${a.company}</strong></td><td>${a.role}</td><td>${a.resumeLabel}</td><td>${formatDate(a.appliedAt)}</td><td>${appStatusBadge(a.status)}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="text-muted-2 p-4">No applications yet. <a href="drives.html">Browse drives</a></td></tr>';
+    document.getElementById('studentAppRows').innerHTML = apps.length ? apps.map(a => `
+      <tr><td><strong>${a.company || '—'}</strong></td><td>${a.role || '—'}</td><td>${a.resumeLabel || '—'}</td><td>${formatDate(a.appliedAt)}</td><td>${appStatusBadge(a.status)}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="text-muted-2 p-4">No applications yet. <a href="drives.html">Browse drives</a></td></tr>';
+  })();
 }
 
 /* Staff recommendations + department stats */
@@ -543,50 +549,68 @@ if (role === 'staff') {
 
 /* Company recruitment overview */
 if (role === 'company') {
-  const coName = user.companyName || 'Acme Cloud';
-  const apps = companyApplicants(coName);
-  const byDept = applicantsByDepartment(coName);
+  (async () => {
+    let apps = [];
+    let byDept = [];
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const data = await RecruitingStore.fetch();
+      if (data) {
+        apps = (data.applicants || []).map(RecruitingStore.mapApplicant);
+        byDept = (data.applicantsByDept || []).map(RecruitingStore.mapDeptRow);
+      }
+    }
+    if (!apps.length) {
+      const coName = user.companyName || 'Acme Cloud';
+      apps = companyApplicants(coName);
+      byDept = applicantsByDepartment(coName);
+    }
 
-  document.getElementById('coApplicants').dataset.target = apps.length;
-  document.getElementById('coDepts').dataset.target = byDept.length;
-  document.getElementById('coDeptBadge').textContent = byDept.length + ' depts';
-  ['coApplicants','coDepts'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.dataset.animated = '0';
-  });
-  animateCounters(document.querySelector('[data-roles="company"]'));
+    document.getElementById('coApplicants').dataset.target = apps.length;
+    document.getElementById('coDepts').dataset.target = byDept.length;
+    document.getElementById('coDeptBadge').textContent = byDept.length + ' depts';
+    ['coApplicants','coDepts'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.dataset.animated = '0';
+    });
+    animateCounters(document.querySelector('[data-roles="company"]'));
 
-  document.getElementById('companyDeptRows').innerHTML = byDept.length ? byDept.map(d =>
-    `<tr><td><strong>${d.dept}</strong></td><td>${d.count}</td></tr>`).join('')
-    : '<tr><td colspan="2" class="text-muted-2 p-3">No applicants yet.</td></tr>';
+    document.getElementById('companyDeptRows').innerHTML = byDept.length ? byDept.map(d =>
+      `<tr><td><strong>${d.dept}</strong></td><td>${d.count}</td></tr>`).join('')
+      : '<tr><td colspan="2" class="text-muted-2 p-3">No applicants yet.</td></tr>';
 
-  document.getElementById('companyApplicants').innerHTML = apps.length ? apps.slice(0, 8).map(a => `
-    <tr><td><strong>${a.name}</strong></td><td>${a.dept}</td><td>${a.cgpa.toFixed(2)}</td><td>${a.role}</td><td>${appStatusBadge(a.status)}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="text-muted-2 p-4">No applicants yet.</td></tr>';
+    document.getElementById('companyApplicants').innerHTML = apps.length ? apps.slice(0, 8).map(a => `
+      <tr><td><strong>${a.name}</strong></td><td>${a.dept}</td><td>${a.cgpa.toFixed(2)}</td><td>${a.role}</td><td>${appStatusBadge(a.status)}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="text-muted-2 p-4">No applicants yet.</td></tr>';
+  })();
 }
 
 if (role === 'alumni') {
-  if (alumniIsWorking()) {
-    document.getElementById('alumniCo').textContent = user.company || '—';
-    const refs = [
-      ['Google','2025-12-14','pending'],
-      ['Razorpay','2025-11-30','contacted'],
-      ['Flipkart','2025-11-18','registered'],
-    ];
-    document.getElementById('alumniReferrals').innerHTML = refs.map(r=>`
-      <tr><td><strong>${r[0]}</strong></td><td>${formatDate(r[1])}</td><td>${recStatusBadge(r[2])}</td></tr>`).join('');
-  } else {
-    const drives = [
-      ['Microsoft','SWE — Lateral','₹52 LPA','success','Eligible'],
-      ['Adobe','Full Stack Engineer','₹24 LPA','success','Eligible'],
-      ['Deloitte','Technology Consultant','₹12 LPA','warning','Apply by Jan 20'],
-    ];
-    document.getElementById('alumniDrives').innerHTML = drives.map(d=>`
-      <div class="d-flex align-items-center justify-content-between py-2 border-bottom" style="border-color:var(--border)!important">
-        <div><strong class="d-block">${d[0]}</strong><small class="text-muted-2">${d[1]} · ${d[2]}</small></div>
-        <span class="badge-soft ${d[3]}">${d[4]}</span>
-      </div>`).join('');
-  }
+  (async () => {
+    if (alumniIsWorking()) {
+      document.getElementById('alumniCo').textContent = user.company || '—';
+      if (Auth.hasRealAuth() && !Auth.isDemo()) await AlumniReferrals.fetch();
+      const refs = AlumniReferrals.mine();
+      document.getElementById('alumniReferrals').innerHTML = refs.length ? refs.map(r => `
+        <tr><td><strong>${r.companyName || '—'}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
+        : '<tr><td colspan="3" class="text-muted-2 p-3">No referrals yet.</td></tr>';
+    } else {
+      if (Auth.hasRealAuth() && !Auth.isDemo()) {
+        await Promise.all([DriveStore.fetchAlumniDrives(), AlumniApps.fetch()]);
+      }
+      const drives = (DriveStore._alumniCache || []).filter(d => d.status !== 'Closed').slice(0, 4);
+      document.getElementById('alumniDrives').innerHTML = drives.length ? drives.map(d => {
+        const applied = AlumniApps.hasApplied(d.id) || d.applied;
+        const badge = applied
+          ? appStatusBadge(AlumniApps.get(d.id)?.status || d.applicationStatus || 'applied')
+          : `<span class="badge-soft ${d.eligible === false ? 'danger' : 'success'}">${d.eligible === false ? 'Not eligible' : 'Eligible'}</span>`;
+        return `<div class="d-flex align-items-center justify-content-between py-2 border-bottom" style="border-color:var(--border)!important">
+          <div><strong class="d-block">${d.company}</strong><small class="text-muted-2">${d.role} · ${d.package}</small></div>
+          ${badge}
+        </div>`;
+      }).join('')
+        : '<div class="p-3 text-muted-2 small">No open drives right now.</div>';
+    }
+  })();
 }
 });
 </script>

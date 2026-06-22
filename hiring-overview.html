@@ -141,6 +141,66 @@ if (!canViewCampusHiring()) {
 
 const stats = campusRecruitmentStats();
 let apiHiringData = null;
+let campusRecruitingData = null;
+
+function recruitingViewForDept(data, deptCode) {
+  if (!data) return null;
+  let applicants = (data.applicants || []).map(RecruitingStore.mapApplicant);
+  if (deptCode) applicants = applicants.filter(a => (a.dept || '') === deptCode);
+
+  const shortlisted = applicants.filter(a => a.status === 'shortlisted' || a.status === 'under_review').length;
+  const offers = applicants.filter(a => a.status === 'offered' || a.status === 'selected').length;
+  const hired = applicants.filter(a => a.status === 'placed').length;
+
+  const companyMap = new Map();
+  (data.activeCompanies || []).forEach(c => {
+    companyMap.set(c.company, {
+      company: c.company,
+      roles: c.openRoles ? [`${c.openRoles} open role${c.openRoles === 1 ? '' : 's'}`] : ['—'],
+      applicants: 0,
+      shortlisted: 0,
+      selected: 0,
+      status: c.status || 'Active',
+      statusCls: { scheduled: 'info', open: 'success', ongoing: 'info', reviewing: 'warning' }[String(c.status || '').toLowerCase()] || 'success',
+    });
+  });
+  applicants.forEach(a => {
+    const key = a.company || 'Unknown';
+    if (!companyMap.has(key)) {
+      companyMap.set(key, { company: key, roles: ['—'], applicants: 0, shortlisted: 0, selected: 0, status: 'Active', statusCls: 'info' });
+    }
+    const row = companyMap.get(key);
+    row.applicants++;
+    if (a.status === 'shortlisted' || a.status === 'under_review') row.shortlisted++;
+    if (a.status === 'offered' || a.status === 'selected') row.selected++;
+  });
+
+  const companies = [...companyMap.values()].filter(c => !deptCode || c.applicants > 0);
+  return {
+    totals: {
+      companiesHiring: companies.length,
+      applicants: applicants.length,
+      shortlisted,
+      offers,
+      hired: hired || offers,
+    },
+    pipeline: [
+      { label: 'Applicants', value: applicants.length },
+      { label: 'Shortlisted', value: shortlisted },
+      { label: 'Offers', value: offers },
+      { label: 'Hired', value: hired || offers },
+    ],
+    companies,
+    candidates: applicants.map(a => ({
+      name: a.name,
+      roll: a.roll,
+      dept: a.dept,
+      company: a.company || '—',
+      role: a.role,
+      status: a.status,
+    })),
+  };
+}
 
 const user = Auth.user() || demoUserFor(Auth.role());
 const role = Auth.role();
@@ -167,19 +227,29 @@ function setDeptUI(dept) {
 
 function renderForDept(dept) {
   const apiDept = (role === 'staff' && apiHiringData) ? apiHiringData : null;
+  const recruitingDept = campusRecruitingData ? recruitingViewForDept(campusRecruitingData, dept) : null;
+  const liveDept = apiDept || recruitingDept;
   // Counters
   if (!dept) {
-    setStat('statCompanies', stats.companiesHiring);
-    setStat('statApplicants', stats.applicants);
-    setStat('statShortlisted', stats.shortlisted);
-    setStat('statOffers', stats.offers);
-    setStat('statHired', stats.hired);
-  } else if (apiDept) {
-    setStat('statCompanies', apiDept.totals?.companiesHiring ?? 0);
-    setStat('statApplicants', apiDept.totals?.applicants ?? 0);
-    setStat('statShortlisted', apiDept.totals?.shortlisted ?? 0);
-    setStat('statOffers', apiDept.totals?.offers ?? 0);
-    setStat('statHired', apiDept.totals?.hired ?? 0);
+    if (liveDept) {
+      setStat('statCompanies', liveDept.totals?.companiesHiring ?? 0);
+      setStat('statApplicants', liveDept.totals?.applicants ?? 0);
+      setStat('statShortlisted', liveDept.totals?.shortlisted ?? 0);
+      setStat('statOffers', liveDept.totals?.offers ?? 0);
+      setStat('statHired', liveDept.totals?.hired ?? 0);
+    } else {
+      setStat('statCompanies', stats.companiesHiring);
+      setStat('statApplicants', stats.applicants);
+      setStat('statShortlisted', stats.shortlisted);
+      setStat('statOffers', stats.offers);
+      setStat('statHired', stats.hired);
+    }
+  } else if (liveDept) {
+    setStat('statCompanies', liveDept.totals?.companiesHiring ?? 0);
+    setStat('statApplicants', liveDept.totals?.applicants ?? 0);
+    setStat('statShortlisted', liveDept.totals?.shortlisted ?? 0);
+    setStat('statOffers', liveDept.totals?.offers ?? 0);
+    setStat('statHired', liveDept.totals?.hired ?? 0);
   } else {
     const d = departmentHiringOverview(dept);
     setStat('statCompanies', d.companies.length);
@@ -192,17 +262,43 @@ function renderForDept(dept) {
 
   // Companies table
   if (!dept) {
-    document.getElementById('activeCount').textContent = `${stats.companiesHiring} active`;
-    document.getElementById('companyRows').innerHTML = stats.companies.length
-      ? stats.companies.map(c => `<tr>
+    if (liveDept) {
+      document.getElementById('activeCount').textContent = `${(liveDept.companies || []).length} active`;
+      document.getElementById('companyRows').innerHTML = (liveDept.companies || []).length
+        ? liveDept.companies.map(c => `<tr>
+            <td><strong>${c.company}</strong></td>
+            <td>${(c.roles || ['—']).join(', ')}</td>
+            <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
+            <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
+            <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
+            <td><span class="badge-soft ${c.statusCls || 'info'}">${c.status || 'Active'}</span></td>
+          </tr>`).join('')
+        : '<tr><td colspan="6" class="text-muted-2 p-4">No companies are actively hiring right now.</td></tr>';
+    } else {
+      document.getElementById('activeCount').textContent = `${stats.companiesHiring} active`;
+      document.getElementById('companyRows').innerHTML = stats.companies.length
+        ? stats.companies.map(c => `<tr>
+            <td><strong>${c.company}</strong></td>
+            <td>${c.roles.join(', ')}</td>
+            <td>${(companyHiringCounts(c.company).applicants || 0).toLocaleString('en-IN')}</td>
+            <td>${(companyHiringCounts(c.company).shortlisted || 0).toLocaleString('en-IN')}</td>
+            <td>${(companyHiringCounts(c.company).selected || 0).toLocaleString('en-IN')}</td>
+            <td><span class="badge-soft ${c.statusCls}">${c.status}</span></td>
+          </tr>`).join('')
+        : '<tr><td colspan="6" class="text-muted-2 p-4">No companies are actively hiring right now.</td></tr>';
+    }
+  } else if (liveDept) {
+    document.getElementById('activeCount').textContent = `${(liveDept.companies || []).length} active`;
+    document.getElementById('companyRows').innerHTML = (liveDept.companies || []).length
+      ? liveDept.companies.map(c => `<tr>
           <td><strong>${c.company}</strong></td>
-          <td>${c.roles.join(', ')}</td>
-          <td>${(companyHiringCounts(c.company).applicants || 0).toLocaleString('en-IN')}</td>
-          <td>${(companyHiringCounts(c.company).shortlisted || 0).toLocaleString('en-IN')}</td>
-          <td>${(companyHiringCounts(c.company).selected || 0).toLocaleString('en-IN')}</td>
-          <td><span class="badge-soft ${c.statusCls}">${c.status}</span></td>
+          <td>${(c.roles || ['—']).join(', ')}</td>
+          <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
+          <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
+          <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
+          <td><span class="badge-soft ${c.statusCls || 'info'}">${c.status || 'Active'}</span></td>
         </tr>`).join('')
-      : '<tr><td colspan="6" class="text-muted-2 p-4">No companies are actively hiring right now.</td></tr>';
+      : '<tr><td colspan="6" class="text-muted-2 p-4">No active hiring data for this department yet.</td></tr>';
   } else if (apiDept) {
     document.getElementById('activeCount').textContent = `${(apiDept.companies || []).length} active`;
     document.getElementById('companyRows').innerHTML = (apiDept.companies || []).length
@@ -232,7 +328,8 @@ function renderForDept(dept) {
 
   // Candidate list
   const status = document.getElementById('statusFilter').value;
-  const candidatePool = apiDept?.candidates
+  const candidatePool = liveDept?.candidates
+    ?? (apiDept?.candidates)
     ?? (dept ? departmentHiringOverview(dept).candidates : PLACEMENT_STUDENTS);
   const list = candidatePool.filter(s => !status || s.status === status);
   document.getElementById('candidateRows').innerHTML = list.length
@@ -266,10 +363,17 @@ async function initHiringOverview() {
     const data = await StaffApi.fetchHiringOverview();
     if (data) apiHiringData = data;
   }
+  if (Auth.hasRealAuth() && (role === 'admin' || role === 'placement_officer')) {
+    await Auth.ensureSession();
+    const data = await RecruitingStore.fetch();
+    if (data) campusRecruitingData = data;
+  }
   animateCounters(document);
   setDeptUI(selectedDept());
   renderForDept(selectedDept());
-  const pipeline = apiHiringData?.pipeline || stats.pipeline;
+  const pipeline = (role === 'staff' && apiHiringData?.pipeline)
+    || (campusRecruitingData && recruitingViewForDept(campusRecruitingData, selectedDept())?.pipeline)
+    || stats.pipeline;
   Charts.bar(
     document.getElementById('pipelineChart'),
     pipeline.map(p => p.label),

@@ -69,6 +69,27 @@ final class ApplicationWorkflowService
     }
 
     /**
+     * Admin-recorded final outcome — bypasses intermediate workflow states.
+     */
+    public function forceFinalStatus(
+        string $applicationId,
+        string $newStatus,
+        string $by,
+        string $remarks = ''
+    ): bool {
+        if (!in_array($newStatus, ['selected', 'rejected'], true)) {
+            return false;
+        }
+
+        $model = new ApplicationModel();
+        if (!$model->findById($applicationId)) {
+            return false;
+        }
+
+        return $model->updateStatus($applicationId, $newStatus, $by, $remarks);
+    }
+
+    /**
      * After admin verifies resume, advance pending applications for this student.
      */
     public function onResumeVerified(string $studentId, string $by): void

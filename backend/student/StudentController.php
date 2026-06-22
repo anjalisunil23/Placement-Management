@@ -12,7 +12,10 @@ use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\ResumeModel;
+use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
+use PMS\Services\OfficerDataService;
+use PMS\Services\RecruitmentResultService;
 use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\NotificationService;
@@ -419,7 +422,9 @@ final class StudentController
         }
       }
       $serialized['companyName'] = $companyName;
-      $serialized['applied'] = (bool) $appModel->findByStudentAndDrive($studentId, (string) $drive['_id']);
+      $app = $appModel->findByStudentAndDrive($studentId, (string) $drive['_id']);
+      $serialized['applied'] = (bool) $app;
+      $serialized['applicationStatus'] = $app['status'] ?? null;
 
       return $serialized;
     }, $drives);
@@ -631,7 +636,22 @@ final class StudentController
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
     $apps = (new ApplicationModel())->findByStudent((string) $profile['_id']);
-    Response::success(DocumentHelper::serializeMany($apps));
+    $rows = (new OfficerDataService())->enrichApplications($apps);
+    $rows = (new RecruitmentResultService())->mergeIntoApplicationRows(
+      $rows,
+      (string) ($profile['registerNumber'] ?? '')
+    );
+    Response::success($rows);
+  }
+
+  /** GET /api/student/results */
+  public function myResults(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $profile = $this->getStudentProfile($user);
+    Response::success(
+      (new RecruitmentResultService())->listForStudent((string) ($profile['registerNumber'] ?? ''))
+    );
   }
 
   /** GET /api/student/notifications */

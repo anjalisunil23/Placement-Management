@@ -28,6 +28,7 @@ use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\EmailService;
 use PMS\Services\NotificationService;
 use PMS\Services\OfficerDataService;
+use PMS\Services\RecruitmentResultService;
 use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
@@ -757,13 +758,25 @@ final class AdminController
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         }
+
+        (new RecruitmentResultService())->syncAfterSave($input, $id, (string) $scope['user']['_id']);
         Response::success(['id' => $id], 'Result saved.');
     }
 
     /** DELETE /api/admin/results/{id} */
     public function deleteResult(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        $scope = (new OfficerDataService())->requireScope();
+        $result = (new RecruitmentResultModel())->findById($id);
+        if (!$result) {
+            Response::notFound();
+        }
+        if (!$scope['ctx']['isAdmin']) {
+            (new OfficerDataService())->assertResultRegisterInScope(
+                (string) ($result['registerNumber'] ?? ''),
+                $scope['ctx']
+            );
+        }
         if (!(new RecruitmentResultModel())->delete($id)) {
             Response::notFound();
         }

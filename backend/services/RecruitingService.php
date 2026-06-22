@@ -193,12 +193,16 @@ final class RecruitingService
         }
 
         $appService = new CompanyApplicationService();
+        $companyModel = new CompanyModel();
         $rows = [];
         foreach ($byCompany as $companyId => $appIds) {
+            $company = $companyModel->findById($companyId);
+            $companyName = (string) ($company['companyName'] ?? 'Company');
             $lookup = array_flip($appIds);
             foreach ($appService->listEnriched($companyId) as $row) {
                 $id = (string) ($row['id'] ?? $row['_id'] ?? '');
                 if ($id !== '' && isset($lookup[$id])) {
+                    $row['companyName'] = $companyName;
                     $rows[] = $row;
                 }
             }

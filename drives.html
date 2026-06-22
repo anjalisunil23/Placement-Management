@@ -469,18 +469,19 @@ function manageActions(d) {
 
 function applyAction(d) {
 
-  const applied = isStudent && (StudentApps.hasApplied(d.id) || d.applied);
+  const appliedStudent = isStudent && (StudentApps.hasApplied(d.id) || d.applied);
+  const appliedAlumni = alumniSeeking && (AlumniApps.hasApplied(d.id) || d.applied);
 
-  if (applied) {
-    const app = StudentApps.get(d.id);
-    return appStatusBadge(app?.status || 'applied');
+  if (appliedStudent || appliedAlumni) {
+    const app = isStudent ? StudentApps.get(d.id) : AlumniApps.get(d.id);
+    return appStatusBadge(app?.status || d.applicationStatus || 'applied');
   }
 
   if (d.status === 'Closed') return '<span class="badge-soft muted">Closed</span>';
 
   if (isStudent) return `<button class="btn btn-sm btn-primary" onclick="openApply('${d.id}')">Apply</button>`;
 
-  if (alumniSeeking) return `<button class="btn btn-sm btn-primary" onclick="toast('Application submitted.','success')">Apply</button>`;
+  if (alumniSeeking) return `<button class="btn btn-sm btn-primary" onclick="openAlumniApply('${d.id}')">Apply</button>`;
 
   return '';
 
@@ -725,6 +726,12 @@ async function loadDrives() {
   if (isStudent && !Auth.isDemo()) {
     const apiDrives = await DriveStore.fetchStudentDrives();
     allDrives = apiDrives ?? DriveStore.allWithCatalog();
+  } else if (alumniSeeking && !Auth.isDemo()) {
+    const apiDrives = await DriveStore.fetchAlumniDrives();
+    allDrives = apiDrives ?? DriveStore.allWithCatalog();
+  } else if (role === 'staff' && Auth.hasRealAuth() && typeof StaffApi !== 'undefined') {
+    const staffDrives = await StaffApi.fetchDrives();
+    allDrives = staffDrives?.length ? staffDrives : DriveStore.allWithCatalog();
   } else {
     if (canManage) await DriveStore.fetch();
     allDrives = DriveStore.allWithCatalog();
@@ -906,8 +913,6 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
 
 });
 
-
-
 window.openApply = async driveId => {
 
   pendingDrive = DriveStore.get(driveId);
@@ -949,6 +954,16 @@ window.openApply = async driveId => {
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('applyModal')).show();
 
+};
+
+window.openAlumniApply = async driveId => {
+  pendingDrive = DriveStore.get(driveId);
+  if (!pendingDrive) return;
+  if (!confirm(`Apply to ${pendingDrive.company} · ${pendingDrive.role}?`)) return;
+  const app = await AlumniApps.apply(pendingDrive);
+  if (!app) return;
+  toast(`Applied to ${pendingDrive.company} · ${pendingDrive.role}`, 'success');
+  renderRows();
 };
 
 
@@ -1062,6 +1077,7 @@ onAppReady(async () => {
   fillDepartmentCodeSelect(document.getElementById('driveBranchFilter'), { includeAll: true });
   renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), { checkedAll: true });
   if (isStudent && !Auth.isDemo()) await StudentApps.fetch();
+  if (alumniSeeking && !Auth.isDemo()) await AlumniApps.fetch();
   if (canManage) await DriveStore.fetch();
   await loadDrives();
   if (location.hash === '#create' && canManage) {

@@ -12,9 +12,12 @@ use PMS\Models\ApplicationModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
+use PMS\Models\CompanyModel;
 use PMS\Models\StudentModel;
 use PMS\Models\SuccessStoryModel;
 use PMS\Services\EligibilityEngine;
+use PMS\Services\OfficerDataService;
+use PMS\Services\RecruitmentResultService;
 use PMS\Services\NotificationService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -144,11 +147,29 @@ final class AlumniController
     $drives = (new DriveModel())->findAll(['status' => ['$ne' => 'completed']], 50);
     $engine = new EligibilityEngine();
     $studentId = (string) $student['_id'];
-    $result = array_map(function ($drive) use ($engine, $studentId) {
+    $companyModel = new CompanyModel();
+    $appModel = new ApplicationModel();
+
+    $result = array_map(function ($drive) use ($engine, $studentId, $companyModel, $appModel) {
       $serialized = DocumentHelper::serialize($drive);
       $serialized['eligibility'] = $engine->checkForDrive($studentId, (string) $drive['_id']);
+
+      $company = $companyModel->findById((string) ($drive['companyId'] ?? ''));
+      $companyName = (string) ($company['companyName'] ?? '');
+      if ($companyName === '') {
+        $title = (string) ($drive['title'] ?? '');
+        if (str_contains($title, '—')) {
+          $companyName = trim((string) (explode('—', $title, 2)[1] ?? ''));
+        }
+      }
+      $serialized['companyName'] = $companyName;
+      $app = $appModel->findByStudentAndDrive($studentId, (string) $drive['_id']);
+      $serialized['applied'] = (bool) $app;
+      $serialized['applicationStatus'] = $app['status'] ?? null;
+
       return $serialized;
     }, $drives);
+
     Response::success($result);
   }
 
@@ -199,6 +220,24 @@ final class AlumniController
     );
 
     Response::success(['applicationId' => $appId], 'Application submitted.', 201);
+  }
+
+  /** GET /api/alumni/applications */
+  public function myApplications(): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $student = (new StudentModel())->findByUserId((string) $user['_id']);
+    if (!$student) {
+      Response::success([]);
+      return;
+    }
+    $apps = (new ApplicationModel())->findByStudent((string) $student['_id']);
+    $rows = (new OfficerDataService())->enrichApplications($apps);
+    $rows = (new RecruitmentResultService())->mergeIntoApplicationRows(
+      $rows,
+      (string) ($student['registerNumber'] ?? '')
+    );
+    Response::success($rows);
   }
 
   /** GET /api/alumni/notifications */

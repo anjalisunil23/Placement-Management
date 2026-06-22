@@ -323,6 +323,10 @@ async function appsForStudentAsync(reg) {
     const apps = await StaffApi.fetchStudentPipeline(s.id);
     return apps || [];
   }
+  if (Auth.hasRealAuth() && !Auth.isDemo() && (role === 'admin' || role === 'placement_officer')) {
+    const all = await ApplicationPipeline.fetch();
+    return (all || []).filter(a => (a.registerNumber || '') === reg);
+  }
   return ApplicationPipeline.all().filter(a => (a.registerNumber || '') === reg);
 }
 
@@ -390,18 +394,24 @@ async function initOverview() {
     const rows = await StaffApi.fetchStudents();
     if (rows) overviewStudents = rows;
     else useStaffApi = false;
+  } else if (Auth.hasRealAuth() && !Auth.isDemo() && (role === 'admin' || role === 'placement_officer')) {
+    overviewStudents = UserRegistry.byRole('student');
   }
   renderOverviewList();
   if (overviewStudents[0]?.registerNumber) selectOverviewStudent(overviewStudents[0].registerNumber);
 }
 
+function registrationStudents() {
+  return UserRegistry.byRole('student');
+}
+
 /* —— Registrations —— */
-const regStudents = UserRegistry.byRole('student');
-const pending = regStudents.filter(s => s.status === 'pending');
-const approved = regStudents.filter(s => s.status === 'approved');
 
 function renderRegistrations() {
   if (!canManageRegistrations) return;
+  const regStudents = registrationStudents();
+  const pending = regStudents.filter(s => s.status === 'pending');
+  const approved = regStudents.filter(s => s.status === 'approved');
   document.getElementById('stats').innerHTML = `
     <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registered</div><div class="val">${regStudents.length}</div></div></div>
     <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending</div><div class="val">${pending.length}</div></div></div>
@@ -614,6 +624,12 @@ document.getElementById('blacklistForm')?.addEventListener('submit', async e => 
 
 onAppReady(async () => {
   activateTabFromHash();
+  if ((canManageRegistrations || role === 'admin' || role === 'placement_officer') && Auth.hasRealAuth() && !Auth.isDemo()) {
+    await UserRegistry.fetch();
+    if (role === 'admin' || role === 'placement_officer') {
+      overviewStudents = UserRegistry.byRole('student');
+    }
+  }
   await initOverview();
   renderRegistrations();
   if (canManageApplications) {

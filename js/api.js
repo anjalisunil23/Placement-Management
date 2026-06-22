@@ -1139,10 +1139,17 @@ const StudentApps = {
     const res = await api('/student/applications');
     if (!res.success || !Array.isArray(res.data)) return this.all();
     const mapped = res.data.map(a => ({
-      id: a._id || a.id,
+      id: a.id || a._id,
       driveId: a.driveId || '',
+      company: a.company || '',
+      role: a.role || '',
+      package: a.resultPackage || a.package || '',
+      resumeLabel: a.resumeLabel || '—',
       status: a.status || 'applied',
-      appliedAt: a.createdAt || a.appliedAt || '',
+      resultStatus: a.resultStatus || '',
+      resultJoiningDate: a.resultJoiningDate || '',
+      resultId: a.resultId || '',
+      appliedAt: a.appliedAt || a.createdAt || '',
     }));
     this.save(mapped);
     return mapped;
@@ -1222,6 +1229,42 @@ const StudentApps = {
         driveId,
       });
     }
+  },
+};
+
+const AlumniApps = {
+  all() {
+    try { return JSON.parse(localStorage.getItem(studentKey('alumni-applications')) || '[]'); } catch { return []; }
+  },
+  save(list) { localStorage.setItem(studentKey('alumni-applications'), JSON.stringify(list)); },
+  hasApplied(driveId) { return this.all().some(a => a.driveId === driveId); },
+  get(driveId) { return this.all().find(a => a.driveId === driveId); },
+  async fetch() {
+    if (Auth.role() !== 'alumni' || Auth.isDemo()) return this.all();
+    const res = await api('/alumni/applications');
+    if (!res.success || !Array.isArray(res.data)) return this.all();
+    const mapped = res.data.map(a => ({
+      id: a.id || a._id,
+      driveId: a.driveId || '',
+      company: a.company || '',
+      role: a.role || '',
+      package: a.resultPackage || a.package || '',
+      status: a.status || 'applied',
+      appliedAt: a.appliedAt || a.createdAt || '',
+    }));
+    this.save(mapped);
+    return mapped;
+  },
+  async apply(drive) {
+    if (this.hasApplied(drive.id)) return null;
+    if (Auth.role() !== 'alumni' || !Auth.hasRealAuth() || Auth.isDemo()) return null;
+    const res = await api('/alumni/apply', { method: 'POST', body: { driveId: drive.id } });
+    if (!res.success) {
+      toast(res.message || 'Application failed.', 'error');
+      return null;
+    }
+    await this.fetch();
+    return res.data;
   },
 };
 
@@ -1425,9 +1468,15 @@ const NotificationInbox = {
 function appStatusBadge(status) {
   const map = {
     applied: ['info','Applied'],
+    resume_pending: ['warning','Resume pending'],
+    resume_verified: ['info','Resume verified'],
+    officer_approved: ['info','Officer approved'],
+    company_review: ['warning','Under review'],
     under_review: ['warning','Under review'],
     shortlisted: ['success','Shortlisted'],
+    selected: ['success','Selected'],
     rejected: ['danger','Not selected'],
+    withdrawn: ['muted','Withdrawn'],
     offered: ['success','Offered'],
     interview: ['info','Interview'],
   };
@@ -2165,7 +2214,8 @@ const RecruitmentResults = {
     return row;
   },
   async remove(id) {
-    const res = await api(`/admin/results/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const path = Auth.role() === 'placement_officer' ? '/officer/results/' : '/admin/results/';
+    const res = await api(`${path}${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (res.success) { await this.fetch(); return true; }
     this.save(this.all().filter(r => r.id !== id));
     return false;
@@ -2427,6 +2477,28 @@ function driveStatusCls(status) {
   return map[status] || 'muted';
 }
 
+function driveUiStatusToApi(status) {
+  const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed' };
+  return map[status] || String(status || '').toLowerCase();
+}
+
+function buildDriveApiBody(patch, existing) {
+  const body = {};
+  if (patch.role || patch.title) body.title = patch.role || patch.title;
+  if (patch.status) body.status = driveUiStatusToApi(patch.status);
+  if (patch.date || patch.deadline) body.date = patch.date || patch.deadline;
+  if (patch.time) body.time = patch.time;
+  if (patch.type) body.type = patch.type;
+  if (patch.branches) {
+    body.branches = Array.isArray(patch.branches)
+      ? patch.branches
+      : String(patch.branches).split(',').map(s => s.trim()).filter(Boolean);
+  }
+  if (patch.companyId || existing?.companyId) body.companyId = patch.companyId || existing?.companyId;
+  if (patch.tier) body.tier = patch.tier;
+  return body;
+}
+
 const DriveStore = {
   all() {
     try { return JSON.parse(localStorage.getItem(DRIVES_STORE_KEY) || '[]'); } catch { return []; }
@@ -2465,6 +2537,10 @@ const DriveStore = {
     if (this._studentCache) {
       const fromStudent = this._studentCache.find(d => d.id === id);
       if (fromStudent) return fromStudent;
+    }
+    if (this._alumniCache) {
+      const fromAlumni = this._alumniCache.find(d => d.id === id);
+      if (fromAlumni) return fromAlumni;
     }
     if (this._apiCache) {
       const fromApi = this._apiCache.find(d => d.id === id);
@@ -2544,6 +2620,7 @@ const DriveStore = {
       deadline: d.date || d.deadline || '—',
       profile: d.profile || 'General',
       applied: d.applied ? 1 : 0,
+      applicationStatus: d.applicationStatus || null,
       eligible: d.eligibility?.eligible !== false,
       _fromApi: true,
     };
@@ -2555,7 +2632,16 @@ const DriveStore = {
     this._studentCache = res.data.map(d => this.mapStudentDrive(d));
     return this._studentCache;
   },
+  async fetchAlumniDrives() {
+    if (Auth.role() !== 'alumni' || Auth.isDemo()) return null;
+    const res = await api('/alumni/drives');
+    if (!res.success || !Array.isArray(res.data)) return null;
+    this._alumniCache = res.data.map(d => this.mapStudentDrive(d));
+    return this._alumniCache;
+  },
   allWithCatalog() {
+    if (this._studentCache?.length) return this._studentCache;
+    if (this._alumniCache?.length) return this._alumniCache;
     if (this._apiCache) return this._apiCache;
     const hidden = new Set(this.hiddenIds());
     const overrides = this.overrides();
@@ -2706,6 +2792,22 @@ const DriveStore = {
 
     const next = { ...p };
     if (p.status) next.statusCls = driveStatusCls(p.status);
+    const existing = this.get(id);
+
+    if (Auth.hasRealAuth() && existing?._fromApi !== false && !this.isCatalog(id)) {
+      const body = buildDriveApiBody(next, existing);
+      if (Object.keys(body).length) {
+        const path = Auth.role() === 'placement_officer' ? `/officer/drives/${encodeURIComponent(id)}` : `/admin/drives/${encodeURIComponent(id)}`;
+        const res = await api(path, { method: 'PUT', body });
+        if (res.success) {
+          await this.fetch();
+          return this.get(id);
+        }
+        toast(res.message || 'Could not update drive.', 'error');
+        return null;
+      }
+    }
+
     if (this.isCustom(id)) {
       this.save(this.all().map(d => d.id === id ? { ...d, ...next } : d));
       return this.get(id);
@@ -2774,6 +2876,8 @@ function clearRoleScopedCaches() {
   PublicPageContent._liveStats = null;
   PlacementNewsStore._cache = null;
   DriveStore._apiCache = null;
+  DriveStore._studentCache = null;
+  DriveStore._alumniCache = null;
 }
 
 async function dashboardStats() {
@@ -2901,6 +3005,7 @@ const RecruitingStore = {
       roll: st.registerNumber || row.registerNumber || '',
       dept: st.department || row.department || '',
       cgpa: parseFloat(st.cgpa ?? row.cgpa ?? 0) || 0,
+      company: row.companyName || row.company?.companyName || '',
       role: job.title || drive?.title || row.role || '—',
       status: row.uiStatus || row.status || 'applied',
       appliedAt: row.createdAt || row.appliedAt || '',
