@@ -724,7 +724,12 @@ function enrichDriveApplicantCounts(apps) {
 async function loadDrives() {
   if (isStudent && !Auth.isDemo()) {
     const apiDrives = await DriveStore.fetchStudentDrives();
-    allDrives = apiDrives ?? DriveStore.allWithCatalog();
+    if (apiDrives === null) {
+      toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
+      allDrives = [];
+    } else {
+      allDrives = apiDrives;
+    }
   } else if (alumniSeeking && !Auth.isDemo()) {
     const apiDrives = await DriveStore.fetchAlumniDrives();
     allDrives = apiDrives ?? DriveStore.allWithCatalog();

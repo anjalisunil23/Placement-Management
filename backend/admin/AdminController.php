@@ -95,6 +95,11 @@ final class AdminController
         if (isset($input['branches']) && is_string($input['branches'])) {
             $input['branches'] = json_decode($input['branches'], true) ?? [];
         }
+        $companyModel = new CompanyModel();
+        $companyId = (string) ($input['companyId'] ?? '');
+        if ($companyId === '' || !$companyModel->findById($companyId)) {
+            Response::error('A valid registered company is required for this drive.', 422);
+        }
         $id = (new DriveModel())->createDrive($input, (string) $admin['_id']);
         (new NotificationService())->announceDrive(
             (string) $input['title'],

@@ -2632,19 +2632,28 @@ const DriveStore = {
     const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
     const rawStatus = (d.status || '').toLowerCase();
     const status = statusMap[rawStatus] || d.status || 'Open';
-    let company = d.companyName || d.company || '';
-    if (!company && d.title && String(d.title).includes('—')) {
-      company = String(d.title).split('—').pop().trim();
+    const title = String(d.title || d.role || '').trim();
+    let company = String(d.companyName || d.company || '').trim();
+    let role = title || '—';
+    if (title.includes('—')) {
+      const parts = title.split('—').map(s => s.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        company = company || parts[0];
+        role = parts.slice(1).join(' — ');
+      }
     }
     const branches = Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '');
-    const elig = (d.eligibility && typeof d.eligibility === 'object') ? d.eligibility : {};
-    const pkg = String(elig.package || d.package || '').trim();
-    const deadline = String(elig.deadline || d.deadline || '').trim();
-    const jobType = String(elig.jobType || d.jobType || '').trim();
+    const elig = (d.eligibility && typeof d.eligibility === 'object' && d.eligibility.eligible === undefined)
+      ? d.eligibility
+      : {};
+    const check = d.eligibilityCheck || (d.eligibility?.eligible !== undefined ? d.eligibility : null);
+    const pkg = String(d.package || elig.package || '').trim();
+    const deadline = String(d.deadline || elig.deadline || '').trim();
+    const jobType = String(d.jobType || elig.jobType || '').trim();
     return {
       id: d._id || d.id,
       company: company || '—',
-      role: d.title || d.role || '—',
+      role,
       package: pkg || '—',
       jobType: jobType || '—',
       branches,
@@ -2654,13 +2663,15 @@ const DriveStore = {
       profile: d.profile || 'General',
       applied: d.applied ? 1 : 0,
       applicationStatus: d.applicationStatus || null,
-      eligible: d.eligibility?.eligible !== false,
+      eligible: check ? check.eligible !== false : true,
+      eligibilityReasons: check?.reasons || [],
       _fromApi: true,
     };
   },
   async fetchStudentDrives() {
     if (Auth.role() !== 'student' || Auth.isDemo()) return null;
-    const res = await api('/student/drives');
+    this._studentCache = null;
+    const res = await api('/student/drives', { skipAuthRedirect: true });
     if (!res.success || !Array.isArray(res.data)) return null;
     this._studentCache = res.data.map(d => this.mapStudentDrive(d));
     return this._studentCache;
@@ -2782,13 +2793,13 @@ const DriveStore = {
 
     if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
       const res = await api('/officer/drives', { method: 'POST', body: driveBody });
-      if (res.success) { await this.fetch(); return res.data; }
+      if (res.success) { await this.fetch(); DriveStore._studentCache = null; return res.data; }
       toast(formatErrors(res), 'error');
       return null;
     }
     if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
       const res = await api('/admin/drives', { method: 'POST', body: driveBody });
-      if (res.success) { await this.fetch(); return res.data; }
+      if (res.success) { await this.fetch(); DriveStore._studentCache = null; return res.data; }
       toast(formatErrors(res), 'error');
       return null;
     }

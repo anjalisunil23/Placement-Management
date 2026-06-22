@@ -414,32 +414,31 @@ final class StudentController
   {
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
-    $drives = (new DriveModel())->findAll(['status' => ['$ne' => 'completed']], 50);
+    $driveModel = new DriveModel();
+    $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
+    $drives = array_values(array_filter(
+      $allDrives,
+      static function (array $drive): bool {
+        $status = strtolower((string) ($drive['status'] ?? 'scheduled'));
+        return !in_array($status, ['completed', 'closed'], true);
+      }
+    ));
+
     $engine = new EligibilityEngine();
     $studentId = (string) $profile['_id'];
-    $companyModel = new CompanyModel();
     $appModel = new ApplicationModel();
+    $enriched = (new OfficerDataService())->enrichDrivesWithCompany($drives);
 
-    $result = array_map(function ($drive) use ($engine, $studentId, $companyModel, $appModel) {
-      $eligibility = $engine->checkForDrive($studentId, (string) $drive['_id']);
-      $serialized = DocumentHelper::serialize($drive);
-      $serialized['eligibility'] = $eligibility;
+    $result = array_map(function (array $row) use ($engine, $studentId, $appModel) {
+      $driveId = (string) ($row['id'] ?? $row['_id'] ?? '');
+      $row['eligibilityCheck'] = $engine->checkForDrive($studentId, $driveId);
 
-      $company = $companyModel->findById((string) ($drive['companyId'] ?? ''));
-      $companyName = (string) ($company['companyName'] ?? '');
-      if ($companyName === '') {
-        $title = (string) ($drive['title'] ?? '');
-        if (str_contains($title, '—')) {
-          $companyName = trim((string) (explode('—', $title, 2)[1] ?? ''));
-        }
-      }
-      $serialized['companyName'] = $companyName;
-      $app = $appModel->findByStudentAndDrive($studentId, (string) $drive['_id']);
-      $serialized['applied'] = (bool) $app;
-      $serialized['applicationStatus'] = $app['status'] ?? null;
+      $app = $appModel->findByStudentAndDrive($studentId, $driveId);
+      $row['applied'] = (bool) $app;
+      $row['applicationStatus'] = $app['status'] ?? null;
 
-      return $serialized;
-    }, $drives);
+      return $row;
+    }, $enriched);
 
     Response::success($result);
   }
@@ -491,11 +490,10 @@ final class StudentController
 
     $company = !empty($drive['companyId']) ? (new CompanyModel())->findById((string) $drive['companyId']) : null;
     $engine = new EligibilityEngine();
-    $eligibility = $engine->checkForDrive((string) $profile['_id'], $driveId);
-
-    $out = DocumentHelper::serialize($drive);
+    $enriched = (new OfficerDataService())->enrichDrivesWithCompany([$drive]);
+    $out = $enriched[0] ?? DocumentHelper::serialize($drive);
     $out['company'] = $company ? DocumentHelper::serialize($company) : null;
-    $out['eligibility'] = $eligibility;
+    $out['eligibilityCheck'] = $engine->checkForDrive((string) $profile['_id'], $driveId);
     Response::success($out);
   }
 
