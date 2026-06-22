@@ -165,4 +165,31 @@ final class PublicController
         }
         Response::success((new AnalyticsService())->getPlacementConsole($departmentId));
     }
+
+    /** POST /api/aes/check-login — proxy to login.aesajce.in (public portal modal) */
+    public function aesCheckLogin(): void
+    {
+        $raw = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($raw)) {
+            $raw = $_POST;
+        }
+
+        $data = $raw;
+        if (isset($raw['data']) && is_array($raw['data'])) {
+            $data = $raw['data'];
+        }
+
+        try {
+            $service = new \PMS\Services\AesLoginService();
+            $resp = $service->checkLogin($data);
+            if (!($resp['status'] ?? false)) {
+                $message = (string) ($resp['message'] ?? $resp['title'] ?? 'AES login failed');
+                Response::error($message, 401, $resp);
+                return;
+            }
+            Response::success($resp, 'AES login verified');
+        } catch (\Throwable $e) {
+            Response::error($e->getMessage(), 400);
+        }
+    }
 }

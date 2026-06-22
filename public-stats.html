@@ -13,7 +13,7 @@
       <span class="brand-mark">P</span>
       <strong>PlaceHub</strong>
     </a>
-    <button type="button" class="btn btn-primary btn-sm public-nav-login public-nav-login-mobile d-lg-none aes-dologin"><i class="bi bi-shield-lock me-1"></i>Login</button>
+    <button type="button" class="btn btn-primary btn-sm public-nav-login public-nav-login-mobile d-lg-none portal-aes-login"><i class="bi bi-shield-lock me-1"></i>Login</button>
     <button class="navbar-toggler border-0 shadow-none d-lg-none" type="button" data-bs-toggle="collapse" data-bs-target="#publicNavMenu" aria-controls="publicNavMenu" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
@@ -24,7 +24,7 @@
         <li class="nav-item"><a class="nav-link" href="#stories">Stories</a></li>
         <li class="nav-item"><a class="nav-link" href="#news">News</a></li>
         <li class="nav-item public-nav-login-desktop d-none d-lg-flex align-items-center ms-lg-2">
-          <button type="button" class="btn btn-primary btn-sm public-nav-login aes-dologin"><i class="bi bi-shield-lock me-1"></i>Login</button>
+          <button type="button" class="btn btn-primary btn-sm public-nav-login portal-aes-login"><i class="bi bi-shield-lock me-1"></i>Login</button>
         </li>
       </ul>
     </div>
@@ -98,14 +98,48 @@
   <div class="container">© 2026 PlaceHub · Placement Cell · <a href="register.html" class="text-decoration-none">Register</a></div>
 </footer>
 
+<div class="modal fade" id="aesLoginModal" tabindex="-1" aria-labelledby="aesLoginModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-0 pb-0">
+        <div>
+          <h5 class="modal-title fw-bold mb-1" id="aesLoginModalLabel">Sign in with AES</h5>
+          <p class="text-muted-2 small mb-0">Amal Jyothi college account — students &amp; staff</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div id="aesLoginError" class="alert alert-danger small py-2 mb-3" style="display:none" role="alert"></div>
+        <form id="aesLoginForm" autocomplete="on">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="aesUsername">Username / Admission No</label>
+            <input id="aesUsername" name="username" type="text" class="form-control" placeholder="Admission number or username" required autocomplete="username" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold d-flex justify-content-between" for="aesPassword">
+              <span>Password</span>
+              <a href="https://login.aesajce.in/" target="_blank" rel="noopener" class="text-decoration-none small">Forgot?</a>
+            </label>
+            <input id="aesPassword" name="password" type="password" class="form-control" placeholder="AES password" required autocomplete="current-password" />
+          </div>
+          <button class="btn btn-primary w-100 py-2 fw-semibold" type="submit" id="aesLoginSubmit">
+            <i class="bi bi-shield-lock me-1"></i> Sign in
+          </button>
+        </form>
+        <p class="text-center small text-muted-2 mt-3 mb-0">Uses your institute AES credentials</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/api.js?v=20260622h"></script>
-<script src="js/app.js?v=20260622h"></script>
-<script src="js/charts.js?v=20260622h"></script>
+<script src="js/api.js?v=20260623a"></script>
+<script src="js/app.js?v=20260623a"></script>
+<script src="js/charts.js?v=20260623a"></script>
 <script type="module" src="https://login.aesajce.in/aes-login.js?api=95872781e44306cdb4c9c9f16c060b63be079dcb" data-aes-login="1"></script>
-<script src="js/aes-auth.js?v=20260622h"></script>
+<script src="js/aes-auth.js?v=20260623a"></script>
 <script>
 let pubBarChart = null;
 let pubPieChart = null;
