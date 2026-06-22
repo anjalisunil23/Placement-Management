@@ -20,10 +20,10 @@
       <div class="mt-5">
         <h1 class="fw-bold" style="font-size:2.4rem;line-height:1.15">The placement engine for modern campuses.</h1>
         <p class="mt-3 opacity-75" style="max-width:480px">Run drives, manage eligibility, track offers and publish placement results — all in one premium workspace.</p>
-        <div class="row g-3 mt-4">
-          <div class="col-4"><div class="h3 fw-bold mb-0">12.4k</div><small class="opacity-75">Students placed</small></div>
-          <div class="col-4"><div class="h3 fw-bold mb-0">820+</div><small class="opacity-75">Recruiters</small></div>
-          <div class="col-4"><div class="h3 fw-bold mb-0">96%</div><small class="opacity-75">Placement rate</small></div>
+        <div class="row g-3 mt-4" id="loginLiveStats">
+          <div class="col-4"><div class="h3 fw-bold mb-0" id="loginStatPlaced">—</div><small class="opacity-75">Students placed</small></div>
+          <div class="col-4"><div class="h3 fw-bold mb-0" id="loginStatRecruiters">—</div><small class="opacity-75">Recruiters</small></div>
+          <div class="col-4"><div class="h3 fw-bold mb-0" id="loginStatRate">—</div><small class="opacity-75">Placement rate</small></div>
         </div>
       </div>
     </div>
@@ -348,6 +348,47 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
   await ensureDepartmentsLoaded();
   fillDepartmentIdSelect(document.getElementById('registerDepartment'));
 })();
+
+function formatLoginCompactCount(value) {
+  const n = Number(value) || 0;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(Math.round(n));
+}
+
+function formatLoginRecruiters(value) {
+  const n = Math.round(Number(value) || 0);
+  if (n <= 0) return '0';
+  return n >= 100 ? `${n}+` : String(n);
+}
+
+async function loadLoginLiveStats() {
+  const placedEl = document.getElementById('loginStatPlaced');
+  const recruitersEl = document.getElementById('loginStatRecruiters');
+  const rateEl = document.getElementById('loginStatRate');
+  if (!placedEl || !recruitersEl || !rateEl) return;
+
+  let live = null;
+  try {
+    const res = await api('/public/placement-stats', { skipAuthRedirect: true });
+    if (res?.success && res.data) live = res.data;
+  } catch (_) {}
+
+  if (!live) {
+    await PlacementNewsStore.fetchPublic().catch(() => null);
+    live = PublicPageContent.liveStats() || {};
+  }
+
+  const pub = PublicPageContent.get();
+  const placed = live.totalPlaced ?? pub.placed ?? 0;
+  const companies = live.totalCompanies ?? pub.companies ?? 0;
+  const rate = live.placementPercentage ?? pub.placementRate ?? 0;
+
+  placedEl.textContent = placed > 0 ? formatLoginCompactCount(placed) : '0';
+  recruitersEl.textContent = formatLoginRecruiters(companies);
+  rateEl.textContent = rate > 0 ? `${Math.round(rate)}%` : '0%';
+}
+
+loadLoginLiveStats();
 </script>
 </body>
 </html>
