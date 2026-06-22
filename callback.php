@@ -9,22 +9,8 @@ declare(strict_types=1);
 
 $root = __DIR__;
 
-$autoload = $root . '/vendor/autoload.php';
-if (!is_readable($autoload)) {
-    http_response_code(500);
-    echo 'Server is missing PHP dependencies.';
-    exit;
-}
-
-require_once $autoload;
-
-$utilsDir = $root . '/backend/utils';
-foreach (['Security.php'] as $utilFile) {
-    $path = $utilsDir . '/' . $utilFile;
-    if (is_readable($path)) {
-        require_once $path;
-    }
-}
+require $root . '/backend/bootstrap-aes.php';
+pms_bootstrap_aes_callback($root);
 
 use PMS\Services\AesLoginService;
 use PMS\Utils\Security;
@@ -38,7 +24,7 @@ $redirectLogin = static function (string $message = ''): void {
 };
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST' || $_POST === []) {
-    header('Location: /');
+    header('Location: /public-stats.html');
     exit;
 }
 
