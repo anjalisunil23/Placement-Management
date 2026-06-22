@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 /**
  * REST API entry point and router.
+ * inline API router — no ApiExceptionHandler dependency (Linux/cPanel safe).
  */
 
 $root = dirname(__DIR__, 2);
@@ -48,8 +49,8 @@ foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php',
         require_once $path;
     }
 }
-if (!class_exists(\PMS\Utils\ApiExceptionHandler::class, false)) {
-    $emitJsonError('Server autoload error: ApiExceptionHandler missing. Redeploy from latest main.');
+if (!class_exists(\PMS\Utils\Response::class, false)) {
+    $emitJsonError('Server autoload error: Response utility missing. Redeploy from latest main.');
 }
 
 try {
@@ -95,7 +96,6 @@ use PMS\Officer\OfficerController;
 use PMS\Staff\StaffController;
 use PMS\Student\StudentController;
 use PMS\Utils\Response;
-use PMS\Utils\ApiExceptionHandler;
 
 $uri    = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 
@@ -313,28 +313,40 @@ $routes = [
     ['GET', '/analytics/placement-console', [PublicController::class, 'placementConsole']],
 ];
 
-ApiExceptionHandler::run(static function () use ($routes, $method, $uri): void {
-foreach ($routes as [$routeMethod, $pattern, $handler]) {
-    if ($routeMethod !== $method) {
-        continue;
-    }
-
-    $regex = preg_replace('/\{([a-zA-Z]+)\}/', '(?P<$1>[^/]+)', $pattern);
-    $regex = '#^' . $regex . '$#';
-
-    if (preg_match($regex, $uri, $matches)) {
-        $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
-        [$class, $action] = $handler;
-        $controller = new $class();
-
-        if (empty($params)) {
-            $controller->$action();
-        } else {
-            $controller->$action(...array_values($params));
+try {
+    foreach ($routes as [$routeMethod, $pattern, $handler]) {
+        if ($routeMethod !== $method) {
+            continue;
         }
-        exit;
-    }
-}
 
-Response::notFound('API endpoint not found.');
-});
+        $regex = preg_replace('/\{([a-zA-Z]+)\}/', '(?P<$1>[^/]+)', $pattern);
+        $regex = '#^' . $regex . '$#';
+
+        if (preg_match($regex, $uri, $matches)) {
+            $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+            [$class, $action] = $handler;
+            $controller = new $class();
+
+            if (empty($params)) {
+                $controller->$action();
+            } else {
+                $controller->$action(...array_values($params));
+            }
+            exit;
+        }
+    }
+
+    Response::notFound('API endpoint not found.');
+} catch (\InvalidArgumentException $e) {
+    Response::error($e->getMessage(), 422);
+} catch (\RuntimeException $e) {
+    $code = $e->getCode();
+    $status = is_int($code) && $code >= 400 && $code < 600 ? $code : 500;
+    Response::error($e->getMessage(), $status);
+} catch (\Throwable $e) {
+    $message = 'An unexpected server error occurred.';
+    if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
+        $message = $e->getMessage();
+    }
+    Response::error($message, 500);
+}
