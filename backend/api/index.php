@@ -7,13 +7,55 @@ declare(strict_types=1);
  */
 
 $root = dirname(__DIR__, 2);
-require_once $root . '/vendor/autoload.php';
-$config = require dirname(__DIR__) . '/config/app.php';
+
+$emitJsonError = static function (string $message, int $status = 500): void {
+    if (!headers_sent()) {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        header('X-Content-Type-Options: nosniff');
+    }
+    echo json_encode(
+        ['success' => false, 'message' => $message, 'data' => null],
+        JSON_UNESCAPED_UNICODE
+    );
+    exit;
+};
+
+register_shutdown_function(static function () use ($emitJsonError): void {
+    $err = error_get_last();
+    if ($err === null) {
+        return;
+    }
+    $fatal = [E_ERROR, E_PARSE, E_COMPILE_ERROR, E_CORE_ERROR];
+    if (!in_array($err['type'], $fatal, true)) {
+        return;
+    }
+    $emitJsonError('Server error: ' . ($err['message'] ?? 'fatal error'));
+});
+
+$autoload = $root . '/vendor/autoload.php';
+if (!is_readable($autoload)) {
+    $emitJsonError('Server is missing PHP dependencies. Run composer install in the site root.');
+}
+
+require_once $autoload;
+
+try {
+    $config = require dirname(__DIR__) . '/config/app.php';
+} catch (\Throwable $e) {
+    $emitJsonError('Configuration failed: ' . $e->getMessage());
+}
+
+// Start session before any output headers (login stores session user).
+\PMS\Utils\Security::startSession();
 
 // CORS — allow configured origins (supports localhost and 127.0.0.1 in dev)
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 $allowed = $config['cors']['allowed_origins'] ?? ['http://localhost:8080', 'http://127.0.0.1:8080'];
 if ($origin !== '' && in_array($origin, $allowed, true)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+} elseif ($origin !== '' && !empty($config['url']) && rtrim($origin, '/') === rtrim((string) $config['url'], '/')) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Vary: Origin');
 } elseif ($origin !== '' && preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#', $origin)) {

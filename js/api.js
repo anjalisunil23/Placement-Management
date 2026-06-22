@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260622c';
+const APP_SCRIPT_VERSION = '20260622d';
 const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 const ROLE_LABELS = {
@@ -3157,7 +3157,25 @@ async function apiFetch(path, opts = {}) {
         status: 401,
       };
     }
-    const json = await res.json().catch(() => ({ success: false, message: 'Bad response', data: null }));
+    const text = await res.text();
+    let json;
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      const detail = plain ? plain.slice(0, 160) : 'Empty server response';
+      return {
+        success: false,
+        message: res.status >= 500
+          ? `Server error (${res.status}). API may be down — redeploy on cPanel and confirm PHP 8.2+ and composer install. ${detail}`
+          : `Bad response (${res.status}): ${detail}`,
+        data: null,
+        status: res.status,
+      };
+    }
+    if (typeof json !== 'object' || json === null) {
+      return { success: false, message: 'Bad response', data: null, status: res.status };
+    }
     json.status = res.status;
     return json;
   } catch (e) {
