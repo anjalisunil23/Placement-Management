@@ -1,4 +1,5 @@
-/* Shared app shell: sidebar, topbar, theme toggle, role gate, counters */
+/* PlaceHub shell v2026.06.22 — hide Departments from admin sidebar */
+const APP_SHELL_VERSION = '2026.06.22';
 
 const NAV = [
   { section: "Overview", roles: ROLES },
@@ -92,8 +93,14 @@ function initials(name='') {
   return name.trim().split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase() || 'U';
 }
 
+function navItemHidden(n) {
+  const href = String(n?.href || '');
+  const label = String(n?.label || '');
+  return href === 'departments.html' || href.includes('departments') || label === 'Departments';
+}
+
 function navItemVisible(n, role) {
-  if (n.href === 'departments.html') return false;
+  if (navItemHidden(n)) return false;
   if (n.studentOnly && role !== 'student') return false;
   if (!n.roles.includes(role)) return false;
   if (role !== 'alumni') return true;
@@ -104,7 +111,7 @@ function navItemVisible(n, role) {
 
 function visibleGroupChildren(group, role) {
   return (group.children || []).filter(c => {
-    if (c.href === 'departments.html') return false;
+    if (navItemHidden(c)) return false;
     if (c.group) {
       if (!navItemVisible(c, role)) return false;
       if (c.href) return true;

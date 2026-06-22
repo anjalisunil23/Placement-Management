@@ -15,6 +15,8 @@ deployment:
     - /bin/cp -f composer.lock $DEPLOYPATH/composer.lock
     - /bin/cp -f .env.production.example $DEPLOYPATH/.env.production.example
     - /bin/cp -f *.html $DEPLOYPATH/
+    - /bin/git rev-parse HEAD > $DEPLOYPATH/deploy-version.txt
+    - /bin/date -u +"%Y-%m-%dT%H:%M:%SZ" >> $DEPLOYPATH/deploy-version.txt
     - /bin/mkdir -p $DEPLOYPATH/uploads/resumes $DEPLOYPATH/uploads/reports $DEPLOYPATH/uploads/jd $DEPLOYPATH/uploads/signed_reports $DEPLOYPATH/uploads/photos
     - /bin/chmod -R 775 $DEPLOYPATH/uploads
     - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader 2>/dev/null || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
