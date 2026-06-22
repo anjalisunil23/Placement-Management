@@ -1,0 +1,212 @@
+/* AES login modal — scoped styles (loads with public-stats.html) */
+#aesLoginModal.aes-login-modal .modal-backdrop.show{opacity:.35}
+#aesLoginModal .aes-login-dialog{
+  max-width:400px;
+  margin:1rem auto;
+}
+#aesLoginModal .modal-content.aes-login-card{
+  border-radius:8px!important;
+  border:1px solid #c5cdd8!important;
+  background:#fff!important;
+  box-shadow:0 8px 28px rgba(15,23,42,.14)!important;
+  position:relative;
+  font-family:'Open Sans',system-ui,-apple-system,Segoe UI,sans-serif;
+  color:#333;
+  overflow:hidden;
+}
+#aesLoginModal .aes-login-close{
+  position:absolute;
+  top:.7rem;
+  right:.7rem;
+  z-index:2;
+  opacity:.4;
+}
+#aesLoginModal .aes-login-body{
+  padding:1.85rem 2rem 1.75rem!important;
+}
+#aesLoginModal .aes-login-brand{
+  text-align:center;
+  margin:0 0 1.35rem;
+}
+#aesLoginModal .aes-login-logo{
+  display:block;
+  margin:0 auto;
+  width:230px;
+  max-width:100%;
+  height:auto;
+}
+#aesLoginModal .aes-login-error{
+  margin:0 0 .85rem;
+  padding:.5rem .65rem;
+  border-radius:4px;
+  background:#fde8e8;
+  border:1px solid #f5c2c2;
+  color:#b42318;
+  font-size:.82rem;
+  line-height:1.35;
+}
+#aesLoginModal .aes-form-group{margin:0 0 .9rem}
+#aesLoginModal .aes-login-input{
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+  -webkit-appearance:none;
+  appearance:none;
+  background:#eef6fc!important;
+  border:1px solid #7eb8e8!important;
+  border-radius:6px!important;
+  padding:.65rem .9rem!important;
+  font-size:1rem;
+  line-height:1.4;
+  color:#1a1a1a!important;
+  box-shadow:none!important;
+}
+#aesLoginModal .aes-login-input:focus{
+  outline:0!important;
+  background:#e8f3fb!important;
+  border-color:#5aa8db!important;
+  box-shadow:none!important;
+}
+#aesLoginModal .aes-login-input::placeholder{color:#6b7280;opacity:1}
+#aesLoginModal .aes-login-submit{
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+  -webkit-appearance:none;
+  appearance:none;
+  margin:0;
+  padding:.75rem 1rem;
+  border:1px solid #1d7fc3!important;
+  border-radius:6px!important;
+  background:#1d7fc3!important;
+  color:#fff!important;
+  font-size:1.125rem;
+  font-weight:600;
+  line-height:1.2;
+  cursor:pointer;
+  text-align:center;
+}
+#aesLoginModal .aes-login-submit:hover:not(:disabled),
+#aesLoginModal .aes-login-submit:focus:not(:disabled){
+  background:#1a72b0!important;
+  border-color:#1a72b0!important;
+  color:#fff!important;
+}
+#aesLoginModal .aes-login-submit:disabled{opacity:.7;cursor:not-allowed}
+#aesLoginModal .aes-login-forgot-wrap{
+  margin:.9rem 0 0;
+  text-align:left;
+}
+#aesLoginModal .aes-login-forgot{
+  color:#4b5563;
+  font-size:.95rem;
+  text-decoration:none;
+}
+#aesLoginModal .aes-login-forgot:hover{color:#1d7fc3;text-decoration:underline}
+#aesLoginModal .aes-login-or{
+  width:100%;
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  border:none;
+  font-size:12px;
+  font-weight:500;
+  color:#6b7280;
+  margin:0;
+  padding:.75rem 0 .65rem;
+  text-transform:uppercase;
+}
+#aesLoginModal .aes-login-or::before,
+#aesLoginModal .aes-login-or::after{
+  content:"";
+  border-bottom:1px solid #c2c8d0;
+  flex:1 0 auto;
+  height:.8em;
+}
+#aesLoginModal .aes-login-or span{
+  flex:0 0 auto;
+  padding:0 .65rem;
+  text-align:center;
+}
+#aesLoginModal .aes-social-row{
+  display:flex;
+  gap:8px;
+}
+#aesLoginModal .aes-social-btn{
+  flex:1 1 0;
+  min-width:0;
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  justify-content:center;
+  gap:.35rem;
+  padding:.55rem .35rem;
+  border:0!important;
+  border-radius:6px!important;
+  color:#fff!important;
+  font-size:.75rem;
+  font-weight:600;
+  line-height:1.1;
+  cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+  box-sizing:border-box;
+}
+#aesLoginModal .aes-social-icon{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:transparent;
+  padding:0;
+}
+#aesLoginModal .aes-social-icon i{font-size:1rem;line-height:1;color:#fff!important}
+#aesLoginModal .aes-social-text{
+  color:#fff!important;
+  white-space:nowrap;
+}
+#aesLoginModal .aes-social-btn:hover:not(:disabled){filter:brightness(1.06)}
+#aesLoginModal .aes-social-btn:disabled{opacity:.65;cursor:not-allowed}
+#aesLoginModal .aes-social-google{background:#db4437!important}
+#aesLoginModal .aes-social-microsoft{background:#0078d4!important}
+#aesLoginModal .aes-social-whatsapp{background:#25d366!important}
+#aesLoginModal .aes-wa-otp-panel{
+  margin-top:.85rem;
+  padding:.85rem;
+  border:1px dashed #7eb8e8;
+  border-radius:6px;
+  background:#f4faff;
+  text-align:center;
+}
+#aesLoginModal .aes-wa-otp-title{
+  font-weight:700;
+  color:#1e293b;
+  margin:0 0 .35rem;
+  font-size:.95rem;
+}
+#aesLoginModal .aes-wa-otp-hint{
+  margin:0 0 .5rem;
+  font-size:.78rem;
+  color:#64748b;
+}
+#aesLoginModal .aes-wa-otp-code{
+  font-family:ui-monospace,Menlo,monospace;
+  font-size:1.6rem;
+  font-weight:700;
+  letter-spacing:.1em;
+  color:#1d7fc3;
+  margin:0;
+}
+#aesLoginModal .aes-wa-otp-cancel{
+  margin-top:.65rem;
+  padding:.3rem .75rem;
+  border:1px solid #cbd5e1;
+  border-radius:4px;
+  background:#fff;
+  color:#475569;
+  font-size:.8rem;
+  cursor:pointer;
+}
+@media (max-width:575px){
+  #aesLoginModal .aes-login-body{padding:1.4rem 1.2rem 1.3rem!important}
+  #aesLoginModal .aes-social-btn{font-size:.68rem;gap:.2rem;padding:.5rem .2rem}
+}
