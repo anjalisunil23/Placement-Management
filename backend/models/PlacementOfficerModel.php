@@ -96,15 +96,17 @@ class PlacementOfficerModel extends BaseModel
      */
     public function createProfile(string $userId, array $data): string
     {
-        if ($this->findByUserId($userId)) {
-            throw new \RuntimeException('This user is already assigned as a placement officer.');
+        $deptId = Security::toObjectId($data['departmentId'] ?? '');
+        if ($deptId === null) {
+            throw new \InvalidArgumentException('Valid departmentId is required.');
         }
 
-        $deptId = !empty($data['departmentId']) ? Security::toObjectId($data['departmentId']) : null;
-        if ($deptId !== null) {
-            if ($this->findByDepartment((string) $deptId)) {
-                throw new \RuntimeException('This department already has a placement officer. Each department can have only one.');
-            }
+        if ($this->findByDepartment((string) $deptId)) {
+            throw new \RuntimeException('This department already has a placement officer. Each department can have only one.');
+        }
+
+        if ($this->findByUserId($userId)) {
+            throw new \RuntimeException('This user is already assigned as a placement officer.');
         }
 
         return $this->insert([

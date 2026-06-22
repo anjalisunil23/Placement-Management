@@ -28,6 +28,7 @@
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabStaff">Staff</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabCompanies">Companies</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAlumni" id="linkTabAlumni">Alumni</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabDepartments" id="linkTabDepartments">Departments</a></li>
   </ul>
   <div class="tab-content">
     <div class="tab-pane fade show active" id="tabStudents">
@@ -55,6 +56,22 @@
         <th>Name</th><th>Email</th><th>Company</th><th>Role</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="alumniRows"></tbody></table></div>
     </div>
+    <div class="tab-pane fade" id="tabDepartments">
+      <div class="p-3 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
+        <div>
+          <h6 class="fw-bold mb-0">Academic departments</h6>
+          <small class="text-muted-2">Branch names and codes used across drives, staff, and placement officers.</small>
+        </div>
+        <button class="btn btn-sm btn-primary" type="button" id="btnAddDept"><i class="bi bi-plus-lg me-1"></i>Add department</button>
+      </div>
+      <div class="row g-3 p-3">
+        <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Total departments</div><div class="val" id="statDeptTotal">0</div></div></div>
+      </div>
+      <div class="table-wrap">
+        <table class="table-modern"><thead><tr><th>Department name</th><th>Code</th><th>Actions</th></tr></thead>
+        <tbody id="deptRows"></tbody></table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -74,6 +91,11 @@
       <div class="col-12"><label class="form-label small fw-semibold" id="addUserNameLabel">Full name</label><input class="form-control" id="addUserName" required/></div>
       <div class="col-12"><label class="form-label small fw-semibold">Email</label><input class="form-control" type="email" id="addUserEmail" required/></div>
       <div class="col-12"><label class="form-label small fw-semibold">Password</label><input class="form-control" type="password" id="addUserPassword" minlength="8" required/><div class="form-text" id="addUserPasswordHint">Min. 8 characters.</div></div>
+      <div class="col-12 d-none" id="addUserDeptWrap">
+        <label class="form-label small fw-semibold">Department</label>
+        <select class="form-select" id="addUserDepartment"><option value="">Select department…</option></select>
+        <div class="form-text" id="addUserDeptHint"></div>
+      </div>
       <div class="col-md-6 d-none" id="addUserAlumniCompanyWrap">
         <label class="form-label small fw-semibold">Current company</label>
         <input class="form-control" id="addUserAlumniCompany" placeholder="Current employer"/>
@@ -96,12 +118,84 @@
   </form>
 </div></div></div>
 
+<div class="modal fade" id="deptModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="deptModalTitle">Add department</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="deptForm">
+    <input type="hidden" id="deptId"/>
+    <div class="modal-body row g-3">
+      <div class="col-12"><label class="form-label small fw-semibold">Department name</label><input class="form-control" id="deptName" required placeholder="e.g. Computer Science"/></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Code</label><input class="form-control" id="deptCode" required placeholder="e.g. CSE" maxlength="10"/></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save</button></div>
+  </form>
+</div></div></div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/admin-api.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
 <script>
+let departments = [];
+let editingDeptId = null;
+
+function deptModal() {
+  return bootstrap.Modal.getOrCreateInstance(document.getElementById('deptModal'));
+}
+
+function activateTabFromHash() {
+  const hash = (location.hash || '').replace('#', '');
+  if (hash === 'departments') {
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('linkTabDepartments')).show();
+  }
+}
+
+function openAddDept() {
+  editingDeptId = null;
+  document.getElementById('deptModalTitle').textContent = 'Add department';
+  document.getElementById('deptId').value = '';
+  document.getElementById('deptName').value = '';
+  document.getElementById('deptCode').value = '';
+  deptModal().show();
+}
+
+function openEditDept(id) {
+  const d = DepartmentStore.all().find(x => x.id === id);
+  if (!d) return;
+  editingDeptId = id;
+  document.getElementById('deptModalTitle').textContent = 'Edit department';
+  document.getElementById('deptId').value = id;
+  document.getElementById('deptName').value = d.name || '';
+  document.getElementById('deptCode').value = d.code || '';
+  deptModal().show();
+}
+
+function removeDept(id) {
+  const d = DepartmentStore.all().find(x => x.id === id);
+  if (!d) return;
+  if (!confirm(`Delete department "${d.name}" (${d.code})?`)) return;
+  DepartmentStore.remove(id).then(ok => {
+    toast(ok ? 'Department removed.' : 'Removed locally.', ok ? 'success' : 'warn');
+    loadDepartments().then(() => render());
+  });
+}
+
+function renderDepartments() {
+  const list = DepartmentStore.all();
+  document.getElementById('statDeptTotal').textContent = list.length;
+  document.getElementById('deptRows').innerHTML = list.length ? list.map(d => `
+    <tr>
+      <td><strong>${d.name}</strong></td>
+      <td><span class="badge-soft primary">${d.code}</span></td>
+      <td>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-outline-primary" onclick="openEditDept('${d.id}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm btn-outline-danger" onclick="removeDept('${d.id}')"><i class="bi bi-trash"></i></button>
+        </div>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="3" class="text-muted-2 p-4">No departments yet. <button type="button" class="btn btn-link btn-sm p-0 align-baseline" onclick="openAddDept()">Add one</button></td></tr>';
+}
+
 const ROLE_DEFAULT_PASSWORD = {
   placement_officer: 'Officer@123456',
   staff: 'Staff@123456',
@@ -211,11 +305,50 @@ function render() {
   renderAlumni(UserRegistry.byRole('alumni'));
 }
 
+function refreshDepartmentOptions(role) {
+  const sel = document.getElementById('addUserDepartment');
+  const hint = document.getElementById('addUserDeptHint');
+  const isOfficer = role === 'placement_officer';
+
+  if (!departments.length) {
+    sel.innerHTML = '<option value="">Loading departments…</option>';
+    sel.disabled = true;
+    hint.textContent = 'Could not load departments. Check that the server is running.';
+    return;
+  }
+
+  sel.disabled = false;
+  sel.innerHTML = '<option value="">Select department…</option>' +
+    departments.map(d => {
+      const label = `${d.name} (${d.code})`;
+      const suffix = isOfficer && d.hasOfficer ? ' — has officer' : '';
+      return `<option value="${d.id}">${label}${suffix}</option>`;
+    }).join('');
+  hint.textContent = isOfficer
+    ? 'All departments are listed. Each department can have only one placement officer.'
+    : 'Assign staff to a department.';
+}
+
+async function loadDepartments() {
+  await DepartmentStore.fetch();
+  departments = DepartmentStore.all().map(d => ({
+    id: d.id,
+    name: d.name,
+    code: d.code,
+    hasOfficer: !!d.hasOfficer,
+  }));
+  renderDepartments();
+  return departments;
+}
+
 function syncAddUserForm() {
   const role = document.getElementById('addUserRole').value;
+  const isOfficer = role === 'placement_officer';
+  const isStaff = role === 'staff';
   const isAlumni = role === 'alumni';
   const isCompany = role === 'company';
 
+  document.getElementById('addUserDeptWrap').classList.toggle('d-none', !isOfficer && !isStaff);
   document.getElementById('addUserAlumniCompanyWrap').classList.toggle('d-none', !isAlumni);
   document.getElementById('addUserAlumniRoleWrap').classList.toggle('d-none', !isAlumni);
   document.getElementById('addUserRecruiterWrap').classList.toggle('d-none', !isCompany);
@@ -224,11 +357,14 @@ function syncAddUserForm() {
 
   document.getElementById('addUserPassword').value = ROLE_DEFAULT_PASSWORD[role] || 'Staff@123456';
   document.getElementById('addUserPasswordHint').textContent = `Default: ${ROLE_DEFAULT_PASSWORD[role] || 'Staff@123456'}`;
+
+  if (isOfficer || isStaff) refreshDepartmentOptions(role);
 }
 
-window.openAddUserModal = (presetRole) => {
+window.openAddUserModal = async (presetRole) => {
   document.getElementById('addUserForm').reset();
   if (presetRole) document.getElementById('addUserRole').value = presetRole;
+  await loadDepartments();
   syncAddUserForm();
   const titles = {
     placement_officer: 'Add placement officer',
@@ -240,7 +376,8 @@ window.openAddUserModal = (presetRole) => {
   addUserModal().show();
 };
 
-document.getElementById('addUserRole').addEventListener('change', () => {
+document.getElementById('addUserRole').addEventListener('change', async () => {
+  await loadDepartments();
   syncAddUserForm();
   const titles = {
     placement_officer: 'Add placement officer',
@@ -276,6 +413,15 @@ document.getElementById('addUserForm').addEventListener('submit', async e => {
     approved: true,
   };
 
+  if (role === 'placement_officer' || role === 'staff') {
+    const departmentId = document.getElementById('addUserDepartment').value;
+    if (!departmentId) {
+      toast('Select a department.', 'warn');
+      return;
+    }
+    payload.departmentId = departmentId;
+  }
+
   if (role === 'alumni') {
     payload.company = document.getElementById('addUserAlumniCompany').value.trim();
     payload.alumniRole = document.getElementById('addUserAlumniRole').value.trim();
@@ -298,14 +444,37 @@ document.getElementById('addUserForm').addEventListener('submit', async e => {
   if (!created) return;
 
   addUserModal().hide();
+  await loadDepartments();
   toast('User created successfully.', 'success');
   render();
 });
 
+document.getElementById('btnAddDept').addEventListener('click', openAddDept);
+
+document.getElementById('deptForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!(await requireWriteSession())) return;
+  const name = document.getElementById('deptName').value.trim();
+  const code = document.getElementById('deptCode').value.trim();
+  if (!name || !code) return;
+  if (editingDeptId) {
+    await DepartmentStore.update(editingDeptId, { name, code: code.toUpperCase() });
+    toast('Department updated.', 'success');
+  } else {
+    const created = await DepartmentStore.add({ name, code });
+    if (!created) return;
+    toast('Department added.', 'success');
+  }
+  deptModal().hide();
+  await loadDepartments();
+});
+
 async function initUsersPage() {
+  activateTabFromHash();
   Auth._sessionReady = false;
   const live = await Auth.bootstrap();
   showLiveDataBanner(live);
+  await loadDepartments();
   if (live) await UserRegistry.fetch();
   render();
 }

@@ -279,6 +279,9 @@ final class AdminController
         ]);
 
         if ($input['role'] === 'placement_officer') {
+            if (empty($input['departmentId'])) {
+                Response::error('departmentId is required when creating a placement officer.', 422);
+            }
             try {
                 (new PlacementOfficerModel())->createProfile($id, $input);
             } catch (\InvalidArgumentException $e) {
@@ -291,6 +294,9 @@ final class AdminController
         }
 
         if ($input['role'] === 'staff') {
+            if (empty($input['departmentId'])) {
+                Response::error('departmentId is required when creating staff.', 422);
+            }
             try {
                 (new StaffModel())->createProfile($id, $input);
             } catch (\InvalidArgumentException $e) {
