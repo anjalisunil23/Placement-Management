@@ -33,6 +33,16 @@ final class PublicController
                 $tables = [];
             }
         }
+        $root = dirname(__DIR__, 2);
+        $deployVersion = '';
+        $deployFile = $root . '/deploy-version.txt';
+        if (is_readable($deployFile)) {
+            $deployVersion = trim((string) file_get_contents($deployFile));
+        }
+        $eligibilityFile = $root . '/backend/services/EligibilityEngine.php';
+        $legacyPolicyRules = is_readable($eligibilityFile)
+            && str_contains((string) file_get_contents($eligibilityFile), 'Placement policy not accepted');
+
         Response::success([
             'status'   => $db['ok'] ? 'ok' : 'error',
             'database' => [
@@ -42,6 +52,10 @@ final class PublicController
                 'database'  => $_ENV['DB_DATABASE'] ?? null,
                 'tables'    => count($tables),
                 'error'     => $db['error'],
+            ],
+            'build' => [
+                'deployVersion'    => $deployVersion,
+                'eligibilityRules' => $legacyPolicyRules ? 'legacy-policy-required' : 'v2-resume-only',
             ],
         ], $db['ok'] ? 'OK' : 'Database unavailable', $db['ok'] ? 200 : 503);
     }
