@@ -185,6 +185,8 @@ final class TrackingService
         $companyModel = new CompanyModel();
         $driveModel = new DriveModel();
         $jobModel = new JobModel();
+        $departmentModel = new DepartmentModel();
+        $deptCodeCache = [];
 
         usort($apps, static function (array $a, array $b): int {
             $aTime = strtotime((string) ($a['updatedAt'] ?? $a['createdAt'] ?? '')) ?: 0;
@@ -198,10 +200,18 @@ final class TrackingService
             $user = $student ? $userModel->findById((string) ($student['userId'] ?? '')) : null;
             $company = $companyModel->findById((string) ($app['companyId'] ?? ''));
             $drive = $driveModel->findById((string) ($app['driveId'] ?? ''));
+            if (!$company && $drive) {
+                $company = $companyModel->findById((string) ($drive['companyId'] ?? ''));
+            }
             $job = !empty($app['jobId']) ? $jobModel->findById((string) $app['jobId']) : null;
 
             $status = (string) ($app['status'] ?? 'applied');
             $stageLabel = $this->stageLabel($status, $student);
+            $deptId = (string) ($student['departmentId'] ?? '');
+            if ($deptId !== '' && !isset($deptCodeCache[$deptId])) {
+                $dept = $departmentModel->findById($deptId);
+                $deptCodeCache[$deptId] = (string) ($dept['code'] ?? $dept['name'] ?? '');
+            }
             $badge = match ($status) {
                 'selected' => !empty($student['placed']) ? 'success' : 'success',
                 'rejected' => 'danger',
@@ -210,13 +220,17 @@ final class TrackingService
             };
 
             $rows[] = [
-                'student'   => (string) ($user['name'] ?? 'Student'),
-                'company'   => (string) ($company['companyName'] ?? ''),
-                'role'      => (string) ($job['title'] ?? $drive['title'] ?? ''),
-                'stage'     => $stageLabel,
-                'updatedAt' => DocumentHelper::serialize($app)['updatedAt'] ?? null,
-                'status'    => $status,
-                'badge'     => $badge,
+                'applicationId' => (string) ($app['_id'] ?? ''),
+                'student'       => (string) ($user['name'] ?? 'Student'),
+                'registerNumber'=> (string) ($student['registerNumber'] ?? ''),
+                'department'    => $deptCodeCache[$deptId] ?? '',
+                'cgpa'          => (float) ($student['academic']['cgpa'] ?? $student['cgpa'] ?? 0),
+                'company'       => (string) ($company['companyName'] ?? ''),
+                'role'          => (string) ($job['title'] ?? $drive['title'] ?? ''),
+                'stage'         => $stageLabel,
+                'updatedAt'     => DocumentHelper::serialize($app)['updatedAt'] ?? null,
+                'status'        => $status,
+                'badge'         => $badge,
             ];
         }
 

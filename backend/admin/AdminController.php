@@ -107,7 +107,8 @@ final class AdminController
     {
         RBACMiddleware::requireAdmin();
         $model = new DriveModel();
-        if (!$model->findById($id)) {
+        $drive = $model->findById($id);
+        if (!$drive) {
             Response::notFound('Drive not found.');
         }
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
@@ -119,6 +120,9 @@ final class AdminController
         }
         $allowed = ['title','companyId','type','date','time','branches','eligibility','tier','jdFile','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
+        if (isset($update['eligibility']) && is_array($update['eligibility'])) {
+            $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);
+        }
         $model->update($id, $update);
         Response::success(null, 'Drive updated.');
     }

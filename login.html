@@ -119,12 +119,6 @@
                 <label class="form-label small fw-semibold">Register number</label>
                 <input name="registerNumber" class="form-control" placeholder="22MCA047" />
               </div>
-              <div class="col-md-6 role-field role-student role-staff">
-                <label class="form-label small fw-semibold">Department</label>
-                <select name="departmentId" class="form-select" id="registerDepartment">
-                  <option value="">Loading departments…</option>
-                </select>
-              </div>
 
               <!-- Staff -->
               <div class="col-md-6 role-field role-staff">
@@ -343,11 +337,6 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
     }
   } else { toast(res.message || 'Registration failed', 'error'); }
 });
-
-(async () => {
-  await ensureDepartmentsLoaded();
-  fillDepartmentIdSelect(document.getElementById('registerDepartment'));
-})();
 
 function formatLoginCompactCount(value) {
   const n = Number(value) || 0;

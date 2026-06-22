@@ -38,7 +38,12 @@ const OfficerApi = {
       id: OfficerApi.id(d),
       company: meta.company || d.companyName || d.company || '',
       companyId: d.companyId || '',
-      role: meta.role || d.title || '',
+      role: meta.role || (() => {
+      const title = String(d.title || '').trim();
+      if (title.includes('—')) return title.split('—').pop().trim();
+      if (title.includes(' - ')) return title.split(' - ').pop().trim();
+      return '';
+    })() || d.role || '',
       title: d.title || '',
       type: d.type || 'pooled',
       date: d.date || '',
@@ -199,7 +204,7 @@ const OfficerApi = {
   },
 
   async fetchPlacementConsole() {
-    const res = await api('/analytics/placement-console');
+    const res = await api('/officer/placement-console');
     return res.success ? res.data : null;
   },
 

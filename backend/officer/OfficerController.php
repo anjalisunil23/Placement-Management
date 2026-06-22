@@ -238,8 +238,14 @@ final class OfficerController
         }
 
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-        $allowed = ['title','type','date','time','eligibility','tier','status'];
+        if (isset($input['eligibility']) && is_string($input['eligibility'])) {
+            $input['eligibility'] = json_decode($input['eligibility'], true) ?? [];
+        }
+        $allowed = ['title','type','date','time','eligibility','tier','status','branches'];
         $update = array_intersect_key($input, array_flip($allowed));
+        if (isset($update['eligibility']) && is_array($update['eligibility'])) {
+            $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);
+        }
 
         // For placement officers, keep drive scoped to their department
         if (!$ctx['isAdmin']) {

@@ -400,7 +400,9 @@ final class AnalyticsService
         $tracking = (new TrackingService())->getOverview($departmentId, 50);
         $recruiting = (new RecruitingService())->getCampusOverview($departmentId);
         $departments = $this->getDepartmentPipeline($departmentId);
-        $jobCount = (new JobModel())->count([]);
+        $driveModel = new DriveModel();
+        $activeDriveStatuses = ['scheduled', 'ongoing', 'open', 'reviewing'];
+        $jobCount = $driveModel->count(['status' => ['$in' => $activeDriveStatuses]]);
 
         return [
             'summary' => [

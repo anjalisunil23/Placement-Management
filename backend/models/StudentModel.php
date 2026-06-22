@@ -46,7 +46,7 @@ class StudentModel extends BaseModel
     public function createProfile(string $userId, array $data): string
     {
         $userId = Security::toObjectId($userId);
-        $deptId = Security::toObjectId($data['departmentId']);
+        $deptId = !empty($data['departmentId']) ? Security::toObjectId($data['departmentId']) : null;
 
         $doc = [
             'userId'         => $userId,

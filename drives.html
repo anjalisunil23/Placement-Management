@@ -145,11 +145,13 @@
 
         <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="editRole" required/></div>
 
-        <div class="col-md-4"><label class="form-label small fw-semibold">Package</label><input class="form-control" id="editPackage" required/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Package</label><input class="form-control" id="editPackage" placeholder="e.g. ₹12 LPA"/></div>
 
         <div class="col-12"><label class="form-label small fw-semibold">Eligible branches</label><div id="editDriveBranches" class="d-flex flex-wrap gap-2 border rounded p-2"></div></div>
 
-        <div class="col-md-4"><label class="form-label small fw-semibold">Deadline</label><input class="form-control" id="editDeadline"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Recruitment date</label><input type="date" class="form-control" id="editRecruitmentDate"/></div>
+
+        <div class="col-md-4"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" id="editDeadline"/></div>
 
         <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="editStatus"><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
 
@@ -313,6 +315,7 @@ let isStudent = false;
 let alumniSeeking = false;
 let pendingDrive = null;
 let allDrives = [];
+let editingDrive = null;
 
 function driveViewMode() {
   if (canManage) return 'manage';
@@ -814,9 +817,13 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
 
 window.openEditDrive = id => {
   if (!canManage) return;
-  const d = DriveStore.get(id);
-  if (!d) return;
+  const d = allDrives.find(x => x.id === id) || DriveStore.get(id);
+  if (!d) {
+    toast('Could not load drive details. Refresh the page and try again.', 'error');
+    return;
+  }
 
+  editingDrive = d;
   document.getElementById('editDriveId').value = id;
 
   document.getElementById('editCompany').value = d.company || '';
@@ -828,6 +835,8 @@ window.openEditDrive = id => {
   const branchList = String(d.branches || '').split(/,\s*/).filter(Boolean);
   renderDepartmentBranchCheckboxes(document.getElementById('editDriveBranches'), { checkedAll: false, selected: branchList });
 
+  const recruitmentDate = (d.date && d.date !== '—' && d.date !== 'TBD') ? d.date : '';
+  document.getElementById('editRecruitmentDate').value = recruitmentDate;
   document.getElementById('editDeadline').value = (d.deadline && d.deadline !== '—' && d.deadline !== 'TBD') ? d.deadline : '';
 
   document.getElementById('editStatus').value = d.status || 'Open';
@@ -874,16 +883,21 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
 
     branches: readCheckedBranchCodes(document.getElementById('editDriveBranches')).join(', '),
 
+    date: document.getElementById('editRecruitmentDate').value.trim(),
+
+    recruitmentDate: document.getElementById('editRecruitmentDate').value.trim(),
+
     deadline: document.getElementById('editDeadline').value.trim(),
 
     status: document.getElementById('editStatus').value,
 
     description: document.getElementById('editDescription').value.trim(),
 
-  });
+  }, editingDrive || DriveStore.get(id));
 
   if (!result) return;
 
+  editingDrive = null;
   bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
 
   toast('Drive updated.', 'success');

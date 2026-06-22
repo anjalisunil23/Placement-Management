@@ -572,6 +572,38 @@ const RegisteredCompanies = {
     toast(res.message || 'Could not add company.', 'error');
     return null;
   },
+  async update(companyId, payload) {
+    if (!(await requireWriteSession())) return null;
+    const body = {
+      companyName: String(payload.companyName || '').trim(),
+      website: String(payload.website || payload.companyWebsite || '').trim(),
+      category: payload.category || 'Product',
+      tier: payload.tier || 'Tier 2',
+    };
+    const hrName = String(payload.hrName || '').trim();
+    const hrEmail = String(payload.hrEmail || '').trim();
+    const contactNumber = String(payload.contactNumber || '').trim();
+    if (hrName || hrEmail || contactNumber) {
+      body.contacts = [{ name: hrName, email: hrEmail, phone: contactNumber }];
+    }
+    const res = await api(`/admin/companies/${encodeURIComponent(companyId)}`, { method: 'PUT', body });
+    if (res.success) {
+      await this.fetch();
+      return true;
+    }
+    toast(res.message || 'Could not update company.', 'error');
+    return null;
+  },
+  async remove(companyId) {
+    if (!(await requireWriteSession())) return false;
+    const res = await api(`/admin/companies/${encodeURIComponent(companyId)}`, { method: 'DELETE' });
+    if (res.success) {
+      await this.fetch();
+      return true;
+    }
+    toast(res.message || 'Could not delete company.', 'error');
+    return false;
+  },
 };
 
 const ALUMNI_JOBS_KEY = 'ph-alumni-job-posts';
@@ -1586,10 +1618,12 @@ function fillDepartmentCodeSelect(selectEl, { includeAll = false, selected = '' 
 function renderDepartmentBranchCheckboxes(container, { name = 'branches', checkedAll = true, selected = null } = {}) {
   if (!container) return;
   const codes = departmentCodes();
-  const selectedSet = selected instanceof Set ? selected : (Array.isArray(selected) ? new Set(selected) : null);
+  const selectedSet = selected instanceof Set
+    ? selected
+    : (Array.isArray(selected) ? new Set(selected.map(s => String(s).trim().toUpperCase())) : null);
   container.innerHTML = codes.length
     ? codes.map(code => {
-        const checked = selectedSet ? selectedSet.has(code) : checkedAll;
+        const checked = selectedSet ? selectedSet.has(String(code).toUpperCase()) : checkedAll;
         const id = `br-${code}-${Math.random().toString(36).slice(2, 7)}`;
         return `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="${name}" value="${code}" id="${id}"${checked ? ' checked' : ''}><label class="form-check-label small" for="${id}">${code}</label></div>`;
       }).join('')
@@ -2439,6 +2473,8 @@ const DriveStore = {
     }
     const stored = this.all().find(d => d.id === id);
     if (stored) return stored;
+    const merged = this.allWithCatalog().find(d => d.id === id);
+    if (merged) return merged;
     return this.catalogEntry(id);
   },
   _driveStatusToApi(status) {
@@ -2639,7 +2675,7 @@ const DriveStore = {
     }
     return null;
   },
-  async update(id, p) {
+  async update(id, p, existingHint = null) {
     if (!canManageDrives()) return null;
     if (!(await requireWriteSession())) return null;
 
@@ -2651,7 +2687,7 @@ const DriveStore = {
     };
 
     if (this.isApiDrive(id)) {
-      const existing = this.get(id) || {};
+      const existing = existingHint || this.get(id) || {};
       const body = await this._buildUpdateBody(p, existing);
       if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
         const res = await api(`/officer/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
@@ -2665,6 +2701,7 @@ const DriveStore = {
         toast(formatErrors(res), 'error');
         return null;
       }
+      toast('Sign in with an admin or officer account to update drives.', 'error');
       return null;
     }
 
@@ -2679,6 +2716,7 @@ const DriveStore = {
       this.saveOverrides(map);
       return this.get(id);
     }
+    toast('Could not update drive.', 'error');
     return null;
   },
   async remove(id) {
@@ -2893,7 +2931,12 @@ const PlacementConsoleStore = {
   async fetch() {
     if (!Auth.hasRealAuth()) return null;
     const role = Auth.role();
-    if (role !== 'admin' && role !== 'placement_officer') return null;
+    if (role === 'admin' && typeof AdminApi !== 'undefined') {
+      return AdminApi.fetchPlacementConsole();
+    }
+    if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+      return OfficerApi.fetchPlacementConsole();
+    }
     const res = await api('/analytics/placement-console');
     return res.success ? res.data : null;
   },

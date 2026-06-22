@@ -76,7 +76,6 @@
           <form id="addStaffForm" class="row g-2">
             <div class="col-12"><label class="form-label small fw-semibold">Full name</label><input class="form-control" name="name" required/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Email</label><input class="form-control" type="email" name="email" required/></div>
-            <div class="col-6"><label class="form-label small fw-semibold">Department</label><select class="form-select" name="department" id="staffDeptSelect" required></select></div>
             <div class="col-6"><label class="form-label small fw-semibold">Designation</label><input class="form-control" name="designation" placeholder="Professor"/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Phone</label><input class="form-control" name="phone"/></div>
             <div class="col-12"><button type="submit" class="btn btn-primary w-100"><i class="bi bi-person-plus me-1"></i>Add staff</button></div>
@@ -88,7 +87,7 @@
           <div class="p-3 p-md-4 pb-0 d-flex justify-content-between"><h6 class="fw-bold mb-0">Staff directory</h6><span class="badge-soft muted" id="staffCount">0</span></div>
           <div class="table-wrap">
             <table class="table-modern">
-              <thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Designation</th><th>Added</th><th class="admin-only-col"></th></tr></thead>
+              <thead><tr><th>Name</th><th>Email</th><th>Designation</th><th>Added</th><th class="admin-only-col"></th></tr></thead>
               <tbody id="staffRows"></tbody>
             </table>
           </div>
@@ -153,13 +152,12 @@
             <option value="selected">Selected</option>
             <option value="placed">Placed</option>
           </select>
-          <select class="form-select form-select-sm w-auto" id="appDeptFilter"><option value="">All depts</option></select>
         </div>
       </div>
       <div class="table-wrap">
         <table class="table-modern">
           <thead><tr>
-            <th>Student</th><th>Roll</th><th>Dept</th><th>CGPA</th><th>Company</th><th>Role</th><th>Status</th><th class="resume-col">Resume</th>
+            <th>Student</th><th>Roll</th><th>CGPA</th><th>Company</th><th>Role</th><th>Status</th><th class="resume-col">Resume</th>
           </tr></thead>
           <tbody id="applicantRows"></tbody>
         </table>
@@ -213,11 +211,12 @@
 const role = Auth.role();
 const isAdmin = role === 'admin';
 
-let deptData = DEPARTMENT_PLACEMENT;
-let totals = placementDeptTotals();
-let activeCos = activeRecruitingCompanies();
-let openJobs = DRIVE_CATALOG.filter(d => d.status !== 'Closed');
-let pipelineStudents = PLACEMENT_STUDENTS;
+let deptData = [];
+let totals = { applicants: 0, shortlisted: 0, selected: 0, placed: 0, companies: 0, jobPosts: 0, students: 0 };
+let activeCos = [];
+let openJobs = [];
+let pipelineStudents = [];
+let staffList = [];
 
 function mapAppToPipeline(a) {
   const raw = String(a.status || a.stage || 'applied').toLowerCase();
@@ -250,12 +249,12 @@ function refreshConsoleViews() {
 }
 
 function updateTopStats() {
-  document.getElementById('tApplicants').dataset.target = totals.applicants;
-  document.getElementById('tShortlisted').dataset.target = totals.shortlisted;
-  document.getElementById('tSelected').dataset.target = totals.selected;
-  document.getElementById('tPlaced').dataset.target = totals.placed;
-  document.getElementById('tCompanies').dataset.target = activeCos.length;
-  document.getElementById('tJobs').dataset.target = openJobs.length;
+  document.getElementById('tApplicants').dataset.target = totals.applicants ?? 0;
+  document.getElementById('tShortlisted').dataset.target = totals.shortlisted ?? 0;
+  document.getElementById('tSelected').dataset.target = totals.selected ?? 0;
+  document.getElementById('tPlaced').dataset.target = totals.placed ?? 0;
+  document.getElementById('tCompanies').dataset.target = totals.companies ?? activeCos.length ?? 0;
+  document.getElementById('tJobs').dataset.target = totals.jobPosts ?? openJobs.length ?? 0;
   ['tApplicants','tShortlisted','tSelected','tPlaced','tCompanies','tJobs'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.dataset.animated = '0';
@@ -264,7 +263,15 @@ function updateTopStats() {
 }
 
 function renderDeptStats() {
-  document.getElementById('deptStatsRows').innerHTML = deptData.map(d => `
+  const tbody = document.getElementById('deptStatsRows');
+  if (!deptData.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted-2 p-4 text-center">No department statistics yet.</td></tr>';
+    document.getElementById('deptStatsFoot').innerHTML = '';
+    destroyChart(document.getElementById('deptPlacedChart'));
+    destroyChart(document.getElementById('deptPipelineChart'));
+    return;
+  }
+  tbody.innerHTML = deptData.map(d => `
     <tr>
       <td><strong>${d.dept}</strong></td>
       <td>${d.students}</td><td>${d.applicants}</td><td>${d.shortlisted}</td>
@@ -284,18 +291,34 @@ function renderDeptStats() {
 }
 
 function renderStaff() {
-  const list = StaffRegistry.all();
+  const list = staffList;
   document.getElementById('staffCount').textContent = list.length + ' staff';
   document.getElementById('staffRows').innerHTML = list.length ? list.map(s => `
     <tr>
-      <td><strong>${s.name}</strong></td><td>${s.email}</td><td>${s.department}</td>
+      <td><strong>${s.name}</strong></td><td>${s.email}</td>
       <td>${s.designation}</td><td>${formatDate(s.addedAt)}</td>
       <td class="admin-only-col">${isAdmin ? `<button class="btn btn-sm btn-outline-danger" onclick="removeStaff('${s.id}')"><i class="bi bi-trash"></i></button>` : ''}</td>
-    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No staff added yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No staff added yet.</td></tr>';
 }
 
-window.removeStaff = id => {
+window.removeStaff = async id => {
   if (!isAdmin) return;
+  if (!confirm('Remove this staff member?')) return;
+  if (Auth.hasRealAuth()) {
+    const ok = await UserRegistry.removeUser(id);
+    if (!ok) return;
+    staffList = UserRegistry.byRole('staff').map(u => ({
+      id: u.id || u.userId || '',
+      name: u.name || '',
+      email: u.email || '',
+      department: u.department || '',
+      designation: u.designation || 'Faculty',
+      addedAt: u.createdAt || u.addedAt || '',
+    }));
+    toast('Staff removed.', 'success');
+    renderStaff();
+    return;
+  }
   StaffRegistry.remove(id);
   toast('Staff removed.', 'success');
   renderStaff();
@@ -372,7 +395,12 @@ window.openRegisterAlumni = id => {
 };
 
 function renderJobs() {
-  document.getElementById('jobRows').innerHTML = openJobs.map(d => `
+  const rows = document.getElementById('jobRows');
+  if (!openJobs.length) {
+    rows.innerHTML = '<tr><td colspan="7" class="text-muted-2 p-4 text-center">No active drives yet.</td></tr>';
+    return;
+  }
+  rows.innerHTML = openJobs.map(d => `
     <tr>
       <td><strong>${d.company}</strong></td><td>${d.role}</td><td>${d.package}</td>
       <td>${d.branches}</td><td>${d.applied}</td>
@@ -381,7 +409,12 @@ function renderJobs() {
 }
 
 function renderRecruiting() {
-  document.getElementById('recruitingRows').innerHTML = activeCos.map(c => `
+  const rows = document.getElementById('recruitingRows');
+  if (!activeCos.length) {
+    rows.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">No recruiting companies yet.</td></tr>';
+    return;
+  }
+  rows.innerHTML = activeCos.map(c => `
     <tr>
       <td><strong>${c.company}</strong></td><td>${c.roles.join(', ')}</td><td>${c.package}</td>
       <td>${c.applicants.toLocaleString('en-IN')}</td>
@@ -404,20 +437,18 @@ function renderApplicants() {
   const on = resumeVerificationOn();
   const q = document.getElementById('appSearch').value.trim().toLowerCase();
   const status = document.getElementById('appStatusFilter').value;
-  const dept = document.getElementById('appDeptFilter').value;
   const filtered = pipelineStudents.filter(s => {
     if (status && s.status !== status) return false;
-    if (dept && s.dept !== dept) return false;
-    if (q && !`${s.name} ${s.roll} ${s.dept} ${s.company}`.toLowerCase().includes(q)) return false;
+    if (q && !`${s.name} ${s.roll} ${s.company}`.toLowerCase().includes(q)) return false;
     return true;
   });
   document.getElementById('applicantRows').innerHTML = filtered.length ? filtered.map(s => `
     <tr>
-      <td><strong>${s.name}</strong></td><td>${s.roll}</td><td>${s.dept}</td><td>${s.cgpa.toFixed(2)}</td>
+      <td><strong>${s.name}</strong></td><td>${s.roll}</td><td>${s.cgpa.toFixed(2)}</td>
       <td>${s.company}</td><td>${s.role}</td><td>${pipelineStatusBadge(s.status)}</td>
       <td class="resume-col">${on ? `<button class="btn btn-sm btn-outline-primary" onclick="viewResume('${s.id}')"><i class="bi bi-file-earmark-pdf"></i> View</button>` : '<span class="text-muted-2 small">Hidden</span>'}</td>
     </tr>`).join('')
-    : '<tr><td colspan="8" class="text-muted-2 p-4">No matching applicants.</td></tr>';
+    : '<tr><td colspan="7" class="text-muted-2 p-4">No matching applicants.</td></tr>';
   syncResumeUI();
 }
 
@@ -426,7 +457,7 @@ window.viewResume = id => {
   const s = pipelineStudents.find(x => x.id === id);
   if (!s) return;
   document.getElementById('resumeStudentName').textContent = s.name;
-  document.getElementById('resumeStudentRoll').textContent = s.roll + ' · ' + s.dept;
+  document.getElementById('resumeStudentRoll').textContent = s.roll || '—';
   document.getElementById('resumePath').textContent = s.resumeUrl || s.resumePath || '—';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('resumeModal')).show();
 };
@@ -437,61 +468,110 @@ if (!isAdmin) {
   document.querySelectorAll('.admin-only-col').forEach(el => el.style.display = 'none');
 }
 
-onAppReady(async () => {
-  showPageAlert('consoleAlert', 'info', 'Loading placement console…');
-  await ensureDepartmentsLoaded();
-  await Promise.all([StaffRecs.fetch(), AlumniReferrals.fetch()]);
-  fillDepartmentCodeSelect(document.getElementById('staffDeptSelect'));
-  const appFilter = document.getElementById('appDeptFilter');
-  if (appFilter) {
-    appFilter.innerHTML = '<option value="">All depts</option>';
-    departmentCodes().forEach(code => {
-      appFilter.innerHTML += `<option value="${code}">${code}</option>`;
-    });
+function mapTrackingCandidate(c) {
+  const raw = String(c.status || 'applied').toLowerCase();
+  let status = 'applied';
+  if (raw === 'selected') status = c.stage === 'Joined' ? 'placed' : 'selected';
+  else if (raw === 'placed') status = 'placed';
+  else if (['shortlisted', 'company_review', 'officer_approved'].includes(raw)) status = 'shortlisted';
+  return {
+    id: c.applicationId || c.id || `${c.student || ''}-${c.company || ''}`,
+    name: c.student || c.studentName || c.name || 'Student',
+    roll: c.registerNumber || c.roll || '',
+    dept: c.department || c.dept || '',
+    cgpa: parseFloat(c.cgpa ?? 0) || 0,
+    company: c.company || '',
+    role: c.role || '',
+    status,
+    resumePath: c.resumePath || c.resumeFileName || '',
+    resumeUrl: c.resumeUrl || '',
+  };
+}
+
+async function loadLiveConsoleData() {
+  if (!Auth.hasRealAuth()) {
+    showPageAlert('consoleAlert', 'warn', 'Sign in with your admin or officer account to view live placement data.');
+    return false;
   }
-  renderReferrals();
+
+  showPageAlert('consoleAlert', 'info', 'Loading live placement data…');
+
+  const drivesPromise = isAdmin && typeof AdminApi !== 'undefined'
+    ? AdminApi.fetchDrives()
+    : (typeof OfficerApi !== 'undefined' ? OfficerApi.fetchDrives() : Promise.resolve(null));
+  const appsPromise = isAdmin && typeof AdminApi !== 'undefined'
+    ? AdminApi.fetchApplications()
+    : (typeof OfficerApi !== 'undefined' ? OfficerApi.fetchApplications() : Promise.resolve(null));
+  const staffPromise = isAdmin ? UserRegistry.fetch() : Promise.resolve(null);
+
+  const [console, drives, applications] = await Promise.all([
+    PlacementConsoleStore.fetch(),
+    drivesPromise,
+    appsPromise,
+  ]);
+
+  await Promise.all([
+    StaffRecs.fetch(),
+    AlumniReferrals.fetch(),
+    staffPromise,
+  ]);
+
+  if (console) {
+    const summary = console.summary || {};
+    totals = {
+      students: (console.departments || []).reduce((t, d) => t + (d.students || 0), 0),
+      applicants: summary.applicants ?? 0,
+      shortlisted: summary.shortlisted ?? 0,
+      selected: summary.selected ?? 0,
+      placed: summary.placed ?? 0,
+      companies: summary.companies ?? 0,
+      jobPosts: summary.jobPosts ?? 0,
+    };
+    deptData = (console.departments || []).map(d => PlacementConsoleStore.mapDepartment(d));
+    activeCos = (console.recruiting?.activeCompanies || []).map(c => RecruitingStore.mapActiveCompany(c));
+  }
+
+  if (Array.isArray(drives)) {
+    openJobs = drives.filter(d => String(d.status || '').toLowerCase() !== 'closed');
+    if (!totals.jobPosts) totals.jobPosts = openJobs.length;
+  }
+
+  if (Array.isArray(applications)) {
+    pipelineStudents = applications.map(a => mapAppToPipeline(a));
+  } else if (console?.tracking?.candidates?.length) {
+    pipelineStudents = console.tracking.candidates.map(mapTrackingCandidate);
+  }
+
+  if (isAdmin) {
+    staffList = UserRegistry.byRole('staff').map(u => ({
+      id: u.id || u.userId || '',
+      name: u.name || '',
+      email: u.email || '',
+      department: u.department || '',
+      designation: u.designation || 'Faculty',
+      addedAt: u.createdAt || u.addedAt || '',
+    }));
+  }
+
+  if (!console && !drives && !applications) {
+    showPageAlert('consoleAlert', 'danger', 'Could not load live placement data. Check your connection and try again.');
+    return false;
+  }
+
+  showPageAlert('consoleAlert', 'hide');
+  return true;
+}
+
+onAppReady(async () => {
+  await ensureDepartmentsLoaded();
 
   try {
-    if (Auth.hasRealAuth()) {
-      const consolePromise = PlacementConsoleStore.fetch();
-      const drivesPromise = isAdmin && typeof AdminApi !== 'undefined'
-        ? AdminApi.fetchDrives()
-        : (typeof OfficerApi !== 'undefined' ? OfficerApi.fetchDrives() : null);
-      const appsPromise = isAdmin && typeof AdminApi !== 'undefined'
-        ? AdminApi.fetchApplications()
-        : (typeof OfficerApi !== 'undefined' ? OfficerApi.fetchApplications() : null);
-      const [console, drives, applications] = await Promise.all([
-        consolePromise,
-        drivesPromise || Promise.resolve(null),
-        appsPromise || Promise.resolve(null),
-      ]);
-
-      if (console) {
-        const summary = console.summary || {};
-        totals = {
-          students: (console.departments || []).reduce((t, d) => t + (d.students || 0), 0),
-          applicants: summary.applicants ?? 0,
-          shortlisted: summary.shortlisted ?? 0,
-          selected: summary.selected ?? 0,
-          placed: summary.placed ?? 0,
-        };
-        deptData = (console.departments || []).map(d => PlacementConsoleStore.mapDepartment(d));
-        activeCos = (console.recruiting?.activeCompanies || []).map(c => RecruitingStore.mapActiveCompany(c));
-      }
-      if (drives && drives.length) {
-        openJobs = drives.filter(d => String(d.status || '').toLowerCase() !== 'closed');
-      }
-      if (applications && applications.length) {
-        pipelineStudents = applications.map(a => mapAppToPipeline(a));
-      }
-      showPageAlert('consoleAlert', 'hide');
-    } else {
-      showPageAlert('consoleAlert', 'hide');
-    }
+    await loadLiveConsoleData();
   } catch (e) {
-    showPageAlert('consoleAlert', 'danger', 'Failed to load live console data. Showing demo snapshot.');
+    showPageAlert('consoleAlert', 'danger', 'Failed to load live placement data.');
   }
 
+  renderReferrals();
   refreshConsoleViews();
 });
 
@@ -505,25 +585,39 @@ document.getElementById('resumeVerifyToggle').addEventListener('change', e => {
 document.getElementById('addStaffForm')?.addEventListener('submit', e => {
   e.preventDefault();
   if (!isAdmin) return;
+  if (Auth.hasRealAuth()) {
+    toast('Add staff from User Management to create live accounts.', 'info');
+    return;
+  }
   StaffRegistry.add(Object.fromEntries(new FormData(e.target).entries()));
   toast('Staff member added.', 'success');
   e.target.reset();
   renderStaff();
 });
 
-document.getElementById('registerForm').addEventListener('submit', e => {
+document.getElementById('registerForm').addEventListener('submit', async e => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
   if (!data.sourceRecommendationId) delete data.sourceRecommendationId;
-  RegisteredCompanies.register(data);
+  const ok = await RegisteredCompanies.register(data);
+  if (!ok) return;
   toast('Company registered.', 'success');
   registerModal().hide();
   e.target.reset();
+  await loadLiveConsoleData();
   renderReferrals();
+  refreshConsoleViews();
 });
 
-['appSearch','appStatusFilter','appDeptFilter'].forEach(id => {
+['appSearch','appStatusFilter'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderApplicants);
   document.getElementById(id).addEventListener('change', renderApplicants);
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !Auth.hasRealAuth()) return;
+  loadLiveConsoleData()
+    .then(ok => { if (ok) { renderReferrals(); refreshConsoleViews(); } })
+    .catch(() => {});
 });
 </script></body></html>

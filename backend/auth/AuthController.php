@@ -169,7 +169,6 @@ final class AuthController
             case 'student':
                 $studentErrors = Validator::validate($input, [
                     'registerNumber' => 'required',
-                    'departmentId'   => 'required',
                 ]);
                 if (!empty($studentErrors)) {
                     return;
