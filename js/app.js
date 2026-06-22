@@ -72,7 +72,6 @@ const PAGE_LABELS = {
   'alumni-success-stories.html': 'Success Stories',
   'staff-recommend.html': 'Recommend Company',
   'users.html': 'User Management',
-  'departments.html': 'Departments',
   'rules.html': 'Placement Rules',
   'applications.html': 'Student · Management · Application',
   'blacklist.html': 'Student · Management · Blacklist',

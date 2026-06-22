@@ -45,7 +45,6 @@ const PAGE_PERMS = {
   'student-overview.html':  ['admin','placement_officer','staff'],
   'hiring-overview.html':   ['admin','placement_officer','staff'],
   'users.html':             ['admin'],
-  'departments.html':       ['admin'],
   'rules.html':             ['admin'],
   'applications.html':      ['admin','placement_officer'],
   'resumes.html':           ['admin','placement_officer'],
@@ -71,7 +70,7 @@ const ROLE_HOME = {
 };
 
 const ADMIN_ONLY_PAGES = [
-  'users.html', 'departments.html', 'rules.html', 'blacklist.html', 'admin-settings.html',
+  'users.html', 'rules.html', 'blacklist.html', 'admin-settings.html',
 ];
 
 const RESUME_PROFILES = ['General', 'SDE / Full Stack', 'Data / ML', 'Product / Business', 'Core Engineering'];
@@ -272,7 +271,7 @@ const Auth = {
   needsApiSession(page) {
     return [
       'reports.html', 'applications.html', 'resumes.html', 'results.html',
-      'students.html', 'users.html', 'departments.html', 'rules.html',
+      'students.html', 'users.html', 'rules.html',
       'blacklist.html', 'admin-companies.html', 'admin-settings.html',
       'drives.html', 'create-drive.html',
     ].includes(page);
