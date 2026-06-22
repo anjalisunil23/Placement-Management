@@ -1043,6 +1043,24 @@ const ResumeBucket = {
   },
   async fetch() {
     if (Auth.role() !== 'student' || Auth.isDemo()) return this.all();
+
+    const libraryRes = await apiFetch('/student/resumes', { skipAuthRedirect: true });
+    if (libraryRes.success && Array.isArray(libraryRes.data) && libraryRes.data.length) {
+      const fromLibrary = libraryRes.data.map(r => ({
+        id: r._id || r.id,
+        label: r.label || 'Resume',
+        profileType: r.profileType || 'General',
+        fileName: r.fileName || '',
+        fileSize: r.fileSize || 0,
+        bucketPath: r.viewUrl || '',
+        uploadedAt: r.uploadedAt || new Date().toISOString(),
+        verified: !!r.verified,
+        fromApi: true,
+      }));
+      this.save(fromLibrary);
+      return fromLibrary;
+    }
+
     const res = await apiFetch('/student/profile', { skipAuthRedirect: true });
     if (!res.success || !res.data) return this.all();
     const profile = res.data;
@@ -1171,7 +1189,12 @@ const StudentApps = {
         },
       });
       if (!res.success) {
-        toast(res.message || 'Application failed.', 'error');
+        const msg = res.message || 'Application failed.';
+        if (/not eligible/i.test(msg)) {
+          toast(`${msg} Upload a resume in Settings → Resumes, then try again.`, 'error');
+        } else {
+          toast(msg, 'error');
+        }
         return null;
       }
       const app = {

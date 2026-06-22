@@ -121,7 +121,10 @@ if (isStudent) {
     await ResumeBucket.fetch();
     if (Auth.isDemo()) ResumeBucket.seed();
     document.getElementById('resumeProfileType').innerHTML = RESUME_PROFILES.map(p => `<option>${p}</option>`).join('');
-    renderResumes();
+    await refreshResumes();
+    if (location.hash === '#resumes') {
+      document.querySelector('[href="#resumes"]')?.click();
+    }
   });
 } else {
   document.querySelector('[href="#resumes"]')?.remove();
@@ -492,7 +495,6 @@ async function refreshResumes() {
   await loadResumes();
   renderResumes();
 }
-if (isStudent) refreshResumes();
 
 document.getElementById('saveSettings').addEventListener('click', async () => {
   savePreferences();

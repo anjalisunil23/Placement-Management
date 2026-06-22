@@ -243,6 +243,18 @@ final class StudentController
     ];
 
     $id = (new ResumeModel())->insert($doc);
+
+    $this->studentModel->update((string) $profile['_id'], [
+      'resume' => [
+        'filename'   => $doc['fileName'],
+        'path'       => $path,
+        'verified'   => false,
+        'uploadedAt' => DocumentHelper::now(),
+      ],
+    ]);
+
+    (new ApplicationWorkflowService())->onResumeUploaded((string) $profile['_id']);
+
     Response::success(['id' => $id], 'Resume uploaded.', 201);
   }
 
@@ -503,9 +515,10 @@ final class StudentController
 
     $studentId = (string) $profile['_id'];
     $driveId = $input['driveId'];
+    $resumeId = (string) ($input['resumeId'] ?? '');
 
     $engine = new EligibilityEngine();
-    $check = $engine->checkForDrive($studentId, $driveId);
+    $check = $engine->checkForDrive($studentId, $driveId, $resumeId !== '' ? $resumeId : null);
     if (!$check['eligible']) {
       Response::error('Not eligible: ' . implode(' ', $check['reasons']), 403);
     }
@@ -521,14 +534,28 @@ final class StudentController
     }
 
     $resume = null;
-    if (!empty($input['resumePath']) || !empty($input['resumeFileName'])) {
+    if ($resumeId !== '') {
+      $resumeDoc = (new ResumeModel())->findById($resumeId);
+      if ($resumeDoc && (string) ($resumeDoc['studentId'] ?? '') === $studentId) {
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $storedName = (string) ($resumeDoc['storedName'] ?? '');
+        $path = rtrim($config['uploads']['resume_dir'], '/\\') . DIRECTORY_SEPARATOR . $storedName;
+        $resume = [
+          'resumeId' => $resumeId,
+          'label'    => (string) ($resumeDoc['label'] ?? ''),
+          'fileName' => (string) ($resumeDoc['fileName'] ?? $storedName),
+          'path'     => $path,
+        ];
+      }
+    }
+    if ($resume === null && (!empty($input['resumePath']) || !empty($input['resumeFileName']))) {
       $resume = [
-        'resumeId'   => (string) ($input['resumeId'] ?? ''),
+        'resumeId'   => $resumeId,
         'label'      => (string) ($input['resumeLabel'] ?? ''),
         'fileName'   => (string) ($input['resumeFileName'] ?? ''),
         'path'       => (string) ($input['resumePath'] ?? ''),
       ];
-    } elseif (!empty($profile['resume']['path'])) {
+    } elseif ($resume === null && !empty($profile['resume']['path'])) {
       $resume = [
         'resumeId' => '',
         'label'    => 'Uploaded resume',

@@ -8,6 +8,7 @@ use PMS\Models\BlacklistModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
+use PMS\Models\ResumeModel;
 use PMS\Models\RuleModel;
 use PMS\Models\StudentModel;
 use PMS\Utils\Security;
@@ -16,7 +17,7 @@ use PMS\Utils\Security;
  * Automatic eligibility checker for placement drives and jobs.
  *
  * IF student.cgpa >= required AND department matches AND backlogs OK
- * AND not blacklisted AND placement chances remain AND policy accepted
+ * AND not blacklisted AND placement chances remain
  * THEN allow application ELSE reject.
  */
 final class EligibilityEngine
@@ -37,7 +38,7 @@ final class EligibilityEngine
     /**
      * @return array{eligible: bool, reasons: string[]}
      */
-    public function checkForDrive(string $studentId, string $driveId): array
+    public function checkForDrive(string $studentId, string $driveId, ?string $resumeId = null): array
     {
         $student = $this->studentModel->findById($studentId);
         $driveModel = new DriveModel();
@@ -54,7 +55,7 @@ final class EligibilityEngine
         $criteria = $this->toPlainArray($drive['eligibility'] ?? []);
         $branches = $this->toPlainArray($drive['branches'] ?? []);
         $tier = $drive['tier'] ?? 'Tier 2';
-        return $this->evaluate($student, $criteria, $branches, (string) $tier);
+        return $this->evaluate($student, $criteria, $branches, (string) $tier, $resumeId);
     }
 
     /**
@@ -91,7 +92,7 @@ final class EligibilityEngine
      * @param string $driveTier
      * @return array{eligible: bool, reasons: string[]}
      */
-    private function evaluate(array $student, array $criteria, array $allowedBranches, string $driveTier = 'Tier 2'): array
+    private function evaluate(array $student, array $criteria, array $allowedBranches, string $driveTier = 'Tier 2', ?string $resumeId = null): array
     {
         $reasons = [];
         $studentId = (string) $student['_id'];
@@ -127,20 +128,9 @@ final class EligibilityEngine
             $reasons[] = 'Student is blacklisted.';
         }
 
-        // Policy acceptance
-        if (!($student['policyAccepted'] ?? false)) {
-            $reasons[] = 'Placement policy not accepted.';
-        }
-
-        // Resume must be uploaded (verification happens in workflow after apply)
-        $resume = $student['resume'] ?? null;
-        if (!$resume || empty($resume['path'])) {
+        // Resume must be uploaded (profile field or resume library)
+        if (!$this->studentHasResume($student, $resumeId)) {
             $reasons[] = 'Resume not uploaded.';
-        }
-
-        // Signed placement report required
-        if (empty($student['signedReport'])) {
-            $reasons[] = 'Signed placement report not uploaded.';
         }
 
         // Placement chances — tier cost must be affordable
@@ -174,6 +164,28 @@ final class EligibilityEngine
             'eligible' => empty($reasons),
             'reasons'  => $reasons,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     */
+    private function studentHasResume(array $student, ?string $resumeId = null): bool
+    {
+        $studentId = (string) ($student['_id'] ?? '');
+
+        if ($resumeId !== null && $resumeId !== '') {
+            $resume = (new ResumeModel())->findById($resumeId);
+            if ($resume && (string) ($resume['studentId'] ?? '') === $studentId) {
+                return true;
+            }
+        }
+
+        $profileResume = $student['resume'] ?? null;
+        if (is_array($profileResume) && !empty($profileResume['path'])) {
+            return true;
+        }
+
+        return (new ResumeModel())->findByStudent($studentId, 1) !== [];
     }
 
     /**
