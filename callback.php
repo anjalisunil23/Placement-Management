@@ -32,8 +32,8 @@ use PMS\Utils\Security;
 Security::startSession();
 
 $redirectLogin = static function (string $message = ''): void {
-    $qs = $message !== '' ? ('?aes_error=' . rawurlencode($message)) : '';
-    header('Location: /login.html' . $qs);
+    $qs = $message !== '' ? ('?aes_error=' . rawurlencode($message) . '&login=1') : '?login=1';
+    header('Location: /public-stats.html' . $qs);
     exit;
 };
 

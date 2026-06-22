@@ -226,7 +226,7 @@ final class AesLoginService
             CURLOPT_TIMEOUT        => 8,
             CURLOPT_HTTPHEADER     => [
                 'Content-Type: application/x-www-form-urlencoded',
-                'Referer: https://' . $this->refHost . '/login.html',
+                'Referer: https://' . $this->refHost . '/public-stats.html',
             ],
         ]);
 

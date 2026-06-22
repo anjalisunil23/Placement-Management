@@ -114,12 +114,22 @@ const API_BASE =
   localStorage.getItem('ph-api-base') ||
   '/backend/api';
 
+const PORTAL_AUTH_PAGE = 'public-stats.html';
+
+function portalAuthUrl(next = '', autoLogin = true) {
+  const params = new URLSearchParams();
+  if (next) params.set('next', next);
+  if (autoLogin) params.set('login', '1');
+  const qs = params.toString();
+  return qs ? `${PORTAL_AUTH_PAGE}?${qs}` : PORTAL_AUTH_PAGE;
+}
+
 /** Ensure a live server session before admin writes; redirects to login when needed. */
 async function requireWriteSession() {
   Auth._sessionReady = false;
   if (await Auth.ensureSession()) return true;
   const page = document.body?.dataset?.page || 'dashboard.html';
-  window.location.href = `login.html?next=${encodeURIComponent(page)}`;
+  window.location.href = portalAuthUrl(page);
   return false;
 }
 
@@ -200,7 +210,7 @@ const Auth = {
     if (!raw) return this.homePage();
     const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
     const hash = raw.includes('#') ? raw.slice(raw.indexOf('#')) : '';
-    if (page && page !== 'login.html' && this.isAllowed(page)) {
+    if (page && page !== 'login.html' && page !== PORTAL_AUTH_PAGE && this.isAllowed(page)) {
       return page + hash;
     }
     return this.homePage();
@@ -261,7 +271,7 @@ const Auth = {
   logout() {
     apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
     this.clear();
-    window.location.href = 'login.html';
+    window.location.href = PORTAL_AUTH_PAGE;
   },
   isDemo() {
     const t = this.token();
@@ -3154,15 +3164,14 @@ async function apiFetch(path, opts = {}) {
       }
       if (!opts.skipAuthRedirect && !Auth.isDemo()) {
         const page = document.body?.dataset?.page;
-        const next = page && page !== 'login.html' ? `?next=${encodeURIComponent(page)}` : '';
         Auth.clear();
-        window.location.href = `login.html${next}`;
+        window.location.href = portalAuthUrl(page && page !== PORTAL_AUTH_PAGE ? page : '');
         return { success: false, message: 'Session expired', data: null, status: 401 };
       }
       return {
         success: false,
         message: Auth.isDemo()
-          ? 'Sign in with your account on the login page to save changes. Preview mode is read-only.'
+          ? 'Sign in with your AES account on the public portal to save changes. Preview mode is read-only.'
           : 'Session expired. Please sign in again.',
         data: null,
         status: 401,
@@ -3199,7 +3208,7 @@ async function api(path, opts = {}) {
 }
 
 function onAppReady(fn) {
-  if (document.body?.dataset?.page && document.body.dataset.page !== 'login.html') {
+  if (document.body?.dataset?.page && document.body.dataset.page !== 'login.html' && document.body.dataset.page !== PORTAL_AUTH_PAGE) {
     document.addEventListener('ph-ready', fn, { once: true });
   } else {
     fn();
