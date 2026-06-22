@@ -8,7 +8,11 @@ deployment:
     # Sync app files into the live web root (overwrite stale copies)
     - /bin/cp -Rf backend $DEPLOYPATH/backend
     - /bin/cp -Rf css $DEPLOYPATH/css
+    # Force-replace JS (cp -Rf alone can leave stale app.js on some hosts)
+    - /bin/mkdir -p $DEPLOYPATH/js
+    - /bin/rm -rf $DEPLOYPATH/js
     - /bin/cp -Rf js $DEPLOYPATH/js
+    - /bin/cp -f js/*.js $DEPLOYPATH/js/
     - /bin/cp -f .htaccess $DEPLOYPATH/.htaccess
     - /bin/cp -f index.php $DEPLOYPATH/index.php
     - /bin/cp -f composer.json $DEPLOYPATH/composer.json
@@ -17,6 +21,8 @@ deployment:
     - /bin/cp -f *.html $DEPLOYPATH/
     - /bin/git rev-parse HEAD > $DEPLOYPATH/deploy-version.txt
     - /bin/date -u +"%Y-%m-%dT%H:%M:%SZ" >> $DEPLOYPATH/deploy-version.txt
+    - /bin/head -n 1 js/app.js >> $DEPLOYPATH/deploy-version.txt
+    - /bin/grep -q "APP_SHELL_VERSION" $DEPLOYPATH/js/app.js || (echo "DEPLOY FAILED - js/app.js not updated. Check file permissions on public_html/js/" >&2; exit 1)
     - /bin/mkdir -p $DEPLOYPATH/uploads/resumes $DEPLOYPATH/uploads/reports $DEPLOYPATH/uploads/jd $DEPLOYPATH/uploads/signed_reports $DEPLOYPATH/uploads/photos
     - /bin/chmod -R 775 $DEPLOYPATH/uploads
     - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader 2>/dev/null || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
