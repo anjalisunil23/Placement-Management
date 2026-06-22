@@ -40,6 +40,18 @@ if (!is_readable($autoload)) {
 
 require_once $autoload;
 
+// Linux/cPanel: PSR-4 may not resolve backend/utils (lowercase) — load utils explicitly.
+$utilsDir = dirname(__DIR__) . '/utils';
+foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php', 'JwtHelper.php', 'OwnershipHelper.php', 'ApiExceptionHandler.php'] as $utilFile) {
+    $path = $utilsDir . '/' . $utilFile;
+    if (is_readable($path)) {
+        require_once $path;
+    }
+}
+if (!class_exists(\PMS\Utils\ApiExceptionHandler::class, false)) {
+    $emitJsonError('Server autoload error: ApiExceptionHandler missing. Redeploy from latest main.');
+}
+
 try {
     $config = require dirname(__DIR__) . '/config/app.php';
 } catch (\Throwable $e) {
