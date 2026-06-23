@@ -105,9 +105,9 @@ final class OfficerDataService
             $row = DocumentHelper::serialize($app) ?? [];
             $row['driveId'] = (string) ($app['driveId'] ?? '');
             $row['studentId'] = (string) ($app['studentId'] ?? '');
-            $row['studentName'] = $user['name'] ?? '';
-            $row['registerNumber'] = $student['registerNumber'] ?? '';
-            $row['department'] = $dept['code'] ?? $dept['name'] ?? '';
+            $row['studentName'] = is_array($user) ? (string) ($user['name'] ?? '') : '';
+            $row['registerNumber'] = is_array($student) ? (string) ($student['registerNumber'] ?? '') : '';
+            $row['department'] = is_array($dept) ? (string) ($dept['code'] ?? $dept['name'] ?? '') : '';
             $row['company'] = $companyName;
             $row['role'] = $drive['title'] ?? '';
             $row['stage'] = $stage;
@@ -452,7 +452,7 @@ final class OfficerDataService
             $companyId = (string) ($row['companyId'] ?? '');
             if ($companyId !== '') {
                 $company = $companyModel->findById($companyId);
-                $row['companyName'] = (string) ($company['companyName'] ?? '');
+                $row['companyName'] = is_array($company) ? (string) ($company['companyName'] ?? '') : '';
             }
 
             $elig = is_array($row['eligibility'] ?? null) ? $row['eligibility'] : [];

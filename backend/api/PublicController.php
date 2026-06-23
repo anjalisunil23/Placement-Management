@@ -45,11 +45,30 @@ final class PublicController
             && strpos((string) file_get_contents($eligibilityFile), 'Placement policy not accepted') !== false;
 
         $requiredTables = [
+            Collections::USERS,
+            Collections::STUDENTS,
+            Collections::STAFF,
+            Collections::PLACEMENT_OFFICERS,
+            Collections::COMPANIES,
+            Collections::ALUMNI,
+            Collections::DEPARTMENTS,
+            Collections::DRIVES,
+            Collections::APPLICATIONS,
+            Collections::JOBS,
+            Collections::NOTIFICATIONS,
+            Collections::RESUMES,
+            Collections::BLACKLIST,
+            Collections::RULES,
+            Collections::REPORTS,
+            Collections::RECOMMENDATIONS,
+            Collections::ALUMNI_REFERRALS,
+            Collections::ALUMNI_JOB_POSTS,
+            Collections::RECRUITMENT_RESULTS,
+            Collections::SYSTEM_SETTINGS,
+            Collections::PUBLIC_PAGE_CONTENT,
+            Collections::PLACEMENT_NEWS,
             Collections::SUCCESS_STORIES,
             Collections::BROADCAST_LOGS,
-            Collections::PLACEMENT_NEWS,
-            Collections::PUBLIC_PAGE_CONTENT,
-            Collections::SYSTEM_SETTINGS,
         ];
         $missingTables = array_values(array_diff($requiredTables, $tables));
 

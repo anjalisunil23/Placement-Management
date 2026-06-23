@@ -107,9 +107,12 @@ final class RecruitmentResultService
             return [];
         }
 
-        $results = (new RecruitmentResultModel())->list(['registerNumber' => $register], 100);
-
-        return DocumentHelper::serializeMany($results);
+        try {
+            $results = (new RecruitmentResultModel())->list(['registerNumber' => $register], 100);
+            return DocumentHelper::serializeMany($results);
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /**
@@ -124,9 +127,13 @@ final class RecruitmentResultService
             return $rows;
         }
 
-        $results = (new RecruitmentResultModel())->list([
-            'registerNumber' => strtoupper(trim($registerNumber)),
-        ], 100);
+        try {
+            $results = (new RecruitmentResultModel())->list([
+                'registerNumber' => strtoupper(trim($registerNumber)),
+            ], 100);
+        } catch (\Throwable) {
+            return $rows;
+        }
 
         $byDrive = [];
         $byCompany = [];

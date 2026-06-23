@@ -57,7 +57,7 @@ $required = [
     Collections::BROADCAST_LOGS,
 ];
 
-$existing = Database::pdo()->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
+$existing = Database::pdo()->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
 $missing = array_values(array_diff($required, $existing));
 
 if ($missing !== []) {

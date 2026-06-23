@@ -117,7 +117,7 @@ final class EligibilityEngine
         if (!empty($allowedBranches)) {
             $deptId = (string) ($student['departmentId'] ?? '');
             $dept = $this->departmentModel->findById($deptId);
-            $deptCode = $dept['code'] ?? '';
+            $deptCode = is_array($dept) ? (string) ($dept['code'] ?? '') : '';
             if ($deptCode && !in_array($deptCode, $allowedBranches, true)) {
                 $reasons[] = "Department {$deptCode} is not eligible for this drive.";
             }

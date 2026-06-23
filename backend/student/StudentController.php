@@ -460,7 +460,7 @@ final class StudentController
       unset($row);
     }
 
-    Response::success($result);
+    Response::success(DocumentHelper::jsonSafe($result));
   }
 
   /** GET /api/student/open-drives */
@@ -686,7 +686,7 @@ final class StudentController
       $rows,
       (string) ($profile['registerNumber'] ?? '')
     );
-    Response::success($rows);
+    Response::success(DocumentHelper::jsonSafe($rows));
   }
 
   /** GET /api/student/results */
@@ -694,9 +694,9 @@ final class StudentController
   {
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
-    Response::success(
+    Response::success(DocumentHelper::jsonSafe(
       (new RecruitmentResultService())->listForStudent((string) ($profile['registerNumber'] ?? ''))
-    );
+    ));
   }
 
   /** GET /api/student/notifications */
