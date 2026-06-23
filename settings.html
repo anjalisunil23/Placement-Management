@@ -106,8 +106,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260623c"></script>
-<script src="js/app.js?v=20260623c"></script>
+<script src="js/api.js?v=20260623d"></script>
+<script src="js/app.js?v=20260623d"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -129,13 +129,48 @@ function mergeProfileUser(u) {
 function pickDisplayName(u) {
   const merged = mergeProfileUser(u);
   const reg = merged.registerNumber || merged.admission_no || merged.username || '';
-  const keys = ['name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname', 'staff_name', 'emp_name'];
+  const keys = ['name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname', 'staff_name', 'emp_name', 'display_name'];
   for (const key of keys) {
     const val = String(merged[key] || '').trim();
     if (val && !isPlaceholderName(val, reg)) return val;
   }
+  const fname = String(merged.fname || merged.first_name || merged.firstName || merged.firstname || '').trim();
+  const lname = String(merged.lname || merged.last_name || merged.lastName || merged.lastname || '').trim();
+  const combined = `${fname} ${lname}`.trim();
+  if (combined && !isPlaceholderName(combined, reg)) return combined;
   const current = String(merged.name || '').trim();
   return current && !isPlaceholderName(current, reg) ? current : '';
+}
+
+function pickDepartment(u) {
+  const merged = mergeProfileUser(u);
+  const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
+  const deptObj = (merged.department && typeof merged.department === 'object') ? merged.department : null;
+  if (deptObj) {
+    const fromObj = String(deptObj.code || deptObj.name || '').trim();
+    if (fromObj) return fromObj.toUpperCase();
+  }
+  const keys = [
+    'department', 'departmentName', 'branch', 'dept', 'dept_name', 'branch_name',
+    'department_name', 'department_code', 'dept_code', 'branch_code',
+    'specialisation', 'specialization', 'programme', 'program',
+  ];
+  for (const key of keys) {
+    const val = String(merged[key] || academic[key] || '').trim();
+    if (val) return val.toUpperCase();
+  }
+  return '';
+}
+
+function pickCgpa(u) {
+  const merged = mergeProfileUser(u);
+  const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
+  const keys = ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa'];
+  for (const key of keys) {
+    const val = merged[key] ?? academic[key];
+    if (val != null && val !== '' && Number(val) > 0) return Number(val);
+  }
+  return '';
 }
 
 function syntheticStudentEmail(registerNumber) {
@@ -240,11 +275,10 @@ function applyProfileFromUser(u, activeRole) {
   if (roleEl) roleEl.value = ROLE_LABELS[r] || r || '';
   if (r === 'student') {
     document.getElementById('profRegNo').value = merged.registerNumber || merged.admission_no || merged.username || '';
-    document.getElementById('profDept').value = merged.department || merged.departmentName || merged.branch || merged.dept || '';
-    const cgpa = merged.cgpa ?? merged.CGPA ?? merged.gpa;
-    if (cgpa != null && cgpa !== '' && Number(cgpa) > 0) {
-      document.getElementById('profCgpa').value = cgpa;
-    }
+    const dept = pickDepartment(merged);
+    if (dept) document.getElementById('profDept').value = dept;
+    const cgpa = pickCgpa(merged);
+    if (cgpa) document.getElementById('profCgpa').value = cgpa;
   }
   if (r === 'staff') {
     document.getElementById('profStaffDept').value = merged.department || merged.departmentName || '';
@@ -274,17 +308,24 @@ async function loadSettingsProfile() {
       const ac = p.academic || {};
       const personal = p.personal || {};
       const reg = p.registerNumber || user.registerNumber || '';
-      const profileCtx = { ...user, ...u, registerNumber: reg, personal, academic: ac, department: p.department?.code || p.department?.name };
+      const profileCtx = {
+        ...user,
+        ...u,
+        registerNumber: reg,
+        personal,
+        academic: ac,
+        department: p.department || user.department,
+      };
       const apiName = pickDisplayName(profileCtx);
       const apiEmail = pickEmail(profileCtx);
       const apiPhone = pickPhone(profileCtx);
+      const apiDept = pickDepartment(profileCtx) || p.department?.code || p.department?.name || '';
+      const apiCgpa = pickCgpa(profileCtx) || (ac.cgpa > 0 ? ac.cgpa : '');
       if (apiName) document.getElementById('profName').value = apiName;
       document.getElementById('profEmail').value = apiEmail;
       document.getElementById('profRegNo').value = reg;
-      document.getElementById('profDept').value = p.department?.code || p.department?.name || user.department || '';
-      if (ac.cgpa != null && Number(ac.cgpa) > 0) {
-        document.getElementById('profCgpa').value = ac.cgpa;
-      }
+      if (apiDept) document.getElementById('profDept').value = apiDept;
+      if (apiCgpa) document.getElementById('profCgpa').value = apiCgpa;
       document.getElementById('profPhone').value = apiPhone;
       if (p.photo?.url || p.photoUrl) setAvatarPhoto(p.photo?.url || p.photoUrl);
       else setAvatarInitials();
@@ -293,8 +334,9 @@ async function loadSettingsProfile() {
         name: apiName || user.name,
         email: apiEmail || user.email,
         registerNumber: reg,
-        department: p.department?.code || p.department?.name || user.department,
-        cgpa: ac.cgpa ?? user.cgpa,
+        department: apiDept || user.department,
+        departmentName: apiDept || user.departmentName,
+        cgpa: apiCgpa || user.cgpa,
         phone: apiPhone || user.phone,
       };
       Auth.set(user, Auth.token());

@@ -262,6 +262,29 @@ final class AesLoginService
             $data['email'] = $this->syntheticStudentEmail($register);
         }
 
+        $aesDept = strtoupper(trim($this->pick($aesProfile, [
+            'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
+            'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
+            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
+        ])));
+        if ($aesDept === '' && !empty($mapped['department'])) {
+            $aesDept = strtoupper((string) $mapped['department']);
+        }
+        if ($aesDept !== '') {
+            $data['department'] = $aesDept;
+            $data['departmentName'] = $aesDept;
+        }
+
+        $aesCgpa = $this->pick($aesProfile, [
+            'cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa',
+        ]);
+        if ($aesCgpa === '' && isset($mapped['cgpa'])) {
+            $aesCgpa = (string) $mapped['cgpa'];
+        }
+        if ($aesCgpa !== '' && is_numeric($aesCgpa) && (float) $aesCgpa > 0) {
+            $data['cgpa'] = (float) $aesCgpa;
+        }
+
         $name = trim((string) ($data['name'] ?? ''));
         if ($name !== '' && !$this->isRealPersonName($name)) {
             $data['name'] = '';
@@ -303,16 +326,16 @@ final class AesLoginService
             $details[$keyStr] = is_bool($value) ? $value : trim((string) $value);
         }
 
-        return array_merge($details, $this->deepScanContactFields($payload));
+        return array_merge($details, $this->deepScanAesProfileFields($payload));
     }
 
     /**
-     * Walk nested AES payloads for email / phone fields under any key name.
+     * Walk nested AES payloads for profile fields (name, email, phone, department, CGPA).
      *
      * @param array<string, mixed> $payload
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
-    private function deepScanContactFields(array $payload): array
+    private function deepScanAesProfileFields(array $payload): array
     {
         $found = [];
 
@@ -333,6 +356,7 @@ final class AesLoginService
                     continue;
                 }
                 $lower = strtolower((string) $key);
+
                 if (
                     str_contains($lower, 'mail')
                     || $lower === 'email'
@@ -344,6 +368,7 @@ final class AesLoginService
                         $found['email'] = $email;
                     }
                 }
+
                 if (
                     str_contains($lower, 'phone')
                     || str_contains($lower, 'mobile')
@@ -355,12 +380,76 @@ final class AesLoginService
                         $found['phone'] = $text;
                     }
                 }
+
+                if (
+                    ($lower === 'name' || str_ends_with($lower, '_name') || $lower === 'fullname' || $lower === 'full_name')
+                    && !str_contains($lower, 'parent')
+                    && !str_contains($lower, 'father')
+                    && !str_contains($lower, 'mother')
+                    && !str_contains($lower, 'guardian')
+                    && !str_contains($lower, 'dept')
+                    && !str_contains($lower, 'branch')
+                ) {
+                    if ($this->isRealPersonName($text)) {
+                        $found['name'] = $text;
+                    }
+                }
+
+                if (
+                    $lower === 'department'
+                    || $lower === 'dept'
+                    || $lower === 'branch'
+                    || str_contains($lower, 'dept_')
+                    || str_contains($lower, 'branch_')
+                    || str_contains($lower, 'department_')
+                    || $lower === 'specialisation'
+                    || $lower === 'specialization'
+                    || $lower === 'programme'
+                    || $lower === 'program'
+                ) {
+                    if (strlen($text) >= 2 && strlen($text) <= 80 && !preg_match('/^\d+$/', $text)) {
+                        $found['department'] = strtoupper($text);
+                    }
+                }
+
+                if (
+                    $lower === 'cgpa'
+                    || $lower === 'gpa'
+                    || str_contains($lower, 'cgpa')
+                    || str_contains($lower, 'grade_point')
+                ) {
+                    if (is_numeric($text)) {
+                        $cgpa = (float) $text;
+                        if ($cgpa > 0 && $cgpa <= 10) {
+                            $found['cgpa'] = $cgpa;
+                        }
+                    }
+                }
             }
         };
 
         $walk($payload);
 
         return $found;
+    }
+
+    /**
+     * @deprecated Use deepScanAesProfileFields
+     * @param array<string, mixed> $payload
+     * @return array<string, string>
+     */
+    private function deepScanContactFields(array $payload): array
+    {
+        $scan = $this->deepScanAesProfileFields($payload);
+        $contact = [];
+        if (!empty($scan['email'])) {
+            $contact['email'] = (string) $scan['email'];
+        }
+        if (!empty($scan['phone'])) {
+            $contact['phone'] = (string) $scan['phone'];
+        }
+
+        return $contact;
     }
 
     /**
@@ -374,8 +463,8 @@ final class AesLoginService
         $mapped = [
             'name'           => trim($this->pick($aesDetails, [
                 'name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname',
-                'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name',
-            ])),
+                'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name', 'display_name',
+            ])) ?: trim($this->pick($aesDetails, ['fname', 'first_name', 'firstName', 'firstname']) . ' ' . $this->pick($aesDetails, ['lname', 'last_name', 'lastName', 'lastname'])),
             'phone'          => $this->pick($aesDetails, [
                 'phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno',
                 'cell', 'cell_no', 'cellNo', 'whatsapp', 'whatsapp_no',
@@ -403,7 +492,9 @@ final class AesLoginService
             'aadhar'         => $this->pick($aesDetails, ['aadhar', 'aadhaar', 'aadhar_no', 'aadhaarNo']),
         ];
 
-        $cgpa = $this->pick($aesDetails, ['cgpa', 'CGPA', 'gpa', 'GPA']);
+        $cgpa = $this->pick($aesDetails, [
+            'cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa',
+        ]);
         if ($cgpa !== '' && is_numeric($cgpa)) {
             $mapped['cgpa'] = (float) $cgpa;
         }
@@ -415,6 +506,7 @@ final class AesLoginService
         $dept = $this->pick($aesDetails, [
             'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
             'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
+            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
         ]);
         if ($dept !== '') {
             $mapped['department'] = strtoupper($dept);
@@ -522,8 +614,10 @@ final class AesLoginService
 
         $academic = is_array($existing['academic'] ?? null) ? $existing['academic'] : [];
         $academicPatch = [];
-        if (isset($extras['cgpa']) && (float) ($academic['cgpa'] ?? 0) <= 0) {
-            $academicPatch['cgpa'] = (float) $extras['cgpa'];
+        if (isset($extras['cgpa']) && (float) $extras['cgpa'] > 0) {
+            if ((float) ($academic['cgpa'] ?? 0) <= 0 || (float) $extras['cgpa'] > (float) ($academic['cgpa'] ?? 0)) {
+                $academicPatch['cgpa'] = (float) $extras['cgpa'];
+            }
         }
         if (isset($extras['backlogs'])) {
             $academicPatch['backlogs'] = (int) $extras['backlogs'];
@@ -663,9 +757,9 @@ final class AesLoginService
             'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
             'stu_email', 'stuEmail', 'personal_email', 'personalEmail',
         ])));
-        $contactScan = $this->deepScanContactFields($payload);
+        $contactScan = $this->deepScanAesProfileFields($payload);
         if ($email === '' && !empty($contactScan['email'])) {
-            $email = $contactScan['email'];
+            $email = (string) $contactScan['email'];
         }
 
         $name = trim($this->pick($flat, [
@@ -677,6 +771,9 @@ final class AesLoginService
             $lname = trim($this->pick($flat, ['lname', 'last_name', 'lastName', 'lastname']));
             $name = trim($fname . ' ' . $lname);
         }
+        if ($name === '' && !empty($contactScan['name'])) {
+            $name = (string) $contactScan['name'];
+        }
 
         $roleHint = strtolower(trim($this->pick($flat, [
             'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
@@ -685,9 +782,18 @@ final class AesLoginService
         $departmentCode = strtoupper(trim($this->pick($flat, [
             'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
             'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
+            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
         ])));
+        if ($departmentCode === '' && !empty($contactScan['department'])) {
+            $departmentCode = strtoupper((string) $contactScan['department']);
+        }
 
-        $cgpaRaw = $this->pick($flat, ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa']);
+        $cgpaRaw = $this->pick($flat, [
+            'cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa',
+        ]);
+        if ($cgpaRaw === '' && isset($contactScan['cgpa'])) {
+            $cgpaRaw = (string) $contactScan['cgpa'];
+        }
 
         if ($email === '' && $registerNumber !== '' && !str_contains($registerNumber, '@')) {
             $email = $this->syntheticStudentEmail($registerNumber);

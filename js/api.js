@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260623c';
+const APP_SCRIPT_VERSION = '20260623d';
 const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 function sanitizeDisplayName(name, registerNumber) {
@@ -9,6 +9,44 @@ function sanitizeDisplayName(name, registerNumber) {
   if (reg && n.toUpperCase() === reg.toUpperCase()) return '';
   if (/^\d+$/.test(n)) return '';
   return n;
+}
+
+function resolveSessionName(merged, registerNumber) {
+  const reg = registerNumber || '';
+  const keys = ['name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname', 'display_name'];
+  for (const key of keys) {
+    const val = String(merged[key] || '').trim();
+    const clean = sanitizeDisplayName(val, reg);
+    if (clean) return clean;
+  }
+  const fname = String(merged.fname || merged.first_name || merged.firstName || '').trim();
+  const lname = String(merged.lname || merged.last_name || merged.lastName || '').trim();
+  const combined = sanitizeDisplayName(`${fname} ${lname}`.trim(), reg);
+  if (combined) return combined;
+  return sanitizeDisplayName(merged.name || '', reg);
+}
+
+function resolveSessionDepartment(merged) {
+  const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
+  const keys = [
+    'department', 'departmentName', 'branch', 'dept', 'dept_name', 'branch_name',
+    'department_name', 'department_code', 'dept_code', 'branch_code', 'programme', 'program',
+  ];
+  for (const key of keys) {
+    const val = String(merged[key] || academic[key] || '').trim();
+    if (val) return val.toUpperCase();
+  }
+  return '';
+}
+
+function resolveSessionCgpa(merged) {
+  const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
+  const keys = ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa'];
+  for (const key of keys) {
+    const val = merged[key] ?? academic[key];
+    if (val != null && val !== '' && Number(val) > 0) return Number(val);
+  }
+  return undefined;
 }
 
 function syntheticStudentEmail(registerNumber) {
@@ -265,12 +303,12 @@ const Auth = {
       {
         ...prev,
         id: merged.id || merged._id || prev.id || '',
-        name: sanitizeDisplayName(merged.name || prev.name || '', reg),
+        name: resolveSessionName(merged, reg),
         email: resolveSessionEmail(merged, reg),
         role: merged.role || prev.role || '',
-        department: merged.department || prev.department || '',
+        department: resolveSessionDepartment(merged) || merged.department || prev.department || '',
         departmentId: merged.departmentId || prev.departmentId || '',
-        departmentName: merged.departmentName || prev.departmentName || '',
+        departmentName: resolveSessionDepartment(merged) || merged.departmentName || prev.departmentName || '',
         designation: merged.designation || prev.designation || '',
         company: merged.company ?? prev.company ?? '',
         companyName: merged.companyName ?? prev.companyName ?? '',
@@ -278,7 +316,7 @@ const Auth = {
         registerNumber: merged.registerNumber || prev.registerNumber || '',
         studentId: merged.studentId || prev.studentId || '',
         classBatch: merged.classBatch || prev.classBatch || '',
-        cgpa: merged.cgpa ?? prev.cgpa,
+        cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
         backlogs: merged.backlogs ?? prev.backlogs,
         placed: merged.placed ?? prev.placed,
         title: merged.title ?? prev.title ?? '',

@@ -109,9 +109,16 @@ final class StudentController
       'name' => (string) ($dept['name'] ?? ''),
     ] : null;
     if ($out['department'] === null && !empty($merged['department'])) {
-      $out['department'] = ['code' => (string) $merged['department'], 'name' => (string) $merged['department']];
+      $out['department'] = ['code' => (string) $merged['department'], 'name' => (string) ($merged['departmentName'] ?? $merged['department'])];
+    } elseif ($out['department'] !== null && !empty($merged['department'])) {
+      if (empty($out['department']['code'])) {
+        $out['department']['code'] = (string) $merged['department'];
+      }
+      if (empty($out['department']['name'])) {
+        $out['department']['name'] = (string) ($merged['departmentName'] ?? $merged['department']);
+      }
     }
-    if (!empty($merged['cgpa']) && (float) ($academic['cgpa'] ?? 0) <= 0) {
+    if (!empty($merged['cgpa']) && (float) $merged['cgpa'] > 0) {
       $academic['cgpa'] = (float) $merged['cgpa'];
       $out['academic'] = $academic;
     }
