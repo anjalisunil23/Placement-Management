@@ -335,7 +335,7 @@ function renderShell(active) {
     e.preventDefault();
     const key = a.dataset.role;
     if (key === 'admin') {
-      window.location.href = `login.html?next=${encodeURIComponent('dashboard.html')}`;
+      window.location.href = portalAuthUrl('dashboard.html');
       return;
     }
     const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
@@ -408,7 +408,7 @@ function animateCounters(root = document) {
 }
 
 function enforcePageRole(active) {
-  if (!active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html') return true;
+  if (!active || active === 'login.html' || active === PORTAL_AUTH_PAGE || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html' || active === 'register.html') return true;
   const page = active.split('#')[0];
   if (!Auth.isAllowed(page)) {
     toast(`This page isn't available for ${ROLE_LABELS[Auth.role()] || 'your role'}.`, 'warn');
@@ -420,7 +420,7 @@ function enforcePageRole(active) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   const active = document.body.dataset.page;
-  const isPublic = !active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html';
+  const isPublic = !active || active === 'login.html' || active === PORTAL_AUTH_PAGE || active === 'public-stats.html' || active === 'index.html' || active === 'register.html' || active === 'aes-complete.html';
 
   if (isPublic) {
     document.documentElement.setAttribute('data-theme', UserPrefs.theme());
@@ -434,7 +434,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const hasSession = await Auth.bootstrap();
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
-    window.location.replace(`login.html?next=${encodeURIComponent(active)}`);
+    window.location.replace(portalAuthUrl(active));
     return;
   }
   if (!hasSession) {
@@ -442,7 +442,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // preview mode — read-only dashboards only
     } else {
       Auth.clear();
-      window.location.href = `login.html?next=${encodeURIComponent(active)}`;
+      window.location.href = portalAuthUrl(active);
       return;
     }
   }

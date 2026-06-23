@@ -1,0 +1,261 @@
+/* AES login modal — keep in sync with inline block in public-stats.html */
+#aesLoginModal.aes-login-modal{z-index:1060}
+#aesLoginModal.aes-login-modal .modal-backdrop.show{opacity:.45}
+#aesLoginModal .aes-login-dialog{
+  max-width:400px;
+  width:calc(100% - 2rem);
+  margin:1rem auto;
+}
+#aesLoginModal .modal-content.aes-login-card{
+  border-radius:10px!important;
+  border:1px solid #cfd8e3!important;
+  background:#fff!important;
+  box-shadow:0 18px 48px rgba(15,23,42,.18)!important;
+  position:relative;
+  font-family:'Open Sans',Arial,Helvetica,sans-serif;
+  font-size:14px;
+  color:#1f2937;
+  overflow:hidden;
+}
+#aesLoginModal .aes-login-close{
+  position:absolute;
+  top:12px;
+  right:12px;
+  z-index:3;
+  opacity:.35;
+  padding:.5rem;
+}
+#aesLoginModal .aes-login-body{
+  padding:28px 30px 26px!important;
+  margin:0!important;
+}
+#aesLoginModal .aes-login-brand{
+  text-align:center;
+  margin:0 0 24px;
+  padding:0;
+}
+#aesLoginModal .aes-login-logo{
+  display:block;
+  margin:0 auto;
+  width:230px;
+  max-width:100%;
+  height:auto;
+}
+#aesLoginModal .aes-login-panel{
+  width:100%;
+  margin:0 auto;
+  padding:0;
+}
+#aesLoginModal .aes-login-error{
+  margin:0 0 14px;
+  padding:9px 12px;
+  border-radius:6px;
+  background:#fef2f2;
+  border:1px solid #fecaca;
+  color:#b91c1c;
+  font-size:13px;
+  line-height:1.4;
+}
+#aesLoginModal .aes-login-form{
+  margin:0;
+  padding:0;
+  width:100%;
+}
+#aesLoginModal .aes-form-group{
+  margin:0 0 12px;
+  padding:0;
+}
+#aesLoginModal .aes-form-group:last-of-type{margin-bottom:16px}
+#aesLoginModal .aes-login-input{
+  display:block;
+  width:100%;
+  height:42px;
+  box-sizing:border-box;
+  -webkit-appearance:none;
+  appearance:none;
+  background:#eef6fc!important;
+  border:1px solid #7eb8e8!important;
+  border-radius:6px!important;
+  padding:10px 14px!important;
+  font-size:15px;
+  line-height:1.4;
+  color:#111827!important;
+  box-shadow:none!important;
+  margin:0!important;
+}
+#aesLoginModal .aes-login-input:focus{
+  outline:0!important;
+  background:#e8f3fb!important;
+  border-color:#5aa8db!important;
+  box-shadow:0 0 0 3px rgba(90,168,219,.22)!important;
+}
+#aesLoginModal .aes-login-input::placeholder{color:#6b7280;opacity:1}
+#aesLoginModal .aes-login-submit{
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+  -webkit-appearance:none;
+  appearance:none;
+  margin:0!important;
+  padding:11px 16px;
+  border:1px solid #2e6da4!important;
+  border-radius:6px!important;
+  background:#337ab7!important;
+  color:#fff!important;
+  font-size:18px;
+  font-weight:600;
+  line-height:1.33;
+  cursor:pointer;
+  text-align:center;
+  transition:background .15s ease,border-color .15s ease;
+}
+#aesLoginModal .aes-login-submit:hover:not(:disabled),
+#aesLoginModal .aes-login-submit:focus:not(:disabled){
+  background:#2e6da4!important;
+  border-color:#2b669a!important;
+  color:#fff!important;
+}
+#aesLoginModal .aes-login-submit:disabled{opacity:.65;cursor:not-allowed}
+#aesLoginModal .aes-login-forgot-wrap{
+  margin:12px 0 0;
+  padding:0;
+  text-align:left;
+}
+#aesLoginModal .aes-login-forgot{
+  color:#374151;
+  font-size:14px;
+  text-decoration:none;
+  display:inline-block;
+}
+#aesLoginModal .aes-login-forgot:hover{color:#337ab7;text-decoration:underline}
+#aesLoginModal .aes-login-or{
+  width:100%;
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  border:none;
+  font-size:12px;
+  font-weight:600;
+  color:#6b7280;
+  margin:0;
+  padding:16px 0 14px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+#aesLoginModal .aes-login-or::before,
+#aesLoginModal .aes-login-or::after{
+  content:"";
+  border-bottom:1px solid #d1d5db;
+  flex:1 0 auto;
+  height:.75em;
+}
+#aesLoginModal .aes-login-or span{
+  flex:0 0 auto;
+  padding:0 12px;
+  text-align:center;
+}
+#aesLoginModal .aes-social-row{
+  display:flex;
+  flex-direction:row;
+  align-items:stretch;
+  gap:6px;
+  margin:0;
+  padding:0;
+}
+#aesLoginModal .aes-social-btn{
+  flex:1 1 0;
+  min-width:0;
+  min-height:36px;
+  display:inline-flex;
+  flex-direction:row;
+  align-items:stretch;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:6px!important;
+  overflow:hidden;
+  color:#fff!important;
+  font-size:12px;
+  font-weight:600;
+  line-height:1.2;
+  cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+  box-sizing:border-box;
+  transition:filter .15s ease;
+}
+#aesLoginModal .aes-social-icon{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 34px;
+  width:34px;
+  padding:0;
+  background:rgba(0,0,0,.16);
+  color:#fff!important;
+}
+#aesLoginModal .aes-social-icon i{
+  font-size:14px;
+  line-height:1;
+  color:inherit!important;
+}
+#aesLoginModal .aes-social-text{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:1;
+  min-width:0;
+  padding:0 6px;
+  color:#fff!important;
+  font-size:11px;
+  font-weight:600;
+  white-space:nowrap;
+}
+#aesLoginModal .aes-social-btn:hover:not(:disabled){filter:brightness(1.06)}
+#aesLoginModal .aes-social-btn:disabled{opacity:.6;cursor:not-allowed}
+#aesLoginModal .aes-social-google{background:#d9534f!important}
+#aesLoginModal .aes-social-microsoft{background:#337ab7!important}
+#aesLoginModal .aes-social-whatsapp{background:#128c7e!important}
+#aesLoginModal .aes-social-whatsapp:hover:not(:disabled){background:#0f7a6e!important}
+#aesLoginModal .aes-wa-otp-panel{
+  margin-top:16px;
+  padding:14px;
+  border:1px dashed #7eb8e8;
+  border-radius:8px;
+  background:#f0f9ff;
+  text-align:center;
+}
+#aesLoginModal .aes-wa-otp-title{
+  font-weight:700;
+  color:#1e293b;
+  margin:0 0 6px;
+  font-size:14px;
+}
+#aesLoginModal .aes-wa-otp-hint{
+  margin:0 0 8px;
+  font-size:12px;
+  color:#64748b;
+}
+#aesLoginModal .aes-wa-otp-code{
+  font-family:ui-monospace,Menlo,monospace;
+  font-size:28px;
+  font-weight:700;
+  letter-spacing:.12em;
+  color:#337ab7;
+  margin:0;
+}
+#aesLoginModal .aes-wa-otp-cancel{
+  margin-top:10px;
+  padding:6px 14px;
+  border:1px solid #cbd5e1;
+  border-radius:6px;
+  background:#fff;
+  color:#475569;
+  font-size:13px;
+  cursor:pointer;
+}
+@media (max-width:419px){
+  #aesLoginModal .aes-login-body{padding:22px 18px 20px!important}
+  #aesLoginModal .aes-social-icon{flex:0 0 30px;width:30px}
+  #aesLoginModal .aes-social-text{font-size:10px;padding:0 4px}
+}

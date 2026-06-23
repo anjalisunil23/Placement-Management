@@ -89,6 +89,38 @@ final class AesLoginService
     }
 
     /**
+     * Proxy AES username/password or social login to login.aesajce.in.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function checkLogin(array $data): array
+    {
+        if ($this->authKey === '') {
+            throw new \RuntimeException('AES login is not configured on this server.');
+        }
+
+        $payload = [
+            'method'  => 'checkLogin',
+            'authkey' => $this->authKey,
+            'refurl'  => $this->refHost,
+            'data'    => json_encode($data, JSON_UNESCAPED_UNICODE) ?: '{}',
+        ];
+
+        $response = $this->postToAes($payload, 'index.php');
+        if ($response === '') {
+            throw new \RuntimeException('Could not reach AES login server.');
+        }
+
+        $decoded = json_decode($response, true);
+        if (!is_array($decoded)) {
+            throw new \RuntimeException('Invalid response from AES login server.');
+        }
+
+        return $decoded;
+    }
+
+    /**
      * AES posts token / user profile here after login.aesajce.in authenticates the user.
      *
      * @param array<string, mixed> $post
@@ -109,6 +141,30 @@ final class AesLoginService
 
         if ($token !== '') {
             $this->verifyTokenWithAes($post, $token);
+            return;
+        }
+
+        $payload = [
+            'method'  => 'confirmLogin',
+            'authkey' => $this->authKey,
+            'refurl'  => $this->refHost,
+            'data'    => json_encode($post, JSON_UNESCAPED_UNICODE) ?: '{}',
+        ];
+
+        $response = $this->postToAes($payload, 'public_api.php');
+        if ($response === '') {
+            return;
+        }
+
+        $decoded = json_decode($response, true);
+        if (!is_array($decoded)) {
+            return;
+        }
+        if (($decoded['message'] ?? '') === 'Invalid Method confirmLogin') {
+            return;
+        }
+        if (isset($decoded['status']) && $decoded['status'] === false) {
+            throw new \RuntimeException((string) ($decoded['message'] ?? 'AES login verification failed.'));
         }
     }
 
@@ -515,13 +571,13 @@ final class AesLoginService
     /**
      * @param array<string, string> $fields
      */
-    private function postToAes(array $fields): string
+    private function postToAes(array $fields, string $endpoint = 'public_api.php'): string
     {
         if (!function_exists('curl_init')) {
             return '';
         }
 
-        $ch = curl_init('https://login.aesajce.in/api/public_api.php');
+        $ch = curl_init('https://login.aesajce.in/api/' . ltrim($endpoint, '/'));
         if ($ch === false) {
             return '';
         }
@@ -533,7 +589,7 @@ final class AesLoginService
             CURLOPT_TIMEOUT        => 12,
             CURLOPT_HTTPHEADER     => [
                 'Content-Type: application/x-www-form-urlencoded',
-                'Referer: https://' . $this->refHost . '/login.html',
+                'Referer: https://' . $this->refHost . '/public-stats.html',
             ],
         ]);
 

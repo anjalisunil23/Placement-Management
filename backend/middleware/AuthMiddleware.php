@@ -92,7 +92,7 @@ final class AuthMiddleware
   {
     $config = require dirname(__DIR__) . '/config/app.php';
     $data = DocumentHelper::serialize($user);
-    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
+    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/public-stats.html';
     if (($user['role'] ?? '') === 'alumni') {
       $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
       if ($profile) {

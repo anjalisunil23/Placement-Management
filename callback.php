@@ -8,27 +8,13 @@ declare(strict_types=1);
  * Flow:
  *   placements.amaljyothi.ac.in  →  Login with AES
  *   login.aesajce.in             →  Authenticate
- *   placements.amaljyothi.ac.in/callback.php  →  token / user info  →  PlaceHub session
+ *   callback.php                 →  aes-complete.html  →  PlaceHub session
  */
 
 $root = __DIR__;
 
-$autoload = $root . '/vendor/autoload.php';
-if (!is_readable($autoload)) {
-    http_response_code(500);
-    echo 'Server is missing PHP dependencies.';
-    exit;
-}
-
-require_once $autoload;
-
-$utilsDir = $root . '/backend/utils';
-foreach (['Security.php'] as $utilFile) {
-    $path = $utilsDir . '/' . $utilFile;
-    if (is_readable($path)) {
-        require_once $path;
-    }
-}
+require $root . '/backend/bootstrap-aes.php';
+pms_bootstrap_aes_callback($root);
 
 use PMS\Services\AesLoginService;
 use PMS\Utils\Security;
@@ -36,8 +22,8 @@ use PMS\Utils\Security;
 Security::startSession();
 
 $redirectLogin = static function (string $message = ''): void {
-    $qs = $message !== '' ? ('?aes_error=' . rawurlencode($message)) : '';
-    header('Location: /login.html' . $qs);
+    $qs = $message !== '' ? ('?aes_error=' . rawurlencode($message) . '&login=1') : '?login=1';
+    header('Location: /public-stats.html' . $qs);
     exit;
 };
 
@@ -45,7 +31,7 @@ $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $payload = $method === 'POST' ? $_POST : $_GET;
 
 if ($payload === []) {
-    header('Location: /login.html');
+    header('Location: /public-stats.html');
     exit;
 }
 
