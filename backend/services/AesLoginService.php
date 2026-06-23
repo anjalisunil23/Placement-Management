@@ -19,25 +19,9 @@ final class AesLoginService
 
     public function __construct()
     {
-        $root = dirname(__DIR__, 2);
-        if (file_exists($root . '/.env')) {
-            $dotenv = \Dotenv\Dotenv::createImmutable($root);
-            $dotenv->safeLoad();
-        }
-        if (file_exists($root . '/.env.local')) {
-            $dotenv = \Dotenv\Dotenv::createMutable($root, '.env.local');
-            $dotenv->safeLoad();
-        }
-
-        $this->authKey = $this->envString('AES_AUTH_KEY');
-        $this->refHost = $this->envString('AES_REF_HOST');
-        if ($this->refHost === '') {
-            $appUrl = rtrim((string) ($_ENV['APP_URL'] ?? ''), '/');
-            $this->refHost = $appUrl !== '' ? (string) parse_url($appUrl, PHP_URL_HOST) : '';
-        }
-        if ($this->refHost === '') {
-            $this->refHost = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
-        }
+        $aes = require dirname(__DIR__) . '/config/aes.php';
+        $this->authKey = (string) ($aes['auth_key'] ?? '');
+        $this->refHost = (string) ($aes['ref_host'] ?? '');
     }
 
     /**
@@ -46,7 +30,7 @@ final class AesLoginService
     public function authenticateCredentials(string $username, string $password): array
     {
         if ($this->authKey === '') {
-            throw new \RuntimeException('AES login is not configured on this server.');
+            throw new \RuntimeException($this->missingAesConfigMessage());
         }
 
         $username = trim($username);
@@ -68,9 +52,7 @@ final class AesLoginService
     public function handleCallback(array $post): string
     {
         if ($this->authKey === '') {
-            throw new \RuntimeException(
-                'AES login is not configured on this server. Add AES_AUTH_KEY and AES_REF_HOST to the site .env file, then redeploy.'
-            );
+            throw new \RuntimeException($this->missingAesConfigMessage());
         }
 
         $this->verifyCallbackPayload($post);
@@ -99,9 +81,7 @@ final class AesLoginService
     public function checkLogin(array $data): array
     {
         if ($this->authKey === '') {
-            throw new \RuntimeException(
-                'AES login is not configured on this server. Add AES_AUTH_KEY and AES_REF_HOST to the site .env file, then redeploy.'
-            );
+            throw new \RuntimeException($this->missingAesConfigMessage());
         }
 
         $payload = [
@@ -603,26 +583,8 @@ final class AesLoginService
         return is_string($body) ? $body : '';
     }
 
-    private function envString(string $key): string
+    private function missingAesConfigMessage(): string
     {
-        $candidates = [];
-        if (isset($_ENV[$key])) {
-            $candidates[] = $_ENV[$key];
-        }
-        if (isset($_SERVER[$key])) {
-            $candidates[] = $_SERVER[$key];
-        }
-        $fromGetenv = getenv($key);
-        if ($fromGetenv !== false) {
-            $candidates[] = $fromGetenv;
-        }
-
-        foreach ($candidates as $value) {
-            if (is_string($value) && trim($value) !== '') {
-                return trim($value);
-            }
-        }
-
-        return '';
+        return 'AES login is not configured on this server. Add AES_AUTH_KEY and AES_REF_HOST to public_html/.env, then redeploy.';
     }
 }
