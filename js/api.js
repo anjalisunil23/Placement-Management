@@ -1,5 +1,19 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260623d';
+const APP_SCRIPT_VERSION = '20260623e';
+
+function isCollegeEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  return e.includes('@students.amaljyothi.ac.in') || e.includes('@amaljyothi.ac.in') || e.endsWith('@ajce.in');
+}
+
+function inferNameFromEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e.includes('@')) return '';
+  let local = e.split('@')[0] || '';
+  local = local.replace(/\d+$/, '').replace(/[._+-]+/g, ' ').trim();
+  if (local.length < 3 || !/[a-zA-Z]/.test(local)) return '';
+  return local.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 function sanitizeDisplayName(name, registerNumber) {
@@ -13,7 +27,7 @@ function sanitizeDisplayName(name, registerNumber) {
 
 function resolveSessionName(merged, registerNumber) {
   const reg = registerNumber || '';
-  const keys = ['name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname', 'display_name'];
+  const keys = ['name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname', 'display_name', 'studname', 'nm'];
   for (const key of keys) {
     const val = String(merged[key] || '').trim();
     const clean = sanitizeDisplayName(val, reg);
@@ -23,6 +37,9 @@ function resolveSessionName(merged, registerNumber) {
   const lname = String(merged.lname || merged.last_name || merged.lastName || '').trim();
   const combined = sanitizeDisplayName(`${fname} ${lname}`.trim(), reg);
   if (combined) return combined;
+  const inferred = inferNameFromEmail(merged.personalEmail || merged.email);
+  const fromEmail = sanitizeDisplayName(inferred, reg);
+  if (fromEmail) return fromEmail;
   return sanitizeDisplayName(merged.name || '', reg);
 }
 
@@ -55,23 +72,21 @@ function syntheticStudentEmail(registerNumber) {
 }
 
 function resolveSessionEmail(merged, registerNumber) {
-  const keys = [
-    'email', 'mail', 'user_email', 'userEmail', 'college_email', 'official_email',
-    'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
-    'stu_email', 'stuEmail', 'personal_email', 'personalEmail',
-  ];
+  const collegeKeys = ['college_email', 'official_email', 'student_email', 'studentEmail', 'stu_email', 'college_mail'];
+  for (const key of collegeKeys) {
+    const val = String(merged[key] || '').trim().toLowerCase();
+    if (val && isCollegeEmail(val)) return val;
+  }
+  for (const key of Object.keys(merged)) {
+    const val = String(merged[key] || '').trim().toLowerCase();
+    if (val.includes('@') && isCollegeEmail(val)) return val;
+  }
+  if (registerNumber) return syntheticStudentEmail(registerNumber);
+  const keys = ['personalEmail', 'email', 'mail', 'user_email', 'userEmail'];
   for (const key of keys) {
     const val = String(merged[key] || '').trim().toLowerCase();
     if (val && val.includes('@')) return val;
   }
-  const stored = String(merged.email || '').trim().toLowerCase();
-  const safeReg = String(registerNumber || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
-  if (stored && stored.includes('@')) {
-    const local = stored.split('@')[0] || '';
-    const isSynthetic = stored.includes('@students.amaljyothi.ac.in') && safeReg && local === safeReg;
-    if (!isSynthetic) return stored;
-  }
-  if (registerNumber) return syntheticStudentEmail(registerNumber);
   return '';
 }
 
@@ -328,6 +343,8 @@ const Auth = {
         website: merged.website || prev.website || '',
         dashboard: merged.dashboard || prev.dashboard || '',
         phone: resolveSessionPhone(merged) || prev.phone || '',
+        personalEmail: merged.personalEmail || prev.personalEmail || '',
+        collegeEmail: merged.collegeEmail || prev.collegeEmail || '',
         course: merged.course || prev.course || '',
         year: merged.year || prev.year || '',
         semester: merged.semester || prev.semester || '',

@@ -46,7 +46,10 @@ try {
         echo "\naesDetails:\n";
         print_r($service->collectAesDetails($payload));
         echo "\nmapped:\n";
-        print_r($service->mapAesDetailsToUserFields($service->collectAesDetails($payload)));
+        $debug = $service->debugAesPayload($payload);
+        print_r($debug['mapped']);
+        echo "\nprofileScan:\n";
+        print_r($debug['profileScan']);
         exit;
     }
 

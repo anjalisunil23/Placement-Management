@@ -106,8 +106,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260623d"></script>
-<script src="js/app.js?v=20260623d"></script>
+<script src="js/api.js?v=20260623e"></script>
+<script src="js/app.js?v=20260623e"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -138,6 +138,8 @@ function pickDisplayName(u) {
   const lname = String(merged.lname || merged.last_name || merged.lastName || merged.lastname || '').trim();
   const combined = `${fname} ${lname}`.trim();
   if (combined && !isPlaceholderName(combined, reg)) return combined;
+  const inferred = inferNameFromEmail(merged.personalEmail || merged.email || pickEmail(merged));
+  if (inferred && !isPlaceholderName(inferred, reg)) return inferred;
   const current = String(merged.name || '').trim();
   return current && !isPlaceholderName(current, reg) ? current : '';
 }
@@ -153,7 +155,7 @@ function pickDepartment(u) {
   const keys = [
     'department', 'departmentName', 'branch', 'dept', 'dept_name', 'branch_name',
     'department_name', 'department_code', 'dept_code', 'branch_code',
-    'specialisation', 'specialization', 'programme', 'program',
+    'specialisation', 'specialization', 'programme', 'program', 'br', 'BR', 'stud_branch', 'course_branch',
   ];
   for (const key of keys) {
     const val = String(merged[key] || academic[key] || '').trim();
@@ -165,7 +167,7 @@ function pickDepartment(u) {
 function pickCgpa(u) {
   const merged = mergeProfileUser(u);
   const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
-  const keys = ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa'];
+  const keys = ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa', 'totcgpa', 'curcgpa'];
   for (const key of keys) {
     const val = merged[key] ?? academic[key];
     if (val != null && val !== '' && Number(val) > 0) return Number(val);
@@ -178,27 +180,39 @@ function syntheticStudentEmail(registerNumber) {
   return safe.toLowerCase() + '@students.amaljyothi.ac.in';
 }
 
+function inferNameFromEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e.includes('@')) return '';
+  let local = e.split('@')[0] || '';
+  local = local.replace(/\d+$/, '').replace(/[._+-]+/g, ' ').trim();
+  if (local.length < 3 || !/[a-zA-Z]/.test(local)) return '';
+  return local.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function isCollegeEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  return e.includes('@students.amaljyothi.ac.in') || e.includes('@amaljyothi.ac.in') || e.endsWith('@ajce.in');
+}
+
 function pickEmail(u) {
   const merged = mergeProfileUser(u);
   const personal = (merged.personal && typeof merged.personal === 'object') ? merged.personal : {};
-  const keys = [
-    'email', 'mail', 'user_email', 'userEmail', 'college_email', 'official_email',
-    'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
-    'stu_email', 'stuEmail', 'personal_email', 'personalEmail',
-  ];
-  for (const key of keys) {
+  const reg = merged.registerNumber || merged.admission_no || merged.username || '';
+  const collegeKeys = ['college_email', 'official_email', 'student_email', 'studentEmail', 'stu_email', 'college_mail', 'institutional_email'];
+  for (const key of collegeKeys) {
+    const val = String(merged[key] || personal[key] || '').trim().toLowerCase();
+    if (val && isCollegeEmail(val)) return val;
+  }
+  for (const key of Object.keys(merged)) {
+    const val = String(merged[key] || '').trim().toLowerCase();
+    if (val.includes('@') && isCollegeEmail(val)) return val;
+  }
+  if (reg) return syntheticStudentEmail(reg);
+  const personalKeys = ['email', 'mail', 'personal_email', 'personalEmail', 'user_email', 'userEmail'];
+  for (const key of personalKeys) {
     const val = String(merged[key] || personal[key] || '').trim().toLowerCase();
     if (val && val.includes('@')) return val;
   }
-  const stored = String(merged.email || '').trim().toLowerCase();
-  const reg = merged.registerNumber || merged.admission_no || merged.username || '';
-  const safeReg = String(reg).replace(/[^a-z0-9]/gi, '').toLowerCase();
-  if (stored && stored.includes('@')) {
-    const local = stored.split('@')[0] || '';
-    const isSynthetic = stored.includes('@students.amaljyothi.ac.in') && safeReg && local === safeReg;
-    if (!isSynthetic) return stored;
-  }
-  if (reg) return syntheticStudentEmail(reg);
   return '';
 }
 
