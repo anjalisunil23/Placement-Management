@@ -113,6 +113,31 @@ const user = Auth.user() || demoUserFor(Auth.role());
 const role = Auth.role();
 const isStudent = role === 'student';
 
+function applyProfileFromUser(u) {
+  if (!u) return;
+  const nameEl = document.getElementById('profName');
+  const emailEl = document.getElementById('profEmail');
+  const phoneEl = document.getElementById('profPhone');
+  if (nameEl && u.name) nameEl.value = u.name;
+  if (emailEl && u.email) emailEl.value = u.email;
+  if (phoneEl && u.phone) phoneEl.value = u.phone;
+  if (isStudent) {
+    if (u.registerNumber) document.getElementById('profRegNo').value = u.registerNumber;
+    if (u.department) document.getElementById('profDept').value = u.department;
+    if (u.cgpa != null && u.cgpa !== '') document.getElementById('profCgpa').value = u.cgpa;
+  }
+  if (role === 'staff') {
+    if (u.department) document.getElementById('profStaffDept').value = u.department;
+    if (u.designation) document.getElementById('profStaffDesig').value = u.designation;
+  }
+  if (role === 'placement_officer' && u.department) {
+    document.getElementById('profOfficerDept').value = u.department;
+  }
+  setAvatarInitials();
+}
+
+applyProfileFromUser(user);
+
 if (isStudent) {
   document.getElementById('settingsTitle').textContent = 'Profile & Resumes';
   document.getElementById('settingsSub').textContent = 'Update your profile and manage resumes in the storage bucket.';
@@ -134,7 +159,7 @@ if (isStudent) {
 document.getElementById('profName').value = user.name || '';
 document.getElementById('profEmail').value = user.email || '';
 document.getElementById('profRole').value = ROLE_LABELS[role] || '';
-document.getElementById('profPhone').value = user.phone || '+91 98765 43210';
+document.getElementById('profPhone').value = user.phone || '';
 const profAvatarEl = document.getElementById('profAvatar');
 const profEditBtn = document.getElementById('profEditBtn');
 
@@ -289,9 +314,21 @@ if (role === 'staff') {
     api('/staff/profile', { skipAuthRedirect: true }).then(res => {
       if (!res?.success || !res.data) return;
       const p = res.data;
+      const u = p.user || {};
+      if (u.name) document.getElementById('profName').value = u.name;
+      if (u.email) document.getElementById('profEmail').value = u.email;
+      if (u.phone) document.getElementById('profPhone').value = u.phone;
       document.getElementById('profStaffDept').value = p.department || p.departmentName || user.department || '';
-      document.getElementById('profStaffDesig').value = p.designation || user.designation || '';
-      Auth.set({ ...user, department: p.department || user.department, designation: p.designation || user.designation }, Auth.token());
+      document.getElementById('profStaffDesig').value = p.designation || u.designation || user.designation || '';
+      Auth.set({
+        ...user,
+        name: u.name || user.name,
+        email: u.email || user.email,
+        phone: u.phone || user.phone,
+        department: p.department || user.department,
+        designation: p.designation || u.designation || user.designation,
+      }, Auth.token());
+      setAvatarInitials();
     });
   }
 }
@@ -321,14 +358,30 @@ if (isStudent && Auth.hasRealAuth()) {
     const personal = p.personal || {};
     if (u.name) document.getElementById('profName').value = u.name;
     if (u.email) document.getElementById('profEmail').value = u.email;
-    document.getElementById('profRegNo').value = p.registerNumber || '';
+    document.getElementById('profRegNo').value = p.registerNumber || user.registerNumber || '';
     document.getElementById('profDept').value = p.department?.code || p.department?.name || user.department || '';
     document.getElementById('profCgpa').value = ac.cgpa ?? user.cgpa ?? '';
     document.getElementById('profPhone').value = personal.phone || user.phone || '';
     if (p.photo?.url || p.photoUrl) setAvatarPhoto(p.photo?.url || p.photoUrl);
     else setAvatarInitials();
+    Auth.set({
+      ...user,
+      name: u.name || user.name,
+      email: u.email || user.email,
+      registerNumber: p.registerNumber || user.registerNumber,
+      department: p.department?.code || p.department?.name || user.department,
+      cgpa: ac.cgpa ?? user.cgpa,
+      phone: personal.phone || user.phone,
+    }, Auth.token());
   });
 }
+
+onAppReady(async () => {
+  if (Auth.hasRealAuth()) {
+    await Auth.bootstrap();
+    applyProfileFromUser(Auth.user() || user);
+  }
+});
 
 if (role === 'alumni') {
   const working = alumniIsWorking();

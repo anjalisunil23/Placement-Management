@@ -14,6 +14,7 @@ use PMS\Models\StaffModel;
 use PMS\Models\UserModel;
 use PMS\Services\StaffContext;
 use PMS\Services\StaffService;
+use PMS\Services\AesLoginService;
 use PMS\Services\NotificationService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -48,10 +49,35 @@ final class StaffController
         $dept = !empty($profile['departmentId'])
             ? (new DepartmentModel())->findById((string) $profile['departmentId'])
             : null;
-        $data = DocumentHelper::serialize($profile);
+        $data = DocumentHelper::serialize($profile) ?? [];
         $data['department'] = $dept ? (string) ($dept['code'] ?? '') : '';
         $data['departmentName'] = $dept ? (string) ($dept['name'] ?? '') : '';
-        Response::success($data);
+
+        $merged = (new AesLoginService())->applyAesSessionToUserFields(array_merge(
+            StaffModel::profileToUserFields($profile, $dept),
+            [
+                'name'  => (string) ($user['name'] ?? ''),
+                'email' => (string) ($user['email'] ?? ''),
+            ]
+        ));
+        $data['user'] = [
+            'name'        => (string) ($merged['name'] ?? $user['name'] ?? ''),
+            'email'       => (string) ($merged['email'] ?? $user['email'] ?? ''),
+            'phone'       => (string) ($merged['phone'] ?? $profile['phone'] ?? ''),
+            'designation' => (string) ($merged['designation'] ?? $profile['designation'] ?? ''),
+        ];
+        if ($data['department'] === '' && !empty($merged['department'])) {
+            $data['department'] = (string) $merged['department'];
+            $data['departmentName'] = (string) $merged['department'];
+        }
+        if (!empty($merged['designation'])) {
+            $data['designation'] = (string) $merged['designation'];
+        }
+        if (!empty($merged['phone'])) {
+            $data['phone'] = (string) $merged['phone'];
+        }
+
+        Response::success(DocumentHelper::jsonSafe($data));
     }
 
     /** PUT /api/staff/profile */

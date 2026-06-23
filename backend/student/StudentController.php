@@ -8,6 +8,7 @@ use PMS\Middleware\AuthMiddleware;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
+use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
@@ -17,6 +18,7 @@ use PMS\Models\StudentModel;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\ApplicationWorkflowService;
+use PMS\Services\AesLoginService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\NotificationService;
 use PMS\Utils\DocumentHelper;
@@ -77,11 +79,47 @@ final class StudentController
   {
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
-    $out = DocumentHelper::serialize($profile);
+    $dept = !empty($profile['departmentId'])
+      ? (new DepartmentModel())->findById((string) $profile['departmentId'])
+      : null;
+
+    $out = DocumentHelper::serialize($profile) ?? [];
     if (!empty($out['photo']) && is_array($out['photo'])) {
       unset($out['photo']['path']);
     }
-    Response::success($out);
+
+    $academic = is_array($out['academic'] ?? null) ? $out['academic'] : [];
+    $personal = is_array($out['personal'] ?? null) ? $out['personal'] : [];
+    $merged = (new AesLoginService())->applyAesSessionToUserFields(array_merge(
+      StudentModel::profileToUserFields($profile, $dept),
+      [
+        'name'  => (string) ($user['name'] ?? ''),
+        'email' => (string) ($user['email'] ?? ''),
+      ]
+    ));
+
+    $out['user'] = [
+      'name'  => (string) ($merged['name'] ?? $user['name'] ?? ''),
+      'email' => (string) ($merged['email'] ?? $user['email'] ?? ''),
+    ];
+    $out['department'] = $dept ? [
+      'id'   => (string) ($dept['_id'] ?? ''),
+      'code' => (string) ($dept['code'] ?? ''),
+      'name' => (string) ($dept['name'] ?? ''),
+    ] : null;
+    if ($out['department'] === null && !empty($merged['department'])) {
+      $out['department'] = ['code' => (string) $merged['department'], 'name' => (string) $merged['department']];
+    }
+    if (!empty($merged['cgpa']) && (float) ($academic['cgpa'] ?? 0) <= 0) {
+      $academic['cgpa'] = (float) $merged['cgpa'];
+      $out['academic'] = $academic;
+    }
+    if (!empty($merged['phone']) && empty($personal['phone'])) {
+      $personal['phone'] = (string) $merged['phone'];
+      $out['personal'] = $personal;
+    }
+
+    Response::success(DocumentHelper::jsonSafe($out));
   }
 
   /** PUT /api/student/profile */
