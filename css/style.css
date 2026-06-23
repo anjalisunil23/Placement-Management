@@ -329,9 +329,6 @@ body.login-page{
   border-top:1px solid var(--border);
   opacity:1;
 }
-.login-aes-btn{border-width:2px;font-size:.95rem}
-.login-or-divider{display:flex;align-items:center;gap:.75rem;color:var(--muted-2,#6b7280);font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.login-or-divider::before,.login-or-divider::after{content:"";flex:1;height:1px;background:rgba(15,23,42,.12)}
 .login-quick-mobile{display:none}
 .login-card{
   width:100%;background:var(--surface);padding:2rem;border-radius:18px;

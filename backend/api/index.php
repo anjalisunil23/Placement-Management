@@ -53,12 +53,6 @@ if (!class_exists(\PMS\Utils\Response::class, false)) {
     $emitJsonError('Server autoload error: Response utility missing. Redeploy from latest main.');
 }
 
-$servicesDir = dirname(__DIR__) . '/services';
-$aesServiceFile = $servicesDir . '/AesLoginService.php';
-if (is_readable($aesServiceFile)) {
-    require_once $aesServiceFile;
-}
-
 try {
     $config = require dirname(__DIR__) . '/config/app.php';
 } catch (\Throwable $e) {
@@ -120,7 +114,6 @@ $routes = [
     // Auth
     ['POST', '/auth/register', [AuthController::class, 'register']],
     ['POST', '/auth/login',    [AuthController::class, 'login']],
-    ['POST', '/auth/aes-login', [AuthController::class, 'aesLogin']],
     ['POST', '/auth/logout',   [AuthController::class, 'logout']],
     ['GET',  '/auth/me',       [AuthController::class, 'me']],
     ['POST', '/auth/change-password', [AuthController::class, 'changePassword']],
@@ -315,7 +308,6 @@ $routes = [
     ['GET', '/public/departments',      [PublicController::class, 'listDepartments']],
     ['GET', '/public/placement-stats',  [PublicController::class, 'placementStats']],
     ['GET', '/public/site-content',    [PublicController::class, 'siteContent']],
-    ['POST', '/aes/check-login',       [PublicController::class, 'aesCheckLogin']],
     ['GET', '/analytics/dashboard',    [PublicController::class, 'analyticsDashboard']],
     ['GET', '/analytics/extended',     [PublicController::class, 'extendedAnalytics']],
     ['GET', '/analytics/placement-console', [PublicController::class, 'placementConsole']],

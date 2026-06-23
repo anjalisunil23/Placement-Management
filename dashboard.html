@@ -353,7 +353,7 @@ onAppReady(() => {
 const user = Auth.user() || demoUserFor(Auth.role());
 const role = Auth.role();
 if (!role || !ROLE_HOME[role]) {
-  window.location.replace(Auth.homePage() || 'public-stats.html');
+  window.location.replace(Auth.homePage() || 'login.html');
   return;
 }
 const titles = {
