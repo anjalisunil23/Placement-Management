@@ -419,6 +419,14 @@ function enforcePageRole(active) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  if (!document.querySelector('link[rel="icon"]')) {
+    const link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/svg+xml';
+    link.href = '/favicon.svg';
+    document.head.appendChild(link);
+  }
+
   const active = document.body.dataset.page;
   const isPublic = !active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html';
 

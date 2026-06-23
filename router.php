@@ -30,6 +30,12 @@ if (preg_match('#^/(callback|aes-callback)\.php$#', $uri)) {
 }
 
 // Debug AES POST payload
+if ($uri === '/favicon.ico') {
+    header('Content-Type: image/svg+xml');
+    readfile(__DIR__ . '/favicon.svg');
+    return true;
+}
+
 if ($uri === '/dologin' || $uri === '/dologin.php') {
     require __DIR__ . '/dologin.php';
     return true;

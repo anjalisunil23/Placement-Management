@@ -2,6 +2,9 @@
 RewriteEngine On
 RewriteBase /
 
+# Favicon (browsers request /favicon.ico by default)
+RewriteRule ^favicon\.ico$ favicon.svg [L]
+
 # Avoid Apache content-negotiation breaking extensionless HTML routes
 Options -MultiViews
 

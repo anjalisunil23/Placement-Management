@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260623e';
+const APP_SCRIPT_VERSION = '20260623f';
 
 function isCollegeEmail(email) {
   const e = String(email || '').trim().toLowerCase();
@@ -71,23 +71,30 @@ function syntheticStudentEmail(registerNumber) {
   return safe.toLowerCase() + '@students.amaljyothi.ac.in';
 }
 
-function resolveSessionEmail(merged, registerNumber) {
-  const collegeKeys = ['college_email', 'official_email', 'student_email', 'studentEmail', 'stu_email', 'college_mail'];
-  for (const key of collegeKeys) {
-    const val = String(merged[key] || '').trim().toLowerCase();
-    if (val && isCollegeEmail(val)) return val;
-  }
+function resolveSessionEmails(merged, registerNumber) {
+  let college = String(merged.collegeEmail || '').trim().toLowerCase();
+  let personal = String(merged.personalEmail || '').trim().toLowerCase();
+
   for (const key of Object.keys(merged)) {
     const val = String(merged[key] || '').trim().toLowerCase();
-    if (val.includes('@') && isCollegeEmail(val)) return val;
+    if (!val.includes('@') || !val.includes('.')) continue;
+    if (isCollegeEmail(val)) {
+      if (!college) college = val;
+    } else if (!personal) {
+      personal = val;
+    }
   }
-  if (registerNumber) return syntheticStudentEmail(registerNumber);
-  const keys = ['personalEmail', 'email', 'mail', 'user_email', 'userEmail'];
-  for (const key of keys) {
-    const val = String(merged[key] || '').trim().toLowerCase();
-    if (val && val.includes('@')) return val;
-  }
-  return '';
+
+  if (!college && registerNumber) college = syntheticStudentEmail(registerNumber);
+  return {
+    collegeEmail: college,
+    personalEmail: personal,
+    email: college || personal,
+  };
+}
+
+function resolveSessionEmail(merged, registerNumber) {
+  return resolveSessionEmails(merged, registerNumber).email;
 }
 
 function resolveSessionPhone(merged) {
@@ -314,12 +321,15 @@ const Auth = {
     const aes = (u.aesProfile && typeof u.aesProfile === 'object') ? u.aesProfile : {};
     const merged = { ...prev, ...u, ...aes };
     const reg = merged.registerNumber || prev.registerNumber || '';
+    const emails = resolveSessionEmails(merged, reg);
     this.set(
       {
         ...prev,
         id: merged.id || merged._id || prev.id || '',
         name: resolveSessionName(merged, reg),
-        email: resolveSessionEmail(merged, reg),
+        email: emails.email,
+        collegeEmail: emails.collegeEmail || prev.collegeEmail || '',
+        personalEmail: emails.personalEmail || prev.personalEmail || '',
         role: merged.role || prev.role || '',
         department: resolveSessionDepartment(merged) || merged.department || prev.department || '',
         departmentId: merged.departmentId || prev.departmentId || '',
@@ -343,8 +353,6 @@ const Auth = {
         website: merged.website || prev.website || '',
         dashboard: merged.dashboard || prev.dashboard || '',
         phone: resolveSessionPhone(merged) || prev.phone || '',
-        personalEmail: merged.personalEmail || prev.personalEmail || '',
-        collegeEmail: merged.collegeEmail || prev.collegeEmail || '',
         course: merged.course || prev.course || '',
         year: merged.year || prev.year || '',
         semester: merged.semester || prev.semester || '',
