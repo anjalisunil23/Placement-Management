@@ -11,6 +11,9 @@ DirectoryIndex index.php public-stats.html index.html
 RewriteRule ^backend/api(?:/index\.php)?(/.*)?$ backend/api/index.php [L,QSA]
 RewriteRule ^api(?:/index\.php)?(/.*)?$ backend/api/index.php [L,QSA]
 
+# AES login debug — dump POST body
+RewriteRule ^dologin/?$ dologin.php [L,QSA]
+
 # Root → public landing page
 RewriteRule ^$ public-stats.html [L]
 

@@ -29,6 +29,12 @@ if (preg_match('#^/(callback|aes-callback)\.php$#', $uri)) {
     return true;
 }
 
+// Debug AES POST payload
+if ($uri === '/dologin' || $uri === '/dologin.php') {
+    require __DIR__ . '/dologin.php';
+    return true;
+}
+
 // Home → landing page
 if ($uri === '/' || $uri === '/index' || $uri === '/index.html') {
     header('Location: /public-stats.html');
