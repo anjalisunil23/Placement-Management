@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260623g';
+const APP_SCRIPT_VERSION = '20260623h';
 
 function isSyntheticStudentEmail(email, registerNumber) {
   const e = String(email || '').trim().toLowerCase();
@@ -82,9 +82,43 @@ function resolveSessionEmails(merged, registerNumber) {
 
   if (college && isSyntheticStudentEmail(college, reg)) college = '';
 
+  const collegeKeys = [
+    'college_email', 'collegeemail', 'college_mail', 'collegemail', 'college_mail_id',
+    'official_email', 'student_email', 'studentemail', 'stu_email', 'institutional_email', 'ajce_email',
+  ];
+  const personalKeys = ['personal_email', 'personalemail', 'gmail', 'alternate_email', 'alt_email', 'private_email'];
+
+  if (!college) {
+    for (const key of collegeKeys) {
+      const val = String(merged[key] || merged.aesProfile?.[key] || '').trim().toLowerCase();
+      if (val && val.includes('@') && !isSyntheticStudentEmail(val, reg) && !/@gmail\.com$/.test(val)) {
+        college = val;
+        break;
+      }
+    }
+  }
+  if (!personal) {
+    for (const key of personalKeys) {
+      const val = String(merged[key] || merged.aesProfile?.[key] || '').trim().toLowerCase();
+      if (val && val.includes('@') && !isCollegeEmail(val)) {
+        personal = val;
+        break;
+      }
+    }
+  }
+
   for (const key of Object.keys(merged)) {
+    const lowerKey = key.toLowerCase();
     const val = String(merged[key] || '').trim().toLowerCase();
     if (!val.includes('@') || !val.includes('.')) continue;
+    if (/college|official|institut|student_email|stu_email|ajce_email|inst_mail/.test(lowerKey)) {
+      if (!college && !isSyntheticStudentEmail(val, reg) && !/@gmail\.com$/.test(val)) college = val;
+      continue;
+    }
+    if (/personal|gmail|alternate|private/.test(lowerKey)) {
+      if (!personal && !isCollegeEmail(val)) personal = val;
+      continue;
+    }
     if (isCollegeEmail(val)) {
       if (!college && !isSyntheticStudentEmail(val, reg)) college = val;
     } else if (!personal) {

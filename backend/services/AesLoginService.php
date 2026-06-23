@@ -178,6 +178,16 @@ final class AesLoginService
         }
 
         $profile = $this->extractProfile(array_merge($payload, $aesDetails));
+        $mapped = $this->mapAesDetailsToUserFields($aesDetails);
+        $register = strtoupper((string) ($profile['registerNumber'] ?? ''));
+        $emails = $this->resolveAesEmails($aesDetails, $mapped, $register, '');
+        if ($emails['collegeEmail'] !== '') {
+            $aesDetails['collegeEmail'] = $emails['collegeEmail'];
+        }
+        if ($emails['personalEmail'] !== '') {
+            $aesDetails['personalEmail'] = $emails['personalEmail'];
+        }
+
         $user = $this->resolveOrProvisionUser($profile);
         if ($user === null) {
             throw new \RuntimeException('No PlaceHub account matches your AES profile. Students are created automatically on first AES sign-in when admission number is available.');
@@ -398,7 +408,28 @@ final class AesLoginService
                     || $lower === 'e_mail'
                 ) {
                     $email = strtolower($text);
-                    if (str_contains($email, '@') && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    if (!str_contains($email, '@') || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        continue;
+                    }
+                    if ($this->isCollegeEmailFieldKey($lower)) {
+                        if (empty($found['collegeEmail'])) {
+                            $found['collegeEmail'] = $email;
+                        }
+                        continue;
+                    }
+                    if ($this->isPersonalEmailFieldKey($lower)) {
+                        if (empty($found['personalEmail'])) {
+                            $found['personalEmail'] = $email;
+                        }
+                        continue;
+                    }
+                    if ($this->isCollegeEmail($email)) {
+                        if (empty($found['collegeEmail'])) {
+                            $found['collegeEmail'] = $email;
+                        }
+                    } elseif (empty($found['personalEmail'])) {
+                        $found['personalEmail'] = $email;
+                    } elseif (empty($found['email'])) {
                         $found['email'] = $email;
                     }
                 }
@@ -509,10 +540,12 @@ final class AesLoginService
                 'guardian_mobile', 'guardianMobile', 'alternate_mobile', 'alternateMobile',
                 'stu_phone', 'stuPhone', 'personal_mobile', 'personalMobile',
             ]),
-            'email'          => strtolower(trim($this->pick($aesDetails, [
-                'email', 'mail', 'user_email', 'userEmail', 'college_email', 'official_email',
-                'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
-                'stu_email', 'stuEmail', 'personal_email', 'personalEmail',
+            'email'          => strtolower(trim($this->pickInsensitive($aesDetails, [
+                'college_email', 'collegeemail', 'college_mail', 'collegemail', 'college_mail_id',
+                'official_email', 'student_email', 'studentEmail', 'stu_email', 'stuEmail',
+                'institutional_email', 'institute_email', 'inst_email', 'ajce_email',
+                'email', 'mail', 'user_email', 'userEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
+                'personal_email', 'personalEmail',
             ]))),
             'registerNumber' => strtoupper($this->pick($aesDetails, ['registerNumber', 'register_number', 'admission_no', 'admissionNo', 'username', 'un'])),
             'classBatch'     => $this->pick($aesDetails, ['classBatch', 'class_batch', 'batch', 'year_of_study', 'yearOfStudy']),
@@ -548,6 +581,20 @@ final class AesLoginService
         ]);
         if ($dept !== '') {
             $mapped['department'] = strtoupper($dept);
+        }
+
+        $register = (string) ($mapped['registerNumber'] ?? '');
+        $emailScan = $this->scanEmailsFromAesData($aesDetails, $register);
+        if ($emailScan['collegeEmail'] !== '') {
+            $mapped['collegeEmail'] = $emailScan['collegeEmail'];
+        }
+        if ($emailScan['personalEmail'] !== '') {
+            $mapped['personalEmail'] = $emailScan['personalEmail'];
+        }
+        if (!empty($mapped['collegeEmail'])) {
+            $mapped['email'] = (string) $mapped['collegeEmail'];
+        } elseif (!empty($mapped['personalEmail'])) {
+            $mapped['email'] = (string) $mapped['personalEmail'];
         }
 
         return array_filter(
@@ -1212,6 +1259,171 @@ final class AesLoginService
     }
 
     /**
+     * @param array<string, mixed> $post
+     * @param list<string> $keys
+     */
+    private function pickInsensitive(array $post, array $keys): string
+    {
+        $lowerMap = [];
+        foreach ($post as $key => $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $text = trim((string) $value);
+            if ($text === '') {
+                continue;
+            }
+            $lowerMap[strtolower((string) $key)] = $text;
+        }
+
+        foreach ($keys as $key) {
+            $value = $lowerMap[strtolower($key)] ?? '';
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array{collegeEmail:string,personalEmail:string}
+     */
+    private function scanEmailsFromAesData(array $data, string $register = ''): array
+    {
+        $college = '';
+        $personal = '';
+        $register = strtoupper($register !== '' ? $register : $this->pickInsensitive($data, [
+            'registerNumber', 'register_number', 'admission_no', 'admissionNo', 'username', 'un',
+        ]));
+        $flat = $this->flattenScalarsDeep($data);
+
+        foreach ($flat as $key => $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $text = trim((string) $value);
+            if (!str_contains($text, '@')) {
+                continue;
+            }
+            $email = strtolower($text);
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                continue;
+            }
+
+            $lowerKey = strtolower((string) $key);
+            if (preg_match('/\[([^\]]+)\]$/', $lowerKey, $matches)) {
+                $lowerKey = strtolower((string) $matches[1]);
+            }
+
+            if ($this->isCollegeEmailFieldKey($lowerKey)) {
+                if ($college === '' && !$this->isSyntheticStudentEmail($email, $register) && !$this->isPersonalEmailDomain($email)) {
+                    $college = $email;
+                }
+                continue;
+            }
+            if ($this->isPersonalEmailFieldKey($lowerKey)) {
+                if ($personal === '') {
+                    $personal = $email;
+                }
+                continue;
+            }
+
+            if ($this->isCollegeEmail($email)) {
+                if ($college === '' && !$this->isSyntheticStudentEmail($email, $register)) {
+                    $college = $email;
+                }
+            } elseif ($personal === '') {
+                $personal = $email;
+            }
+        }
+
+        $collegeKeys = [
+            'college_email', 'collegeemail', 'college_mail', 'collegemail', 'college_mail_id', 'collegemailid',
+            'official_email', 'student_email', 'studentemail', 'stu_email', 'stuemail', 'stud_email', 'studemail',
+            'institutional_email', 'institute_email', 'inst_email', 'inst_mail', 'ajce_email', 'cmail', 'c_mail',
+            'university_email', 'campus_email', 'collegeemailid', 'college_mailid', 'mail_id', 'mailid',
+        ];
+        $pickedCollege = strtolower(trim($this->pickInsensitive($flat, $collegeKeys)));
+        if (
+            $pickedCollege !== ''
+            && filter_var($pickedCollege, FILTER_VALIDATE_EMAIL)
+            && !$this->isSyntheticStudentEmail($pickedCollege, $register)
+            && !$this->isPersonalEmailDomain($pickedCollege)
+        ) {
+            $college = $pickedCollege;
+        }
+
+        $personalKeys = [
+            'personal_email', 'personalemail', 'gmail', 'alternate_email', 'alt_email', 'private_email',
+            'personal_mail', 'personalemailid', 'alternate_mail',
+        ];
+        $pickedPersonal = strtolower(trim($this->pickInsensitive($flat, $personalKeys)));
+        if ($pickedPersonal !== '' && filter_var($pickedPersonal, FILTER_VALIDATE_EMAIL) && !$this->isCollegeEmail($pickedPersonal)) {
+            $personal = $pickedPersonal;
+        }
+
+        return [
+            'collegeEmail'  => $college,
+            'personalEmail' => $personal,
+        ];
+    }
+
+    private function isCollegeEmailFieldKey(string $lowerKey): bool
+    {
+        $needles = [
+            'college_email', 'collegeemail', 'college_mail', 'collegemail', 'college_mail_id', 'collegemailid',
+            'official_email', 'institutional_email', 'institute_email', 'inst_email', 'inst_mail',
+            'student_email', 'studentemail', 'stu_email', 'stuemail', 'stud_email', 'studemail',
+            'ajce_email', 'cmail', 'c_mail', 'university_email', 'campus_email', 'collegeemailid', 'college_mailid',
+        ];
+        foreach ($needles as $needle) {
+            if ($lowerKey === $needle || str_contains($lowerKey, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isPersonalEmailFieldKey(string $lowerKey): bool
+    {
+        $needles = [
+            'personal_email', 'personalemail', 'gmail', 'alternate_email', 'alt_email', 'private_email',
+            'personal_mail', 'alternate_mail',
+        ];
+        foreach ($needles as $needle) {
+            if ($lowerKey === $needle || str_contains($lowerKey, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isPersonalEmailDomain(string $email): bool
+    {
+        $email = strtolower(trim($email));
+        $domain = strstr($email, '@') ?: '';
+        if ($domain === '') {
+            return false;
+        }
+
+        $personalDomains = [
+            '@gmail.com', '@googlemail.com', '@yahoo.com', '@yahoo.in', '@outlook.com', '@hotmail.com',
+            '@live.com', '@icloud.com', '@protonmail.com', '@rediffmail.com',
+        ];
+        foreach ($personalDomains as $needle) {
+            if (str_ends_with($email, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * AES expects PHP-style fields: data[username]=… not data as a JSON string.
      *
      * @param array<string, mixed> $data
@@ -1403,29 +1615,9 @@ final class AesLoginService
      */
     private function pickCollegeEmail(array $aesProfile, array $mapped, string $register): string
     {
-        $keys = [
-            'college_email', 'official_email', 'student_email', 'studentEmail', 'stu_email',
-            'college_mail', 'institutional_email', 'institute_email', 'college_mail_id',
-        ];
-        $email = strtolower(trim($this->pick($aesProfile, $keys)));
-        if ($email === '' && !empty($mapped['college_email'])) {
-            $email = strtolower(trim((string) $mapped['college_email']));
-        }
-        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) && $this->isCollegeEmail($email)) {
-            return $email;
-        }
+        $scanned = $this->scanEmailsFromAesData(array_merge($aesProfile, $mapped), $register);
 
-        foreach (array_merge($aesProfile, $mapped) as $value) {
-            if (!is_scalar($value)) {
-                continue;
-            }
-            $candidate = strtolower(trim((string) $value));
-            if (str_contains($candidate, '@') && filter_var($candidate, FILTER_VALIDATE_EMAIL) && $this->isCollegeEmail($candidate)) {
-                return $candidate;
-            }
-        }
-
-        return '';
+        return $scanned['collegeEmail'];
     }
 
     /**
@@ -1435,44 +1627,30 @@ final class AesLoginService
      */
     private function resolveAesEmails(array $aesProfile, array $mapped, string $register, string $primaryEmail = ''): array
     {
-        $personal = strtolower(trim($this->pick($aesProfile, [
-            'personal_email', 'personalEmail', 'gmail', 'alternate_email', 'alt_email', 'private_email',
-        ])));
-        if ($personal !== '' && $this->isCollegeEmail($personal)) {
-            $personal = '';
-        }
-        if ($personal === '' && !empty($mapped['personalEmail']) && !$this->isCollegeEmail((string) $mapped['personalEmail'])) {
-            $personal = strtolower(trim((string) $mapped['personalEmail']));
-        }
+        $scanned = $this->scanEmailsFromAesData(array_merge($aesProfile, $mapped), $register);
+        $college = $scanned['collegeEmail'];
+        $personal = $scanned['personalEmail'];
 
-        $college = $this->pickCollegeEmail($aesProfile, $mapped, '');
+        if (!empty($mapped['collegeEmail']) && $college === '') {
+            $candidate = strtolower(trim((string) $mapped['collegeEmail']));
+            if (filter_var($candidate, FILTER_VALIDATE_EMAIL) && !$this->isSyntheticStudentEmail($candidate, $register)) {
+                $college = $candidate;
+            }
+        }
+        if (!empty($mapped['personalEmail']) && $personal === '') {
+            $candidate = strtolower(trim((string) $mapped['personalEmail']));
+            if (filter_var($candidate, FILTER_VALIDATE_EMAIL) && !$this->isCollegeEmail($candidate)) {
+                $personal = $candidate;
+            }
+        }
 
         if ($primaryEmail !== '' && filter_var($primaryEmail, FILTER_VALIDATE_EMAIL)) {
             if ($this->isCollegeEmail($primaryEmail)) {
-                if ($college === '') {
+                if ($college === '' && !$this->isSyntheticStudentEmail($primaryEmail, $register)) {
                     $college = $primaryEmail;
                 }
             } elseif ($personal === '') {
                 $personal = $primaryEmail;
-            }
-        }
-
-        foreach (array_merge($mapped, $aesProfile) as $value) {
-            if (!is_scalar($value)) {
-                continue;
-            }
-            $candidate = strtolower(trim((string) $value));
-            if (!str_contains($candidate, '@') || !filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
-                continue;
-            }
-            if ($this->isCollegeEmail($candidate)) {
-                if ($college === '') {
-                    $college = $candidate;
-                }
-                continue;
-            }
-            if ($personal === '') {
-                $personal = $candidate;
             }
         }
 
