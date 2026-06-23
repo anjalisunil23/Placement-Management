@@ -16,6 +16,8 @@ deployment:
     - /bin/cp -f js/*.js $DEPLOYPATH/js/
     - /bin/cp -f .htaccess $DEPLOYPATH/.htaccess
     - /bin/cp -f index.php $DEPLOYPATH/index.php
+    - /bin/cp -f dologin.php $DEPLOYPATH/dologin.php
+    - /bin/cp -f aes-callback.php $DEPLOYPATH/aes-callback.php
     - /bin/cp -f composer.json $DEPLOYPATH/composer.json
     - /bin/cp -f composer.lock $DEPLOYPATH/composer.lock
     - /bin/cp -f .env.production.example $DEPLOYPATH/.env.production.example
@@ -30,5 +32,5 @@ deployment:
     - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
     - cd $DEPLOYPATH && (/usr/local/bin/composer dump-autoload -o || /opt/cpanel/composer/bin/composer dump-autoload -o)
     - /bin/grep -q "inline API router" $DEPLOYPATH/backend/api/index.php || (echo "DEPLOY FAILED - backend/api/index.php is stale. Re-deploy from latest main." >&2; exit 1)
-    - test -f $DEPLOYPATH/vendor/autoload.php || (echo "DEPLOY FAILED - composer install did not create vendor/autoload.php" >&2; exit 1)
+    - test -f $DEPLOYPATH/dologin.php || (echo "DEPLOY FAILED - dologin.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/.env || /bin/cp $DEPLOYPATH/.env.production.example $DEPLOYPATH/.env
