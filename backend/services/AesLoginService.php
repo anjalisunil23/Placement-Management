@@ -1334,7 +1334,7 @@ final class AesLoginService
                 if ($college === '' && !$this->isSyntheticStudentEmail($email, $register)) {
                     $college = $email;
                 }
-            } elseif ($personal === '') {
+            } elseif ($this->isPersonalEmailDomain($email) && $personal === '') {
                 $personal = $email;
             }
         }
@@ -1364,10 +1364,7 @@ final class AesLoginService
             $personal = $pickedPersonal;
         }
 
-        return [
-            'collegeEmail'  => $college,
-            'personalEmail' => $personal,
-        ];
+        return $this->normalizeResolvedEmails($college, $personal);
     }
 
     private function isCollegeEmailFieldKey(string $lowerKey): bool
@@ -1604,9 +1601,45 @@ final class AesLoginService
             return false;
         }
 
-        return str_contains($email, '@students.amaljyothi.ac.in')
-            || str_contains($email, '@amaljyothi.ac.in')
-            || str_ends_with($email, '@ajce.in');
+        $domain = substr(strrchr($email, '@') ?: '', 1);
+        if ($domain === '') {
+            return false;
+        }
+
+        if (str_contains($domain, 'amaljyothi.ac.in')) {
+            return true;
+        }
+
+        return $domain === 'ajce.in' || str_ends_with($domain, '.ajce.in');
+    }
+
+    /**
+     * @return array{personalEmail:string,collegeEmail:string,email:string}
+     */
+    private function normalizeResolvedEmails(string $college, string $personal): array
+    {
+        $college = strtolower(trim($college));
+        $personal = strtolower(trim($personal));
+
+        if ($personal !== '' && $this->isCollegeEmail($personal)) {
+            if ($college === '') {
+                $college = $personal;
+            }
+            $personal = '';
+        }
+
+        if ($college !== '' && $this->isPersonalEmailDomain($college)) {
+            if ($personal === '') {
+                $personal = $college;
+            }
+            $college = '';
+        }
+
+        return [
+            'personalEmail' => $personal,
+            'collegeEmail'  => $college,
+            'email'         => $college !== '' ? $college : $personal,
+        ];
     }
 
     /**
@@ -1649,16 +1682,12 @@ final class AesLoginService
                 if ($college === '' && !$this->isSyntheticStudentEmail($primaryEmail, $register)) {
                     $college = $primaryEmail;
                 }
-            } elseif ($personal === '') {
+            } elseif ($this->isPersonalEmailDomain($primaryEmail) && $personal === '') {
                 $personal = $primaryEmail;
             }
         }
 
-        return [
-            'personalEmail' => $personal,
-            'collegeEmail'  => $college,
-            'email'         => $college !== '' ? $college : $personal,
-        ];
+        return $this->normalizeResolvedEmails($college, $personal);
     }
 
     private function inferNameFromEmail(string $email): string

@@ -188,7 +188,19 @@ function inferNameFromEmail(email) {
 
 function isCollegeEmail(email) {
   const e = String(email || '').trim().toLowerCase();
-  return e.includes('@students.amaljyothi.ac.in') || e.includes('@amaljyothi.ac.in') || e.endsWith('@ajce.in');
+  if (!e.includes('@')) return false;
+  const domain = e.split('@').pop() || '';
+  if (domain.includes('amaljyothi.ac.in')) return true;
+  return domain === 'ajce.in' || domain.endsWith('.ajce.in');
+}
+
+function isPersonalEmailDomain(email) {
+  const e = String(email || '').trim().toLowerCase();
+  const personalDomains = [
+    '@gmail.com', '@googlemail.com', '@yahoo.com', '@yahoo.in', '@outlook.com', '@hotmail.com',
+    '@live.com', '@icloud.com', '@protonmail.com', '@rediffmail.com',
+  ];
+  return personalDomains.some((d) => e.endsWith(d));
 }
 
 function isSyntheticStudentEmail(email, registerNumber) {
@@ -232,8 +244,9 @@ function pickCollegeEmail(u) {
   const sources = [merged, personal, merged.aesProfile || {}];
   for (const src of sources) {
     if (!src || typeof src !== 'object') continue;
-    if (src.collegeEmail && isCollegeEmail(src.collegeEmail) && !isSyntheticStudentEmail(src.collegeEmail, reg)) {
-      return String(src.collegeEmail).trim().toLowerCase();
+    for (const field of ['collegeEmail', 'personalEmail', 'email']) {
+      const val = String(src[field] || '').trim().toLowerCase();
+      if (val && isCollegeEmail(val) && !isSyntheticStudentEmail(val, reg)) return val;
     }
   }
   const collegeKeys = [
@@ -243,7 +256,7 @@ function pickCollegeEmail(u) {
   ];
   for (const src of sources) {
     const val = pickInsensitive(src, collegeKeys).toLowerCase();
-    if (val && val.includes('@') && !isSyntheticStudentEmail(val, reg) && !/@gmail\.com$|@yahoo\.|@outlook\.|@hotmail\./.test(val)) {
+    if (val && val.includes('@') && !isSyntheticStudentEmail(val, reg) && !isPersonalEmailDomain(val)) {
       return val;
     }
   }
@@ -251,7 +264,7 @@ function pickCollegeEmail(u) {
     for (const [key, raw] of Object.entries(src)) {
       const val = String(raw || '').trim().toLowerCase();
       if (!val.includes('@')) continue;
-      if (isCollegeEmailFieldKey(key) && !isSyntheticStudentEmail(val, reg) && !/@gmail\.com$|@yahoo\.|@outlook\.|@hotmail\./.test(val)) {
+      if (isCollegeEmailFieldKey(key) && !isSyntheticStudentEmail(val, reg) && !isPersonalEmailDomain(val)) {
         return val;
       }
       if (isCollegeEmail(val) && !isSyntheticStudentEmail(val, reg)) return val;
@@ -284,7 +297,7 @@ function pickPersonalEmail(u) {
   for (const src of sources) {
     for (const raw of Object.values(src)) {
       const val = String(raw || '').trim().toLowerCase();
-      if (val.includes('@') && !isCollegeEmail(val)) return val;
+      if (val.includes('@') && isPersonalEmailDomain(val)) return val;
     }
   }
   return '';

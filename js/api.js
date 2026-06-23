@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260623h';
+const APP_SCRIPT_VERSION = '20260623i';
 
 function isSyntheticStudentEmail(email, registerNumber) {
   const e = String(email || '').trim().toLowerCase();
@@ -12,7 +12,33 @@ function isSyntheticStudentEmail(email, registerNumber) {
 
 function isCollegeEmail(email) {
   const e = String(email || '').trim().toLowerCase();
-  return e.includes('@students.amaljyothi.ac.in') || e.includes('@amaljyothi.ac.in') || e.endsWith('@ajce.in');
+  if (!e.includes('@')) return false;
+  const domain = e.split('@').pop() || '';
+  if (domain.includes('amaljyothi.ac.in')) return true;
+  return domain === 'ajce.in' || domain.endsWith('.ajce.in');
+}
+
+function isPersonalEmailDomain(email) {
+  const e = String(email || '').trim().toLowerCase();
+  const personalDomains = [
+    '@gmail.com', '@googlemail.com', '@yahoo.com', '@yahoo.in', '@outlook.com', '@hotmail.com',
+    '@live.com', '@icloud.com', '@protonmail.com', '@rediffmail.com',
+  ];
+  return personalDomains.some((d) => e.endsWith(d));
+}
+
+function normalizeSessionEmails(college, personal) {
+  let c = String(college || '').trim().toLowerCase();
+  let p = String(personal || '').trim().toLowerCase();
+  if (p && isCollegeEmail(p)) {
+    if (!c) c = p;
+    p = '';
+  }
+  if (c && isPersonalEmailDomain(c)) {
+    if (!p) p = c;
+    c = '';
+  }
+  return { collegeEmail: c, personalEmail: p, email: c || p };
 }
 
 function inferNameFromEmail(email) {
@@ -91,7 +117,7 @@ function resolveSessionEmails(merged, registerNumber) {
   if (!college) {
     for (const key of collegeKeys) {
       const val = String(merged[key] || merged.aesProfile?.[key] || '').trim().toLowerCase();
-      if (val && val.includes('@') && !isSyntheticStudentEmail(val, reg) && !/@gmail\.com$/.test(val)) {
+      if (val && val.includes('@') && !isSyntheticStudentEmail(val, reg) && !isPersonalEmailDomain(val)) {
         college = val;
         break;
       }
@@ -112,25 +138,21 @@ function resolveSessionEmails(merged, registerNumber) {
     const val = String(merged[key] || '').trim().toLowerCase();
     if (!val.includes('@') || !val.includes('.')) continue;
     if (/college|official|institut|student_email|stu_email|ajce_email|inst_mail/.test(lowerKey)) {
-      if (!college && !isSyntheticStudentEmail(val, reg) && !/@gmail\.com$/.test(val)) college = val;
+      if (!college && !isSyntheticStudentEmail(val, reg) && !isPersonalEmailDomain(val)) college = val;
       continue;
     }
     if (/personal|gmail|alternate|private/.test(lowerKey)) {
-      if (!personal && !isCollegeEmail(val)) personal = val;
+      if (!personal && isPersonalEmailDomain(val)) personal = val;
       continue;
     }
     if (isCollegeEmail(val)) {
       if (!college && !isSyntheticStudentEmail(val, reg)) college = val;
-    } else if (!personal) {
+    } else if (!personal && isPersonalEmailDomain(val)) {
       personal = val;
     }
   }
 
-  return {
-    collegeEmail: college,
-    personalEmail: personal,
-    email: college || personal,
-  };
+  return normalizeSessionEmails(college, personal);
 }
 
 function resolveSessionEmail(merged, registerNumber) {
