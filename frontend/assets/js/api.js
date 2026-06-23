@@ -61,7 +61,7 @@ const PMS = (() => {
       try { await request('POST', '/auth/logout'); } catch (_) {}
       setToken(null);
       setUser(null);
-      window.location.href = '/frontend/pages/login.html';
+      window.location.href = '/public-stats.html';
     },
     requireAuth: (roles = []) => {
       const user = getUser();

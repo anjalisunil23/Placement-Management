@@ -274,7 +274,7 @@ const Auth = {
   logout() {
     apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
     this.clear();
-    window.location.href = 'login.html';
+    window.location.href = 'public-stats.html';
   },
   isDemo() {
     const t = this.token();
