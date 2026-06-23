@@ -23,12 +23,6 @@ if (preg_match('#^/backend/auth/(login|register|logout)\.php$#', $uri)) {
     return true;
 }
 
-// AES institute SSO callback (login.aesajce.in)
-if (preg_match('#^/(callback|aes-callback)\.php$#', $uri)) {
-    require __DIR__ . $uri;
-    return true;
-}
-
 // Home → landing page
 if ($uri === '/' || $uri === '/index' || $uri === '/index.html') {
     header('Location: /public-stats.html');
