@@ -84,14 +84,7 @@ final class AesLoginService
             throw new \RuntimeException($this->missingAesConfigMessage());
         }
 
-        $payload = [
-            'method'  => 'checkLogin',
-            'authkey' => $this->authKey,
-            'refurl'  => $this->refHost,
-            'data'    => json_encode($data, JSON_UNESCAPED_UNICODE) ?: '{}',
-        ];
-
-        $response = $this->postToAes($payload, 'index.php');
+        $response = $this->postToAes('checkLogin', $data, 'index.php');
         if ($response === '') {
             throw new \RuntimeException('Could not reach AES login server.');
         }
@@ -128,14 +121,7 @@ final class AesLoginService
             return;
         }
 
-        $payload = [
-            'method'  => 'confirmLogin',
-            'authkey' => $this->authKey,
-            'refurl'  => $this->refHost,
-            'data'    => json_encode($post, JSON_UNESCAPED_UNICODE) ?: '{}',
-        ];
-
-        $response = $this->postToAes($payload, 'public_api.php');
+        $response = $this->postToAes('confirmLogin', $post, 'public_api.php');
         if ($response === '') {
             return;
         }
@@ -514,14 +500,7 @@ final class AesLoginService
      */
     private function callAes(string $method, array $data): array
     {
-        $fields = [
-            'method'  => $method,
-            'authkey' => $this->authKey,
-            'refurl'  => $this->refHost,
-            'data'    => json_encode($data, JSON_UNESCAPED_UNICODE) ?: '{}',
-        ];
-
-        $body = $this->postToAes($fields);
+        $body = $this->postToAes($method, $data);
         if ($body === '') {
             throw new \RuntimeException('Could not reach the AES login service. Try again later.');
         }
@@ -553,32 +532,85 @@ final class AesLoginService
     }
 
     /**
-     * @param array<string, string> $fields
+     * AES expects PHP-style fields: data[username]=… not data as a JSON string.
+     *
+     * @param array<string, mixed> $data
      */
-    private function postToAes(array $fields, string $endpoint = 'public_api.php'): string
+    private function flattenAesData(array $data, string $prefix = 'data'): array
     {
-        if (!function_exists('curl_init')) {
-            return '';
+        $fields = [];
+        foreach ($data as $key => $value) {
+            if ($value === null) {
+                continue;
+            }
+            $fieldKey = $prefix . '[' . $key . ']';
+            if (is_scalar($value)) {
+                $fields[$fieldKey] = (string) $value;
+                continue;
+            }
+            if (is_array($value)) {
+                foreach ($this->flattenAesData($value, $fieldKey) as $nestedKey => $nestedValue) {
+                    $fields[$nestedKey] = $nestedValue;
+                }
+            }
         }
 
-        $ch = curl_init('https://login.aesajce.in/api/' . ltrim($endpoint, '/'));
-        if ($ch === false) {
-            return '';
+        return $fields;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function postToAes(string $method, array $data, string $endpoint = 'public_api.php'): string
+    {
+        $fields = array_merge(
+            [
+                'method'  => $method,
+                'authkey' => $this->authKey,
+                'refurl'  => $this->refHost,
+            ],
+            $this->flattenAesData($data)
+        );
+
+        if (function_exists('curl_init')) {
+            $ch = curl_init('https://login.aesajce.in/api/' . ltrim($endpoint, '/'));
+            if ($ch !== false) {
+                curl_setopt_array($ch, [
+                    CURLOPT_POST           => true,
+                    CURLOPT_POSTFIELDS     => http_build_query($fields),
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_CONNECTTIMEOUT => 8,
+                    CURLOPT_TIMEOUT        => 15,
+                    CURLOPT_HTTPHEADER     => [
+                        'Content-Type: application/x-www-form-urlencoded',
+                        'Referer: https://' . $this->refHost . '/public-stats.html',
+                    ],
+                ]);
+
+                $body = curl_exec($ch);
+                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if (is_string($body) && $body !== '') {
+                    return $body;
+                }
+                if ($httpCode >= 400) {
+                    return '';
+                }
+            }
         }
 
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => http_build_query($fields),
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 12,
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/x-www-form-urlencoded',
-                'Referer: https://' . $this->refHost . '/public-stats.html',
+        $context = stream_context_create([
+            'http' => [
+                'method'  => 'POST',
+                'header'  => "Content-Type: application/x-www-form-urlencoded\r\n"
+                    . 'Referer: https://' . $this->refHost . "/public-stats.html\r\n",
+                'content' => http_build_query($fields),
+                'timeout' => 15,
             ],
         ]);
 
-        $body = curl_exec($ch);
-        curl_close($ch);
+        $body = @file_get_contents('https://login.aesajce.in/api/' . ltrim($endpoint, '/'), false, $context);
 
         return is_string($body) ? $body : '';
     }
