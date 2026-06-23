@@ -134,6 +134,22 @@ final class AuthMiddleware
     if ($token !== null) {
       $data['token'] = $token;
     }
+
+    $aesProfile = Security::getSessionAesProfile();
+    if ($aesProfile !== []) {
+      $data['aesProfile'] = $aesProfile;
+      $service = new \PMS\Services\AesLoginService();
+      $mapped = $service->mapAesDetailsToUserFields($aesProfile);
+      foreach ($mapped as $key => $value) {
+        if (!array_key_exists($key, $data) || $data[$key] === '' || $data[$key] === null) {
+          $data[$key] = $value;
+        }
+      }
+      if (!empty($mapped['phone']) && empty($data['phone'])) {
+        $data['phone'] = $mapped['phone'];
+      }
+    }
+
     return $data;
   }
 }

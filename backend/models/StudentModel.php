@@ -127,6 +127,7 @@ class StudentModel extends BaseModel
         }
 
         $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+        $personal = is_array($profile['personal'] ?? null) ? $profile['personal'] : [];
 
         return [
             'studentId'      => (string) ($profile['_id'] ?? ''),
@@ -140,6 +141,16 @@ class StudentModel extends BaseModel
             'cgpa'           => (float) ($academic['cgpa'] ?? 0),
             'backlogs'       => (int) ($academic['backlogs'] ?? 0),
             'placed'         => (bool) ($profile['placed'] ?? false),
+            'phone'          => (string) ($personal['phone'] ?? ''),
+            'course'         => (string) ($personal['course'] ?? ''),
+            'year'           => (string) ($personal['year'] ?? ''),
+            'semester'       => (string) ($personal['semester'] ?? ''),
+            'gender'         => (string) ($personal['gender'] ?? ''),
+            'bloodGroup'     => (string) ($personal['bloodGroup'] ?? ''),
+            'address'        => (string) ($personal['address'] ?? ''),
+            'parentName'     => (string) ($personal['parentName'] ?? ''),
+            'dob'            => (string) ($personal['dob'] ?? ''),
+            'aadhar'         => (string) ($personal['aadhar'] ?? ''),
         ];
     }
 }

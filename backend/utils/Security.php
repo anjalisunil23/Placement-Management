@@ -39,8 +39,9 @@ final class Security
 
     /**
      * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $aesProfile
      */
-    public static function setSessionUser(array $user): void
+    public static function setSessionUser(array $user, ?array $aesProfile = null): void
     {
         self::startSession();
         session_regenerate_id(true);
@@ -50,6 +51,28 @@ final class Security
             'email' => $user['email'],
             'role'  => $user['role'],
         ];
+        if ($aesProfile !== null && $aesProfile !== []) {
+            $_SESSION['aes_profile'] = $aesProfile;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $profile
+     */
+    public static function setSessionAesProfile(array $profile): void
+    {
+        self::startSession();
+        $_SESSION['aes_profile'] = $profile;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function getSessionAesProfile(): array
+    {
+        self::startSession();
+        $profile = $_SESSION['aes_profile'] ?? [];
+        return is_array($profile) ? $profile : [];
     }
 
     public static function destroySession(): void

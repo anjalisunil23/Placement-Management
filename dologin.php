@@ -38,6 +38,12 @@ try {
         print_r($_POST);
         echo "\nuserData:\n";
         print_r($userData);
+        $payload = array_merge($_POST, $userData);
+        $service = new AesLoginService();
+        echo "\naesDetails:\n";
+        print_r($service->collectAesDetails($payload));
+        echo "\nmapped:\n";
+        print_r($service->mapAesDetailsToUserFields($service->collectAesDetails($payload)));
         exit;
     }
 

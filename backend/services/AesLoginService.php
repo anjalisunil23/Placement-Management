@@ -171,13 +171,155 @@ final class AesLoginService
     public function loginFromAesPayload(array $payload): array
     {
         $profile = $this->extractProfile($payload);
+        $aesDetails = $this->collectAesDetails($payload);
         $user = $this->resolveOrProvisionUser($profile);
         if ($user === null) {
             throw new \RuntimeException('No PlaceHub account matches your AES profile. Students are created automatically on first AES sign-in when admission number is available.');
         }
         $this->assertUserCanLogin($user);
-        Security::setSessionUser($user);
+        $this->syncStudentFromAes($user, $profile, $aesDetails);
+        Security::setSessionUser($user, $aesDetails);
         return $user;
+    }
+
+    /**
+     * All non-sensitive fields from the AES login payload (decrypted profile + POST).
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function collectAesDetails(array $payload): array
+    {
+        $flat = $this->flattenPayload($payload);
+        $sensitive = [
+            'password', 'pwd', 'pass', 'checksum', 'token', 'auth_token', 'session',
+            'secret', 'api_key', 'authkey', 'enckey', 'enc_key',
+        ];
+        $details = [];
+
+        foreach ($flat as $key => $value) {
+            if (!is_scalar($value) && !is_array($value)) {
+                continue;
+            }
+            $keyStr = (string) $key;
+            $lower = strtolower($keyStr);
+            foreach ($sensitive as $needle) {
+                if ($lower === $needle || str_contains($lower, $needle)) {
+                    continue 2;
+                }
+            }
+            if (is_array($value)) {
+                $details[$keyStr] = $value;
+                continue;
+            }
+            $details[$keyStr] = is_bool($value) ? $value : trim((string) $value);
+        }
+
+        return $details;
+    }
+
+    /**
+     * Map common AES field names to PlaceHub user/profile keys for the client.
+     *
+     * @param array<string, mixed> $aesDetails
+     * @return array<string, mixed>
+     */
+    public function mapAesDetailsToUserFields(array $aesDetails): array
+    {
+        $mapped = [
+            'phone'          => $this->pick($aesDetails, ['phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no']),
+            'registerNumber' => strtoupper($this->pick($aesDetails, ['registerNumber', 'register_number', 'admission_no', 'admissionNo', 'username', 'un'])),
+            'classBatch'     => $this->pick($aesDetails, ['classBatch', 'class_batch', 'batch', 'year_of_study', 'yearOfStudy']),
+            'course'         => $this->pick($aesDetails, ['course', 'program', 'programme', 'degree', 'stream']),
+            'year'           => $this->pick($aesDetails, ['year', 'academic_year', 'academicYear', 'batch_year']),
+            'semester'       => $this->pick($aesDetails, ['semester', 'sem', 'current_semester']),
+            'designation'    => $this->pick($aesDetails, ['designation', 'title', 'job_title', 'jobTitle']),
+            'gender'         => $this->pick($aesDetails, ['gender', 'sex']),
+            'bloodGroup'     => $this->pick($aesDetails, ['bloodGroup', 'blood_group', 'blood']),
+            'address'        => $this->pick($aesDetails, ['address', 'addr', 'permanent_address', 'permanentAddress']),
+            'parentName'     => $this->pick($aesDetails, ['parentName', 'parent_name', 'father_name', 'fatherName', 'guardian']),
+            'dob'            => $this->pick($aesDetails, ['dob', 'date_of_birth', 'dateOfBirth', 'birthdate']),
+            'aadhar'         => $this->pick($aesDetails, ['aadhar', 'aadhaar', 'aadhar_no', 'aadhaarNo']),
+        ];
+
+        $cgpa = $this->pick($aesDetails, ['cgpa', 'CGPA', 'gpa', 'GPA']);
+        if ($cgpa !== '' && is_numeric($cgpa)) {
+            $mapped['cgpa'] = (float) $cgpa;
+        }
+        $backlogs = $this->pick($aesDetails, ['backlogs', 'arrears', 'standing_arrears']);
+        if ($backlogs !== '' && is_numeric($backlogs)) {
+            $mapped['backlogs'] = (int) $backlogs;
+        }
+
+        $dept = $this->pick($aesDetails, ['department', 'dept', 'branch', 'department_code', 'dept_code']);
+        if ($dept !== '') {
+            $mapped['department'] = strtoupper($dept);
+        }
+
+        return array_filter(
+            $mapped,
+            static fn ($value) => $value !== null && $value !== '' && $value !== []
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $aesDetails
+     */
+    private function syncStudentFromAes(array $user, array $profile, array $aesDetails): void
+    {
+        if (($user['role'] ?? '') !== 'student') {
+            return;
+        }
+
+        $studentModel = new StudentModel();
+        $existing = $studentModel->findByUserId((string) $user['_id']);
+        if (!$existing) {
+            return;
+        }
+
+        $extras = $this->mapAesDetailsToUserFields($aesDetails);
+        $patch = [];
+
+        if ($profile['registerNumber'] !== '' && empty($existing['registerNumber'])) {
+            $patch['registerNumber'] = $profile['registerNumber'];
+        }
+        if (!empty($extras['classBatch']) && empty($existing['classBatch'])) {
+            $patch['classBatch'] = (string) $extras['classBatch'];
+        }
+
+        $deptId = $this->resolveDepartmentId($profile['departmentCode']);
+        if ($deptId && empty($existing['departmentId'])) {
+            $patch['departmentId'] = $deptId;
+        }
+
+        $academic = is_array($existing['academic'] ?? null) ? $existing['academic'] : [];
+        $academicPatch = [];
+        if (isset($extras['cgpa']) && (float) ($academic['cgpa'] ?? 0) <= 0) {
+            $academicPatch['cgpa'] = (float) $extras['cgpa'];
+        }
+        if (isset($extras['backlogs']) && !isset($academic['backlogs'])) {
+            $academicPatch['backlogs'] = (int) $extras['backlogs'];
+        }
+        if ($academicPatch !== []) {
+            $patch['academic'] = array_merge($academic, $academicPatch);
+        }
+
+        $personal = is_array($existing['personal'] ?? null) ? $existing['personal'] : [];
+        $personalPatch = [];
+        foreach (['phone', 'gender', 'bloodGroup', 'address', 'parentName', 'dob', 'aadhar', 'course', 'year', 'semester'] as $field) {
+            if (!empty($extras[$field]) && empty($personal[$field])) {
+                $personalPatch[$field] = $extras[$field];
+            }
+        }
+        if ($personalPatch !== []) {
+            $patch['personal'] = array_merge($personal, $personalPatch);
+        }
+
+        if ($patch !== []) {
+            $studentModel->update((string) $existing['_id'], $patch);
+        }
     }
 
     /**
