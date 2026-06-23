@@ -98,11 +98,16 @@ final class StudentController
       ]
     ));
 
+    $reg = (string) ($out['registerNumber'] ?? $merged['registerNumber'] ?? '');
+    $aes = new AesLoginService();
+    $collegeEmail = $aes->excludeSyntheticCollegeEmail((string) ($merged['collegeEmail'] ?? ''), $reg);
+    $personalEmail = (string) ($merged['personalEmail'] ?? '');
+
     $out['user'] = [
       'name'          => (string) ($merged['name'] ?? $user['name'] ?? ''),
-      'email'         => (string) ($merged['collegeEmail'] ?? $merged['email'] ?? $user['email'] ?? ''),
-      'collegeEmail'  => (string) ($merged['collegeEmail'] ?? ''),
-      'personalEmail' => (string) ($merged['personalEmail'] ?? ''),
+      'email'         => $collegeEmail !== '' ? $collegeEmail : ($personalEmail !== '' ? $personalEmail : (string) ($user['email'] ?? '')),
+      'collegeEmail'  => $collegeEmail,
+      'personalEmail' => $personalEmail,
       'phone'         => (string) ($merged['phone'] ?? $personal['phone'] ?? ''),
     ];
     $out['department'] = $dept ? [

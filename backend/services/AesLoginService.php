@@ -264,10 +264,11 @@ final class AesLoginService
         if ($resolvedEmails['collegeEmail'] !== '') {
             $data['collegeEmail'] = $resolvedEmails['collegeEmail'];
         }
+        if (!empty($data['collegeEmail']) && $this->isSyntheticStudentEmail((string) $data['collegeEmail'], $register)) {
+            unset($data['collegeEmail']);
+        }
         if ($resolvedEmails['email'] !== '') {
             $data['email'] = $resolvedEmails['email'];
-        } elseif (trim((string) ($data['email'] ?? '')) === '' && $register !== '') {
-            $data['email'] = $this->syntheticStudentEmail($register);
         }
 
         $aesDept = strtoupper(trim($this->pick($aesProfile, [
@@ -837,10 +838,6 @@ final class AesLoginService
             $cgpaRaw = (string) $contactScan['cgpa'];
         }
 
-        if ($email === '' && $registerNumber !== '' && !str_contains($registerNumber, '@')) {
-            $email = $this->syntheticStudentEmail($registerNumber);
-        }
-
         if ($name === '' && $registerNumber !== '') {
             $name = '';
         }
@@ -889,11 +886,29 @@ final class AesLoginService
             return null;
         }
 
-        if ($profile['email'] === '' || $profile['registerNumber'] === '') {
+        if ($profile['registerNumber'] === '') {
             return null;
         }
 
-        return $this->provisionStudent($profile);
+        $toProvision = $this->profileForProvisioning($profile);
+        if ($toProvision['email'] === '') {
+            return null;
+        }
+
+        return $this->provisionStudent($toProvision);
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @return array{name:string,email:string,registerNumber:string,role:string,departmentCode:string}
+     */
+    private function profileForProvisioning(array $profile): array
+    {
+        if ($profile['email'] === '' && $profile['registerNumber'] !== '') {
+            $profile['email'] = $this->syntheticStudentEmail($profile['registerNumber']);
+        }
+
+        return $profile;
     }
 
     /**
@@ -992,6 +1007,11 @@ final class AesLoginService
     {
         $safe = preg_replace('/[^a-z0-9]/i', '', $registerNumber) ?: 'student';
         return strtolower($safe) . '@students.amaljyothi.ac.in';
+    }
+
+    public function excludeSyntheticCollegeEmail(string $email, string $registerNumber): string
+    {
+        return $this->isSyntheticStudentEmail($email, $registerNumber) ? '' : trim($email);
     }
 
     private function isSyntheticStudentEmail(string $email, string $registerNumber): bool
@@ -1405,10 +1425,6 @@ final class AesLoginService
             }
         }
 
-        if ($register !== '') {
-            return $this->syntheticStudentEmail($register);
-        }
-
         return '';
     }
 
@@ -1458,10 +1474,6 @@ final class AesLoginService
             if ($personal === '') {
                 $personal = $candidate;
             }
-        }
-
-        if ($college === '' && $register !== '') {
-            $college = $this->syntheticStudentEmail($register);
         }
 
         return [

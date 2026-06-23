@@ -36,7 +36,7 @@
         </div>
         <div class="row g-3">
           <div class="col-md-6"><label class="form-label small fw-semibold">Full name</label><input class="form-control" id="profName"/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">College email</label><input class="form-control" id="profCollegeEmail" disabled/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">College email</label><input class="form-control" id="profCollegeEmail" disabled placeholder="Not provided by college login"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Personal email</label><input class="form-control" id="profPersonalEmail" disabled/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
@@ -177,11 +177,6 @@ function pickCgpa(u) {
   return '';
 }
 
-function syntheticStudentEmail(registerNumber) {
-  const safe = String(registerNumber || '').replace(/[^a-z0-9]/gi, '') || 'student';
-  return safe.toLowerCase() + '@students.amaljyothi.ac.in';
-}
-
 function inferNameFromEmail(email) {
   const e = String(email || '').trim().toLowerCase();
   if (!e.includes('@')) return '';
@@ -196,23 +191,31 @@ function isCollegeEmail(email) {
   return e.includes('@students.amaljyothi.ac.in') || e.includes('@amaljyothi.ac.in') || e.endsWith('@ajce.in');
 }
 
+function isSyntheticStudentEmail(email, registerNumber) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e.includes('@students.amaljyothi.ac.in')) return false;
+  const reg = String(registerNumber || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (!reg) return true;
+  const local = e.split('@')[0] || '';
+  return local === reg;
+}
+
 function pickCollegeEmail(u) {
   const merged = mergeProfileUser(u);
   const personal = (merged.personal && typeof merged.personal === 'object') ? merged.personal : {};
   const reg = merged.registerNumber || merged.admission_no || merged.username || '';
-  if (merged.collegeEmail && isCollegeEmail(merged.collegeEmail)) {
+  if (merged.collegeEmail && isCollegeEmail(merged.collegeEmail) && !isSyntheticStudentEmail(merged.collegeEmail, reg)) {
     return String(merged.collegeEmail).trim().toLowerCase();
   }
   const collegeKeys = ['college_email', 'official_email', 'student_email', 'studentEmail', 'stu_email', 'college_mail', 'institutional_email'];
   for (const key of collegeKeys) {
     const val = String(merged[key] || personal[key] || '').trim().toLowerCase();
-    if (val && isCollegeEmail(val)) return val;
+    if (val && isCollegeEmail(val) && !isSyntheticStudentEmail(val, reg)) return val;
   }
   for (const key of Object.keys(merged)) {
     const val = String(merged[key] || '').trim().toLowerCase();
-    if (val.includes('@') && isCollegeEmail(val)) return val;
+    if (val.includes('@') && isCollegeEmail(val) && !isSyntheticStudentEmail(val, reg)) return val;
   }
-  if (reg) return syntheticStudentEmail(reg);
   return '';
 }
 
@@ -376,7 +379,7 @@ async function loadSettingsProfile() {
       user = {
         ...user,
         name: apiName || user.name,
-        email: apiCollegeEmail || user.email,
+        email: apiCollegeEmail || apiPersonalEmail || user.email,
         collegeEmail: apiCollegeEmail || user.collegeEmail,
         personalEmail: apiPersonalEmail || user.personalEmail,
         registerNumber: reg,
