@@ -38,14 +38,16 @@ final class AuthMiddleware
 
     $session = Security::getSessionUser();
     if ($session !== null) {
-      $user = $userModel->findById($session['id']);
-      $role = $user['role'] ?? '';
-      $active = ($user['status'] ?? '') === 'active';
-      $approved = ($user['approved'] ?? false) || $role === 'admin';
-      if ($user && $active && $approved) {
-        self::$currentUser = $user;
-        return $user;
-      }
+        $user = $userModel->findById($session['id']);
+        if ($user) {
+            $role = $user['role'] ?? '';
+            $active = ($user['status'] ?? '') === 'active';
+            $approved = ($user['approved'] ?? false) || $role === 'admin';
+            if ($active && $approved) {
+                self::$currentUser = $user;
+                return $user;
+            }
+        }
     }
 
     Response::unauthorized('Authentication required.');

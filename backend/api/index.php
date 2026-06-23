@@ -114,6 +114,7 @@ $routes = [
     // Auth
     ['POST', '/auth/register', [AuthController::class, 'register']],
     ['POST', '/auth/login',    [AuthController::class, 'login']],
+    ['POST', '/auth/aes-login', [AuthController::class, 'aesLogin']],
     ['POST', '/auth/logout',   [AuthController::class, 'logout']],
     ['GET',  '/auth/me',       [AuthController::class, 'me']],
     ['POST', '/auth/change-password', [AuthController::class, 'changePassword']],

@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260622d';
+const APP_SCRIPT_VERSION = '20260622f';
 const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 const ROLE_LABELS = {
@@ -159,6 +159,36 @@ async function performServerLogin(email, password, next = '') {
   return { success: true, redirect: absAppPath(redirect) };
 }
 
+/** AES institute login — returns { success, message?, redirect? } */
+async function performAesLogin(username, password, next = '') {
+  Auth.clear();
+  const res = await api('/auth/aes-login', {
+    method: 'POST',
+    body: { username, password },
+    skipAuthRedirect: true,
+    skipAuthRetry: true,
+  });
+  if (!res.success) {
+    if (res._offline) {
+      return { success: false, message: 'Cannot reach the server. Start it with: php -S 0.0.0.0:8080 router.php' };
+    }
+    return { success: false, message: res.message || 'AES sign-in failed' };
+  }
+  const user = res.data?.user || res.data;
+  if (!user || !user.role) {
+    return { success: false, message: 'AES sign-in response was invalid.' };
+  }
+  localStorage.setItem('ph-token', 'session');
+  Auth.applySessionUser(user);
+  Auth._sessionReady = false;
+  const verified = await Auth.bootstrap();
+  if (!verified) {
+    Auth._sessionReady = true;
+  }
+  const redirect = Auth.resolveRedirect(next);
+  return { success: true, redirect: absAppPath(redirect) };
+}
+
 /** Root-relative app path for reliable redirects from extensionless URLs. */
 function absAppPath(path) {
   const raw = String(path || '').trim();
@@ -284,6 +314,7 @@ const Auth = {
       return false;
     }
     this.applySessionUser(res.data);
+    localStorage.setItem('ph-token', 'session');
     this._sessionReady = true;
     return true;
   },
@@ -3147,6 +3178,7 @@ async function apiFetch(path, opts = {}) {
     });
     if (res.status === 401) {
       if (!opts.skipAuthRetry && !opts._authRetry) {
+        Auth._sessionReady = false;
         const restored = await Auth.bootstrap();
         if (restored) {
           return apiFetch(path, { ...opts, _authRetry: true });
@@ -3163,7 +3195,9 @@ async function apiFetch(path, opts = {}) {
         success: false,
         message: Auth.isDemo()
           ? 'Sign in with your account on the login page to save changes. Preview mode is read-only.'
-          : 'Session expired. Please sign in again.',
+          : (Auth.hasSession()
+            ? 'Your sign-in expired. Please sign in again.'
+            : 'Please sign in to continue.'),
         data: null,
         status: 401,
       };

@@ -43,6 +43,13 @@ final class PublicController
         $legacyPolicyRules = is_readable($eligibilityFile)
             && strpos((string) file_get_contents($eligibilityFile), 'Placement policy not accepted') !== false;
 
+        $aesCallback = '';
+        try {
+            $aesCallback = (new \PMS\Services\AesLoginService())->expectedCallbackUrl();
+        } catch (\Throwable) {
+            $aesCallback = '';
+        }
+
         Response::success([
             'status'   => $db['ok'] ? 'ok' : 'error',
             'database' => [
@@ -56,6 +63,7 @@ final class PublicController
             'build' => [
                 'deployVersion'    => $deployVersion,
                 'eligibilityRules' => $legacyPolicyRules ? 'legacy-policy-required' : 'v2-resume-only',
+                'aesCallbackUrl'   => $aesCallback,
             ],
         ], $db['ok'] ? 'OK' : 'Database unavailable', $db['ok'] ? 200 : 503);
     }

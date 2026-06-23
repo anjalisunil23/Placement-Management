@@ -3,8 +3,12 @@
 declare(strict_types=1);
 
 /**
- * AES SSO callback — login.aesajce.in posts here after successful institute login.
- * Configure this URL with the AES team when registering the site API key.
+ * AES SSO return URL — login.aesajce.in POSTs token + user info here after authentication.
+ *
+ * Flow:
+ *   placements.amaljyothi.ac.in  →  Login with AES
+ *   login.aesajce.in             →  Authenticate
+ *   placements.amaljyothi.ac.in/callback.php  →  token / user info  →  PlaceHub session
  */
 
 $root = __DIR__;
@@ -37,14 +41,21 @@ $redirectLogin = static function (string $message = ''): void {
     exit;
 };
 
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST' || $_POST === []) {
-    header('Location: /');
+$method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+$payload = $method === 'POST' ? $_POST : $_GET;
+
+if ($payload === []) {
+    header('Location: /login.html');
     exit;
 }
 
 try {
-    $target = (new AesLoginService())->handleCallback($_POST);
-    header('Location: ' . $target);
+    $service = new AesLoginService();
+    $target = $service->handleCallback($payload);
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    header('Location: /aes-complete.html?next=' . rawurlencode($target));
 } catch (\Throwable $e) {
     $redirectLogin($e->getMessage());
 }
