@@ -118,32 +118,6 @@ final class AuthController
         );
     }
 
-    /** POST /api/auth/aes-login — verify AES credentials and sign in (auto-creates student accounts). */
-    public function aesLogin(): void
-    {
-        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-        $errors = Validator::validate($input, [
-            'username' => 'required|min:3|max:50',
-            'password' => 'required|min:1|max:128',
-        ]);
-        if (!empty($errors)) {
-            Response::error('Validation failed.', 422, $errors);
-        }
-
-        try {
-            $service = new \PMS\Services\AesLoginService();
-            $aesResponse = $service->authenticateCredentials((string) $input['username'], (string) $input['password']);
-            $user = $service->loginFromAesPayload($aesResponse);
-        } catch (\Throwable $e) {
-            Response::error($e->getMessage(), 401);
-        }
-
-        Response::success(
-            AuthMiddleware::userResponse($user, null),
-            'AES login successful.'
-        );
-    }
-
     /** POST /api/auth/logout */
     public function logout(): void
     {

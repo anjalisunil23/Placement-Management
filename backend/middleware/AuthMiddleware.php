@@ -38,16 +38,14 @@ final class AuthMiddleware
 
     $session = Security::getSessionUser();
     if ($session !== null) {
-        $user = $userModel->findById($session['id']);
-        if ($user) {
-            $role = $user['role'] ?? '';
-            $active = ($user['status'] ?? '') === 'active';
-            $approved = ($user['approved'] ?? false) || $role === 'admin';
-            if ($active && $approved) {
-                self::$currentUser = $user;
-                return $user;
-            }
-        }
+      $user = $userModel->findById($session['id']);
+      $role = $user['role'] ?? '';
+      $active = ($user['status'] ?? '') === 'active';
+      $approved = ($user['approved'] ?? false) || $role === 'admin';
+      if ($user && $active && $approved) {
+        self::$currentUser = $user;
+        return $user;
+      }
     }
 
     Response::unauthorized('Authentication required.');
@@ -92,7 +90,7 @@ final class AuthMiddleware
   {
     $config = require dirname(__DIR__) . '/config/app.php';
     $data = DocumentHelper::serialize($user);
-    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/public-stats.html';
+    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
     if (($user['role'] ?? '') === 'alumni') {
       $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
       if ($profile) {

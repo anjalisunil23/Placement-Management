@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260622f';
+const APP_SCRIPT_VERSION = '20260622d';
 const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 const ROLE_LABELS = {
@@ -114,22 +114,12 @@ const API_BASE =
   localStorage.getItem('ph-api-base') ||
   '/backend/api';
 
-const PORTAL_AUTH_PAGE = 'public-stats.html';
-
-function portalAuthUrl(next = '', autoLogin = true) {
-  const params = new URLSearchParams();
-  if (next) params.set('next', next);
-  if (autoLogin) params.set('login', '1');
-  const qs = params.toString();
-  return qs ? `${PORTAL_AUTH_PAGE}?${qs}` : PORTAL_AUTH_PAGE;
-}
-
 /** Ensure a live server session before admin writes; redirects to login when needed. */
 async function requireWriteSession() {
   Auth._sessionReady = false;
   if (await Auth.ensureSession()) return true;
   const page = document.body?.dataset?.page || 'dashboard.html';
-  window.location.href = portalAuthUrl(page);
+  window.location.href = `login.html?next=${encodeURIComponent(page)}`;
   return false;
 }
 
@@ -166,36 +156,6 @@ async function performServerLogin(email, password, next = '') {
   if (user.role === 'alumni' && !Auth.isAllowed(redirect.split('#')[0])) {
     return { success: true, redirect: absAppPath(Auth.homePage('alumni')) };
   }
-  return { success: true, redirect: absAppPath(redirect) };
-}
-
-/** AES institute login — returns { success, message?, redirect? } */
-async function performAesLogin(username, password, next = '') {
-  Auth.clear();
-  const res = await api('/auth/aes-login', {
-    method: 'POST',
-    body: { username, password },
-    skipAuthRedirect: true,
-    skipAuthRetry: true,
-  });
-  if (!res.success) {
-    if (res._offline) {
-      return { success: false, message: 'Cannot reach the server. Start it with: php -S 0.0.0.0:8080 router.php' };
-    }
-    return { success: false, message: res.message || 'AES sign-in failed' };
-  }
-  const user = res.data?.user || res.data;
-  if (!user || !user.role) {
-    return { success: false, message: 'AES sign-in response was invalid.' };
-  }
-  localStorage.setItem('ph-token', 'session');
-  Auth.applySessionUser(user);
-  Auth._sessionReady = false;
-  const verified = await Auth.bootstrap();
-  if (!verified) {
-    Auth._sessionReady = true;
-  }
-  const redirect = Auth.resolveRedirect(next);
   return { success: true, redirect: absAppPath(redirect) };
 }
 
@@ -240,7 +200,7 @@ const Auth = {
     if (!raw) return this.homePage();
     const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
     const hash = raw.includes('#') ? raw.slice(raw.indexOf('#')) : '';
-    if (page && page !== 'login.html' && page !== PORTAL_AUTH_PAGE && this.isAllowed(page)) {
+    if (page && page !== 'login.html' && this.isAllowed(page)) {
       return page + hash;
     }
     return this.homePage();
@@ -301,7 +261,7 @@ const Auth = {
   logout() {
     apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
     this.clear();
-    window.location.href = portalAuthUrl('');
+    window.location.href = 'login.html';
   },
   isDemo() {
     const t = this.token();
@@ -324,7 +284,6 @@ const Auth = {
       return false;
     }
     this.applySessionUser(res.data);
-    localStorage.setItem('ph-token', 'session');
     this._sessionReady = true;
     return true;
   },
@@ -3188,7 +3147,6 @@ async function apiFetch(path, opts = {}) {
     });
     if (res.status === 401) {
       if (!opts.skipAuthRetry && !opts._authRetry) {
-        Auth._sessionReady = false;
         const restored = await Auth.bootstrap();
         if (restored) {
           return apiFetch(path, { ...opts, _authRetry: true });
@@ -3196,17 +3154,16 @@ async function apiFetch(path, opts = {}) {
       }
       if (!opts.skipAuthRedirect && !Auth.isDemo()) {
         const page = document.body?.dataset?.page;
+        const next = page && page !== 'login.html' ? `?next=${encodeURIComponent(page)}` : '';
         Auth.clear();
-        window.location.href = portalAuthUrl(page && page !== PORTAL_AUTH_PAGE ? page : '');
+        window.location.href = `login.html${next}`;
         return { success: false, message: 'Session expired', data: null, status: 401 };
       }
       return {
         success: false,
         message: Auth.isDemo()
-          ? 'Sign in with your AES account on the public portal to save changes. Preview mode is read-only.'
-          : (Auth.hasSession()
-            ? 'Your sign-in expired. Please sign in again.'
-            : 'Session expired. Please sign in again.'),
+          ? 'Sign in with your account on the login page to save changes. Preview mode is read-only.'
+          : 'Session expired. Please sign in again.',
         data: null,
         status: 401,
       };
@@ -3242,7 +3199,7 @@ async function api(path, opts = {}) {
 }
 
 function onAppReady(fn) {
-  if (document.body?.dataset?.page && document.body.dataset.page !== 'login.html' && document.body.dataset.page !== PORTAL_AUTH_PAGE) {
+  if (document.body?.dataset?.page && document.body.dataset.page !== 'login.html') {
     document.addEventListener('ph-ready', fn, { once: true });
   } else {
     fn();
