@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Signing in · PlaceHub</title>
+<link href="css/style.css" rel="stylesheet" />
+<style>
+  body{display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:var(--bg,#f4f6fb)}
+  .aes-complete-card{text-align:center;padding:2rem 2.5rem;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(15,23,42,.08);max-width:360px}
+</style>
+</head>
+<body data-page="aes-complete.html">
+<div class="aes-complete-card">
+  <div class="spinner-border text-primary mb-3" role="status" aria-hidden="true"></div>
+  <h1 class="h5 fw-semibold mb-1">Signing you in</h1>
+  <p class="text-muted small mb-0">Opening your dashboard…</p>
+</div>
+<script src="js/api.js?v=20260624h"></script>
+<script>
+(async () => {
+  Auth.clear();
+  Auth._sessionReady = false;
+  const params = new URLSearchParams(location.search);
+  const next = params.get('next') || '';
+  let ok = false;
+  for (let i = 0; i < 5; i++) {
+    if (await Auth.bootstrap()) {
+      ok = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+  }
+  if (!ok) {
+    window.location.replace('/public-stats.html?aes_error=' + encodeURIComponent('Could not start your session. Please try again.'));
+    return;
+  }
+  const target = Auth.resolveRedirect(next);
+  window.location.replace(target.startsWith('/') ? target : '/' + target);
+})();
+</script>
+</body>
+</html>

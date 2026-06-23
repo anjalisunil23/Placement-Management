@@ -9,6 +9,9 @@ pms_bootstrap_aes_callback($root);
 
 use PMS\Middleware\AuthMiddleware;
 use PMS\Services\AesLoginService;
+use PMS\Utils\Security;
+
+Security::startSession();
 
 $fail = static function (string $message = ''): void {
     $qs = $message !== '' ? ('?aes_error=' . rawurlencode($message)) : '';
@@ -61,11 +64,13 @@ try {
         $target = '/drives.html';
     }
 
+    $next = ltrim($target, '/');
+
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
     }
 
-    header('Location: ' . $target);
+    header('Location: /aes-complete.html?next=' . rawurlencode($next));
     exit;
 } catch (Throwable $e) {
     $fail($e->getMessage());

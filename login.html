@@ -215,9 +215,7 @@ showRoleFields();
   Auth._sessionReady = false;
   const ok = await Auth.bootstrap();
   if (!ok) return;
-  if (next) {
-    window.location.replace(Auth.resolveRedirect(next));
-  }
+  window.location.replace(Auth.resolveRedirect(next || ''));
 })();
 
 function fd(form) { return Object.fromEntries(new FormData(form).entries()); }
