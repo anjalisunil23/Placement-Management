@@ -131,19 +131,40 @@ function mergeProfileUser(u) {
 function pickDisplayName(u) {
   const merged = mergeProfileUser(u);
   const reg = merged.registerNumber || merged.admission_no || merged.username || '';
-  const keys = ['name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname', 'staff_name', 'emp_name', 'display_name'];
-  for (const key of keys) {
-    const val = String(merged[key] || '').trim();
-    if (val && !isPlaceholderName(val, reg)) return val;
+  const sources = [merged, merged.aesProfile || {}, (merged.personal && typeof merged.personal === 'object') ? merged.personal : {}];
+  const nameKeys = [
+    'name', 'full_name', 'fullName', 'fullname', 'student_name', 'studentName', 'stu_name', 'sname',
+    'staff_name', 'emp_name', 'display_name', 'displayname', 'studname', 'stud_name', 'studentname', 'nm', 'stu_nm', 'uname', 'stuname',
+  ];
+  for (const src of sources) {
+    if (!src || typeof src !== 'object') continue;
+    for (const key of nameKeys) {
+      const val = pickInsensitive(src, [key]);
+      if (val && !isPlaceholderName(val, reg)) return val;
+    }
+    const fname = pickInsensitive(src, ['fname', 'first_name', 'firstName', 'firstname', 'stu_fname']);
+    const lname = pickInsensitive(src, ['lname', 'last_name', 'lastName', 'lastname', 'stu_lname']);
+    const combined = `${fname} ${lname}`.trim();
+    if (combined && !isPlaceholderName(combined, reg)) return combined;
+    for (const [key, raw] of Object.entries(src)) {
+      if (!isNameFieldKey(key)) continue;
+      const val = String(raw || '').trim();
+      if (val && !isPlaceholderName(val, reg)) return val;
+    }
   }
-  const fname = String(merged.fname || merged.first_name || merged.firstName || merged.firstname || '').trim();
-  const lname = String(merged.lname || merged.last_name || merged.lastName || merged.lastname || '').trim();
-  const combined = `${fname} ${lname}`.trim();
-  if (combined && !isPlaceholderName(combined, reg)) return combined;
   const inferred = inferNameFromEmail(merged.personalEmail || merged.email || pickEmail(merged));
   if (inferred && !isPlaceholderName(inferred, reg)) return inferred;
   const current = String(merged.name || '').trim();
   return current && !isPlaceholderName(current, reg) ? current : '';
+}
+
+function isNameFieldKey(key) {
+  const k = String(key || '').toLowerCase();
+  if (['name', 'fullname', 'full_name', 'displayname', 'display_name', 'nm', 'uname', 'sname', 'studname', 'stuname', 'studentname'].includes(k)) {
+    return true;
+  }
+  if (/parent|father|mother|guardian|dept|branch|company/.test(k)) return false;
+  return k.endsWith('_name') || k.includes('studname') || k.includes('studentname');
 }
 
 function pickDepartment(u) {

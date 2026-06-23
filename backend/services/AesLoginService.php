@@ -187,6 +187,11 @@ final class AesLoginService
         if ($emails['personalEmail'] !== '') {
             $aesDetails['personalEmail'] = $emails['personalEmail'];
         }
+        $aesName = $this->resolveAesName($aesDetails, $mapped, $register, $emails['personalEmail']);
+        if ($aesName !== '') {
+            $aesDetails['name'] = $aesName;
+            $profile['name'] = $aesName;
+        }
 
         $user = $this->resolveOrProvisionUser($profile);
         if ($user === null) {
@@ -228,14 +233,13 @@ final class AesLoginService
         }
 
         $register = (string) ($data['registerNumber'] ?? $mapped['registerNumber'] ?? '');
-        $aesName = trim($this->pick($aesProfile, [
-            'name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname',
-            'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name',
-        ]));
-        if ($aesName === '' && !empty($mapped['name'])) {
-            $aesName = (string) $mapped['name'];
-        }
-        if ($this->isRealPersonName($aesName) && $this->shouldReplaceDisplayName((string) ($data['name'] ?? ''), $register)) {
+        $aesName = $this->resolveAesName(
+            $aesProfile,
+            $mapped,
+            $register,
+            (string) ($data['personalEmail'] ?? $mapped['personalEmail'] ?? '')
+        );
+        if ($aesName !== '') {
             $data['name'] = $aesName;
         }
 
@@ -527,11 +531,12 @@ final class AesLoginService
     public function mapAesDetailsToUserFields(array $aesDetails): array
     {
         $mapped = [
-            'name'           => trim($this->pick($aesDetails, [
-                'name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname',
-                'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name', 'display_name',
-                'studname', 'stud_name', 'studentname', 'StudentName', 'nm', 'stu_nm', 'stuNm', 'uname',
-            ])) ?: trim($this->pick($aesDetails, ['fname', 'first_name', 'firstName', 'firstname']) . ' ' . $this->pick($aesDetails, ['lname', 'last_name', 'lastName', 'lastname'])),
+            'name'           => trim($this->pickInsensitive($aesDetails, [
+                    'name', 'full_name', 'fullName', 'fullname', 'student_name', 'studentName', 'stu_name', 'sname',
+                    'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name', 'display_name',
+                    'studname', 'stud_name', 'studentname', 'StudentName', 'nm', 'stu_nm', 'stuNm', 'uname', 'stuname',
+                ]))
+                ?: trim($this->pickInsensitive($aesDetails, ['fname', 'first_name', 'firstName', 'firstname', 'stu_fname']) . ' ' . $this->pickInsensitive($aesDetails, ['lname', 'last_name', 'lastName', 'lastname', 'stu_lname'])),
             'phone'          => $this->pick($aesDetails, [
                 'phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno',
                 'cell', 'cell_no', 'cellNo', 'whatsapp', 'whatsapp_no',
@@ -584,6 +589,11 @@ final class AesLoginService
         }
 
         $register = (string) ($mapped['registerNumber'] ?? '');
+        $resolvedName = $this->scanNameFromAesData($aesDetails, $register);
+        if ($resolvedName !== '') {
+            $mapped['name'] = $resolvedName;
+        }
+
         $emailScan = $this->scanEmailsFromAesData($aesDetails, $register);
         if ($emailScan['collegeEmail'] !== '') {
             $mapped['collegeEmail'] = $emailScan['collegeEmail'];
@@ -635,13 +645,15 @@ final class AesLoginService
         $mapped = $this->mapAesDetailsToUserFields($aesDetails);
         $patch = [];
 
-        $name = $profile['name'];
-        if (!empty($mapped['name']) && $this->isRealPersonName((string) $mapped['name'])) {
-            $name = (string) $mapped['name'];
-        }
-        if ($this->isRealPersonName($name) && $this->shouldReplaceDisplayName((string) ($user['name'] ?? ''), $profile['registerNumber'])) {
+        $name = $this->resolveAesName(
+            $aesDetails,
+            $mapped,
+            $profile['registerNumber'],
+            (string) ($mapped['personalEmail'] ?? $mapped['email'] ?? $profile['email'])
+        );
+        if ($name !== '') {
             $patch['name'] = $name;
-        } elseif (empty($user['name']) || $this->shouldReplaceDisplayName((string) ($user['name'] ?? ''), $profile['registerNumber'])) {
+        } elseif ($this->shouldReplaceDisplayName((string) ($user['name'] ?? ''), $profile['registerNumber'])) {
             $inferred = $this->inferNameFromEmail((string) ($mapped['personalEmail'] ?? $mapped['email'] ?? $profile['email']));
             if ($this->isRealPersonName($inferred)) {
                 $patch['name'] = $inferred;
@@ -852,15 +864,7 @@ final class AesLoginService
             $email = (string) $contactScan['email'];
         }
 
-        $name = trim($this->pick($flat, [
-            'name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname',
-            'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name', 'display_name',
-        ]));
-        if ($name === '') {
-            $fname = trim($this->pick($flat, ['fname', 'first_name', 'firstName', 'firstname']));
-            $lname = trim($this->pick($flat, ['lname', 'last_name', 'lastName', 'lastname']));
-            $name = trim($fname . ' ' . $lname);
-        }
+        $name = $this->scanNameFromAesData($flat, $registerNumber);
         if ($name === '' && !empty($contactScan['name'])) {
             $name = (string) $contactScan['name'];
         }
@@ -1706,6 +1710,105 @@ final class AesLoginService
         }
 
         return mb_convert_case($local, MB_CASE_TITLE, 'UTF-8');
+    }
+
+    private function resolveAesName(array $aesProfile, array $mapped, string $register, string $personalEmail = ''): string
+    {
+        $name = $this->scanNameFromAesData(array_merge($aesProfile, $mapped), $register);
+        if ($name !== '') {
+            return $name;
+        }
+
+        if (!empty($mapped['name'])) {
+            $candidate = trim((string) $mapped['name']);
+            if ($this->isRealPersonName($candidate) && !$this->isPlaceholderName($candidate, $register)) {
+                return $candidate;
+            }
+        }
+
+        if ($personalEmail !== '') {
+            $inferred = $this->inferNameFromEmail($personalEmail);
+            if ($this->isRealPersonName($inferred) && !$this->isPlaceholderName($inferred, $register)) {
+                return $inferred;
+            }
+        }
+
+        return '';
+    }
+
+    private function scanNameFromAesData(array $data, string $register = ''): string
+    {
+        $register = strtoupper($register !== '' ? $register : $this->pickInsensitive($data, [
+            'registerNumber', 'register_number', 'admission_no', 'admissionNo', 'username', 'un',
+        ]));
+        $flat = $this->flattenScalarsDeep($data);
+
+        $nameKeys = [
+            'name', 'full_name', 'fullname', 'student_name', 'studentname', 'stu_name', 'sname',
+            'staff_name', 'staffname', 'emp_name', 'employee_name', 'faculty_name', 'display_name', 'displayname',
+            'studname', 'stud_name', 'studentname', 'nm', 'stu_nm', 'stuname', 'uname', 'candidate_name',
+        ];
+        $picked = trim($this->pickInsensitive($flat, $nameKeys));
+        if ($this->isRealPersonName($picked) && !$this->isPlaceholderName($picked, $register)) {
+            return $picked;
+        }
+
+        $fname = trim($this->pickInsensitive($flat, ['fname', 'first_name', 'firstname', 'firstName', 'stu_fname', 'student_fname']));
+        $lname = trim($this->pickInsensitive($flat, ['lname', 'last_name', 'lastname', 'lastName', 'stu_lname', 'student_lname']));
+        $combined = trim($fname . ' ' . $lname);
+        if ($this->isRealPersonName($combined) && !$this->isPlaceholderName($combined, $register)) {
+            return $combined;
+        }
+
+        foreach ($flat as $key => $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $text = trim((string) $value);
+            if ($text === '') {
+                continue;
+            }
+            $lowerKey = strtolower((string) $key);
+            if (preg_match('/\[([^\]]+)\]$/', $lowerKey, $matches)) {
+                $lowerKey = strtolower((string) $matches[1]);
+            }
+            if (!$this->isNameFieldKey($lowerKey)) {
+                continue;
+            }
+            if ($this->isRealPersonName($text) && !$this->isPlaceholderName($text, $register)) {
+                return $text;
+            }
+        }
+
+        return '';
+    }
+
+    private function isNameFieldKey(string $lowerKey): bool
+    {
+        if (in_array($lowerKey, ['name', 'fullname', 'full_name', 'displayname', 'display_name', 'nm', 'uname', 'sname', 'studname', 'stuname', 'studentname'], true)) {
+            return true;
+        }
+        if (str_contains($lowerKey, 'parent') || str_contains($lowerKey, 'father') || str_contains($lowerKey, 'mother') || str_contains($lowerKey, 'guardian')) {
+            return false;
+        }
+        if (str_contains($lowerKey, 'dept') || str_contains($lowerKey, 'branch') || str_contains($lowerKey, 'company')) {
+            return false;
+        }
+
+        return str_ends_with($lowerKey, '_name') || str_contains($lowerKey, 'studname') || str_contains($lowerKey, 'studentname');
+    }
+
+    private function isPlaceholderName(string $name, string $registerNumber): bool
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return true;
+        }
+        if ($registerNumber !== '' && strcasecmp($name, $registerNumber) === 0) {
+            return true;
+        }
+
+        return (bool) preg_match('/^\d+$/', $name);
     }
 
     private function isRealPersonName(string $name): bool

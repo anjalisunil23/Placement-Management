@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260623i';
+const APP_SCRIPT_VERSION = '20260623j';
 
 function isSyntheticStudentEmail(email, registerNumber) {
   const e = String(email || '').trim().toLowerCase();
@@ -61,21 +61,56 @@ function sanitizeDisplayName(name, registerNumber) {
 }
 
 function resolveSessionName(merged, registerNumber) {
-  const reg = registerNumber || '';
-  const keys = ['name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname', 'display_name', 'studname', 'nm'];
-  for (const key of keys) {
-    const val = String(merged[key] || '').trim();
-    const clean = sanitizeDisplayName(val, reg);
-    if (clean) return clean;
+  const reg = registerNumber || merged.registerNumber || '';
+  const sources = [merged, merged.aesProfile || {}];
+  const nameKeys = [
+    'name', 'full_name', 'fullName', 'fullname', 'student_name', 'studentName', 'stu_name', 'sname',
+    'display_name', 'displayname', 'studname', 'stud_name', 'studentname', 'nm', 'stu_nm', 'uname', 'stuname',
+  ];
+  for (const src of sources) {
+    if (!src || typeof src !== 'object') continue;
+    for (const key of nameKeys) {
+      const val = pickInsensitiveFrom(src, [key]);
+      const clean = sanitizeDisplayName(val, reg);
+      if (clean) return clean;
+    }
+    const fname = pickInsensitiveFrom(src, ['fname', 'first_name', 'firstName', 'firstname', 'stu_fname']);
+    const lname = pickInsensitiveFrom(src, ['lname', 'last_name', 'lastName', 'lastname', 'stu_lname']);
+    const combined = sanitizeDisplayName(`${fname} ${lname}`.trim(), reg);
+    if (combined) return combined;
+    for (const [key, raw] of Object.entries(src)) {
+      if (!isNameFieldKey(key)) continue;
+      const clean = sanitizeDisplayName(String(raw || '').trim(), reg);
+      if (clean) return clean;
+    }
   }
-  const fname = String(merged.fname || merged.first_name || merged.firstName || '').trim();
-  const lname = String(merged.lname || merged.last_name || merged.lastName || '').trim();
-  const combined = sanitizeDisplayName(`${fname} ${lname}`.trim(), reg);
-  if (combined) return combined;
   const inferred = inferNameFromEmail(merged.personalEmail || merged.email);
   const fromEmail = sanitizeDisplayName(inferred, reg);
   if (fromEmail) return fromEmail;
   return sanitizeDisplayName(merged.name || '', reg);
+}
+
+function pickInsensitiveFrom(obj, keys) {
+  if (!obj || typeof obj !== 'object') return '';
+  const lowerMap = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value == null || value === '') continue;
+    lowerMap[String(key).toLowerCase()] = String(value).trim();
+  }
+  for (const key of keys) {
+    const val = lowerMap[String(key).toLowerCase()];
+    if (val) return val;
+  }
+  return '';
+}
+
+function isNameFieldKey(key) {
+  const k = String(key || '').toLowerCase();
+  if (['name', 'fullname', 'full_name', 'displayname', 'display_name', 'nm', 'uname', 'sname', 'studname', 'stuname', 'studentname'].includes(k)) {
+    return true;
+  }
+  if (/parent|father|mother|guardian|dept|branch|company/.test(k)) return false;
+  return k.endsWith('_name') || k.includes('studname') || k.includes('studentname');
 }
 
 function resolveSessionDepartment(merged) {
