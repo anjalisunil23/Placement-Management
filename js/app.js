@@ -1,5 +1,5 @@
 /* PlaceHub shell v2026.06.22 — hide Departments from admin sidebar */
-const APP_SHELL_VERSION = '2026.06.22';
+const APP_SHELL_VERSION = '20260622f';
 
 const NAV = [
   { section: "Overview", roles: ROLES },
@@ -335,7 +335,7 @@ function renderShell(active) {
     e.preventDefault();
     const key = a.dataset.role;
     if (key === 'admin') {
-      window.location.href = `login.html?next=${encodeURIComponent('dashboard.html')}`;
+      window.location.href = portalAuthUrl('dashboard.html');
       return;
     }
     const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
@@ -408,7 +408,7 @@ function animateCounters(root = document) {
 }
 
 function enforcePageRole(active) {
-  if (!active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html') return true;
+  if (!active || active === 'login.html' || active === PORTAL_AUTH_PAGE || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html' || active === 'register.html') return true;
   const page = active.split('#')[0];
   if (!Auth.isAllowed(page)) {
     toast(`This page isn't available for ${ROLE_LABELS[Auth.role()] || 'your role'}.`, 'warn');
@@ -420,12 +420,12 @@ function enforcePageRole(active) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   const active = document.body.dataset.page;
-  const isPublic = !active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html';
+  const isPublic = !active || active === 'login.html' || active === PORTAL_AUTH_PAGE || active === 'public-stats.html' || active === 'index.html' || active === 'register.html' || active === 'aes-complete.html';
 
   if (isPublic) {
     document.documentElement.setAttribute('data-theme', UserPrefs.theme());
     document.documentElement.setAttribute('data-density', UserPrefs.density());
-    if (active !== 'public-stats.html') {
+  if (active !== 'public-stats.html' && active !== 'aes-complete.html') {
       animateCounters();
     }
     document.dispatchEvent(new CustomEvent('ph-ready'));
@@ -434,18 +434,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const hasSession = await Auth.bootstrap();
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
-    window.location.replace(`login.html?next=${encodeURIComponent(active)}`);
+    window.location.replace(portalAuthUrl(active));
     return;
   }
   if (!hasSession) {
     if (Auth.isDemo()) {
       // preview mode — read-only dashboards only
-    } else if (Auth.hasSession() && Auth.user()?.role) {
-      // Client session from login — avoid bouncing back to login when cookie is slow/missing on mobile.
-      Auth._sessionReady = true;
     } else {
       Auth.clear();
-      window.location.href = `login.html?next=${encodeURIComponent(active)}`;
+      window.location.href = portalAuthUrl(active);
       return;
     }
   }
