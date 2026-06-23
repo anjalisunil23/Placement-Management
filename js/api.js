@@ -1,6 +1,56 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260622d';
+const APP_SCRIPT_VERSION = '20260623c';
 const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
+
+function sanitizeDisplayName(name, registerNumber) {
+  const n = String(name || '').trim();
+  if (!n) return '';
+  const reg = String(registerNumber || '').trim();
+  if (reg && n.toUpperCase() === reg.toUpperCase()) return '';
+  if (/^\d+$/.test(n)) return '';
+  return n;
+}
+
+function syntheticStudentEmail(registerNumber) {
+  const safe = String(registerNumber || '').replace(/[^a-z0-9]/gi, '') || 'student';
+  return safe.toLowerCase() + '@students.amaljyothi.ac.in';
+}
+
+function resolveSessionEmail(merged, registerNumber) {
+  const keys = [
+    'email', 'mail', 'user_email', 'userEmail', 'college_email', 'official_email',
+    'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
+    'stu_email', 'stuEmail', 'personal_email', 'personalEmail',
+  ];
+  for (const key of keys) {
+    const val = String(merged[key] || '').trim().toLowerCase();
+    if (val && val.includes('@')) return val;
+  }
+  const stored = String(merged.email || '').trim().toLowerCase();
+  const safeReg = String(registerNumber || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (stored && stored.includes('@')) {
+    const local = stored.split('@')[0] || '';
+    const isSynthetic = stored.includes('@students.amaljyothi.ac.in') && safeReg && local === safeReg;
+    if (!isSynthetic) return stored;
+  }
+  if (registerNumber) return syntheticStudentEmail(registerNumber);
+  return '';
+}
+
+function resolveSessionPhone(merged) {
+  const keys = [
+    'phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno',
+    'cell', 'student_mobile', 'studentMobile', 'stu_mobile', 'stuMobile',
+    'parent_mobile', 'parentMobile', 'father_mobile', 'mother_mobile',
+    'stu_phone', 'stuPhone', 'personal_mobile', 'personalMobile', 'whatsapp',
+  ];
+  for (const key of keys) {
+    const val = String(merged[key] || '').trim();
+    const digits = val.replace(/\D/g, '');
+    if (val && digits !== '919876543210' && digits !== '9876543210') return val;
+  }
+  return String(merged.phone || '').trim();
+}
 
 const ROLE_LABELS = {
   admin: 'Administrator',
@@ -209,13 +259,14 @@ const Auth = {
     if (!u) return;
     const prev = this.user() || {};
     const aes = (u.aesProfile && typeof u.aesProfile === 'object') ? u.aesProfile : {};
-    const merged = { ...aes, ...u };
+    const merged = { ...prev, ...u, ...aes };
+    const reg = merged.registerNumber || prev.registerNumber || '';
     this.set(
       {
         ...prev,
         id: merged.id || merged._id || prev.id || '',
-        name: merged.name || prev.name || '',
-        email: merged.email || prev.email || '',
+        name: sanitizeDisplayName(merged.name || prev.name || '', reg),
+        email: resolveSessionEmail(merged, reg),
         role: merged.role || prev.role || '',
         department: merged.department || prev.department || '',
         departmentId: merged.departmentId || prev.departmentId || '',
@@ -238,7 +289,7 @@ const Auth = {
         tier: merged.tier || prev.tier || '',
         website: merged.website || prev.website || '',
         dashboard: merged.dashboard || prev.dashboard || '',
-        phone: merged.phone || prev.phone || '',
+        phone: resolveSessionPhone(merged) || prev.phone || '',
         course: merged.course || prev.course || '',
         year: merged.year || prev.year || '',
         semester: merged.semester || prev.semester || '',

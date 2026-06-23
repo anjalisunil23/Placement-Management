@@ -37,7 +37,7 @@
           <div class="col-md-6"><label class="form-label small fw-semibold">Full name</label><input class="form-control" id="profName"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Email</label><input class="form-control" id="profEmail" disabled/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" value="+91 98765 43210"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profDept"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">CGPA</label><input class="form-control" id="profCgpa" type="number" step="0.1" min="0" max="10"/></div>
@@ -106,39 +106,240 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260622d"></script>
-<script src="js/app.js?v=20260622d"></script>
+<script src="js/api.js?v=20260623c"></script>
+<script src="js/app.js?v=20260623c"></script>
 <script>
-const user = Auth.user() || demoUserFor(Auth.role());
-const role = Auth.role();
-const isStudent = role === 'student';
+let user = Auth.user() || demoUserFor(Auth.role() || 'student');
+let role = user.role || Auth.role() || '';
 
-function applyProfileFromUser(u) {
+function isPlaceholderName(name, registerNumber) {
+  const n = String(name || '').trim();
+  if (!n) return true;
+  const reg = String(registerNumber || '').trim();
+  if (reg && n.toUpperCase() === reg.toUpperCase()) return true;
+  return /^\d+$/.test(n);
+}
+
+function mergeProfileUser(u) {
+  if (!u || typeof u !== 'object') return {};
+  const aes = (u.aesProfile && typeof u.aesProfile === 'object') ? u.aesProfile : {};
+  return { ...u, ...aes };
+}
+
+function pickDisplayName(u) {
+  const merged = mergeProfileUser(u);
+  const reg = merged.registerNumber || merged.admission_no || merged.username || '';
+  const keys = ['name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname', 'staff_name', 'emp_name'];
+  for (const key of keys) {
+    const val = String(merged[key] || '').trim();
+    if (val && !isPlaceholderName(val, reg)) return val;
+  }
+  const current = String(merged.name || '').trim();
+  return current && !isPlaceholderName(current, reg) ? current : '';
+}
+
+function syntheticStudentEmail(registerNumber) {
+  const safe = String(registerNumber || '').replace(/[^a-z0-9]/gi, '') || 'student';
+  return safe.toLowerCase() + '@students.amaljyothi.ac.in';
+}
+
+function pickEmail(u) {
+  const merged = mergeProfileUser(u);
+  const personal = (merged.personal && typeof merged.personal === 'object') ? merged.personal : {};
+  const keys = [
+    'email', 'mail', 'user_email', 'userEmail', 'college_email', 'official_email',
+    'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
+    'stu_email', 'stuEmail', 'personal_email', 'personalEmail',
+  ];
+  for (const key of keys) {
+    const val = String(merged[key] || personal[key] || '').trim().toLowerCase();
+    if (val && val.includes('@')) return val;
+  }
+  const stored = String(merged.email || '').trim().toLowerCase();
+  const reg = merged.registerNumber || merged.admission_no || merged.username || '';
+  const safeReg = String(reg).replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (stored && stored.includes('@')) {
+    const local = stored.split('@')[0] || '';
+    const isSynthetic = stored.includes('@students.amaljyothi.ac.in') && safeReg && local === safeReg;
+    if (!isSynthetic) return stored;
+  }
+  if (reg) return syntheticStudentEmail(reg);
+  return '';
+}
+
+function isPlaceholderPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  return digits === '919876543210' || digits === '9876543210';
+}
+
+function pickPhone(u) {
+  const merged = mergeProfileUser(u);
+  const personal = (merged.personal && typeof merged.personal === 'object') ? merged.personal : {};
+  const keys = [
+    'phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno',
+    'cell', 'cell_no', 'cellNo', 'whatsapp', 'whatsapp_no',
+    'student_mobile', 'studentMobile', 'stu_mobile', 'stuMobile',
+    'parent_mobile', 'parentMobile', 'father_mobile', 'fatherMobile', 'mother_mobile', 'motherMobile',
+    'guardian_mobile', 'guardianMobile', 'alternate_mobile', 'alternateMobile',
+    'stu_phone', 'stuPhone', 'personal_mobile', 'personalMobile',
+  ];
+  for (const key of keys) {
+    const val = String(merged[key] || personal[key] || '').trim();
+    if (val && !isPlaceholderPhone(val)) return val;
+  }
+  return '';
+}
+
+function syncRoleFieldsVisibility(activeRole) {
+  document.querySelectorAll('.role-field-student').forEach((el) => {
+    el.style.display = activeRole === 'student' ? '' : 'none';
+  });
+  document.querySelectorAll('.role-field-staff').forEach((el) => {
+    el.style.display = activeRole === 'staff' ? '' : 'none';
+  });
+  document.querySelectorAll('.role-field-officer').forEach((el) => {
+    el.style.display = activeRole === 'placement_officer' ? '' : 'none';
+  });
+}
+
+const profAvatarEl = document.getElementById('profAvatar');
+const profEditBtn = document.getElementById('profEditBtn');
+
+function profileInitials(name) {
+  return String(name || 'U').trim().split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || 'U';
+}
+
+function setAvatarInitials() {
+  if (!profAvatarEl) return;
+  profAvatarEl.classList.remove('has-photo');
+  profAvatarEl.style.backgroundImage = '';
+  profAvatarEl.textContent = profileInitials(document.getElementById('profName')?.value || user.name);
+}
+function setAvatarPhoto(url) {
+  if (!url) return setAvatarInitials();
+  if (!profAvatarEl) return;
+  profAvatarEl.textContent = '';
+  profAvatarEl.classList.add('has-photo');
+  profAvatarEl.style.backgroundImage = `url('${url}')`;
+  profAvatarEl.style.backgroundSize = 'cover';
+  profAvatarEl.style.backgroundPosition = 'center';
+}
+
+function applyProfileFromUser(u, activeRole) {
   if (!u) return;
+  const merged = mergeProfileUser(u);
+  const r = activeRole || merged.role || Auth.role() || '';
   const nameEl = document.getElementById('profName');
   const emailEl = document.getElementById('profEmail');
   const phoneEl = document.getElementById('profPhone');
-  if (nameEl && u.name) nameEl.value = u.name;
-  if (emailEl && u.email) emailEl.value = u.email;
-  if (phoneEl && u.phone) phoneEl.value = u.phone;
-  if (isStudent) {
-    if (u.registerNumber) document.getElementById('profRegNo').value = u.registerNumber;
-    if (u.department) document.getElementById('profDept').value = u.department;
-    if (u.cgpa != null && u.cgpa !== '') document.getElementById('profCgpa').value = u.cgpa;
+  const roleEl = document.getElementById('profRole');
+  const displayName = pickDisplayName(merged);
+  if (nameEl) nameEl.value = displayName;
+  if (emailEl) emailEl.value = pickEmail(merged);
+  if (phoneEl) phoneEl.value = pickPhone(merged);
+  if (roleEl) roleEl.value = ROLE_LABELS[r] || r || '';
+  if (r === 'student') {
+    document.getElementById('profRegNo').value = merged.registerNumber || merged.admission_no || merged.username || '';
+    document.getElementById('profDept').value = merged.department || merged.departmentName || merged.branch || merged.dept || '';
+    const cgpa = merged.cgpa ?? merged.CGPA ?? merged.gpa;
+    if (cgpa != null && cgpa !== '' && Number(cgpa) > 0) {
+      document.getElementById('profCgpa').value = cgpa;
+    }
   }
-  if (role === 'staff') {
-    if (u.department) document.getElementById('profStaffDept').value = u.department;
-    if (u.designation) document.getElementById('profStaffDesig').value = u.designation;
+  if (r === 'staff') {
+    document.getElementById('profStaffDept').value = merged.department || merged.departmentName || '';
+    document.getElementById('profStaffDesig').value = merged.designation || '';
   }
-  if (role === 'placement_officer' && u.department) {
-    document.getElementById('profOfficerDept').value = u.department;
+  if (r === 'placement_officer') {
+    document.getElementById('profOfficerDept').value = merged.department || merged.departmentName || '';
   }
   setAvatarInitials();
 }
 
-applyProfileFromUser(user);
+async function loadSettingsProfile() {
+  if (Auth.hasRealAuth()) {
+    await Auth.bootstrap();
+    user = Auth.user() || user;
+  }
+  role = user.role || Auth.role() || role;
+  syncRoleFieldsVisibility(role);
+  applyProfileFromUser(user, role);
+  setAvatarPhoto(user.photoUrl || user.photo?.url || '');
 
-if (isStudent) {
+  if (role === 'student' && Auth.hasRealAuth()) {
+    const res = await api('/student/profile', { skipAuthRedirect: true });
+    if (res?.success && res.data) {
+      const p = res.data;
+      const u = p.user || {};
+      const ac = p.academic || {};
+      const personal = p.personal || {};
+      const reg = p.registerNumber || user.registerNumber || '';
+      const profileCtx = { ...user, ...u, registerNumber: reg, personal, academic: ac, department: p.department?.code || p.department?.name };
+      const apiName = pickDisplayName(profileCtx);
+      const apiEmail = pickEmail(profileCtx);
+      const apiPhone = pickPhone(profileCtx);
+      if (apiName) document.getElementById('profName').value = apiName;
+      document.getElementById('profEmail').value = apiEmail;
+      document.getElementById('profRegNo').value = reg;
+      document.getElementById('profDept').value = p.department?.code || p.department?.name || user.department || '';
+      if (ac.cgpa != null && Number(ac.cgpa) > 0) {
+        document.getElementById('profCgpa').value = ac.cgpa;
+      }
+      document.getElementById('profPhone').value = apiPhone;
+      if (p.photo?.url || p.photoUrl) setAvatarPhoto(p.photo?.url || p.photoUrl);
+      else setAvatarInitials();
+      user = {
+        ...user,
+        name: apiName || user.name,
+        email: apiEmail || user.email,
+        registerNumber: reg,
+        department: p.department?.code || p.department?.name || user.department,
+        cgpa: ac.cgpa ?? user.cgpa,
+        phone: apiPhone || user.phone,
+      };
+      Auth.set(user, Auth.token());
+    }
+  } else if (role === 'staff' && Auth.hasRealAuth()) {
+    const res = await api('/staff/profile', { skipAuthRedirect: true });
+    if (res?.success && res.data) {
+      const p = res.data;
+      const u = p.user || {};
+      const profileCtx = { ...user, ...u, ...p };
+      const apiName = pickDisplayName(profileCtx);
+      const apiEmail = pickEmail(profileCtx);
+      const apiPhone = pickPhone(profileCtx);
+      if (apiName) document.getElementById('profName').value = apiName;
+      document.getElementById('profEmail').value = apiEmail;
+      document.getElementById('profPhone').value = apiPhone;
+      document.getElementById('profStaffDept').value = p.department || p.departmentName || '';
+      document.getElementById('profStaffDesig').value = p.designation || u.designation || '';
+      user = { ...user, name: apiName || user.name, email: apiEmail || user.email, phone: apiPhone || p.phone, department: p.department || p.departmentName, designation: p.designation || u.designation };
+      Auth.set(user, Auth.token());
+      setAvatarInitials();
+    }
+  } else if (role === 'placement_officer' && Auth.hasRealAuth()) {
+    const res = await api('/officer/profile', { skipAuthRedirect: true });
+    if (res?.success && res.data) {
+      const p = res.data;
+      const u = p.user || {};
+      const profileCtx = { ...user, ...u, department: p.department?.code || p.department?.name };
+      const apiName = pickDisplayName(profileCtx);
+      const apiEmail = pickEmail(profileCtx);
+      const apiPhone = pickPhone(profileCtx);
+      if (apiName) document.getElementById('profName').value = apiName;
+      document.getElementById('profEmail').value = apiEmail;
+      document.getElementById('profPhone').value = apiPhone;
+      document.getElementById('profOfficerDept').value = p.department?.code || p.department?.name || '';
+      user = { ...user, name: apiName || user.name, email: apiEmail || user.email, phone: apiPhone, department: p.department?.code || p.department?.name || '' };
+      Auth.set(user, Auth.token());
+      setAvatarInitials();
+    }
+  }
+}
+
+onAppReady(() => loadSettingsProfile());
+
+if (role === 'student') {
   document.getElementById('settingsTitle').textContent = 'Profile & Resumes';
   document.getElementById('settingsSub').textContent = 'Update your profile and manage resumes in the storage bucket.';
   document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');
@@ -156,46 +357,9 @@ if (isStudent) {
   document.getElementById('resumes')?.remove();
 }
 
-document.getElementById('profName').value = user.name || '';
-document.getElementById('profEmail').value = user.email || '';
-document.getElementById('profRole').value = ROLE_LABELS[role] || '';
-document.getElementById('profPhone').value = user.phone || '';
-const profAvatarEl = document.getElementById('profAvatar');
-const profEditBtn = document.getElementById('profEditBtn');
-
-function profileInitials(name) {
-  return String(name || 'U').trim().split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || 'U';
-}
-
-function setAvatarInitials() {
-  profAvatarEl.classList.remove('has-photo');
-  profAvatarEl.style.backgroundImage = '';
-  profAvatarEl.textContent = profileInitials(document.getElementById('profName')?.value || user.name);
-}
-function setAvatarPhoto(url) {
-  if (!url) return setAvatarInitials();
-  profAvatarEl.textContent = '';
-  profAvatarEl.classList.add('has-photo');
-  profAvatarEl.style.backgroundImage = `url('${url}')`;
-  profAvatarEl.style.backgroundSize = 'cover';
-  profAvatarEl.style.backgroundPosition = 'center';
-}
-setAvatarPhoto(user.photoUrl || user.photo?.url || '');
-
 document.getElementById('profName')?.addEventListener('input', () => {
-  if (!profAvatarEl.classList.contains('has-photo')) setAvatarInitials();
+  if (!profAvatarEl?.classList.contains('has-photo')) setAvatarInitials();
 });
-
-if (isStudent) {
-  document.getElementById('profRegNo').value = user.registerNumber || '';
-  document.getElementById('profDept').value = user.department || '';
-  document.getElementById('profCgpa').value = user.cgpa || '';
-  document.getElementById('resumeProfileType').innerHTML = RESUME_PROFILES.map(p => `<option>${p}</option>`).join('');
-  onAppReady(async () => {
-    await ResumeBucket.fetch();
-    renderResumes();
-  });
-}
 
 // Profile photo menu (students) or focus fields (other roles)
 async function uploadStudentPhoto(file) {
@@ -286,7 +450,7 @@ function openPhotoMenu() {
 }
 
 function openProfileEdit() {
-  if (isStudent) {
+  if (role === 'student') {
     openPhotoMenu();
     return;
   }
@@ -296,92 +460,7 @@ function openProfileEdit() {
 }
 
 profEditBtn?.addEventListener('click', openProfileEdit);
-
-document.querySelectorAll('.role-field-student').forEach(el => {
-  el.style.display = isStudent ? '' : 'none';
-});
-document.querySelectorAll('.role-field-staff').forEach(el => {
-  el.style.display = role === 'staff' ? '' : 'none';
-});
-document.querySelectorAll('.role-field-officer').forEach(el => {
-  el.style.display = role === 'placement_officer' ? '' : 'none';
-});
-
-if (role === 'staff') {
-  document.getElementById('profStaffDept').value = user.department || '';
-  document.getElementById('profStaffDesig').value = user.designation || '';
-  if (Auth.hasRealAuth()) {
-    api('/staff/profile', { skipAuthRedirect: true }).then(res => {
-      if (!res?.success || !res.data) return;
-      const p = res.data;
-      const u = p.user || {};
-      if (u.name) document.getElementById('profName').value = u.name;
-      if (u.email) document.getElementById('profEmail').value = u.email;
-      if (u.phone) document.getElementById('profPhone').value = u.phone;
-      document.getElementById('profStaffDept').value = p.department || p.departmentName || user.department || '';
-      document.getElementById('profStaffDesig').value = p.designation || u.designation || user.designation || '';
-      Auth.set({
-        ...user,
-        name: u.name || user.name,
-        email: u.email || user.email,
-        phone: u.phone || user.phone,
-        department: p.department || user.department,
-        designation: p.designation || u.designation || user.designation,
-      }, Auth.token());
-      setAvatarInitials();
-    });
-  }
-}
-
-if (role === 'placement_officer') {
-  document.getElementById('profOfficerDept').value = user.department || '';
-  if (Auth.hasRealAuth()) {
-    api('/officer/profile', { skipAuthRedirect: true }).then(res => {
-      if (!res?.success || !res.data) return;
-      const p = res.data;
-      const u = p.user || {};
-      if (u.name) document.getElementById('profName').value = u.name;
-      if (u.email) document.getElementById('profEmail').value = u.email;
-      document.getElementById('profOfficerDept').value = p.department?.code || p.department?.name || user.department || '';
-      setAvatarInitials();
-      Auth.set({ ...user, name: u.name || user.name, email: u.email || user.email, department: p.department?.code || p.department?.name || '' }, Auth.token());
-    });
-  }
-}
-
-if (isStudent && Auth.hasRealAuth()) {
-  api('/student/profile', { skipAuthRedirect: true }).then(res => {
-    if (!res?.success || !res.data) return;
-    const p = res.data;
-    const u = p.user || {};
-    const ac = p.academic || {};
-    const personal = p.personal || {};
-    if (u.name) document.getElementById('profName').value = u.name;
-    if (u.email) document.getElementById('profEmail').value = u.email;
-    document.getElementById('profRegNo').value = p.registerNumber || user.registerNumber || '';
-    document.getElementById('profDept').value = p.department?.code || p.department?.name || user.department || '';
-    document.getElementById('profCgpa').value = ac.cgpa ?? user.cgpa ?? '';
-    document.getElementById('profPhone').value = personal.phone || user.phone || '';
-    if (p.photo?.url || p.photoUrl) setAvatarPhoto(p.photo?.url || p.photoUrl);
-    else setAvatarInitials();
-    Auth.set({
-      ...user,
-      name: u.name || user.name,
-      email: u.email || user.email,
-      registerNumber: p.registerNumber || user.registerNumber,
-      department: p.department?.code || p.department?.name || user.department,
-      cgpa: ac.cgpa ?? user.cgpa,
-      phone: personal.phone || user.phone,
-    }, Auth.token());
-  });
-}
-
-onAppReady(async () => {
-  if (Auth.hasRealAuth()) {
-    await Auth.bootstrap();
-    applyProfileFromUser(Auth.user() || user);
-  }
-});
+syncRoleFieldsVisibility(role);
 
 if (role === 'alumni') {
   const working = alumniIsWorking();
@@ -581,7 +660,7 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     setTimeout(() => window.location.href = 'dashboard.html', 700);
     return;
   }
-  if (isStudent) {
+  if (role === 'student') {
     Auth.set({
       ...user,
       name: document.getElementById('profName').value,
@@ -647,7 +726,7 @@ function loadPreferences() {
   document.getElementById('cd').checked = UserPrefs.isCompact();
 }
 
-const notifPrefs = isStudent
+const notifPrefs = role === 'student'
   ? [
     { key: 'job_posters', label: 'New job posters / drives' },
     { key: 'app_updates', label: 'Application status updates' },

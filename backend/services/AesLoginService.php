@@ -233,6 +233,40 @@ final class AesLoginService
             $data['phone'] = $mapped['phone'];
         }
 
+        $aesPhone = trim($this->pick($aesProfile, [
+            'phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno',
+            'cell', 'cell_no', 'cellNo', 'whatsapp', 'whatsapp_no',
+            'student_mobile', 'studentMobile', 'stu_mobile', 'stuMobile',
+            'parent_mobile', 'parentMobile', 'father_mobile', 'fatherMobile', 'mother_mobile', 'motherMobile',
+            'guardian_mobile', 'guardianMobile', 'alternate_mobile', 'alternateMobile',
+            'stu_phone', 'stuPhone', 'personal_mobile', 'personalMobile',
+        ]));
+        if ($aesPhone === '' && !empty($mapped['phone'])) {
+            $aesPhone = trim((string) $mapped['phone']);
+        }
+        if ($aesPhone !== '' && $this->isValidPhone($aesPhone)) {
+            $data['phone'] = $aesPhone;
+        }
+
+        $aesEmail = strtolower(trim($this->pick($aesProfile, [
+            'email', 'mail', 'user_email', 'userEmail', 'college_email', 'official_email',
+            'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
+        ])));
+        if ($aesEmail === '' && !empty($mapped['email'])) {
+            $aesEmail = strtolower(trim((string) $mapped['email']));
+        }
+        $currentEmail = strtolower(trim((string) ($data['email'] ?? '')));
+        if ($aesEmail !== '' && filter_var($aesEmail, FILTER_VALIDATE_EMAIL)) {
+            $data['email'] = $aesEmail;
+        } elseif ($currentEmail === '' && $register !== '') {
+            $data['email'] = $this->syntheticStudentEmail($register);
+        }
+
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name !== '' && !$this->isRealPersonName($name)) {
+            $data['name'] = '';
+        }
+
         return $data;
     }
 
@@ -269,7 +303,64 @@ final class AesLoginService
             $details[$keyStr] = is_bool($value) ? $value : trim((string) $value);
         }
 
-        return $details;
+        return array_merge($details, $this->deepScanContactFields($payload));
+    }
+
+    /**
+     * Walk nested AES payloads for email / phone fields under any key name.
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, string>
+     */
+    private function deepScanContactFields(array $payload): array
+    {
+        $found = [];
+
+        $walk = function (mixed $node) use (&$walk, &$found): void {
+            if (!is_array($node)) {
+                return;
+            }
+            foreach ($node as $key => $value) {
+                if (is_array($value)) {
+                    $walk($value);
+                    continue;
+                }
+                if (!is_scalar($value)) {
+                    continue;
+                }
+                $text = trim((string) $value);
+                if ($text === '') {
+                    continue;
+                }
+                $lower = strtolower((string) $key);
+                if (
+                    str_contains($lower, 'mail')
+                    || $lower === 'email'
+                    || str_ends_with($lower, '_email')
+                    || $lower === 'e_mail'
+                ) {
+                    $email = strtolower($text);
+                    if (str_contains($email, '@') && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $found['email'] = $email;
+                    }
+                }
+                if (
+                    str_contains($lower, 'phone')
+                    || str_contains($lower, 'mobile')
+                    || str_contains($lower, 'mob')
+                    || str_contains($lower, 'whatsapp')
+                    || ($lower === 'contact' && preg_match('/\d{6,}/', $text))
+                ) {
+                    if ($this->isValidPhone($text)) {
+                        $found['phone'] = $text;
+                    }
+                }
+            }
+        };
+
+        $walk($payload);
+
+        return $found;
     }
 
     /**
@@ -285,7 +376,19 @@ final class AesLoginService
                 'name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname',
                 'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name',
             ])),
-            'phone'          => $this->pick($aesDetails, ['phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno']),
+            'phone'          => $this->pick($aesDetails, [
+                'phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno',
+                'cell', 'cell_no', 'cellNo', 'whatsapp', 'whatsapp_no',
+                'student_mobile', 'studentMobile', 'stu_mobile', 'stuMobile',
+                'parent_mobile', 'parentMobile', 'father_mobile', 'fatherMobile', 'mother_mobile', 'motherMobile',
+                'guardian_mobile', 'guardianMobile', 'alternate_mobile', 'alternateMobile',
+                'stu_phone', 'stuPhone', 'personal_mobile', 'personalMobile',
+            ]),
+            'email'          => strtolower(trim($this->pick($aesDetails, [
+                'email', 'mail', 'user_email', 'userEmail', 'college_email', 'official_email',
+                'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
+                'stu_email', 'stuEmail', 'personal_email', 'personalEmail',
+            ]))),
             'registerNumber' => strtoupper($this->pick($aesDetails, ['registerNumber', 'register_number', 'admission_no', 'admissionNo', 'username', 'un'])),
             'classBatch'     => $this->pick($aesDetails, ['classBatch', 'class_batch', 'batch', 'year_of_study', 'yearOfStudy']),
             'course'         => $this->pick($aesDetails, ['course', 'program', 'programme', 'degree', 'stream']),
@@ -361,6 +464,17 @@ final class AesLoginService
         }
         if ($this->isRealPersonName($name) && $this->shouldReplaceDisplayName((string) ($user['name'] ?? ''), $profile['registerNumber'])) {
             $patch['name'] = $name;
+        }
+
+        $aesEmail = strtolower(trim((string) ($mapped['email'] ?? '')));
+        if ($aesEmail === '' && $profile['email'] !== '' && filter_var($profile['email'], FILTER_VALIDATE_EMAIL)) {
+            $aesEmail = strtolower($profile['email']);
+        }
+        if ($aesEmail !== '' && filter_var($aesEmail, FILTER_VALIDATE_EMAIL)) {
+            $currentEmail = strtolower(trim((string) ($user['email'] ?? '')));
+            if ($currentEmail === '' || $this->isSyntheticStudentEmail($currentEmail, $profile['registerNumber'])) {
+                $patch['email'] = $aesEmail;
+            }
         }
 
         if ($patch === []) {
@@ -546,7 +660,13 @@ final class AesLoginService
 
         $email = strtolower(trim($this->pick($flat, [
             'email', 'mail', 'user_email', 'userEmail', 'college_email', 'official_email',
+            'student_email', 'studentEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
+            'stu_email', 'stuEmail', 'personal_email', 'personalEmail',
         ])));
+        $contactScan = $this->deepScanContactFields($payload);
+        if ($email === '' && !empty($contactScan['email'])) {
+            $email = $contactScan['email'];
+        }
 
         $name = trim($this->pick($flat, [
             'name', 'full_name', 'fullName', 'student_name', 'studentName', 'stu_name', 'sname',
@@ -574,7 +694,7 @@ final class AesLoginService
         }
 
         if ($name === '' && $registerNumber !== '') {
-            $name = $registerNumber;
+            $name = '';
         }
 
         $role = $this->inferRole($roleHint, $registerNumber, $email);
@@ -723,6 +843,21 @@ final class AesLoginService
         return strtolower($safe) . '@students.amaljyothi.ac.in';
     }
 
+    private function isSyntheticStudentEmail(string $email, string $registerNumber): bool
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || !str_contains($email, '@students.amaljyothi.ac.in')) {
+            return false;
+        }
+        if ($registerNumber === '') {
+            return true;
+        }
+        $local = strstr($email, '@', true) ?: '';
+        $safeReg = strtolower(preg_replace('/[^a-z0-9]/i', '', $registerNumber) ?: '');
+
+        return $local !== '' && $safeReg !== '' && $local === $safeReg;
+    }
+
     private function inferRole(string $roleHint, string $registerNumber, string $email): string
     {
         if (str_contains($roleHint, 'staff') || str_contains($roleHint, 'faculty') || str_contains($roleHint, 'teacher')) {
@@ -772,7 +907,7 @@ final class AesLoginService
     {
         $flat = $payload;
 
-        foreach (['data', 'user', 'profile', 'student', 'staff', 'employee', 'resp', 'details', 'userData'] as $nestedKey) {
+        foreach (['data', 'user', 'profile', 'student', 'staff', 'employee', 'resp', 'details', 'userData', 'personal', 'contact'] as $nestedKey) {
             if (!isset($payload[$nestedKey])) {
                 continue;
             }
@@ -972,23 +1107,34 @@ final class AesLoginService
             return [];
         }
 
+        $token = $this->pick($flat, ['token', 'auth_token', 'session', 'checksum']);
+        $baseRequest = [
+            'username'     => $username,
+            'un'           => $username,
+            'admission_no' => $username,
+        ];
+        if ($token !== '') {
+            $baseRequest['token'] = $token;
+            $baseRequest['checksum'] = $token;
+        }
+
         $methods = [
-            'getUserDetails',
             'getStudentDetails',
+            'getUserDetails',
             'getStaffDetails',
+            'getStudentProfile',
+            'getPersonalDetails',
+            'getContactDetails',
             'getProfile',
             'getUserProfile',
             'userDetails',
             'studentProfile',
+            'studentDetails',
         ];
 
         foreach ($methods as $method) {
             try {
-                $response = $this->callAes($method, [
-                    'username' => $username,
-                    'un'       => $username,
-                    'admission_no' => $username,
-                ]);
+                $response = $this->callAes($method, $baseRequest);
             } catch (\Throwable) {
                 continue;
             }
@@ -998,18 +1144,36 @@ final class AesLoginService
             }
 
             if (($response['status'] ?? false) === true) {
-                $data = $response['data'] ?? $response['profile'] ?? $response['user'] ?? null;
+                $data = $response['data'] ?? $response['profile'] ?? $response['user'] ?? $response['student'] ?? null;
                 if (is_array($data) && $data !== []) {
                     return $data;
                 }
             }
 
-            if (isset($response['name']) || isset($response['student_name']) || isset($response['stu_name'])) {
+            if (
+                isset($response['name'])
+                || isset($response['student_name'])
+                || isset($response['stu_name'])
+                || isset($response['email'])
+                || isset($response['mobile'])
+                || isset($response['phone'])
+                || isset($response['student_email'])
+            ) {
                 return $response;
             }
         }
 
         return [];
+    }
+
+    private function isValidPhone(string $phone): bool
+    {
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+        if ($digits === '' || strlen($digits) < 6) {
+            return false;
+        }
+
+        return !in_array($digits, ['919876543210', '9876543210'], true);
     }
 
     private function isRealPersonName(string $name): bool

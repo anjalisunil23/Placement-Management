@@ -101,6 +101,7 @@ final class StudentController
     $out['user'] = [
       'name'  => (string) ($merged['name'] ?? $user['name'] ?? ''),
       'email' => (string) ($merged['email'] ?? $user['email'] ?? ''),
+      'phone' => (string) ($merged['phone'] ?? $personal['phone'] ?? ''),
     ];
     $out['department'] = $dept ? [
       'id'   => (string) ($dept['_id'] ?? ''),
