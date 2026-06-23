@@ -114,14 +114,11 @@ const API_BASE =
   localStorage.getItem('ph-api-base') ||
   '/backend/api';
 
-const PORTAL_AUTH_PAGE = 'public-stats.html';
+const PORTAL_AUTH_PAGE = 'login.html';
 
-function portalAuthUrl(next = '', autoLogin = true) {
-  const params = new URLSearchParams();
-  if (next) params.set('next', next);
-  if (autoLogin) params.set('login', '1');
-  const qs = params.toString();
-  return qs ? `${PORTAL_AUTH_PAGE}?${qs}` : PORTAL_AUTH_PAGE;
+function portalAuthUrl(next = '') {
+  if (!next) return PORTAL_AUTH_PAGE;
+  return `${PORTAL_AUTH_PAGE}?next=${encodeURIComponent(next)}`;
 }
 
 /** Ensure a live server session before admin writes; redirects to login when needed. */
@@ -3203,7 +3200,7 @@ async function apiFetch(path, opts = {}) {
       return {
         success: false,
         message: Auth.isDemo()
-          ? 'Sign in with your AES account on the public portal to save changes. Preview mode is read-only.'
+          ? 'Sign in with your account to save changes. Preview mode is read-only.'
           : (Auth.hasSession()
             ? 'Your sign-in expired. Please sign in again.'
             : 'Session expired. Please sign in again.'),

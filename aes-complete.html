@@ -32,7 +32,7 @@
     await new Promise(r => setTimeout(r, 180 * (i + 1)));
   }
   if (!ok) {
-    window.location.replace('/public-stats.html?login=1&aes_error=' + encodeURIComponent('Could not start your session. Please sign in again.'));
+    window.location.replace('/login.html?aes_error=' + encodeURIComponent('Could not start your session. Please sign in again.'));
     return;
   }
   const target = Auth.resolveRedirect(next);

@@ -111,7 +111,7 @@
           <div id="regNote" class="alert alert-info small mt-3 mb-0" style="display:none"></div>
           <button class="btn btn-primary w-100 py-2 fw-semibold mt-3" type="submit">Create account</button>
         </form>
-        <p class="text-center small text-muted-2 mt-3 mb-0">Already have an account? <a href="public-stats.html?login=1">Sign in with AES</a></p>
+        <p class="text-center small text-muted-2 mt-3 mb-0">Already have an account? <a href="login.html">Sign in</a></p>
       </div>
     </div>
   </section>
@@ -150,8 +150,8 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
       toast('Registered. Your account is pending approval.', 'success');
       setTimeout(() => { window.location.href = 'public-stats.html'; }, 800);
     } else {
-      toast('Account created. Sign in with AES from the public portal.', 'success');
-      setTimeout(() => { window.location.href = 'public-stats.html?login=1'; }, 800);
+      toast('Account created. Sign in to continue.', 'success');
+      setTimeout(() => { window.location.href = 'login.html'; }, 800);
     }
   } else {
     toast(res.message || 'Registration failed', 'error');

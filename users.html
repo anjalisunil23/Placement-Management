@@ -398,7 +398,7 @@ function showLiveDataBanner(live) {
   }
   el.classList.remove('d-none');
   el.className = 'alert alert-warning mb-3';
-  el.innerHTML = '<strong>Not connected to the server.</strong> Sign in to load live users and save changes. <a href="public-stats.html?login=1&next=users.html" class="alert-link">Sign in now</a>';
+  el.innerHTML = '<strong>Not connected to the server.</strong> Sign in to load live users and save changes. <a href="login.html?next=users.html" class="alert-link">Sign in now</a>';
 }
 
 document.getElementById('addUserForm').addEventListener('submit', async e => {

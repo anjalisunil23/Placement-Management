@@ -583,7 +583,7 @@ final class AesLoginService
                     CURLOPT_TIMEOUT        => 15,
                     CURLOPT_HTTPHEADER     => [
                         'Content-Type: application/x-www-form-urlencoded',
-                        'Referer: https://' . $this->refHost . '/public-stats.html',
+                        'Referer: https://' . $this->refHost . '/login.html',
                     ],
                 ]);
 
@@ -604,7 +604,7 @@ final class AesLoginService
             'http' => [
                 'method'  => 'POST',
                 'header'  => "Content-Type: application/x-www-form-urlencoded\r\n"
-                    . 'Referer: https://' . $this->refHost . "/public-stats.html\r\n",
+                    . 'Referer: https://' . $this->refHost . "/login.html\r\n",
                 'content' => http_build_query($fields),
                 'timeout' => 15,
             ],
