@@ -29,8 +29,8 @@ final class AesLoginService
             $dotenv->safeLoad();
         }
 
-        $this->authKey = trim((string) ($_ENV['AES_AUTH_KEY'] ?? ''));
-        $this->refHost = trim((string) ($_ENV['AES_REF_HOST'] ?? ''));
+        $this->authKey = $this->envString('AES_AUTH_KEY');
+        $this->refHost = $this->envString('AES_REF_HOST');
         if ($this->refHost === '') {
             $appUrl = rtrim((string) ($_ENV['APP_URL'] ?? ''), '/');
             $this->refHost = $appUrl !== '' ? (string) parse_url($appUrl, PHP_URL_HOST) : '';
@@ -68,7 +68,9 @@ final class AesLoginService
     public function handleCallback(array $post): string
     {
         if ($this->authKey === '') {
-            throw new \RuntimeException('AES login is not configured on this server.');
+            throw new \RuntimeException(
+                'AES login is not configured on this server. Add AES_AUTH_KEY and AES_REF_HOST to the site .env file, then redeploy.'
+            );
         }
 
         $this->verifyCallbackPayload($post);
@@ -97,7 +99,9 @@ final class AesLoginService
     public function checkLogin(array $data): array
     {
         if ($this->authKey === '') {
-            throw new \RuntimeException('AES login is not configured on this server.');
+            throw new \RuntimeException(
+                'AES login is not configured on this server. Add AES_AUTH_KEY and AES_REF_HOST to the site .env file, then redeploy.'
+            );
         }
 
         $payload = [
@@ -597,5 +601,28 @@ final class AesLoginService
         curl_close($ch);
 
         return is_string($body) ? $body : '';
+    }
+
+    private function envString(string $key): string
+    {
+        $candidates = [];
+        if (isset($_ENV[$key])) {
+            $candidates[] = $_ENV[$key];
+        }
+        if (isset($_SERVER[$key])) {
+            $candidates[] = $_SERVER[$key];
+        }
+        $fromGetenv = getenv($key);
+        if ($fromGetenv !== false) {
+            $candidates[] = $fromGetenv;
+        }
+
+        foreach ($candidates as $value) {
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        return '';
     }
 }

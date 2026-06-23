@@ -37,3 +37,5 @@ deployment:
     - test -f $DEPLOYPATH/css/aes-login.css || (echo "DEPLOY FAILED - css/aes-login.css missing." >&2; exit 1)
     - test -f $DEPLOYPATH/backend/services/AesLoginService.php || (echo "DEPLOY FAILED - AesLoginService.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/.env || /bin/cp $DEPLOYPATH/.env.production.example $DEPLOYPATH/.env
+    - /bin/sh $REPOPATH/scripts/ensure-aes-env.sh $DEPLOYPATH/.env $DEPLOYPATH/.env.production.example
+    - /bin/grep -qE '^AES_AUTH_KEY=.+' $DEPLOYPATH/.env || (echo "DEPLOY FAILED - AES_AUTH_KEY missing from .env. Edit public_html/.env or redeploy after ensure-aes-env.sh." >&2; exit 1)

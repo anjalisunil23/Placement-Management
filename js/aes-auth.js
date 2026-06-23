@@ -1,16 +1,20 @@
 /**
- * AES login gate for the public portal — sign in on every site entry.
- * Uses PORTAL_AUTH_PAGE / portalAuthUrl from api.js.
+ * AES login modal for the public portal — opens on Login click (or ?login=1 / ?aes_error=).
  */
 let aesLoginModal = null;
+
+function shouldAutoOpenAesLogin() {
+  const params = new URLSearchParams(location.search);
+  return params.get('login') === '1' || params.has('aes_error');
+}
 
 function getAesLoginModal() {
   const node = document.getElementById('aesLoginModal');
   if (!node || typeof bootstrap === 'undefined') return null;
   if (!aesLoginModal) {
     aesLoginModal = bootstrap.Modal.getOrCreateInstance(node, {
-      backdrop: 'static',
-      keyboard: false,
+      backdrop: true,
+      keyboard: true,
     });
   }
   return aesLoginModal;
@@ -157,14 +161,16 @@ function wireLoggedInPortalButton() {
   });
 }
 
-function promptAesLoginGate() {
+function initPortalAesLogin() {
   const params = new URLSearchParams(location.search);
   const aesErr = params.get('aes_error');
   if (aesErr) {
     showAesLoginError(decodeURIComponent(aesErr.replace(/\+/g, ' ')));
   }
   wirePortalAesLoginButtons();
-  setTimeout(() => openAesLoginModal(), aesErr ? 100 : 350);
+  if (shouldAutoOpenAesLogin()) {
+    setTimeout(() => openAesLoginModal(), aesErr ? 100 : 150);
+  }
 }
 
 async function bootPortalAesLogin() {
@@ -191,7 +197,7 @@ async function bootPortalAesLogin() {
     Auth.clear();
   }
 
-  promptAesLoginGate();
+  initPortalAesLogin();
 }
 
 if (document.readyState === 'loading') {
