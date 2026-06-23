@@ -49,6 +49,15 @@ foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php',
         require_once $path;
     }
 }
+
+// Linux/cPanel: load services explicitly when PSR-4 case differs from backend/services/.
+$servicesDir = dirname(__DIR__) . '/services';
+foreach (['AesLoginService.php', 'AnalyticsService.php'] as $serviceFile) {
+    $path = $servicesDir . '/' . $serviceFile;
+    if (is_readable($path)) {
+        require_once $path;
+    }
+}
 if (!class_exists(\PMS\Utils\Response::class, false)) {
     $emitJsonError('Server autoload error: Response utility missing. Redeploy from latest main.');
 }

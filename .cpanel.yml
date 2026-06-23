@@ -32,6 +32,7 @@ deployment:
     - /bin/chmod -R 775 $DEPLOYPATH/uploads
     - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
     - cd $DEPLOYPATH && (/usr/local/bin/composer dump-autoload -o || /opt/cpanel/composer/bin/composer dump-autoload -o)
+    - cd $DEPLOYPATH && (/usr/local/bin/php backend/scripts/ensure-schema.php || /opt/cpanel/ea-php82/root/usr/bin/php backend/scripts/ensure-schema.php)
     - /bin/grep -q "inline API router" $DEPLOYPATH/backend/api/index.php || (echo "DEPLOY FAILED - backend/api/index.php is stale. Re-deploy from latest main." >&2; exit 1)
     - test -f $DEPLOYPATH/dologin.php || (echo "DEPLOY FAILED - dologin.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/backend/services/AesLoginService.php || (echo "DEPLOY FAILED - AesLoginService.php missing." >&2; exit 1)

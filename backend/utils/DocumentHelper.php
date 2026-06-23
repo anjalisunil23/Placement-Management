@@ -68,4 +68,39 @@ final class DocumentHelper
             $docs
         )));
     }
+
+    /**
+     * Recursively coerce values so json_encode never fails on bad UTF-8 or non-JSON types.
+     *
+     * @return array<string, mixed>|list<mixed>
+     */
+    public static function jsonSafe(mixed $value): mixed
+    {
+        if ($value === null || is_bool($value) || is_int($value)) {
+            return $value;
+        }
+        if (is_float($value)) {
+            return is_finite($value) ? $value : 0.0;
+        }
+        if (is_string($value)) {
+            if (function_exists('mb_convert_encoding')) {
+                return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+            }
+            return preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $value) ?? '';
+        }
+        if (is_array($value)) {
+            $out = [];
+            foreach ($value as $key => $item) {
+                if (!is_string($key) && !is_int($key)) {
+                    continue;
+                }
+                $out[$key] = self::jsonSafe($item);
+            }
+            return $out;
+        }
+        if (is_object($value) && method_exists($value, '__toString')) {
+            return self::jsonSafe((string) $value);
+        }
+        return null;
+    }
 }

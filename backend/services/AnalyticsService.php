@@ -213,8 +213,12 @@ final class AnalyticsService
     private function getSuccessStories(int $limit = 6): array
     {
         $stories = [];
-        foreach ((new SuccessStoryModel())->published($limit) as $row) {
-            $stories[] = SuccessStoryModel::toPublicCard($row);
+        try {
+            foreach ((new SuccessStoryModel())->published($limit) as $row) {
+                $stories[] = SuccessStoryModel::toPublicCard($row);
+            }
+        } catch (\Throwable) {
+            $stories = [];
         }
         if (count($stories) >= $limit) {
             return array_slice($stories, 0, $limit);

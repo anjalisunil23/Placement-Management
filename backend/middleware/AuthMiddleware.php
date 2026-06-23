@@ -137,6 +137,10 @@ final class AuthMiddleware
 
     $aesProfile = Security::getSessionAesProfile();
     if ($aesProfile !== []) {
+      $aesProfile = DocumentHelper::jsonSafe($aesProfile);
+      if (!is_array($aesProfile)) {
+        $aesProfile = [];
+      }
       $data['aesProfile'] = $aesProfile;
       $service = new \PMS\Services\AesLoginService();
       $mapped = $service->mapAesDetailsToUserFields($aesProfile);
@@ -150,6 +154,7 @@ final class AuthMiddleware
       }
     }
 
-    return $data;
+    $safe = DocumentHelper::jsonSafe($data);
+    return is_array($safe) ? $safe : $data;
   }
 }

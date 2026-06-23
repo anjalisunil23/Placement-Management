@@ -6,6 +6,7 @@ namespace PMS\Api;
 
 use PMS\Config\Database;
 use PMS\Models\DepartmentModel;
+use PMS\Schemas\Collections;
 use PMS\Models\PlacementNewsModel;
 use PMS\Models\PlacementOfficerModel;
 use PMS\Models\PublicPageContentModel;
@@ -43,6 +44,15 @@ final class PublicController
         $legacyPolicyRules = is_readable($eligibilityFile)
             && strpos((string) file_get_contents($eligibilityFile), 'Placement policy not accepted') !== false;
 
+        $requiredTables = [
+            Collections::SUCCESS_STORIES,
+            Collections::BROADCAST_LOGS,
+            Collections::PLACEMENT_NEWS,
+            Collections::PUBLIC_PAGE_CONTENT,
+            Collections::SYSTEM_SETTINGS,
+        ];
+        $missingTables = array_values(array_diff($requiredTables, $tables));
+
         Response::success([
             'status'   => $db['ok'] ? 'ok' : 'error',
             'database' => [
@@ -51,6 +61,7 @@ final class PublicController
                 'version'   => $db['version'],
                 'database'  => $_ENV['DB_DATABASE'] ?? null,
                 'tables'    => count($tables),
+                'missingTables' => $missingTables,
                 'error'     => $db['error'],
             ],
             'build' => [
@@ -64,7 +75,7 @@ final class PublicController
     public function placementStats(): void
     {
         $service = new AnalyticsService();
-        Response::success($service->getPublicStats());
+        Response::success(DocumentHelper::jsonSafe($service->getPublicStats()));
     }
 
     /** GET /api/public/site-content — landing page stats + news (no auth) */
@@ -96,12 +107,12 @@ final class PublicController
         }
 
         $news = DocumentHelper::serializeMany((new PlacementNewsModel())->published(50));
-        Response::success([
+        Response::success(DocumentHelper::jsonSafe([
             'system'     => $system,
             'publicPage' => $public,
             'liveStats'  => $live,
             'news'       => $news,
-        ]);
+        ]));
     }
 
     /** GET /api/public/departments — for registration and forms (no auth) */
