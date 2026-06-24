@@ -192,9 +192,16 @@ final class AesLoginService
             $aesDetails['name'] = $aesName;
             $profile['name'] = $aesName;
         }
+        $profile['email'] = $emails['email'] !== ''
+            ? $emails['email']
+            : ($emails['collegeEmail'] !== '' ? $emails['collegeEmail'] : ($emails['personalEmail'] !== '' ? $emails['personalEmail'] : $profile['email']));
+        $profile['role'] = $this->inferRoleFromAes(array_merge($payload, $aesDetails), $profile, $emails);
 
-        $user = $this->resolveOrProvisionUser($profile);
+        $user = $this->resolveOrProvisionUser($profile, $aesDetails, $mapped, $emails);
         if ($user === null) {
+            if (in_array($profile['role'], ['staff', 'placement_officer', 'faculty'], true)) {
+                throw new \RuntimeException('No PlaceHub account matches your AES staff profile. Ask the placement cell to register your college email first.');
+            }
             throw new \RuntimeException('No PlaceHub account matches your AES profile. Students are created automatically on first AES sign-in when admission number is available.');
         }
         $this->assertUserCanLogin($user);
@@ -308,20 +315,6 @@ final class AesLoginService
             $data['cgpa'] = (float) $aesCgpa;
         }
 
-        $name = trim((string) ($data['name'] ?? ''));
-        if ($name !== '' && !$this->isRealPersonName($name)) {
-            $name = '';
-        }
-        if ($name === '') {
-            $inferred = $this->inferNameFromEmail((string) ($data['personalEmail'] ?? $resolvedEmails['personalEmail'] ?? $aesEmail));
-            if ($this->isRealPersonName($inferred)) {
-                $name = $inferred;
-            }
-        }
-        if ($name !== '') {
-            $data['name'] = $name;
-        }
-
         return $data;
     }
 
@@ -338,6 +331,12 @@ final class AesLoginService
             'aesDetails'  => $details,
             'mapped'      => $this->mapAesDetailsToUserFields($details),
             'profileScan' => $this->deepScanAesProfileFields($payload),
+            'resolvedName' => $this->resolveAesName(
+                $details,
+                $this->mapAesDetailsToUserFields($details),
+                strtoupper((string) ($details['registerNumber'] ?? $details['admission_no'] ?? '')),
+                (string) ($details['personalEmail'] ?? '')
+            ),
         ];
     }
 
@@ -460,7 +459,10 @@ final class AesLoginService
                     && !str_contains($lower, 'branch')
                 ) {
                     if ($this->isRealPersonName($text)) {
-                        $found['name'] = $text;
+                        if (!isset($found['_nameCandidates']) || !is_array($found['_nameCandidates'])) {
+                            $found['_nameCandidates'] = [];
+                        }
+                        $found['_nameCandidates'][] = ['name' => $text, 'key' => $lower];
                     }
                 }
 
@@ -499,6 +501,14 @@ final class AesLoginService
         };
 
         $walk($payload);
+
+        if (!empty($found['_nameCandidates']) && is_array($found['_nameCandidates'])) {
+            $best = $this->pickBestAesName($found['_nameCandidates'], '');
+            if ($best !== '') {
+                $found['name'] = $best;
+            }
+            unset($found['_nameCandidates']);
+        }
 
         return $found;
     }
@@ -654,9 +664,12 @@ final class AesLoginService
         if ($name !== '') {
             $patch['name'] = $name;
         } elseif ($this->shouldReplaceDisplayName((string) ($user['name'] ?? ''), $profile['registerNumber'])) {
-            $inferred = $this->inferNameFromEmail((string) ($mapped['personalEmail'] ?? $mapped['email'] ?? $profile['email']));
-            if ($this->isRealPersonName($inferred)) {
-                $patch['name'] = $inferred;
+            $personalOnly = (string) ($mapped['personalEmail'] ?? '');
+            if ($personalOnly !== '' && !$this->isCollegeEmail($personalOnly)) {
+                $inferred = $this->inferNameFromEmail($personalOnly);
+                if ($this->isRealPersonName($inferred)) {
+                    $patch['name'] = $inferred;
+                }
             }
         }
 
@@ -893,10 +906,22 @@ final class AesLoginService
             $name = '';
         }
         if ($name === '') {
-            $name = $this->inferNameFromEmail($email);
+            $emailScan = $this->scanEmailsFromAesData($flat, $registerNumber);
+            $personalEmail = (string) ($emailScan['personalEmail'] ?? '');
+            if ($personalEmail !== '' && $this->isPersonalEmailDomain($personalEmail)) {
+                $name = $this->inferNameFromEmail($personalEmail);
+            }
         }
 
-        $role = $this->inferRole($roleHint, $registerNumber, $email);
+        $role = $this->inferRoleFromAes(
+            $payload,
+            [
+                'registerNumber' => $registerNumber,
+                'email'          => $email,
+            ],
+            $this->scanEmailsFromAesData($flat, $registerNumber),
+            $roleHint
+        );
 
         return [
             'name'           => $name,
@@ -910,16 +935,23 @@ final class AesLoginService
 
     /**
      * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $aesDetails
+     * @param array<string, mixed> $mapped
+     * @param array{personalEmail:string,collegeEmail:string,email:string} $resolvedEmails
      * @return array<string, mixed>
      */
-    private function resolveOrProvisionUser(array $profile): ?array
+    private function resolveOrProvisionUser(array $profile, array $aesDetails = [], array $mapped = [], array $resolvedEmails = []): ?array
     {
         $userModel = new UserModel();
 
-        if ($profile['email'] !== '') {
-            $user = $userModel->findByEmail($profile['email']);
+        foreach ($this->collectLookupEmails($profile, $aesDetails, $mapped, $resolvedEmails) as $email) {
+            $user = $userModel->findByEmail($email);
             if ($user) {
-                return $this->ensureStudentProfile($user, $profile);
+                if (($user['role'] ?? '') === 'student') {
+                    return $this->ensureStudentProfile($user, $profile);
+                }
+
+                return $user;
             }
         }
 
@@ -947,6 +979,48 @@ final class AesLoginService
         }
 
         return $this->provisionStudent($toProvision);
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $aesDetails
+     * @param array<string, mixed> $mapped
+     * @param array{personalEmail?:string,collegeEmail?:string,email?:string} $resolvedEmails
+     * @return list<string>
+     */
+    private function collectLookupEmails(array $profile, array $aesDetails, array $mapped, array $resolvedEmails): array
+    {
+        $emails = [
+            (string) ($profile['email'] ?? ''),
+            (string) ($resolvedEmails['collegeEmail'] ?? ''),
+            (string) ($resolvedEmails['personalEmail'] ?? ''),
+            (string) ($resolvedEmails['email'] ?? ''),
+            (string) ($mapped['collegeEmail'] ?? ''),
+            (string) ($mapped['personalEmail'] ?? ''),
+            (string) ($mapped['email'] ?? ''),
+        ];
+
+        $flat = $this->flattenScalarsDeep(array_merge($aesDetails, $mapped));
+        foreach ($flat as $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $text = strtolower(trim((string) $value));
+            if (str_contains($text, '@') && filter_var($text, FILTER_VALIDATE_EMAIL)) {
+                $emails[] = $text;
+            }
+        }
+
+        $unique = [];
+        foreach ($emails as $email) {
+            $email = strtolower(trim($email));
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                continue;
+            }
+            $unique[$email] = $email;
+        }
+
+        return array_values($unique);
     }
 
     /**
@@ -1082,8 +1156,37 @@ final class AesLoginService
 
     private function inferRole(string $roleHint, string $registerNumber, string $email): string
     {
-        if (str_contains($roleHint, 'staff') || str_contains($roleHint, 'faculty') || str_contains($roleHint, 'teacher')) {
-            return 'staff';
+        return $this->inferRoleFromAes([], [
+            'registerNumber' => $registerNumber,
+            'email'          => $email,
+        ], [
+            'collegeEmail'  => $this->isCollegeEmail($email) ? $email : '',
+            'personalEmail' => $this->isPersonalEmailDomain($email) ? $email : '',
+            'email'         => $email,
+        ], $roleHint);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param array{name?:string,email?:string,registerNumber?:string,role?:string,departmentCode?:string} $profile
+     * @param array{personalEmail?:string,collegeEmail?:string,email?:string} $emailScan
+     */
+    private function inferRoleFromAes(array $payload, array $profile, array $emailScan, string $roleHint = ''): string
+    {
+        $flat = $payload !== [] ? $this->flattenScalarsDeep($payload) : [];
+        if ($roleHint === '') {
+            $roleHint = strtolower(trim($this->pickInsensitive($flat, [
+                'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
+                'login_type', 'logintype', 'account_type', 'accounttype', 'designation_type',
+            ])));
+        } else {
+            $roleHint = strtolower($roleHint);
+        }
+
+        foreach (['staff', 'faculty', 'teacher', 'employee', 'hod', 'professor', 'lecturer', 'non-teaching', 'non_teaching'] as $needle) {
+            if (str_contains($roleHint, $needle)) {
+                return 'staff';
+            }
         }
         if (str_contains($roleHint, 'officer') || str_contains($roleHint, 'placement')) {
             return 'placement_officer';
@@ -1095,15 +1198,88 @@ final class AesLoginService
             return 'student';
         }
 
+        foreach ($flat as $key => $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $lowerKey = strtolower((string) $key);
+            if (!in_array($lowerKey, ['role', 'user_type', 'usertype', 'category', 'type', 'login_type', 'account_type'], true)) {
+                continue;
+            }
+            $text = strtolower(trim((string) $value));
+            if ($text === '') {
+                continue;
+            }
+            if (str_contains($text, 'staff') || str_contains($text, 'faculty') || str_contains($text, 'teacher') || str_contains($text, 'employee')) {
+                return 'staff';
+            }
+            if (str_contains($text, 'officer') || str_contains($text, 'placement')) {
+                return 'placement_officer';
+            }
+            if (str_contains($text, 'student') || str_contains($text, 'parent')) {
+                return 'student';
+            }
+        }
+
+        if (isset($payload['staff']) || isset($flat['staff']) || isset($flat['employee']) || isset($flat['faculty'])) {
+            return 'staff';
+        }
+
+        $registerNumber = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+        $collegeEmail = strtolower(trim((string) ($emailScan['collegeEmail'] ?? '')));
+        $personalEmail = strtolower(trim((string) ($emailScan['personalEmail'] ?? '')));
+        $primaryEmail = strtolower(trim((string) ($profile['email'] ?? $emailScan['email'] ?? '')));
+
+        if ($this->isStudentCollegeEmail($collegeEmail) || $this->isStudentCollegeEmail($primaryEmail)) {
+            return 'student';
+        }
+        if ($this->isStaffCollegeEmail($collegeEmail) || $this->isStaffCollegeEmail($primaryEmail)) {
+            return 'staff';
+        }
+
         if ($registerNumber !== '' && preg_match('/^[0-9]{2}[A-Z]{2,4}[0-9]{2,4}$/i', $registerNumber)) {
             return 'student';
         }
-
-        if ($email !== '' && str_contains($email, '@students.amaljyothi.ac.in')) {
+        if ($registerNumber !== '' && preg_match('/^\d{4,6}$/', $registerNumber)) {
             return 'student';
         }
 
+        if ($primaryEmail !== '' && str_contains($primaryEmail, '@students.amaljyothi.ac.in')) {
+            return 'student';
+        }
+
+        if ($personalEmail !== '' && $this->isPersonalEmailDomain($personalEmail) && !$this->isStaffCollegeEmail($collegeEmail)) {
+            return 'student';
+        }
+
+        if ($collegeEmail !== '' || ($primaryEmail !== '' && $this->isCollegeEmail($primaryEmail))) {
+            return 'staff';
+        }
+
         return 'student';
+    }
+
+    private function isStudentCollegeEmail(string $email): bool
+    {
+        $email = strtolower(trim($email));
+        if ($email === '') {
+            return false;
+        }
+        if (str_contains($email, '@students.amaljyothi.ac.in')) {
+            return true;
+        }
+
+        return (bool) preg_match('/@(mca|cse|ece|eee|me|ce|it|cs|mba|mtech|ecea|eee|mech|civil)\.ajce\.in$/', $email);
+    }
+
+    private function isStaffCollegeEmail(string $email): bool
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || !$this->isCollegeEmail($email)) {
+            return false;
+        }
+
+        return !$this->isStudentCollegeEmail($email);
     }
 
     /**
@@ -1719,14 +1895,7 @@ final class AesLoginService
             return $name;
         }
 
-        if (!empty($mapped['name'])) {
-            $candidate = trim((string) $mapped['name']);
-            if ($this->isRealPersonName($candidate) && !$this->isPlaceholderName($candidate, $register)) {
-                return $candidate;
-            }
-        }
-
-        if ($personalEmail !== '') {
+        if ($personalEmail !== '' && $this->isPersonalEmailDomain($personalEmail)) {
             $inferred = $this->inferNameFromEmail($personalEmail);
             if ($this->isRealPersonName($inferred) && !$this->isPlaceholderName($inferred, $register)) {
                 return $inferred;
@@ -1742,22 +1911,27 @@ final class AesLoginService
             'registerNumber', 'register_number', 'admission_no', 'admissionNo', 'username', 'un',
         ]));
         $flat = $this->flattenScalarsDeep($data);
+        $candidates = [];
 
-        $nameKeys = [
-            'name', 'full_name', 'fullname', 'student_name', 'studentname', 'stu_name', 'sname',
-            'staff_name', 'staffname', 'emp_name', 'employee_name', 'faculty_name', 'display_name', 'displayname',
-            'studname', 'stud_name', 'studentname', 'nm', 'stu_nm', 'stuname', 'uname', 'candidate_name',
+        $priorityKeys = [
+            'full_name', 'fullname', 'student_full_name', 'studentfullname', 'stud_full_name', 'studfullname',
+            'user_full_name', 'complete_name', 'name_in_full', 'applicant_name', 'candidate_name',
+            'student_name', 'studentname', 'studname', 'stud_name', 'stu_name', 'stuname',
+            'display_name', 'displayname', 'staff_name', 'staffname', 'emp_name', 'employee_name', 'faculty_name',
+            'name', 'sname', 'nm', 'stu_nm', 'uname',
         ];
-        $picked = trim($this->pickInsensitive($flat, $nameKeys));
-        if ($this->isRealPersonName($picked) && !$this->isPlaceholderName($picked, $register)) {
-            return $picked;
+        foreach ($priorityKeys as $key) {
+            $val = trim($this->pickInsensitive($flat, [$key]));
+            if ($val !== '') {
+                $candidates[] = ['name' => $val, 'key' => $key];
+            }
         }
 
         $fname = trim($this->pickInsensitive($flat, ['fname', 'first_name', 'firstname', 'firstName', 'stu_fname', 'student_fname']));
-        $lname = trim($this->pickInsensitive($flat, ['lname', 'last_name', 'lastname', 'lastName', 'stu_lname', 'student_lname']));
+        $lname = trim($this->pickInsensitive($flat, ['lname', 'last_name', 'lastname', 'lastName', 'stu_lname', 'student_lname', 'mname', 'middle_name']));
         $combined = trim($fname . ' ' . $lname);
-        if ($this->isRealPersonName($combined) && !$this->isPlaceholderName($combined, $register)) {
-            return $combined;
+        if ($combined !== '') {
+            $candidates[] = ['name' => $combined, 'key' => 'first_last_combined'];
         }
 
         foreach ($flat as $key => $value) {
@@ -1775,17 +1949,73 @@ final class AesLoginService
             if (!$this->isNameFieldKey($lowerKey)) {
                 continue;
             }
-            if ($this->isRealPersonName($text) && !$this->isPlaceholderName($text, $register)) {
-                return $text;
+            $candidates[] = ['name' => $text, 'key' => $lowerKey];
+        }
+
+        return $this->pickBestAesName($candidates, $register);
+    }
+
+    /**
+     * @param list<array{name:string,key:string}> $candidates
+     */
+    private function pickBestAesName(array $candidates, string $register): string
+    {
+        $best = '';
+        $bestScore = -1;
+        $seen = [];
+
+        foreach ($candidates as $entry) {
+            $name = trim((string) ($entry['name'] ?? ''));
+            $key = strtolower((string) ($entry['key'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $normalized = strtolower(preg_replace('/\s+/', ' ', $name) ?? $name);
+            if (isset($seen[$normalized])) {
+                continue;
+            }
+            $seen[$normalized] = true;
+            if (!$this->isRealPersonName($name) || $this->isPlaceholderName($name, $register)) {
+                continue;
+            }
+            $score = $this->nameFieldScore($name, $key);
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $name;
             }
         }
 
-        return '';
+        return $best;
+    }
+
+    private function nameFieldScore(string $name, string $key): int
+    {
+        $score = strlen($name);
+        if (str_contains($key, 'full')) {
+            $score += 200;
+        }
+        if (str_contains($key, 'first_last')) {
+            $score += 150;
+        }
+        if (str_contains($key, 'student') || str_contains($key, 'stud')) {
+            $score += 80;
+        }
+        if (str_contains($name, ' ')) {
+            $score += 50;
+        }
+        if ($key === 'name' || $key === 'nm' || $key === 'uname') {
+            $score -= 30;
+        }
+
+        return $score;
     }
 
     private function isNameFieldKey(string $lowerKey): bool
     {
-        if (in_array($lowerKey, ['name', 'fullname', 'full_name', 'displayname', 'display_name', 'nm', 'uname', 'sname', 'studname', 'stuname', 'studentname'], true)) {
+        if (in_array($lowerKey, [
+            'name', 'fullname', 'full_name', 'displayname', 'display_name', 'nm', 'uname', 'sname',
+            'studname', 'stuname', 'studentname', 'studentfullname', 'student_full_name', 'studfullname',
+        ], true)) {
             return true;
         }
         if (str_contains($lowerKey, 'parent') || str_contains($lowerKey, 'father') || str_contains($lowerKey, 'mother') || str_contains($lowerKey, 'guardian')) {

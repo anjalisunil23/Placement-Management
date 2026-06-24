@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260623j';
+const APP_SCRIPT_VERSION = '20260623k';
 
 function isSyntheticStudentEmail(email, registerNumber) {
   const e = String(email || '').trim().toLowerCase();
@@ -63,31 +63,69 @@ function sanitizeDisplayName(name, registerNumber) {
 function resolveSessionName(merged, registerNumber) {
   const reg = registerNumber || merged.registerNumber || '';
   const sources = [merged, merged.aesProfile || {}];
-  const nameKeys = [
-    'name', 'full_name', 'fullName', 'fullname', 'student_name', 'studentName', 'stu_name', 'sname',
-    'display_name', 'displayname', 'studname', 'stud_name', 'studentname', 'nm', 'stu_nm', 'uname', 'stuname',
-  ];
+  const candidates = [];
   for (const src of sources) {
-    if (!src || typeof src !== 'object') continue;
-    for (const key of nameKeys) {
-      const val = pickInsensitiveFrom(src, [key]);
-      const clean = sanitizeDisplayName(val, reg);
-      if (clean) return clean;
-    }
-    const fname = pickInsensitiveFrom(src, ['fname', 'first_name', 'firstName', 'firstname', 'stu_fname']);
-    const lname = pickInsensitiveFrom(src, ['lname', 'last_name', 'lastName', 'lastname', 'stu_lname']);
-    const combined = sanitizeDisplayName(`${fname} ${lname}`.trim(), reg);
-    if (combined) return combined;
-    for (const [key, raw] of Object.entries(src)) {
-      if (!isNameFieldKey(key)) continue;
-      const clean = sanitizeDisplayName(String(raw || '').trim(), reg);
-      if (clean) return clean;
-    }
+    candidates.push(...collectAesNameCandidates(src));
   }
-  const inferred = inferNameFromEmail(merged.personalEmail || merged.email);
+  const best = pickBestAesName(candidates, reg);
+  if (best) return best;
+  const inferred = inferNameFromEmail(merged.personalEmail || '');
   const fromEmail = sanitizeDisplayName(inferred, reg);
   if (fromEmail) return fromEmail;
   return sanitizeDisplayName(merged.name || '', reg);
+}
+
+function collectAesNameCandidates(src) {
+  if (!src || typeof src !== 'object') return [];
+  const candidates = [];
+  const priorityKeys = [
+    'full_name', 'fullname', 'student_full_name', 'studentfullname', 'stud_full_name', 'studfullname',
+    'user_full_name', 'complete_name', 'name_in_full', 'applicant_name', 'candidate_name',
+    'student_name', 'studentName', 'studname', 'stud_name', 'stu_name', 'stuname',
+    'display_name', 'displayname', 'staff_name', 'emp_name', 'name', 'sname', 'nm', 'stu_nm', 'uname',
+  ];
+  for (const key of priorityKeys) {
+    const val = pickInsensitiveFrom(src, [key]);
+    if (val) candidates.push({ name: val, key });
+  }
+  const fname = pickInsensitiveFrom(src, ['fname', 'first_name', 'firstName', 'firstname', 'stu_fname']);
+  const lname = pickInsensitiveFrom(src, ['lname', 'last_name', 'lastName', 'lastname', 'stu_lname', 'mname', 'middle_name']);
+  const combined = `${fname} ${lname}`.trim();
+  if (combined) candidates.push({ name: combined, key: 'first_last_combined' });
+  for (const [key, raw] of Object.entries(src)) {
+    if (!isNameFieldKey(key)) continue;
+    const val = String(raw || '').trim();
+    if (val) candidates.push({ name: val, key });
+  }
+  return candidates;
+}
+
+function pickBestAesName(candidates, registerNumber) {
+  const reg = String(registerNumber || '').trim();
+  let best = '';
+  let bestScore = -1;
+  const seen = new Set();
+  for (const entry of candidates) {
+    const name = String(entry.name || '').trim();
+    const key = String(entry.key || '').toLowerCase();
+    if (!name) continue;
+    const normalized = name.toLowerCase().replace(/\s+/g, ' ');
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    const clean = sanitizeDisplayName(name, reg);
+    if (!clean) continue;
+    let score = clean.length;
+    if (key.includes('full')) score += 200;
+    if (key.includes('first_last')) score += 150;
+    if (key.includes('student') || key.includes('stud')) score += 80;
+    if (clean.includes(' ')) score += 50;
+    if (key === 'name' || key === 'nm' || key === 'uname') score -= 30;
+    if (score > bestScore) {
+      bestScore = score;
+      best = clean;
+    }
+  }
+  return best;
 }
 
 function pickInsensitiveFrom(obj, keys) {
@@ -106,7 +144,7 @@ function pickInsensitiveFrom(obj, keys) {
 
 function isNameFieldKey(key) {
   const k = String(key || '').toLowerCase();
-  if (['name', 'fullname', 'full_name', 'displayname', 'display_name', 'nm', 'uname', 'sname', 'studname', 'stuname', 'studentname'].includes(k)) {
+  if (['name', 'fullname', 'full_name', 'displayname', 'display_name', 'nm', 'uname', 'sname', 'studname', 'stuname', 'studentname', 'studentfullname', 'student_full_name', 'studfullname'].includes(k)) {
     return true;
   }
   if (/parent|father|mother|guardian|dept|branch|company/.test(k)) return false;
