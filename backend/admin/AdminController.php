@@ -260,6 +260,9 @@ final class AdminController
     {
         RBACMiddleware::requireAdmin();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (isset($input['email'])) {
+            $input['email'] = strtolower(trim((string) $input['email']));
+        }
 
         $errors = Validator::validate($input, [
             'name'     => 'required|min:2',
@@ -271,8 +274,35 @@ final class AdminController
             Response::error('Validation failed.', 422, $errors);
         }
 
-        if ($this->userModel->findByEmail($input['email'])) {
+        $existing = $this->userModel->findByEmail($input['email']);
+        if ($existing) {
+            if (
+                ($input['role'] ?? '') === 'placement_officer'
+                && in_array((string) ($existing['role'] ?? ''), ['staff', 'placement_officer'], true)
+            ) {
+                $id = (string) $existing['_id'];
+                $this->assertValidPlacementOfficerDepartment($input);
+                $this->userModel->updateUser($id, [
+                    'name'     => $input['name'],
+                    'password' => $input['password'],
+                    'role'     => 'placement_officer',
+                    'status'   => 'active',
+                    'approved' => true,
+                ]);
+                try {
+                    $this->assignPlacementOfficerProfile($id, $input);
+                } catch (\InvalidArgumentException $e) {
+                    Response::error($e->getMessage(), 422);
+                } catch (\RuntimeException $e) {
+                    Response::error($e->getMessage(), 409);
+                }
+                Response::success(['id' => $id], 'Placement officer updated.', 200);
+            }
             Response::error('Email already exists.', 409);
+        }
+
+        if (($input['role'] ?? '') === 'placement_officer') {
+            $this->assertValidPlacementOfficerDepartment($input);
         }
 
         $id = $this->userModel->createUser([
@@ -285,17 +315,8 @@ final class AdminController
         ]);
 
         if ($input['role'] === 'placement_officer') {
-            if (empty($input['departmentId'])) {
-                Response::error('departmentId is required when creating a placement officer.', 422);
-            }
             try {
-                $poModel = new PlacementOfficerModel();
-                $deptId = (string) $input['departmentId'];
-                $existingDept = $poModel->findByDepartment($deptId);
-                if ($existingDept) {
-                    $poModel->deleteByDepartment($deptId);
-                }
-                $poModel->createProfile($id, $input);
+                $this->assignPlacementOfficerProfile($id, $input);
             } catch (\InvalidArgumentException $e) {
                 $this->userModel->delete($id);
                 Response::error($e->getMessage(), 422);
@@ -1205,5 +1226,40 @@ final class AdminController
     {
         RBACMiddleware::requireAdmin();
         Response::success((new RecruitingService())->getCampusOverview(null));
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     */
+    private function assertValidPlacementOfficerDepartment(array $input): void
+    {
+        $deptId = (string) ($input['departmentId'] ?? '');
+        if ($deptId === '' || Security::toObjectId($deptId) === null) {
+            Response::error('A valid department is required when creating a placement officer.', 422);
+        }
+        if (!(new DepartmentModel())->findById($deptId)) {
+            Response::error('Department not found. Refresh the page and select a department from the list.', 422);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     */
+    private function assignPlacementOfficerProfile(string $userId, array $input): void
+    {
+        $deptId = (string) ($input['departmentId'] ?? '');
+        if ($deptId === '') {
+            throw new \InvalidArgumentException('departmentId is required when creating a placement officer.');
+        }
+
+        $poModel = new PlacementOfficerModel();
+        $existingDept = $poModel->findByDepartment($deptId);
+        if ($existingDept && (string) ($existingDept['userId'] ?? '') !== (string) Security::toObjectId($userId)) {
+            $poModel->deleteByDepartment($deptId);
+        }
+
+        if (!$poModel->findByUserId($userId)) {
+            $poModel->createProfile($userId, $input);
+        }
     }
 }

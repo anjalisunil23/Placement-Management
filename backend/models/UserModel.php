@@ -28,13 +28,21 @@ class UserModel extends BaseModel
      */
     public function createUser(array $data): string
     {
+        $role = (string) ($data['role'] ?? '');
+        $approved = $data['approved'] ?? false;
+        $status = $data['status'] ?? 'pending';
+        if (in_array($role, ['admin', 'placement_officer', 'staff'], true)) {
+            $approved = true;
+            $status = 'active';
+        }
+
         $doc = [
             'name'      => $data['name'],
-            'email'     => strtolower(trim($data['email'])),
-            'password'  => Security::hashPassword($data['password']),
-            'role'      => $data['role'],
-            'status'    => $data['status'] ?? 'pending',
-            'approved'  => $data['approved'] ?? false,
+            'email'     => strtolower(trim((string) $data['email'])),
+            'password'  => Security::hashPassword((string) $data['password']),
+            'role'      => $role,
+            'status'    => $status,
+            'approved'  => $approved,
         ];
         return $this->insert($doc);
     }

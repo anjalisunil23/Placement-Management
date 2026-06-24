@@ -290,7 +290,11 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   const next = new URLSearchParams(location.search).get('next') || '';
   const btn = e.target.querySelector('button[type="submit"]');
   if (btn) btn.disabled = true;
-  const result = await performServerLogin(data.email, data.password, next);
+  const result = await performServerLogin(
+    String(data.email || '').trim().toLowerCase(),
+    String(data.password || ''),
+    next
+  );
   if (btn) btn.disabled = false;
   if (result.success) {
     toast('Welcome back, ' + (Auth.user()?.name || ''), 'success');

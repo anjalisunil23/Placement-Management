@@ -408,7 +408,7 @@ document.getElementById('addUserForm').addEventListener('submit', async e => {
   const payload = {
     role,
     name: document.getElementById('addUserName').value.trim(),
-    email: document.getElementById('addUserEmail').value.trim(),
+    email: document.getElementById('addUserEmail').value.trim().toLowerCase(),
     password: document.getElementById('addUserPassword').value,
     approved: true,
   };
@@ -417,6 +417,10 @@ document.getElementById('addUserForm').addEventListener('submit', async e => {
     const departmentId = document.getElementById('addUserDepartment').value;
     if (!departmentId) {
       toast('Select a department.', 'warn');
+      return;
+    }
+    if (!/^[a-f\d]{24}$/i.test(departmentId)) {
+      toast('Departments are still loading or invalid. Refresh the page and try again.', 'warn');
       return;
     }
     payload.departmentId = departmentId;
@@ -445,7 +449,10 @@ document.getElementById('addUserForm').addEventListener('submit', async e => {
 
   addUserModal().hide();
   await loadDepartments();
-  toast('User created successfully.', 'success');
+  const loginHint = role === 'placement_officer'
+    ? ` Placement officer can sign in at login.html with ${payload.email}.`
+    : '';
+  toast(`User created successfully.${loginHint}`, 'success');
   render();
 });
 

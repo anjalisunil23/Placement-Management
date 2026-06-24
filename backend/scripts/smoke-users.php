@@ -41,7 +41,7 @@ function assertOk(string $label, array $r, int $expectCode = 200): bool
 
 echo "PMS User management smoke test\n";
 
-$login = req($base . '/auth/login', 'POST', ['email' => 'admin@college.edu', 'password' => 'Admin@123456']);
+$login = req($base . '/auth/login', 'POST', ['email' => 'placements@amaljyothi.ac.in', 'password' => 'Placements@2026']);
 if (!assertOk('Admin login', $login)) {
     exit(1);
 }
@@ -87,6 +87,14 @@ if ($officerDept) {
     ]);
     if (assertOk('Create placement officer', $officer, 201) && !empty($officer['json']['data']['id'])) {
         $createdUserIds[] = $officer['json']['data']['id'];
+        $officerEmail = "smoke.officer.$suffix@college.edu";
+        $poCookie = tempnam(sys_get_temp_dir(), 'pms_po_');
+        $adminCookie = $cookie;
+        $cookie = $poCookie;
+        $poLogin = req($base . '/auth/login', 'POST', ['email' => $officerEmail, 'password' => 'Officer@123456']);
+        assertOk('Placement officer login after create', $poLogin);
+        $cookie = $adminCookie;
+        @unlink($poCookie);
     }
 } else {
     echo "SKIP Create placement officer (no free department)\n";

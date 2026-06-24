@@ -89,6 +89,12 @@ final class AuthController
     public function login(): void
     {
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (isset($input['email'])) {
+            $input['email'] = strtolower(trim((string) $input['email']));
+        }
+        if (isset($input['password'])) {
+            $input['password'] = (string) $input['password'];
+        }
         $errors = Validator::validate($input, [
             'email'    => 'required|email',
             'password' => 'required',
@@ -98,7 +104,7 @@ final class AuthController
         }
 
         $user = $this->userModel->findByEmail($input['email']);
-        if (!$user || !Security::verifyPassword($input['password'], $user['password'])) {
+        if (!$user || !Security::verifyPassword($input['password'], (string) ($user['password'] ?? ''))) {
             Response::error('Invalid email or password.', 401);
         }
 
@@ -112,6 +118,9 @@ final class AuthController
         }
 
         Security::setSessionUser($user);
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
 
         Response::success(
             AuthMiddleware::userResponse($user, null),

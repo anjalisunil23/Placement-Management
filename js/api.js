@@ -392,7 +392,8 @@ async function performServerLogin(email, password, next = '') {
   Auth._sessionReady = false;
   const verified = await Auth.bootstrap();
   if (!verified) {
-    Auth._sessionReady = true;
+    Auth.clear();
+    return { success: false, message: 'Sign-in succeeded but the session could not be verified. Try again.' };
   }
   const redirect = Auth.resolveRedirect(next);
   if (user.role === 'company' && !Auth.isAllowed(redirect.split('#')[0])) {
@@ -2097,6 +2098,11 @@ const DepartmentStore = {
       }
     }
     if (list) { this._cache = list; localStorage.setItem(DEPTS_KEY, JSON.stringify(list)); return list; }
+    if (Auth.role() === 'admin') {
+      this._cache = [];
+      localStorage.setItem(DEPTS_KEY, JSON.stringify([]));
+      return [];
+    }
     return this.all();
   },
   async add(p) {
@@ -2228,10 +2234,15 @@ const UserRegistry = {
   },
   async add(p) {
     if (!(await requireWriteSession())) return null;
+    const password = String(p.password || '').trim();
+    if (password.length < 8) {
+      toast('Password must be at least 8 characters.', 'error');
+      return null;
+    }
     const body = {
-      name: p.name,
-      email: p.email,
-      password: p.password || ({ staff: 'Staff@123456', placement_officer: 'Officer@123456', alumni: 'Alumni@123456', company: 'Company@123456' }[p.role] || 'Staff@123456'),
+      name: (p.name || '').trim(),
+      email: String(p.email || '').trim().toLowerCase(),
+      password,
       role: p.role || 'staff',
       approved: p.approved !== false,
     };
