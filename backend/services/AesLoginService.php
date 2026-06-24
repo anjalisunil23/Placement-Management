@@ -544,6 +544,16 @@ final class AesLoginService
             }
         }
 
+        if ($code === '' && $registerNumber !== '') {
+            $fromApi = $this->fetchPlacementDepartmentForRegister($registerNumber, $aesProfile);
+            if ($fromApi['code'] !== '') {
+                $code = $fromApi['code'];
+            }
+            if ($name === '' && $fromApi['name'] !== '') {
+                $name = $fromApi['name'];
+            }
+        }
+
         if ($name === '' && $code !== '') {
             $dept = (new DepartmentModel())->findByCode($code);
             if ($dept) {
@@ -583,7 +593,18 @@ final class AesLoginService
         }
 
         $register = strtoupper(trim((string) ($profile['registerNumber'] ?? $aesProfile['registerNumber'] ?? '')));
-        $fields = $this->resolveStudentDepartmentFields(null, $register);
+        $dbDept = null;
+        if (!empty($profile['departmentId'])) {
+            $dept = (new DepartmentModel())->findById((string) $profile['departmentId']);
+            if ($dept) {
+                $dbDept = [
+                    'id'   => (string) ($dept['_id'] ?? ''),
+                    'code' => (string) ($dept['code'] ?? ''),
+                    'name' => (string) ($dept['name'] ?? ''),
+                ];
+            }
+        }
+        $fields = $this->resolveStudentDepartmentFields($dbDept, $register, $aesProfile);
         if ($fields['code'] === '' && $fields['name'] === '') {
             return;
         }
@@ -601,6 +622,45 @@ final class AesLoginService
         }
 
         (new StudentModel())->update((string) $profile['_id'], ['departmentId' => $deptId]);
+    }
+
+    /**
+     * Pull department from AES placement API (works for numeric admission numbers).
+     *
+     * @param array<string, mixed> $sessionHints
+     * @return array{code:string,name:string}
+     */
+    private function fetchPlacementDepartmentForRegister(string $registerNumber, array $sessionHints = []): array
+    {
+        $register = strtoupper(trim($registerNumber));
+        if ($register === '') {
+            return ['code' => '', 'name' => ''];
+        }
+
+        $params = [
+            'username'       => $register,
+            'un'             => $register,
+            'admission_no'   => $register,
+            'registerNumber' => $register,
+        ];
+        $token = $this->pick($sessionHints, ['token', 'auth_token', 'checksum', 'session']);
+        if ($token !== '') {
+            $params['token'] = $token;
+            $params['checksum'] = $token;
+        }
+
+        try {
+            $record = (new AesApiService())->fetchStudentPlacementProfile($params);
+            if ($record === []) {
+                return ['code' => '', 'name' => ''];
+            }
+            $mapped = $this->mapAesDetailsToUserFields($record);
+            $code = strtoupper(trim((string) ($mapped['department'] ?? '')));
+            $name = trim((string) ($mapped['departmentName'] ?? ''));
+            return ['code' => $code, 'name' => $name];
+        } catch (\Throwable) {
+            return ['code' => '', 'name' => ''];
+        }
     }
 
     /**

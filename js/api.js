@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260625b';
+const APP_SCRIPT_VERSION = '20260626a';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -186,15 +186,22 @@ function isNameFieldKey(key) {
 function resolveSessionDepartment(merged) {
   const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
   const aes = (merged.aesProfile && typeof merged.aesProfile === 'object') ? merged.aesProfile : {};
+  const deptObj = (merged.department && typeof merged.department === 'object') ? merged.department : null;
+  if (deptObj) {
+    const fromObj = String(deptObj.code || deptObj.name || '').trim();
+    if (fromObj) return fromObj.toUpperCase();
+  }
   const sources = [merged, aes, academic];
   const keys = [
-    'deptCode', 'dept_code', 'deptshort', 'dept_short',
+    'deptCode', 'dept_code', 'deptshort', 'dept_short', 'departmentCode',
     'department', 'departmentName', 'branch', 'dept', 'dept_name', 'deptName', 'branch_name',
     'department_name', 'department_code', 'branch_code', 'programme', 'program',
   ];
   for (const src of sources) {
     for (const key of keys) {
-      const val = String(src[key] || '').trim();
+      const raw = src[key];
+      if (raw && typeof raw === 'object') continue;
+      const val = String(raw || '').trim();
       if (val) return val.toUpperCase();
     }
   }
