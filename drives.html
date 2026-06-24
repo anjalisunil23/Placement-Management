@@ -181,6 +181,10 @@
 
     <div class="small text-muted-2" id="applyResumeMeta"></div>
 
+    <label class="form-label small fw-semibold mt-3">Certificates <span class="text-muted fw-normal">(optional)</span></label>
+    <input type="file" class="form-control" id="applyCertificates" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple/>
+    <div class="small text-muted-2 mt-1" id="applyCertMeta"></div>
+
     <div class="alert alert-info small mt-3 mb-0">Upload a resume in <a href="settings.html#resumes">Profile &amp; Resumes</a> before applying.</div>
 
   </div>
@@ -480,7 +484,7 @@ function applyAction(d) {
 
   if (isStudent) return `<button class="btn btn-sm btn-primary" onclick="openApply('${d.id}')">Apply</button>`;
 
-  if (alumniSeeking) return `<button class="btn btn-sm btn-primary" onclick="openAlumniApply('${d.id}')">Apply</button>`;
+  if (alumniSeeking) return `<button class="btn btn-sm btn-primary" onclick="openApply('${d.id}')">Apply</button>`;
 
   return '';
 
@@ -932,8 +936,8 @@ window.openApply = async driveId => {
 
   if (!pendingDrive) return;
 
-  if (isStudent) {
-    await ResumeBucket.fetch();
+  if (isStudent || alumniSeeking) {
+    await ResumeBucket.fetchForApplicant();
     if (!ResumeBucket.all().length && Auth.isDemo()) ResumeBucket.seed();
   }
 
@@ -942,6 +946,10 @@ window.openApply = async driveId => {
   document.getElementById('applyDriveInfo').textContent = `${pendingDrive.company} · ${pendingDrive.role} · ${pendingDrive.package}${pendingDrive.profile ? ` (Profile: ${pendingDrive.profile})` : ''}`;
 
   const sel = document.getElementById('applyResumeSelect');
+
+  const certInput = document.getElementById('applyCertificates');
+  if (certInput) certInput.value = '';
+  document.getElementById('applyCertMeta').textContent = '';
 
   if (!resumes.length) {
 
@@ -969,17 +977,12 @@ window.openApply = async driveId => {
 
 };
 
-window.openAlumniApply = async driveId => {
-  pendingDrive = DriveStore.get(driveId);
-  if (!pendingDrive) return;
-  if (!confirm(`Apply to ${pendingDrive.company} · ${pendingDrive.role}?`)) return;
-  const app = await AlumniApps.apply(pendingDrive);
-  if (!app) return;
-  toast(`Applied to ${pendingDrive.company} · ${pendingDrive.role}`, 'success');
-  renderRows();
-};
-
-
+document.getElementById('applyCertificates')?.addEventListener('change', () => {
+  const files = [...(document.getElementById('applyCertificates')?.files || [])];
+  document.getElementById('applyCertMeta').textContent = files.length
+    ? `Selected: ${files.map(f => f.name).join(', ')}`
+    : '';
+});
 
 document.getElementById('confirmApply')?.addEventListener('click', async () => {
 
@@ -987,7 +990,10 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
 
   if (!resumeId) { toast('Upload a resume for this job profile first.', 'warn'); return; }
 
-  const app = await StudentApps.apply(pendingDrive, resumeId);
+  const certFiles = [...(document.getElementById('applyCertificates')?.files || [])];
+  const app = alumniSeeking
+    ? await AlumniApps.apply(pendingDrive, resumeId, certFiles)
+    : await StudentApps.apply(pendingDrive, resumeId, certFiles);
   if (!app) return;
 
   bootstrap.Modal.getInstance(document.getElementById('applyModal')).hide();

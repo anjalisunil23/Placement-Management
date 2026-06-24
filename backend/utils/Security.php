@@ -169,6 +169,12 @@ final class Security
         return ['jpg', 'jpeg', 'png', 'webp'];
     }
 
+    /** @return string[] */
+    public static function allowedCertificateExtensions(): array
+    {
+        return ['pdf', 'png', 'jpg', 'jpeg', 'webp'];
+    }
+
     public static function validateUploadedFile(array $file, int $maxSize, array $allowedExtensions): ?string
     {
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {

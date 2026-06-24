@@ -116,6 +116,14 @@ final class OfficerDataService
             $row['resumeFileName'] = $resumeFile;
             $row['resumePath'] = $resumePath;
             $row['hasResume'] = $resumePath !== '';
+            $certs = is_array($app['certificates'] ?? null) ? $app['certificates'] : [];
+            $row['certificateCount'] = count($certs);
+            $row['certificates'] = array_map(static function (array $cert) {
+                return [
+                    'fileName' => (string) ($cert['fileName'] ?? ''),
+                    'label'    => (string) ($cert['label'] ?? ''),
+                ];
+            }, $certs);
             $rows[] = $row;
         }
 

@@ -17,6 +17,7 @@ use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
+use PMS\Services\ApplicationUploadService;
 use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\AesLoginService;
 use PMS\Services\EligibilityEngine;
@@ -147,9 +148,15 @@ final class StudentController
     $allowed = ['personal', 'academic', 'certifications'];
     $update = [];
     foreach ($allowed as $key) {
-      if (isset($input[$key])) {
-        $update[$key] = $input[$key];
+      if (!isset($input[$key]) || !is_array($input[$key])) {
+        continue;
       }
+      $existing = is_array($profile[$key] ?? null) ? $profile[$key] : [];
+      $update[$key] = array_merge($existing, $input[$key]);
+    }
+
+    if ($update === []) {
+      Response::error('No valid fields to update.', 422);
     }
 
     $this->studentModel->update((string) $profile['_id'], $update);
@@ -575,7 +582,8 @@ final class StudentController
   {
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
-    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+    $uploads = new ApplicationUploadService();
+    $input = $uploads->parseApplyInput();
 
     $errors = Validator::validate($input, [
       'driveId' => 'required',
@@ -588,6 +596,7 @@ final class StudentController
     $driveId = $input['driveId'];
     $resumeId = (string) ($input['resumeId'] ?? '');
 
+    $profile = $this->studentModel->findById($studentId) ?? $profile;
     $engine = new EligibilityEngine();
     $check = $engine->checkForDrive($studentId, $driveId, $resumeId !== '' ? $resumeId : null);
     if (!$check['eligible']) {
@@ -604,35 +613,13 @@ final class StudentController
       Response::error('Already applied to this drive.', 409);
     }
 
-    $resume = null;
-    if ($resumeId !== '') {
-      $resumeDoc = (new ResumeModel())->findById($resumeId);
-      if ($resumeDoc && (string) ($resumeDoc['studentId'] ?? '') === $studentId) {
-        $config = require dirname(__DIR__) . '/config/app.php';
-        $storedName = (string) ($resumeDoc['storedName'] ?? '');
-        $path = rtrim($config['uploads']['resume_dir'], '/\\') . DIRECTORY_SEPARATOR . $storedName;
-        $resume = [
-          'resumeId' => $resumeId,
-          'label'    => (string) ($resumeDoc['label'] ?? ''),
-          'fileName' => (string) ($resumeDoc['fileName'] ?? $storedName),
-          'path'     => $path,
-        ];
-      }
-    }
-    if ($resume === null && (!empty($input['resumePath']) || !empty($input['resumeFileName']))) {
-      $resume = [
-        'resumeId'   => $resumeId,
-        'label'      => (string) ($input['resumeLabel'] ?? ''),
-        'fileName'   => (string) ($input['resumeFileName'] ?? ''),
-        'path'       => (string) ($input['resumePath'] ?? ''),
-      ];
-    } elseif ($resume === null && !empty($profile['resume']['path'])) {
-      $resume = [
-        'resumeId' => '',
-        'label'    => 'Uploaded resume',
-        'fileName' => (string) ($profile['resume']['filename'] ?? basename((string) $profile['resume']['path'])),
-        'path'     => (string) $profile['resume']['path'],
-      ];
+    $profile = $this->studentModel->findById($studentId) ?? $profile;
+    $resume = $uploads->resolveResume($input, $profile, $studentId);
+
+    try {
+      $certificates = $uploads->storeCertificates((string) ($profile['registerNumber'] ?? ''));
+    } catch (\RuntimeException $e) {
+      Response::error($e->getMessage(), 422);
     }
 
     $createData = [
@@ -644,6 +631,9 @@ final class StudentController
     ];
     if ($resume !== null) {
       $createData['resume'] = $resume;
+    }
+    if ($certificates !== []) {
+      $createData['certificates'] = $certificates;
     }
 
     $appId = $appModel->createApplication($createData);

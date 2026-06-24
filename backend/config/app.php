@@ -39,8 +39,10 @@ return [
     ],
     'uploads' => [
         'max_resume' => (int) ($_ENV['MAX_RESUME_SIZE'] ?? 5242880),
+        'max_certificate' => (int) ($_ENV['MAX_CERTIFICATE_SIZE'] ?? 5242880),
         'max_jd'     => (int) ($_ENV['MAX_JD_SIZE'] ?? 10485760),
         'resume_dir' => $rootPath . '/uploads/resumes',
+        'certificate_dir' => $rootPath . '/uploads/certificates',
         'reports_dir'=> $rootPath . '/uploads/reports',
         'jd_dir'     => $rootPath . '/uploads/jd',
         'signed_dir' => $rootPath . '/uploads/signed_reports',

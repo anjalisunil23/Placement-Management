@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260623k';
+const APP_SCRIPT_VERSION = '20260624a';
 
 function isSyntheticStudentEmail(email, registerNumber) {
   const e = String(email || '').trim().toLowerCase();
@@ -1309,6 +1309,30 @@ const ResumeBucket = {
     const existing = list.find(r => r.id === entry.id);
     return [{ ...existing, ...entry }, ...rest];
   },
+  async fetchForApplicant() {
+    const role = Auth.role();
+    if (role === 'student') return this.fetch();
+    if (role !== 'alumni' || Auth.isDemo()) return this.all();
+
+    const libraryRes = await apiFetch('/alumni/resumes', { skipAuthRedirect: true });
+    if (libraryRes.success && Array.isArray(libraryRes.data) && libraryRes.data.length) {
+      const fromLibrary = libraryRes.data.map(r => ({
+        id: r._id || r.id,
+        label: r.label || 'Resume',
+        profileType: r.profileType || 'General',
+        fileName: r.fileName || '',
+        fileSize: r.fileSize || 0,
+        bucketPath: r.viewUrl || '',
+        uploadedAt: r.uploadedAt || new Date().toISOString(),
+        verified: !!r.verified,
+        fromApi: true,
+      }));
+      this.save(fromLibrary);
+      return fromLibrary;
+    }
+
+    return this.all();
+  },
   async fetch() {
     if (Auth.role() !== 'student' || Auth.isDemo()) return this.all();
 
@@ -1440,25 +1464,38 @@ const StudentApps = {
     this.save(mapped);
     return mapped;
   },
-  async apply(drive, resumeId) {
+  async apply(drive, resumeId, certificateFiles = []) {
     if (this.hasApplied(drive.id)) return null;
     const resume = ResumeBucket.all().find(r => r.id === resumeId);
     const resumePath = this.resumePathForApply(resume);
+    const certs = Array.isArray(certificateFiles) ? certificateFiles.filter(f => f?.name) : [];
 
     if (Auth.role() === 'student' && Auth.hasSession() && !Auth.isDemo()) {
-      const res = await api('/student/apply', {
-        method: 'POST',
-        body: {
-          driveId: drive.id,
-          resumeId: resumeId || '',
-          resumeLabel: resume?.label || '',
-          resumeFileName: resume?.fileName || '',
-          resumePath,
-        },
-      });
+      let res;
+      if (certs.length) {
+        const form = new FormData();
+        form.append('driveId', drive.id);
+        form.append('resumeId', resumeId || '');
+        form.append('resumeLabel', resume?.label || '');
+        form.append('resumeFileName', resume?.fileName || '');
+        form.append('resumePath', resumePath || '');
+        certs.forEach(file => form.append('certificates[]', file));
+        res = await apiFetch('/student/apply', { method: 'POST', body: form });
+      } else {
+        res = await api('/student/apply', {
+          method: 'POST',
+          body: {
+            driveId: drive.id,
+            resumeId: resumeId || '',
+            resumeLabel: resume?.label || '',
+            resumeFileName: resume?.fileName || '',
+            resumePath,
+          },
+        });
+      }
       if (!res.success) {
         const msg = res.message || 'Application failed.';
-        if (/not eligible/i.test(msg)) {
+        if (/not eligible/i.test(msg) && /resume/i.test(msg)) {
           toast(`${msg} Upload a resume in Settings → Resumes, then try again.`, 'error');
         } else {
           toast(msg, 'error');
@@ -1546,12 +1583,42 @@ const AlumniApps = {
     this.save(mapped);
     return mapped;
   },
-  async apply(drive) {
+  async apply(drive, resumeId, certificateFiles = []) {
     if (this.hasApplied(drive.id)) return null;
     if (Auth.role() !== 'alumni' || !Auth.hasRealAuth() || Auth.isDemo()) return null;
-    const res = await api('/alumni/apply', { method: 'POST', body: { driveId: drive.id } });
+    const resume = ResumeBucket.all().find(r => r.id === resumeId);
+    const resumePath = StudentApps.resumePathForApply(resume);
+    const certs = Array.isArray(certificateFiles) ? certificateFiles.filter(f => f?.name) : [];
+
+    let res;
+    if (certs.length) {
+      const form = new FormData();
+      form.append('driveId', drive.id);
+      form.append('resumeId', resumeId || '');
+      form.append('resumeLabel', resume?.label || '');
+      form.append('resumeFileName', resume?.fileName || '');
+      form.append('resumePath', resumePath || '');
+      certs.forEach(file => form.append('certificates[]', file));
+      res = await apiFetch('/alumni/apply', { method: 'POST', body: form });
+    } else {
+      res = await api('/alumni/apply', {
+        method: 'POST',
+        body: {
+          driveId: drive.id,
+          resumeId: resumeId || '',
+          resumeLabel: resume?.label || '',
+          resumeFileName: resume?.fileName || '',
+          resumePath,
+        },
+      });
+    }
     if (!res.success) {
-      toast(res.message || 'Application failed.', 'error');
+      const msg = res.message || 'Application failed.';
+      if (/not eligible/i.test(msg) && /resume/i.test(msg)) {
+        toast(`${msg} Upload a resume in Settings → Resumes, then try again.`, 'error');
+      } else {
+        toast(msg, 'error');
+      }
       return null;
     }
     await this.fetch();

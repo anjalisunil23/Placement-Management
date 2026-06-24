@@ -13,8 +13,10 @@ use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\CompanyModel;
+use PMS\Models\ResumeModel;
 use PMS\Models\StudentModel;
 use PMS\Models\SuccessStoryModel;
+use PMS\Services\ApplicationUploadService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
@@ -173,6 +175,34 @@ final class AlumniController
     Response::success($result);
   }
 
+  /** GET /api/alumni/resumes */
+  public function listResumes(): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $student = (new StudentModel())->findByUserId((string) $user['_id']);
+    if (!$student) {
+      Response::success([]);
+      return;
+    }
+
+    $rows = (new ResumeModel())->findByStudent((string) $student['_id'], 50);
+    $out = array_map(static function (array $r) {
+      return [
+        '_id'         => (string) $r['_id'],
+        'label'       => $r['label'] ?? '',
+        'profileType' => $r['profileType'] ?? '',
+        'fileName'    => $r['fileName'] ?? '',
+        'fileSize'    => (int) ($r['fileSize'] ?? 0),
+        'verified'    => (bool) ($r['verified'] ?? false),
+        'isDefault'   => (bool) ($r['isDefault'] ?? false),
+        'uploadedAt'  => isset($r['uploadedAt']) ? DocumentHelper::serialize($r['uploadedAt']) : null,
+        'viewUrl'     => '/backend/api/student/resumes/' . (string) $r['_id'] . '/view',
+      ];
+    }, $rows);
+
+    Response::success($out);
+  }
+
   /** POST /api/alumni/apply */
   public function apply(): void
   {
@@ -181,7 +211,8 @@ final class AlumniController
     if (!$student) {
       Response::error('Alumni must have a linked student profile to apply.', 403);
     }
-    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+    $uploads = new ApplicationUploadService();
+    $input = $uploads->parseApplyInput();
     $errors = Validator::validate($input, ['driveId' => 'required']);
     if (!empty($errors)) {
       Response::error('Validation failed.', 422, $errors);
@@ -189,7 +220,9 @@ final class AlumniController
 
     $studentId = (string) $student['_id'];
     $driveId = $input['driveId'];
-    $check = (new EligibilityEngine())->checkForDrive($studentId, $driveId);
+    $resumeId = (string) ($input['resumeId'] ?? '');
+
+    $check = (new EligibilityEngine())->checkForDrive($studentId, $driveId, $resumeId !== '' ? $resumeId : null);
     if (!$check['eligible']) {
       Response::error('Not eligible: ' . implode(' ', $check['reasons']), 403);
     }
@@ -204,12 +237,29 @@ final class AlumniController
       Response::error('Already applied to this drive.', 409);
     }
 
-    $appId = $appModel->createApplication([
+    $student = (new StudentModel())->findById($studentId) ?? $student;
+    $resume = $uploads->resolveResume($input, $student, $studentId);
+
+    try {
+      $certificates = $uploads->storeCertificates((string) ($student['registerNumber'] ?? ''));
+    } catch (\RuntimeException $e) {
+      Response::error($e->getMessage(), 422);
+    }
+
+    $createData = [
       'studentId' => $studentId,
       'driveId'   => $driveId,
       'companyId' => (string) $drive['companyId'],
       'status'    => ($student['resume']['verified'] ?? false) ? 'resume_verified' : 'applied',
-    ]);
+    ];
+    if ($resume !== null) {
+      $createData['resume'] = $resume;
+    }
+    if ($certificates !== []) {
+      $createData['certificates'] = $certificates;
+    }
+
+    $appId = $appModel->createApplication($createData);
 
     (new NotificationService())->notifyUser(
       (string) $user['_id'],

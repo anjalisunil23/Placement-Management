@@ -69,6 +69,9 @@ class ApplicationModel extends BaseModel
         if (!empty($data['resume']) && is_array($data['resume'])) {
             $doc['resume'] = $data['resume'];
         }
+        if (!empty($data['certificates']) && is_array($data['certificates'])) {
+            $doc['certificates'] = $data['certificates'];
+        }
         return $this->insert($doc);
     }
 

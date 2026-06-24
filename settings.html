@@ -881,13 +881,25 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     return;
   }
   if (role === 'student') {
+    const cgpaVal = parseFloat(document.getElementById('profCgpa').value);
+    const phoneVal = document.getElementById('profPhone').value.trim();
+    const payload = {
+      academic: { cgpa: Number.isFinite(cgpaVal) ? cgpaVal : 0 },
+      personal: { phone: phoneVal },
+    };
+    if (Auth.hasRealAuth()) {
+      const res = await api('/student/profile', { method: 'PUT', body: payload, noRedirectOn401: true });
+      if (!res?.success) {
+        toast(res?.message || 'Could not save profile to server.', 'warn');
+      }
+    }
     Auth.set({
       ...user,
       name: document.getElementById('profName').value,
-      phone: document.getElementById('profPhone').value,
+      phone: phoneVal,
       registerNumber: document.getElementById('profRegNo').value,
       department: document.getElementById('profDept').value,
-      cgpa: parseFloat(document.getElementById('profCgpa').value) || user.cgpa,
+      cgpa: Number.isFinite(cgpaVal) ? cgpaVal : user.cgpa,
     }, Auth.token());
     toast('Settings saved.', 'success');
     return;

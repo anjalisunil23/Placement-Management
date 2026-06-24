@@ -269,6 +269,7 @@ $routes = [
     ['GET',  '/alumni/referrals',   [AlumniController::class, 'listReferrals']],
     ['POST', '/alumni/jobs/refer',  [AlumniController::class, 'referJob']],
     ['GET',  '/alumni/drives',      [AlumniController::class, 'listDrives']],
+    ['GET',  '/alumni/resumes',     [AlumniController::class, 'listResumes']],
     ['POST', '/alumni/apply',       [AlumniController::class, 'apply']],
     ['GET',  '/alumni/applications', [AlumniController::class, 'myApplications']],
     ['GET',  '/alumni/notifications', [AlumniController::class, 'notifications']],

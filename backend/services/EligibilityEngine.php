@@ -48,6 +48,8 @@ final class EligibilityEngine
             return ['eligible' => false, 'reasons' => ['Student or drive not found.']];
         }
 
+        $student = $this->enrichStudentForEligibility($student);
+
         if (($drive['status'] ?? '') === 'completed') {
             return ['eligible' => false, 'reasons' => ['This drive has been completed.']];
         }
@@ -70,6 +72,8 @@ final class EligibilityEngine
         if (!$student || !$job) {
             return ['eligible' => false, 'reasons' => ['Student or job not found.']];
         }
+
+        $student = $this->enrichStudentForEligibility($student);
 
         $criteria = $this->toPlainArray($job['eligibility'] ?? []);
         $branches = [];
@@ -186,6 +190,49 @@ final class EligibilityEngine
         }
 
         return (new ResumeModel())->findByStudent($studentId, 1) !== [];
+    }
+
+    /**
+     * Use AES session CGPA/backlogs when the stored student profile is still empty.
+     *
+     * @param array<string, mixed> $student
+     * @return array<string, mixed>
+     */
+    private function enrichStudentForEligibility(array $student): array
+    {
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        $cgpa = (float) ($academic['cgpa'] ?? 0);
+        $needsCgpa = $cgpa <= 0;
+        $needsBacklogs = !array_key_exists('backlogs', $academic);
+
+        if (!$needsCgpa && !$needsBacklogs) {
+            return $student;
+        }
+
+        $aesProfile = Security::getSessionAesProfile();
+        if (!is_array($aesProfile) || $aesProfile === []) {
+            return $student;
+        }
+
+        $mapped = (new AesLoginService())->mapAesDetailsToUserFields($aesProfile);
+        $patch = [];
+
+        if ($needsCgpa && !empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
+            $academic['cgpa'] = (float) $mapped['cgpa'];
+            $patch['academic'] = $academic;
+        }
+        if ($needsBacklogs && isset($mapped['backlogs'])) {
+            $academic = $patch['academic'] ?? $academic;
+            $academic['backlogs'] = (int) $mapped['backlogs'];
+            $patch['academic'] = $academic;
+        }
+
+        if ($patch !== []) {
+            $this->studentModel->update((string) $student['_id'], $patch);
+            $student = array_merge($student, $patch);
+        }
+
+        return $student;
     }
 
     /**
