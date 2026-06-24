@@ -41,6 +41,11 @@ if ($uri === '/dologin' || $uri === '/dologin.php') {
     return true;
 }
 
+if ($uri === '/logo.php') {
+    require __DIR__ . '/logo.php';
+    return true;
+}
+
 // Home → landing page
 if ($uri === '/' || $uri === '/index' || $uri === '/index.html') {
     header('Location: /public-stats.html');
