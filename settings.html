@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Settings · PlaceHub</title>
+<title>Settings · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -666,7 +666,12 @@ function openPhotoMenu() {
   document.addEventListener('click', onDoc, true);
 
   menu.querySelector('#phUploadPhoto')?.addEventListener('click', () => { close(); pickPhotoFile(); });
-  menu.querySelector('#phRemovePhoto')?.addEventListener('click', () => { close(); if (confirm('Remove profile photo?')) removeStudentPhoto(); });
+  menu.querySelector('#phRemovePhoto')?.addEventListener('click', async () => {
+    close();
+    if (await confirmAction({ title: 'Remove photo', message: 'Remove profile photo?', confirmText: 'Remove', variant: 'warning' })) {
+      removeStudentPhoto();
+    }
+  });
 }
 
 function openProfileEdit() {
@@ -766,7 +771,7 @@ function renderResumes() {
 }
 
 window.deleteResume = async id => {
-  if (!confirm('Delete this resume?')) return;
+  if (!(await confirmAction({ title: 'Delete resume', message: 'Delete this resume?', confirmText: 'Delete', variant: 'danger' }))) return;
   if (resumeUseApi) {
     const res = await api(`/student/resumes/${id}/delete`, { method:'POST', noRedirectOn401: true });
     if (res?.success) { toast('Resume deleted.', 'success'); await refreshResumes(); return; }
@@ -810,6 +815,7 @@ document.getElementById('resumeUploadForm')?.addEventListener('submit', async e 
   const label = fd.get('label');
   const profileType = fd.get('profileType');
   if (!file?.name) return;
+  if (!(await confirmAction({ title: 'Upload resume', message: `Upload "${label || file.name}" for ${profileType || 'selected profile'}?`, confirmText: 'Upload', variant: 'primary' }))) return;
 
   if (Auth.hasRealAuth()) {
     const uploadFd = new FormData();
@@ -1025,14 +1031,21 @@ function bindIntegrationClicks() {
   const list = document.getElementById('intList');
   if (!list || list.dataset.bound === '1') return;
   list.dataset.bound = '1';
-  list.addEventListener('click', e => {
+  list.addEventListener('click', async e => {
     const btn = e.target.closest('[data-integration]');
     if (!btn) return;
     const key = btn.dataset.integration;
     const item = INTEGRATION_CATALOG.find(i => i.key === key);
     const willConnect = btn.dataset.connected !== '1';
-    if (willConnect && !confirm(`Connect ${item?.name || 'this integration'} to PlaceHub?`)) return;
-    if (!willConnect && !confirm(`Disconnect ${item?.name || 'this integration'}?`)) return;
+    const confirmed = await confirmAction({
+      title: willConnect ? 'Connect integration' : 'Disconnect integration',
+      message: willConnect
+        ? `Connect ${item?.name || 'this integration'} to AJCE Placements?`
+        : `Disconnect ${item?.name || 'this integration'}?`,
+      confirmText: willConnect ? 'Connect' : 'Disconnect',
+      variant: willConnect ? 'primary' : 'warning',
+    });
+    if (!confirmed) return;
     UserPrefs.setIntegrationConnected(key, willConnect);
     renderIntegrations();
     toast(`${item?.name || 'Integration'} ${willConnect ? 'connected' : 'disconnected'}.`, 'success');

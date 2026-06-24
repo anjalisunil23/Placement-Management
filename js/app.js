@@ -245,17 +245,14 @@ function renderShell(active) {
   const activeBase = (active || 'dashboard.html').split('#')[0];
   const pageLabel = role === 'student' && activeBase === 'settings.html'
     ? 'Profile & Resumes'
-    : (PAGE_LABELS[activeBase] || 'PlaceHub');
+    : (PAGE_LABELS[activeBase] || BRAND.title);
   const showTopbarTitle = activeBase !== 'staff-recommend.html';
 
   if (sidebar) {
     const navItems = filteredNav();
     sidebar.innerHTML = `
       <div class="brand">
-        <a href="${Auth.homePage()}" class="d-flex align-items-center gap-2 text-decoration-none text-reset">
-          <div class="brand-mark">P</div>
-          <div>PlaceHub<div style="font-size:.7rem;color:var(--muted);font-weight:500">Placement Suite</div></div>
-        </a>
+        ${brandBlockHtml({ href: Auth.homePage(), logoHeight: 36 })}
       </div>
       <div class="nav-section">
         ${navItems.length ? navItems.map(n => renderNavEntry(n, active, role)).join('') : `<div class="p-3 small text-muted-2">No navigation items for this role.</div>`}
@@ -345,7 +342,16 @@ function renderShell(active) {
     window.location.reload();
   }));
 
-  document.getElementById('logoutBtn')?.addEventListener('click', () => Auth.logout());
+  document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    if (await confirmAction({
+      title: 'Sign out',
+      message: 'Sign out of your account?',
+      confirmText: 'Sign out',
+      variant: 'warning',
+    })) {
+      Auth.logout();
+    }
+  });
 
   sidebar?.querySelectorAll('.nav-group-chevron-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -505,6 +511,7 @@ const ReferralModals = {
     document.getElementById('staffRecommendModalForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(e.target).entries());
+      if (!(await confirmAction({ title: 'Submit recommendation', message: `Recommend ${data.companyName || 'this company'} to the placement cell?`, confirmText: 'Submit', variant: 'primary' }))) return;
       await StaffRecs.add(data);
       bootstrap.Modal.getInstance(document.getElementById('staffRecommendModal'))?.hide();
       toast('Company recommended. The admin will review and contact them.', 'success');
@@ -546,6 +553,7 @@ const ReferralModals = {
     document.getElementById('alumniReferralModalForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(e.target).entries());
+      if (!(await confirmAction({ title: 'Submit recommendation', message: `Recommend ${data.companyName || 'this company'} to the placement cell?`, confirmText: 'Submit', variant: 'primary' }))) return;
       await AlumniReferrals.add(data);
       bootstrap.Modal.getInstance(document.getElementById('alumniReferralModal'))?.hide();
       toast('Company recommended. The admin will review and contact them.', 'success');

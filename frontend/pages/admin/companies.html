@@ -49,7 +49,7 @@
       bootstrap.Modal.getInstance(document.getElementById('addModal')).hide();
       load();
     }
-    const del = id => { if (confirm('Delete company?')) PMS.del(`/admin/companies/${id}`).then(load); };
+    const del = async id => { if (await confirmAction({ title: 'Delete company', message: 'Delete this company?', confirmText: 'Delete', variant: 'danger' })) PMS.del(`/admin/companies/${id}`).then(load); };
     load();
   </script>
 </body>

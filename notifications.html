@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Notifications · PlaceHub</title>
+<title>Notifications · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -342,6 +342,12 @@ if (isAdminLike) {
       const deptId = document.getElementById('broadcastDepartment').value;
       if (deptId) payload.departmentId = deptId;
     }
+    if (!(await confirmAction({
+      title: 'Send broadcast',
+      message: `Send this notification to ${audience.replace(/_/g, ' ')}?`,
+      confirmText: 'Send',
+      variant: 'primary',
+    }))) return;
     const btn = document.getElementById('broadcastSubmitBtn');
     btn.disabled = true;
     const result = await BroadcastStore.send(payload);

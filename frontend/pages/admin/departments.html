@@ -46,7 +46,7 @@
       bootstrap.Modal.getInstance(document.getElementById('addModal')).hide();
       load();
     }
-    const del = id => { if (confirm('Delete?')) PMS.del(`/admin/departments/${id}`).then(load).catch(e => alert(e.message || 'Delete failed')); };
+    const del = async id => { if (await confirmAction({ title: 'Delete department', message: 'Delete this department?', confirmText: 'Delete', variant: 'danger' })) PMS.del(`/admin/departments/${id}`).then(load).catch(e => alert(e.message || 'Delete failed')); };
     load();
   </script>
 </body>

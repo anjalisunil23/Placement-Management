@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Student · Management · PlaceHub</title>
+<title>Student · Management · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -443,9 +443,28 @@ function rowActions(s) {
   </div>`;
 }
 
-window.approveStudent = id => { UserRegistry.approve(id); toast('Student approved.', 'success'); location.reload(); };
-window.toggleBlock = id => { const s = UserRegistry.get(id); UserRegistry.block(id, !s.blocked); toast(s.blocked ? 'Unblocked.' : 'Blocked.', 'success'); location.reload(); };
-window.deleteStudent = id => { if (confirm('Delete student account?')) { UserRegistry.remove(id); toast('Deleted.', 'success'); location.reload(); } };
+window.approveStudent = async id => {
+  const s = UserRegistry.get(id);
+  if (!s || !(await confirmAction({ title: 'Approve student', message: `Approve ${s.name}?`, confirmText: 'Approve', variant: 'success' }))) return;
+  UserRegistry.approve(id); toast('Student approved.', 'success'); location.reload();
+};
+window.toggleBlock = async id => {
+  const s = UserRegistry.get(id);
+  if (!s) return;
+  const blocked = !s.blocked;
+  if (!(await confirmAction({
+    title: blocked ? 'Block student' : 'Unblock student',
+    message: blocked ? `Block ${s.name}?` : `Unblock ${s.name}?`,
+    confirmText: blocked ? 'Block' : 'Unblock',
+    variant: blocked ? 'warning' : 'primary',
+  }))) return;
+  UserRegistry.block(id, blocked); toast(blocked ? 'Blocked.' : 'Unblocked.', 'success'); location.reload();
+};
+window.deleteStudent = async id => {
+  const s = UserRegistry.get(id);
+  if (!s || !(await confirmAction({ title: 'Delete student', message: `Delete student account for ${s.name}? This cannot be undone.`, confirmText: 'Delete', variant: 'danger' }))) return;
+  UserRegistry.remove(id); toast('Deleted.', 'success'); location.reload();
+};
 
 /* —— Applications —— */
 function appStatusBadge(status) {
@@ -458,11 +477,15 @@ function canActApp(a) {
   return a.stage !== 'rejected' && a.stage !== 'company_selection' && a.status !== 'rejected' && a.status !== 'shortlisted';
 }
 
-function approveApp(id) {
+async function approveApp(id) {
+  const a = ApplicationPipeline.all().find(x => x.id === id);
+  if (!a || !(await confirmAction({ title: 'Approve application', message: `Approve application for ${a.studentName} (${a.company})?`, confirmText: 'Approve', variant: 'success' }))) return;
   ApplicationPipeline.approve(id).then(() => { toast('Application advanced.', 'success'); renderApplications(); });
 }
 
-function rejectApp(id) {
+async function rejectApp(id) {
+  const a = ApplicationPipeline.all().find(x => x.id === id);
+  if (!a || !(await confirmAction({ title: 'Reject application', message: `Reject application for ${a.studentName}?`, confirmText: 'Reject', variant: 'danger' }))) return;
   ApplicationPipeline.reject(id).then(() => { toast('Application rejected.', 'warn'); renderApplications(); });
 }
 
@@ -539,14 +562,18 @@ function resumeRowCells(r, showActions, showStatus) {
     ${actions}`;
 }
 
-function approveResume(id) {
+async function approveResume(id) {
+  const r = ResumeQueue.all().find(x => x.id === id);
+  if (!r || !(await confirmAction({ title: 'Approve resume', message: `Approve resume for ${r.studentName}?`, confirmText: 'Approve', variant: 'success' }))) return;
   ResumeQueue.approve(id).then(ok => {
     if (ok) { toast('Resume approved.', 'success'); renderResumes(); }
     else toast('Could not approve resume.', 'error');
   });
 }
 
-function rejectResume(id) {
+async function rejectResume(id) {
+  const r = ResumeQueue.all().find(x => x.id === id);
+  if (!r || !(await confirmAction({ title: 'Reject resume', message: `Reject resume for ${r.studentName}?`, confirmText: 'Reject', variant: 'danger' }))) return;
   ResumeQueue.reject(id).then(ok => {
     if (ok) { toast('Application rejected.', 'warn'); renderResumes(); }
     else toast('Could not reject application.', 'error');
@@ -585,10 +612,15 @@ function activeBlacklist() {
   return BlacklistStore.all().filter(b => b.active !== false);
 }
 
-function removeBlacklistEntry(id) {
+async function removeBlacklistEntry(id) {
   const e = BlacklistStore.all().find(b => b.id === id);
   if (!e) return;
-  if (!confirm(`Remove ${e.studentName} (${e.registerNumber}) from the blacklist?`)) return;
+  if (!(await confirmAction({
+    title: 'Remove from blacklist',
+    message: `Remove ${e.studentName} (${e.registerNumber}) from the blacklist?`,
+    confirmText: 'Remove',
+    variant: 'warning',
+  }))) return;
   BlacklistStore.remove(id).then(ok => { toast(ok ? 'Student removed from blacklist.' : 'Removed locally.', ok ? 'success' : 'warn'); renderBlacklist(); });
 }
 
@@ -616,6 +648,12 @@ document.getElementById('blacklistForm')?.addEventListener('submit', async e => 
     toast('This register number is already blacklisted.', 'error');
     return;
   }
+  if (!(await confirmAction({
+    title: 'Add to blacklist',
+    message: `Add ${studentName} (${registerNumber}) to the blacklist?`,
+    confirmText: 'Add',
+    variant: 'warning',
+  }))) return;
   const ok = await BlacklistStore.add({ studentName, registerNumber, reason });
   document.getElementById('blacklistForm').reset();
   toast(ok ? 'Student added to blacklist.' : 'Added locally (API unavailable).', ok ? 'success' : 'warn');

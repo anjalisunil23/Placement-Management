@@ -18,6 +18,7 @@
       <tbody id="appTable"></tbody>
     </table>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="/frontend/assets/js/api.js"></script>
   <script src="/frontend/assets/js/nav.js"></script>
   <script>
@@ -31,7 +32,7 @@
           <td>${!['selected','rejected','withdrawn'].includes(a.status) ? `<button class="btn btn-sm btn-secondary" onclick="withdraw('${a._id}')">Withdraw</button>` : ''}</td>
         </tr>`).join('') || '<tr><td colspan="4">No applications yet.</td></tr>';
     });
-    const withdraw = id => { if (confirm('Withdraw application?')) PMS.post(`/student/applications/${id}/withdraw`).then(() => location.reload()); };
+    const withdraw = async id => { if (await confirmAction({ title: 'Withdraw application', message: 'Withdraw this application?', confirmText: 'Withdraw', variant: 'warning' })) PMS.post(`/student/applications/${id}/withdraw`).then(() => location.reload()); };
   </script>
 </body>
 </html>

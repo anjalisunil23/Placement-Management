@@ -1,5 +1,32 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260624a';
+const APP_SCRIPT_VERSION = '20260624h';
+
+const BRAND = {
+  logoSrc: 'css/img/ajce-logo.png',
+  logoAlt: 'Amal Jyothi College of Engineering (Autonomous)',
+  title: 'AJCE Placements',
+  subtitle: 'Amal Jyothi College of Engineering',
+};
+
+function brandLogoHtml(height = 34, className = 'brand-logo') {
+  return `<img src="${BRAND.logoSrc}" alt="${BRAND.logoAlt}" class="${className}" height="${height}" loading="lazy"/>`;
+}
+
+function brandBlockHtml(opts = {}) {
+  const showSubtitle = opts.showSubtitle !== false;
+  const href = opts.href || '';
+  const inner = `
+    <div class="d-flex align-items-center gap-2 ${opts.className || ''}">
+      ${brandLogoHtml(opts.logoHeight || 34)}
+      <div style="min-width:0">
+        <div style="font-weight:700;line-height:1.2">${BRAND.title}</div>
+        ${showSubtitle ? `<div style="font-size:.7rem;color:var(--muted);font-weight:500;line-height:1.2">${BRAND.subtitle}</div>` : ''}
+      </div>
+    </div>`;
+  return href
+    ? `<a href="${href}" class="d-flex align-items-center gap-2 text-decoration-none text-reset">${inner}</a>`
+    : inner;
+}
 
 function isSyntheticStudentEmail(email, registerNumber) {
   const e = String(email || '').trim().toLowerCase();
@@ -3612,6 +3639,91 @@ async function mockAuth(kind, payload) {
   const user = { ...demoUserFor(role), ...payload, role };
   return { success:true, message: kind==='register' ? 'Registered. Pending approval.' : 'Logged in', data: { user, token: 'demo-token-' + Date.now() }, _offline: true };
 }
+
+/* Confirmation modal — replaces window.confirm for destructive / write actions */
+function ensureConfirmModal() {
+  if (document.getElementById('phConfirmModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+<div class="modal fade" id="phConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="phConfirmTitle">Confirm action</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body"><p class="mb-0" id="phConfirmMessage"></p></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="phConfirmCancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="phConfirmOk">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+  document.body.appendChild(wrap.firstElementChild);
+}
+
+/**
+ * @param {string|{ title?: string, message: string, confirmText?: string, cancelText?: string, variant?: string }} opts
+ * @returns {Promise<boolean>}
+ */
+function confirmAction(opts) {
+  const options = typeof opts === 'string' ? { message: opts } : (opts || {});
+  ensureConfirmModal();
+  return new Promise((resolve) => {
+    const modalEl = document.getElementById('phConfirmModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    const titleEl = document.getElementById('phConfirmTitle');
+    const msgEl = document.getElementById('phConfirmMessage');
+    const okBtn = document.getElementById('phConfirmOk');
+    const cancelBtn = document.getElementById('phConfirmCancel');
+
+    titleEl.textContent = options.title || 'Confirm action';
+    msgEl.textContent = options.message || 'Are you sure you want to continue?';
+    okBtn.textContent = options.confirmText || 'Confirm';
+    cancelBtn.textContent = options.cancelText || 'Cancel';
+    okBtn.className = `btn btn-${options.variant || 'primary'}`;
+
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const onOk = () => {
+      modal.hide();
+      finish(true);
+    };
+    const onHidden = () => {
+      okBtn.removeEventListener('click', onOk);
+      modalEl.removeEventListener('hidden.bs.modal', onHidden);
+      if (!settled) finish(false);
+    };
+
+    okBtn.addEventListener('click', onOk);
+    modalEl.addEventListener('hidden.bs.modal', onHidden);
+    modal.show();
+  });
+}
+
+window.confirmAction = confirmAction;
+window.BRAND = BRAND;
+window.brandLogoHtml = brandLogoHtml;
+window.brandBlockHtml = brandBlockHtml;
+
+/**
+ * Confirm before running a form submit or other write handler.
+ * @param {Event} e
+ * @param {Parameters<typeof confirmAction>[0]} opts
+ * @param {() => (void|Promise<void>)} handler
+ */
+async function confirmThen(e, opts, handler) {
+  if (e?.preventDefault) e.preventDefault();
+  if (!(await confirmAction(opts))) return;
+  await handler();
+}
+window.confirmThen = confirmThen;
 
 /* Toasts */
 function toast(msg, kind='info') {

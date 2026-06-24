@@ -160,10 +160,10 @@
       }
     }
 
-    const approve = id => PMS.post(`/admin/users/${id}/approve`).then(loadUsers);
-    const block = id => PMS.post(`/admin/users/${id}/block`).then(loadUsers);
-    const unblock = id => PMS.post(`/admin/users/${id}/unblock`).then(loadUsers);
-    const del = id => { if (confirm('Delete user?')) PMS.del(`/admin/users/${id}`).then(() => { loadDepartments(); loadUsers(); }); };
+    const approve = async id => { if (await confirmAction({ title: 'Approve user', message: 'Approve this user account?', confirmText: 'Approve', variant: 'success' })) PMS.post(`/admin/users/${id}/approve`).then(loadUsers); };
+    const block = async id => { if (await confirmAction({ title: 'Block user', message: 'Block this user from signing in?', confirmText: 'Block', variant: 'warning' })) PMS.post(`/admin/users/${id}/block`).then(loadUsers); };
+    const unblock = async id => { if (await confirmAction({ title: 'Unblock user', message: 'Restore access for this user?', confirmText: 'Unblock', variant: 'success' })) PMS.post(`/admin/users/${id}/unblock`).then(loadUsers); };
+    const del = async id => { if (await confirmAction({ title: 'Delete user', message: 'Delete this user? This cannot be undone.', confirmText: 'Delete', variant: 'danger' })) PMS.del(`/admin/users/${id}`).then(() => { loadDepartments(); loadUsers(); }); };
 
     document.getElementById('roleFilter').addEventListener('change', loadUsers);
     loadDepartments();
