@@ -2333,7 +2333,7 @@ final class AesLoginService
         }
 
         try {
-            $placementInfo = (new AesApiService())->getStudInfo4Placement($baseRequest);
+            $placementInfo = (new AesApiService())->fetchStudentPlacementProfile($baseRequest);
             if ($placementInfo !== []) {
                 return $placementInfo;
             }

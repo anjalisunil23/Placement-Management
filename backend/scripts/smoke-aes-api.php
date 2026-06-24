@@ -17,8 +17,9 @@ $register = $argv[1] ?? '';
 $api = new AesApiService();
 
 echo "=== getDepartments ===\n";
-$depts = $api->getDepartments();
-echo 'count: ' . count($depts) . "\n";
+$deptResult = $api->getDepartments();
+$depts = $api->listDepartments();
+echo 'http: ' . ($deptResult['status'] ?? 0) . ', parsed count: ' . count($depts) . "\n";
 foreach (array_slice($depts, 0, 5) as $row) {
     echo ($row['code'] ?? '') . ' — ' . ($row['name'] ?? '') . "\n";
 }
@@ -35,6 +36,14 @@ if ($register !== '') {
         'registerNumber' => $register,
     ]);
     echo json_encode($info, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
+    $parsed = $api->fetchStudentPlacementProfile([
+        'username'       => $register,
+        'un'             => $register,
+        'admission_no'   => $register,
+        'registerNumber' => $register,
+    ]);
+    echo "\nParsed profile:\n";
+    echo json_encode($parsed, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
 } else {
     echo "\nTip: pass admission number to test getStudInfo4Placement\n";
 }
