@@ -68,4 +68,8 @@ return [
         'alumni'            => '/dashboard.html',
         'placement_officer' => '/placement-console.html',
     ],
+    'super_admin_emails' => array_values(array_filter(array_map(
+        static fn (string $email): string => strtolower(trim($email)),
+        explode(',', $_ENV['SUPER_ADMIN_EMAILS'] ?? 'placements@amaljyothi.ac.in')
+    ))),
 ];

@@ -457,6 +457,8 @@ const Auth = {
     const merged = { ...prev, ...u, ...aes };
     const reg = merged.registerNumber || prev.registerNumber || '';
     const emails = resolveSessionEmails(merged, reg);
+    const role = u.role || prev.role || '';
+    const dashboard = u.dashboard || prev.dashboard || '';
     this.set(
       {
         ...prev,
@@ -465,7 +467,7 @@ const Auth = {
         email: emails.email,
         collegeEmail: emails.collegeEmail || prev.collegeEmail || '',
         personalEmail: emails.personalEmail || prev.personalEmail || '',
-        role: merged.role || prev.role || '',
+        role,
         department: resolveSessionDepartment(merged) || merged.department || prev.department || '',
         departmentId: merged.departmentId || prev.departmentId || '',
         departmentName: resolveSessionDepartment(merged) || merged.departmentName || prev.departmentName || '',
@@ -486,7 +488,7 @@ const Auth = {
         category: merged.category || prev.category || '',
         tier: merged.tier || prev.tier || '',
         website: merged.website || prev.website || '',
-        dashboard: merged.dashboard || prev.dashboard || '',
+        dashboard,
         phone: resolveSessionPhone(merged) || prev.phone || '',
         course: merged.course || prev.course || '',
         year: merged.year || prev.year || '',

@@ -139,7 +139,7 @@ final class AuthMiddleware
     if ($aesProfile !== []) {
       $service = new \PMS\Services\AesLoginService();
       $data = $service->applyAesSessionToUserFields($data);
-      $aesProfile = DocumentHelper::jsonSafe($aesProfile);
+      $aesProfile = DocumentHelper::jsonSafe($service->sanitizeAesProfileForClient($aesProfile));
       if (is_array($aesProfile)) {
         $data['aesProfile'] = $aesProfile;
       }

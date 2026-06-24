@@ -199,7 +199,13 @@ final class AesLoginService
             : ($emails['collegeEmail'] !== '' ? $emails['collegeEmail'] : ($emails['personalEmail'] !== '' ? $emails['personalEmail'] : $profile['email']));
         $profile['role'] = $this->inferRoleFromAes(array_merge($payload, $aesDetails), $profile, $emails);
 
-        $user = $this->resolveOrProvisionUser($profile, $aesDetails, $mapped, $emails);
+        $adminUser = $this->resolveSuperAdminUser($profile, $aesDetails, $mapped, $emails);
+        if ($adminUser !== null) {
+            $profile['role'] = 'admin';
+            $user = $adminUser;
+        } else {
+            $user = $this->resolveOrProvisionUser($profile, $aesDetails, $mapped, $emails);
+        }
         if ($user === null) {
             if ($profile['role'] === 'placement_officer') {
                 throw new \RuntimeException('No PlaceHub account matches your AES placement officer profile. Ask the placement cell to register your account first.');
@@ -215,8 +221,81 @@ final class AesLoginService
         $this->assertUserCanLogin($user);
         $user = $this->syncUserFromAes($user, $profile, $aesDetails);
         $this->syncRoleProfileFromAes($user, $profile, $aesDetails);
-        Security::setSessionUser($user, $aesDetails);
+        Security::setSessionUser($user, $this->sanitizeAesProfileForClient($aesDetails));
         return $user;
+    }
+
+    /**
+     * Remove auth-sensitive AES fields before storing in session or sending to the client.
+     *
+     * @param array<string, mixed> $aesProfile
+     * @return array<string, mixed>
+     */
+    public function sanitizeAesProfileForClient(array $aesProfile): array
+    {
+        $strip = [
+            'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
+            'login_type', 'logintype', 'account_type', 'accounttype', 'designation_type', 'portal', 'module',
+            'dashboard', 'staff', 'employee', 'faculty', 'alumni', 'student',
+        ];
+        foreach ($strip as $key) {
+            unset($aesProfile[$key]);
+        }
+
+        return $aesProfile;
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $aesDetails
+     * @param array<string, mixed> $mapped
+     * @param array{personalEmail?:string,collegeEmail?:string,email?:string} $resolvedEmails
+     * @return array<string, mixed>|null
+     */
+    private function resolveSuperAdminUser(array $profile, array $aesDetails, array $mapped, array $resolvedEmails): ?array
+    {
+        $userModel = new UserModel();
+        foreach ($this->collectLookupEmails($profile, $aesDetails, $mapped, $resolvedEmails) as $email) {
+            if ($this->isSuperAdminEmail($email)) {
+                $user = $userModel->findByEmail($email);
+                if ($user && ($user['role'] ?? '') === 'admin') {
+                    return $user;
+                }
+            }
+
+            $user = $userModel->findByEmail($email);
+            if ($user && ($user['role'] ?? '') === 'admin') {
+                return $user;
+            }
+        }
+
+        return null;
+    }
+
+    private function isSuperAdminEmail(string $email): bool
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $allowlist = $config['super_admin_emails'] ?? [];
+
+        return in_array($email, $allowlist, true);
+    }
+
+    private function isPlacementOfficerHint(string $text): bool
+    {
+        $text = strtolower(trim($text));
+        if ($text === '') {
+            return false;
+        }
+        if (str_contains($text, 'officer') && str_contains($text, 'placement')) {
+            return true;
+        }
+
+        return (bool) preg_match('/\bplacement[\s_-]*officer\b/', $text);
     }
 
     /**
@@ -1011,6 +1090,11 @@ final class AesLoginService
      */
     private function resolveOrProvisionUser(array $profile, array $aesDetails = [], array $mapped = [], array $resolvedEmails = []): ?array
     {
+        $adminUser = $this->resolveSuperAdminUser($profile, $aesDetails, $mapped, $resolvedEmails);
+        if ($adminUser !== null) {
+            return $adminUser;
+        }
+
         $userModel = new UserModel();
 
         foreach ($this->collectLookupEmails($profile, $aesDetails, $mapped, $resolvedEmails) as $email) {
@@ -1042,6 +1126,9 @@ final class AesLoginService
 
         if ($profile['role'] === 'staff') {
             $toProvision = $this->profileForStaffProvisioning($profile, $resolvedEmails);
+            if ($toProvision['email'] !== '' && $this->isSuperAdminEmail($toProvision['email'])) {
+                return null;
+            }
             if ($toProvision['email'] !== '') {
                 return $this->provisionStaff($toProvision, $mapped);
             }
@@ -1489,7 +1576,7 @@ final class AesLoginService
                     return 'staff';
                 }
             }
-            if (str_contains($text, 'officer') || str_contains($text, 'placement')) {
+            if ($this->isPlacementOfficerHint($text)) {
                 return 'placement_officer';
             }
         }
@@ -1512,6 +1599,28 @@ final class AesLoginService
     private function inferRoleFromAes(array $payload, array $profile, array $emailScan, string $roleHint = ''): string
     {
         $flat = $payload !== [] ? $this->flattenScalarsDeep($payload) : [];
+        $lookupEmails = $this->collectLookupEmails(
+            [
+                'name'           => (string) ($profile['name'] ?? ''),
+                'email'          => (string) ($profile['email'] ?? ''),
+                'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
+                'role'           => '',
+                'departmentCode' => (string) ($profile['departmentCode'] ?? ''),
+            ],
+            $flat,
+            [],
+            $emailScan
+        );
+        foreach ($lookupEmails as $email) {
+            if ($this->isSuperAdminEmail($email)) {
+                return 'admin';
+            }
+            $existing = (new UserModel())->findByEmail($email);
+            if ($existing && ($existing['role'] ?? '') === 'admin') {
+                return 'admin';
+            }
+        }
+
         if ($roleHint === '') {
             $roleHint = strtolower(trim($this->pickInsensitive($flat, [
                 'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
@@ -1531,7 +1640,7 @@ final class AesLoginService
                 return 'staff';
             }
         }
-        if (str_contains($roleHint, 'officer') || str_contains($roleHint, 'placement')) {
+        if ($this->isPlacementOfficerHint($roleHint)) {
             return 'placement_officer';
         }
         if (str_contains($roleHint, 'alumni')) {
@@ -1556,7 +1665,7 @@ final class AesLoginService
             if (str_contains($text, 'staff') || str_contains($text, 'faculty') || str_contains($text, 'teacher') || str_contains($text, 'employee')) {
                 return 'staff';
             }
-            if (str_contains($text, 'officer') || str_contains($text, 'placement')) {
+            if ($this->isPlacementOfficerHint($text)) {
                 return 'placement_officer';
             }
             if (str_contains($text, 'alumni') || str_contains($text, 'alum') || str_contains($text, 'ex-student') || str_contains($text, 'ex_student')) {
