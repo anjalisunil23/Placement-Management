@@ -92,8 +92,29 @@ function sanitizeDisplayName(name, registerNumber) {
   return n;
 }
 
+function isEmailDerivedName(name, email) {
+  const n = String(name || '').trim();
+  const e = String(email || '').trim();
+  if (!n || !e) return false;
+  const inferred = inferNameFromEmail(e);
+  return inferred && n.toLowerCase() === inferred.toLowerCase();
+}
+
+function pickPlacementApiName(merged, registerNumber) {
+  const reg = String(registerNumber || '').trim();
+  const sources = [merged, merged.aesProfile || {}];
+  for (const src of sources) {
+    const name = pickInsensitiveFrom(src, ['stud_name', 'student_name', 'studentName', 'studentfullname', 'student_full_name']);
+    const clean = sanitizeDisplayName(name, reg);
+    if (clean) return clean;
+  }
+  return '';
+}
+
 function resolveSessionName(merged, registerNumber) {
   const reg = registerNumber || merged.registerNumber || '';
+  const placementName = pickPlacementApiName(merged, reg);
+  if (placementName) return placementName;
   const sources = [merged, merged.aesProfile || {}];
   const candidates = [];
   for (const src of sources) {
@@ -101,10 +122,13 @@ function resolveSessionName(merged, registerNumber) {
   }
   const best = pickBestAesName(candidates, reg);
   if (best) return best;
+  const emails = [merged.collegeEmail, merged.email, merged.personalEmail].filter(Boolean);
+  const current = sanitizeDisplayName(merged.name || '', reg);
+  if (current && !emails.some((e) => isEmailDerivedName(current, e))) return current;
   const inferred = inferNameFromEmail(merged.personalEmail || '');
-  const fromEmail = sanitizeDisplayName(inferred, reg);
-  if (fromEmail) return fromEmail;
-  return sanitizeDisplayName(merged.name || '', reg);
+  const fromPersonal = sanitizeDisplayName(inferred, reg);
+  if (fromPersonal) return fromPersonal;
+  return current || '';
 }
 
 function collectAesNameCandidates(src) {
@@ -150,6 +174,7 @@ function pickBestAesName(candidates, registerNumber) {
     if (key.includes('full')) score += 200;
     if (key.includes('first_last')) score += 150;
     if (key.includes('student') || key.includes('stud')) score += 80;
+    if (key === 'stud_name' || key === 'student_name' || key === 'studentname') score += 300;
     if (clean.includes(' ')) score += 50;
     if (key === 'name' || key === 'nm' || key === 'uname') score -= 30;
     if (score > bestScore) {

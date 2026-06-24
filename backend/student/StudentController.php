@@ -15,6 +15,7 @@ use PMS\Models\NotificationModel;
 use PMS\Models\ResumeModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
+use PMS\Models\UserModel;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\ApplicationUploadService;
@@ -81,6 +82,12 @@ final class StudentController
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
     $aes = new AesLoginService();
+    $reg = (string) ($profile['registerNumber'] ?? '');
+    $apiName = $aes->resolveStudentDisplayName($reg);
+    if ($apiName !== '' && strcasecmp($apiName, (string) ($user['name'] ?? '')) !== 0) {
+      (new UserModel())->updateUser((string) $user['_id'], ['name' => $apiName]);
+      $user['name'] = $apiName;
+    }
     $aes->syncStudentDepartmentIfMissing($profile, array_merge(
         \PMS\Utils\Security::getSessionAesProfile(),
         ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]

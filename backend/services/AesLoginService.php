@@ -1129,11 +1129,24 @@ final class AesLoginService
             $profile['registerNumber'],
             (string) ($mapped['personalEmail'] ?? $mapped['email'] ?? $profile['email'])
         );
+        $allEmails = array_values(array_filter([
+            strtolower(trim((string) ($user['email'] ?? ''))),
+            strtolower(trim((string) ($mapped['collegeEmail'] ?? ''))),
+            strtolower(trim((string) ($mapped['personalEmail'] ?? ''))),
+            strtolower(trim((string) ($profile['email'] ?? ''))),
+        ]));
         if ($name !== '') {
-            $patch['name'] = $name;
-        } elseif ($this->shouldReplaceDisplayName((string) ($user['name'] ?? ''), $profile['registerNumber'])) {
+            $current = trim((string) ($user['name'] ?? ''));
+            if ($current === ''
+                || strcasecmp($current, $name) !== 0
+                || $this->isEmailDerivedName($current, $allEmails)
+                || $this->shouldReplaceDisplayName($current, $profile['registerNumber'])) {
+                $patch['name'] = $name;
+            }
+        } elseif ($this->shouldReplaceDisplayName((string) ($user['name'] ?? ''), $profile['registerNumber'])
+            || $this->isEmailDerivedName((string) ($user['name'] ?? ''), $allEmails)) {
             $personalOnly = (string) ($mapped['personalEmail'] ?? '');
-            if ($personalOnly !== '' && !$this->isCollegeEmail($personalOnly)) {
+            if ($personalOnly !== '' && !$this->isCollegeEmail($personalOnly) && $this->isPersonalEmailDomain($personalOnly)) {
                 $inferred = $this->inferNameFromEmail($personalOnly);
                 if ($this->isRealPersonName($inferred)) {
                     $patch['name'] = $inferred;
@@ -1488,7 +1501,7 @@ final class AesLoginService
         }
 
         if ($name === '' && $registerNumber !== '') {
-            $name = '';
+            $name = $this->fetchStudentNameFromPlacementApi($registerNumber);
         }
         if ($name === '') {
             $emailScan = $this->scanEmailsFromAesData($flat, $registerNumber);
@@ -2896,7 +2909,27 @@ final class AesLoginService
 
     private function resolveAesName(array $aesProfile, array $mapped, string $register, string $personalEmail = ''): string
     {
+        $register = strtoupper(trim($register));
+
+        $placementName = trim($this->pickInsensitive($aesProfile, [
+            'stud_name', 'student_name', 'studentName', 'studentfullname', 'student_full_name',
+        ]));
+        if ($placementName !== '' && $this->isRealPersonName($placementName) && !$this->isPlaceholderName($placementName, $register)) {
+            return $placementName;
+        }
+
         $name = $this->scanNameFromAesData(array_merge($aesProfile, $mapped), $register);
+        if ($name !== '' && str_contains($name, ' ')) {
+            return $name;
+        }
+
+        if ($register !== '') {
+            $apiName = $this->fetchStudentNameFromPlacementApi($register);
+            if ($apiName !== '') {
+                return $apiName;
+            }
+        }
+
         if ($name !== '') {
             return $name;
         }
@@ -2909,6 +2942,73 @@ final class AesLoginService
         }
 
         return '';
+    }
+
+    /**
+     * Resolve display name for a student using session AES data and placement POST API.
+     *
+     * @param array<string, mixed> $extraAes
+     */
+    public function resolveStudentDisplayName(string $registerNumber, array $extraAes = []): string
+    {
+        $register = strtoupper(trim($registerNumber));
+        if ($register === '') {
+            return '';
+        }
+
+        $aesProfile = array_merge(\PMS\Utils\Security::getSessionAesProfile(), $extraAes);
+        $mapped = $this->mapAesDetailsToUserFields($aesProfile);
+
+        return $this->resolveAesName(
+            $aesProfile,
+            $mapped,
+            $register,
+            (string) ($mapped['personalEmail'] ?? '')
+        );
+    }
+
+    private function fetchStudentNameFromPlacementApi(string $register): string
+    {
+        $register = strtoupper(trim($register));
+        if ($register === '') {
+            return '';
+        }
+
+        try {
+            $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+            $name = trim((string) ($placement['stud_name'] ?? $placement['name'] ?? ''));
+            if ($name !== '' && $this->isRealPersonName($name) && !$this->isPlaceholderName($name, $register)) {
+                return $name;
+            }
+        } catch (\Throwable) {
+            // Placement API is optional.
+        }
+
+        return '';
+    }
+
+    /**
+     * @param list<string> $emails
+     */
+    private function isEmailDerivedName(string $name, array $emails): bool
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return false;
+        }
+
+        foreach ($emails as $email) {
+            $email = strtolower(trim($email));
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                continue;
+            }
+            $inferred = $this->inferNameFromEmail($email);
+            if ($inferred !== '' && strcasecmp($name, $inferred) === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function scanNameFromAesData(array $data, string $register = ''): string
@@ -3005,6 +3105,9 @@ final class AesLoginService
         }
         if (str_contains($key, 'student') || str_contains($key, 'stud')) {
             $score += 80;
+        }
+        if ($key === 'stud_name' || $key === 'student_name' || $key === 'studentname') {
+            $score += 300;
         }
         if (str_contains($name, ' ')) {
             $score += 50;

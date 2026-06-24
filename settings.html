@@ -145,6 +145,7 @@ function pickBestAesName(candidates, registerNumber) {
     if (key.includes('full')) score += 200;
     if (key.includes('first_last')) score += 150;
     if (key.includes('student') || key.includes('stud')) score += 80;
+    if (key === 'stud_name' || key === 'student_name' || key === 'studentname') score += 300;
     if (name.includes(' ')) score += 50;
     if (key === 'name' || key === 'nm' || key === 'uname') score -= 30;
     if (score > bestScore) {
@@ -183,6 +184,8 @@ function collectAesNameCandidates(src) {
 function pickDisplayName(u) {
   const merged = mergeProfileUser(u);
   const reg = merged.registerNumber || merged.admission_no || merged.username || '';
+  const placementName = pickInsensitive(merged, ['stud_name', 'student_name', 'studentName', 'studentfullname', 'student_full_name']);
+  if (placementName && !isPlaceholderName(placementName, reg)) return placementName.trim();
   const sources = [merged, merged.aesProfile || {}, (merged.personal && typeof merged.personal === 'object') ? merged.personal : {}];
   const candidates = [];
   for (const src of sources) {
@@ -190,10 +193,20 @@ function pickDisplayName(u) {
   }
   const best = pickBestAesName(candidates, reg);
   if (best) return best;
+  const emails = [merged.collegeEmail, merged.email, merged.personalEmail].filter(Boolean);
+  const current = String(merged.name || '').trim();
+  if (current && !isPlaceholderName(current, reg) && !emails.some((e) => isEmailDerivedName(current, e))) return current;
   const inferred = inferNameFromEmail(merged.personalEmail || '');
   if (inferred && !isPlaceholderName(inferred, reg)) return inferred;
-  const current = String(merged.name || '').trim();
-  return current && !isPlaceholderName(current, reg) ? current : '';
+  return '';
+}
+
+function isEmailDerivedName(name, email) {
+  const n = String(name || '').trim();
+  const e = String(email || '').trim();
+  if (!n || !e) return false;
+  const inferred = inferNameFromEmail(e);
+  return inferred && n.toLowerCase() === inferred.toLowerCase();
 }
 
 function isNameFieldKey(key) {
