@@ -133,6 +133,8 @@ $routes = [
     ['POST',   '/admin/users/{id}/block',       [AdminController::class, 'blockUser']],
     ['POST',   '/admin/users/{id}/unblock',     [AdminController::class, 'unblockUser']],
     ['POST',   '/admin/users/{id}/approve',     [AdminController::class, 'approveUser']],
+    ['POST',   '/admin/users/{id}/promote-to-officer', [AdminController::class, 'promoteStaffToPlacementOfficer']],
+    ['POST',   '/admin/users/{id}/demote-from-officer', [AdminController::class, 'demotePlacementOfficer']],
     ['GET',    '/admin/placement-officers',     [AdminController::class, 'listPlacementOfficers']],
     ['GET',    '/admin/departments',            [AdminController::class, 'listDepartments']],
     ['POST',   '/admin/departments',            [AdminController::class, 'createDepartment']],

@@ -2126,6 +2126,13 @@ const DepartmentStore = {
     toast(res.message || 'Could not delete department.', 'error');
     return false;
   },
+  async unassignOfficer(deptId) {
+    if (!(await requireWriteSession())) return false;
+    const res = await api(`/admin/departments/${encodeURIComponent(deptId)}/placement-officer`, { method: 'DELETE' });
+    if (res.success) { await this.fetch(); return true; }
+    toast(res.message || 'Could not remove placement officer.', 'error');
+    return false;
+  },
 };
 
 function seedDeptOfficers() {
@@ -2261,6 +2268,42 @@ const UserRegistry = {
     if (res.success) { await this.fetch(); return res.data; }
     toast(res.message || 'Could not create user.', 'error');
     return null;
+  },
+  async promoteToOfficer(userId) {
+    if (!(await requireWriteSession())) return false;
+    const res = await api(`/admin/users/${encodeURIComponent(userId)}/promote-to-officer`, { method: 'POST' });
+    if (res.success) {
+      await this.fetch();
+      if (typeof DepartmentStore !== 'undefined') await DepartmentStore.fetch();
+      return true;
+    }
+    toast(res.message || 'Could not assign placement officer.', 'error');
+    return false;
+  },
+  async demoteFromOfficer(userId) {
+    if (!(await requireWriteSession())) return false;
+    const res = await api(`/admin/users/${encodeURIComponent(userId)}/demote-from-officer`, { method: 'POST' });
+    if (res.success) {
+      await this.fetch();
+      if (typeof DepartmentStore !== 'undefined') await DepartmentStore.fetch();
+      return true;
+    }
+    toast(res.message || 'Could not remove placement officer role.', 'error');
+    return false;
+  },
+  async changeDepartmentOfficer(deptId, userId) {
+    if (!(await requireWriteSession())) return false;
+    const res = await api(`/admin/departments/${encodeURIComponent(deptId)}/placement-officer`, {
+      method: 'PUT',
+      body: { userId },
+    });
+    if (res.success) {
+      await this.fetch();
+      if (typeof DepartmentStore !== 'undefined') await DepartmentStore.fetch();
+      return true;
+    }
+    toast(res.message || 'Could not change placement officer.', 'error');
+    return false;
   },
   async approve(id) {
     if (Auth.role() === 'placement_officer') {

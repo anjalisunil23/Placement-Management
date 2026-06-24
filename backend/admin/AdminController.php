@@ -371,6 +371,73 @@ final class AdminController
         Response::success(['id' => $id], 'User created.', 201);
     }
 
+    /** POST /api/admin/users/{id}/promote-to-officer */
+    public function promoteStaffToPlacementOfficer(string $userId): void
+    {
+        RBACMiddleware::requireAdmin();
+        $user = $this->userModel->findById($userId);
+        if (!$user) {
+            Response::notFound('User not found.');
+        }
+
+        $role = (string) ($user['role'] ?? '');
+        if ($role === 'placement_officer') {
+            Response::success(['id' => $userId], 'User is already a placement officer.');
+        }
+        if ($role !== 'staff') {
+            Response::error('Only staff members in a department can be assigned as placement officers.', 422);
+        }
+
+        $staffProfile = (new StaffModel())->findByUserId($userId);
+        $departmentId = (string) ($staffProfile['departmentId'] ?? '');
+        if ($staffProfile === null || $departmentId === '') {
+            Response::error('Staff member must be assigned to a department first.', 422);
+        }
+        if (!(new DepartmentModel())->findById($departmentId)) {
+            Response::error('Staff department not found.', 422);
+        }
+
+        $this->userModel->updateUser($userId, [
+            'role'     => 'placement_officer',
+            'status'   => 'active',
+            'approved' => true,
+        ]);
+
+        try {
+            $this->assignPlacementOfficerProfile($userId, [
+                'departmentId' => $departmentId,
+                'designation'  => $staffProfile['designation'] ?? 'Placement Officer',
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            $this->userModel->updateUser($userId, ['role' => 'staff']);
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            $this->userModel->updateUser($userId, ['role' => 'staff']);
+            Response::error($e->getMessage(), 409);
+        }
+
+        Response::success(
+            ['id' => $userId, 'departmentId' => $departmentId],
+            'Staff member assigned as placement officer.'
+        );
+    }
+
+    /** POST /api/admin/users/{id}/demote-from-officer */
+    public function demotePlacementOfficer(string $userId): void
+    {
+        RBACMiddleware::requireAdmin();
+        $user = $this->userModel->findById($userId);
+        if (!$user) {
+            Response::notFound('User not found.');
+        }
+        if (($user['role'] ?? '') !== 'placement_officer') {
+            Response::error('User is not a placement officer.', 422);
+        }
+
+        $this->demotePlacementOfficerToStaff($userId);
+        Response::success(['id' => $userId], 'Placement officer role removed.');
+    }
+
     /** PUT /api/admin/users/{id} */
     public function updateUser(string $id): void
     {
@@ -468,10 +535,41 @@ final class AdminController
 
         $user = $this->userModel->findById($userId);
         if (!$user) {
-            Response::notFound('Placement officer user not found.');
+            Response::notFound('User not found.');
         }
-        if (($user['role'] ?? '') !== 'placement_officer') {
-            Response::error('User must have role placement_officer.', 422);
+
+        $role = (string) ($user['role'] ?? '');
+        $staffProfile = null;
+        if ($role === 'staff') {
+            $staffProfile = (new StaffModel())->findByUserId($userId);
+            $staffDeptId = (string) ($staffProfile['departmentId'] ?? '');
+            if ($staffProfile === null || $staffDeptId === '') {
+                Response::error('Staff member must be assigned to a department first.', 422);
+            }
+            if ((string) Security::toObjectId($staffDeptId) !== (string) Security::toObjectId($departmentId)) {
+                Response::error('Staff member must belong to this department.', 422);
+            }
+            $this->userModel->updateUser($userId, [
+                'role'     => 'placement_officer',
+                'status'   => 'active',
+                'approved' => true,
+            ]);
+            try {
+                $this->assignPlacementOfficerProfile($userId, [
+                    'departmentId' => $departmentId,
+                    'designation'  => $input['designation'] ?? ($staffProfile['designation'] ?? 'Placement Officer'),
+                ]);
+            } catch (\InvalidArgumentException $e) {
+                $this->userModel->updateUser($userId, ['role' => 'staff']);
+                Response::error($e->getMessage(), 422);
+            } catch (\RuntimeException $e) {
+                $this->userModel->updateUser($userId, ['role' => 'staff']);
+                Response::error($e->getMessage(), 409);
+            }
+            Response::success(null, 'Placement officer assigned.');
+        }
+        if ($role !== 'placement_officer') {
+            Response::error('User must be staff or a placement officer.', 422);
         }
 
         $po = new PlacementOfficerModel();
@@ -503,7 +601,15 @@ final class AdminController
     public function unassignPlacementOfficer(string $departmentId): void
     {
         RBACMiddleware::requireAdmin();
-        (new PlacementOfficerModel())->deleteByDepartment($departmentId);
+        $poModel = new PlacementOfficerModel();
+        $existing = $poModel->findByDepartment($departmentId);
+        if ($existing) {
+            $userId = (string) ($existing['userId'] ?? '');
+            $poModel->deleteByDepartment($departmentId);
+            if ($userId !== '') {
+                $this->demotePlacementOfficerToStaff($userId, $departmentId);
+            }
+        }
         Response::success(null, 'Placement officer unassigned.');
     }
 
@@ -1255,11 +1361,50 @@ final class AdminController
         $poModel = new PlacementOfficerModel();
         $existingDept = $poModel->findByDepartment($deptId);
         if ($existingDept && (string) ($existingDept['userId'] ?? '') !== (string) Security::toObjectId($userId)) {
+            $replacedUserId = (string) ($existingDept['userId'] ?? '');
             $poModel->deleteByDepartment($deptId);
+            if ($replacedUserId !== '') {
+                $this->demotePlacementOfficerToStaff($replacedUserId, $deptId);
+            }
         }
 
         if (!$poModel->findByUserId($userId)) {
             $poModel->createProfile($userId, $input);
         }
+    }
+
+    private function demotePlacementOfficerToStaff(string $userId, string $departmentId = ''): void
+    {
+        $user = $this->userModel->findById($userId);
+        if ($user === null || ($user['role'] ?? '') !== 'placement_officer') {
+            return;
+        }
+
+        $poModel = new PlacementOfficerModel();
+        $profile = $poModel->findByUserId($userId);
+        $deptId = $departmentId !== ''
+            ? $departmentId
+            : (string) ($profile['departmentId'] ?? '');
+        if ($profile !== null) {
+            $poModel->deleteByUserId($userId);
+        }
+
+        $staffModel = new StaffModel();
+        if ($staffModel->findByUserId($userId) === null && $deptId !== '') {
+            try {
+                $staffModel->createProfile($userId, [
+                    'departmentId' => $deptId,
+                    'designation'  => 'Staff',
+                ]);
+            } catch (\Throwable) {
+                // Profile may already exist from a concurrent update.
+            }
+        }
+
+        $this->userModel->updateUser($userId, [
+            'role'     => 'staff',
+            'status'   => 'active',
+            'approved' => true,
+        ]);
     }
 }

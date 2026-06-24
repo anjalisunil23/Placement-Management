@@ -14,6 +14,7 @@ const AdminApi = {
       status: u.approved ? 'approved' : (u.status === 'pending' ? 'pending' : (u.status || 'pending')),
       blocked: u.status === 'blocked',
       department: u.department || u.departmentName || '',
+      departmentId: u.departmentId || '',
       designation: u.designation || '',
       company: u.company || u.companyName || '',
       alumniRole: u.alumniRole || '',
