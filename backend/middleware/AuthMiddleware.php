@@ -155,9 +155,18 @@ final class AuthMiddleware
     }
 
     $aesProfile = Security::getSessionAesProfile();
+    $service = new \PMS\Services\AesLoginService();
+    $data = $service->applyAesSessionToUserFields($data);
+    if (($data['role'] ?? $user['role'] ?? '') === 'student') {
+      $syncedName = $service->syncStudentNameFromPlacement(
+          array_merge($user, $data),
+          (string) ($data['registerNumber'] ?? '')
+      );
+      if ($syncedName !== '') {
+        $data['name'] = $syncedName;
+      }
+    }
     if ($aesProfile !== []) {
-      $service = new \PMS\Services\AesLoginService();
-      $data = $service->applyAesSessionToUserFields($data);
       $aesProfile = DocumentHelper::jsonSafe($service->sanitizeAesProfileForClient($aesProfile));
       if (is_array($aesProfile)) {
         $data['aesProfile'] = $aesProfile;

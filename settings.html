@@ -192,13 +192,18 @@ function pickDisplayName(u) {
     candidates.push(...collectAesNameCandidates(src));
   }
   const best = pickBestAesName(candidates, reg);
-  if (best) return best;
+  if (best && !isNameEmailDerived(best, merged)) return best;
   const emails = [merged.collegeEmail, merged.email, merged.personalEmail].filter(Boolean);
   const current = String(merged.name || '').trim();
   if (current && !isPlaceholderName(current, reg) && !emails.some((e) => isEmailDerivedName(current, e))) return current;
   const inferred = inferNameFromEmail(merged.personalEmail || '');
   if (inferred && !isPlaceholderName(inferred, reg)) return inferred;
   return '';
+}
+
+function isNameEmailDerived(name, merged) {
+  const emails = [merged.collegeEmail, merged.email, merged.personalEmail].filter(Boolean);
+  return emails.some((e) => isEmailDerivedName(name, e));
 }
 
 function isEmailDerivedName(name, email) {
@@ -543,7 +548,7 @@ async function loadSettingsProfile() {
         departmentCode: p.departmentCode || p.branch || p.programme || p.department?.code || user.department,
         branch: p.branch || p.programme || p.departmentName || '',
         programme: p.programme || p.branch || p.departmentName || '',
-        stud_photo: p.photoUrl || p.photo?.url || '',
+        stud_name: p.user?.stud_name || p.user?.name || user.name || '',
         photoUrl: p.photoUrl || p.photo?.url || '',
         photo: p.photo || user.photo,
       };

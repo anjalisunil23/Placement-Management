@@ -15,7 +15,6 @@ use PMS\Models\NotificationModel;
 use PMS\Models\ResumeModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
-use PMS\Models\UserModel;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\ApplicationUploadService;
@@ -82,10 +81,17 @@ final class StudentController
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
     $aes = new AesLoginService();
-    $reg = (string) ($profile['registerNumber'] ?? '');
-    $apiName = $aes->resolveStudentDisplayName($reg);
-    if ($apiName !== '' && strcasecmp($apiName, (string) ($user['name'] ?? '')) !== 0) {
-      (new UserModel())->updateUser((string) $user['_id'], ['name' => $apiName]);
+    $sessionAes = \PMS\Utils\Security::getSessionAesProfile();
+    $reg = $aes->resolveAesAdmissionNumber(
+        (string) ($profile['registerNumber'] ?? ''),
+        $sessionAes
+    );
+    if ($reg !== '' && (string) ($profile['registerNumber'] ?? '') === '') {
+      $this->studentModel->update((string) $profile['_id'], ['registerNumber' => $reg]);
+      $profile['registerNumber'] = $reg;
+    }
+    $apiName = $aes->syncStudentNameFromPlacement($user, $reg);
+    if ($apiName !== '') {
       $user['name'] = $apiName;
     }
     $aes->syncStudentDepartmentIfMissing($profile, array_merge(
@@ -120,6 +126,7 @@ final class StudentController
 
     $out['user'] = [
       'name'          => (string) ($merged['name'] ?? $user['name'] ?? ''),
+      'stud_name'     => (string) ($merged['name'] ?? $user['name'] ?? ''),
       'email'         => $collegeEmail !== '' ? $collegeEmail : ($personalEmail !== '' ? $personalEmail : (string) ($user['email'] ?? '')),
       'collegeEmail'  => $collegeEmail,
       'personalEmail' => $personalEmail,

@@ -121,7 +121,7 @@ function resolveSessionName(merged, registerNumber) {
     candidates.push(...collectAesNameCandidates(src));
   }
   const best = pickBestAesName(candidates, reg);
-  if (best) return best;
+  if (best && !isNameEmailDerived(best, merged)) return best;
   const emails = [merged.collegeEmail, merged.email, merged.personalEmail].filter(Boolean);
   const current = sanitizeDisplayName(merged.name || '', reg);
   if (current && !emails.some((e) => isEmailDerivedName(current, e))) return current;
@@ -183,6 +183,11 @@ function pickBestAesName(candidates, registerNumber) {
     }
   }
   return best;
+}
+
+function isNameEmailDerived(name, merged) {
+  const emails = [merged.collegeEmail, merged.email, merged.personalEmail].filter(Boolean);
+  return emails.some((e) => isEmailDerivedName(name, e));
 }
 
 function pickInsensitiveFrom(obj, keys) {
