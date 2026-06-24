@@ -47,6 +47,13 @@ if ($uri === '/' || $uri === '/index' || $uri === '/index.html') {
     exit;
 }
 
+// Legacy public stats URL
+if ($uri === '/public/stats.html') {
+    header('Content-Type: text/html; charset=utf-8');
+    readfile(__DIR__ . '/public-stats.html');
+    return true;
+}
+
 // Existing files (css, js, images, .html, etc.)
 $file = __DIR__ . $uri;
 if ($uri !== '/' && is_file($file)) {

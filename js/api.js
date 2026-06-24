@@ -1,8 +1,8 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260624h';
+const APP_SCRIPT_VERSION = '20260624i';
 
 const BRAND = {
-  logoSrc: 'css/img/ajce-logo.png',
+  logoSrc: '/css/img/ajce-logo.png',
   logoAlt: 'Amal Jyothi College of Engineering (Autonomous)',
   title: 'AJCE Placements',
   subtitle: 'Amal Jyothi College of Engineering',
