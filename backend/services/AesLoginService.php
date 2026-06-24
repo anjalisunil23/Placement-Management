@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Models\DepartmentModel;
+use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Utils\Security;
@@ -199,11 +200,11 @@ final class AesLoginService
 
         $user = $this->resolveOrProvisionUser($profile, $aesDetails, $mapped, $emails);
         if ($user === null) {
-            if ($profile['role'] === 'staff') {
-                throw new \RuntimeException('Could not create your PlaceHub staff account. AES must include a valid college email address.');
+            if ($profile['role'] === 'placement_officer') {
+                throw new \RuntimeException('No PlaceHub account matches your AES placement officer profile. Ask the placement cell to register your account first.');
             }
-            if (in_array($profile['role'], ['placement_officer', 'faculty'], true)) {
-                throw new \RuntimeException('No PlaceHub account matches your AES profile. Ask the placement cell to register your account first.');
+            if ($profile['role'] === 'staff') {
+                throw new \RuntimeException('Could not create your PlaceHub staff account from AES login. A valid college email is required.');
             }
             throw new \RuntimeException('No PlaceHub account matches your AES profile. Students are created automatically on first AES sign-in when admission number is available.');
         }
@@ -767,17 +768,21 @@ final class AesLoginService
      */
     private function syncStaffFromAes(array $user, array $profile, array $aesDetails): void
     {
-        $staffModel = new \PMS\Models\StaffModel();
+        $staffModel = new StaffModel();
         $existing = $staffModel->findByUserId((string) $user['_id']);
+        $extras = $this->mapAesDetailsToUserFields($aesDetails);
+
         if (!$existing) {
-            $this->ensureStaffProfile($user, $profile, $aesDetails);
-            $existing = $staffModel->findByUserId((string) $user['_id']);
-            if (!$existing) {
-                return;
-            }
+            $designation = trim((string) ($extras['designation'] ?? ''));
+            $staffModel->createProfile((string) $user['_id'], [
+                'departmentId' => $this->resolveDepartmentId($profile['departmentCode'] !== '' ? $profile['departmentCode'] : (string) ($extras['department'] ?? '')),
+                'designation'  => $designation !== '' ? $designation : 'Faculty',
+                'phone'        => (string) ($extras['phone'] ?? ''),
+            ]);
+
+            return;
         }
 
-        $extras = $this->mapAesDetailsToUserFields($aesDetails);
         $patch = [];
 
         if (!empty($extras['designation'])) {
@@ -958,7 +963,7 @@ final class AesLoginService
                     return $this->ensureStudentProfile($user, $profile);
                 }
                 if (($user['role'] ?? '') === 'staff') {
-                    return $this->ensureStaffProfile($user, $profile, $aesDetails);
+                    return $this->ensureStaffProfile($user, $profile, $mapped);
                 }
 
                 return $user;
@@ -976,9 +981,9 @@ final class AesLoginService
         }
 
         if ($profile['role'] === 'staff') {
-            $toProvision = $this->profileForStaffProvisioning($profile, $resolvedEmails, $mapped);
+            $toProvision = $this->profileForStaffProvisioning($profile, $resolvedEmails);
             if ($toProvision['email'] !== '') {
-                return $this->provisionStaff($toProvision, $aesDetails);
+                return $this->provisionStaff($toProvision, $mapped);
             }
 
             return null;
@@ -1057,6 +1062,105 @@ final class AesLoginService
 
     /**
      * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array{personalEmail?:string,collegeEmail?:string,email?:string} $resolvedEmails
+     * @return array{name:string,email:string,registerNumber:string,role:string,departmentCode:string}
+     */
+    private function profileForStaffProvisioning(array $profile, array $resolvedEmails): array
+    {
+        if ($profile['email'] === '') {
+            $profile['email'] = (string) ($resolvedEmails['collegeEmail'] ?? '');
+        }
+        if ($profile['email'] === '') {
+            $profile['email'] = (string) ($resolvedEmails['personalEmail'] ?? '');
+        }
+        if ($profile['email'] === '') {
+            $profile['email'] = (string) ($resolvedEmails['email'] ?? '');
+        }
+
+        return $profile;
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $mapped
+     * @return array<string, mixed>
+     */
+    private function provisionStaff(array $profile, array $mapped = []): array
+    {
+        $userModel = new UserModel();
+        $staffModel = new StaffModel();
+
+        if ($userModel->findByEmail($profile['email'])) {
+            throw new \RuntimeException('This email is already registered in PlaceHub.');
+        }
+
+        $name = trim($profile['name'] ?? '');
+        if ($name === '') {
+            $name = 'Staff Member';
+        }
+
+        $deptId = $this->resolveDepartmentId($profile['departmentCode']);
+        $designation = trim((string) ($mapped['designation'] ?? ''));
+        if ($designation === '') {
+            $designation = 'Faculty';
+        }
+
+        $userId = $userModel->createUser([
+            'name'     => $name,
+            'email'    => $profile['email'],
+            'password' => bin2hex(random_bytes(16)),
+            'role'     => 'staff',
+            'status'   => 'active',
+            'approved' => true,
+        ]);
+
+        $staffModel->createProfile($userId, [
+            'departmentId' => $deptId,
+            'designation'  => $designation,
+            'phone'        => (string) ($mapped['phone'] ?? ''),
+        ]);
+
+        $user = $userModel->findById($userId);
+        if (!$user) {
+            throw new \RuntimeException('Could not create your PlaceHub staff account.');
+        }
+
+        return $user;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $mapped
+     * @return array<string, mixed>
+     */
+    private function ensureStaffProfile(array $user, array $profile, array $mapped = []): array
+    {
+        if (($user['role'] ?? '') !== 'staff') {
+            return $user;
+        }
+
+        $staffModel = new StaffModel();
+        if ($staffModel->findByUserId((string) $user['_id'])) {
+            return $user;
+        }
+
+        $designation = trim((string) ($mapped['designation'] ?? ''));
+        if ($designation === '') {
+            $designation = 'Faculty';
+        }
+
+        $staffModel->createProfile((string) $user['_id'], [
+            'departmentId' => $this->resolveDepartmentId($profile['departmentCode']),
+            'designation'  => $designation,
+            'phone'        => (string) ($mapped['phone'] ?? ''),
+        ]);
+
+        return $user;
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
      * @return array<string, mixed>
      */
     private function provisionStudent(array $profile): array
@@ -1098,104 +1202,6 @@ final class AesLoginService
         if (!$user) {
             throw new \RuntimeException('Could not create your PlaceHub student account.');
         }
-
-        return $user;
-    }
-
-    /**
-     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
-     * @param array{personalEmail?:string,collegeEmail?:string,email?:string} $resolvedEmails
-     * @param array<string, mixed> $mapped
-     * @return array{name:string,email:string,registerNumber:string,role:string,departmentCode:string}
-     */
-    private function profileForStaffProvisioning(array $profile, array $resolvedEmails, array $mapped): array
-    {
-        if ($profile['email'] === '') {
-            $profile['email'] = (string) ($resolvedEmails['collegeEmail'] ?? '');
-        }
-        if ($profile['email'] === '') {
-            $profile['email'] = (string) ($resolvedEmails['personalEmail'] ?? '');
-        }
-        if ($profile['email'] === '') {
-            $profile['email'] = (string) ($mapped['collegeEmail'] ?? $mapped['email'] ?? '');
-        }
-        if (trim($profile['name']) === '') {
-            $profile['name'] = 'Staff Member';
-        }
-
-        return $profile;
-    }
-
-    /**
-     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
-     * @param array<string, mixed> $aesDetails
-     * @return array<string, mixed>
-     */
-    private function provisionStaff(array $profile, array $aesDetails = []): array
-    {
-        $userModel = new UserModel();
-        $staffModel = new \PMS\Models\StaffModel();
-
-        $email = strtolower(trim($profile['email']));
-        if ($userModel->findByEmail($email)) {
-            throw new \RuntimeException('This email is already registered in PlaceHub.');
-        }
-
-        $extras = $this->mapAesDetailsToUserFields($aesDetails);
-        $deptId = $this->resolveDepartmentId($profile['departmentCode'] !== ''
-            ? $profile['departmentCode']
-            : (string) ($extras['department'] ?? ''));
-
-        $userId = $userModel->createUser([
-            'name'     => $profile['name'] !== '' ? $profile['name'] : 'Staff Member',
-            'email'    => $email,
-            'password' => bin2hex(random_bytes(16)),
-            'role'     => 'staff',
-            'status'   => 'active',
-            'approved' => true,
-        ]);
-
-        $staffModel->createProfile($userId, [
-            'departmentId' => $deptId,
-            'designation'  => (string) ($extras['designation'] ?? 'Faculty'),
-            'phone'        => (string) ($extras['phone'] ?? ''),
-        ]);
-
-        $user = $userModel->findById($userId);
-        if (!$user) {
-            throw new \RuntimeException('Could not create your PlaceHub staff account.');
-        }
-
-        return $user;
-    }
-
-    /**
-     * @param array<string, mixed> $user
-     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
-     * @param array<string, mixed> $aesDetails
-     * @return array<string, mixed>
-     */
-    private function ensureStaffProfile(array $user, array $profile, array $aesDetails = []): array
-    {
-        if (($user['role'] ?? '') !== 'staff') {
-            return $user;
-        }
-
-        $staffModel = new \PMS\Models\StaffModel();
-        if ($staffModel->findByUserId((string) $user['_id'])) {
-            return $user;
-        }
-
-        $extras = $this->mapAesDetailsToUserFields($aesDetails);
-        $deptId = $this->resolveDepartmentId($profile['departmentCode'] !== ''
-            ? $profile['departmentCode']
-            : (string) ($extras['department'] ?? ''));
-
-        $staffModel->createProfile((string) $user['_id'], [
-            'departmentId' => $deptId,
-            'designation'  => (string) ($extras['designation'] ?? 'Faculty'),
-            'phone'        => (string) ($extras['phone'] ?? ''),
-        ]);
 
         return $user;
     }
@@ -1291,11 +1297,6 @@ final class AesLoginService
     private function inferRoleFromAes(array $payload, array $profile, array $emailScan, string $roleHint = ''): string
     {
         $flat = $payload !== [] ? $this->flattenScalarsDeep($payload) : [];
-
-        if ($this->isAesStaffLoginPayload($payload, $flat)) {
-            return 'staff';
-        }
-
         if ($roleHint === '') {
             $roleHint = strtolower(trim($this->pickInsensitive($flat, [
                 'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
@@ -1362,12 +1363,7 @@ final class AesLoginService
         if ($registerNumber !== '' && preg_match('/^[0-9]{2}[A-Z]{2,4}[0-9]{2,4}$/i', $registerNumber)) {
             return 'student';
         }
-        if (
-            $registerNumber !== ''
-            && preg_match('/^\d{4,6}$/', $registerNumber)
-            && !$this->isStaffCollegeEmail($collegeEmail)
-            && !$this->isStaffCollegeEmail($primaryEmail)
-        ) {
+        if ($registerNumber !== '' && preg_match('/^\d{4,6}$/', $registerNumber)) {
             return 'student';
         }
 
@@ -1407,65 +1403,6 @@ final class AesLoginService
         }
 
         return !$this->isStudentCollegeEmail($email);
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     * @param array<string, mixed> $flat
-     */
-    private function isAesStaffLoginPayload(array $payload, array $flat): bool
-    {
-        foreach (['staff', 'employee', 'faculty', 'teacher'] as $nestedKey) {
-            if (isset($payload[$nestedKey]) && is_array($payload[$nestedKey]) && $payload[$nestedKey] !== []) {
-                return true;
-            }
-        }
-
-        foreach (['login_as', 'loginas', 'login_mode', 'loginmode', 'portal_type', 'usertype_selected', 'selected_role'] as $key) {
-            $val = strtolower(trim($this->pickInsensitive($flat, [$key])));
-            if ($val === '') {
-                continue;
-            }
-            if (str_contains($val, 'staff') || str_contains($val, 'faculty') || str_contains($val, 'teacher') || str_contains($val, 'employee')) {
-                return true;
-            }
-        }
-
-        foreach ($flat as $key => $value) {
-            if (!is_scalar($value)) {
-                continue;
-            }
-            $lowerKey = strtolower((string) $key);
-            $text = strtolower(trim((string) $value));
-            if ($text === '') {
-                continue;
-            }
-            if (in_array($lowerKey, ['login_type', 'logintype', 'user_type', 'usertype', 'category', 'type', 'role'], true)) {
-                if (in_array($text, ['staff', 'faculty', 'teacher', 'employee', 'hod'], true)) {
-                    return true;
-                }
-                if (str_contains($text, 'staff') || str_contains($text, 'faculty') || str_contains($text, 'teacher')) {
-                    return true;
-                }
-            }
-            if (str_contains($lowerKey, 'staff') && !str_contains($lowerKey, 'student')) {
-                return true;
-            }
-            if (in_array($lowerKey, ['designation', 'staff_designation', 'emp_designation'], true) && $text !== '') {
-                return true;
-            }
-        }
-
-        $designation = strtolower(trim($this->pickInsensitive($flat, [
-            'designation', 'staff_designation', 'emp_designation', 'job_title', 'title',
-        ])));
-        $register = strtoupper(trim($this->pickInsensitive($flat, [
-            'registerNumber', 'register_number', 'admission_no', 'admissionNo',
-        ])));
-
-        return $designation !== ''
-            && $register === ''
-            && !$this->isStudentCollegeEmail(strtolower(trim($this->pickInsensitive($flat, ['email', 'college_email', 'official_email']))));
     }
 
     /**
@@ -1903,9 +1840,9 @@ final class AesLoginService
         }
 
         $methods = [
-            'getStaffDetails',
-            'getUserDetails',
             'getStudentDetails',
+            'getUserDetails',
+            'getStaffDetails',
             'getStudentProfile',
             'getPersonalDetails',
             'getContactDetails',
