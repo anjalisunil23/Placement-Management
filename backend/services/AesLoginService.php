@@ -449,6 +449,13 @@ final class AesLoginService
             $data['name'] = $aesName;
         }
 
+        $photoUrl = trim($this->pickInsensitive($aesProfile, [
+            'stud_photo', 'photoUrl', 'photo_url', 'profile_photo', 'profilePhoto',
+        ]));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $data['photoUrl'] = $photoUrl;
+        }
+
         if (empty($data['phone']) && !empty($mapped['phone'])) {
             $data['phone'] = $mapped['phone'];
         }
@@ -647,6 +654,68 @@ final class AesLoginService
     }
 
     /**
+     * Sync CGPA, backlogs, and profile photo from AES getStudInfo4Placement.
+     *
+     * @param array<string, mixed> $profile
+     */
+    public function syncStudentPlacementExtras(array $profile): void
+    {
+        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+        if ($register === '') {
+            return;
+        }
+
+        try {
+            $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+        } catch (\Throwable) {
+            return;
+        }
+        if ($placement === []) {
+            return;
+        }
+
+        $patch = [];
+        $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+
+        if (isset($placement['cgpa']) && (float) $placement['cgpa'] > 0) {
+            $apiCgpa = (float) $placement['cgpa'];
+            if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
+                $academic['cgpa'] = $apiCgpa;
+                $patch['academic'] = $academic;
+            }
+        }
+
+        if (isset($placement['backlogs']) || isset($placement['backlog'])) {
+            $apiBacklogs = (int) ($placement['backlogs'] ?? $placement['backlog'] ?? 0);
+            $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
+            if ((int) ($academic['backlogs'] ?? -1) !== $apiBacklogs) {
+                $academic['backlogs'] = $apiBacklogs;
+                $patch['academic'] = $academic;
+            }
+        }
+
+        $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $existingPhoto = is_array($profile['photo'] ?? null) ? $profile['photo'] : null;
+            $source = is_array($existingPhoto) ? (string) ($existingPhoto['source'] ?? '') : '';
+            if ($source !== 'upload') {
+                $existingUrl = is_array($existingPhoto) ? trim((string) ($existingPhoto['url'] ?? '')) : '';
+                if ($existingUrl !== $photoUrl) {
+                    $patch['photo'] = [
+                        'url'      => $photoUrl,
+                        'source'   => 'aes',
+                        'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+                    ];
+                }
+            }
+        }
+
+        if ($patch !== []) {
+            (new StudentModel())->update((string) $profile['_id'], $patch);
+        }
+    }
+
+    /**
      * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
      * @param array<string, mixed> $aesDetails
      * @param array<string, mixed> $payload
@@ -712,23 +781,35 @@ final class AesLoginService
             $aesDetails['programme'] = $branch;
             $aesDetails['departmentName'] = $branch;
             $aesDetails['deptName'] = $branch;
-            return;
+        } else {
+            $deptCode = strtoupper(trim((string) (
+                $placement['deptCode'] ?? $placement['department'] ?? $placement['department_code'] ?? ''
+            )));
+            $deptName = trim((string) (
+                $placement['deptName'] ?? $placement['departmentName'] ?? $placement['department_name'] ?? ''
+            ));
+            if ($deptCode !== '') {
+                $profile['departmentCode'] = $deptCode;
+                $aesDetails['department'] = $deptCode;
+                $aesDetails['deptCode'] = $deptCode;
+            }
+            if ($deptName !== '') {
+                $aesDetails['departmentName'] = $deptName;
+                $aesDetails['deptName'] = $deptName;
+            }
         }
 
-        $deptCode = strtoupper(trim((string) (
-            $placement['deptCode'] ?? $placement['department'] ?? $placement['department_code'] ?? ''
-        )));
-        $deptName = trim((string) (
-            $placement['deptName'] ?? $placement['departmentName'] ?? $placement['department_name'] ?? ''
-        ));
-        if ($deptCode !== '') {
-            $profile['departmentCode'] = $deptCode;
-            $aesDetails['department'] = $deptCode;
-            $aesDetails['deptCode'] = $deptCode;
+        if (isset($placement['cgpa']) && (float) $placement['cgpa'] > 0) {
+            $profile['cgpa'] = (float) $placement['cgpa'];
+            $aesDetails['cgpa'] = $profile['cgpa'];
         }
-        if ($deptName !== '') {
-            $aesDetails['departmentName'] = $deptName;
-            $aesDetails['deptName'] = $deptName;
+        if (isset($placement['backlogs']) || isset($placement['backlog'])) {
+            $aesDetails['backlogs'] = (int) ($placement['backlogs'] ?? $placement['backlog'] ?? 0);
+        }
+        $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $aesDetails['stud_photo'] = $photoUrl;
+            $aesDetails['photoUrl'] = $photoUrl;
         }
     }
 
@@ -1031,9 +1112,16 @@ final class AesLoginService
         if ($cgpa !== '' && is_numeric($cgpa)) {
             $mapped['cgpa'] = (float) $cgpa;
         }
-        $backlogs = $this->pick($aesDetails, ['backlogs', 'arrears', 'standing_arrears']);
+        $backlogs = $this->pick($aesDetails, ['backlogs', 'backlog', 'arrears', 'standing_arrears']);
         if ($backlogs !== '' && is_numeric($backlogs)) {
             $mapped['backlogs'] = (int) $backlogs;
+        }
+
+        $photoUrl = trim($this->pickInsensitive($aesDetails, [
+            'stud_photo', 'photoUrl', 'photo_url', 'profile_photo', 'profilePhoto', 'student_photo', 'studentPhoto',
+        ]));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $mapped['photoUrl'] = $photoUrl;
         }
 
         $deptCode = strtoupper(trim($this->pickInsensitive($aesDetails, [
@@ -1231,6 +1319,22 @@ final class AesLoginService
         }
         if ($personalPatch !== []) {
             $patch['personal'] = array_merge($personal, $personalPatch);
+        }
+
+        $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $existingPhoto = is_array($existing['photo'] ?? null) ? $existing['photo'] : null;
+            $source = is_array($existingPhoto) ? (string) ($existingPhoto['source'] ?? '') : '';
+            if ($source !== 'upload') {
+                $existingUrl = is_array($existingPhoto) ? trim((string) ($existingPhoto['url'] ?? '')) : '';
+                if ($existingUrl !== $photoUrl) {
+                    $patch['photo'] = [
+                        'url'      => $photoUrl,
+                        'source'   => 'aes',
+                        'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+                    ];
+                }
+            }
         }
 
         if ($patch !== []) {

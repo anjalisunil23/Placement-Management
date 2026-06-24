@@ -278,6 +278,18 @@ function pickCgpa(u) {
   return '';
 }
 
+function pickPhotoUrl(u) {
+  const merged = mergeProfileUser(u);
+  const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo'];
+  for (const key of keys) {
+    const url = String(merged[key] || '').trim();
+    if (url && /^https?:\/\//i.test(url)) return url;
+  }
+  const local = String(merged.photo?.url || '').trim();
+  if (local) return local.startsWith('http') ? local : local;
+  return '';
+}
+
 function inferNameFromEmail(email) {
   const e = String(email || '').trim().toLowerCase();
   if (!e.includes('@')) return '';
@@ -510,7 +522,7 @@ async function loadSettingsProfile() {
   role = user.role || Auth.role() || role;
   syncRoleFieldsVisibility(role);
   applyProfileFromUser(user, role);
-  setAvatarPhoto(user.photoUrl || user.photo?.url || '');
+  setAvatarPhoto(pickPhotoUrl(user) || user.photoUrl || user.photo?.url || '');
 
   if (role === 'student' && Auth.hasRealAuth()) {
     const res = await api('/student/profile', { skipAuthRedirect: true });
@@ -531,6 +543,9 @@ async function loadSettingsProfile() {
         departmentCode: p.departmentCode || p.branch || p.programme || p.department?.code || user.department,
         branch: p.branch || p.programme || p.departmentName || '',
         programme: p.programme || p.branch || p.departmentName || '',
+        stud_photo: p.photoUrl || p.photo?.url || '',
+        photoUrl: p.photoUrl || p.photo?.url || '',
+        photo: p.photo || user.photo,
       };
       const apiName = pickDisplayName(profileCtx);
       const apiCollegeEmail = pickCollegeEmail(profileCtx);
@@ -550,9 +565,10 @@ async function loadSettingsProfile() {
       document.getElementById('profRegNo').value = reg;
       document.getElementById('profDept').value = apiDept;
       if (apiCgpa) document.getElementById('profCgpa').value = apiCgpa;
-      document.getElementById('profPhone').value = apiPhone;
-      if (p.photo?.url || p.photoUrl) setAvatarPhoto(p.photo?.url || p.photoUrl);
+      const apiPhoto = pickPhotoUrl(profileCtx) || p.photoUrl || p.photo?.url || '';
+      if (apiPhoto) setAvatarPhoto(apiPhoto);
       else setAvatarInitials();
+      document.getElementById('profPhone').value = apiPhone;
       user = {
         ...user,
         name: apiName || user.name,
@@ -564,6 +580,8 @@ async function loadSettingsProfile() {
         departmentName: apiDept || user.departmentName,
         cgpa: apiCgpa || user.cgpa,
         phone: apiPhone || user.phone,
+        photoUrl: apiPhoto || user.photoUrl || '',
+        photo: p.photo || user.photo,
       };
       Auth.set(user, Auth.token());
     }

@@ -92,6 +92,7 @@ final class StudentController
         \PMS\Utils\Security::getSessionAesProfile(),
         ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
     ));
+    $aes->syncStudentPlacementExtras($profile);
     $profile = $this->studentModel->findById((string) $profile['_id']) ?? $profile;
 
     $dept = !empty($profile['departmentId'])
@@ -150,6 +151,12 @@ final class StudentController
     if (!empty($merged['phone']) && empty($personal['phone'])) {
       $personal['phone'] = (string) $merged['phone'];
       $out['personal'] = $personal;
+    }
+    if (!empty($merged['photoUrl'])) {
+      $out['photoUrl'] = (string) $merged['photoUrl'];
+      if (empty($out['photo']) || !is_array($out['photo'])) {
+        $out['photo'] = ['url' => (string) $merged['photoUrl'], 'source' => 'aes'];
+      }
     }
 
     Response::success(DocumentHelper::jsonSafe($out));
@@ -448,8 +455,9 @@ final class StudentController
     $relative = '/uploads/photos/' . $filename;
     $this->studentModel->update((string) $profile['_id'], [
       'photo' => [
-        'file' => $filename,
-        'url'  => $relative,
+        'file'       => $filename,
+        'url'        => $relative,
+        'source'     => 'upload',
         'uploadedAt' => DocumentHelper::now(),
       ],
     ]);

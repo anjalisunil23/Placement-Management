@@ -151,6 +151,9 @@ class StudentModel extends BaseModel
             'parentName'     => (string) ($personal['parentName'] ?? ''),
             'dob'            => (string) ($personal['dob'] ?? ''),
             'aadhar'         => (string) ($personal['aadhar'] ?? ''),
+            'photoUrl'       => is_array($profile['photo'] ?? null)
+                ? (string) (($profile['photo']['url'] ?? ''))
+                : '',
         ];
     }
 }

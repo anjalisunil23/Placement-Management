@@ -430,6 +430,32 @@ final class AesApiService
         if (!empty($record['stud_personal_mails'])) {
             $record['personalEmail'] = strtolower(trim((string) $record['stud_personal_mails']));
         }
+        if (isset($record['cgpa']) && $record['cgpa'] !== '' && is_numeric($record['cgpa'])) {
+            $cgpa = (float) $record['cgpa'];
+            if ($cgpa > 0) {
+                $record['cgpa'] = $cgpa;
+            }
+        }
+        $photoUrl = trim((string) (
+            $record['stud_photo']
+            ?? $record['photoUrl']
+            ?? $record['photo_url']
+            ?? $record['profile_photo']
+            ?? ''
+        ));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $record['stud_photo'] = $photoUrl;
+            $record['photoUrl'] = $photoUrl;
+        }
+        if (!empty($record['stud_class'])) {
+            $record['classBatch'] = trim((string) $record['stud_class']);
+        }
+        if (isset($record['stud_year']) && $record['stud_year'] !== '') {
+            $record['year'] = trim((string) $record['stud_year']);
+        }
+        if (isset($record['stud_semester']) && $record['stud_semester'] !== '') {
+            $record['semester'] = trim((string) $record['stud_semester']);
+        }
         if (isset($record['backlog']) && $record['backlog'] !== '' && is_numeric($record['backlog'])) {
             $record['backlogs'] = (int) $record['backlog'];
         }

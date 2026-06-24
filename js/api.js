@@ -262,10 +262,27 @@ function resolveSessionCgpa(merged) {
   const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
   const keys = ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa'];
   for (const key of keys) {
-    const val = merged[key] ?? academic[key];
+    const val = merged[key] ?? academic[key] ?? merged.aesProfile?.[key];
     if (val != null && val !== '' && Number(val) > 0) return Number(val);
   }
   return undefined;
+}
+
+function resolveSessionPhotoUrl(merged) {
+  const sources = [merged, merged.aesProfile || {}];
+  const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo'];
+  for (const src of sources) {
+    for (const key of keys) {
+      const url = String(src[key] || '').trim();
+      if (url && /^https?:\/\//i.test(url)) return url;
+    }
+    const photo = src.photo;
+    if (photo && typeof photo === 'object') {
+      const url = String(photo.url || '').trim();
+      if (url) return url.startsWith('http') ? url : url;
+    }
+  }
+  return '';
 }
 
 function resolveSessionEmails(merged, registerNumber) {
@@ -578,6 +595,7 @@ const Auth = {
         classBatch: merged.classBatch || prev.classBatch || '',
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
         backlogs: merged.backlogs ?? prev.backlogs,
+        photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || prev.photoUrl || '',
         placed: merged.placed ?? prev.placed,
         title: merged.title ?? prev.title ?? '',
         experience: merged.experience ?? prev.experience,
