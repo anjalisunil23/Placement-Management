@@ -18,7 +18,7 @@ if (file_exists($rootPath . '/.env.local')) {
 }
 
 return [
-    'name'    => $_ENV['APP_NAME'] ?? 'Placement Management System',
+    'name'    => $_ENV['APP_NAME'] ?? 'AJCE Placements',
     'env'     => $_ENV['APP_ENV'] ?? 'production',
     'debug'   => filter_var($_ENV['APP_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN),
     'url'     => rtrim($_ENV['APP_URL'] ?? 'http://localhost', '/'),

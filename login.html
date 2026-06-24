@@ -13,13 +13,10 @@
 <div class="login-wrap">
   <aside class="login-aside">
     <div class="content">
-      <div class="d-flex align-items-center gap-2">
-        <img src="/logo.php?v=20260624m" alt="Amal Jyothi College of Engineering (Autonomous)" class="brand-logo" height="48" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='/ajce-logo.jpg';}"/>
-        <strong>AJCE Placements</strong>
-      </div>
+      <div class="d-flex align-items-center gap-2" id="loginAsideBrand"></div>
       <div class="mt-5">
-        <h1 class="fw-bold" style="font-size:2.4rem;line-height:1.15">The placement engine for modern campuses.</h1>
-        <p class="mt-3 opacity-75" style="max-width:480px">Run drives, manage eligibility, track offers and publish placement results ? all in one premium workspace.</p>
+        <h1 class="fw-bold" style="font-size:2.4rem;line-height:1.15">Amal Jyothi College of Engineering &mdash; AJCE Placements</h1>
+        <p class="mt-3 opacity-75" style="max-width:480px">Run drives, manage eligibility, track offers, and publish placement results &middot; all in one campus workspace.</p>
         <div class="row g-3 mt-4" id="loginLiveStats">
           <div class="col-4"><div class="h3 fw-bold mb-0" id="loginStatPlaced">?</div><small class="opacity-75">Students placed</small></div>
           <div class="col-4"><div class="h3 fw-bold mb-0" id="loginStatRecruiters">?</div><small class="opacity-75">Recruiters</small></div>
@@ -34,10 +31,7 @@
     <div class="login-form-shell">
       <div class="login-card">
       <div class="login-top-row d-flex flex-row flex-nowrap align-items-center justify-content-between gap-2">
-        <div class="login-brand d-flex flex-row align-items-center gap-2 min-w-0">
-          <img src="/logo.php?v=20260624m" alt="Amal Jyothi College of Engineering (Autonomous)" class="brand-logo" height="36" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='/ajce-logo.jpg';}"/>
-          <strong class="text-truncate">AJCE Placements</strong>
-        </div>
+        <div class="login-brand d-flex flex-row align-items-center gap-2 min-w-0" id="loginCardBrand"></div>
         <div class="login-nav-actions d-flex align-items-center gap-2 flex-shrink-0" role="tablist">
           <button type="button" class="btn btn-primary btn-sm login-nav-tab active" id="tabBtnLogin" data-bs-toggle="pill" data-bs-target="#tab-login" role="tab">Sign in</button>
           <button type="button" class="btn btn-primary btn-sm login-nav-tab" id="tabBtnRegister" data-bs-toggle="pill" data-bs-target="#tab-register" role="tab">Register</button>
@@ -74,7 +68,7 @@
           </div>
           <details class="login-quick-panel mt-3">
             <summary class="small text-muted-2">Demo accounts &amp; one-click sign-in</summary>
-            <p class="small text-muted-2 mb-2 mt-2 login-quick-links">Fill credentials: <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="admin">Admin</button> � <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="placement_officer">Officer</button> � <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="staff">Staff</button> � <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="student">Student</button> � <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="company">Company</button> � <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="alumni">Alumni</button></p>
+            <p class="small text-muted-2 mb-2 mt-2 login-quick-links">Fill credentials: <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="admin">Admin</button> &middot; <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="placement_officer">Officer</button> &middot; <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="staff">Staff</button> &middot; <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="student">Student</button> &middot; <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="company">Company</button> &middot; <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-fill="alumni">Alumni</button></p>
             <div class="row g-2 login-quick-grid">
               <div class="col-6 col-md-4"><button type="button" class="btn btn-outline-primary w-100 btn-sm login-quick-btn" data-quick-login="admin">Admin</button></div>
               <div class="col-6 col-md-4"><button type="button" class="btn btn-outline-primary w-100 btn-sm login-quick-btn" data-quick-login="placement_officer">Officer</button></div>
@@ -180,8 +174,20 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260624f"></script>
+<script src="js/api.js?v=20260624n"></script>
 <script>
+(function initLoginBrand() {
+  const aside = document.getElementById('loginAsideBrand');
+  const card = document.getElementById('loginCardBrand');
+  if (aside && typeof brandBlockHtml === 'function') {
+    aside.innerHTML = brandBlockHtml({ logoHeight: 40, showSubtitle: true });
+  }
+  if (card && typeof brandLogoHtml === 'function') {
+    card.innerHTML = `${brandLogoHtml(32)}<strong class="text-truncate">${BRAND.title}</strong>`;
+  }
+  document.title = `Sign in &middot; ${BRAND.title}`;
+})();
+
 function showRoleFields() {
   const r = document.getElementById('roleSel').value;
   document.querySelectorAll('.role-field').forEach(el => {
