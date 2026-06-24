@@ -184,12 +184,13 @@ final class AesLoginService
         $mapped = $this->mapAesDetailsToUserFields($aesDetails);
         $register = strtoupper((string) ($profile['registerNumber'] ?? ''));
         if ($profile['departmentCode'] === '' && $register !== '') {
-            $inferred = $this->inferDepartmentFromRegisterNumber($register);
-            if ($inferred['code'] !== '') {
-                $profile['departmentCode'] = $inferred['code'];
-                $aesDetails['department'] = $inferred['code'];
-                if ($inferred['name'] !== '') {
-                    $aesDetails['departmentName'] = $inferred['name'];
+            $api = new AesApiService();
+            $resolved = $api->resolveStudentDepartment([], $register);
+            if ($resolved['code'] !== '') {
+                $profile['departmentCode'] = $resolved['code'];
+                $aesDetails['department'] = $resolved['code'];
+                if ($resolved['name'] !== '') {
+                    $aesDetails['departmentName'] = $resolved['name'];
                 }
             }
         }
@@ -607,16 +608,7 @@ final class AesLoginService
      */
     private function inferDepartmentFromRegisterNumber(string $registerNumber): array
     {
-        $register = strtoupper(trim($registerNumber));
-        if ($register === '') {
-            return ['code' => '', 'name' => ''];
-        }
-
-        if (preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
-            return ['code' => strtoupper($matches[1]), 'name' => ''];
-        }
-
-        return ['code' => '', 'name' => ''];
+        return (new AesApiService())->resolveStudentDepartment([], $registerNumber);
     }
 
     /**
@@ -2515,9 +2507,22 @@ final class AesLoginService
         }
 
         try {
-            $placementInfo = (new AesApiService())->fetchStudentPlacementProfile($baseRequest);
+            $api = new AesApiService();
+            $placementInfo = $api->fetchStudentPlacementProfile($baseRequest);
             if ($placementInfo !== []) {
                 return $placementInfo;
+            }
+
+            $department = $api->resolveStudentDepartment($baseRequest, $username);
+            if ($department['code'] !== '' || $department['name'] !== '') {
+                return [
+                    'department'      => $department['code'],
+                    'deptCode'        => $department['code'],
+                    'departmentName'  => $department['name'],
+                    'deptName'        => $department['name'],
+                    'registerNumber'  => strtoupper($username),
+                    'admission_no'    => strtoupper($username),
+                ];
             }
         } catch (\Throwable) {
             // Fall back to legacy login.aesajce.in profile methods.

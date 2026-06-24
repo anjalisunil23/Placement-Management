@@ -65,8 +65,8 @@ if ($refHost === '') {
     $refHost = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
 }
 
-// Public portal already ships this key in HTML/JS; use when production .env was never patched.
-if ($authKey === '' && $refHost === 'placements.amaljyothi.ac.in') {
+// Public portal ships this key in HTML/JS; use when .env was never patched.
+if ($authKey === '') {
     $authKey = '17f7e7bf8d3ecf54364107279801e88ee6509a09';
 }
 
