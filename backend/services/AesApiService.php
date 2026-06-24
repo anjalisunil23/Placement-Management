@@ -127,6 +127,7 @@ final class AesApiService
             : (string) ($params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
 
         $merged = array_merge([
+            'admno'          => $register,
             'username'       => $register,
             'un'             => $register,
             'admission_no'   => $register,
@@ -134,6 +135,29 @@ final class AesApiService
         ], $params);
 
         return $this->stringifyParams($merged);
+    }
+
+    /**
+     * POST getStudInfo4Placement with admno-first params (AES expects admno for numeric IDs).
+     *
+     * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    public function postStudInfo4Placement(array $params, string $registerNumber = ''): array
+    {
+        $register = strtoupper(trim($registerNumber !== ''
+            ? $registerNumber
+            : (string) ($params['admno'] ?? $params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
+
+        if ($register !== '') {
+            $admnoOnly = $this->getStudInfo4Placement(['admno' => $register]);
+            $record = $this->extractRecord($admnoOnly);
+            if ($record !== []) {
+                return $admnoOnly;
+            }
+        }
+
+        return $this->getStudInfo4Placement($this->buildStudentRequestParams($params, $register));
     }
 
     /**
@@ -214,8 +238,8 @@ final class AesApiService
     {
         $request = $this->buildStudentRequestParams($params, $registerNumber);
 
-        // POST method=getStudInfo4Placement
-        $placementPost = $this->getStudInfo4Placement($request);
+        // POST method=getStudInfo4Placement (admno-first)
+        $placementPost = $this->postStudInfo4Placement($params, $registerNumber);
         $profile = $this->normalizePlacementStudentRecord($this->extractRecord($placementPost));
 
         // POST method=getDepartments
@@ -247,16 +271,6 @@ final class AesApiService
             }
         }
 
-        $register = (string) ($request['registerNumber'] ?? $request['un'] ?? '');
-        if ($register !== '' && preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
-            $resolved = $this->matchDepartmentRow($departments, strtoupper($matches[1]));
-            if ($resolved !== null) {
-                return ['code' => $resolved['code'], 'name' => $resolved['name']];
-            }
-
-            return ['code' => strtoupper($matches[1]), 'name' => ''];
-        }
-
         return ['code' => '', 'name' => ''];
     }
 
@@ -268,7 +282,7 @@ final class AesApiService
     {
         $request = $this->buildStudentRequestParams($params);
         $record = $this->normalizePlacementStudentRecord(
-            $this->extractRecord($this->getStudInfo4Placement($request))
+            $this->extractRecord($this->postStudInfo4Placement($params, (string) ($request['admno'] ?? '')))
         );
         if ($record === []) {
             return [];
@@ -309,10 +323,13 @@ final class AesApiService
         }
 
         $code = strtoupper(trim((string) (
-            $record['deptCode']
+            $record['stud_deptcode']
+            ?? $record['deptCode']
             ?? $record['dept_code']
             ?? $record['department_code']
             ?? $record['branch_code']
+            ?? $record['stud_cource_short']
+            ?? $record['stud_course']
             ?? $record['deptshort']
             ?? $record['dept_short']
             ?? $record['dept_shortName']
@@ -328,6 +345,7 @@ final class AesApiService
             ?? $record['department_name']
             ?? $record['branch_name']
             ?? $record['departmentName']
+            ?? $record['stud_course']
             ?? ''
         ));
 
@@ -429,8 +447,9 @@ final class AesApiService
         }
 
         $scalarKeys = [
-            'name', 'student_name', 'email', 'cgpa', 'department', 'dept', 'branch', 'admission_no',
-            'deptCode', 'deptName', 'dept_code', 'dept_name', 'deptshort', 'registerNumber',
+            'name', 'student_name', 'stud_name', 'email', 'cgpa', 'department', 'dept', 'branch', 'admission_no',
+            'stud_admno', 'deptCode', 'deptName', 'dept_code', 'dept_name', 'deptshort', 'stud_deptcode',
+            'stud_course', 'stud_cource_short', 'registerNumber',
         ];
         foreach ($scalarKeys as $key) {
             if (isset($payload[$key]) && is_scalar($payload[$key]) && trim((string) $payload[$key]) !== '') {

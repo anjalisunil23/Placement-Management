@@ -183,9 +183,11 @@ final class AesLoginService
         $profile = $this->extractProfile(array_merge($payload, $aesDetails));
         $mapped = $this->mapAesDetailsToUserFields($aesDetails);
         $register = strtoupper((string) ($profile['registerNumber'] ?? ''));
+        $emails = $this->resolveAesEmails($aesDetails, $mapped, $register, '');
         if ($profile['departmentCode'] === '' && $register !== '') {
             $api = new AesApiService();
             $request = $api->buildStudentRequestParams([
+                'admno'          => $register,
                 'username'       => $register,
                 'un'             => $register,
                 'admission_no'   => $register,
@@ -200,7 +202,6 @@ final class AesLoginService
                 }
             }
         }
-        $emails = $this->resolveAesEmails($aesDetails, $mapped, $register, '');
         if ($emails['collegeEmail'] !== '') {
             $aesDetails['collegeEmail'] = $emails['collegeEmail'];
         }
@@ -509,6 +510,18 @@ final class AesLoginService
             $data['cgpa'] = (float) $aesCgpa;
         }
 
+        if (empty($data['department']) && empty($data['departmentName'])) {
+            $resolved = $this->inferDepartmentFromRegisterNumber($register);
+            if ($resolved['code'] !== '') {
+                $data['department'] = $resolved['code'];
+            }
+            if ($resolved['name'] !== '') {
+                $data['departmentName'] = $resolved['name'];
+            } elseif ($resolved['code'] !== '') {
+                $data['departmentName'] = $resolved['code'];
+            }
+        }
+
         return $data;
     }
 
@@ -588,7 +601,7 @@ final class AesLoginService
         }
 
         $register = strtoupper(trim((string) ($profile['registerNumber'] ?? $aesProfile['registerNumber'] ?? '')));
-        $fields = $this->resolveStudentDepartmentFields(null, $register);
+        $fields = $this->resolveStudentDepartmentFields(null, $register, $aesProfile);
         if ($fields['code'] === '' && $fields['name'] === '') {
             return;
         }
@@ -609,6 +622,8 @@ final class AesLoginService
     }
 
     /**
+     * Resolve department via POST getStudInfo4Placement + getDepartments.
+     *
      * @return array{code:string,name:string}
      */
     private function inferDepartmentFromRegisterNumber(string $registerNumber): array
@@ -618,11 +633,7 @@ final class AesLoginService
             return ['code' => '', 'name' => ''];
         }
 
-        if (preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
-            return ['code' => strtoupper($matches[1]), 'name' => ''];
-        }
-
-        return ['code' => '', 'name' => ''];
+        return (new AesApiService())->resolveStudentDepartment(['admno' => $register], $register);
     }
 
     /**

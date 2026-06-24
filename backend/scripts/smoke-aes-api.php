@@ -29,8 +29,8 @@ echo "synced new departments: {$synced}\n";
 
 if ($register !== '') {
     echo "\n=== POST getStudInfo4Placement ({$register}) ===\n";
-    $request = $api->buildStudentRequestParams(['un' => $register], $register);
-    $info = $api->getStudInfo4Placement($request);
+    $request = $api->buildStudentRequestParams(['admno' => $register, 'un' => $register], $register);
+    $info = $api->postStudInfo4Placement(['admno' => $register], $register);
     echo json_encode($info, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
 
     echo "\n=== POST getDepartments ===\n";
