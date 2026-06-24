@@ -39,10 +39,10 @@ final class AuthMiddleware
     $session = Security::getSessionUser();
     if ($session !== null) {
       $user = $userModel->findById($session['id']);
-      $role = $user['role'] ?? '';
-      $active = ($user['status'] ?? '') === 'active';
-      $approved = ($user['approved'] ?? false) || $role === 'admin';
-      if ($user && $active && $approved) {
+      if ($user) {
+        $user = $userModel->ensureLoginReady($user);
+      }
+      if ($user && $userModel->canLogin($user)) {
         self::$currentUser = $user;
         return $user;
       }
@@ -119,7 +119,7 @@ final class AuthMiddleware
         $data = array_merge($data, StaffModel::profileToUserFields($profile, $dept));
       }
     }
-    if (($user['role'] ?? '') === 'placement_officer') {
+    if (($data['role'] ?? $user['role'] ?? '') === 'placement_officer') {
       $profile = (new PlacementOfficerModel())->findByUserId((string) $user['_id']);
       if ($profile) {
         $dept = !empty($profile['departmentId'])

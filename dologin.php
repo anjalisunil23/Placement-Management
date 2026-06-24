@@ -61,6 +61,8 @@ try {
     $target = (string) ($info['dashboard'] ?? '/dashboard.html');
     if (($info['role'] ?? '') === 'admin') {
         $target = '/dashboard.html';
+    } elseif (($info['role'] ?? '') === 'placement_officer') {
+        $target = '/placement-console.html';
     }
     if ($target === '' || $target[0] !== '/') {
         $target = '/' . ltrim($target, '/');

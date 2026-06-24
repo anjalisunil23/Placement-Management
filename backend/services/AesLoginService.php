@@ -6,6 +6,7 @@ namespace PMS\Services;
 
 use PMS\Models\AlumniModel;
 use PMS\Models\DepartmentModel;
+use PMS\Models\PlacementOfficerModel;
 use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
@@ -204,7 +205,13 @@ final class AesLoginService
             $profile['role'] = 'admin';
             $user = $adminUser;
         } else {
-            $user = $this->resolveOrProvisionUser($profile, $aesDetails, $mapped, $emails);
+            $officerUser = $this->resolvePlacementOfficerUser($profile, $aesDetails, $mapped, $emails);
+            if ($officerUser !== null) {
+                $profile['role'] = 'placement_officer';
+                $user = $officerUser;
+            } else {
+                $user = $this->resolveOrProvisionUser($profile, $aesDetails, $mapped, $emails);
+            }
         }
         if ($user === null) {
             if ($profile['role'] === 'placement_officer') {
@@ -219,9 +226,11 @@ final class AesLoginService
             throw new \RuntimeException('No PlaceHub account matches your AES profile. Students are created automatically on first AES sign-in when admission number is available.');
         }
         $this->assertUserCanLogin($user);
+        $user = (new UserModel())->ensureLoginReady($user);
         $user = $this->normalizeSuperAdminUser($user);
         $user = $this->syncUserFromAes($user, $profile, $aesDetails);
         $this->syncRoleProfileFromAes($user, $profile, $aesDetails);
+        $user = $this->ensurePlacementOfficerProfile($user, $profile, $mapped);
         $user = $this->normalizeSuperAdminUser($user);
         Security::setSessionUser($user, $this->sanitizeAesProfileForClient($aesDetails));
         return $user;
@@ -323,6 +332,25 @@ final class AesLoginService
         }
 
         return $user ?: null;
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $aesDetails
+     * @param array<string, mixed> $mapped
+     * @param array{personalEmail?:string,collegeEmail?:string,email?:string} $resolvedEmails
+     * @return array<string, mixed>|null
+     */
+    private function resolvePlacementOfficerUser(array $profile, array $aesDetails, array $mapped, array $resolvedEmails): ?array
+    {
+        foreach ($this->collectLookupEmails($profile, $aesDetails, $mapped, $resolvedEmails) as $email) {
+            $user = (new UserModel())->findByEmail($email);
+            if ($user && ($user['role'] ?? '') === 'placement_officer') {
+                return $this->ensurePlacementOfficerProfile($user, $profile, $mapped);
+            }
+        }
+
+        return null;
     }
 
     public function isSuperAdminEmail(string $email): bool
@@ -948,6 +976,53 @@ final class AesLoginService
     /**
      * @param array<string, mixed> $user
      * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $mapped
+     * @return array<string, mixed>
+     */
+    private function ensurePlacementOfficerProfile(array $user, array $profile, array $mapped = []): array
+    {
+        if (($user['role'] ?? '') !== 'placement_officer') {
+            return $user;
+        }
+
+        $poModel = new PlacementOfficerModel();
+        if ($poModel->findByUserId((string) $user['_id'])) {
+            return $user;
+        }
+
+        $deptId = $this->resolveDepartmentId($profile['departmentCode']);
+        if ($deptId === null && !empty($mapped['department'])) {
+            $deptId = $this->resolveDepartmentId((string) $mapped['department']);
+        }
+        if ($deptId === null) {
+            return $user;
+        }
+
+        $existingDept = $poModel->findByDepartment($deptId);
+        if ($existingDept) {
+            $poModel->deleteByDepartment($deptId);
+        }
+
+        $designation = trim((string) ($mapped['designation'] ?? ''));
+        if ($designation === '') {
+            $designation = 'Placement Officer';
+        }
+
+        try {
+            $poModel->createProfile((string) $user['_id'], [
+                'departmentId' => $deptId,
+                'designation'  => $designation,
+            ]);
+        } catch (\Throwable) {
+            return $user;
+        }
+
+        return $user;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
      * @param array<string, mixed> $aesDetails
      */
     private function syncAlumniFromAes(array $user, array $profile, array $aesDetails): void
@@ -1148,6 +1223,11 @@ final class AesLoginService
             return $adminUser;
         }
 
+        $officerUser = $this->resolvePlacementOfficerUser($profile, $aesDetails, $mapped, $resolvedEmails);
+        if ($officerUser !== null) {
+            return $officerUser;
+        }
+
         $userModel = new UserModel();
 
         foreach ($this->collectLookupEmails($profile, $aesDetails, $mapped, $resolvedEmails) as $email) {
@@ -1162,6 +1242,9 @@ final class AesLoginService
             if ($user) {
                 if (($user['role'] ?? '') === 'student') {
                     return $this->ensureStudentProfile($user, $profile);
+                }
+                if (($user['role'] ?? '') === 'placement_officer') {
+                    return $this->ensurePlacementOfficerProfile($user, $profile, $mapped);
                 }
                 if (($user['role'] ?? '') === 'staff') {
                     return $this->ensureStaffProfile($user, $profile, $mapped);
@@ -1679,6 +1762,9 @@ final class AesLoginService
             if ($existing && ($existing['role'] ?? '') === 'admin') {
                 return 'admin';
             }
+            if ($existing && ($existing['role'] ?? '') === 'placement_officer') {
+                return 'placement_officer';
+            }
         }
 
         if ($roleHint === '') {
@@ -1809,8 +1895,9 @@ final class AesLoginService
             throw new \RuntimeException('Your account has been blocked. Contact admin.');
         }
 
-        $role = (string) ($user['role'] ?? '');
-        if (!($user['approved'] ?? false) && $role !== 'admin') {
+        $userModel = new UserModel();
+        $user = $userModel->ensureLoginReady($user);
+        if (!$userModel->canLogin($user)) {
             throw new \RuntimeException('Account pending approval.');
         }
     }

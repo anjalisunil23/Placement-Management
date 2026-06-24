@@ -106,7 +106,8 @@ final class AuthController
             Response::error('Your account has been blocked. Contact admin.', 403);
         }
 
-        if (!($user['approved'] ?? false) && ($user['role'] ?? '') !== 'admin') {
+        $user = $this->userModel->ensureLoginReady($user);
+        if (!$this->userModel->canLogin($user)) {
             Response::error('Account pending approval.', 403);
         }
 

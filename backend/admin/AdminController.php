@@ -289,7 +289,13 @@ final class AdminController
                 Response::error('departmentId is required when creating a placement officer.', 422);
             }
             try {
-                (new PlacementOfficerModel())->createProfile($id, $input);
+                $poModel = new PlacementOfficerModel();
+                $deptId = (string) $input['departmentId'];
+                $existingDept = $poModel->findByDepartment($deptId);
+                if ($existingDept) {
+                    $poModel->deleteByDepartment($deptId);
+                }
+                $poModel->createProfile($id, $input);
             } catch (\InvalidArgumentException $e) {
                 $this->userModel->delete($id);
                 Response::error($e->getMessage(), 422);

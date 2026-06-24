@@ -71,6 +71,63 @@ class UserModel extends BaseModel
     }
 
     /**
+     * Whether this account may sign in (password, AES, or session restore).
+     *
+     * @param array<string, mixed> $user
+     */
+    public function canLogin(array $user): bool
+    {
+        if (($user['status'] ?? '') === 'blocked') {
+            return false;
+        }
+
+        $role = (string) ($user['role'] ?? '');
+        if ($role === 'admin') {
+            return true;
+        }
+
+        if (($user['status'] ?? '') !== 'active') {
+            return false;
+        }
+
+        if (in_array($role, ['placement_officer', 'staff'], true)) {
+            return true;
+        }
+
+        return (bool) ($user['approved'] ?? false);
+    }
+
+    /**
+     * Normalize admin-provisioned campus accounts so login is not blocked by stale flags.
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function ensureLoginReady(array $user): array
+    {
+        $role = (string) ($user['role'] ?? '');
+        if (!in_array($role, ['placement_officer', 'staff'], true)) {
+            return $user;
+        }
+
+        $patch = [];
+        if (($user['status'] ?? '') !== 'active') {
+            $patch['status'] = 'active';
+        }
+        if (!($user['approved'] ?? false)) {
+            $patch['approved'] = true;
+        }
+
+        if ($patch === []) {
+            return $user;
+        }
+
+        $this->updateUser((string) $user['_id'], $patch);
+
+        return $this->findById((string) $user['_id']) ?? $user;
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function findByRole(string $role, int $limit = 100, int $skip = 0): array

@@ -35,7 +35,9 @@
     window.location.replace('/public-stats.html?aes_error=' + encodeURIComponent('Could not start your session. Please try again.'));
     return;
   }
-  const target = Auth.role() === 'admin' ? 'dashboard.html' : Auth.resolveRedirect(next);
+  const target = Auth.role() === 'admin'
+    ? 'dashboard.html'
+    : (Auth.role() === 'placement_officer' ? 'placement-console.html' : Auth.resolveRedirect(next));
   window.location.replace(target.startsWith('/') ? target : '/' + target);
 })();
 </script>
