@@ -491,13 +491,12 @@ final class AesLoginService
             $aesDeptName = (string) $mapped['departmentName'];
         }
         if ($aesDept !== '') {
-            $resolved = (new AesApiService())->findDepartment($aesDept);
-            $data['department'] = $resolved['code'] ?? $aesDept;
-            $data['departmentName'] = $aesDeptName !== ''
-                ? $aesDeptName
-                : ($resolved['name'] ?? $aesDept);
-        } elseif ($aesDeptName !== '') {
+            $data['department'] = $aesDept;
+        }
+        if ($aesDeptName !== '') {
             $data['departmentName'] = $aesDeptName;
+        } elseif ($aesDept !== '') {
+            $data['departmentName'] = $aesDept;
         }
 
         $aesCgpa = $this->pick($aesProfile, [
@@ -614,7 +613,16 @@ final class AesLoginService
      */
     private function inferDepartmentFromRegisterNumber(string $registerNumber): array
     {
-        return (new AesApiService())->resolveStudentDepartment([], $registerNumber);
+        $register = strtoupper(trim($registerNumber));
+        if ($register === '') {
+            return ['code' => '', 'name' => ''];
+        }
+
+        if (preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
+            return ['code' => strtoupper($matches[1]), 'name' => ''];
+        }
+
+        return ['code' => '', 'name' => ''];
     }
 
     /**

@@ -16,7 +16,7 @@ final class AesApiService
     private string $referer;
     private string $authKey;
 
-    /** @var list<array{code:string,name:string}>|null */
+    /** @var list<array{code:string,name:string,short:string}>|null */
     private static ?array $departmentCache = null;
 
     public function __construct()
@@ -489,24 +489,13 @@ final class AesApiService
                 ?? $item['branch']
                 ?? ''
             ));
-            $short = strtoupper(trim((string) (
-                $item['deptshort']
-                ?? $item['dept_short']
-                ?? $item['dept_shortName']
-                ?? $item['short']
-                ?? $item['branch_code']
-                ?? ''
-            )));
-            if ($code === '' && $short !== '') {
-                $code = $short;
-            }
             if ($code === '' && $name !== '') {
                 $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? $name);
             }
             if ($code === '' || $name === '') {
                 continue;
             }
-            $rows[] = ['code' => $code, 'name' => $name, 'short' => $short];
+            $rows[] = ['code' => $code, 'name' => $name];
         }
 
         return $rows;
