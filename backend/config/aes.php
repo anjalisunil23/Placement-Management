@@ -73,4 +73,7 @@ if ($authKey === '' && $refHost === 'placements.amaljyothi.ac.in') {
 return [
     'auth_key' => $authKey,
     'ref_host' => $refHost,
+    'api_url' => $readEnv('AES_API_URL') ?: 'https://api.aesajce.in/',
+    'api_origin' => $readEnv('AES_API_ORIGIN') ?: 'https://www.aesajce.in',
+    'api_referer' => $readEnv('AES_API_REFERER') ?: 'https://www.aesajce.in/',
 ];

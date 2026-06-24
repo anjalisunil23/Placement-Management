@@ -137,6 +137,12 @@ final class PublicController
     /** GET /api/public/departments — for registration and forms (no auth) */
     public function listDepartments(): void
     {
+        try {
+            (new \PMS\Services\AesApiService())->syncDepartmentsToLocal();
+        } catch (\Throwable) {
+            // Serve local departments when AES API is unreachable.
+        }
+
         $departments = (new DepartmentModel())->findAll([], 200);
         $assignedDeptIds = [];
         foreach ((new PlacementOfficerModel())->findAll([], 200) as $profile) {

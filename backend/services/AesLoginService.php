@@ -1645,6 +1645,16 @@ final class AesLoginService
             return (string) $dept['_id'];
         }
 
+        try {
+            (new AesApiService())->syncDepartmentsToLocal();
+            $dept = $deptModel->findByCode($departmentCode);
+            if ($dept) {
+                return (string) $dept['_id'];
+            }
+        } catch (\Throwable) {
+            // Local departments only.
+        }
+
         $dept = $deptModel->findOne(['name' => $departmentCode]);
         return $dept ? (string) $dept['_id'] : null;
     }
@@ -2315,10 +2325,20 @@ final class AesLoginService
             'username'     => $username,
             'un'           => $username,
             'admission_no' => $username,
+            'registerNumber' => $username,
         ];
         if ($token !== '') {
             $baseRequest['token'] = $token;
             $baseRequest['checksum'] = $token;
+        }
+
+        try {
+            $placementInfo = (new AesApiService())->getStudInfo4Placement($baseRequest);
+            if ($placementInfo !== []) {
+                return $placementInfo;
+            }
+        } catch (\Throwable) {
+            // Fall back to legacy login.aesajce.in profile methods.
         }
 
         $methods = [
