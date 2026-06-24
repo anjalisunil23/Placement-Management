@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Models\AlumniModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
@@ -205,6 +206,9 @@ final class AesLoginService
             }
             if ($profile['role'] === 'staff') {
                 throw new \RuntimeException('Could not create your PlaceHub staff account from AES login. A valid college email is required.');
+            }
+            if ($profile['role'] === 'alumni') {
+                throw new \RuntimeException('Could not create your PlaceHub alumni account from AES login. A valid email is required.');
             }
             throw new \RuntimeException('No PlaceHub account matches your AES profile. Students are created automatically on first AES sign-in when admission number is available.');
         }
@@ -645,6 +649,10 @@ final class AesLoginService
         }
         if ($role === 'placement_officer') {
             $this->syncPlacementOfficerFromAes($user, $profile, $aesDetails);
+            return;
+        }
+        if ($role === 'alumni') {
+            $this->syncAlumniFromAes($user, $profile, $aesDetails);
         }
     }
 
@@ -810,6 +818,54 @@ final class AesLoginService
      * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
      * @param array<string, mixed> $aesDetails
      */
+    private function syncAlumniFromAes(array $user, array $profile, array $aesDetails): void
+    {
+        if (($user['role'] ?? '') !== 'alumni') {
+            return;
+        }
+
+        $alumniModel = new AlumniModel();
+        $existing = $alumniModel->findByUserId((string) $user['_id']);
+        $extras = $this->mapAesDetailsToUserFields($aesDetails);
+
+        $company = trim((string) ($extras['company'] ?? $extras['organization'] ?? $extras['employer'] ?? ''));
+        $title = trim((string) ($extras['designation'] ?? $extras['title'] ?? $extras['job_title'] ?? $extras['jobTitle'] ?? ''));
+
+        if (!$existing) {
+            $alumniModel->createProfile((string) $user['_id'], [
+                'company'    => $company,
+                'role'       => $title,
+                'title'      => $title,
+                'experience' => (int) ($extras['experience'] ?? 0),
+                'isWorking'  => $company !== '',
+            ]);
+
+            return;
+        }
+
+        $patch = [];
+        if ($company !== '') {
+            $patch['company'] = $company;
+            $patch['isWorking'] = true;
+        }
+        if ($title !== '') {
+            $patch['role'] = $title;
+            $patch['title'] = $title;
+        }
+        if (isset($extras['experience'])) {
+            $patch['experience'] = (int) $extras['experience'];
+        }
+
+        if ($patch !== []) {
+            $alumniModel->updateProfile((string) $existing['_id'], $patch);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $aesDetails
+     */
     private function syncPlacementOfficerFromAes(array $user, array $profile, array $aesDetails): void
     {
         $officerModel = new \PMS\Models\PlacementOfficerModel();
@@ -896,6 +952,7 @@ final class AesLoginService
 
         $roleHint = strtolower(trim($this->pick($flat, [
             'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
+            'login_type', 'logintype', 'account_type', 'accounttype', 'portal', 'module',
         ])));
 
         $departmentCode = strtoupper(trim($this->pick($flat, [
@@ -965,12 +1022,15 @@ final class AesLoginService
                 if (($user['role'] ?? '') === 'staff') {
                     return $this->ensureStaffProfile($user, $profile, $mapped);
                 }
+                if (($user['role'] ?? '') === 'alumni') {
+                    return $this->ensureAlumniProfile($user, $profile, $mapped);
+                }
 
                 return $user;
             }
         }
 
-        if ($profile['registerNumber'] !== '') {
+        if ($profile['registerNumber'] !== '' && $profile['role'] === 'student') {
             $student = (new StudentModel())->findByRegisterNumber($profile['registerNumber']);
             if ($student && !empty($student['userId'])) {
                 $user = $userModel->findById((string) $student['userId']);
@@ -984,6 +1044,15 @@ final class AesLoginService
             $toProvision = $this->profileForStaffProvisioning($profile, $resolvedEmails);
             if ($toProvision['email'] !== '') {
                 return $this->provisionStaff($toProvision, $mapped);
+            }
+
+            return null;
+        }
+
+        if ($profile['role'] === 'alumni') {
+            $toProvision = $this->profileForAlumniProvisioning($profile, $resolvedEmails);
+            if ($toProvision['email'] !== '') {
+                return $this->provisionAlumni($toProvision, $mapped);
             }
 
             return null;
@@ -1078,6 +1147,105 @@ final class AesLoginService
         }
 
         return $profile;
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array{personalEmail?:string,collegeEmail?:string,email?:string} $resolvedEmails
+     * @return array{name:string,email:string,registerNumber:string,role:string,departmentCode:string}
+     */
+    private function profileForAlumniProvisioning(array $profile, array $resolvedEmails): array
+    {
+        if ($profile['email'] === '') {
+            $profile['email'] = (string) ($resolvedEmails['personalEmail'] ?? '');
+        }
+        if ($profile['email'] === '') {
+            $profile['email'] = (string) ($resolvedEmails['collegeEmail'] ?? '');
+        }
+        if ($profile['email'] === '') {
+            $profile['email'] = (string) ($resolvedEmails['email'] ?? '');
+        }
+
+        return $profile;
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $mapped
+     * @return array<string, mixed>
+     */
+    private function provisionAlumni(array $profile, array $mapped = []): array
+    {
+        $userModel = new UserModel();
+        $alumniModel = new AlumniModel();
+
+        if ($userModel->findByEmail($profile['email'])) {
+            throw new \RuntimeException('This email is already registered in PlaceHub.');
+        }
+
+        $name = trim($profile['name'] ?? '');
+        if ($name === '') {
+            $name = 'Alumni';
+        }
+
+        $company = trim((string) ($mapped['company'] ?? $mapped['organization'] ?? $mapped['employer'] ?? ''));
+        $title = trim((string) ($mapped['designation'] ?? $mapped['title'] ?? $mapped['job_title'] ?? $mapped['jobTitle'] ?? ''));
+        $experience = (int) ($mapped['experience'] ?? 0);
+
+        $userId = $userModel->createUser([
+            'name'     => $name,
+            'email'    => $profile['email'],
+            'password' => bin2hex(random_bytes(16)),
+            'role'     => 'alumni',
+            'status'   => 'active',
+            'approved' => true,
+        ]);
+
+        $alumniModel->createProfile($userId, [
+            'company'    => $company,
+            'role'       => $title,
+            'title'      => $title,
+            'experience' => $experience,
+            'isWorking'  => $company !== '',
+        ]);
+
+        $user = $userModel->findById($userId);
+        if (!$user) {
+            throw new \RuntimeException('Could not create your PlaceHub alumni account.');
+        }
+
+        return $user;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $mapped
+     * @return array<string, mixed>
+     */
+    private function ensureAlumniProfile(array $user, array $profile, array $mapped = []): array
+    {
+        if (($user['role'] ?? '') !== 'alumni') {
+            return $user;
+        }
+
+        $alumniModel = new AlumniModel();
+        if ($alumniModel->findByUserId((string) $user['_id'])) {
+            return $user;
+        }
+
+        $company = trim((string) ($mapped['company'] ?? $mapped['organization'] ?? $mapped['employer'] ?? ''));
+        $title = trim((string) ($mapped['designation'] ?? $mapped['title'] ?? $mapped['job_title'] ?? $mapped['jobTitle'] ?? ''));
+
+        $alumniModel->createProfile((string) $user['_id'], [
+            'company'    => $company,
+            'role'       => $title,
+            'title'      => $title,
+            'experience' => (int) ($mapped['experience'] ?? 0),
+            'isWorking'  => $company !== '',
+        ]);
+
+        return $user;
     }
 
     /**
@@ -1290,6 +1458,53 @@ final class AesLoginService
     }
 
     /**
+     * Detect AES portal login category (alumni/staff/student) from callback payload.
+     *
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $flat
+     */
+    private function detectAesLoginCategory(array $payload, array $flat, string $roleHint): string
+    {
+        $candidates = [$roleHint];
+        foreach ($flat as $key => $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $lowerKey = strtolower((string) $key);
+            if (!preg_match('/(role|type|category|portal|module|login|section|user)/', $lowerKey)) {
+                continue;
+            }
+            $candidates[] = strtolower(trim((string) $value));
+        }
+
+        foreach ($candidates as $text) {
+            if ($text === '') {
+                continue;
+            }
+            if (str_contains($text, 'alumni') || str_contains($text, 'alum') || str_contains($text, 'ex-student') || str_contains($text, 'ex_student') || str_contains($text, 'passedout') || str_contains($text, 'passed_out')) {
+                return 'alumni';
+            }
+            foreach (['staff', 'faculty', 'teacher', 'employee', 'hod', 'professor', 'lecturer'] as $needle) {
+                if (str_contains($text, $needle)) {
+                    return 'staff';
+                }
+            }
+            if (str_contains($text, 'officer') || str_contains($text, 'placement')) {
+                return 'placement_officer';
+            }
+        }
+
+        if (isset($payload['alumni']) || isset($flat['alumni']) || isset($flat['alum'])) {
+            return 'alumni';
+        }
+        if (isset($payload['staff']) || isset($flat['staff']) || isset($flat['employee']) || isset($flat['faculty'])) {
+            return 'staff';
+        }
+
+        return '';
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @param array{name?:string,email?:string,registerNumber?:string,role?:string,departmentCode?:string} $profile
      * @param array{personalEmail?:string,collegeEmail?:string,email?:string} $emailScan
@@ -1300,10 +1515,15 @@ final class AesLoginService
         if ($roleHint === '') {
             $roleHint = strtolower(trim($this->pickInsensitive($flat, [
                 'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
-                'login_type', 'logintype', 'account_type', 'accounttype', 'designation_type',
+                'login_type', 'logintype', 'account_type', 'accounttype', 'designation_type', 'portal', 'module',
             ])));
         } else {
             $roleHint = strtolower($roleHint);
+        }
+
+        $loginCategory = $this->detectAesLoginCategory($payload, $flat, $roleHint);
+        if ($loginCategory !== '') {
+            return $loginCategory;
         }
 
         foreach (['staff', 'faculty', 'teacher', 'employee', 'hod', 'professor', 'lecturer', 'non-teaching', 'non_teaching'] as $needle) {
@@ -1339,6 +1559,9 @@ final class AesLoginService
             if (str_contains($text, 'officer') || str_contains($text, 'placement')) {
                 return 'placement_officer';
             }
+            if (str_contains($text, 'alumni') || str_contains($text, 'alum') || str_contains($text, 'ex-student') || str_contains($text, 'ex_student')) {
+                return 'alumni';
+            }
             if (str_contains($text, 'student') || str_contains($text, 'parent')) {
                 return 'student';
             }
@@ -1346,6 +1569,9 @@ final class AesLoginService
 
         if (isset($payload['staff']) || isset($flat['staff']) || isset($flat['employee']) || isset($flat['faculty'])) {
             return 'staff';
+        }
+        if (isset($payload['alumni']) || isset($flat['alumni']) || isset($flat['alum'])) {
+            return 'alumni';
         }
 
         $registerNumber = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
