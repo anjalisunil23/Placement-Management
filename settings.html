@@ -214,8 +214,9 @@ function pickDepartment(u) {
     if (fromObj) return fromObj.toUpperCase();
   }
   const keys = [
-    'department', 'departmentName', 'branch', 'dept', 'dept_name', 'branch_name',
-    'department_name', 'department_code', 'dept_code', 'branch_code',
+    'deptCode', 'dept_code', 'deptshort', 'dept_short',
+    'department', 'departmentName', 'branch', 'dept', 'dept_name', 'deptName', 'branch_name',
+    'department_name', 'department_code', 'branch_code',
     'specialisation', 'specialization', 'programme', 'program', 'br', 'BR', 'stud_branch', 'course_branch',
   ];
   for (const key of keys) {
@@ -223,6 +224,16 @@ function pickDepartment(u) {
     if (val) return val.toUpperCase();
   }
   return '';
+}
+
+function pickDepartmentDisplay(u) {
+  const merged = mergeProfileUser(u);
+  const deptObj = (merged.department && typeof merged.department === 'object') ? merged.department : null;
+  const fromObjName = deptObj ? String(deptObj.name || '').trim() : '';
+  if (fromObjName) return fromObjName;
+  const name = String(merged.departmentName || merged.deptName || merged.dept_name || '').trim();
+  if (name) return name;
+  return pickDepartment(merged);
 }
 
 function pickCgpa(u) {
@@ -445,17 +456,17 @@ function applyProfileFromUser(u, activeRole) {
   if (roleEl) roleEl.value = ROLE_LABELS[r] || r || '';
   if (r === 'student') {
     document.getElementById('profRegNo').value = merged.registerNumber || merged.admission_no || merged.username || '';
-    const dept = pickDepartment(merged);
+    const dept = pickDepartmentDisplay(merged);
     if (dept) document.getElementById('profDept').value = dept;
     const cgpa = pickCgpa(merged);
     if (cgpa) document.getElementById('profCgpa').value = cgpa;
   }
   if (r === 'staff') {
-    document.getElementById('profStaffDept').value = merged.department || merged.departmentName || '';
+    document.getElementById('profStaffDept').value = pickDepartmentDisplay(merged) || merged.department || merged.departmentName || '';
     document.getElementById('profStaffDesig').value = merged.designation || '';
   }
   if (r === 'placement_officer') {
-    document.getElementById('profOfficerDept').value = merged.department || merged.departmentName || '';
+    document.getElementById('profOfficerDept').value = pickDepartmentDisplay(merged) || merged.department || merged.departmentName || '';
   }
   setAvatarInitials();
 }
@@ -490,7 +501,7 @@ async function loadSettingsProfile() {
       const apiCollegeEmail = pickCollegeEmail(profileCtx);
       const apiPersonalEmail = pickPersonalEmail(profileCtx);
       const apiPhone = pickPhone(profileCtx);
-      const apiDept = pickDepartment(profileCtx) || p.department?.code || p.department?.name || '';
+      const apiDept = pickDepartmentDisplay(profileCtx) || p.department?.name || p.department?.code || pickDepartment(profileCtx) || '';
       const apiCgpa = pickCgpa(profileCtx) || (ac.cgpa > 0 ? ac.cgpa : '');
       if (apiName) document.getElementById('profName').value = apiName;
       document.getElementById('profCollegeEmail').value = apiCollegeEmail;
@@ -529,9 +540,9 @@ async function loadSettingsProfile() {
       document.getElementById('profCollegeEmail').value = apiCollegeEmail;
       document.getElementById('profPersonalEmail').value = apiPersonalEmail;
       document.getElementById('profPhone').value = apiPhone;
-      document.getElementById('profStaffDept').value = p.department || p.departmentName || '';
+      document.getElementById('profStaffDept').value = pickDepartmentDisplay(profileCtx) || p.department || p.departmentName || '';
       document.getElementById('profStaffDesig').value = p.designation || u.designation || '';
-      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone || p.phone, department: p.department || p.departmentName, designation: p.designation || u.designation };
+      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone || p.phone, department: pickDepartmentDisplay(profileCtx) || p.department || p.departmentName, departmentName: p.departmentName || pickDepartmentDisplay(profileCtx), designation: p.designation || u.designation };
       Auth.set(user, Auth.token());
       setAvatarInitials();
     }
@@ -540,17 +551,18 @@ async function loadSettingsProfile() {
     if (res?.success && res.data) {
       const p = res.data;
       const u = p.user || {};
-      const profileCtx = { ...user, ...u, department: p.department?.code || p.department?.name };
+      const profileCtx = { ...user, ...u, ...p, department: p.department || user.department };
       const apiName = pickDisplayName(profileCtx);
       const apiCollegeEmail = pickCollegeEmail(profileCtx);
       const apiPersonalEmail = pickPersonalEmail(profileCtx);
       const apiPhone = pickPhone(profileCtx);
+      const apiDept = pickDepartmentDisplay(profileCtx) || p.department?.name || p.department?.code || '';
       if (apiName) document.getElementById('profName').value = apiName;
       document.getElementById('profCollegeEmail').value = apiCollegeEmail;
       document.getElementById('profPersonalEmail').value = apiPersonalEmail;
       document.getElementById('profPhone').value = apiPhone;
-      document.getElementById('profOfficerDept').value = p.department?.code || p.department?.name || '';
-      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone, department: p.department?.code || p.department?.name || '' };
+      document.getElementById('profOfficerDept').value = apiDept;
+      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone, department: apiDept, departmentName: apiDept };
       Auth.set(user, Auth.token());
       setAvatarInitials();
     }

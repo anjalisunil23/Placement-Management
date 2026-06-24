@@ -460,16 +460,25 @@ final class AesLoginService
             $data['email'] = $resolvedEmails['email'];
         }
 
-        $aesDept = strtoupper(trim($this->pick($aesProfile, [
-            'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
-            'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
-            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
+        $aesDept = strtoupper(trim($this->pickInsensitive($aesProfile, [
+            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short',
+            'department', 'dept', 'branch', 'deptCode', 'br',
         ])));
+        $aesDeptName = trim($this->pickInsensitive($aesProfile, [
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
+        ]));
         if ($aesDept === '' && !empty($mapped['department'])) {
             $aesDept = strtoupper((string) $mapped['department']);
         }
+        if ($aesDeptName === '' && !empty($mapped['departmentName'])) {
+            $aesDeptName = (string) $mapped['departmentName'];
+        }
         if ($aesDept !== '') {
             $data['department'] = $aesDept;
+        }
+        if ($aesDeptName !== '') {
+            $data['departmentName'] = $aesDeptName;
+        } elseif ($aesDept !== '') {
             $data['departmentName'] = $aesDept;
         }
 
@@ -639,6 +648,9 @@ final class AesLoginService
                     || $lower === 'dept'
                     || $lower === 'branch'
                     || $lower === 'br'
+                    || $lower === 'deptcode'
+                    || $lower === 'deptname'
+                    || $lower === 'deptshort'
                     || str_contains($lower, 'dept_')
                     || str_contains($lower, 'branch_')
                     || str_contains($lower, 'department_')
@@ -647,8 +659,16 @@ final class AesLoginService
                     || $lower === 'programme'
                     || $lower === 'program'
                 ) {
-                    if (strlen($text) >= 2 && strlen($text) <= 80 && !preg_match('/^\d+$/', $text)) {
-                        $found['department'] = strtoupper($text);
+                    if (strlen($text) >= 1 && strlen($text) <= 80) {
+                        if (in_array($lower, ['deptname', 'dept_name', 'department_name', 'branch_name'], true)) {
+                            $found['departmentName'] = $text;
+                        } elseif (in_array($lower, ['deptcode', 'dept_code', 'deptshort', 'dept_short', 'br'], true)) {
+                            $found['department'] = strtoupper($text);
+                        } elseif (empty($found['department']) && !preg_match('/^\d+$/', $text)) {
+                            $found['department'] = strtoupper($text);
+                        } elseif (empty($found['department'])) {
+                            $found['department'] = strtoupper($text);
+                        }
                     }
                 }
 
@@ -756,14 +776,21 @@ final class AesLoginService
             $mapped['backlogs'] = (int) $backlogs;
         }
 
-        $dept = $this->pick($aesDetails, [
-            'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
-            'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
-            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
-            'br', 'BR', 'deptnm', 'deptname', 'branchname', 'course_branch', 'stud_branch',
-        ]);
-        if ($dept !== '') {
-            $mapped['department'] = strtoupper($dept);
+        $deptCode = strtoupper(trim($this->pickInsensitive($aesDetails, [
+            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short', 'br',
+            'department', 'dept', 'branch',
+        ])));
+        $deptName = trim($this->pickInsensitive($aesDetails, [
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
+        ]));
+        if ($deptCode !== '') {
+            $mapped['department'] = $deptCode;
+        }
+        if ($deptName !== '') {
+            $mapped['departmentName'] = $deptName;
+        }
+        if ($deptCode === '' && $deptName !== '') {
+            $mapped['department'] = strtoupper($deptName);
         }
 
         $register = (string) ($mapped['registerNumber'] ?? '');
@@ -894,7 +921,7 @@ final class AesLoginService
         $deptCode = $profile['departmentCode'] !== ''
             ? $profile['departmentCode']
             : (string) ($extras['department'] ?? '');
-        $deptId = $this->resolveDepartmentId($deptCode);
+        $deptId = $this->resolveDepartmentIdFromProfile($profile, $extras);
         if ($deptId) {
             $patch['departmentId'] = $deptId;
         }
@@ -960,10 +987,7 @@ final class AesLoginService
             $patch['phone'] = (string) $extras['phone'];
         }
 
-        $deptCode = $profile['departmentCode'] !== ''
-            ? $profile['departmentCode']
-            : (string) ($extras['department'] ?? '');
-        $deptId = $this->resolveDepartmentId($deptCode);
+        $deptId = $this->resolveDepartmentIdFromProfile($profile, $extras);
         if ($deptId) {
             $patch['departmentId'] = $deptId;
         }
@@ -1088,10 +1112,7 @@ final class AesLoginService
             $patch['designation'] = (string) $extras['designation'];
         }
 
-        $deptCode = $profile['departmentCode'] !== ''
-            ? $profile['departmentCode']
-            : (string) ($extras['department'] ?? '');
-        $deptId = $this->resolveDepartmentId($deptCode);
+        $deptId = $this->resolveDepartmentIdFromProfile($profile, $extras);
         if ($deptId) {
             $patch['departmentId'] = $deptId;
         }
@@ -1162,13 +1183,23 @@ final class AesLoginService
             'login_type', 'logintype', 'account_type', 'accounttype', 'portal', 'module',
         ])));
 
-        $departmentCode = strtoupper(trim($this->pick($flat, [
-            'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
+        $departmentCode = strtoupper(trim($this->pickInsensitive($flat, [
+            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short', 'br',
+            'department', 'dept', 'branch',
             'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
-            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
+            'specialisation', 'specialization', 'programme', 'program',
         ])));
         if ($departmentCode === '' && !empty($contactScan['department'])) {
             $departmentCode = strtoupper((string) $contactScan['department']);
+        }
+        $departmentName = trim($this->pickInsensitive($flat, [
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
+        ]));
+        if ($departmentName === '' && !empty($contactScan['departmentName'])) {
+            $departmentName = (string) $contactScan['departmentName'];
+        }
+        if ($departmentCode === '' && $departmentName !== '') {
+            $departmentCode = strtoupper($departmentName);
         }
 
         $cgpaRaw = $this->pick($flat, [
@@ -1657,6 +1688,24 @@ final class AesLoginService
 
         $dept = $deptModel->findOne(['name' => $departmentCode]);
         return $dept ? (string) $dept['_id'] : null;
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $extras
+     */
+    private function resolveDepartmentIdFromProfile(array $profile, array $extras): ?string
+    {
+        $deptCode = $profile['departmentCode'] !== ''
+            ? $profile['departmentCode']
+            : (string) ($extras['department'] ?? '');
+        $deptId = $this->resolveDepartmentId($deptCode);
+        if ($deptId !== null) {
+            return $deptId;
+        }
+
+        $deptName = (string) ($extras['departmentName'] ?? '');
+        return $deptName !== '' ? $this->resolveDepartmentId($deptName) : null;
     }
 
     private function syntheticStudentEmail(string $registerNumber): string

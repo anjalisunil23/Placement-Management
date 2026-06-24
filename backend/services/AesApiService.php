@@ -125,7 +125,59 @@ final class AesApiService
      */
     public function fetchStudentPlacementProfile(array $params): array
     {
-        return $this->extractRecord($this->getStudInfo4Placement($params));
+        return $this->normalizePlacementStudentRecord(
+            $this->extractRecord($this->getStudInfo4Placement($params))
+        );
+    }
+
+    /**
+     * Map AES placement API fields (deptCode, deptName, …) to profile keys.
+     *
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    public function normalizePlacementStudentRecord(array $record): array
+    {
+        if ($record === []) {
+            return [];
+        }
+
+        $code = strtoupper(trim((string) (
+            $record['deptCode']
+            ?? $record['dept_code']
+            ?? $record['department_code']
+            ?? $record['branch_code']
+            ?? $record['deptshort']
+            ?? $record['dept_short']
+            ?? $record['dept_shortName']
+            ?? $record['br']
+            ?? $record['department']
+            ?? $record['dept']
+            ?? $record['branch']
+            ?? ''
+        )));
+        $name = trim((string) (
+            $record['deptName']
+            ?? $record['dept_name']
+            ?? $record['department_name']
+            ?? $record['branch_name']
+            ?? $record['departmentName']
+            ?? ''
+        ));
+
+        if ($code !== '') {
+            $record['deptCode'] = $code;
+            $record['department'] = $code;
+        }
+        if ($name !== '') {
+            $record['deptName'] = $name;
+            $record['departmentName'] = $name;
+            if ($code === '') {
+                $record['department'] = strtoupper($name);
+            }
+        }
+
+        return $record;
     }
 
     /**
@@ -206,7 +258,10 @@ final class AesApiService
             return $record;
         }
 
-        $scalarKeys = ['name', 'student_name', 'email', 'cgpa', 'department', 'dept', 'branch', 'admission_no'];
+        $scalarKeys = [
+            'name', 'student_name', 'email', 'cgpa', 'department', 'dept', 'branch', 'admission_no',
+            'deptCode', 'deptName', 'dept_code', 'dept_name', 'deptshort', 'registerNumber',
+        ];
         foreach ($scalarKeys as $key) {
             if (isset($payload[$key]) && is_scalar($payload[$key]) && trim((string) $payload[$key]) !== '') {
                 return $payload;
