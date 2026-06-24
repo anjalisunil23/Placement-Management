@@ -467,11 +467,23 @@ body.login-page{
   padding:.45rem 1rem;border-radius:10px;
   flex-shrink:0;
 }
+.hero-login{
+  display:inline-flex;align-items:center;justify-content:center;gap:.55rem;
+  padding:.85rem 2rem;border:none;border-radius:999px;
+  background:#ff5638;color:#fff;font-size:1.05rem;font-weight:600;
+  line-height:1;white-space:nowrap;cursor:pointer;
+  box-shadow:0 4px 14px rgba(255,86,56,.35);
+  transition:background .2s ease,transform .2s ease,box-shadow .2s ease;
+}
+.hero-login i{font-size:1.15rem}
+.hero-login:hover{background:#e84a2e;color:#fff;transform:translateY(-1px);box-shadow:0 6px 18px rgba(255,86,56,.4)}
+.hero-login:active{transform:translateY(0);box-shadow:0 2px 8px rgba(255,86,56,.3)}
+.hero-login:focus-visible{outline:2px solid #ff5638;outline-offset:3px}
 @media (max-width:575px){
   .hero{padding:3rem 0 2.5rem}
   .hero h1{font-size:clamp(1.65rem,7vw,2.2rem)}
   .hero .lead{font-size:.95rem}
-  .hero .btn-lg{padding:.65rem 1rem;font-size:.95rem}
+  .hero-login{padding:.75rem 1.5rem;font-size:.95rem}
 }
 .hero{
   padding:5rem 0 4rem;
