@@ -51,6 +51,8 @@
   </div>
 </nav>
 
+<div class="container mt-3" id="aesLoginError" hidden></div>
+
 <section class="hero">
   <div class="container text-center">
     <span class="badge-soft mb-3">Placement Cell</span>
@@ -128,6 +130,25 @@
 (function initPublicNavBrand() {
   const el = document.getElementById('publicNavBrand');
   if (el && typeof brandLogoHtml === 'function') el.innerHTML = brandLogoHtml(52);
+})();
+
+(function showAesLoginError() {
+  const params = new URLSearchParams(location.search);
+  const err = params.get('aes_error');
+  if (!err) return;
+  const box = document.getElementById('aesLoginError');
+  if (!box) return;
+  box.hidden = false;
+  const text = decodeURIComponent(err).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  box.innerHTML = `<div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
+    <strong>Login failed:</strong> ${text}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>`;
+  if (history.replaceState) {
+    params.delete('aes_error');
+    const qs = params.toString();
+    history.replaceState({}, '', location.pathname + (qs ? '?' + qs : ''));
+  }
 })();
 
 let pubBarChart = null;

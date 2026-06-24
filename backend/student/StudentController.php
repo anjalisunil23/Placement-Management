@@ -81,13 +81,10 @@ final class StudentController
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
     $aes = new AesLoginService();
-    $aes->syncStudentDepartmentIfMissing($profile, [
-        'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
-        'departmentCode' => '',
-        'name'           => '',
-        'email'          => '',
-        'role'           => 'student',
-    ]);
+    $aes->syncStudentDepartmentIfMissing($profile, array_merge(
+        \PMS\Utils\Security::getSessionAesProfile(),
+        ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
+    ));
     $profile = $this->studentModel->findById((string) $profile['_id']) ?? $profile;
 
     $dept = !empty($profile['departmentId'])
@@ -137,6 +134,8 @@ final class StudentController
     }
     $out['departmentCode'] = $resolvedDept['code'];
     $out['departmentName'] = $resolvedDept['name'];
+    $out['programme'] = $resolvedDept['name'];
+    $out['branch'] = $resolvedDept['name'];
     if (!empty($merged['cgpa']) && (float) $merged['cgpa'] > 0) {
       $academic['cgpa'] = (float) $merged['cgpa'];
       $out['academic'] = $academic;

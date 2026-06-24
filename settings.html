@@ -238,6 +238,11 @@ function pickDepartment(u) {
 function pickDepartmentDisplay(u) {
   const merged = mergeProfileUser(u);
   const deptObj = (merged.department && typeof merged.department === 'object') ? merged.department : null;
+  const branch = String(
+    merged.branch || merged.programme || merged.program || merged.course
+    || merged.stud_cource_short || merged.stud_course || ''
+  ).trim();
+  if (branch) return branch.toUpperCase();
   const fromObjName = deptObj ? String(deptObj.name || '').trim() : '';
   if (fromObjName) return fromObjName;
   const name = String(merged.departmentName || merged.deptName || merged.dept_name || '').trim();
@@ -509,8 +514,10 @@ async function loadSettingsProfile() {
         personal,
         academic: ac,
         department: p.department || user.department,
-        departmentName: p.departmentName || p.department?.name || user.departmentName,
-        departmentCode: p.departmentCode || p.department?.code || user.department,
+        departmentName: p.departmentName || p.branch || p.programme || p.department?.name || user.departmentName,
+        departmentCode: p.departmentCode || p.branch || p.programme || p.department?.code || user.department,
+        branch: p.branch || p.programme || p.departmentName || '',
+        programme: p.programme || p.branch || p.departmentName || '',
       };
       const apiName = pickDisplayName(profileCtx);
       const apiCollegeEmail = pickCollegeEmail(profileCtx);

@@ -174,33 +174,46 @@ final class AesLoginService
     public function loginFromAesPayload(array $payload): array
     {
         $aesDetails = $this->collectAesDetails($payload);
-        $extended = $this->fetchExtendedProfileFromAes($payload);
+        try {
+            $extended = $this->fetchExtendedProfileFromAes($payload);
+        } catch (\Throwable) {
+            $extended = [];
+        }
         if ($extended !== []) {
             $aesDetails = array_merge($aesDetails, $this->collectAesDetails($extended));
             $payload = array_merge($payload, $extended);
         }
 
         $profile = $this->extractProfile(array_merge($payload, $aesDetails));
+        $register = $this->resolveAesRegisterNumber($profile, $aesDetails, $payload);
+        if ($register !== '' && $profile['registerNumber'] === '') {
+            $profile['registerNumber'] = $register;
+        }
+
+        try {
+            $this->enrichAesDetailsFromPlacementApi($profile, $aesDetails, $register);
+        } catch (\Throwable) {
+            // Placement API is optional during login; do not block AES sign-in.
+        }
+
+        $register = strtoupper((string) ($profile['registerNumber'] ?? $register));
         $mapped = $this->mapAesDetailsToUserFields($aesDetails);
-        $register = strtoupper((string) ($profile['registerNumber'] ?? ''));
         $emails = $this->resolveAesEmails($aesDetails, $mapped, $register, '');
-        if ($profile['departmentCode'] === '' && $register !== '') {
-            $api = new AesApiService();
-            $request = $api->buildStudentRequestParams([
-                'admno'          => $register,
-                'username'       => $register,
-                'un'             => $register,
-                'admission_no'   => $register,
-                'registerNumber' => $register,
-            ], $register);
-            $resolved = $api->resolveStudentDepartment($request, $register);
-            if ($resolved['code'] !== '') {
-                $profile['departmentCode'] = $resolved['code'];
-                $aesDetails['department'] = $resolved['code'];
-                if ($resolved['name'] !== '') {
-                    $aesDetails['departmentName'] = $resolved['name'];
+        try {
+            if ($profile['departmentCode'] === '' && $register !== '') {
+                $resolved = (new AesApiService())->resolveStudentDepartment(['admno' => $register], $register);
+                if ($resolved['code'] !== '') {
+                    $profile['departmentCode'] = $resolved['code'];
+                    $aesDetails['department'] = $resolved['code'];
+                    $aesDetails['deptCode'] = $resolved['code'];
+                    if ($resolved['name'] !== '') {
+                        $aesDetails['departmentName'] = $resolved['name'];
+                        $aesDetails['deptName'] = $resolved['name'];
+                    }
                 }
             }
+        } catch (\Throwable) {
+            // Department lookup must not block login.
         }
         if ($emails['collegeEmail'] !== '') {
             $aesDetails['collegeEmail'] = $emails['collegeEmail'];
@@ -244,7 +257,7 @@ final class AesLoginService
             throw new \RuntimeException('No PlaceHub account matches your AES profile. Students are created automatically on first AES sign-in when admission number is available.');
         }
         $this->assertUserCanLogin($user);
-        $user = (new UserModel())->ensureLoginReady($user);
+        $user = $this->prepareAesUserForLogin($user);
         $user = $this->normalizeSuperAdminUser($user);
         $user = $this->syncUserFromAes($user, $profile, $aesDetails);
         $this->syncRoleProfileFromAes($user, $profile, $aesDetails);
@@ -544,6 +557,18 @@ final class AesLoginService
         $aesProfile = array_merge(\PMS\Utils\Security::getSessionAesProfile(), $extraAes);
         if ($aesProfile !== []) {
             $mapped = $this->mapAesDetailsToUserFields($aesProfile);
+            $branch = strtoupper(trim((string) (
+                $mapped['branch'] ?? $mapped['programme'] ?? $mapped['course'] ?? ''
+            )));
+            if ($branch === '') {
+                $branch = strtoupper(trim($this->pickInsensitive($aesProfile, [
+                    'stud_cource_short', 'stud_course', 'branch', 'programme', 'program',
+                ])));
+            }
+            if ($branch !== '') {
+                $code = $branch;
+                $name = $branch;
+            }
             if ($code === '' && !empty($mapped['department'])) {
                 $code = strtoupper((string) $mapped['department']);
             }
@@ -552,17 +577,17 @@ final class AesLoginService
             }
         }
 
-        if ($code === '' && $registerNumber !== '') {
+        if ($registerNumber !== '') {
             $inferred = $this->inferDepartmentFromRegisterNumber($registerNumber);
             if ($inferred['code'] !== '') {
                 $code = $inferred['code'];
             }
-            if ($name === '' && $inferred['name'] !== '') {
+            if ($inferred['name'] !== '') {
                 $name = $inferred['name'];
             }
         }
 
-        if ($name === '' && $code !== '') {
+        if ($name === '' && $code !== '' && ctype_digit($code)) {
             $dept = (new DepartmentModel())->findByCode($code);
             if ($dept) {
                 $name = trim((string) ($dept['name'] ?? ''));
@@ -622,6 +647,92 @@ final class AesLoginService
     }
 
     /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $aesDetails
+     * @param array<string, mixed> $payload
+     */
+    private function resolveAesRegisterNumber(array $profile, array $aesDetails, array $payload): string
+    {
+        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+        if ($register !== '') {
+            return $register;
+        }
+
+        $flat = $this->flattenPayload(array_merge($payload, $aesDetails));
+
+        return strtoupper(trim($this->pick($flat, [
+            'registerNumber', 'register_number', 'admission_no', 'admissionNo', 'admission_number',
+            'admno', 'stud_admno', 'username', 'un', 'userid', 'user_id', 'token_user',
+        ])));
+    }
+
+    /**
+     * Merge POST getStudInfo4Placement + getDepartments data into AES login/session fields.
+     *
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $aesDetails
+     */
+    private function enrichAesDetailsFromPlacementApi(array &$profile, array &$aesDetails, string $register): void
+    {
+        $register = strtoupper(trim($register));
+        if ($register === '') {
+            return;
+        }
+
+        $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+        if ($placement === []) {
+            return;
+        }
+
+        $aesDetails = array_merge($aesDetails, $placement);
+
+        if (!empty($placement['name'])) {
+            $profile['name'] = trim((string) $placement['name']);
+            $aesDetails['name'] = $profile['name'];
+            $aesDetails['stud_name'] = $profile['name'];
+        }
+
+        if (!empty($placement['registerNumber'])) {
+            $profile['registerNumber'] = strtoupper((string) $placement['registerNumber']);
+            $aesDetails['registerNumber'] = $profile['registerNumber'];
+        }
+
+        $branch = strtoupper(trim((string) (
+            $placement['branch']
+            ?? $placement['programme']
+            ?? $placement['stud_cource_short']
+            ?? $placement['stud_course']
+            ?? ''
+        )));
+        if ($branch !== '') {
+            $profile['departmentCode'] = $branch;
+            $aesDetails['department'] = $branch;
+            $aesDetails['deptCode'] = $branch;
+            $aesDetails['branch'] = $branch;
+            $aesDetails['programme'] = $branch;
+            $aesDetails['departmentName'] = $branch;
+            $aesDetails['deptName'] = $branch;
+            return;
+        }
+
+        $deptCode = strtoupper(trim((string) (
+            $placement['deptCode'] ?? $placement['department'] ?? $placement['department_code'] ?? ''
+        )));
+        $deptName = trim((string) (
+            $placement['deptName'] ?? $placement['departmentName'] ?? $placement['department_name'] ?? ''
+        ));
+        if ($deptCode !== '') {
+            $profile['departmentCode'] = $deptCode;
+            $aesDetails['department'] = $deptCode;
+            $aesDetails['deptCode'] = $deptCode;
+        }
+        if ($deptName !== '') {
+            $aesDetails['departmentName'] = $deptName;
+            $aesDetails['deptName'] = $deptName;
+        }
+    }
+
+    /**
      * Resolve department via POST getStudInfo4Placement + getDepartments.
      *
      * @return array{code:string,name:string}
@@ -633,7 +744,11 @@ final class AesLoginService
             return ['code' => '', 'name' => ''];
         }
 
-        return (new AesApiService())->resolveStudentDepartment(['admno' => $register], $register);
+        try {
+            return (new AesApiService())->resolveStudentDepartment(['admno' => $register], $register);
+        } catch (\Throwable) {
+            return ['code' => '', 'name' => ''];
+        }
     }
 
     /**
@@ -872,12 +987,13 @@ final class AesLoginService
         $mapped = [
             'name'           => trim($this->pickInsensitive($aesDetails, [
                     'name', 'full_name', 'fullName', 'fullname', 'student_name', 'studentName', 'stu_name', 'sname',
-                    'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name', 'display_name',
-                    'studname', 'stud_name', 'studentname', 'StudentName', 'nm', 'stu_nm', 'stuNm', 'uname', 'stuname',
+                    'stud_name', 'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name', 'display_name',
+                    'studname', 'StudentName', 'nm', 'stu_nm', 'stuNm', 'uname', 'stuname',
                 ]))
                 ?: trim($this->pickInsensitive($aesDetails, ['fname', 'first_name', 'firstName', 'firstname', 'stu_fname']) . ' ' . $this->pickInsensitive($aesDetails, ['lname', 'last_name', 'lastName', 'lastname', 'stu_lname'])),
             'phone'          => $this->pick($aesDetails, [
                 'phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno',
+                'stud_mobiles',
                 'cell', 'cell_no', 'cellNo', 'whatsapp', 'whatsapp_no',
                 'student_mobile', 'studentMobile', 'stu_mobile', 'stuMobile',
                 'parent_mobile', 'parentMobile', 'father_mobile', 'fatherMobile', 'mother_mobile', 'motherMobile',
@@ -886,14 +1002,17 @@ final class AesLoginService
             ]),
             'email'          => strtolower(trim($this->pickInsensitive($aesDetails, [
                 'college_email', 'collegeemail', 'college_mail', 'collegemail', 'college_mail_id',
+                'stud_ajce_mails',
                 'official_email', 'student_email', 'studentEmail', 'stu_email', 'stuEmail',
                 'institutional_email', 'institute_email', 'inst_email', 'ajce_email',
                 'email', 'mail', 'user_email', 'userEmail', 'email_id', 'emailid', 'email_address', 'emailAddress',
                 'personal_email', 'personalEmail',
             ]))),
-            'registerNumber' => strtoupper($this->pick($aesDetails, ['registerNumber', 'register_number', 'admission_no', 'admissionNo', 'username', 'un'])),
-            'classBatch'     => $this->pick($aesDetails, ['classBatch', 'class_batch', 'batch', 'year_of_study', 'yearOfStudy']),
-            'course'         => $this->pick($aesDetails, ['course', 'program', 'programme', 'degree', 'stream']),
+            'registerNumber' => strtoupper($this->pick($aesDetails, [
+                'registerNumber', 'register_number', 'admission_no', 'admissionNo', 'username', 'un', 'admno', 'stud_admno',
+            ])),
+            'classBatch'     => $this->pick($aesDetails, ['classBatch', 'class_batch', 'batch', 'year_of_study', 'yearOfStudy', 'stud_class']),
+            'course'         => $this->pick($aesDetails, ['stud_course', 'stud_cource_short', 'course', 'program', 'programme', 'degree', 'stream']),
             'year'           => $this->pick($aesDetails, ['year', 'academic_year', 'academicYear', 'batch_year']),
             'semester'       => $this->pick($aesDetails, ['semester', 'sem', 'current_semester']),
             'designation'    => $this->pick($aesDetails, ['designation', 'title', 'job_title', 'jobTitle']),
@@ -919,15 +1038,24 @@ final class AesLoginService
 
         $deptCode = strtoupper(trim($this->pickInsensitive($aesDetails, [
             'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short', 'br',
+            'stud_deptcode', 'stud_cource_short', 'stud_course',
             'department', 'dept', 'branch',
         ])));
         $deptName = trim($this->pickInsensitive($aesDetails, [
             'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
         ]));
-        if ($deptCode !== '') {
+        $branch = strtoupper(trim($this->pickInsensitive($aesDetails, [
+            'stud_cource_short', 'stud_course', 'branch', 'programme', 'program',
+        ])));
+        if ($branch !== '') {
+            $mapped['department'] = $branch;
+            $mapped['departmentName'] = $branch;
+            $mapped['branch'] = $branch;
+            $mapped['programme'] = $branch;
+        } elseif ($deptCode !== '') {
             $mapped['department'] = $deptCode;
         }
-        if ($deptName !== '') {
+        if ($branch === '' && $deptName !== '') {
             $mapped['departmentName'] = $deptName;
         }
         if ($deptCode === '' && $deptName !== '') {
@@ -1836,7 +1964,17 @@ final class AesLoginService
             // Local departments only.
         }
 
-        $dept = $deptModel->findOne(['name' => $departmentCode]);
+        $code = strtoupper(trim($departmentCode));
+        if ($dept === null && preg_match('/^[A-Z]{2,12}$/', $code)) {
+            try {
+                $deptModel->createDepartment(['code' => $code, 'name' => $code]);
+                $dept = $deptModel->findByCode($code);
+            } catch (\Throwable) {
+                // Branch may already exist under another name.
+            }
+        }
+
+        $dept = $dept ?? $deptModel->findOne(['name' => $departmentCode]);
         return $dept ? (string) $dept['_id'] : null;
     }
 
@@ -2105,10 +2243,40 @@ final class AesLoginService
         }
 
         $userModel = new UserModel();
-        $user = $userModel->ensureLoginReady($user);
+        $user = $this->prepareAesUserForLogin($user);
         if (!$userModel->canLogin($user)) {
             throw new \RuntimeException('Account pending approval.');
         }
+    }
+
+    /**
+     * AES sign-in should not be blocked by manual registration approval flags.
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function prepareAesUserForLogin(array $user): array
+    {
+        $role = (string) ($user['role'] ?? '');
+        if (!in_array($role, ['student', 'placement_officer', 'staff'], true)) {
+            return (new UserModel())->ensureLoginReady($user);
+        }
+
+        $patch = [];
+        if (($user['status'] ?? '') !== 'active') {
+            $patch['status'] = 'active';
+        }
+        if (!($user['approved'] ?? false)) {
+            $patch['approved'] = true;
+        }
+        if ($patch === []) {
+            return $user;
+        }
+
+        $userModel = new UserModel();
+        $userModel->updateUser((string) $user['_id'], $patch);
+
+        return $userModel->findById((string) $user['_id']) ?? $user;
     }
 
     /**
@@ -2521,6 +2689,7 @@ final class AesLoginService
 
         $token = $this->pick($flat, ['token', 'auth_token', 'session', 'checksum']);
         $baseRequest = [
+            'admno'          => $username,
             'username'     => $username,
             'un'           => $username,
             'admission_no' => $username,

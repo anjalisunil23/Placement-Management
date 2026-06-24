@@ -219,6 +219,11 @@ function inferDepartmentFromRegisterNumber(registerNumber) {
 function resolveSessionDepartmentName(merged) {
   const aes = (merged.aesProfile && typeof merged.aesProfile === 'object') ? merged.aesProfile : {};
   const deptObj = (merged.department && typeof merged.department === 'object') ? merged.department : null;
+  const branch = String(
+    merged.branch || merged.programme || merged.program || merged.course
+    || aes.branch || aes.programme || aes.stud_cource_short || aes.stud_course || ''
+  ).trim();
+  if (branch) return branch.toUpperCase();
   if (deptObj?.name) return String(deptObj.name).trim();
   const name = String(
     merged.departmentName || merged.deptName || merged.dept_name || aes.departmentName || aes.deptName || ''

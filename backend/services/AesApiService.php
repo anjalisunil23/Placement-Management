@@ -150,10 +150,18 @@ final class AesApiService
             : (string) ($params['admno'] ?? $params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
 
         if ($register !== '') {
-            $admnoOnly = $this->getStudInfo4Placement(['admno' => $register]);
-            $record = $this->extractRecord($admnoOnly);
-            if ($record !== []) {
-                return $admnoOnly;
+            foreach ([
+                ['admno' => $register],
+                ['un' => $register],
+                ['username' => $register],
+                ['admission_no' => $register],
+                ['registerNumber' => $register],
+                ['studno' => $register],
+            ] as $attempt) {
+                $response = $this->getStudInfo4Placement($attempt);
+                if ($this->extractRecord($response) !== []) {
+                    return $response;
+                }
             }
         }
 
@@ -227,6 +235,66 @@ final class AesApiService
     }
 
     /**
+     * Programme branch from placement API (MCA, BCA, INMCA) vs parent department (Computer Applications).
+     *
+     * @param array<string, mixed> $record
+     * @param list<array{code:string,name:string,short:string}> $departments
+     * @return array{branch:string,parentCode:string,parentName:string}
+     */
+    private function extractPlacementBranch(array $record, array $departments = []): array
+    {
+        $branch = strtoupper(trim((string) (
+            $record['stud_cource_short']
+            ?? $record['stud_course']
+            ?? $record['branch']
+            ?? $record['programme']
+            ?? $record['program']
+            ?? ''
+        )));
+        $parentCode = strtoupper(trim((string) (
+            $record['stud_deptcode']
+            ?? $record['parentDepartmentCode']
+            ?? $record['deptCode']
+            ?? ''
+        )));
+        $parentName = '';
+        if ($parentCode !== '' && $departments !== []) {
+            $resolved = $this->matchDepartmentRow($departments, $parentCode);
+            if ($resolved !== null) {
+                $parentName = $resolved['name'];
+            }
+        }
+
+        return [
+            'branch'     => $branch,
+            'parentCode' => $parentCode,
+            'parentName' => $parentName,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @return array{code:string,name:string}
+     */
+    private function placementBranchDepartment(array $record, array $departments = []): array
+    {
+        $info = $this->extractPlacementBranch($record, $departments);
+        if ($info['branch'] !== '') {
+            return ['code' => $info['branch'], 'name' => $info['branch']];
+        }
+        if ($info['parentCode'] !== '') {
+            $resolved = $this->matchDepartmentRow($departments, $info['parentCode']);
+            if ($resolved !== null) {
+                return ['code' => $resolved['code'], 'name' => $resolved['name']];
+            }
+
+            return ['code' => $info['parentCode'], 'name' => $info['parentName']];
+        }
+
+        return ['code' => '', 'name' => ''];
+    }
+
+    /**
      * Fetch student department using AES POST APIs:
      * 1) getStudInfo4Placement — student record (deptCode / deptshort)
      * 2) getDepartments — master list to resolve department name
@@ -246,29 +314,7 @@ final class AesApiService
         $departments = $this->loadDepartmentsFromApi();
 
         if ($profile !== []) {
-            $hint = strtoupper(trim((string) (
-                $profile['deptCode']
-                ?? $profile['deptshort']
-                ?? $profile['department']
-                ?? $profile['department_code']
-                ?? $profile['dept']
-                ?? ''
-            )));
-            $name = trim((string) (
-                $profile['deptName']
-                ?? $profile['departmentName']
-                ?? $profile['department_name']
-                ?? ''
-            ));
-            if ($hint !== '') {
-                $resolved = $this->matchDepartmentRow($departments, $hint);
-                if ($resolved !== null) {
-                    return ['code' => $resolved['code'], 'name' => $resolved['name']];
-                }
-                if ($name !== '') {
-                    return ['code' => $hint, 'name' => $name];
-                }
-            }
+            return $this->placementBranchDepartment($profile, $departments);
         }
 
         return ['code' => '', 'name' => ''];
@@ -289,22 +335,27 @@ final class AesApiService
         }
 
         $departments = $this->loadDepartmentsFromApi();
-        $hint = strtoupper(trim((string) (
-            $record['deptCode']
-            ?? $record['deptshort']
-            ?? $record['department']
-            ?? ''
-        )));
-        if ($hint !== '') {
-            $resolved = $this->matchDepartmentRow($departments, $hint);
-            if ($resolved !== null) {
-                $record['department'] = $resolved['code'];
-                $record['department_code'] = $resolved['code'];
-                $record['department_name'] = $resolved['name'];
-                $record['dept_name'] = $resolved['name'];
-                $record['deptName'] = $resolved['name'];
-                $record['deptCode'] = $resolved['code'];
-            }
+        $branchInfo = $this->extractPlacementBranch($record, $departments);
+        if ($branchInfo['parentCode'] !== '') {
+            $record['parentDepartmentCode'] = $branchInfo['parentCode'];
+            $record['parentDepartmentName'] = $branchInfo['parentName'];
+            $record['stud_deptcode'] = $branchInfo['parentCode'];
+        }
+        if ($branchInfo['branch'] !== '') {
+            $record['branch'] = $branchInfo['branch'];
+            $record['programme'] = $branchInfo['branch'];
+            $record['department'] = $branchInfo['branch'];
+            $record['department_code'] = $branchInfo['branch'];
+            $record['departmentName'] = $branchInfo['branch'];
+            $record['deptName'] = $branchInfo['branch'];
+            $record['deptCode'] = $branchInfo['branch'];
+        } elseif ($branchInfo['parentCode'] !== '' && $branchInfo['parentName'] !== '') {
+            $record['department'] = $branchInfo['parentCode'];
+            $record['department_code'] = $branchInfo['parentCode'];
+            $record['department_name'] = $branchInfo['parentName'];
+            $record['dept_name'] = $branchInfo['parentName'];
+            $record['deptName'] = $branchInfo['parentName'];
+            $record['deptCode'] = $branchInfo['parentCode'];
         }
 
         return $record;
@@ -322,43 +373,65 @@ final class AesApiService
             return [];
         }
 
-        $code = strtoupper(trim((string) (
+        $parentCode = strtoupper(trim((string) (
             $record['stud_deptcode']
-            ?? $record['deptCode']
             ?? $record['dept_code']
             ?? $record['department_code']
-            ?? $record['branch_code']
-            ?? $record['stud_cource_short']
-            ?? $record['stud_course']
-            ?? $record['deptshort']
-            ?? $record['dept_short']
-            ?? $record['dept_shortName']
-            ?? $record['br']
-            ?? $record['department']
-            ?? $record['dept']
-            ?? $record['branch']
             ?? ''
         )));
-        $name = trim((string) (
-            $record['deptName']
-            ?? $record['dept_name']
-            ?? $record['department_name']
-            ?? $record['branch_name']
-            ?? $record['departmentName']
+        $branch = strtoupper(trim((string) (
+            $record['stud_cource_short']
             ?? $record['stud_course']
             ?? ''
-        ));
+        )));
 
-        if ($code !== '') {
-            $record['deptCode'] = $code;
-            $record['department'] = $code;
+        if ($parentCode !== '') {
+            $record['parentDepartmentCode'] = $parentCode;
+            $record['stud_deptcode'] = $parentCode;
         }
-        if ($name !== '') {
-            $record['deptName'] = $name;
-            $record['departmentName'] = $name;
-            if ($code === '') {
-                $record['department'] = strtoupper($name);
-            }
+        if ($branch !== '') {
+            $record['branch'] = $branch;
+            $record['programme'] = $branch;
+            $record['deptCode'] = $branch;
+            $record['department'] = $branch;
+            $record['departmentName'] = $branch;
+            $record['deptName'] = $branch;
+        } elseif ($parentCode !== '') {
+            $record['deptCode'] = $parentCode;
+            $record['department'] = $parentCode;
+        }
+
+        $legacyName = trim((string) (
+            $record['dept_name']
+            ?? $record['department_name']
+            ?? $record['branch_name']
+            ?? ''
+        ));
+        if ($branch === '' && $legacyName !== '') {
+            $record['departmentName'] = $legacyName;
+            $record['deptName'] = $legacyName;
+        }
+
+        if (!empty($record['stud_admno'])) {
+            $admno = strtoupper(trim((string) $record['stud_admno']));
+            $record['registerNumber'] = $admno;
+            $record['admission_no'] = $admno;
+            $record['admno'] = $admno;
+        }
+        if (!empty($record['stud_name'])) {
+            $record['name'] = trim((string) $record['stud_name']);
+        }
+        if (!empty($record['stud_mobiles'])) {
+            $record['phone'] = trim((string) $record['stud_mobiles']);
+        }
+        if (!empty($record['stud_ajce_mails'])) {
+            $record['collegeEmail'] = strtolower(trim((string) $record['stud_ajce_mails']));
+        }
+        if (!empty($record['stud_personal_mails'])) {
+            $record['personalEmail'] = strtolower(trim((string) $record['stud_personal_mails']));
+        }
+        if (isset($record['backlog']) && $record['backlog'] !== '' && is_numeric($record['backlog'])) {
+            $record['backlogs'] = (int) $record['backlog'];
         }
 
         return $record;
