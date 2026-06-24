@@ -41,7 +41,7 @@
           <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
-          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profDept"/></div>
+          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profDept" disabled placeholder="From college login"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">CGPA</label><input class="form-control" id="profCgpa" type="number" step="0.1" min="0" max="10"/></div>
           <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profStaffDept" disabled/></div>
           <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Designation</label><input class="form-control" id="profStaffDesig" disabled/></div>
@@ -108,8 +108,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260623f"></script>
-<script src="js/app.js?v=20260623f"></script>
+<script src="js/api.js?v=20260626a"></script>
+<script src="js/app.js?v=20260626a"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -220,13 +220,15 @@ function pickDepartment(u) {
     if (fromObj) return fromObj.toUpperCase();
   }
   const keys = [
-    'deptCode', 'dept_code', 'deptshort', 'dept_short',
+    'deptCode', 'dept_code', 'deptshort', 'dept_short', 'departmentCode',
     'department', 'departmentName', 'branch', 'dept', 'dept_name', 'deptName', 'branch_name',
     'department_name', 'department_code', 'branch_code',
     'specialisation', 'specialization', 'programme', 'program', 'br', 'BR', 'stud_branch', 'course_branch',
   ];
   for (const key of keys) {
-    const val = String(merged[key] || academic[key] || '').trim();
+    const raw = merged[key] ?? academic[key];
+    if (raw && typeof raw === 'object') continue;
+    const val = String(raw || '').trim();
     if (val) return val.toUpperCase();
   }
   const inferred = inferDepartmentFromRegisterNumber(merged.registerNumber || merged.admission_no || merged.username || '');
@@ -240,6 +242,8 @@ function pickDepartmentDisplay(u) {
   if (fromObjName) return fromObjName;
   const name = String(merged.departmentName || merged.deptName || merged.dept_name || '').trim();
   if (name) return name;
+  const code = String(merged.departmentCode || deptObj?.code || '').trim();
+  if (code) return code.toUpperCase();
   const inferred = inferDepartmentFromRegisterNumber(merged.registerNumber || merged.admission_no || merged.username || '');
   if (inferred) return inferred;
   return pickDepartment(merged);
@@ -466,7 +470,7 @@ function applyProfileFromUser(u, activeRole) {
   if (r === 'student') {
     document.getElementById('profRegNo').value = merged.registerNumber || merged.admission_no || merged.username || '';
     const dept = pickDepartmentDisplay(merged);
-    if (dept) document.getElementById('profDept').value = dept;
+    document.getElementById('profDept').value = dept;
     const cgpa = pickCgpa(merged);
     if (cgpa) document.getElementById('profCgpa').value = cgpa;
   }
@@ -512,13 +516,19 @@ async function loadSettingsProfile() {
       const apiCollegeEmail = pickCollegeEmail(profileCtx);
       const apiPersonalEmail = pickPersonalEmail(profileCtx);
       const apiPhone = pickPhone(profileCtx);
-      const apiDept = pickDepartmentDisplay(profileCtx) || p.department?.name || p.department?.code || pickDepartment(profileCtx) || '';
+      const apiDept = pickDepartmentDisplay(profileCtx)
+        || p.departmentName
+        || p.departmentCode
+        || p.department?.name
+        || p.department?.code
+        || pickDepartment(profileCtx)
+        || '';
       const apiCgpa = pickCgpa(profileCtx) || (ac.cgpa > 0 ? ac.cgpa : '');
       if (apiName) document.getElementById('profName').value = apiName;
       document.getElementById('profCollegeEmail').value = apiCollegeEmail;
       document.getElementById('profPersonalEmail').value = apiPersonalEmail;
       document.getElementById('profRegNo').value = reg;
-      if (apiDept) document.getElementById('profDept').value = apiDept;
+      document.getElementById('profDept').value = apiDept;
       if (apiCgpa) document.getElementById('profCgpa').value = apiCgpa;
       document.getElementById('profPhone').value = apiPhone;
       if (p.photo?.url || p.photoUrl) setAvatarPhoto(p.photo?.url || p.photoUrl);
