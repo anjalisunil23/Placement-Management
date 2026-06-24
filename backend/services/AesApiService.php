@@ -29,6 +29,8 @@ final class AesApiService
     }
 
     /**
+     * POST to https://api.aesajce.in/ with form-urlencoded body.
+     *
      * @param array<string, scalar|null> $params
      * @param list<string> $extraHeaders
      * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
@@ -49,22 +51,20 @@ final class AesApiService
             ];
         }
 
-        curl_setopt_array($ch, [
-            CURLOPT_URL            => $this->apiUrl,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 15,
-            CURLOPT_CONNECTTIMEOUT => 8,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => http_build_query($postData),
-            CURLOPT_HTTPHEADER     => array_merge([
-                'Accept: application/json, */*;q=0.1',
-                'Content-Type: application/x-www-form-urlencoded',
-                'Origin: ' . $this->origin,
-                'Referer: ' . $this->referer,
-                'X-Requested-With: XMLHttpRequest',
-            ], $extraHeaders),
-        ]);
+        curl_setopt($ch, CURLOPT_URL, $this->apiUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge([
+            'Accept: application/json, */*;q=0.1',
+            'Content-Type: application/x-www-form-urlencoded',
+            'Origin: ' . $this->origin,
+            'Referer: ' . $this->referer,
+            'X-Requested-With: XMLHttpRequest',
+        ], $extraHeaders));
 
         $response = curl_exec($ch);
         $curlErr = curl_error($ch);
@@ -90,7 +90,7 @@ final class AesApiService
         }
 
         return [
-            'success' => $statusCode >= 200 && $statusCode < 300,
+            'success' => true,
             'status'  => $statusCode,
             'data'    => $decoded,
         ];
@@ -98,34 +98,33 @@ final class AesApiService
 
     /**
      * @param array<string, scalar|null> $params
-     * @return array<string, mixed>
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
      */
-    public function getStudInfo4Placement(array $params): array
+    public function getDepartments(array $params = []): array
     {
-        $result = $this->callAESApi('getStudInfo4Placement', $params);
-        $record = $this->extractRecord($result);
-        if ($record === []) {
-            return [];
-        }
-
-        return $this->enrichWithDepartment($record);
+        return $this->callAESApi('getDepartments', $params);
     }
 
     /**
      * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    public function getStudInfo4Placement(array $params = []): array
+    {
+        return $this->callAESApi('getStudInfo4Placement', $params);
+    }
+
+    /**
      * @return list<array{code:string,name:string}>
      */
-    public function getDepartments(array $params = []): array
+    public function listDepartments(): array
     {
-        if ($params === [] && self::$departmentCache !== null) {
+        if (self::$departmentCache !== null) {
             return self::$departmentCache;
         }
 
-        $result = $this->callAESApi('getDepartments', $params);
-        $rows = $this->normalizeDepartmentRows($result);
-        if ($params === []) {
-            self::$departmentCache = $rows;
-        }
+        $rows = $this->normalizeDepartmentRows($this->getDepartments());
+        self::$departmentCache = $rows;
 
         return $rows;
     }
@@ -142,7 +141,7 @@ final class AesApiService
             return null;
         }
 
-        foreach ($this->getDepartments() as $row) {
+        foreach ($this->listDepartments() as $row) {
             $code = strtoupper($row['code']);
             $name = strtoupper($row['name']);
             if ($code === $needle || $name === $needle) {
@@ -154,11 +153,77 @@ final class AesApiService
     }
 
     /**
+     * @param array<string, scalar|null> $params
+     * @return array<string, mixed>
+     */
+    public function fetchStudentPlacementProfile(array $params): array
+    {
+        $record = $this->normalizePlacementStudentRecord(
+            $this->extractRecord($this->getStudInfo4Placement($params))
+        );
+        if ($record === []) {
+            return [];
+        }
+
+        return $this->enrichWithDepartment($record);
+    }
+
+    /**
+     * Map AES placement API fields (deptCode, deptName, …) to profile keys.
+     *
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    public function normalizePlacementStudentRecord(array $record): array
+    {
+        if ($record === []) {
+            return [];
+        }
+
+        $code = strtoupper(trim((string) (
+            $record['deptCode']
+            ?? $record['dept_code']
+            ?? $record['department_code']
+            ?? $record['branch_code']
+            ?? $record['deptshort']
+            ?? $record['dept_short']
+            ?? $record['dept_shortName']
+            ?? $record['br']
+            ?? $record['department']
+            ?? $record['dept']
+            ?? $record['branch']
+            ?? ''
+        )));
+        $name = trim((string) (
+            $record['deptName']
+            ?? $record['dept_name']
+            ?? $record['department_name']
+            ?? $record['branch_name']
+            ?? $record['departmentName']
+            ?? ''
+        ));
+
+        if ($code !== '') {
+            $record['deptCode'] = $code;
+            $record['department'] = $code;
+        }
+        if ($name !== '') {
+            $record['deptName'] = $name;
+            $record['departmentName'] = $name;
+            if ($code === '') {
+                $record['department'] = strtoupper($name);
+            }
+        }
+
+        return $record;
+    }
+
+    /**
      * Pull AES departments into the local departments collection (insert missing codes only).
      */
     public function syncDepartmentsToLocal(): int
     {
-        $rows = $this->getDepartments();
+        $rows = $this->listDepartments();
         if ($rows === []) {
             return 0;
         }
@@ -222,6 +287,10 @@ final class AesApiService
             return [];
         }
 
+        if (array_is_list($payload) && isset($payload[0]) && is_array($payload[0])) {
+            return $this->normalizePlacementStudentRecord($payload[0]);
+        }
+
         if (($payload['status'] ?? true) === false || ($payload['status'] ?? null) === 'false') {
             return [];
         }
@@ -231,7 +300,10 @@ final class AesApiService
             return $record;
         }
 
-        $scalarKeys = ['name', 'student_name', 'email', 'cgpa', 'department', 'dept', 'branch', 'admission_no'];
+        $scalarKeys = [
+            'name', 'student_name', 'email', 'cgpa', 'department', 'dept', 'branch', 'admission_no',
+            'deptCode', 'deptName', 'dept_code', 'dept_name', 'deptshort', 'registerNumber',
+        ];
         foreach ($scalarKeys as $key) {
             if (isset($payload[$key]) && is_scalar($payload[$key]) && trim((string) $payload[$key]) !== '') {
                 return $payload;

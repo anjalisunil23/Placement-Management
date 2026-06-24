@@ -136,6 +136,18 @@ final class AuthMiddleware
           ? (new DepartmentModel())->findById((string) $profile['departmentId'])
           : null;
         $data = array_merge($data, StudentModel::profileToUserFields($profile, $dept));
+        $aesDept = (new \PMS\Services\AesLoginService())->resolveStudentDepartmentFields(
+            $dept ? [
+                'id'   => (string) ($dept['_id'] ?? ''),
+                'code' => (string) ($dept['code'] ?? ''),
+                'name' => (string) ($dept['name'] ?? ''),
+            ] : null,
+            (string) ($profile['registerNumber'] ?? '')
+        );
+        if ($aesDept['code'] !== '' || $aesDept['name'] !== '') {
+          $data['department'] = $aesDept['code'];
+          $data['departmentName'] = $aesDept['name'];
+        }
       }
     }
     if ($token !== null) {

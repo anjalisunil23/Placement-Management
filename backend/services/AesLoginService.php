@@ -183,6 +183,16 @@ final class AesLoginService
         $profile = $this->extractProfile(array_merge($payload, $aesDetails));
         $mapped = $this->mapAesDetailsToUserFields($aesDetails);
         $register = strtoupper((string) ($profile['registerNumber'] ?? ''));
+        if ($profile['departmentCode'] === '' && $register !== '') {
+            $inferred = $this->inferDepartmentFromRegisterNumber($register);
+            if ($inferred['code'] !== '') {
+                $profile['departmentCode'] = $inferred['code'];
+                $aesDetails['department'] = $inferred['code'];
+                if ($inferred['name'] !== '') {
+                    $aesDetails['departmentName'] = $inferred['name'];
+                }
+            }
+        }
         $emails = $this->resolveAesEmails($aesDetails, $mapped, $register, '');
         if ($emails['collegeEmail'] !== '') {
             $aesDetails['collegeEmail'] = $emails['collegeEmail'];
@@ -460,18 +470,27 @@ final class AesLoginService
             $data['email'] = $resolvedEmails['email'];
         }
 
-        $aesDept = strtoupper(trim($this->pick($aesProfile, [
-            'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
-            'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
-            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
+        $aesDept = strtoupper(trim($this->pickInsensitive($aesProfile, [
+            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short',
+            'department', 'dept', 'branch', 'deptCode', 'br',
         ])));
+        $aesDeptName = trim($this->pickInsensitive($aesProfile, [
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
+        ]));
         if ($aesDept === '' && !empty($mapped['department'])) {
             $aesDept = strtoupper((string) $mapped['department']);
+        }
+        if ($aesDeptName === '' && !empty($mapped['departmentName'])) {
+            $aesDeptName = (string) $mapped['departmentName'];
         }
         if ($aesDept !== '') {
             $resolved = (new AesApiService())->findDepartment($aesDept);
             $data['department'] = $resolved['code'] ?? $aesDept;
-            $data['departmentName'] = $resolved['name'] ?? $aesDept;
+            $data['departmentName'] = $aesDeptName !== ''
+                ? $aesDeptName
+                : ($resolved['name'] ?? $aesDept);
+        } elseif ($aesDeptName !== '') {
+            $data['departmentName'] = $aesDeptName;
         }
 
         $aesCgpa = $this->pick($aesProfile, [
@@ -485,6 +504,119 @@ final class AesLoginService
         }
 
         return $data;
+    }
+
+    /**
+     * Resolve department code/name for student profile display.
+     *
+     * @param array{id?:string,code?:string,name?:string}|null $department
+     * @param array<string, mixed> $extraAes
+     * @return array{code:string,name:string}
+     */
+    public function resolveStudentDepartmentFields(?array $department, string $registerNumber = '', array $extraAes = []): array
+    {
+        $code = '';
+        $name = '';
+        if (is_array($department)) {
+            $code = strtoupper(trim((string) ($department['code'] ?? '')));
+            $name = trim((string) ($department['name'] ?? ''));
+        }
+
+        $aesProfile = array_merge(\PMS\Utils\Security::getSessionAesProfile(), $extraAes);
+        if ($aesProfile !== []) {
+            $mapped = $this->mapAesDetailsToUserFields($aesProfile);
+            if ($code === '' && !empty($mapped['department'])) {
+                $code = strtoupper((string) $mapped['department']);
+            }
+            if ($name === '' && !empty($mapped['departmentName'])) {
+                $name = (string) $mapped['departmentName'];
+            }
+        }
+
+        if ($code === '' && $registerNumber !== '') {
+            $inferred = $this->inferDepartmentFromRegisterNumber($registerNumber);
+            if ($inferred['code'] !== '') {
+                $code = $inferred['code'];
+            }
+            if ($name === '' && $inferred['name'] !== '') {
+                $name = $inferred['name'];
+            }
+        }
+
+        if ($name === '' && $code !== '') {
+            $dept = (new DepartmentModel())->findByCode($code);
+            if ($dept) {
+                $name = trim((string) ($dept['name'] ?? ''));
+            }
+            if ($name === '') {
+                try {
+                    foreach ((new AesApiService())->listDepartments() as $row) {
+                        if (strcasecmp($row['code'], $code) === 0) {
+                            $name = $row['name'];
+                            break;
+                        }
+                    }
+                } catch (\Throwable) {
+                    // Optional AES department lookup.
+                }
+            }
+        }
+
+        if ($name === '' && $code !== '') {
+            $name = $code;
+        }
+
+        return ['code' => $code, 'name' => $name];
+    }
+
+    /**
+     * Persist departmentId on a student record when AES/register data provides a code.
+     *
+     * @param array<string, mixed> $profile
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $aesProfile
+     */
+    public function syncStudentDepartmentIfMissing(array $profile, array $aesProfile): void
+    {
+        if (!empty($profile['departmentId'])) {
+            return;
+        }
+
+        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? $aesProfile['registerNumber'] ?? '')));
+        $fields = $this->resolveStudentDepartmentFields(null, $register);
+        if ($fields['code'] === '' && $fields['name'] === '') {
+            return;
+        }
+
+        $extras = [
+            'department'     => $fields['code'],
+            'departmentName' => $fields['name'],
+        ];
+        $deptId = $this->resolveDepartmentIdFromProfile(
+            ['departmentCode' => $fields['code'], 'registerNumber' => $register, 'name' => '', 'email' => '', 'role' => 'student'],
+            $extras
+        );
+        if ($deptId === null) {
+            return;
+        }
+
+        (new StudentModel())->update((string) $profile['_id'], ['departmentId' => $deptId]);
+    }
+
+    /**
+     * @return array{code:string,name:string}
+     */
+    private function inferDepartmentFromRegisterNumber(string $registerNumber): array
+    {
+        $register = strtoupper(trim($registerNumber));
+        if ($register === '') {
+            return ['code' => '', 'name' => ''];
+        }
+
+        if (preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
+            return ['code' => strtoupper($matches[1]), 'name' => ''];
+        }
+
+        return ['code' => '', 'name' => ''];
     }
 
     /**
@@ -640,6 +772,9 @@ final class AesLoginService
                     || $lower === 'dept'
                     || $lower === 'branch'
                     || $lower === 'br'
+                    || $lower === 'deptcode'
+                    || $lower === 'deptname'
+                    || $lower === 'deptshort'
                     || str_contains($lower, 'dept_')
                     || str_contains($lower, 'branch_')
                     || str_contains($lower, 'department_')
@@ -648,8 +783,16 @@ final class AesLoginService
                     || $lower === 'programme'
                     || $lower === 'program'
                 ) {
-                    if (strlen($text) >= 2 && strlen($text) <= 80 && !preg_match('/^\d+$/', $text)) {
-                        $found['department'] = strtoupper($text);
+                    if (strlen($text) >= 1 && strlen($text) <= 80) {
+                        if (in_array($lower, ['deptname', 'dept_name', 'department_name', 'branch_name'], true)) {
+                            $found['departmentName'] = $text;
+                        } elseif (in_array($lower, ['deptcode', 'dept_code', 'deptshort', 'dept_short', 'br'], true)) {
+                            $found['department'] = strtoupper($text);
+                        } elseif (empty($found['department']) && !preg_match('/^\d+$/', $text)) {
+                            $found['department'] = strtoupper($text);
+                        } elseif (empty($found['department'])) {
+                            $found['department'] = strtoupper($text);
+                        }
                     }
                 }
 
@@ -757,14 +900,21 @@ final class AesLoginService
             $mapped['backlogs'] = (int) $backlogs;
         }
 
-        $dept = $this->pick($aesDetails, [
-            'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
-            'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
-            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
-            'br', 'BR', 'deptnm', 'deptname', 'branchname', 'course_branch', 'stud_branch',
-        ]);
-        if ($dept !== '') {
-            $mapped['department'] = strtoupper($dept);
+        $deptCode = strtoupper(trim($this->pickInsensitive($aesDetails, [
+            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short', 'br',
+            'department', 'dept', 'branch',
+        ])));
+        $deptName = trim($this->pickInsensitive($aesDetails, [
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
+        ]));
+        if ($deptCode !== '') {
+            $mapped['department'] = $deptCode;
+        }
+        if ($deptName !== '') {
+            $mapped['departmentName'] = $deptName;
+        }
+        if ($deptCode === '' && $deptName !== '') {
+            $mapped['department'] = strtoupper($deptName);
         }
 
         $register = (string) ($mapped['registerNumber'] ?? '');
@@ -895,7 +1045,7 @@ final class AesLoginService
         $deptCode = $profile['departmentCode'] !== ''
             ? $profile['departmentCode']
             : (string) ($extras['department'] ?? '');
-        $deptId = $this->resolveDepartmentId($deptCode);
+        $deptId = $this->resolveDepartmentIdFromProfile($profile, $extras);
         if ($deptId) {
             $patch['departmentId'] = $deptId;
         }
@@ -961,10 +1111,7 @@ final class AesLoginService
             $patch['phone'] = (string) $extras['phone'];
         }
 
-        $deptCode = $profile['departmentCode'] !== ''
-            ? $profile['departmentCode']
-            : (string) ($extras['department'] ?? '');
-        $deptId = $this->resolveDepartmentId($deptCode);
+        $deptId = $this->resolveDepartmentIdFromProfile($profile, $extras);
         if ($deptId) {
             $patch['departmentId'] = $deptId;
         }
@@ -1089,10 +1236,7 @@ final class AesLoginService
             $patch['designation'] = (string) $extras['designation'];
         }
 
-        $deptCode = $profile['departmentCode'] !== ''
-            ? $profile['departmentCode']
-            : (string) ($extras['department'] ?? '');
-        $deptId = $this->resolveDepartmentId($deptCode);
+        $deptId = $this->resolveDepartmentIdFromProfile($profile, $extras);
         if ($deptId) {
             $patch['departmentId'] = $deptId;
         }
@@ -1163,13 +1307,32 @@ final class AesLoginService
             'login_type', 'logintype', 'account_type', 'accounttype', 'portal', 'module',
         ])));
 
-        $departmentCode = strtoupper(trim($this->pick($flat, [
-            'department', 'dept', 'branch', 'department_code', 'dept_code', 'deptCode',
+        $departmentCode = strtoupper(trim($this->pickInsensitive($flat, [
+            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short', 'br',
+            'department', 'dept', 'branch',
             'branch_name', 'branchName', 'dept_name', 'deptName', 'department_name',
-            'branch_code', 'specialisation', 'specialization', 'programme', 'program',
+            'specialisation', 'specialization', 'programme', 'program',
         ])));
         if ($departmentCode === '' && !empty($contactScan['department'])) {
             $departmentCode = strtoupper((string) $contactScan['department']);
+        }
+        $departmentName = trim($this->pickInsensitive($flat, [
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
+        ]));
+        if ($departmentName === '' && !empty($contactScan['departmentName'])) {
+            $departmentName = (string) $contactScan['departmentName'];
+        }
+        if ($departmentCode === '' && $departmentName !== '') {
+            $departmentCode = strtoupper($departmentName);
+        }
+        if ($departmentCode === '' && $registerNumber !== '') {
+            $inferred = $this->inferDepartmentFromRegisterNumber($registerNumber);
+            if ($inferred['code'] !== '') {
+                $departmentCode = $inferred['code'];
+                if ($departmentName === '' && $inferred['name'] !== '') {
+                    $departmentName = $inferred['name'];
+                }
+            }
         }
 
         $cgpaRaw = $this->pick($flat, [
@@ -1658,6 +1821,24 @@ final class AesLoginService
 
         $dept = $deptModel->findOne(['name' => $departmentCode]);
         return $dept ? (string) $dept['_id'] : null;
+    }
+
+    /**
+     * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
+     * @param array<string, mixed> $extras
+     */
+    private function resolveDepartmentIdFromProfile(array $profile, array $extras): ?string
+    {
+        $deptCode = $profile['departmentCode'] !== ''
+            ? $profile['departmentCode']
+            : (string) ($extras['department'] ?? '');
+        $deptId = $this->resolveDepartmentId($deptCode);
+        if ($deptId !== null) {
+            return $deptId;
+        }
+
+        $deptName = (string) ($extras['departmentName'] ?? '');
+        return $deptName !== '' ? $this->resolveDepartmentId($deptName) : null;
     }
 
     private function syntheticStudentEmail(string $registerNumber): string
@@ -2334,7 +2515,7 @@ final class AesLoginService
         }
 
         try {
-            $placementInfo = (new AesApiService())->getStudInfo4Placement($baseRequest);
+            $placementInfo = (new AesApiService())->fetchStudentPlacementProfile($baseRequest);
             if ($placementInfo !== []) {
                 return $placementInfo;
             }

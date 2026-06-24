@@ -80,6 +80,16 @@ final class StudentController
   {
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
+    $aes = new AesLoginService();
+    $aes->syncStudentDepartmentIfMissing($profile, [
+        'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
+        'departmentCode' => '',
+        'name'           => '',
+        'email'          => '',
+        'role'           => 'student',
+    ]);
+    $profile = $this->studentModel->findById((string) $profile['_id']) ?? $profile;
+
     $dept = !empty($profile['departmentId'])
       ? (new DepartmentModel())->findById((string) $profile['departmentId'])
       : null;
@@ -91,7 +101,7 @@ final class StudentController
 
     $academic = is_array($out['academic'] ?? null) ? $out['academic'] : [];
     $personal = is_array($out['personal'] ?? null) ? $out['personal'] : [];
-    $merged = (new AesLoginService())->applyAesSessionToUserFields(array_merge(
+    $merged = $aes->applyAesSessionToUserFields(array_merge(
       StudentModel::profileToUserFields($profile, $dept),
       [
         'name'  => (string) ($user['name'] ?? ''),
@@ -100,7 +110,6 @@ final class StudentController
     ));
 
     $reg = (string) ($out['registerNumber'] ?? $merged['registerNumber'] ?? '');
-    $aes = new AesLoginService();
     $collegeEmail = $aes->excludeSyntheticCollegeEmail((string) ($merged['collegeEmail'] ?? ''), $reg);
     $personalEmail = (string) ($merged['personalEmail'] ?? '');
 
@@ -111,21 +120,23 @@ final class StudentController
       'personalEmail' => $personalEmail,
       'phone'         => (string) ($merged['phone'] ?? $personal['phone'] ?? ''),
     ];
-    $out['department'] = $dept ? [
+
+    $dbDept = $dept ? [
       'id'   => (string) ($dept['_id'] ?? ''),
       'code' => (string) ($dept['code'] ?? ''),
       'name' => (string) ($dept['name'] ?? ''),
     ] : null;
-    if ($out['department'] === null && !empty($merged['department'])) {
-      $out['department'] = ['code' => (string) $merged['department'], 'name' => (string) ($merged['departmentName'] ?? $merged['department'])];
-    } elseif ($out['department'] !== null && !empty($merged['department'])) {
-      if (empty($out['department']['code'])) {
-        $out['department']['code'] = (string) $merged['department'];
-      }
-      if (empty($out['department']['name'])) {
-        $out['department']['name'] = (string) ($merged['departmentName'] ?? $merged['department']);
-      }
+    $resolvedDept = $aes->resolveStudentDepartmentFields($dbDept, $reg);
+    $out['department'] = [
+      'id'   => (string) ($dbDept['id'] ?? ''),
+      'code' => $resolvedDept['code'],
+      'name' => $resolvedDept['name'],
+    ];
+    if ($resolvedDept['code'] === '' && $resolvedDept['name'] === '') {
+      $out['department'] = null;
     }
+    $out['departmentCode'] = $resolvedDept['code'];
+    $out['departmentName'] = $resolvedDept['name'];
     if (!empty($merged['cgpa']) && (float) $merged['cgpa'] > 0) {
       $academic['cgpa'] = (float) $merged['cgpa'];
       $out['academic'] = $academic;

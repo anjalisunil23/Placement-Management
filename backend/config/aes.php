@@ -67,7 +67,7 @@ if ($refHost === '') {
 
 // Public portal already ships this key in HTML/JS; use when production .env was never patched.
 if ($authKey === '' && $refHost === 'placements.amaljyothi.ac.in') {
-    $authKey = '95872781e44306cdb4c9c9f16c060b63be079dcb';
+    $authKey = '17f7e7bf8d3ecf54364107279801e88ee6509a09';
 }
 
 return [

@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260624v';
+const APP_SCRIPT_VERSION = '20260625b';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -185,15 +185,40 @@ function isNameFieldKey(key) {
 
 function resolveSessionDepartment(merged) {
   const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
+  const aes = (merged.aesProfile && typeof merged.aesProfile === 'object') ? merged.aesProfile : {};
+  const sources = [merged, aes, academic];
   const keys = [
-    'department', 'departmentName', 'branch', 'dept', 'dept_name', 'branch_name',
-    'department_name', 'department_code', 'dept_code', 'branch_code', 'programme', 'program',
+    'deptCode', 'dept_code', 'deptshort', 'dept_short',
+    'department', 'departmentName', 'branch', 'dept', 'dept_name', 'deptName', 'branch_name',
+    'department_name', 'department_code', 'branch_code', 'programme', 'program',
   ];
-  for (const key of keys) {
-    const val = String(merged[key] || academic[key] || '').trim();
-    if (val) return val.toUpperCase();
+  for (const src of sources) {
+    for (const key of keys) {
+      const val = String(src[key] || '').trim();
+      if (val) return val.toUpperCase();
+    }
   }
-  return '';
+  const reg = String(merged.registerNumber || aes.registerNumber || '').trim();
+  const inferred = inferDepartmentFromRegisterNumber(reg);
+  return inferred || '';
+}
+
+function inferDepartmentFromRegisterNumber(registerNumber) {
+  const reg = String(registerNumber || '').trim().toUpperCase();
+  const m = reg.match(/\d{2}([A-Z]{2,10})\d+/);
+  return m ? m[1].toUpperCase() : '';
+}
+
+function resolveSessionDepartmentName(merged) {
+  const aes = (merged.aesProfile && typeof merged.aesProfile === 'object') ? merged.aesProfile : {};
+  const deptObj = (merged.department && typeof merged.department === 'object') ? merged.department : null;
+  if (deptObj?.name) return String(deptObj.name).trim();
+  const name = String(
+    merged.departmentName || merged.deptName || merged.dept_name || aes.departmentName || aes.deptName || ''
+  ).trim();
+  if (name) return name;
+  const code = resolveSessionDepartment(merged);
+  return code || '';
 }
 
 function resolveSessionCgpa(merged) {
@@ -506,7 +531,7 @@ const Auth = {
         role,
         department: resolveSessionDepartment(merged) || merged.department || prev.department || '',
         departmentId: merged.departmentId || prev.departmentId || '',
-        departmentName: resolveSessionDepartment(merged) || merged.departmentName || prev.departmentName || '',
+        departmentName: resolveSessionDepartmentName(merged) || merged.departmentName || prev.departmentName || '',
         designation: merged.designation || prev.designation || '',
         company: merged.company ?? prev.company ?? '',
         companyName: merged.companyName ?? prev.companyName ?? '',
@@ -3551,7 +3576,9 @@ async function apiFetch(path, opts = {}) {
   }
   let body = opts.body;
   if (body instanceof FormData) {
-    // Let the browser set multipart boundary.
+    // Let the browser set multipart boundary; a preset Content-Type breaks uploads (415).
+    delete headers['Content-Type'];
+    delete headers['content-type'];
   } else if (body != null && typeof body !== 'string') {
     body = JSON.stringify(body);
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
