@@ -23,7 +23,12 @@ foreach (array_slice($depts, 0, 5) as $row) {
     echo ($row['code'] ?? '') . ' — ' . ($row['name'] ?? '') . "\n";
 }
 
-$synced = $api->syncDepartmentsToLocal();
+$synced = 0;
+try {
+    $synced = $api->syncDepartmentsToLocal();
+} catch (\Throwable $e) {
+    echo 'sync skipped (database unavailable): ' . $e->getMessage() . "\n";
+}
 echo "synced new departments: {$synced}\n";
 
 if ($register !== '') {

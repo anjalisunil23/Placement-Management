@@ -16,6 +16,9 @@ final class AesApiService
     private string $referer;
     private string $authKey;
 
+    /** @var list<array{code:string,name:string}>|null */
+    private static ?array $departmentCache = null;
+
     public function __construct()
     {
         $aes = require dirname(__DIR__) . '/config/aes.php';
@@ -100,16 +103,54 @@ final class AesApiService
     public function getStudInfo4Placement(array $params): array
     {
         $result = $this->callAESApi('getStudInfo4Placement', $params);
-        return $this->extractRecord($result);
+        $record = $this->extractRecord($result);
+        if ($record === []) {
+            return [];
+        }
+
+        return $this->enrichWithDepartment($record);
     }
 
     /**
+     * @param array<string, scalar|null> $params
      * @return list<array{code:string,name:string}>
      */
-    public function getDepartments(): array
+    public function getDepartments(array $params = []): array
     {
-        $result = $this->callAESApi('getDepartments');
-        return $this->normalizeDepartmentRows($result);
+        if ($params === [] && self::$departmentCache !== null) {
+            return self::$departmentCache;
+        }
+
+        $result = $this->callAESApi('getDepartments', $params);
+        $rows = $this->normalizeDepartmentRows($result);
+        if ($params === []) {
+            self::$departmentCache = $rows;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Resolve an AES department code or name to a canonical {code, name} pair.
+     *
+     * @return array{code:string,name:string}|null
+     */
+    public function findDepartment(string $codeOrName): ?array
+    {
+        $needle = strtoupper(trim($codeOrName));
+        if ($needle === '') {
+            return null;
+        }
+
+        foreach ($this->getDepartments() as $row) {
+            $code = strtoupper($row['code']);
+            $name = strtoupper($row['name']);
+            if ($code === $needle || $name === $needle) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -258,6 +299,41 @@ final class AesApiService
         }
 
         return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    private function enrichWithDepartment(array $record): array
+    {
+        $deptHint = trim((string) (
+            $record['department_code']
+            ?? $record['dept_code']
+            ?? $record['deptCode']
+            ?? $record['department']
+            ?? $record['dept']
+            ?? $record['branch']
+            ?? $record['branch_code']
+            ?? $record['dept_name']
+            ?? $record['department_name']
+            ?? ''
+        ));
+        if ($deptHint === '') {
+            return $record;
+        }
+
+        $resolved = $this->findDepartment($deptHint);
+        if ($resolved === null) {
+            return $record;
+        }
+
+        $record['department'] = $resolved['code'];
+        $record['department_code'] = $resolved['code'];
+        $record['department_name'] = $resolved['name'];
+        $record['dept_name'] = $resolved['name'];
+
+        return $record;
     }
 
     /**

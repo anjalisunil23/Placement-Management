@@ -469,8 +469,9 @@ final class AesLoginService
             $aesDept = strtoupper((string) $mapped['department']);
         }
         if ($aesDept !== '') {
-            $data['department'] = $aesDept;
-            $data['departmentName'] = $aesDept;
+            $resolved = (new AesApiService())->findDepartment($aesDept);
+            $data['department'] = $resolved['code'] ?? $aesDept;
+            $data['departmentName'] = $resolved['name'] ?? $aesDept;
         }
 
         $aesCgpa = $this->pick($aesProfile, [
