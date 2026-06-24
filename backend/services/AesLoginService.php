@@ -219,8 +219,10 @@ final class AesLoginService
             throw new \RuntimeException('No PlaceHub account matches your AES profile. Students are created automatically on first AES sign-in when admission number is available.');
         }
         $this->assertUserCanLogin($user);
+        $user = $this->normalizeSuperAdminUser($user);
         $user = $this->syncUserFromAes($user, $profile, $aesDetails);
         $this->syncRoleProfileFromAes($user, $profile, $aesDetails);
+        $user = $this->normalizeSuperAdminUser($user);
         Security::setSessionUser($user, $this->sanitizeAesProfileForClient($aesDetails));
         return $user;
     }
@@ -254,16 +256,23 @@ final class AesLoginService
      */
     private function resolveSuperAdminUser(array $profile, array $aesDetails, array $mapped, array $resolvedEmails): ?array
     {
-        $userModel = new UserModel();
-        foreach ($this->collectLookupEmails($profile, $aesDetails, $mapped, $resolvedEmails) as $email) {
-            if ($this->isSuperAdminEmail($email)) {
-                $user = $userModel->findByEmail($email);
-                if ($user && ($user['role'] ?? '') === 'admin') {
-                    return $user;
+        $lookup = $this->collectLookupEmails($profile, $aesDetails, $mapped, $resolvedEmails);
+        $config = require dirname(__DIR__) . '/config/app.php';
+
+        foreach ($config['super_admin_emails'] ?? [] as $adminEmail) {
+            foreach ($lookup as $email) {
+                if (strcasecmp($email, $adminEmail) === 0) {
+                    return $this->ensureSuperAdminAccount($adminEmail);
                 }
             }
+        }
 
-            $user = $userModel->findByEmail($email);
+        foreach ($lookup as $email) {
+            if ($this->isSuperAdminEmail($email)) {
+                return $this->ensureSuperAdminAccount($email);
+            }
+
+            $user = (new UserModel())->findByEmail($email);
             if ($user && ($user['role'] ?? '') === 'admin') {
                 return $user;
             }
@@ -272,7 +281,51 @@ final class AesLoginService
         return null;
     }
 
-    private function isSuperAdminEmail(string $email): bool
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function normalizeSuperAdminUser(array $user): array
+    {
+        $email = strtolower(trim((string) ($user['email'] ?? '')));
+        if (!$this->isSuperAdminEmail($email)) {
+            return $user;
+        }
+
+        $promoted = $this->ensureSuperAdminAccount($email);
+
+        return $promoted ?? $user;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function ensureSuperAdminAccount(string $email): ?array
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+
+        $userModel = new UserModel();
+        $user = $userModel->findByEmail($email);
+        if (!$user) {
+            return null;
+        }
+
+        if (($user['role'] ?? '') !== 'admin') {
+            $userModel->updateUser((string) $user['_id'], [
+                'role'     => 'admin',
+                'approved' => true,
+                'status'   => 'active',
+            ]);
+            $user = $userModel->findById((string) $user['_id']);
+        }
+
+        return $user ?: null;
+    }
+
+    public function isSuperAdminEmail(string $email): bool
     {
         $email = strtolower(trim($email));
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -1098,6 +1151,13 @@ final class AesLoginService
         $userModel = new UserModel();
 
         foreach ($this->collectLookupEmails($profile, $aesDetails, $mapped, $resolvedEmails) as $email) {
+            if ($this->isSuperAdminEmail($email)) {
+                $admin = $this->ensureSuperAdminAccount($email);
+                if ($admin) {
+                    return $admin;
+                }
+            }
+
             $user = $userModel->findByEmail($email);
             if ($user) {
                 if (($user['role'] ?? '') === 'student') {

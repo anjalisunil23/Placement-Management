@@ -431,6 +431,7 @@ const Auth = {
   homePage(role) {
     const u = this.user();
     const r = role || this.role();
+    if (r === 'admin') return 'dashboard.html';
     if (r === 'alumni' && u && typeof u.isWorking === 'boolean' && !u.isWorking) {
       return 'drives.html';
     }
@@ -441,6 +442,7 @@ const Auth = {
     return ROLE_HOME[r] || 'dashboard.html';
   },
   resolveRedirect(next) {
+    if (this.role() === 'admin') return 'dashboard.html';
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
     const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');

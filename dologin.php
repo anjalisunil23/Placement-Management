@@ -59,6 +59,9 @@ try {
 
     $info = AuthMiddleware::userResponse($user);
     $target = (string) ($info['dashboard'] ?? '/dashboard.html');
+    if (($info['role'] ?? '') === 'admin') {
+        $target = '/dashboard.html';
+    }
     if ($target === '' || $target[0] !== '/') {
         $target = '/' . ltrim($target, '/');
     }

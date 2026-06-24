@@ -90,20 +90,27 @@ final class AuthMiddleware
   {
     $config = require dirname(__DIR__) . '/config/app.php';
     $data = DocumentHelper::serialize($user);
-    $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
-    if (($user['role'] ?? '') === 'alumni') {
+    $aesService = new \PMS\Services\AesLoginService();
+    $email = strtolower(trim((string) ($data['email'] ?? '')));
+    if ($aesService->isSuperAdminEmail($email)) {
+      $data['role'] = 'admin';
+      $data['dashboard'] = $config['role_dashboards']['admin'] ?? '/dashboard.html';
+    } else {
+      $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
+    }
+    if (($data['role'] ?? '') === 'alumni') {
       $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
       if ($profile) {
         $data = array_merge($data, AlumniModel::profileToUserFields($profile));
       }
     }
-    if (($user['role'] ?? '') === 'company') {
+    if (($data['role'] ?? $user['role'] ?? '') === 'company') {
       $company = (new CompanyModel())->findByUserId((string) $user['_id']);
       if ($company) {
         $data = array_merge($data, CompanyModel::profileToUserFields($company));
       }
     }
-    if (($user['role'] ?? '') === 'staff') {
+    if (($data['role'] ?? $user['role'] ?? '') === 'staff') {
       $profile = (new StaffModel())->findByUserId((string) $user['_id']);
       if ($profile) {
         $dept = !empty($profile['departmentId'])
@@ -143,6 +150,11 @@ final class AuthMiddleware
       if (is_array($aesProfile)) {
         $data['aesProfile'] = $aesProfile;
       }
+    }
+
+    if ($aesService->isSuperAdminEmail(strtolower(trim((string) ($data['email'] ?? ''))))) {
+      $data['role'] = 'admin';
+      $data['dashboard'] = $config['role_dashboards']['admin'] ?? '/dashboard.html';
     }
 
     $safe = DocumentHelper::jsonSafe($data);
