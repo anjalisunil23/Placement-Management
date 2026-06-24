@@ -472,11 +472,12 @@ final class AesLoginService
         }
 
         $aesDept = strtoupper(trim($this->pickInsensitive($aesProfile, [
-            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short',
-            'department', 'dept', 'branch', 'deptCode', 'br',
+            'deptshort', 'dept_short', 'br',
+            'deptCode', 'dept_code', 'department_code', 'branch_code',
+            'department', 'dept', 'branch',
         ])));
         $aesDeptName = trim($this->pickInsensitive($aesProfile, [
-            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName', 'dept_shortName',
         ]));
         if ($aesDept === '' && !empty($mapped['department'])) {
             $aesDept = strtoupper((string) $mapped['department']);
@@ -575,6 +576,14 @@ final class AesLoginService
 
         if ($name === '' && $code !== '') {
             $name = $code;
+        }
+
+        $resolved = (new AesApiService())->findDepartment($code !== '' ? $code : $name);
+        if ($resolved !== null) {
+            $code = $resolved['code'];
+            if ($name === '' || preg_match('/^\d+$/', $name) === 1) {
+                $name = $resolved['name'];
+            }
         }
 
         return ['code' => $code, 'name' => $name];
@@ -952,21 +961,38 @@ final class AesLoginService
             $mapped['backlogs'] = (int) $backlogs;
         }
 
-        $deptCode = strtoupper(trim($this->pickInsensitive($aesDetails, [
-            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short', 'br',
+        $deptShort = strtoupper(trim($this->pickInsensitive($aesDetails, [
+            'deptshort', 'dept_short', 'br',
+        ])));
+        $deptNumeric = trim($this->pickInsensitive($aesDetails, [
+            'deptCode', 'dept_code', 'department_code', 'branch_code',
+        ]));
+        $deptName = trim($this->pickInsensitive($aesDetails, [
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName', 'dept_shortName',
+        ]));
+        $deptFallback = strtoupper(trim($this->pickInsensitive($aesDetails, [
             'department', 'dept', 'branch',
         ])));
-        $deptName = trim($this->pickInsensitive($aesDetails, [
-            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
-        ]));
-        if ($deptCode !== '') {
-            $mapped['department'] = $deptCode;
-        }
-        if ($deptName !== '') {
-            $mapped['departmentName'] = $deptName;
-        }
-        if ($deptCode === '' && $deptName !== '') {
-            $mapped['department'] = strtoupper($deptName);
+        $deptHint = $deptShort !== '' ? $deptShort : ($deptNumeric !== '' ? $deptNumeric : $deptFallback);
+        if ($deptHint !== '' || $deptName !== '') {
+            $resolved = $deptHint !== '' ? (new AesApiService())->findDepartment($deptHint) : null;
+            if ($resolved !== null) {
+                $mapped['department'] = $resolved['code'];
+                if ($deptName === '') {
+                    $deptName = $resolved['name'];
+                }
+            } elseif ($deptShort !== '') {
+                $mapped['department'] = $deptShort;
+            } elseif ($deptHint !== '') {
+                $mapped['department'] = $deptHint;
+            }
+            if ($deptName !== '') {
+                $mapped['departmentName'] = $deptName;
+            } elseif ($resolved !== null) {
+                $mapped['departmentName'] = $resolved['name'];
+            } elseif (!empty($mapped['department'])) {
+                $mapped['departmentName'] = (string) $mapped['department'];
+            }
         }
 
         $register = (string) ($mapped['registerNumber'] ?? '');

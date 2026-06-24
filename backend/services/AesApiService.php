@@ -16,7 +16,7 @@ final class AesApiService
     private string $referer;
     private string $authKey;
 
-    /** @var list<array{code:string,name:string}>|null */
+    /** @var list<array{code:string,name:string,aesId?:string}>|null */
     private static ?array $departmentCache = null;
 
     public function __construct()
@@ -185,7 +185,7 @@ final class AesApiService
     }
 
     /**
-     * @return list<array{code:string,name:string,short:string}>
+     * @return list<array{code:string,name:string,short:string,aesId?:string}>
      */
     public function listDepartments(): array
     {
@@ -215,6 +215,10 @@ final class AesApiService
             $code = strtoupper($row['code']);
             $name = strtoupper($row['name']);
             $short = strtoupper($row['short'] ?? '');
+            $aesId = strtoupper(trim((string) ($row['aesId'] ?? '')));
+            if ($aesId !== '' && $aesId === $needle) {
+                return ['code' => $row['code'], 'name' => $row['name']];
+            }
             if ($code === $needle || $name === $needle || ($short !== '' && $short === $needle)) {
                 return ['code' => $row['code'], 'name' => $row['name']];
             }
@@ -253,14 +257,14 @@ final class AesApiService
         }
 
         $code = strtoupper(trim((string) (
-            $record['deptCode']
-            ?? $record['dept_code']
-            ?? $record['department_code']
-            ?? $record['branch_code']
-            ?? $record['deptshort']
+            $record['deptshort']
             ?? $record['dept_short']
             ?? $record['dept_shortName']
             ?? $record['br']
+            ?? $record['branch_code']
+            ?? $record['deptCode']
+            ?? $record['dept_code']
+            ?? $record['department_code']
             ?? $record['department']
             ?? $record['dept']
             ?? $record['branch']
@@ -284,6 +288,16 @@ final class AesApiService
             $record['departmentName'] = $name;
             if ($code === '') {
                 $record['department'] = strtoupper($name);
+            }
+        }
+
+        $resolved = $this->findDepartment($code !== '' ? $code : $name);
+        if ($resolved !== null) {
+            $record['deptCode'] = $resolved['code'];
+            $record['department'] = $resolved['code'];
+            if ($name === '') {
+                $record['deptName'] = $resolved['name'];
+                $record['departmentName'] = $resolved['name'];
             }
         }
 
@@ -414,19 +428,32 @@ final class AesApiService
             if (!is_array($item)) {
                 continue;
             }
-            $code = strtoupper(trim((string) (
-                $item['code']
-                ?? $item['dept_code']
-                ?? $item['deptCode']
-                ?? $item['department_code']
-                ?? $item['branch_code']
+            $short = strtoupper(trim((string) (
+                $item['deptshort']
+                ?? $item['dept_short']
                 ?? $item['br']
+                ?? $item['branch_code']
                 ?? ''
             )));
+            $aesId = trim((string) (
+                $item['deptCode']
+                ?? $item['dept_code']
+                ?? $item['department_code']
+                ?? ''
+            ));
+            $code = strtoupper(trim((string) (
+                $short !== '' ? $short : (
+                    $item['code']
+                    ?? $item['branch_code']
+                    ?? $aesId
+                    ?? ''
+                )
+            )));
             $name = trim((string) (
-                $item['name']
+                $item['deptName']
                 ?? $item['dept_name']
-                ?? $item['deptName']
+                ?? $item['dept_shortName']
+                ?? $item['name']
                 ?? $item['department_name']
                 ?? $item['department']
                 ?? $item['branch_name']
@@ -450,7 +477,11 @@ final class AesApiService
             if ($code === '' || $name === '') {
                 continue;
             }
-            $rows[] = ['code' => $code, 'name' => $name, 'short' => $short];
+            $row = ['code' => $code, 'name' => $name, 'short' => $short];
+            if ($aesId !== '' && $aesId !== $code) {
+                $row['aesId'] = $aesId;
+            }
+            $rows[] = $row;
         }
 
         return $rows;
