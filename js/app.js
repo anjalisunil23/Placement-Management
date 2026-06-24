@@ -252,7 +252,7 @@ function renderShell(active) {
     const navItems = filteredNav();
     sidebar.innerHTML = `
       <div class="brand">
-        ${brandBlockHtml({ href: Auth.homePage(), logoHeight: 36, showTitle: true })}
+        ${brandBlockHtml({ href: Auth.homePage(), logoHeight: 36 })}
       </div>
       <div class="nav-section">
         ${navItems.length ? navItems.map(n => renderNavEntry(n, active, role)).join('') : `<div class="p-3 small text-muted-2">No navigation items for this role.</div>`}
