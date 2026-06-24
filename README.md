@@ -48,8 +48,8 @@ php backend/scripts/setup.php
 ```
 
 This creates tables and a default admin:
-- **Email**: `admin@college.edu`
-- **Password**: `Admin@123456`
+- **Email**: `placements@amaljyothi.ac.in`
+- **Password**: `Placements@2026`
 
 ### 5) Run locally
 

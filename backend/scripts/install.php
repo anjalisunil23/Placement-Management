@@ -38,9 +38,9 @@ if ($code !== 0) {
     exit($code);
 }
 
-$admin = (new UserModel())->findByEmail('admin@college.edu');
+$admin = (new UserModel())->findByEmail('placements@amaljyothi.ac.in');
 if ($admin) {
-    echo "\nInstall complete. Admin: admin@college.edu / Admin@123456\n";
+    echo "\nInstall complete. Admin: placements@amaljyothi.ac.in\n";
     exit(0);
 }
 

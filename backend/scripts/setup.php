@@ -55,18 +55,18 @@ Database::setupIndexes();
 echo "Database tables created.\n";
 
 $userModel = new UserModel();
-$admin = $userModel->findByEmail('admin@college.edu');
+$admin = $userModel->findByEmail('placements@amaljyothi.ac.in');
 
 if (!$admin) {
     $id = $userModel->createUser([
         'name'     => 'System Administrator',
-        'email'    => 'admin@college.edu',
-        'password' => 'Admin@123456',
+        'email'    => 'placements@amaljyothi.ac.in',
+        'password' => 'Placements@2026',
         'role'     => 'admin',
         'status'   => 'active',
         'approved' => true,
     ]);
-    echo "Default admin created (admin@college.edu / Admin@123456)\n";
+    echo "Default admin created (placements@amaljyothi.ac.in)\n";
     echo "User ID: {$id}\n";
     echo "IMPORTANT: Change the default password after first login!\n";
 } else {
@@ -314,7 +314,7 @@ if (!$company) {
 $driveModel = new DriveModel();
 $existingDrives = $driveModel->findAll(['title' => 'SDE Intern — Acme Cloud'], 1);
 if ($existingDrives === [] && isset($deptIds['MCA'])) {
-    $admin = $userModel->findByEmail('admin@college.edu');
+    $admin = $userModel->findByEmail('placements@amaljyothi.ac.in');
     $createdBy = $admin ? (string) $admin['_id'] : '';
     $driveId = $driveModel->createDrive([
         'title'        => 'SDE Intern — Acme Cloud',
@@ -530,7 +530,7 @@ if (!$userModel->findByEmail('ravi.iyer@college.edu') && $cseDeptId) {
 // --- Sample in-app notifications (unread + read) for demo accounts ---
 $notifModel = new NotificationModel();
 $seedNotifs = [
-    ['email' => 'admin@college.edu', 'items' => [
+    ['email' => 'placements@amaljyothi.ac.in', 'items' => [
         ['type' => 'drive_announcement', 'title' => 'New drive published', 'message' => 'Google SDE-1 is now open for registrations.', 'read' => false],
         ['type' => 'offer', 'title' => 'Offer accepted', 'message' => 'Kabir Singh accepted Amazon SDE Intern offer.', 'read' => false],
         ['type' => 'resume_review', 'title' => 'Resume needs review', 'message' => '18 new resumes pending verification.', 'read' => false],

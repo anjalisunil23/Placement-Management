@@ -412,7 +412,7 @@ function absAppPath(path) {
 }
 
 const QUICK_LOGIN_ACCOUNTS = {
-  admin: { email: 'admin@college.edu', password: 'Admin@123456' },
+  admin: { email: 'placements@amaljyothi.ac.in', password: 'Placements@2026' },
   placement_officer: { email: 'riya@college.edu', password: 'Officer@123456' },
   staff: { email: 'ravi.iyer@college.edu', password: 'Staff@123456' },
   student: { email: 'rahul.v@college.edu', password: 'Student@123456' },
