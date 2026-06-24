@@ -17,6 +17,9 @@ RewriteRule ^api(?:/index\.php)?(/.*)?$ backend/api/index.php [L,QSA]
 # AES login debug — dump POST body
 RewriteRule ^dologin/?$ dologin.php [L,QSA]
 
+# Logo endpoint (production static img folder may be blocked)
+RewriteRule ^logo\.php$ logo.php [L,QSA]
+
 # Root → public landing page
 RewriteRule ^$ public-stats.html [L]
 
