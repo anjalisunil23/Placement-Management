@@ -185,7 +185,13 @@ final class AesLoginService
         $register = strtoupper((string) ($profile['registerNumber'] ?? ''));
         if ($profile['departmentCode'] === '' && $register !== '') {
             $api = new AesApiService();
-            $resolved = $api->resolveStudentDepartment([], $register);
+            $request = $api->buildStudentRequestParams([
+                'username'       => $register,
+                'un'             => $register,
+                'admission_no'   => $register,
+                'registerNumber' => $register,
+            ], $register);
+            $resolved = $api->resolveStudentDepartment($request, $register);
             if ($resolved['code'] !== '') {
                 $profile['departmentCode'] = $resolved['code'];
                 $aesDetails['department'] = $resolved['code'];
@@ -544,16 +550,6 @@ final class AesLoginService
             }
         }
 
-        if ($code === '' && $registerNumber !== '') {
-            $fromApi = $this->fetchPlacementDepartmentForRegister($registerNumber, $aesProfile);
-            if ($fromApi['code'] !== '') {
-                $code = $fromApi['code'];
-            }
-            if ($name === '' && $fromApi['name'] !== '') {
-                $name = $fromApi['name'];
-            }
-        }
-
         if ($name === '' && $code !== '') {
             $dept = (new DepartmentModel())->findByCode($code);
             if ($dept) {
@@ -593,18 +589,7 @@ final class AesLoginService
         }
 
         $register = strtoupper(trim((string) ($profile['registerNumber'] ?? $aesProfile['registerNumber'] ?? '')));
-        $dbDept = null;
-        if (!empty($profile['departmentId'])) {
-            $dept = (new DepartmentModel())->findById((string) $profile['departmentId']);
-            if ($dept) {
-                $dbDept = [
-                    'id'   => (string) ($dept['_id'] ?? ''),
-                    'code' => (string) ($dept['code'] ?? ''),
-                    'name' => (string) ($dept['name'] ?? ''),
-                ];
-            }
-        }
-        $fields = $this->resolveStudentDepartmentFields($dbDept, $register, $aesProfile);
+        $fields = $this->resolveStudentDepartmentFields(null, $register);
         if ($fields['code'] === '' && $fields['name'] === '') {
             return;
         }
@@ -622,45 +607,6 @@ final class AesLoginService
         }
 
         (new StudentModel())->update((string) $profile['_id'], ['departmentId' => $deptId]);
-    }
-
-    /**
-     * Pull department from AES placement API (works for numeric admission numbers).
-     *
-     * @param array<string, mixed> $sessionHints
-     * @return array{code:string,name:string}
-     */
-    private function fetchPlacementDepartmentForRegister(string $registerNumber, array $sessionHints = []): array
-    {
-        $register = strtoupper(trim($registerNumber));
-        if ($register === '') {
-            return ['code' => '', 'name' => ''];
-        }
-
-        $params = [
-            'username'       => $register,
-            'un'             => $register,
-            'admission_no'   => $register,
-            'registerNumber' => $register,
-        ];
-        $token = $this->pick($sessionHints, ['token', 'auth_token', 'checksum', 'session']);
-        if ($token !== '') {
-            $params['token'] = $token;
-            $params['checksum'] = $token;
-        }
-
-        try {
-            $record = (new AesApiService())->fetchStudentPlacementProfile($params);
-            if ($record === []) {
-                return ['code' => '', 'name' => ''];
-            }
-            $mapped = $this->mapAesDetailsToUserFields($record);
-            $code = strtoupper(trim((string) ($mapped['department'] ?? '')));
-            $name = trim((string) ($mapped['departmentName'] ?? ''));
-            return ['code' => $code, 'name' => $name];
-        } catch (\Throwable) {
-            return ['code' => '', 'name' => ''];
-        }
     }
 
     /**
@@ -2574,14 +2520,14 @@ final class AesLoginService
             }
 
             $department = $api->resolveStudentDepartment($baseRequest, $username);
-            if ($department['code'] !== '' || $department['name'] !== '') {
+            if ($department['code'] !== '') {
                 return [
+                    'registerNumber'  => $username,
+                    'admission_no'    => $username,
                     'department'      => $department['code'],
                     'deptCode'        => $department['code'],
                     'departmentName'  => $department['name'],
                     'deptName'        => $department['name'],
-                    'registerNumber'  => strtoupper($username),
-                    'admission_no'    => strtoupper($username),
                 ];
             }
         } catch (\Throwable) {

@@ -33,15 +33,17 @@ try {
 echo "synced new departments: {$synced}\n";
 
 if ($register !== '') {
-    echo "\n=== getStudInfo4Placement ({$register}) ===\n";
-    $request = $api->buildStudentRequestParams([], $register);
+    echo "\n=== POST getStudInfo4Placement ({$register}) ===\n";
+    $request = $api->buildStudentRequestParams(['un' => $register], $register);
     $info = $api->getStudInfo4Placement($request);
     echo json_encode($info, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
-    $parsed = $api->fetchStudentPlacementProfile($request);
-    echo "\nParsed profile (POST getStudInfo4Placement + getDepartments):\n";
-    echo json_encode($parsed, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
+
+    echo "\n=== POST getDepartments ===\n";
+    $deptPost = $api->getDepartments();
+    echo 'http: ' . ($deptPost['status'] ?? 0) . ', rows: ' . count($api->loadDepartmentsFromApi()) . "\n";
+
     $resolved = $api->resolveStudentDepartment($request, $register);
-    echo "\nResolved department (POST APIs):\n";
+    echo "\nResolved department (getStudInfo4Placement + getDepartments):\n";
     echo json_encode($resolved, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
 } else {
     echo "\nTip: pass admission number to test getStudInfo4Placement\n";

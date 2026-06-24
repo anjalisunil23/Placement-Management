@@ -97,76 +97,6 @@ final class AesApiService
     }
 
     /**
-     * Build standard POST params for AES student placement APIs.
-     *
-     * @param array<string, scalar|null> $params
-     * @return array<string, string>
-     */
-    public function buildStudentRequestParams(array $params = [], string $registerNumber = ''): array
-    {
-        $register = strtoupper(trim($registerNumber !== ''
-            ? $registerNumber
-            : (string) ($params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
-
-        $base = $register !== '' ? [
-            'username'       => $register,
-            'un'             => $register,
-            'admission_no'   => $register,
-            'registerNumber' => $register,
-        ] : [];
-
-        return array_merge($base, $this->stringifyParams($params));
-    }
-
-    /**
-     * POST getStudInfo4Placement, then resolve department via POST getDepartments.
-     *
-     * @param array<string, scalar|null> $params
-     * @return array{code:string,name:string}
-     */
-    public function resolveStudentDepartment(array $params = [], string $registerNumber = ''): array
-    {
-        $request = $this->buildStudentRequestParams($params, $registerNumber);
-
-        // 1) POST method=getStudInfo4Placement
-        $placementResponse = $this->getStudInfo4Placement($request);
-        $record = $this->normalizePlacementStudentRecord($this->extractRecord($placementResponse));
-        if ($record !== []) {
-            $enriched = $this->enrichWithDepartment($record);
-            $code = strtoupper(trim((string) (
-                $enriched['deptCode']
-                ?? $enriched['department']
-                ?? $enriched['department_code']
-                ?? ''
-            )));
-            $name = trim((string) (
-                $enriched['deptName']
-                ?? $enriched['departmentName']
-                ?? $enriched['department_name']
-                ?? ''
-            ));
-            if ($code !== '' || $name !== '') {
-                return [
-                    'code' => $code,
-                    'name' => $name !== '' ? $name : ($this->findDepartment($code)['name'] ?? $code),
-                ];
-            }
-        }
-
-        // 2) POST method=getDepartments — map admission prefix (e.g. MCA) via deptshort
-        $register = (string) ($request['registerNumber'] ?? $request['admission_no'] ?? $request['un'] ?? '');
-        if ($register !== '' && preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
-            $this->getDepartments();
-            $resolved = $this->findDepartment(strtoupper($matches[1]));
-            if ($resolved !== null) {
-                return $resolved;
-            }
-        }
-
-        return ['code' => '', 'name' => ''];
-    }
-
-    /**
      * @param array<string, scalar|null> $params
      * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
      */
@@ -176,6 +106,8 @@ final class AesApiService
     }
 
     /**
+     * POST method=getStudInfo4Placement — student placement profile from AES.
+     *
      * @param array<string, scalar|null> $params
      * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
      */
@@ -185,18 +117,51 @@ final class AesApiService
     }
 
     /**
+     * @param array<string, scalar|null> $params
+     * @return array<string, scalar|null>
+     */
+    public function buildStudentRequestParams(array $params, string $registerNumber = ''): array
+    {
+        $register = strtoupper(trim($registerNumber !== ''
+            ? $registerNumber
+            : (string) ($params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
+
+        $merged = array_merge([
+            'username'       => $register,
+            'un'             => $register,
+            'admission_no'   => $register,
+            'registerNumber' => $register,
+        ], $params);
+
+        return $this->stringifyParams($merged);
+    }
+
+    /**
+     * POST getDepartments and return parsed rows (cached).
+     *
+     * @param array<string, scalar|null> $params
+     * @return list<array{code:string,name:string,short:string}>
+     */
+    public function loadDepartmentsFromApi(array $params = []): array
+    {
+        if ($params === [] && self::$departmentCache !== null) {
+            return self::$departmentCache;
+        }
+
+        $rows = $this->normalizeDepartmentRows($this->getDepartments($params));
+        if ($params === []) {
+            self::$departmentCache = $rows;
+        }
+
+        return $rows;
+    }
+
+    /**
      * @return list<array{code:string,name:string,short:string}>
      */
     public function listDepartments(): array
     {
-        if (self::$departmentCache !== null) {
-            return self::$departmentCache;
-        }
-
-        $rows = $this->normalizeDepartmentRows($this->getDepartments());
-        self::$departmentCache = $rows;
-
-        return $rows;
+        return $this->loadDepartmentsFromApi();
     }
 
     /**
@@ -206,21 +171,93 @@ final class AesApiService
      */
     public function findDepartment(string $codeOrName): ?array
     {
+        $resolved = $this->matchDepartmentRow($this->loadDepartmentsFromApi(), $codeOrName);
+        if ($resolved === null) {
+            return null;
+        }
+
+        return ['code' => $resolved['code'], 'name' => $resolved['name']];
+    }
+
+    /**
+     * @param list<array{code:string,name:string,short:string}> $departments
+     * @return array{code:string,name:string,short:string}|null
+     */
+    private function matchDepartmentRow(array $departments, string $codeOrName): ?array
+    {
         $needle = strtoupper(trim($codeOrName));
         if ($needle === '') {
             return null;
         }
 
-        foreach ($this->listDepartments() as $row) {
+        foreach ($departments as $row) {
             $code = strtoupper($row['code']);
             $name = strtoupper($row['name']);
             $short = strtoupper($row['short'] ?? '');
             if ($code === $needle || $name === $needle || ($short !== '' && $short === $needle)) {
-                return ['code' => $row['code'], 'name' => $row['name']];
+                return $row;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Fetch student department using AES POST APIs:
+     * 1) getStudInfo4Placement — student record (deptCode / deptshort)
+     * 2) getDepartments — master list to resolve department name
+     *
+     * @param array<string, scalar|null> $params
+     * @return array{code:string,name:string}
+     */
+    public function resolveStudentDepartment(array $params, string $registerNumber = ''): array
+    {
+        $request = $this->buildStudentRequestParams($params, $registerNumber);
+
+        // POST method=getStudInfo4Placement
+        $placementPost = $this->getStudInfo4Placement($request);
+        $profile = $this->normalizePlacementStudentRecord($this->extractRecord($placementPost));
+
+        // POST method=getDepartments
+        $departments = $this->loadDepartmentsFromApi();
+
+        if ($profile !== []) {
+            $hint = strtoupper(trim((string) (
+                $profile['deptCode']
+                ?? $profile['deptshort']
+                ?? $profile['department']
+                ?? $profile['department_code']
+                ?? $profile['dept']
+                ?? ''
+            )));
+            $name = trim((string) (
+                $profile['deptName']
+                ?? $profile['departmentName']
+                ?? $profile['department_name']
+                ?? ''
+            ));
+            if ($hint !== '') {
+                $resolved = $this->matchDepartmentRow($departments, $hint);
+                if ($resolved !== null) {
+                    return ['code' => $resolved['code'], 'name' => $resolved['name']];
+                }
+                if ($name !== '') {
+                    return ['code' => $hint, 'name' => $name];
+                }
+            }
+        }
+
+        $register = (string) ($request['registerNumber'] ?? $request['un'] ?? '');
+        if ($register !== '' && preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
+            $resolved = $this->matchDepartmentRow($departments, strtoupper($matches[1]));
+            if ($resolved !== null) {
+                return ['code' => $resolved['code'], 'name' => $resolved['name']];
+            }
+
+            return ['code' => strtoupper($matches[1]), 'name' => ''];
+        }
+
+        return ['code' => '', 'name' => ''];
     }
 
     /**
@@ -237,7 +274,26 @@ final class AesApiService
             return [];
         }
 
-        return $this->enrichWithDepartment($record);
+        $departments = $this->loadDepartmentsFromApi();
+        $hint = strtoupper(trim((string) (
+            $record['deptCode']
+            ?? $record['deptshort']
+            ?? $record['department']
+            ?? ''
+        )));
+        if ($hint !== '') {
+            $resolved = $this->matchDepartmentRow($departments, $hint);
+            if ($resolved !== null) {
+                $record['department'] = $resolved['code'];
+                $record['department_code'] = $resolved['code'];
+                $record['department_name'] = $resolved['name'];
+                $record['dept_name'] = $resolved['name'];
+                $record['deptName'] = $resolved['name'];
+                $record['deptCode'] = $resolved['code'];
+            }
+        }
+
+        return $record;
     }
 
     /**
@@ -454,45 +510,6 @@ final class AesApiService
         }
 
         return $rows;
-    }
-
-    /**
-     * @param array<string, mixed> $record
-     * @return array<string, mixed>
-     */
-    private function enrichWithDepartment(array $record): array
-    {
-        $deptHint = trim((string) (
-            $record['department_code']
-            ?? $record['dept_code']
-            ?? $record['deptCode']
-            ?? $record['deptshort']
-            ?? $record['dept_short']
-            ?? $record['department']
-            ?? $record['dept']
-            ?? $record['branch']
-            ?? $record['branch_code']
-            ?? $record['dept_name']
-            ?? $record['department_name']
-            ?? ''
-        ));
-        if ($deptHint === '') {
-            return $record;
-        }
-
-        $resolved = $this->findDepartment($deptHint);
-        if ($resolved === null) {
-            return $record;
-        }
-
-        $record['department'] = $resolved['code'];
-        $record['department_code'] = $resolved['code'];
-        $record['department_name'] = $resolved['name'];
-        $record['dept_name'] = $resolved['name'];
-        $record['deptName'] = $resolved['name'];
-        $record['deptCode'] = $resolved['code'];
-
-        return $record;
     }
 
     /**
