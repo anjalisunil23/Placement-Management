@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260626b';
+const APP_SCRIPT_VERSION = '20260626a';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',

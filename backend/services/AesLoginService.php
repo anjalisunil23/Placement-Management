@@ -184,13 +184,12 @@ final class AesLoginService
         $mapped = $this->mapAesDetailsToUserFields($aesDetails);
         $register = strtoupper((string) ($profile['registerNumber'] ?? ''));
         if ($profile['departmentCode'] === '' && $register !== '') {
-            $api = new AesApiService();
-            $resolved = $api->resolveStudentDepartment([], $register);
-            if ($resolved['code'] !== '') {
-                $profile['departmentCode'] = $resolved['code'];
-                $aesDetails['department'] = $resolved['code'];
-                if ($resolved['name'] !== '') {
-                    $aesDetails['departmentName'] = $resolved['name'];
+            $inferred = $this->inferDepartmentFromRegisterNumber($register);
+            if ($inferred['code'] !== '') {
+                $profile['departmentCode'] = $inferred['code'];
+                $aesDetails['department'] = $inferred['code'];
+                if ($inferred['name'] !== '') {
+                    $aesDetails['departmentName'] = $inferred['name'];
                 }
             }
         }
@@ -472,12 +471,11 @@ final class AesLoginService
         }
 
         $aesDept = strtoupper(trim($this->pickInsensitive($aesProfile, [
-            'deptshort', 'dept_short', 'br',
-            'deptCode', 'dept_code', 'department_code', 'branch_code',
-            'department', 'dept', 'branch',
+            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short',
+            'department', 'dept', 'branch', 'deptCode', 'br',
         ])));
         $aesDeptName = trim($this->pickInsensitive($aesProfile, [
-            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName', 'dept_shortName',
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
         ]));
         if ($aesDept === '' && !empty($mapped['department'])) {
             $aesDept = strtoupper((string) $mapped['department']);
@@ -486,13 +484,12 @@ final class AesLoginService
             $aesDeptName = (string) $mapped['departmentName'];
         }
         if ($aesDept !== '') {
-            $resolved = (new AesApiService())->findDepartment($aesDept);
-            $data['department'] = $resolved['code'] ?? $aesDept;
-            $data['departmentName'] = $aesDeptName !== ''
-                ? $aesDeptName
-                : ($resolved['name'] ?? $aesDept);
-        } elseif ($aesDeptName !== '') {
+            $data['department'] = $aesDept;
+        }
+        if ($aesDeptName !== '') {
             $data['departmentName'] = $aesDeptName;
+        } elseif ($aesDept !== '') {
+            $data['departmentName'] = $aesDept;
         }
 
         $aesCgpa = $this->pick($aesProfile, [
@@ -576,14 +573,6 @@ final class AesLoginService
 
         if ($name === '' && $code !== '') {
             $name = $code;
-        }
-
-        $resolved = (new AesApiService())->findDepartment($code !== '' ? $code : $name);
-        if ($resolved !== null) {
-            $code = $resolved['code'];
-            if ($name === '' || preg_match('/^\d+$/', $name) === 1) {
-                $name = $resolved['name'];
-            }
         }
 
         return ['code' => $code, 'name' => $name];
@@ -677,7 +666,16 @@ final class AesLoginService
      */
     private function inferDepartmentFromRegisterNumber(string $registerNumber): array
     {
-        return (new AesApiService())->resolveStudentDepartment([], $registerNumber);
+        $register = strtoupper(trim($registerNumber));
+        if ($register === '') {
+            return ['code' => '', 'name' => ''];
+        }
+
+        if (preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
+            return ['code' => strtoupper($matches[1]), 'name' => ''];
+        }
+
+        return ['code' => '', 'name' => ''];
     }
 
     /**
@@ -961,38 +959,21 @@ final class AesLoginService
             $mapped['backlogs'] = (int) $backlogs;
         }
 
-        $deptShort = strtoupper(trim($this->pickInsensitive($aesDetails, [
-            'deptshort', 'dept_short', 'br',
-        ])));
-        $deptNumeric = trim($this->pickInsensitive($aesDetails, [
-            'deptCode', 'dept_code', 'department_code', 'branch_code',
-        ]));
-        $deptName = trim($this->pickInsensitive($aesDetails, [
-            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName', 'dept_shortName',
-        ]));
-        $deptFallback = strtoupper(trim($this->pickInsensitive($aesDetails, [
+        $deptCode = strtoupper(trim($this->pickInsensitive($aesDetails, [
+            'deptCode', 'dept_code', 'department_code', 'branch_code', 'deptshort', 'dept_short', 'br',
             'department', 'dept', 'branch',
         ])));
-        $deptHint = $deptShort !== '' ? $deptShort : ($deptNumeric !== '' ? $deptNumeric : $deptFallback);
-        if ($deptHint !== '' || $deptName !== '') {
-            $resolved = $deptHint !== '' ? (new AesApiService())->findDepartment($deptHint) : null;
-            if ($resolved !== null) {
-                $mapped['department'] = $resolved['code'];
-                if ($deptName === '') {
-                    $deptName = $resolved['name'];
-                }
-            } elseif ($deptShort !== '') {
-                $mapped['department'] = $deptShort;
-            } elseif ($deptHint !== '') {
-                $mapped['department'] = $deptHint;
-            }
-            if ($deptName !== '') {
-                $mapped['departmentName'] = $deptName;
-            } elseif ($resolved !== null) {
-                $mapped['departmentName'] = $resolved['name'];
-            } elseif (!empty($mapped['department'])) {
-                $mapped['departmentName'] = (string) $mapped['department'];
-            }
+        $deptName = trim($this->pickInsensitive($aesDetails, [
+            'deptName', 'dept_name', 'department_name', 'branch_name', 'departmentName',
+        ]));
+        if ($deptCode !== '') {
+            $mapped['department'] = $deptCode;
+        }
+        if ($deptName !== '') {
+            $mapped['departmentName'] = $deptName;
+        }
+        if ($deptCode === '' && $deptName !== '') {
+            $mapped['department'] = strtoupper($deptName);
         }
 
         $register = (string) ($mapped['registerNumber'] ?? '');
@@ -2593,22 +2574,9 @@ final class AesLoginService
         }
 
         try {
-            $api = new AesApiService();
-            $placementInfo = $api->fetchStudentPlacementProfile($baseRequest);
+            $placementInfo = (new AesApiService())->fetchStudentPlacementProfile($baseRequest);
             if ($placementInfo !== []) {
                 return $placementInfo;
-            }
-
-            $department = $api->resolveStudentDepartment($baseRequest, $username);
-            if ($department['code'] !== '' || $department['name'] !== '') {
-                return [
-                    'department'      => $department['code'],
-                    'deptCode'        => $department['code'],
-                    'departmentName'  => $department['name'],
-                    'deptName'        => $department['name'],
-                    'registerNumber'  => strtoupper($username),
-                    'admission_no'    => strtoupper($username),
-                ];
             }
         } catch (\Throwable) {
             // Fall back to legacy login.aesajce.in profile methods.

@@ -16,9 +16,6 @@ final class AesApiService
     private string $referer;
     private string $authKey;
 
-    /** @var list<array{code:string,name:string,aesId?:string}>|null */
-    private static ?array $departmentCache = null;
-
     public function __construct()
     {
         $aes = require dirname(__DIR__) . '/config/aes.php';
@@ -97,76 +94,6 @@ final class AesApiService
     }
 
     /**
-     * Build standard POST params for AES student placement APIs.
-     *
-     * @param array<string, scalar|null> $params
-     * @return array<string, string>
-     */
-    public function buildStudentRequestParams(array $params = [], string $registerNumber = ''): array
-    {
-        $register = strtoupper(trim($registerNumber !== ''
-            ? $registerNumber
-            : (string) ($params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
-
-        $base = $register !== '' ? [
-            'username'       => $register,
-            'un'             => $register,
-            'admission_no'   => $register,
-            'registerNumber' => $register,
-        ] : [];
-
-        return array_merge($base, $this->stringifyParams($params));
-    }
-
-    /**
-     * POST getStudInfo4Placement, then resolve department via POST getDepartments.
-     *
-     * @param array<string, scalar|null> $params
-     * @return array{code:string,name:string}
-     */
-    public function resolveStudentDepartment(array $params = [], string $registerNumber = ''): array
-    {
-        $request = $this->buildStudentRequestParams($params, $registerNumber);
-
-        // 1) POST method=getStudInfo4Placement
-        $placementResponse = $this->getStudInfo4Placement($request);
-        $record = $this->normalizePlacementStudentRecord($this->extractRecord($placementResponse));
-        if ($record !== []) {
-            $enriched = $this->enrichWithDepartment($record);
-            $code = strtoupper(trim((string) (
-                $enriched['deptCode']
-                ?? $enriched['department']
-                ?? $enriched['department_code']
-                ?? ''
-            )));
-            $name = trim((string) (
-                $enriched['deptName']
-                ?? $enriched['departmentName']
-                ?? $enriched['department_name']
-                ?? ''
-            ));
-            if ($code !== '' || $name !== '') {
-                return [
-                    'code' => $code,
-                    'name' => $name !== '' ? $name : ($this->findDepartment($code)['name'] ?? $code),
-                ];
-            }
-        }
-
-        // 2) POST method=getDepartments — map admission prefix (e.g. MCA) via deptshort
-        $register = (string) ($request['registerNumber'] ?? $request['admission_no'] ?? $request['un'] ?? '');
-        if ($register !== '' && preg_match('/\d{2}([A-Z]{2,10})\d+/i', $register, $matches) === 1) {
-            $this->getDepartments();
-            $resolved = $this->findDepartment(strtoupper($matches[1]));
-            if ($resolved !== null) {
-                return $resolved;
-            }
-        }
-
-        return ['code' => '', 'name' => ''];
-    }
-
-    /**
      * @param array<string, scalar|null> $params
      * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
      */
@@ -185,46 +112,11 @@ final class AesApiService
     }
 
     /**
-     * @return list<array{code:string,name:string,short:string,aesId?:string}>
+     * @return list<array{code:string,name:string}>
      */
     public function listDepartments(): array
     {
-        if (self::$departmentCache !== null) {
-            return self::$departmentCache;
-        }
-
-        $rows = $this->normalizeDepartmentRows($this->getDepartments());
-        self::$departmentCache = $rows;
-
-        return $rows;
-    }
-
-    /**
-     * Resolve an AES department code or name to a canonical {code, name} pair.
-     *
-     * @return array{code:string,name:string}|null
-     */
-    public function findDepartment(string $codeOrName): ?array
-    {
-        $needle = strtoupper(trim($codeOrName));
-        if ($needle === '') {
-            return null;
-        }
-
-        foreach ($this->listDepartments() as $row) {
-            $code = strtoupper($row['code']);
-            $name = strtoupper($row['name']);
-            $short = strtoupper($row['short'] ?? '');
-            $aesId = strtoupper(trim((string) ($row['aesId'] ?? '')));
-            if ($aesId !== '' && $aesId === $needle) {
-                return ['code' => $row['code'], 'name' => $row['name']];
-            }
-            if ($code === $needle || $name === $needle || ($short !== '' && $short === $needle)) {
-                return ['code' => $row['code'], 'name' => $row['name']];
-            }
-        }
-
-        return null;
+        return $this->normalizeDepartmentRows($this->getDepartments());
     }
 
     /**
@@ -233,15 +125,9 @@ final class AesApiService
      */
     public function fetchStudentPlacementProfile(array $params): array
     {
-        $request = $this->buildStudentRequestParams($params);
-        $record = $this->normalizePlacementStudentRecord(
-            $this->extractRecord($this->getStudInfo4Placement($request))
+        return $this->normalizePlacementStudentRecord(
+            $this->extractRecord($this->getStudInfo4Placement($params))
         );
-        if ($record === []) {
-            return [];
-        }
-
-        return $this->enrichWithDepartment($record);
     }
 
     /**
@@ -257,14 +143,14 @@ final class AesApiService
         }
 
         $code = strtoupper(trim((string) (
-            $record['deptshort']
+            $record['deptCode']
+            ?? $record['dept_code']
+            ?? $record['department_code']
+            ?? $record['branch_code']
+            ?? $record['deptshort']
             ?? $record['dept_short']
             ?? $record['dept_shortName']
             ?? $record['br']
-            ?? $record['branch_code']
-            ?? $record['deptCode']
-            ?? $record['dept_code']
-            ?? $record['department_code']
             ?? $record['department']
             ?? $record['dept']
             ?? $record['branch']
@@ -288,16 +174,6 @@ final class AesApiService
             $record['departmentName'] = $name;
             if ($code === '') {
                 $record['department'] = strtoupper($name);
-            }
-        }
-
-        $resolved = $this->findDepartment($code !== '' ? $code : $name);
-        if ($resolved !== null) {
-            $record['deptCode'] = $resolved['code'];
-            $record['department'] = $resolved['code'];
-            if ($name === '') {
-                $record['deptName'] = $resolved['name'];
-                $record['departmentName'] = $resolved['name'];
             }
         }
 
@@ -428,102 +304,35 @@ final class AesApiService
             if (!is_array($item)) {
                 continue;
             }
-            $short = strtoupper(trim((string) (
-                $item['deptshort']
-                ?? $item['dept_short']
-                ?? $item['br']
-                ?? $item['branch_code']
-                ?? ''
-            )));
-            $aesId = trim((string) (
-                $item['deptCode']
-                ?? $item['dept_code']
-                ?? $item['department_code']
-                ?? ''
-            ));
             $code = strtoupper(trim((string) (
-                $short !== '' ? $short : (
-                    $item['code']
-                    ?? $item['branch_code']
-                    ?? $aesId
-                    ?? ''
-                )
+                $item['code']
+                ?? $item['dept_code']
+                ?? $item['deptCode']
+                ?? $item['department_code']
+                ?? $item['branch_code']
+                ?? $item['br']
+                ?? ''
             )));
             $name = trim((string) (
-                $item['deptName']
+                $item['name']
                 ?? $item['dept_name']
-                ?? $item['dept_shortName']
-                ?? $item['name']
+                ?? $item['deptName']
                 ?? $item['department_name']
                 ?? $item['department']
                 ?? $item['branch_name']
                 ?? $item['branch']
                 ?? ''
             ));
-            $short = strtoupper(trim((string) (
-                $item['deptshort']
-                ?? $item['dept_short']
-                ?? $item['dept_shortName']
-                ?? $item['short']
-                ?? $item['branch_code']
-                ?? ''
-            )));
-            if ($code === '' && $short !== '') {
-                $code = $short;
-            }
             if ($code === '' && $name !== '') {
                 $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? $name);
             }
             if ($code === '' || $name === '') {
                 continue;
             }
-            $row = ['code' => $code, 'name' => $name, 'short' => $short];
-            if ($aesId !== '' && $aesId !== $code) {
-                $row['aesId'] = $aesId;
-            }
-            $rows[] = $row;
+            $rows[] = ['code' => $code, 'name' => $name];
         }
 
         return $rows;
-    }
-
-    /**
-     * @param array<string, mixed> $record
-     * @return array<string, mixed>
-     */
-    private function enrichWithDepartment(array $record): array
-    {
-        $deptHint = trim((string) (
-            $record['department_code']
-            ?? $record['dept_code']
-            ?? $record['deptCode']
-            ?? $record['deptshort']
-            ?? $record['dept_short']
-            ?? $record['department']
-            ?? $record['dept']
-            ?? $record['branch']
-            ?? $record['branch_code']
-            ?? $record['dept_name']
-            ?? $record['department_name']
-            ?? ''
-        ));
-        if ($deptHint === '') {
-            return $record;
-        }
-
-        $resolved = $this->findDepartment($deptHint);
-        if ($resolved === null) {
-            return $record;
-        }
-
-        $record['department'] = $resolved['code'];
-        $record['department_code'] = $resolved['code'];
-        $record['department_name'] = $resolved['name'];
-        $record['dept_name'] = $resolved['name'];
-        $record['deptName'] = $resolved['name'];
-        $record['deptCode'] = $resolved['code'];
-
-        return $record;
     }
 
     /**
