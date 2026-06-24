@@ -1,9 +1,9 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260624p';
+const APP_SCRIPT_VERSION = '20260624q';
 
 const BRAND = {
-  logoSrc: '/css/img/ajce-logo.png?v=20260624p',
-  logoFallbackSrc: '/logo.php?v=20260624p',
+  logoSrc: '/css/img/ajce-logo.png?v=20260624q',
+  logoFallbackSrc: '/logo.php?v=20260624q',
   logoAlt: 'Amal Jyothi College of Engineering — AJCE Placements',
   fullName: 'Amal Jyothi College of Engineering — AJCE Placements',
   title: 'AJCE Placements',
@@ -11,7 +11,7 @@ const BRAND = {
 };
 
 function brandLogoHtml(height = 34, className = 'brand-logo') {
-  const fallback = BRAND.logoFallbackSrc || '/ajce-logo.jpg';
+  const fallback = BRAND.logoFallbackSrc || '/logo.php';
   return `<img src="${BRAND.logoSrc}" alt="${BRAND.logoAlt}" class="${className}" height="${height}" loading="lazy" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='${fallback}';}"/>`;
 }
 
