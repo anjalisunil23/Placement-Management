@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260624v';
+const APP_SCRIPT_VERSION = '20260625a';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -3551,7 +3551,9 @@ async function apiFetch(path, opts = {}) {
   }
   let body = opts.body;
   if (body instanceof FormData) {
-    // Let the browser set multipart boundary.
+    // Let the browser set multipart boundary; a preset Content-Type breaks uploads (415).
+    delete headers['Content-Type'];
+    delete headers['content-type'];
   } else if (body != null && typeof body !== 'string') {
     body = JSON.stringify(body);
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
