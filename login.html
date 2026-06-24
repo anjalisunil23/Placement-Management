@@ -174,13 +174,13 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260624o"></script>
+<script src="js/api.js?v=20260624p"></script>
 <script>
 (function initLoginBrand() {
   const aside = document.getElementById('loginAsideBrand');
   const card = document.getElementById('loginCardBrand');
   if (aside && typeof brandBlockHtml === 'function') {
-    aside.innerHTML = brandBlockHtml({ logoHeight: 40, showSubtitle: true });
+    aside.innerHTML = brandBlockHtml({ logoHeight: 40 });
   }
   if (card && typeof brandLogoHtml === 'function') {
     card.innerHTML = `${brandLogoHtml(32)}<strong class="text-truncate">${BRAND.title}</strong>`;

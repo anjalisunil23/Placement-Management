@@ -1,9 +1,9 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260624o';
+const APP_SCRIPT_VERSION = '20260624p';
 
 const BRAND = {
-  logoSrc: '/css/img/ajce-logo.png?v=20260624o',
-  logoFallbackSrc: '/logo.php?v=20260624o',
+  logoSrc: '/css/img/ajce-logo.png?v=20260624p',
+  logoFallbackSrc: '/logo.php?v=20260624p',
   logoAlt: 'Amal Jyothi College of Engineering — AJCE Placements',
   fullName: 'Amal Jyothi College of Engineering — AJCE Placements',
   title: 'AJCE Placements',
@@ -16,15 +16,16 @@ function brandLogoHtml(height = 34, className = 'brand-logo') {
 }
 
 function brandBlockHtml(opts = {}) {
-  const showSubtitle = opts.showSubtitle !== false;
+  const showTitle = opts.showTitle === true;
+  const showSubtitle = showTitle && opts.showSubtitle === true;
   const href = opts.href || '';
   const inner = `
     <div class="d-flex align-items-center gap-2 ${opts.className || ''}">
       ${brandLogoHtml(opts.logoHeight || 34)}
-      <div style="min-width:0">
+      ${showTitle ? `<div style="min-width:0">
         <div style="font-weight:700;line-height:1.2">${BRAND.title}</div>
         ${showSubtitle ? `<div style="font-size:.7rem;color:var(--muted);font-weight:500;line-height:1.2">${BRAND.subtitle}</div>` : ''}
-      </div>
+      </div>` : ''}
     </div>`;
   return href
     ? `<a href="${href}" class="d-flex align-items-center gap-2 text-decoration-none text-reset">${inner}</a>`
