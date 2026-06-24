@@ -445,7 +445,11 @@ body.login-page{
 
 /* ===== Public site ===== */
 .public-nav{
-  z-index:1020;background:rgba(255,255,255,.92);
+  position:sticky;
+  top:0;
+  z-index:1030;
+  width:100%;
+  background:rgba(255,255,255,.92);
   backdrop-filter:saturate(180%) blur(14px);
   border-bottom:1px solid var(--border);
   padding-top:calc(.35rem + env(safe-area-inset-top,0px));
@@ -469,18 +473,54 @@ body.login-page{
 }
 @media (max-width:575px){
   .hero{padding:3rem 0 2.5rem}
-  .hero h1{font-size:clamp(1.65rem,7vw,2.2rem)}
+  .hero h1{font-size:clamp(1.35rem,5.5vw,1.75rem)}
+  .hero .badge-soft{font-size:clamp(.95rem,4vw,1.1rem);padding:.45rem 1rem}
   .hero .lead{font-size:.95rem}
   .hero .btn-lg{padding:.65rem 1rem;font-size:.95rem}
 }
 .hero{
+  position:relative;
   padding:5rem 0 4rem;
-  background:
-    radial-gradient(800px 400px at 80% 0%,rgba(124,92,255,.18),transparent 60%),
-    radial-gradient(700px 350px at 0% 100%,rgba(236,72,153,.15),transparent 60%),
-    linear-gradient(180deg,#fff,#f6f8fb);
+  background:url('/hero-bg.php') center 60%/cover no-repeat;
+  color:#fff;
+  overflow:hidden;
 }
-.hero h1{font-size:clamp(2rem,4vw,3.4rem);font-weight:800;letter-spacing:-.02em}
+.hero::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(
+    180deg,
+    rgba(15,23,42,.7) 0%,
+    rgba(15,23,42,.45) 45%,
+    rgba(15,23,42,.75) 100%
+  );
+  z-index:0;
+}
+.hero .container{position:relative;z-index:1}
+.hero h1{
+  font-size:clamp(1.5rem,3vw,2.1rem);
+  font-weight:800;
+  letter-spacing:-.02em;
+  color:#fff;
+  text-shadow:0 2px 24px rgba(0,0,0,.35);
+}
+.hero .lead{color:rgba(255,255,255,.9)!important}
+.hero .badge-soft{
+  font-size:clamp(1.05rem,2.2vw,1.4rem);
+  font-weight:700;
+  padding:.5rem 1.15rem;
+  background:rgba(255,255,255,.16);
+  color:#fff;
+  border:1px solid rgba(255,255,255,.22);
+  backdrop-filter:blur(6px);
+}
+.hero .gradient-text{
+  background:linear-gradient(135deg,#c4b5fd,#f9a8d4);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+}
 .gradient-text{background:linear-gradient(135deg,#5b5bd6,#ec4899);-webkit-background-clip:text;background-clip:text;color:transparent}
 
 .recruiter-logo{

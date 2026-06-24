@@ -46,6 +46,11 @@ if ($uri === '/logo.php') {
     return true;
 }
 
+if ($uri === '/hero-bg.php') {
+    require __DIR__ . '/hero-bg.php';
+    return true;
+}
+
 // Home → landing page
 if ($uri === '/' || $uri === '/index' || $uri === '/index.html') {
     header('Location: /public-stats.html');
