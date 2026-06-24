@@ -5,7 +5,10 @@ declare(strict_types=1);
 /**
  * Serves the AJCE campus hero background (works when static /css/img/ is blocked).
  */
-$path = __DIR__ . '/css/img/ajce-campus-hero.png';
+$path = __DIR__ . '/css/ajce-campus-hero.png';
+if (!is_file($path)) {
+    $path = __DIR__ . '/css/img/ajce-campus-hero.png';
+}
 
 if (!is_file($path)) {
     http_response_code(404);
