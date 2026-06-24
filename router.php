@@ -47,8 +47,8 @@ if ($uri === '/' || $uri === '/index' || $uri === '/index.html') {
     exit;
 }
 
-// Legacy public stats URL
-if ($uri === '/public/stats.html') {
+// Legacy public stats URLs
+if ($uri === '/public/stats.html' || $uri === '/public_stats.html') {
     header('Content-Type: text/html; charset=utf-8');
     readfile(__DIR__ . '/public-stats.html');
     return true;

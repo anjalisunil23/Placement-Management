@@ -20,8 +20,9 @@ RewriteRule ^dologin/?$ dologin.php [L,QSA]
 # Root → public landing page
 RewriteRule ^$ public-stats.html [L]
 
-# Legacy public stats URL (production uses /public/stats.html)
+# Legacy public stats URLs (production)
 RewriteRule ^public/stats\.html$ public-stats.html [L]
+RewriteRule ^public_stats\.html$ public-stats.html [L]
 
 # Extensionless HTML: /dashboard → dashboard.html
 RewriteCond %{REQUEST_FILENAME} !-f
