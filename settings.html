@@ -205,6 +205,12 @@ function isNameFieldKey(key) {
   return k.endsWith('_name') || k.includes('studname') || k.includes('studentname');
 }
 
+function inferDepartmentFromRegisterNumber(registerNumber) {
+  const reg = String(registerNumber || '').trim().toUpperCase();
+  const m = reg.match(/\d{2}([A-Z]{2,10})\d+/);
+  return m ? m[1].toUpperCase() : '';
+}
+
 function pickDepartment(u) {
   const merged = mergeProfileUser(u);
   const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
@@ -223,7 +229,8 @@ function pickDepartment(u) {
     const val = String(merged[key] || academic[key] || '').trim();
     if (val) return val.toUpperCase();
   }
-  return '';
+  const inferred = inferDepartmentFromRegisterNumber(merged.registerNumber || merged.admission_no || merged.username || '');
+  return inferred || '';
 }
 
 function pickDepartmentDisplay(u) {
@@ -233,6 +240,8 @@ function pickDepartmentDisplay(u) {
   if (fromObjName) return fromObjName;
   const name = String(merged.departmentName || merged.deptName || merged.dept_name || '').trim();
   if (name) return name;
+  const inferred = inferDepartmentFromRegisterNumber(merged.registerNumber || merged.admission_no || merged.username || '');
+  if (inferred) return inferred;
   return pickDepartment(merged);
 }
 
@@ -496,6 +505,8 @@ async function loadSettingsProfile() {
         personal,
         academic: ac,
         department: p.department || user.department,
+        departmentName: p.departmentName || p.department?.name || user.departmentName,
+        departmentCode: p.departmentCode || p.department?.code || user.department,
       };
       const apiName = pickDisplayName(profileCtx);
       const apiCollegeEmail = pickCollegeEmail(profileCtx);

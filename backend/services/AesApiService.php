@@ -249,6 +249,10 @@ final class AesApiService
             return [];
         }
 
+        if (array_is_list($payload) && isset($payload[0]) && is_array($payload[0])) {
+            return $this->normalizePlacementStudentRecord($payload[0]);
+        }
+
         if (($payload['status'] ?? true) === false || ($payload['status'] ?? null) === 'false') {
             return [];
         }
