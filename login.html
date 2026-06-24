@@ -183,7 +183,7 @@
     aside.innerHTML = brandBlockHtml({ logoHeight: 40 });
   }
   if (card && typeof brandLogoHtml === 'function') {
-    card.innerHTML = `${brandLogoHtml(32)}<strong class="text-truncate">${BRAND.title}</strong>`;
+    card.innerHTML = brandLogoHtml(32);
   }
   document.title = `Sign in &middot; ${BRAND.title}`;
 })();
