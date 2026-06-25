@@ -100,13 +100,6 @@ function escapeAttr(value) {
     .replace(/</g, '&lt;');
 }
 
-function cssBackgroundUrl(url) {
-  const raw = String(url || '').trim();
-  if (!raw) return '';
-  const safe = encodeURI(raw).replace(/'/g, '%27');
-  return `url('${safe}')`;
-}
-
 function userPhotoUrl(user) {
   if (!user || typeof user !== 'object') return '';
   if (typeof resolveSessionPhotoUrl === 'function') {
@@ -124,10 +117,29 @@ function userAvatarHtml(user, size = 38, fontSize = '.85rem') {
   const box = `width:${size}px;height:${size}px;min-width:${size}px;min-height:${size}px;max-width:${size}px;max-height:${size}px;font-size:${fontSize}`;
   const ini = initials(user?.name);
   if (url) {
-    const bg = cssBackgroundUrl(url);
-    return `<div class="avatar has-photo" style="${box};background-image:${bg}" data-initials="${escapeAttr(ini)}" title="${escapeAttr(user?.name || '')}" role="img" aria-label="${escapeAttr(user?.name || 'User')}"></div>`;
+    return `<div class="avatar has-photo" style="${box}" data-initials="${escapeAttr(ini)}" title="${escapeAttr(user?.name || '')}" role="img" aria-label="${escapeAttr(user?.name || 'User')}"><img src="${escapeAttr(url)}" alt="" loading="lazy" decoding="async"/></div>`;
   }
   return `<div class="avatar" style="${box}">${ini}</div>`;
+}
+
+function hydrateShellAvatars() {
+  const url = userPhotoUrl(Auth.user());
+  if (!url) return;
+  document.querySelectorAll('#sidebar .avatar, #topbar .avatar').forEach((el) => {
+    const ini = el.dataset.initials || initials(Auth.user()?.name);
+    let img = el.querySelector('img');
+    if (!img) {
+      el.textContent = '';
+      el.classList.add('has-photo');
+      img = document.createElement('img');
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      el.appendChild(img);
+    }
+    if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+    el.dataset.initials = ini;
+  });
 }
 
 function navItemHidden(n) {
@@ -427,6 +439,8 @@ function renderShell(active) {
       group.classList.toggle('open');
     });
   });
+
+  hydrateShellAvatars();
 }
 
 /* Animated counters */

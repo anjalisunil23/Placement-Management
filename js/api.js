@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260627c';
+const APP_SCRIPT_VERSION = '20260627d';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -351,6 +351,7 @@ function resolveSessionEmail(merged, registerNumber) {
 function resolveSessionPhone(merged) {
   const keys = [
     'phone', 'mobile', 'phone_no', 'phoneNo', 'mob', 'contact', 'contact_no', 'mobile_no', 'mobileno',
+    'stud_mobiles', 'stud_mobile',
     'cell', 'student_mobile', 'studentMobile', 'stu_mobile', 'stuMobile',
     'parent_mobile', 'parentMobile', 'father_mobile', 'mother_mobile',
     'stu_phone', 'stuPhone', 'personal_mobile', 'personalMobile', 'whatsapp',
@@ -601,6 +602,7 @@ const Auth = {
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
         backlogs: merged.backlogs ?? prev.backlogs,
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || prev.photoUrl || '',
+        photo: merged.photo || prev.photo || null,
         placed: merged.placed ?? prev.placed,
         title: merged.title ?? prev.title ?? '',
         experience: merged.experience ?? prev.experience,
@@ -731,7 +733,9 @@ const Auth = {
         ...merged,
         name: resolveSessionName(merged, reg) || merged.name || prev.name || '',
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || '',
+        phone: resolveSessionPhone(merged) || merged.phone || prev.phone || '',
       });
+      document.dispatchEvent(new CustomEvent('ph-user-updated'));
       return true;
     } catch {
       return false;

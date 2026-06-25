@@ -184,7 +184,7 @@ a{color:inherit;text-decoration:none}
   flex-shrink:0;overflow:hidden;box-sizing:border-box;
 }
 .avatar.has-photo{
-  background-size:cover;background-position:center;background-repeat:no-repeat;
+  background:none;
   color:transparent;
   overflow:hidden;
   padding:0;
