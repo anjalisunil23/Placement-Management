@@ -7,6 +7,7 @@ namespace PMS\Models;
 use PMS\Schemas\Collections;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Security;
+use PMS\Services\AnalyticsService;
 
 /**
  * User model — core authentication entity.
@@ -147,13 +148,28 @@ class UserModel extends BaseModel
     {
         $studentModel = new StudentModel();
         $companyModel = new CompanyModel();
+        $driveModel = new DriveModel();
+        $totalStudents = $studentModel->count([]);
+        $placedStudents = $studentModel->count(['placed' => true]);
+        $analytics = (new AnalyticsService())->getDashboardAnalytics(null);
+        $extended = (new AnalyticsService())->getExtendedAnalytics(null);
 
         return [
-            'totalStudents'      => $studentModel->count([]),
-            'totalCompanies'     => $companyModel->count([]),
-            'placedStudents'     => $studentModel->count(['placed' => true]),
-            'pendingApprovals'   => $this->count(['approved' => false]),
-            'blockedUsers'       => $this->count(['status' => 'blocked']),
+            'totalStudents'       => $totalStudents,
+            'totalCompanies'      => $companyModel->count([]),
+            'placedStudents'      => $placedStudents,
+            'placementPercentage' => $totalStudents > 0
+                ? round(($placedStudents / $totalStudents) * 100, 1)
+                : 0,
+            'pendingApprovals'    => $this->count(['approved' => false]),
+            'blockedUsers'        => $this->count(['status' => 'blocked']),
+            'totalStaff'          => $this->count(['role' => 'staff']),
+            'totalAlumni'         => $this->count(['role' => 'alumni']),
+            'activeDrives'        => $driveModel->count(['status' => ['$ne' => 'closed']]),
+            'salaryAnalytics'     => $analytics['salaryAnalytics'],
+            'branchStatistics'    => $analytics['branchStatistics'],
+            'companyStatistics'   => $analytics['companyStatistics'],
+            'hiringTrend'         => $extended['hiringTrend'],
         ];
     }
 

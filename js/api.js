@@ -3529,70 +3529,73 @@ function clearRoleScopedCaches() {
 }
 
 async function dashboardStats() {
-  if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined' && Auth.hasRealAuth()) {
-    const stats = await OfficerApi.fetchDashboard();
-    if (stats) {
-      return {
-        totalStudents: stats.totalStudents ?? 0,
-        totalCompanies: RegisteredCompanies.all().length,
-        totalStaff: StaffRegistry.all().length,
-        totalAlumni: Math.max(UserRegistry.byRole('alumni').length, 0),
-        totalDrives: stats.activeDrives ?? 0,
-        placedStudents: stats.placedStudents ?? 0,
-        pendingApprovals: stats.pendingApprovals ?? 0,
-        placementPct: stats.placementPercentage ?? 0,
-        salary: { highest:68, lowest:3.5, average:9.4, median:8.2 },
-        branchStats: DEPARTMENT_PLACEMENT,
-        companyStats: activeRecruitingCompanies().slice(0, 8),
-        department: stats.department || null,
-      };
-    }
-  }
-  if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined' && Auth.hasRealAuth()) {
-    const [stats, drives] = await Promise.all([
-      AdminApi.fetchDashboard(),
-      AdminApi.fetchDrives(),
-    ]);
-    if (stats) {
-      const total = stats.totalStudents ?? 0;
-      const placed = stats.placedStudents ?? 0;
-      const activeDrives = drives
-        ? drives.filter(d => String(d.status || '').toLowerCase() !== 'closed').length
-        : 0;
-      return {
-        totalStudents: total,
-        totalCompanies: stats.totalCompanies ?? 0,
-        totalStaff: StaffRegistry.all().length,
-        totalAlumni: Math.max(UserRegistry.byRole('alumni').length, 0),
-        totalDrives: activeDrives,
-        placedStudents: placed,
-        pendingApprovals: stats.pendingApprovals ?? 0,
-        placementPct: total ? ((placed / total) * 100).toFixed(1) : 0,
-        salary: { highest:68, lowest:3.5, average:9.4, median:8.2 },
-        branchStats: DEPARTMENT_PLACEMENT,
-        companyStats: activeRecruitingCompanies().slice(0, 8),
-      };
-    }
-  }
-  const students = UserRegistry.byRole('student');
-  const placed = students.filter(s => s.placementStatus === 'placed').length;
-  const total = 3284;
-  const salaries = [68, 52, 42, 28, 18, 12, 9.4, 7.5, 4.5, 3.5];
-  const sorted = [...salaries].sort((a,b) => a-b);
-  const mid = Math.floor(sorted.length / 2);
-  return {
-    totalStudents: total,
-    totalCompanies: UserRegistry.byRole('company').length + RegisteredCompanies.all().length,
-    totalStaff: StaffRegistry.all().length,
-    totalAlumni: Math.max(UserRegistry.byRole('alumni').length, 840),
-    totalDrives: DriveStore.allWithCatalog().filter(d => d.status !== 'Closed').length,
-    placedStudents: placed || placementDeptTotals().placed,
-    pendingApprovals: UserRegistry.all().filter(u => u.status === 'pending').length + ResumeQueue.all().filter(r => r.status === 'pending').length,
-    placementPct: total ? ((placed || placementDeptTotals().placed) / total * 100).toFixed(1) : 0,
-    salary: { highest:68, lowest:3.5, average:9.4, median: sorted[mid] || 8.2 },
-    branchStats: DEPARTMENT_PLACEMENT,
-    companyStats: activeRecruitingCompanies().slice(0, 8),
+  const empty = {
+    totalStudents: 0,
+    totalCompanies: 0,
+    totalStaff: 0,
+    totalAlumni: 0,
+    totalDrives: 0,
+    placedStudents: 0,
+    pendingApprovals: 0,
+    placementPct: 0,
+    salary: { highest: 0, lowest: 0, average: 0, median: 0 },
+    branchStats: [],
+    companyStats: [],
+    hiringTrend: null,
   };
+
+  const mapLiveDashboard = (stats, activeDrives = null) => {
+    if (!stats) return empty;
+    const salary = stats.salaryAnalytics || stats.salary || {};
+    const branchStats = (stats.branchStatistics || []).map(b => ({
+      dept: b.code || b.department || '',
+      placed: b.placed ?? 0,
+    }));
+    const companyStats = (stats.companyStatistics || [])
+      .map(c => ({
+        company: c.name || c.companyName || '',
+        applicants: c.applications ?? c.applicants ?? 0,
+      }))
+      .filter(c => c.company)
+      .sort((a, b) => b.applicants - a.applicants)
+      .slice(0, 8);
+    const totalStudents = stats.totalStudents ?? 0;
+    const placedStudents = stats.placedStudents ?? 0;
+
+    return {
+      totalStudents,
+      totalCompanies: stats.totalCompanies ?? stats.totals?.companies ?? 0,
+      totalStaff: stats.totalStaff ?? 0,
+      totalAlumni: stats.totalAlumni ?? 0,
+      totalDrives: activeDrives ?? stats.activeDrives ?? 0,
+      placedStudents,
+      pendingApprovals: stats.pendingApprovals ?? 0,
+      placementPct: stats.placementPercentage ?? (totalStudents > 0 ? ((placedStudents / totalStudents) * 100).toFixed(1) : 0),
+      salary: {
+        highest: salary.highest ?? 0,
+        lowest: salary.lowest ?? 0,
+        average: salary.average ?? 0,
+        median: salary.median ?? 0,
+      },
+      branchStats,
+      companyStats,
+      hiringTrend: stats.hiringTrend || null,
+      department: stats.department || null,
+    };
+  };
+
+  if (Auth.hasRealAuth() && !Auth.isDemo()) {
+    if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+      const stats = await OfficerApi.fetchDashboard();
+      return mapLiveDashboard(stats);
+    }
+    if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
+      const stats = await AdminApi.fetchDashboard();
+      return mapLiveDashboard(stats, stats?.activeDrives ?? 0);
+    }
+  }
+
+  return empty;
 }
 
 function stageBadge(stage) {

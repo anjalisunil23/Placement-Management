@@ -233,8 +233,8 @@ function render() {
         <div class="d-flex flex-wrap gap-1 align-items-center">
           <a class="btn btn-sm btn-outline-primary" href="mailto:${r.hrEmail}?subject=Campus%20Placement%20Partnership%20-%20AJCE Placements"><i class="bi bi-envelope"></i></a>
           <a class="btn btn-sm btn-outline-secondary" href="tel:${(r.contactNumber || '').replace(/\s/g,'')}"><i class="bi bi-telephone"></i></a>
-          ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${escAttr(r.id)}', '${escAttr(r.source)}')">Mark contacted</button>` : ''}
-          ${r.status !== 'registered' ? `<button class="btn btn-sm btn-primary" onclick="openRegisterFromRecId('${escAttr(r.id)}', '${escAttr(r.source)}')">Register</button>` : ''}
+          ${r.status !== 'contacted' && r.status !== 'registered' ? `<button type="button" class="icon-btn" style="width:30px;height:30px" title="Mark contacted" onclick="markContacted('${escAttr(r.id)}', '${escAttr(r.source)}')"><i class="bi bi-check2-circle"></i></button>` : ''}
+          ${r.status !== 'registered' ? `<button type="button" class="btn btn-sm btn-primary py-0 px-2 text-nowrap" style="font-size:.75rem;line-height:1.5" onclick="openRegisterFromRecId('${escAttr(r.id)}', '${escAttr(r.source)}')">Register</button>` : ''}
           ${recommendationManageActions(r)}
         </div>
       </td>

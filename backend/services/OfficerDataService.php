@@ -557,6 +557,11 @@ final class OfficerDataService
             ));
         }
 
+        $deptId = $ctx['isAdmin'] ? null : ($ctx['departmentId'] ?? null);
+        $analytics = (new AnalyticsService())->getDashboardAnalytics($deptId);
+        $extended = (new AnalyticsService())->getExtendedAnalytics($deptId);
+        $userModel = new UserModel();
+
         return [
             'totalStudents'       => $totalStudents,
             'placedStudents'      => $placedStudents,
@@ -568,6 +573,13 @@ final class OfficerDataService
             'pendingApplications' => $pendingApplications,
             'pendingResumes'      => $pendingResumes,
             'activeDrives'        => $activeDrives,
+            'totalCompanies'      => $analytics['totals']['companies'] ?? (new CompanyModel())->count([]),
+            'totalStaff'          => $userModel->count(['role' => 'staff']),
+            'totalAlumni'         => $userModel->count(['role' => 'alumni']),
+            'salaryAnalytics'     => $analytics['salaryAnalytics'],
+            'branchStatistics'    => $analytics['branchStatistics'],
+            'companyStatistics'   => $analytics['companyStatistics'],
+            'hiringTrend'         => $extended['hiringTrend'],
             'department'          => $ctx['department']
                 ? DocumentHelper::serialize($ctx['department'])
                 : null,
