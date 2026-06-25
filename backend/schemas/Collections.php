@@ -116,6 +116,7 @@ final class Collections
                 ],
                 'policyAccepted' => 'bool',
                 'signedReport'   => 'string|null',
+                'selfPlacement'  => 'array|null',
                 'placementChances' => [
                     'used'      => 'int',
                     'remaining' => 'int',

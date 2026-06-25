@@ -15,6 +15,7 @@ use PMS\Models\NotificationModel;
 use PMS\Models\ResumeModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
+use PMS\Models\UserModel;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\ApplicationUploadService;
@@ -164,6 +165,9 @@ final class StudentController
       if (empty($out['photo']) || !is_array($out['photo'])) {
         $out['photo'] = ['url' => (string) $merged['photoUrl'], 'source' => 'aes'];
       }
+    }
+    if (!empty($out['selfPlacement']) && is_array($out['selfPlacement'])) {
+      unset($out['selfPlacement']['offerLetterPath']);
     }
 
     Response::success(DocumentHelper::jsonSafe($out));
@@ -733,6 +737,113 @@ final class StudentController
 
     $this->studentModel->update((string) $profile['_id'], ['signedReport' => $path]);
     Response::success(['path' => basename($path)], 'Signed report uploaded.');
+  }
+
+  /** POST /api/student/self-placement — off-campus / self-reported placement */
+  public function submitSelfPlacement(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $profile = $this->getStudentProfile($user);
+
+    if (($profile['placed'] ?? false) === true) {
+      Response::error('You are already marked as placed.', 409);
+    }
+
+    $existing = $profile['selfPlacement'] ?? null;
+    if (is_array($existing) && ($existing['status'] ?? '') === 'pending') {
+      Response::error('Your placement report is already under review.', 409);
+    }
+
+    $companyName = trim((string) ($_POST['companyName'] ?? ''));
+    $companyAddress = trim((string) ($_POST['companyAddress'] ?? ''));
+    $jobRole = trim((string) ($_POST['role'] ?? ''));
+
+    if ($companyName === '' || $jobRole === '') {
+      Response::error('Company name and role are required.', 422);
+    }
+    if ($companyAddress === '') {
+      Response::error('Company address is required.', 422);
+    }
+
+    if (!isset($_FILES['offerLetter']) || (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+      Response::error('Offer letter PDF is required.', 400);
+    }
+
+    $config = require dirname(__DIR__) . '/config/app.php';
+    $error = Security::validateUploadedFile(
+      $_FILES['offerLetter'],
+      $config['uploads']['max_resume'],
+      ['pdf']
+    );
+    if ($error) {
+      Response::error($error, 400);
+    }
+
+    $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
+    if (!is_dir($dir)) {
+      mkdir($dir, 0755, true);
+    }
+
+    $registerNo = (string) ($profile['registerNumber'] ?? 'student');
+    $safeCompany = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $companyName) ?: 'company';
+    $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
+    if (!move_uploaded_file($_FILES['offerLetter']['tmp_name'], $path)) {
+      Response::error('Failed to save offer letter.', 500);
+    }
+
+    $report = [
+      'companyName'    => $companyName,
+      'companyAddress' => $companyAddress,
+      'role'           => $jobRole,
+      'offerLetter'    => basename($path),
+      'status'         => 'pending',
+      'submittedAt'    => DocumentHelper::now(),
+    ];
+
+    $history = is_array($profile['placementHistory'] ?? null) ? $profile['placementHistory'] : [];
+    $history[] = [
+      'type'    => 'self_reported',
+      'company' => $companyName,
+      'address' => $companyAddress,
+      'role'    => $jobRole,
+      'status'  => 'pending',
+      'date'    => DocumentHelper::now(),
+    ];
+
+    $this->studentModel->update((string) $profile['_id'], [
+      'selfPlacement'    => $report,
+      'placementHistory' => $history,
+    ]);
+
+    $studentName = (string) ($user['name'] ?? $registerNo);
+    $notifier = new NotificationService();
+    $notifier->notifyAdmins(
+      'self_placement_submitted',
+      'Self-reported placement',
+      "{$studentName} ({$registerNo}) reported placement at {$companyName} as {$jobRole}.",
+      ['studentId' => (string) $profile['_id'], 'registerNumber' => $registerNo],
+      false
+    );
+    foreach ((new UserModel())->findByRole('placement_officer', 100) as $officer) {
+      $notifier->notifyUser(
+        (string) $officer['_id'],
+        'self_placement_submitted',
+        'Student placement report',
+        "{$studentName} ({$registerNo}) submitted a placement report for {$companyName}.",
+        ['studentId' => (string) $profile['_id']],
+        false
+      );
+    }
+    $notifier->notifyUser(
+      (string) $user['_id'],
+      'placement_report_submitted',
+      'Placement report submitted',
+      'Your placement details were sent to the placement cell for verification.',
+      [],
+      false
+    );
+
+    Response::success($report, 'Placement report submitted for verification.', 201);
   }
 
   /** POST /api/student/applications/{id}/withdraw */

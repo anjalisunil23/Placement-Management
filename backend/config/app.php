@@ -46,6 +46,7 @@ return [
         'reports_dir'=> $rootPath . '/uploads/reports',
         'jd_dir'     => $rootPath . '/uploads/jd',
         'signed_dir' => $rootPath . '/uploads/signed_reports',
+        'offer_letter_dir' => $rootPath . '/uploads/offer_letters',
         'photo_dir'  => $rootPath . '/uploads/photos',
     ],
     'cors' => [

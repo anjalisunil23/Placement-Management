@@ -224,6 +224,7 @@ $routes = [
     ['GET',  '/student/notifications',     [StudentController::class, 'notifications']],
     ['POST', '/student/notifications/read-all', [StudentController::class, 'markAllNotificationsRead']],
     ['GET',  '/student/placement-history', [StudentController::class, 'placementHistory']],
+    ['POST', '/student/self-placement',    [StudentController::class, 'submitSelfPlacement']],
     ['POST', '/student/signed-report',     [StudentController::class, 'uploadSignedReport']],
     ['POST', '/student/applications/{id}/withdraw', [StudentController::class, 'withdrawApplication']],
     ['POST', '/student/notifications/{id}/read',    [StudentController::class, 'markNotificationRead']],
