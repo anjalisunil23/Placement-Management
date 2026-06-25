@@ -112,9 +112,49 @@ function userPhotoUrl(user) {
   return direct.startsWith('/') ? direct : `/${direct}`;
 }
 
+function shellProfileHref(role) {
+  return 'settings.html';
+}
+
+function shellProfileLabel(role) {
+  return 'View profile';
+}
+
+function topbarProfileMenuHtml(user, role) {
+  const avatar = userAvatarHtml(user, 38, '.8rem');
+  const profileLabel = shellProfileLabel(role);
+  return `
+    <div class="dropdown topbar-profile-menu">
+      <button type="button" class="topbar-avatar-btn" data-bs-toggle="dropdown" aria-expanded="false" title="${escapeAttr(user?.name || 'Account')}">
+        <span class="topbar-avatar-wrap">${avatar}</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+        <li><h6 class="dropdown-header text-truncate">${escapeAttr(user?.name || 'Account')}</h6></li>
+        <li><a class="dropdown-item" href="${shellProfileHref(role)}"><i class="bi bi-person me-2"></i>${profileLabel}</a></li>
+        <li><hr class="dropdown-divider my-1"></li>
+        <li><button type="button" class="dropdown-item text-danger" id="topbarLogoutBtn"><i class="bi bi-box-arrow-right me-2"></i>Log out</button></li>
+      </ul>
+    </div>`;
+}
+
+function bindLogoutButton(btn) {
+  if (!btn || btn.dataset.bound === '1') return;
+  btn.dataset.bound = '1';
+  btn.addEventListener('click', async () => {
+    if (await confirmAction({
+      title: 'Sign out',
+      message: 'Sign out of your account?',
+      confirmText: 'Sign out',
+      variant: 'warning',
+    })) {
+      Auth.logout();
+    }
+  });
+}
+
 function userAvatarHtml(user, size = 38, fontSize = '.85rem') {
   const url = userPhotoUrl(user);
-  const box = `width:${size}px;height:${size}px;min-width:${size}px;min-height:${size}px;max-width:${size}px;max-height:${size}px;font-size:${fontSize}`;
+  const box = `width:${size}px;height:${size}px;min-width:${size}px;min-height:${size}px;max-width:${size}px;max-height:${size}px;font-size:${fontSize};border-radius:50%;overflow:hidden`;
   const ini = initials(user?.name);
   if (url) {
     return `<div class="avatar has-photo shell-avatar" style="${box}" data-initials="${escapeAttr(ini)}" title="${escapeAttr(user?.name || '')}" role="img" aria-label="${escapeAttr(user?.name || 'User')}"><img src="${escapeAttr(url)}" alt="" width="${size}" height="${size}" loading="lazy" decoding="async"/></div>`;
@@ -356,8 +396,7 @@ function renderShell(active) {
         </div>` : `<span class="badge badge-soft ${ROLE_BADGES[role] || 'muted'} d-none d-sm-inline-flex align-items-center gap-1 px-2 py-1"><i class="bi bi-person-badge"></i>${ROLE_LABELS[role]}</span>`}
         <button class="icon-btn" id="themeBtn" title="Theme"><i class="bi bi-moon-stars"></i></button>
         ${'<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>'}
-        ${role !== 'student' ? '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Settings"><i class="bi bi-gear"></i></a>' : '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Profile & Resumes"><i class="bi bi-person-badge"></i></a>'}
-        <span class="topbar-avatar-wrap">${userAvatarHtml(user, 38, '.8rem')}</span>
+        ${topbarProfileMenuHtml(user, role)}
       </div>`;
   }
 
@@ -394,16 +433,8 @@ function renderShell(active) {
     window.location.reload();
   }));
 
-  document.getElementById('logoutBtn')?.addEventListener('click', async () => {
-    if (await confirmAction({
-      title: 'Sign out',
-      message: 'Sign out of your account?',
-      confirmText: 'Sign out',
-      variant: 'warning',
-    })) {
-      Auth.logout();
-    }
-  });
+  document.getElementById('logoutBtn') && bindLogoutButton(document.getElementById('logoutBtn'));
+  document.getElementById('topbarLogoutBtn') && bindLogoutButton(document.getElementById('topbarLogoutBtn'));
 
   sidebar?.querySelectorAll('.nav-group-chevron-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
