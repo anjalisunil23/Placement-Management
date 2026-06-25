@@ -334,7 +334,7 @@ function renderShell(active) {
         <button class="icon-btn" id="themeBtn" title="Theme"><i class="bi bi-moon-stars"></i></button>
         ${'<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>'}
         ${role !== 'student' ? '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Settings"><i class="bi bi-gear"></i></a>' : '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Profile & Resumes"><i class="bi bi-person-badge"></i></a>'}
-        <div class="avatar">${initials(user.name)}</div>
+        ${userAvatarHtml(user, 34, '.75rem')}
       </div>`;
   }
 
@@ -512,6 +512,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (!enforcePageRole(active)) return;
+  if (Auth.hasRealAuth()) {
+    await Auth.enrichFromProfile();
+  }
   renderShell(active);
   applyRoleVisibility();
   animateCounters();

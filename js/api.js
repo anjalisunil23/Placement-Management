@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260626d';
+const APP_SCRIPT_VERSION = '20260627b';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -694,6 +694,48 @@ const Auth = {
   hasRealAuth() {
     const t = this.token();
     return !!t && !String(t).startsWith('demo-token');
+  },
+  async enrichFromProfile() {
+    if (!this.hasRealAuth() || this.isDemo()) return false;
+    const endpoints = {
+      student: '/student/profile',
+      staff: '/staff/profile',
+      alumni: '/alumni/profile',
+      company: '/company/profile',
+      placement_officer: '/officer/profile',
+    };
+    const role = this.role();
+    const path = endpoints[role];
+    if (!path) return false;
+    try {
+      const res = await apiFetch(path, { skipAuthRedirect: true, skipAuthRetry: true });
+      if (!res?.success || !res.data) return false;
+      const p = res.data;
+      const u = p.user || {};
+      const prev = this.user() || {};
+      const reg = p.registerNumber || prev.registerNumber || '';
+      const merged = {
+        ...prev,
+        ...u,
+        registerNumber: reg,
+        stud_name: u.stud_name || u.name || p.stud_name || prev.stud_name || '',
+        academic: p.academic || prev.academic,
+        department: p.department || prev.department,
+        departmentName: p.departmentName || p.branch || p.programme || prev.departmentName || '',
+        branch: p.branch || p.programme || prev.branch || '',
+        programme: p.programme || p.branch || prev.programme || '',
+        photoUrl: p.photoUrl || p.photo?.url || u.photoUrl || prev.photoUrl || '',
+        photo: p.photo || prev.photo || null,
+      };
+      this.applySessionUser({
+        ...merged,
+        name: resolveSessionName(merged, reg) || merged.name || prev.name || '',
+        photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || '',
+      });
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
