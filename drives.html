@@ -1175,6 +1175,10 @@ onAppReady(async () => {
   setupDrivesChrome();
   await ensureDepartmentsLoaded();
   renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), { checkedAll: true });
+  if (Auth.hasRealAuth() && !Auth.isDemo()) {
+    await Auth.ensureSession();
+    if (role === 'staff') await Auth.enrichFromProfile();
+  }
   if (isStudent && !Auth.isDemo()) await StudentApps.fetch();
   if (alumniSeeking && !Auth.isDemo()) await AlumniApps.fetch();
   if (canManage) await DriveStore.fetch();

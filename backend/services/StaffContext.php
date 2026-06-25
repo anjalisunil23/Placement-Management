@@ -24,10 +24,7 @@ final class StaffContext
      */
     public static function resolve(array $user): array
     {
-        $profile = (new StaffModel())->findByUserId((string) $user['_id']);
-        if (!$profile) {
-            Response::notFound('Staff profile not found.');
-        }
+        $profile = self::ensureProfile($user);
 
         $departmentId = !empty($profile['departmentId']) ? (string) $profile['departmentId'] : null;
         $department = $departmentId ? (new DepartmentModel())->findById($departmentId) : null;
@@ -37,6 +34,69 @@ final class StaffContext
             'departmentId' => $departmentId,
             'department'   => $department,
         ];
+    }
+
+    /**
+     * Ensure a staff profile exists (AES sign-in may create the user before the profile row).
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public static function ensureProfile(array $user): array
+    {
+        $staffModel = new StaffModel();
+        $userId = (string) ($user['_id'] ?? '');
+        if ($userId === '') {
+            Response::notFound('Staff profile not found.');
+        }
+
+        $profile = $staffModel->findByUserId($userId);
+        if ($profile) {
+            return $profile;
+        }
+
+        $aes = new AesLoginService();
+        $merged = $aes->applyAesSessionToUserFields([
+            'name'  => (string) ($user['name'] ?? ''),
+            'email' => (string) ($user['email'] ?? ''),
+        ]);
+
+        $deptId = self::resolveDepartmentIdFromHints(
+            (string) ($merged['department'] ?? ''),
+            (string) ($merged['departmentName'] ?? '')
+        );
+
+        $designation = trim((string) ($merged['designation'] ?? ''));
+        $staffModel->createProfile($userId, [
+            'departmentId' => $deptId,
+            'designation'  => $designation !== '' ? $designation : 'Faculty',
+            'phone'        => trim((string) ($merged['phone'] ?? '')),
+        ]);
+
+        $profile = $staffModel->findByUserId($userId);
+        if (!$profile) {
+            Response::notFound('Staff profile not found.');
+        }
+
+        return $profile;
+    }
+
+    private static function resolveDepartmentIdFromHints(string $code, string $name): ?string
+    {
+        $deptModel = new DepartmentModel();
+        foreach (array_filter([$code, $name]) as $hint) {
+            $hint = trim($hint);
+            if ($hint === '') {
+                continue;
+            }
+            $dept = $deptModel->findByCode($hint)
+                ?? $deptModel->findByCode(strtoupper($hint));
+            if ($dept) {
+                return (string) ($dept['_id'] ?? '');
+            }
+        }
+
+        return null;
     }
 
     /**

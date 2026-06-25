@@ -148,8 +148,18 @@ final class StaffService
             if ($apps === []) {
                 continue;
             }
+            $roles = [];
+            foreach ($apps as $app) {
+                $job = !empty($app['jobId']) ? (new JobModel())->findById((string) $app['jobId']) : null;
+                $drive = !empty($app['driveId']) ? (new DriveModel())->findById((string) $app['driveId']) : null;
+                $title = trim((string) ($job['title'] ?? $drive['title'] ?? $drive['role'] ?? ''));
+                if ($title !== '') {
+                    $roles[] = $title;
+                }
+            }
             $companies[] = [
                 'company'     => $company['companyName'] ?? '',
+                'roles'       => array_values(array_unique($roles)),
                 'applicants'  => count($apps),
                 'shortlisted' => count(array_filter($apps, fn ($a) => in_array($a['status'] ?? '', ['shortlisted', 'company_review', 'officer_approved'], true))),
                 'selected'    => count(array_filter($apps, fn ($a) => ($a['status'] ?? '') === 'selected')),

@@ -378,6 +378,7 @@ async function initHiringOverview() {
   populateDeptSelect();
   if (Auth.hasRealAuth() && role === 'staff') {
     await Auth.ensureSession();
+    await Auth.enrichFromProfile();
     const data = await StaffApi.fetchHiringOverview();
     if (data) apiHiringData = data;
   }

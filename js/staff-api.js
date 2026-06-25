@@ -24,17 +24,22 @@ const StaffApi = {
   },
 
   mapStudentRow(row) {
+    const deptObj = row.department && typeof row.department === 'object' ? row.department : null;
+    const deptCode = row.departmentCode
+      || deptObj?.code
+      || (typeof row.department === 'string' ? row.department : '');
+    const deptName = row.departmentName || deptObj?.name || deptCode;
     return {
-      id: row.id || StaffApi.id(row),
-      studentId: row.id || StaffApi.id(row),
+      id: row.id || row._id || StaffApi.id(row),
+      studentId: row.id || row._id || row.studentId || StaffApi.id(row),
       name: row.displayName || row.name || '',
       email: row.collegeEmail || row.email || '',
       collegeEmail: row.collegeEmail || row.email || '',
       personalEmail: row.personalEmail || '',
-      phone: row.phone || '',
+      phone: row.phone || row.personal?.phone || '',
       registerNumber: row.registerNumber || '',
-      department: row.departmentCode || row.department || '',
-      departmentName: row.departmentName || row.department || '',
+      department: deptCode,
+      departmentName: deptName,
       classBatch: row.classBatch || '',
       cgpa: row.cgpa ?? row.academic?.cgpa ?? null,
       marks10th: row.marks10th ?? row.academic?.marks10th ?? null,
@@ -44,7 +49,7 @@ const StaffApi = {
       photoUrl: row.photoUrl || row.photo?.url || '',
       placementStatus: row.placementStatus || 'seeking',
       photo: row.photo || null,
-      status: row.status || 'active',
+      status: row.status || row.user?.status || 'active',
       blacklisted: !!row.blacklisted,
       blocked: !!row.blocked,
     };

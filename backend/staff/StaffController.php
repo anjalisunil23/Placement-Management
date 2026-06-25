@@ -34,11 +34,7 @@ final class StaffController
 
     private function getProfile(array $user): array
     {
-        $profile = $this->staffModel->findByUserId((string) $user['_id']);
-        if (!$profile) {
-            Response::notFound('Staff profile not found.');
-        }
-        return $profile;
+        return StaffContext::ensureProfile($user);
     }
 
     /** GET /api/staff/profile */
@@ -157,7 +153,9 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         $drives = (new StaffDataService())->listDrives($ctx);
-        Response::success((new OfficerDataService())->enrichDrivesWithCompany($drives));
+        Response::success(DocumentHelper::jsonSafe(
+            (new OfficerDataService())->enrichDrivesWithCompany($drives)
+        ));
     }
 
     /** GET /api/staff/students */
@@ -165,9 +163,13 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
+        $officerCtx = StaffContext::officerCompatible($ctx);
         $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
-        $rows = (new StaffService())->listStudents($ctx['departmentId'], $query !== '' ? $query : null);
-        Response::success($rows);
+        $rows = (new OfficerDataService())->listStudents(
+            $officerCtx,
+            $query !== '' ? $query : null
+        );
+        Response::success(DocumentHelper::jsonSafe($rows));
     }
 
     /** GET /api/staff/students/{id}/pipeline */

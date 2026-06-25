@@ -112,17 +112,15 @@ final class AuthMiddleware
       }
     }
     if (($data['role'] ?? $user['role'] ?? '') === 'staff') {
-      $profile = (new StaffModel())->findByUserId((string) $user['_id']);
-      if ($profile) {
-        $dept = !empty($profile['departmentId'])
-          ? (new DepartmentModel())->findById((string) $profile['departmentId'])
-          : null;
-        $data = array_merge($data, StaffModel::profileToUserFields($profile, $dept));
-        $photo = (new \PMS\Services\AesLoginService())->resolveProfilePhoto($profile, $user);
-        if (($photo['photoUrl'] ?? '') !== '') {
-          $data['photoUrl'] = $photo['photoUrl'];
-          $data['photo'] = $photo['photo'];
-        }
+      $profile = \PMS\Services\StaffContext::ensureProfile($user);
+      $dept = !empty($profile['departmentId'])
+        ? (new DepartmentModel())->findById((string) $profile['departmentId'])
+        : null;
+      $data = array_merge($data, StaffModel::profileToUserFields($profile, $dept));
+      $photo = (new \PMS\Services\AesLoginService())->resolveProfilePhoto($profile, $user);
+      if (($photo['photoUrl'] ?? '') !== '') {
+        $data['photoUrl'] = $photo['photoUrl'];
+        $data['photo'] = $photo['photo'];
       }
     }
     if (($data['role'] ?? $user['role'] ?? '') === 'placement_officer') {

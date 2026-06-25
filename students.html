@@ -838,6 +838,8 @@ async function initOverview() {
   useLiveOverviewApi = Auth.hasRealAuth() && !Auth.isDemo() && (useStaffApi || role === 'admin' || role === 'placement_officer');
 
   if (useLiveOverviewApi) {
+    await Auth.ensureSession();
+    if (useStaffApi) await Auth.enrichFromProfile();
     const rows = await fetchOverviewStudentsFromApi('');
     if (rows) {
       overviewStudentsAll = rows;

@@ -175,6 +175,8 @@ let notificationRows = [];
 
 async function loadNotifications() {
   if (Auth.hasRealAuth() && notifApiBase) {
+    await Auth.ensureSession();
+    if (isStaff) await Auth.enrichFromProfile();
     const res = await api(notifApiBase, { skipAuthRedirect: true });
     if (res?.success) {
       notificationRows = (res.data || []).map(normalizeNotif);
