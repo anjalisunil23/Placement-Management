@@ -135,12 +135,51 @@ final class PlacementOfficerContext
         if ($ctx['isAdmin'] || empty($ctx['departmentId'])) {
             return true;
         }
-        $branches = $drive['branches'] ?? [];
-        if (empty($branches)) {
+
+        $deptOid = (string) $ctx['departmentId'];
+        $deptCode = strtoupper(trim((string) ($ctx['department']['code'] ?? '')));
+        $driveDeptId = (string) ($drive['departmentId'] ?? '');
+        if ($driveDeptId !== '' && $driveDeptId === $deptOid) {
             return true;
         }
-        $deptCode = $ctx['department']['code'] ?? '';
-        return $deptCode && in_array($deptCode, $branches, true);
+
+        $branches = $drive['branches'] ?? [];
+        if (!is_array($branches)) {
+            $branches = [];
+        }
+        $normalized = array_values(array_filter(array_map(
+            static fn ($b) => strtoupper(trim((string) $b)),
+            $branches
+        )));
+        if ($normalized === []) {
+            return false;
+        }
+
+        return $deptCode !== '' && in_array($deptCode, $normalized, true);
+    }
+
+    /**
+     * Mongo filter for drives visible to a department-scoped role (placement officer / staff).
+     *
+     * @return array<string, mixed>|null null when the role has no department (show nothing)
+     */
+    public static function driveCollectionFilter(array $ctx): ?array
+    {
+        if (!empty($ctx['isAdmin'])) {
+            return [];
+        }
+
+        $deptOid = Security::toObjectId($ctx['departmentId'] ?? '');
+        $deptCode = strtoupper(trim((string) ($ctx['department']['code'] ?? '')));
+        $or = [];
+        if ($deptOid !== null) {
+            $or[] = ['departmentId' => $deptOid];
+        }
+        if ($deptCode !== '') {
+            $or[] = ['branches' => $deptCode];
+        }
+
+        return $or !== [] ? ['$or' => $or] : null;
     }
 
     /**

@@ -519,6 +519,15 @@ final class StudentController
     $engine = new EligibilityEngine();
     $studentId = (string) $profile['_id'];
     $appModel = new ApplicationModel();
+    $drives = array_values(array_filter(
+      $drives,
+      static function (array $drive) use ($engine, $profile, $studentId, $appModel): bool {
+        if ($appModel->findByStudentAndDrive($studentId, (string) ($drive['_id'] ?? ''))) {
+          return true;
+        }
+        return $engine->driveVisibleToStudent($profile, $drive);
+      }
+    ));
     $enriched = (new OfficerDataService())->enrichDrivesWithCompany($drives);
 
     $result = array_map(function (array $row) use ($engine, $studentId, $appModel) {
@@ -567,6 +576,16 @@ final class StudentController
     $studentId = (string) $profile['_id'];
 
     $drives = $driveModel->findAll(['status' => ['$ne' => 'completed']], 50);
+    $appModel = new ApplicationModel();
+    $drives = array_values(array_filter(
+      $drives,
+      static function (array $drive) use ($engine, $profile, $studentId, $appModel): bool {
+        if ($appModel->findByStudentAndDrive($studentId, (string) ($drive['_id'] ?? ''))) {
+          return true;
+        }
+        return $engine->driveVisibleToStudent($profile, $drive);
+      }
+    ));
     $rows = [];
 
     foreach ($drives as $drive) {

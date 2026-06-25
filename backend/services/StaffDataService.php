@@ -74,19 +74,19 @@ final class StaffDataService
      */
     public function listDrives(array $ctx): array
     {
-        $driveModel = new DriveModel();
-        $deptOid = Security::toObjectId($ctx['departmentId']);
-        $deptCode = $ctx['department']['code'] ?? '';
-        $or = [
-            ['departmentId' => $deptOid],
-            ['branches' => []],
+        $officerCtx = [
+            'isAdmin'      => false,
+            'departmentId' => $ctx['departmentId'] ?? '',
+            'department'   => $ctx['department'] ?? null,
+            'profile'      => $ctx['profile'] ?? null,
         ];
-        if ($deptCode !== '') {
-            $or[] = ['branches' => $deptCode];
+        $filter = PlacementOfficerContext::driveCollectionFilter($officerCtx);
+        if ($filter === null) {
+            return [];
         }
 
         return DocumentHelper::serializeMany(
-            $driveModel->findAll(['$or' => $or], 100)
+            (new DriveModel())->findAll($filter, 100)
         );
     }
 

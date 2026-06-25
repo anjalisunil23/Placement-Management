@@ -303,11 +303,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-<script src="js/admin-api.js?v=20260622d"></script>
-<script src="js/officer-api.js?v=20260622d"></script>
-<script src="js/api.js?v=20260622d"></script>
+<script src="js/admin-api.js?v=20260626d"></script>
+<script src="js/officer-api.js?v=20260626d"></script>
+<script src="js/api.js?v=20260626d"></script>
 
-<script src="js/app.js?v=20260622d"></script>
+<script src="js/app.js?v=20260626d"></script>
 
 <script>
 
@@ -762,7 +762,16 @@ async function loadDrives() {
 window.openCreateDrive = async () => {
   if (!canManage) return;
   document.getElementById('createDriveForm')?.reset();
-  renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), { checkedAll: true });
+  const user = Auth.user() || {};
+  const deptCode = String(user.department || user.departmentCode || '').trim().toUpperCase();
+  if (role === 'placement_officer' && deptCode) {
+    renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), {
+      checkedAll: false,
+      selected: [deptCode],
+    });
+  } else {
+    renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), { checkedAll: true });
+  }
   await populateCreateDriveCompanies();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('createModal')).show();
 };

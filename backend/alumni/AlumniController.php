@@ -151,6 +151,15 @@ final class AlumniController
     $studentId = (string) $student['_id'];
     $companyModel = new CompanyModel();
     $appModel = new ApplicationModel();
+    $drives = array_values(array_filter(
+      $drives,
+      static function (array $drive) use ($engine, $student, $studentId, $appModel): bool {
+        if ($appModel->findByStudentAndDrive($studentId, (string) ($drive['_id'] ?? ''))) {
+          return true;
+        }
+        return $engine->driveVisibleToStudent($student, $drive);
+      }
+    ));
 
     $result = array_map(function ($drive) use ($engine, $studentId, $companyModel, $appModel) {
       $serialized = DocumentHelper::serialize($drive);

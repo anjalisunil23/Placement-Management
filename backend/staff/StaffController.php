@@ -13,6 +13,7 @@ use PMS\Models\RecommendationModel;
 use PMS\Models\StaffModel;
 use PMS\Models\UserModel;
 use PMS\Services\StaffContext;
+use PMS\Services\StaffDataService;
 use PMS\Services\StaffService;
 use PMS\Services\AesLoginService;
 use PMS\Services\NotificationService;
@@ -147,17 +148,25 @@ final class StaffController
     /** GET /api/staff/drives */
     public function listDrives(): void
     {
-        RBACMiddleware::requireStaff();
-        $drives = (new DriveModel())->findAll([], 100);
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        $rows = (new StaffDataService())->listDrives($ctx);
         $companyModel = new CompanyModel();
         $serialized = array_map(static function (array $drive) use ($companyModel) {
-            $out = DocumentHelper::serialize($drive);
-            $company = $companyModel->findById((string) ($drive['companyId'] ?? ''));
-            $out['company'] = $company['companyName'] ?? '';
-            $out['role'] = $drive['title'] ?? '';
-            $out['package'] = $drive['tier'] ?? '';
+            $out = $drive;
+            $companyId = (string) ($drive['companyId'] ?? '');
+            if ($companyId !== '' && empty($out['company'])) {
+                $company = $companyModel->findById($companyId);
+                $out['company'] = $company['companyName'] ?? '';
+            }
+            if (empty($out['role'])) {
+                $out['role'] = $drive['title'] ?? '';
+            }
+            if (empty($out['package'])) {
+                $out['package'] = $drive['tier'] ?? '';
+            }
             return $out;
-        }, $drives);
+        }, $rows);
         Response::success($serialized);
     }
 

@@ -171,6 +171,62 @@ final class EligibilityEngine
     }
 
     /**
+     * Whether a drive should appear in a student's drive list (eligible branch scope).
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $drive
+     */
+    public function driveVisibleToStudent(array $student, array $drive): bool
+    {
+        $branches = array_values(array_filter(array_map(
+            static fn ($b) => strtoupper(trim((string) $b)),
+            $this->toPlainArray($drive['branches'] ?? [])
+        )));
+        if ($branches === []) {
+            return true;
+        }
+
+        foreach ($this->studentDepartmentCodes($student) as $code) {
+            if (in_array($code, $branches, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @return list<string>
+     */
+    private function studentDepartmentCodes(array $student): array
+    {
+        $codes = [];
+        $deptId = (string) ($student['departmentId'] ?? '');
+        if ($deptId !== '') {
+            $dept = $this->departmentModel->findById($deptId);
+            if (is_array($dept) && !empty($dept['code'])) {
+                $codes[] = strtoupper(trim((string) $dept['code']));
+            }
+        }
+
+        $reg = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        if ($reg !== '' && preg_match('/\d{2}([A-Z]{2,10})\d+/i', $reg, $matches) === 1) {
+            $codes[] = strtoupper($matches[1]);
+        }
+
+        $aesProfile = Security::getSessionAesProfile();
+        if (is_array($aesProfile) && $aesProfile !== []) {
+            $mapped = (new AesLoginService())->mapAesDetailsToUserFields($aesProfile);
+            if (!empty($mapped['department'])) {
+                $codes[] = strtoupper(trim((string) $mapped['department']));
+            }
+        }
+
+        return array_values(array_unique(array_filter($codes)));
+    }
+
+    /**
      * @param array<string, mixed> $student
      */
     private function studentHasResume(array $student, ?string $resumeId = null): bool

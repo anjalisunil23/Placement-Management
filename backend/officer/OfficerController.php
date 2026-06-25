@@ -194,25 +194,8 @@ final class OfficerController
 
         } else {
 
-            $deptOid = Security::toObjectId($ctx['departmentId']);
-
-            $deptCode = $ctx['department']['code'] ?? '';
-
-            $or = [
-
-                ['departmentId' => $deptOid],
-
-                ['branches' => []],
-
-            ];
-
-            if ($deptCode !== '') {
-
-                $or[] = ['branches' => $deptCode];
-
-            }
-
-            $drives = $driveModel->findAll(['$or' => $or], 100);
+            $filter = PlacementOfficerContext::driveCollectionFilter($ctx);
+            $drives = $filter === null ? [] : $driveModel->findAll($filter, 100);
 
         }
 
