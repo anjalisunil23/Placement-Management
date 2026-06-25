@@ -119,10 +119,16 @@ const AdminApi = {
   },
 
   mapCompany(c) {
-    const contact = (c.contacts && c.contacts[0]) || {};
+    const contacts = Array.isArray(c.contacts)
+      ? c.contacts
+      : (c.contacts && typeof c.contacts === 'object' ? [c.contacts] : []);
+    const contact = contacts[0] || {};
     const userId = String(c.userId || '');
     const companyId = this.id(c);
     const hasLogin = !!userId;
+    const hrName = contact.name || c.hrName || c.contactPerson || c.name || '';
+    const hrEmail = contact.email || c.hrEmail || (hasLogin ? c.email : '') || '';
+    const contactNumber = contact.phone || c.contactNumber || c.phone || '';
     return {
       id: userId || companyId,
       userId: userId || null,
@@ -130,17 +136,17 @@ const AdminApi = {
       hasLogin,
       companyName: c.companyName || '',
       companyWebsite: c.website || c.companyWebsite || '',
-      hrName: contact.name || '',
-      hrEmail: contact.email || '',
-      contactNumber: contact.phone || '',
+      hrName,
+      hrEmail,
+      contactNumber,
       category: c.category || '',
       tier: c.tier || '',
       registeredAt: c.createdAt || '',
       associationStatus: c.associationStatus || '',
-      name: contact.name || c.companyName || '',
-      email: contact.email || '',
-      contactPerson: contact.name || '',
-      phone: contact.phone || '',
+      name: hrName || c.companyName || '',
+      email: hrEmail,
+      contactPerson: hrName,
+      phone: contactNumber,
       status: c.associationStatus === 'active' ? 'approved' : 'pending',
       blocked: false,
       role: 'company',

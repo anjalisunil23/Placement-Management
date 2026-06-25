@@ -988,7 +988,7 @@ final class AdminController
     public function listCompanies(): void
     {
         RBACMiddleware::requirePlacementOfficer();
-        Response::success(DocumentHelper::serializeMany((new CompanyModel())->findAll([], 200)));
+        Response::success(DocumentHelper::serializeMany((new CompanyModel())->listEnriched(200)));
     }
 
     /** POST /api/admin/companies */
