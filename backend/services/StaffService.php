@@ -227,9 +227,10 @@ final class StaffService
         foreach ($students as $student) {
             $user = $userModel->findById((string) $student['userId']);
             $dept = $deptModel->findById((string) $student['departmentId']);
-            $enriched = (new OfficerDataService())->enrichStudentListRow([], $student, $user);
-            $displayName = (string) ($enriched['displayName'] ?? ($user['name'] ?? 'Student'));
-            $photoUrl = (string) ($enriched['photoUrl'] ?? '');
+            $row = (new OfficerDataService())->enrichStudentListRow([], $student, $user);
+            $displayName = (string) ($row['displayName'] ?? ($user['name'] ?? 'Student'));
+            $photoUrl = (string) ($row['photoUrl'] ?? '');
+            $academic = is_array($row['academic'] ?? null) ? $row['academic'] : (is_array($student['academic'] ?? null) ? $student['academic'] : []);
             $hasSelfPlacement = is_array($student['selfPlacement'] ?? null)
                 && (string) ($student['selfPlacement']['companyName'] ?? '') !== '';
             $selfStatus = $hasSelfPlacement ? (string) ($student['selfPlacement']['status'] ?? '') : '';
@@ -237,21 +238,28 @@ final class StaffService
             $placementStatus = $isPlaced
                 ? 'placed'
                 : ($selfStatus === 'pending' ? 'pending_placement' : 'seeking');
+            $collegeEmail = (string) ($row['collegeEmail'] ?? '');
+            $personalEmail = (string) ($row['personalEmail'] ?? '');
+            $userEmail = strtolower(trim((string) ($user['email'] ?? '')));
             $rows[] = [
                 'id'              => (string) $student['_id'],
                 'name'            => $displayName !== '' ? $displayName : 'Student',
-                'email'           => $user['email'] ?? '',
+                'email'           => $collegeEmail !== '' ? $collegeEmail : ($personalEmail !== '' ? $personalEmail : $userEmail),
+                'collegeEmail'    => $collegeEmail,
+                'personalEmail'   => $personalEmail,
+                'phone'           => (string) ($row['phone'] ?? ''),
                 'registerNumber'  => $student['registerNumber'] ?? '',
-                'department'      => $dept['code'] ?? '',
-                'departmentName'  => $dept['name'] ?? '',
-                'classBatch'      => (string) ($student['classBatch'] ?? $student['personal']['batch'] ?? ''),
-                'cgpa'            => (float) ($student['academic']['cgpa'] ?? 0),
-                'marks10th'       => (float) ($student['academic']['marks10th'] ?? 0) ?: null,
-                'marks12th'       => (float) ($student['academic']['marks12th'] ?? $student['academic']['ugMarks'] ?? 0) ?: null,
-                'ugMarks'         => (float) ($student['academic']['ugMarks'] ?? $student['academic']['marks12th'] ?? 0) ?: null,
+                'department'      => (string) ($row['departmentCode'] ?? $dept['code'] ?? ''),
+                'departmentName'  => (string) ($row['departmentName'] ?? $dept['name'] ?? ''),
+                'classBatch'      => (string) ($row['classBatch'] ?? $student['classBatch'] ?? ''),
+                'cgpa'            => (float) ($academic['cgpa'] ?? 0) ?: null,
+                'marks10th'       => (float) ($academic['marks10th'] ?? 0) ?: null,
+                'marks12th'       => (float) ($academic['marks12th'] ?? $student['academic']['ugMarks'] ?? 0) ?: null,
+                'ugMarks'         => (float) ($academic['ugMarks'] ?? $academic['marks12th'] ?? 0) ?: null,
+                'backlogs'        => (int) ($academic['backlogs'] ?? 0),
                 'placementStatus' => $placementStatus,
                 'photoUrl'        => $photoUrl,
-                'photo'           => $enriched['photo'] ?? null,
+                'photo'           => $row['photo'] ?? null,
                 'status'          => $user['status'] ?? 'active',
                 'blacklisted'     => false,
                 'blocked'         => ($user['status'] ?? '') === 'blocked',

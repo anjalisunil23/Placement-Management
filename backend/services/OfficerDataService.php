@@ -291,53 +291,57 @@ final class OfficerDataService
         $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
         $chances = is_array($student['placementChances'] ?? null) ? $student['placementChances'] : [];
         $selfPlacement = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : null;
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
 
-        $email = strtolower(trim((string) ($user['email'] ?? '')));
-        $collegeEmail = $this->isCollegeEmailAddress($email) ? $email : '';
-        if ($collegeEmail === '') {
-            $collegeEmail = strtolower(trim((string) (
-                $placement['collegeEmail']
-                ?? $mapped['collegeEmail']
-                ?? ''
-            )));
-        }
-        $personalEmail = trim((string) ($personal['personalEmail'] ?? $personal['email'] ?? ''));
-        if ($personalEmail === '') {
-            $personalEmail = strtolower(trim((string) (
-                $placement['personalEmail']
-                ?? $mapped['personalEmail']
-                ?? ''
-            )));
-        }
-        if ($personalEmail === '' && $email !== '' && !$this->isCollegeEmailAddress($email)) {
-            $personalEmail = $email;
-        }
-        if ($collegeEmail === '' && $email !== '' && $this->isCollegeEmailAddress($email)) {
-            $collegeEmail = $email;
+        $aesCtx = $this->trustedAesContextForRegister($register);
+        if ($placement === [] && $aesCtx['placement'] !== []) {
+            $placement = $aesCtx['placement'];
+            $mapped = $aesCtx['mapped'];
         }
 
-        $classBatch = trim((string) ($student['classBatch'] ?? ''));
+        $contact = $this->contactFieldsFromSources($user, $personal, $placement, $mapped);
+        $collegeEmail = $contact['collegeEmail'];
+        $personalEmail = $contact['personalEmail'];
+        $phone = $contact['phone'];
+
+        $classBatch = trim((string) ($mapped['classBatch'] ?? $placement['classBatch'] ?? ''));
         if ($classBatch === '') {
-            $classBatch = trim((string) ($placement['classBatch'] ?? $mapped['classBatch'] ?? ''));
+            $classBatch = trim((string) ($student['classBatch'] ?? ''));
         }
 
-        $phone = trim((string) ($personal['phone'] ?? ''));
-        if ($phone === '') {
-            $phone = trim((string) ($placement['phone'] ?? $mapped['phone'] ?? ''));
-        }
-
-        $marks10 = (float) ($academic['marks10th'] ?? 0);
+        $cgpa = !empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0
+            ? (float) $mapped['cgpa']
+            : (float) ($academic['cgpa'] ?? 0);
+        $marks10 = !empty($mapped['marks10th']) && (float) $mapped['marks10th'] > 0
+            ? (float) $mapped['marks10th']
+            : (float) ($academic['marks10th'] ?? 0);
         if ($marks10 <= 0) {
-            $marks10 = (float) ($placement['marks10th'] ?? $mapped['marks10th'] ?? 0);
+            $marks10 = (float) ($placement['marks10th'] ?? 0);
         }
+        $marks12 = !empty($mapped['marks12th']) && (float) $mapped['marks12th'] > 0
+            ? (float) $mapped['marks12th']
+            : (float) ($academic['marks12th'] ?? $academic['ugMarks'] ?? 0);
+        if ($marks12 <= 0) {
+            $marks12 = (float) ($placement['marks12th'] ?? $placement['ugMarks'] ?? 0);
+        }
+        $backlogs = isset($mapped['backlogs'])
+            ? (int) $mapped['backlogs']
+            : (int) ($academic['backlogs'] ?? 0);
 
-        $marks12 = (float) ($academic['marks12th'] ?? 0);
-        if ($marks12 <= 0) {
-            $marks12 = (float) ($academic['ugMarks'] ?? 0);
-        }
-        if ($marks12 <= 0) {
-            $marks12 = (float) ($placement['marks12th'] ?? $placement['ugMarks'] ?? $mapped['marks12th'] ?? 0);
-        }
+        $aesDeptName = trim((string) (
+            $mapped['departmentName']
+            ?? $mapped['branch']
+            ?? $placement['departmentName']
+            ?? $placement['deptName']
+            ?? $placement['branch']
+            ?? ''
+        ));
+        $aesDeptCode = trim((string) (
+            $mapped['department']
+            ?? $placement['deptCode']
+            ?? $placement['department']
+            ?? ''
+        ));
 
         if ($photoUrl === '') {
             $photoUrl = (new AesApiService())->resolvePhotoUrl(trim((string) (
@@ -364,18 +368,18 @@ final class OfficerDataService
             'studentId'       => (string) ($student['_id'] ?? ''),
             'registerNumber'  => (string) ($student['registerNumber'] ?? ''),
             'name'            => $displayName,
-            'email'           => $collegeEmail !== '' ? $collegeEmail : ($personalEmail !== '' ? $personalEmail : $email),
+            'email'           => $collegeEmail !== '' ? $collegeEmail : $personalEmail,
             'collegeEmail'    => $collegeEmail,
             'personalEmail'   => $personalEmail,
             'phone'           => $phone,
-            'department'      => (string) ($dept['code'] ?? ''),
-            'departmentName'  => (string) ($dept['name'] ?? $dept['code'] ?? ''),
+            'department'      => $aesDeptCode !== '' ? $aesDeptCode : (string) ($dept['code'] ?? ''),
+            'departmentName'  => $aesDeptName !== '' ? $aesDeptName : (string) ($dept['name'] ?? $dept['code'] ?? ''),
             'classBatch'      => $classBatch,
-            'cgpa'            => (float) ($academic['cgpa'] ?? 0) ?: null,
+            'cgpa'            => $cgpa > 0 ? $cgpa : null,
             'marks10th'       => $marks10 > 0 ? $marks10 : null,
             'marks12th'       => $marks12 > 0 ? $marks12 : null,
-            'ugMarks'         => (float) ($academic['ugMarks'] ?? 0) ?: null,
-            'backlogs'        => (int) ($academic['backlogs'] ?? 0),
+            'ugMarks'         => $marks12 > 0 ? $marks12 : ((float) ($academic['ugMarks'] ?? 0) ?: null),
+            'backlogs'        => $backlogs,
             'photoUrl'        => $photoUrl,
             'photoProxyUrl'   => $photoUrl !== ''
                 ? '/backend/api/' . trim($photoRoutePrefix, '/') . '/students/' . rawurlencode($studentId) . '/photo'
@@ -484,16 +488,87 @@ final class OfficerDataService
             $overview['photo'] = ['url' => $photoUrl, 'source' => 'aes'];
         }
 
-        $deptName = trim((string) ($placement['departmentName'] ?? $placement['deptName'] ?? $placement['branch'] ?? ''));
-        if ($deptName !== '' && empty($overview['departmentName'])) {
+        $deptName = trim((string) ($placement['departmentName'] ?? $placement['deptName'] ?? $placement['branch'] ?? $mapped['departmentName'] ?? $mapped['branch'] ?? ''));
+        if ($deptName !== '') {
             $overview['departmentName'] = $deptName;
         }
-        $deptCode = trim((string) ($placement['deptCode'] ?? $placement['department'] ?? ''));
-        if ($deptCode !== '' && empty($overview['department'])) {
+        $deptCode = trim((string) ($placement['deptCode'] ?? $placement['department'] ?? $mapped['department'] ?? ''));
+        if ($deptCode !== '') {
             $overview['department'] = $deptCode;
+        } elseif ($deptName !== '') {
+            $overview['department'] = $deptName;
         }
 
         return $overview;
+    }
+
+    /**
+     * @param array<string, mixed>|null $user
+     * @param array<string, mixed> $personal Stored MariaDB personal JSON (fallback only).
+     * @param array<string, mixed> $placement
+     * @param array<string, mixed> $mapped
+     * @return array{collegeEmail: string, personalEmail: string, phone: string}
+     */
+    private function contactFieldsFromSources(?array $user, array $personal, array $placement, array $mapped): array
+    {
+        $collegeEmail = strtolower(trim((string) ($mapped['collegeEmail'] ?? $placement['collegeEmail'] ?? '')));
+        $personalEmail = trim((string) ($mapped['personalEmail'] ?? $placement['personalEmail'] ?? ''));
+        $phone = trim((string) ($mapped['phone'] ?? $placement['phone'] ?? $placement['stud_mobiles'] ?? ''));
+
+        $mappedEmail = strtolower(trim((string) ($mapped['email'] ?? '')));
+        if ($collegeEmail === '' && $mappedEmail !== '' && $this->isCollegeEmailAddress($mappedEmail)) {
+            $collegeEmail = $mappedEmail;
+        } elseif ($personalEmail === '' && $mappedEmail !== '' && !$this->isCollegeEmailAddress($mappedEmail)) {
+            $personalEmail = $mappedEmail;
+        }
+
+        $userEmail = strtolower(trim((string) ($user['email'] ?? '')));
+        if ($collegeEmail === '' && $userEmail !== '' && $this->isCollegeEmailAddress($userEmail)) {
+            $collegeEmail = $userEmail;
+        }
+        if ($personalEmail === '' && $userEmail !== '' && !$this->isCollegeEmailAddress($userEmail)) {
+            $personalEmail = $userEmail;
+        }
+
+        if ($collegeEmail === '') {
+            $collegeEmail = strtolower(trim((string) ($personal['collegeEmail'] ?? '')));
+        }
+        if ($personalEmail === '') {
+            $personalEmail = trim((string) ($personal['personalEmail'] ?? $personal['email'] ?? ''));
+        }
+        if ($phone === '') {
+            $phone = trim((string) ($personal['phone'] ?? ''));
+        }
+
+        return [
+            'collegeEmail'  => $collegeEmail,
+            'personalEmail' => $personalEmail,
+            'phone'         => $phone,
+        ];
+    }
+
+    /**
+     * @return array{placement: array<string, mixed>, mapped: array<string, mixed>, register: string}
+     */
+    private function trustedAesContextForRegister(string $register): array
+    {
+        $register = strtoupper(trim($register));
+        if ($register === '') {
+            return ['placement' => [], 'mapped' => [], 'register' => ''];
+        }
+
+        $placement = $this->placementProfileForRegister($register);
+        if ($placement === []) {
+            return ['placement' => [], 'mapped' => [], 'register' => $register];
+        }
+
+        $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
+        $aesReg = strtoupper(trim((string) ($mapped['registerNumber'] ?? '')));
+        if ($aesReg !== '' && $aesReg !== $register) {
+            return ['placement' => [], 'mapped' => [], 'register' => $register];
+        }
+
+        return ['placement' => $placement, 'mapped' => $mapped, 'register' => $register];
     }
 
     /**
@@ -639,14 +714,10 @@ final class OfficerDataService
             return $row;
         }
 
-        $placement = $this->placementProfileForRegister($register);
+        $ctx = $this->trustedAesContextForRegister($register);
+        $placement = $ctx['placement'];
+        $mapped = $ctx['mapped'];
         if ($placement === []) {
-            return $row;
-        }
-
-        $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
-        $aesReg = strtoupper(trim((string) ($mapped['registerNumber'] ?? '')));
-        if ($aesReg !== '' && $aesReg !== $register) {
             return $row;
         }
 
@@ -672,43 +743,29 @@ final class OfficerDataService
             $row['academic'] = $academic;
         }
 
-        $phone = trim((string) ($mapped['phone'] ?? ''));
-        if ($phone !== '') {
-            $personal = is_array($row['personal'] ?? null) ? $row['personal'] : (is_array($student['personal'] ?? null) ? $student['personal'] : []);
-            $personal['phone'] = $phone;
+        $personal = is_array($row['personal'] ?? null) ? $row['personal'] : (is_array($student['personal'] ?? null) ? $student['personal'] : []);
+        $contact = $this->contactFieldsFromSources(null, $personal, $placement, $mapped);
+        if ($contact['phone'] !== '') {
+            $personal['phone'] = $contact['phone'];
             $row['personal'] = $personal;
-            $row['phone'] = $phone;
+            $row['phone'] = $contact['phone'];
+        }
+        if ($contact['collegeEmail'] !== '') {
+            $row['collegeEmail'] = $contact['collegeEmail'];
+        }
+        if ($contact['personalEmail'] !== '') {
+            $row['personalEmail'] = $contact['personalEmail'];
         }
 
-        $email = strtolower(trim((string) ($mapped['email'] ?? '')));
-        $collegeFromAes = strtolower(trim((string) ($mapped['collegeEmail'] ?? '')));
-        $personalFromAes = trim((string) ($mapped['personalEmail'] ?? ''));
-        $collegeEmail = '';
-        $personalEmail = '';
-        if ($collegeFromAes !== '' && $this->isCollegeEmailAddress($collegeFromAes)) {
-            $collegeEmail = $collegeFromAes;
-        } elseif ($email !== '' && $this->isCollegeEmailAddress($email)) {
-            $collegeEmail = $email;
-        } elseif ($email !== '' && !$this->isCollegeEmailAddress($email)) {
-            $personalEmail = $email;
-        }
-        if ($personalFromAes !== '') {
-            $personalEmail = $personalFromAes;
-        }
-        if ($collegeEmail !== '') {
-            $row['collegeEmail'] = $collegeEmail;
-        }
-        if ($personalEmail !== '') {
-            $row['personalEmail'] = $personalEmail;
-        }
-
-        $deptName = trim((string) ($placement['departmentName'] ?? $placement['deptName'] ?? $placement['branch'] ?? ''));
+        $deptName = trim((string) ($mapped['departmentName'] ?? $mapped['branch'] ?? $placement['departmentName'] ?? $placement['deptName'] ?? $placement['branch'] ?? ''));
         if ($deptName !== '') {
             $row['departmentName'] = $deptName;
         }
-        $deptCode = trim((string) ($placement['deptCode'] ?? $placement['department'] ?? ''));
+        $deptCode = trim((string) ($mapped['department'] ?? $placement['deptCode'] ?? $placement['department'] ?? ''));
         if ($deptCode !== '') {
             $row['departmentCode'] = $deptCode;
+        } elseif ($deptName !== '') {
+            $row['departmentCode'] = $deptName;
         }
 
         return $row;
@@ -1206,7 +1263,7 @@ final class OfficerDataService
     }
 
     /**
-     * Resolve a student profile by Mongo id or linked user id.
+     * Resolve a student profile by MariaDB id, linked user id, or register number.
      *
      * @return array<string, mixed>|null
      */
@@ -1222,7 +1279,16 @@ final class OfficerDataService
             return $student;
         }
 
-        return $studentModel->findByUserId($ref);
+        $student = $studentModel->findByUserId($ref);
+        if ($student) {
+            return $student;
+        }
+
+        if (preg_match('/^\d{4,8}$/', $ref) === 1) {
+            return $studentModel->findByRegisterNumber($ref);
+        }
+
+        return null;
     }
 
     /**

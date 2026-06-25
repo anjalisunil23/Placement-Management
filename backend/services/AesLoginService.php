@@ -819,7 +819,7 @@ final class AesLoginService
             $personalPatch['personalEmail'] = $personalEmail;
         }
         $phone = trim((string) ($placement['phone'] ?? $mapped['phone'] ?? ''));
-        if ($phone !== '' && trim((string) ($personal['phone'] ?? '')) === '') {
+        if ($phone !== '' && trim((string) ($personal['phone'] ?? '')) !== $phone) {
             $personalPatch['phone'] = $phone;
         }
         if ($personalPatch !== []) {
