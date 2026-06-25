@@ -129,10 +129,10 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/staff-api.js?v=20260630d"></script>
-<script src="js/api.js?v=20260630d"></script>
-<script src="js/charts.js?v=20260630d"></script>
-<script src="js/app.js?v=20260630d"></script>
+<script src="js/staff-api.js?v=20260630e"></script>
+<script src="js/api.js?v=20260630e"></script>
+<script src="js/charts.js?v=20260630e"></script>
+<script src="js/app.js?v=20260630e"></script>
 <script>
 if (!canViewCampusHiring()) {
   toast('You do not have access to this page.', 'warn');
@@ -180,10 +180,6 @@ function updateLiveBadge() {
   const el = document.getElementById('liveDataBadge');
   if (!el) return;
   el.classList.toggle('d-none', !(staffLive || campusLive));
-}
-
-function demoStats() {
-  return campusRecruitmentStats();
 }
 
 function liveHiringView(dept) {
@@ -466,64 +462,11 @@ function renderCompanyRows(companies, emptyMsg) {
 }
 
 function renderForDept(dept) {
-  const isLive = staffLive || campusLive;
-  const view = isLive ? liveHiringView(dept) : null;
-  let totals;
-  let companies;
-  let candidates;
-  let pipeline;
-
-  if (isLive) {
-    totals = view?.totals || {};
-    companies = view?.companies || [];
-    candidates = view?.candidates || [];
-    pipeline = pipelineFromView(view);
-  } else if (!dept) {
-    const stats = demoStats();
-    totals = {
-      companiesHiring: stats.companiesHiring,
-      applicants: stats.applicants,
-      shortlisted: stats.shortlisted,
-      offers: stats.offers,
-      hired: stats.hired,
-    };
-    companies = stats.companies.map(c => ({
-      company: c.company,
-      roles: c.roles,
-      applicants: companyHiringCounts(c.company).applicants || 0,
-      shortlisted: companyHiringCounts(c.company).shortlisted || 0,
-      selected: companyHiringCounts(c.company).selected || 0,
-      status: c.status,
-      statusCls: c.statusCls,
-    }));
-    candidates = PLACEMENT_STUDENTS;
-    pipeline = stats.pipeline;
-  } else {
-    const d = departmentHiringOverview(dept);
-    totals = {
-      companiesHiring: d.companies.length,
-      applicants: d.applicants,
-      shortlisted: d.shortlisted,
-      offers: d.offers,
-      hired: d.hired,
-    };
-    companies = d.companies.map(c => ({
-      company: c.company,
-      roles: [],
-      applicants: c.applicants || 0,
-      shortlisted: c.shortlisted || 0,
-      selected: c.selected || 0,
-      status: 'Active',
-      statusCls: 'info',
-    }));
-    candidates = d.candidates;
-    pipeline = [
-      { label: 'Applicants', value: d.applicants },
-      { label: 'Shortlisted', value: d.shortlisted },
-      { label: 'Offers', value: d.offers },
-      { label: 'Hired', value: d.hired },
-    ];
-  }
+  const view = liveHiringView(dept);
+  const totals = view?.totals || {};
+  const companies = view?.companies || [];
+  const candidates = view?.candidates || [];
+  const pipeline = pipelineFromView(view);
 
   setStat('statCompanies', totals.companiesHiring ?? 0);
   setStat('statApplicants', totals.applicants ?? 0);
@@ -541,7 +484,7 @@ function renderForDept(dept) {
   const list = candidates.filter(s => candidateMatchesFilter(s.status, status));
   const emptyCandidatesMsg = staffLive
     ? 'No students from your department are in the hiring pipeline yet.'
-    : (isLive ? 'No candidates match this filter.' : 'Sign in to view live hiring pipeline data.');
+    : (campusLive ? 'No candidates match this filter.' : 'Sign in to view live hiring data.');
   document.getElementById('candidateRows').innerHTML = list.length
     ? list.map(s => `<tr>
         <td><strong>${escHtml(s.name)}</strong></td>
