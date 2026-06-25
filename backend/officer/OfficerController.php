@@ -195,7 +195,11 @@ final class OfficerController
         } else {
 
             $filter = PlacementOfficerContext::driveCollectionFilter($ctx);
-            $drives = $filter === null ? [] : $driveModel->findAll($filter, 100);
+            $candidates = $driveModel->findAll($filter, 100);
+            $drives = array_values(array_filter(
+                $candidates,
+                static fn (array $drive): bool => PlacementOfficerContext::driveMatchesDepartment($drive, $ctx)
+            ));
 
         }
 

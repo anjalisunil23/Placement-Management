@@ -549,13 +549,12 @@ final class OfficerDataService
         if ($ctx['isAdmin']) {
             $activeDrives = $driveModel->count(['status' => ['$ne' => 'closed']]);
         } else {
-            $deptOid = Security::toObjectId($ctx['departmentId']);
-            $deptCode = $ctx['department']['code'] ?? '';
-            $or = [['departmentId' => $deptOid], ['branches' => []]];
-            if ($deptCode !== '') {
-                $or[] = ['branches' => $deptCode];
-            }
-            $activeDrives = $driveModel->count(['$or' => $or, 'status' => ['$ne' => 'closed']]);
+            $filter = PlacementOfficerContext::driveCollectionFilter($ctx);
+            $candidates = $driveModel->findAll(array_merge($filter, ['status' => ['$ne' => 'closed']]), 200);
+            $activeDrives = count(array_filter(
+                $candidates,
+                static fn (array $drive): bool => PlacementOfficerContext::driveMatchesDepartment($drive, $ctx)
+            ));
         }
 
         return [

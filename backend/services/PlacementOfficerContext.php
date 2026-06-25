@@ -129,6 +129,32 @@ final class PlacementOfficerContext
 
     /**
      * @param array<string, mixed> $drive
+     * @return list<string>
+     */
+    public static function driveBranchCodes(array $drive): array
+    {
+        $branches = $drive['branches'] ?? [];
+        if (!is_array($branches)) {
+            if (is_string($branches) && trim($branches) !== '') {
+                $branches = array_map('trim', explode(',', $branches));
+            } else {
+                $branches = [];
+            }
+        }
+
+        $codes = [];
+        foreach ($branches as $branch) {
+            $raw = strtoupper(trim((string) $branch));
+            if ($raw !== '') {
+                $codes[] = $raw;
+            }
+        }
+
+        return array_values(array_unique($codes));
+    }
+
+    /**
+     * @param array<string, mixed> $drive
      */
     public static function driveMatchesDepartment(array $drive, array $ctx): bool
     {
@@ -143,19 +169,31 @@ final class PlacementOfficerContext
             return true;
         }
 
-        $branches = $drive['branches'] ?? [];
-        if (!is_array($branches)) {
-            $branches = [];
-        }
-        $normalized = array_values(array_filter(array_map(
-            static fn ($b) => strtoupper(trim((string) $b)),
-            $branches
-        )));
-        if ($normalized === []) {
-            return false;
+        $branchCodes = self::driveBranchCodes($drive);
+        if ($branchCodes === []) {
+            return true;
         }
 
-        return $deptCode !== '' && in_array($deptCode, $normalized, true);
+        if ($deptCode !== '' && in_array($deptCode, $branchCodes, true)) {
+            return true;
+        }
+
+        $deptModel = new DepartmentModel();
+        foreach ($branchCodes as $code) {
+            $row = $deptModel->findByCode($code);
+            if ($row === null) {
+                continue;
+            }
+            $rowCode = strtoupper(trim((string) ($row['code'] ?? '')));
+            if ($deptCode !== '' && $rowCode === $deptCode) {
+                return true;
+            }
+            if ((string) ($row['_id'] ?? '') === $deptOid) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -171,7 +209,10 @@ final class PlacementOfficerContext
 
         $deptOid = Security::toObjectId($ctx['departmentId'] ?? '');
         $deptCode = strtoupper(trim((string) ($ctx['department']['code'] ?? '')));
-        $or = [];
+        $or = [
+            ['branches' => []],
+            ['branches' => ['$size' => 0]],
+        ];
         if ($deptOid !== null) {
             $or[] = ['departmentId' => $deptOid];
         }
@@ -179,7 +220,7 @@ final class PlacementOfficerContext
             $or[] = ['branches' => $deptCode];
         }
 
-        return $or !== [] ? ['$or' => $or] : null;
+        return $or;
     }
 
     /**

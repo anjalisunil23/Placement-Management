@@ -81,13 +81,12 @@ final class StaffDataService
             'profile'      => $ctx['profile'] ?? null,
         ];
         $filter = PlacementOfficerContext::driveCollectionFilter($officerCtx);
-        if ($filter === null) {
-            return [];
-        }
+        $candidates = (new DriveModel())->findAll($filter, 100);
 
-        return DocumentHelper::serializeMany(
-            (new DriveModel())->findAll($filter, 100)
-        );
+        return array_values(array_filter(
+            DocumentHelper::serializeMany($candidates),
+            static fn (array $drive): bool => PlacementOfficerContext::driveMatchesDepartment($drive, $officerCtx)
+        ));
     }
 
     /**
