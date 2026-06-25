@@ -236,7 +236,11 @@ final class StaffService
                 'departmentName'  => $dept['name'] ?? '',
                 'classBatch'      => (string) ($student['classBatch'] ?? $student['personal']['batch'] ?? ''),
                 'cgpa'            => (float) ($student['academic']['cgpa'] ?? 0),
-                'placementStatus' => !empty($student['placed']) ? 'placed' : 'seeking',
+                'placementStatus' => !empty($student['placed'])
+                    ? 'placed'
+                    : ((is_array($student['selfPlacement'] ?? null) && ($student['selfPlacement']['status'] ?? '') === 'pending')
+                        ? 'pending_placement'
+                        : 'seeking'),
                 'status'          => $user['status'] ?? 'active',
                 'blacklisted'     => false,
                 'blocked'         => ($user['status'] ?? '') === 'blocked',
@@ -289,28 +293,13 @@ final class StaffService
      */
     public function studentPipeline(string $studentId): array
     {
-        $apps = (new ApplicationModel())->findByStudent($studentId);
-        $companyModel = new CompanyModel();
-        $jobModel = new JobModel();
-        $driveModel = new DriveModel();
-        $rows = [];
-
-        foreach ($apps as $app) {
-            $company = $companyModel->findById((string) ($app['companyId'] ?? ''));
-            $job = !empty($app['jobId']) ? $jobModel->findById((string) $app['jobId']) : null;
-            $drive = !empty($app['driveId']) ? $driveModel->findById((string) $app['driveId']) : null;
-            $status = (string) ($app['status'] ?? 'applied');
-            $rows[] = [
-                'company'        => $company['companyName'] ?? '',
-                'role'           => $job['title'] ?? $drive['title'] ?? '',
-                'stage'          => $status,
-                'status'         => $status,
-                'appliedAt'      => DocumentHelper::serialize($app)['createdAt'] ?? '',
-                'registerNumber' => '',
-            ];
+        $service = new OfficerDataService();
+        $student = $service->resolveStudentRef($studentId);
+        if (!$student) {
+            return [];
         }
 
-        return $rows;
+        return $service->buildStudentPipeline($student);
     }
 
     /**

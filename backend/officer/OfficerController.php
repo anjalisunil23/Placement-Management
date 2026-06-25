@@ -393,6 +393,13 @@ final class OfficerController
         Response::success((new OfficerDataService())->listStudents($scope['ctx'], $query !== '' ? $query : null));
     }
 
+    /** GET /api/officer/students/{id}/pipeline */
+    public function studentPipeline(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->studentPipelineForScope($studentId, $scope['ctx']));
+    }
+
     /** GET /api/officer/applications */
     public function listApplications(): void
     {

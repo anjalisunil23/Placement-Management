@@ -8,6 +8,10 @@ const OfficerApi = {
     const u = row.user || {};
     const dept = row.department || {};
     const chances = row.placementChances || {};
+    const selfPlacement = row.selfPlacement && typeof row.selfPlacement === 'object' ? row.selfPlacement : null;
+    let placementStatus = 'registered';
+    if (row.placed) placementStatus = 'placed';
+    else if (selfPlacement?.status === 'pending') placementStatus = 'pending_placement';
     return {
       id: OfficerApi.id(u) || OfficerApi.id(row),
       studentId: OfficerApi.id(row),
@@ -21,7 +25,9 @@ const OfficerApi = {
       cgpa: row.academic?.cgpa ?? null,
       status: u.approved ? 'approved' : 'pending',
       blocked: u.status === 'blocked',
-      placementStatus: row.placed ? 'placed' : 'registered',
+      placed: !!row.placed,
+      selfPlacement,
+      placementStatus,
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
       resumeStatus: row.resume?.verified ? 'approved' : (row.resume?.path ? 'pending' : 'pending'),
@@ -132,6 +138,12 @@ const OfficerApi = {
     const res = await api('/officer/students' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => OfficerApi.mapStudentRow(s));
+  },
+
+  async fetchStudentPipeline(studentId) {
+    const res = await api(`/officer/students/${encodeURIComponent(studentId)}/pipeline`);
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data;
   },
 
   async fetchPendingStudents() {
