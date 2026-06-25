@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Hiring Overview ù AJCE Placements</title>
+<title>Hiring Overview | AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -25,7 +25,7 @@
           <option value="">All departments</option>
         </select>
         <span class="badge-soft info" id="deptBadge">Campus</span>
-        <span class="small text-muted-2" id="deptOfficer">?</span>
+        <span class="small text-muted-2" id="deptOfficer"></span>
       </div>
     </div>
     <div class="small text-muted-2">Staff and placement officers see their department automatically.</div>
@@ -129,10 +129,10 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/staff-api.js?v=20260622d"></script>
-<script src="js/api.js?v=20260622d"></script>
-<script src="js/charts.js?v=20260622d"></script>
-<script src="js/app.js?v=20260622d"></script>
+<script src="js/staff-api.js?v=20260629c"></script>
+<script src="js/api.js?v=20260629c"></script>
+<script src="js/charts.js?v=20260629c"></script>
+<script src="js/app.js?v=20260629c"></script>
 <script>
 if (!canViewCampusHiring()) {
   toast('You do not have access to this page.', 'warn');
@@ -156,7 +156,7 @@ function recruitingViewForDept(data, deptCode) {
   (data.activeCompanies || []).forEach(c => {
     companyMap.set(c.company, {
       company: c.company,
-      roles: c.openRoles ? [`${c.openRoles} open role${c.openRoles === 1 ? '' : 's'}`] : ['ù'],
+      roles: c.openRoles ? [`${c.openRoles} open role${c.openRoles === 1 ? '' : 's'}`] : [],
       applicants: 0,
       shortlisted: 0,
       selected: 0,
@@ -167,7 +167,7 @@ function recruitingViewForDept(data, deptCode) {
   applicants.forEach(a => {
     const key = a.company || 'Unknown';
     if (!companyMap.has(key)) {
-      companyMap.set(key, { company: key, roles: ['ù'], applicants: 0, shortlisted: 0, selected: 0, status: 'Active', statusCls: 'info' });
+      companyMap.set(key, { company: key, roles: [], applicants: 0, shortlisted: 0, selected: 0, status: 'Active', statusCls: 'info' });
     }
     const row = companyMap.get(key);
     row.applicants++;
@@ -195,16 +195,37 @@ function recruitingViewForDept(data, deptCode) {
       name: a.name,
       roll: a.roll,
       dept: a.dept,
-      company: a.company || 'ù',
+      company: a.company || '-',
       role: a.role,
       status: a.status,
     })),
   };
 }
 
-const user = Auth.user() || demoUserFor(Auth.role());
-const role = Auth.role();
+function currentRole() { return Auth.role(); }
+function currentUser() { return Auth.user() || demoUserFor(Auth.role()); }
 const deptSelect = document.getElementById('deptSelect');
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function formatRoles(roles) {
+  const list = (roles || []).map(r => String(r || '').trim()).filter(r => r && r !== '?');
+  return list.length ? list.join(', ') : '-';
+}
+
+function configurePageForRole(role) {
+  const title = document.querySelector('.page-title');
+  const sub = document.querySelector('.page-sub');
+  if (role === 'staff') {
+    if (title) title.textContent = 'Department Hiring Overview';
+    if (sub) sub.textContent = 'Live snapshot of companies hiring your department students, pipeline stages, and recent activity.';
+  } else if (role === 'placement_officer') {
+    if (title) title.textContent = 'Department Hiring Overview';
+    if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.';
+  }
+}
 
 function populateDeptSelect() {
   const escLabel = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -218,30 +239,63 @@ function populateDeptSelect() {
 }
 
 function selectedDept() {
+  const role = currentRole();
   if (role === 'staff' || role === 'placement_officer') return viewerDepartment();
   return deptSelect.value || '';
 }
 
 function setDeptUI(dept) {
+  const role = currentRole();
+  const user = currentUser();
   const badge = document.getElementById('deptBadge');
+  const officerEl = document.getElementById('deptOfficer');
+  deptSelect.style.display = (role === 'admin') ? '' : 'none';
+
+  if (role === 'staff') {
+    const deptCode = dept || viewerDepartment();
+    const label = deptCode
+      ? departmentDisplayName(deptCode)
+      : (user.departmentName || user.branch || user.programme || 'Your department');
+    badge.textContent = label;
+    badge.className = 'badge-soft primary';
+    officerEl.textContent = 'Staff department view';
+    return;
+  }
+
+  if (role === 'placement_officer') {
+    const deptCode = dept || viewerDepartment();
+    const label = deptCode
+      ? departmentDisplayName(deptCode)
+      : (user.departmentName || user.branch || user.programme || 'Your department');
+    badge.textContent = label;
+    badge.className = 'badge-soft primary';
+    const canon = departmentCanonicalCode(deptCode);
+    const officer = DeptPlacementOfficers.officerForDept(canon) || user;
+    const name = officer?.name || user?.name || '';
+    const email = officer?.email || user?.email || '';
+    officerEl.innerHTML = name
+      ? `Placement officer - <strong>${escHtml(name)}</strong>${email ? ` <span class="text-muted-2 small">(${escHtml(email)})</span>` : ''}`
+      : 'Placement officer view';
+    return;
+  }
+
   if (!dept) {
     badge.textContent = 'Campus';
     badge.className = 'badge-soft info';
+    officerEl.textContent = 'Campus-wide, all departments';
   } else {
     badge.textContent = departmentDisplayName(dept);
     badge.className = 'badge-soft primary';
+    const canon = departmentCanonicalCode(dept);
+    const officer = DeptPlacementOfficers.officerForDept(canon) || DeptPlacementOfficers.officerForDept(dept);
+    officerEl.innerHTML = officer
+      ? `Placement officer - <strong>${escHtml(officer.name || officer.email)}</strong>${officer.email ? ` <span class="text-muted-2 small">(${escHtml(officer.email)})</span>` : ''}`
+      : 'No placement officer assigned for this department';
   }
-  const canon = departmentCanonicalCode(dept);
-  const officer = dept
-    ? (DeptPlacementOfficers.officerForDept(canon) || DeptPlacementOfficers.officerForDept(dept))
-    : null;
-  document.getElementById('deptOfficer').innerHTML = officer
-    ? `Placement officer: <strong>${officer.name || officer.email}</strong> <span class="text-muted-2 small">(${officer.email || '?'})</span>`
-    : (dept ? 'Placement officer: ?' : 'Placement officer: ?');
-  deptSelect.style.display = (role === 'admin') ? '' : 'none';
 }
 
 function renderForDept(dept) {
+  const role = currentRole();
   const apiDept = (role === 'staff' && apiHiringData) ? apiHiringData : null;
   const recruitingDept = campusRecruitingData ? recruitingViewForDept(campusRecruitingData, dept) : null;
   const liveDept = apiDept || recruitingDept;
@@ -283,7 +337,7 @@ function renderForDept(dept) {
       document.getElementById('companyRows').innerHTML = (liveDept.companies || []).length
         ? liveDept.companies.map(c => `<tr>
             <td><strong>${c.company}</strong></td>
-            <td>${(c.roles || ['ù']).join(', ')}</td>
+            <td>${formatRoles(c.roles)}</td>
             <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
             <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
             <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
@@ -308,7 +362,7 @@ function renderForDept(dept) {
     document.getElementById('companyRows').innerHTML = (liveDept.companies || []).length
       ? liveDept.companies.map(c => `<tr>
           <td><strong>${c.company}</strong></td>
-          <td>${(c.roles || ['ù']).join(', ')}</td>
+          <td>${formatRoles(c.roles)}</td>
           <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
           <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
           <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
@@ -320,7 +374,7 @@ function renderForDept(dept) {
     document.getElementById('companyRows').innerHTML = (apiDept.companies || []).length
       ? apiDept.companies.map(c => `<tr>
           <td><strong>${c.company}</strong></td>
-          <td><span class="text-muted-2 small">?</span></td>
+          <td>${formatRoles(c.roles)}</td>
           <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
           <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
           <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
@@ -333,7 +387,7 @@ function renderForDept(dept) {
     document.getElementById('companyRows').innerHTML = d.companies.length
       ? d.companies.map(c => `<tr>
           <td><strong>${c.company}</strong></td>
-          <td><span class="text-muted-2 small">?</span></td>
+          <td>${formatRoles(c.roles)}</td>
           <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
           <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
           <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
@@ -376,17 +430,23 @@ setStat('statHired', stats.hired);
 async function initHiringOverview() {
   await DepartmentStore.fetch();
   populateDeptSelect();
-  if (Auth.hasRealAuth() && role === 'staff') {
+  if (Auth.hasRealAuth()) {
     await Auth.ensureSession();
-    await Auth.enrichFromProfile();
-    const data = await StaffApi.fetchHiringOverview();
-    if (data) apiHiringData = data;
+    const role = currentRole();
+    if (role === 'staff' || role === 'placement_officer') {
+      await Auth.enrichFromProfile();
+    }
+    if (role === 'staff') {
+      const data = await StaffApi.fetchHiringOverview();
+      if (data) apiHiringData = data;
+    }
+    if (role === 'admin' || role === 'placement_officer') {
+      const data = await RecruitingStore.fetch();
+      if (data) campusRecruitingData = data;
+    }
   }
-  if (Auth.hasRealAuth() && (role === 'admin' || role === 'placement_officer')) {
-    await Auth.ensureSession();
-    const data = await RecruitingStore.fetch();
-    if (data) campusRecruitingData = data;
-  }
+  const role = currentRole();
+  configurePageForRole(role);
   animateCounters(document);
   setDeptUI(selectedDept());
   renderForDept(selectedDept());
