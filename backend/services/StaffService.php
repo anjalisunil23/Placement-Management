@@ -170,28 +170,33 @@ final class StaffService
 
         $candidates = [];
         if ($departmentId !== null) {
-            $students = $studentModel->findAll(['departmentId' => Security::toObjectId($departmentId)], 200);
+            $officerData = new OfficerDataService();
+            $students = $studentModel->findAll(['departmentId' => Security::toObjectId($departmentId)], 500);
             foreach ($students as $student) {
-                $user = $userModel->findById((string) $student['userId']);
-                $dept = $deptModel->findById((string) $student['departmentId']);
+                $user = $userModel->findById((string) ($student['userId'] ?? ''));
+                $dept = $deptModel->findById((string) ($student['departmentId'] ?? ''));
+                $row = $officerData->enrichStudentListRow([], $student, $user);
                 $apps = $appModel->findByStudent((string) $student['_id']);
                 $latest = $apps[0] ?? null;
                 $companyName = '';
-                $role = '';
+                $roleTitle = '';
                 if ($latest) {
                     $co = $companyModel->findById((string) ($latest['companyId'] ?? ''));
-                    $companyName = $co['companyName'] ?? '';
+                    $companyName = is_array($co) ? (string) ($co['companyName'] ?? '') : '';
                     $job = !empty($latest['jobId']) ? (new JobModel())->findById((string) $latest['jobId']) : null;
                     $drive = !empty($latest['driveId']) ? (new DriveModel())->findById((string) $latest['driveId']) : null;
-                    $role = $job['title'] ?? $drive['title'] ?? '';
+                    $roleTitle = trim((string) ($job['title'] ?? $drive['title'] ?? $drive['role'] ?? ''));
                 }
+                $displayName = trim((string) ($row['displayName'] ?? ($user['name'] ?? '')));
+                $deptCode = trim((string) ($row['departmentCode'] ?? $dept['code'] ?? ''));
+                $deptName = trim((string) ($row['departmentName'] ?? $dept['name'] ?? ''));
                 $candidates[] = [
-                    'name'    => $user['name'] ?? 'Student',
-                    'roll'    => $student['registerNumber'] ?? '',
-                    'dept'    => $dept['code'] ?? '',
-                    'company' => $companyName,
-                    'role'    => $role,
-                    'status'  => !empty($student['placed']) ? 'placed' : ($latest['status'] ?? 'applied'),
+                    'name'    => $displayName !== '' ? $displayName : 'Student',
+                    'roll'    => (string) ($student['registerNumber'] ?? ''),
+                    'dept'    => $deptCode !== '' ? $deptCode : $deptName,
+                    'company' => $companyName !== '' ? $companyName : '—',
+                    'role'    => $roleTitle !== '' ? $roleTitle : '—',
+                    'status'  => $this->candidatePipelineStatus($student, $latest),
                 ];
             }
         }
@@ -214,6 +219,29 @@ final class StaffService
             'companies'  => $companies,
             'candidates' => $candidates,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed>|null $latestApp
+     */
+    private function candidatePipelineStatus(array $student, ?array $latestApp): string
+    {
+        if (!empty($student['placed'])) {
+            return 'placed';
+        }
+        if ($latestApp === null) {
+            return 'applied';
+        }
+        $status = (string) ($latestApp['status'] ?? 'applied');
+        if ($status === 'selected') {
+            return 'selected';
+        }
+        if (in_array($status, ['shortlisted', 'company_review', 'officer_approved'], true)) {
+            return 'shortlisted';
+        }
+
+        return 'applied';
     }
 
     /**

@@ -497,13 +497,7 @@ function renderOverviewList() {
   const list = filteredOverviewStudents();
   document.getElementById('studentCount').textContent = list.length;
   if (!list.length) {
-    const q = document.getElementById('searchStudent').value.trim();
-    const msg = useLiveOverviewApi && role === 'staff' && !q
-      ? 'No students in your department yet.'
-      : (useLiveOverviewApi && !q
-        ? 'No students found.'
-        : 'No students match your search.');
-    document.getElementById('studentList').innerHTML = `<div class="p-3 small text-muted-2">${esc(msg)}</div>`;
+    document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">No students match your search.</div>';
     return;
   }
   const recentSet = new Set(loadRecentStudentRegs());
@@ -974,13 +968,13 @@ async function initOverview() {
       overviewStudentsAll = rows;
       overviewStudents = rows;
     } else if (useStaffApi) {
-      overviewStudentsAll = [];
-      overviewStudents = [];
+      useStaffApi = false;
+      useLiveOverviewApi = false;
       toast('Could not load students from the server. Refresh or sign in again.', 'warn');
     }
   }
 
-  if (!overviewStudentsAll.length && !(useLiveOverviewApi && Auth.hasRealAuth() && !Auth.isDemo())) {
+  if (!overviewStudentsAll.length && !(role === 'staff' && Auth.hasRealAuth() && !Auth.isDemo())) {
     overviewStudentsAll = UserRegistry.byRole('student');
     overviewStudents = overviewStudentsAll;
   }

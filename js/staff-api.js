@@ -25,7 +25,6 @@ const StaffApi = {
 
   mapStudentRow(row) {
     if (typeof OfficerApi !== 'undefined') return OfficerApi.mapStudentRow(row);
-    if (typeof AdminApi !== 'undefined') return AdminApi.mapStudentRow(row);
     const deptObj = row.department && typeof row.department === 'object' ? row.department : null;
     const deptCode = row.departmentCode
       || deptObj?.code

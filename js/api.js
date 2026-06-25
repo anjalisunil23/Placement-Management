@@ -2145,21 +2145,9 @@ function companyHiringCounts(companyName) {
 
 function viewerDepartment() {
   const role = Auth.role();
-  const u = Auth.user() || {};
-  if (role !== 'staff' && role !== 'placement_officer') return '';
-  const code = String(u.department || u.departmentCode || '').trim();
-  if (code) return code;
-  const name = String(u.departmentName || u.branch || u.programme || '').trim();
-  if (name) {
-    const rec = resolveDepartmentRecord(name);
-    if (rec?.code) return String(rec.code).trim();
-    return name;
-  }
-  const deptId = String(u.departmentId || '').trim();
-  if (deptId && typeof DepartmentStore !== 'undefined') {
-    const rec = DepartmentStore.all().find(d => String(d.id || '') === deptId);
-    if (rec?.code) return String(rec.code).trim();
-  }
+  const u = Auth.user();
+  if (role === 'staff') return u?.department || '';
+  if (role === 'placement_officer') return u?.department || '';
   return '';
 }
 
