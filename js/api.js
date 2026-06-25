@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260628e';
+const APP_SCRIPT_VERSION = '20260628g';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -673,6 +673,15 @@ const Auth = {
     this.applySessionUser(res.data);
     this._sessionReady = true;
     return true;
+  },
+  async refreshSession() {
+    this._sessionReady = false;
+    let ok = await this.bootstrap();
+    if (!ok) {
+      await new Promise((r) => setTimeout(r, 300));
+      ok = await this.bootstrap();
+    }
+    return ok;
   },
   async ensureSession() {
     if (this._sessionReady === true) return true;
@@ -3658,7 +3667,7 @@ async function dashboardStats() {
 }
 
 function stageBadge(stage) {
-  const map = { applied:['muted','Applied'], resume_verification:['warning','Resume verify'], approval:['info','Approval'], company_selection:['primary','Company'], rejected:['danger','Rejected'], shortlisted:['success','Shortlisted'] };
+  const map = { applied:['muted','Applied'], resume_verification:['warning','Resume verify'], approval:['info','Approval'], company_selection:['primary','Company'], rejected:['danger','Rejected'], shortlisted:['success','Shortlisted'], self_reported:['info','Self reported'], self_reported_placement:['info','Self reported'], placement:['muted','Placement'] };
   const [cls, label] = map[stage] || ['muted', stage];
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }
@@ -3776,6 +3785,33 @@ function userStatusBadge(status, blocked) {
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }
 
+function authReentryUrl(nextPage, roleHint) {
+  let role = roleHint || '';
+  if (!role) {
+    try { role = Auth.role() || JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch { role = ''; }
+  }
+  const page = nextPage || document.body?.dataset?.page || 'dashboard.html';
+  const hash = (typeof location !== 'undefined' && location.hash && !String(page).includes('#')) ? location.hash : '';
+  const next = String(page).includes('#') ? page : (page + hash);
+  const aesRoles = ['student', 'staff', 'placement_officer', 'alumni'];
+  if (aesRoles.includes(role)) {
+    try {
+      document.cookie = `ph_auth_next=${encodeURIComponent(next)}; path=/; max-age=600; SameSite=Lax`;
+    } catch { /* ignore */ }
+    return `/public-stats.html?next=${encodeURIComponent(next)}`;
+  }
+  return `public-stats.html?next=${encodeURIComponent(next)}`;
+}
+
+function rebuildFormData(entries) {
+  const fd = new FormData();
+  for (const [key, value] of entries) {
+    if (value instanceof File) fd.append(key, value, value.name);
+    else fd.append(key, value);
+  }
+  return fd;
+}
+
 /* Generic fetch with session cookies; optional 401 redirect for expired sessions */
 async function apiFetch(path, opts = {}) {
   if (opts.noRedirectOn401 && opts.skipAuthRedirect === undefined) {
@@ -3787,8 +3823,16 @@ async function apiFetch(path, opts = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
   let body = opts.body;
-  if (body instanceof FormData) {
-    // Let the browser set multipart boundary; a preset Content-Type breaks uploads (415).
+  if (body instanceof FormData && !opts._formEntries) {
+    const entries = [];
+    for (const [key, value] of body.entries()) entries.push([key, value]);
+    opts = { ...opts, _formEntries: entries };
+  }
+  if (opts._formEntries) {
+    body = rebuildFormData(opts._formEntries);
+    delete headers['Content-Type'];
+    delete headers['content-type'];
+  } else if (body instanceof FormData) {
     delete headers['Content-Type'];
     delete headers['content-type'];
   } else if (body != null && typeof body !== 'string') {
@@ -3804,8 +3848,18 @@ async function apiFetch(path, opts = {}) {
       body,
       credentials: 'include',
     });
+    const text = await res.text();
+    let json = null;
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      json = null;
+    }
+
     if (res.status === 401) {
+      const serverMsg = (json && json.message) ? String(json.message) : '';
       if (!opts.skipAuthRetry && !opts._authRetry) {
+        Auth._sessionReady = false;
         const restored = await Auth.bootstrap();
         if (restored) {
           return apiFetch(path, { ...opts, _authRetry: true });
@@ -3815,23 +3869,20 @@ async function apiFetch(path, opts = {}) {
         const page = document.body?.dataset?.page;
         const next = page && page !== 'public-stats.html' && page !== 'login.html' ? `?next=${encodeURIComponent(page)}` : '';
         Auth.clear();
-        window.location.href = `public-stats.html${next}`;
-        return { success: false, message: 'Session expired', data: null, status: 401 };
+        window.location.href = authReentryUrl(page || 'dashboard.html');
+        return { success: false, message: serverMsg || 'Session expired', data: null, status: 401 };
       }
       return {
         success: false,
-        message: Auth.isDemo()
+        message: serverMsg || (Auth.isDemo()
           ? 'Sign in with your college AES account on the public stats page to save changes. Preview mode is read-only.'
-          : 'Session expired. Please sign in again.',
+          : 'Session expired. Please sign in again.'),
         data: null,
         status: 401,
       };
     }
-    const text = await res.text();
-    let json;
-    try {
-      json = text ? JSON.parse(text) : {};
-    } catch {
+
+    if (json === null) {
       const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       const detail = plain ? plain.slice(0, 160) : 'Empty server response';
       return {

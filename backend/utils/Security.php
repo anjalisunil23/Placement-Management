@@ -37,6 +37,14 @@ final class Security
         }
     }
 
+    public static function touchSession(): void
+    {
+        self::startSession();
+        if (isset($_SESSION['user']) && is_array($_SESSION['user'])) {
+            $_SESSION['last_activity'] = time();
+        }
+    }
+
     /**
      * @param array<string, mixed> $user
      * @param array<string, mixed>|null $aesProfile

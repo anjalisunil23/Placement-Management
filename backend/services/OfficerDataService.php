@@ -759,4 +759,135 @@ final class OfficerDataService
             Response::forbidden('This student does not belong to your department.');
         }
     }
+
+    /**
+     * Resolve a student profile by Mongo id or linked user id.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function resolveStudentRef(string $ref): ?array
+    {
+        $ref = trim($ref);
+        if ($ref === '') {
+            return null;
+        }
+        $studentModel = new StudentModel();
+        $student = $studentModel->findById($ref);
+        if ($student) {
+            return $student;
+        }
+
+        return $studentModel->findByUserId($ref);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function studentPipelineForScope(string $studentRef, array $ctx): array
+    {
+        $student = $this->resolveStudentRef($studentRef);
+        if (!$student) {
+            Response::notFound('Student not found.');
+        }
+        PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $ctx);
+
+        return $this->buildStudentPipeline($student);
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @return array<int, array<string, mixed>>
+     */
+    public function buildStudentPipeline(array $student): array
+    {
+        $studentId = (string) ($student['_id'] ?? '');
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        $placed = ($student['placed'] ?? false) === true;
+
+        $apps = (new ApplicationModel())->findByStudent($studentId);
+        $pipeline = [];
+        foreach ($this->enrichApplications($apps) as $row) {
+            $pipeline[] = [
+                'id'             => (string) ($row['id'] ?? $row['_id'] ?? ''),
+                'company'        => (string) ($row['company'] ?? ''),
+                'role'           => (string) ($row['role'] ?? ''),
+                'stage'          => (string) ($row['stage'] ?? ''),
+                'status'         => (string) ($row['status'] ?? ''),
+                'appliedAt'      => (string) ($row['appliedAt'] ?? $row['createdAt'] ?? ''),
+                'registerNumber' => (string) ($row['registerNumber'] ?? $register),
+                'source'         => 'campus',
+            ];
+        }
+
+        $self = $student['selfPlacement'] ?? null;
+        if (is_array($self) && (string) ($self['companyName'] ?? '') !== '') {
+            $pipeline[] = [
+                'id'             => 'self-placement',
+                'company'        => (string) $self['companyName'],
+                'role'           => (string) ($self['role'] ?? ''),
+                'stage'          => 'self_reported',
+                'status'         => $placed ? 'placed' : (string) ($self['status'] ?? 'pending'),
+                'appliedAt'      => $this->pipelineTimestamp($self['submittedAt'] ?? null),
+                'registerNumber' => (string) ($student['registerNumber'] ?? ''),
+                'source'         => 'self_placement',
+                'companyAddress' => (string) ($self['companyAddress'] ?? ''),
+            ];
+        }
+
+        $history = is_array($student['placementHistory'] ?? null) ? $student['placementHistory'] : [];
+        foreach ($history as $idx => $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            if (is_array($self) && ($entry['type'] ?? '') === 'self_reported') {
+                continue;
+            }
+            $company = (string) ($entry['company'] ?? '');
+            if ($company === '') {
+                continue;
+            }
+            $pipeline[] = [
+                'id'             => 'history-' . $idx,
+                'company'        => $company,
+                'role'           => (string) ($entry['role'] ?? ''),
+                'stage'          => (string) ($entry['type'] ?? 'placement'),
+                'status'         => (string) ($entry['status'] ?? ($placed ? 'placed' : 'pending')),
+                'appliedAt'      => $this->pipelineTimestamp($entry['date'] ?? null),
+                'registerNumber' => (string) ($student['registerNumber'] ?? ''),
+                'source'         => 'history',
+            ];
+        }
+
+        $resultFilter = $register !== '' ? ['registerNumber' => $register] : [];
+        foreach ((new RecruitmentResultModel())->list($resultFilter, 50) as $result) {
+            $status = (string) ($result['status'] ?? 'selected');
+            $serialized = DocumentHelper::serialize($result) ?? [];
+            $pipeline[] = [
+                'id'             => 'result-' . (string) ($result['_id'] ?? ''),
+                'company'        => (string) ($result['company'] ?? ''),
+                'role'           => (string) ($result['role'] ?? ''),
+                'stage'          => 'company_selection',
+                'status'         => $status === 'rejected' ? 'rejected' : 'selected',
+                'appliedAt'      => (string) ($serialized['updatedAt'] ?? $serialized['createdAt'] ?? ''),
+                'registerNumber' => (string) ($result['registerNumber'] ?? $register),
+                'source'         => 'recruitment_result',
+            ];
+        }
+
+        return $pipeline;
+    }
+
+    private function pipelineTimestamp(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+        if (is_array($value)) {
+            $serialized = DocumentHelper::serialize(['at' => $value]);
+
+            return (string) ($serialized['at'] ?? '');
+        }
+
+        return (string) $value;
+    }
 }

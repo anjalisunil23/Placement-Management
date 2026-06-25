@@ -567,11 +567,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (!hasSession) {
     if (Auth.isDemo()) {
       // preview mode — read-only dashboards only
-    } else if (Auth.hasSession() && Auth.user()?.role) {
-      Auth._sessionReady = true;
     } else {
+      const roleHint = Auth.role() || Auth.user()?.role || '';
       Auth.clear();
-      window.location.href = `public-stats.html?next=${encodeURIComponent(active)}`;
+      window.location.href = authReentryUrl(active, roleHint);
       return;
     }
   }

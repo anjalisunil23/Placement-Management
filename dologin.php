@@ -73,6 +73,13 @@ try {
     }
 
     $next = ltrim($target, '/');
+    if (!empty($_COOKIE['ph_auth_next'])) {
+        $cookieNext = trim((string) $_COOKIE['ph_auth_next']);
+        setcookie('ph_auth_next', '', ['expires' => time() - 3600, 'path' => '/', 'samesite' => 'Lax']);
+        if ($cookieNext !== '' && !str_contains(strtolower($cookieNext), 'login.html')) {
+            $next = ltrim($cookieNext, '/');
+        }
+    }
 
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();

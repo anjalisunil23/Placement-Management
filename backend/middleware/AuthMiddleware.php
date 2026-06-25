@@ -38,6 +38,7 @@ final class AuthMiddleware
 
     $session = Security::getSessionUser();
     if ($session !== null) {
+      Security::touchSession();
       $user = $userModel->findById($session['id']);
       if ($user) {
         $user = $userModel->ensureLoginReady($user);

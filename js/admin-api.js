@@ -44,6 +44,10 @@ const AdminApi = {
     const resume = row.resume || {};
     const email = u.email || '';
     const isCollege = /@(students\.)?amaljyothi\.ac\.in$/i.test(email) || /\.ajce\.in$/i.test(email);
+    const selfPlacement = row.selfPlacement && typeof row.selfPlacement === 'object' ? row.selfPlacement : null;
+    let placementStatus = 'registered';
+    if (row.placed) placementStatus = 'placed';
+    else if (selfPlacement?.status === 'pending') placementStatus = 'pending_placement';
     return {
       id: this.id(u) || this.id(row),
       studentId: this.id(row),
@@ -65,7 +69,9 @@ const AdminApi = {
       photoUrl: photo.url || '',
       status: u.approved ? 'approved' : 'pending',
       blocked: u.status === 'blocked',
-      placementStatus: row.placed ? 'placed' : 'registered',
+      placed: !!row.placed,
+      selfPlacement,
+      placementStatus,
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
       resumeStatus: resume.verified ? 'approved' : (resume.path ? 'pending' : 'none'),
@@ -267,6 +273,12 @@ const AdminApi = {
   async fetchStudentProfile(studentId) {
     const res = await api(`/admin/students/${encodeURIComponent(studentId)}/profile`);
     return res.success && res.data ? res.data : null;
+  },
+
+  async fetchStudentPipeline(studentId) {
+    const res = await api(`/admin/students/${encodeURIComponent(studentId)}/pipeline`);
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data;
   },
 
   async fetchCompanies() {
