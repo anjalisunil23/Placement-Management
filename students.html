@@ -292,11 +292,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260628k"></script>
-<script src="js/admin-api.js?v=20260628k"></script>
-<script src="js/officer-api.js?v=20260628k"></script>
-<script src="js/api.js?v=20260628k"></script>
-<script src="js/app.js?v=20260628k"></script>
+<script src="js/staff-api.js?v=20260628l"></script>
+<script src="js/admin-api.js?v=20260628l"></script>
+<script src="js/officer-api.js?v=20260628l"></script>
+<script src="js/api.js?v=20260628l"></script>
+<script src="js/app.js?v=20260628l"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin' || role === 'placement_officer';
@@ -512,30 +512,18 @@ function apiProfileMatchesStudent(selected, api) {
 
 function mergeApiStudentProfile(selected, api) {
   if (!apiProfileMatchesStudent(selected, api)) return selected;
-  const reg = String(selected.registerNumber || '').trim();
   return {
     ...selected,
-    ...api,
-    studentId: String(selected.studentId || api.studentId || ''),
-    registerNumber: reg,
-    name: api.name || selected.name || '',
-    department: api.department || selected.department || '',
-    departmentName: api.departmentName || selected.departmentName || selected.department || '',
-    classBatch: api.classBatch || selected.classBatch || '',
-    email: api.email || selected.email || '',
-    collegeEmail: api.collegeEmail || selected.collegeEmail || '',
-    personalEmail: api.personalEmail || selected.personalEmail || '',
-    phone: api.phone || selected.phone || '',
-    cgpa: api.cgpa ?? selected.cgpa ?? null,
-    marks10th: api.marks10th ?? selected.marks10th ?? null,
-    marks12th: api.marks12th ?? selected.marks12th ?? selected.ugMarks ?? null,
-    ugMarks: api.ugMarks ?? api.marks12th ?? selected.ugMarks ?? selected.marks12th ?? null,
-    backlogs: api.backlogs ?? selected.backlogs ?? 0,
-    photoUrl: api.photoUrl || selected.photoUrl || '',
-    photo: api.photo || selected.photo || null,
-    resumeStatus: api.resumeStatus || selected.resumeStatus || 'none',
-    chancesUsed: api.chancesUsed ?? selected.chancesUsed ?? 0,
-    chancesMax: api.chancesMax ?? selected.chancesMax ?? 0,
+    resumeStatus: api.resumeStatus ?? selected.resumeStatus,
+    chancesUsed: api.chancesUsed ?? selected.chancesUsed,
+    chancesMax: api.chancesMax ?? selected.chancesMax,
+    placed: api.placed ?? selected.placed,
+    placementStatus: api.placementStatus ?? selected.placementStatus,
+    selfPlacement: api.selfPlacement ?? selected.selfPlacement,
+    status: api.status ?? selected.status,
+    blocked: api.blocked ?? selected.blocked,
+    blacklisted: api.blacklisted ?? selected.blacklisted,
+    photoProxyUrl: api.photoProxyUrl || selected.photoProxyUrl,
   };
 }
 
@@ -747,12 +735,13 @@ async function loadStudentProfile(s) {
   const seq = ++profileLoadSeq;
   let profile = s;
   if (useLiveOverviewApi) {
-    const sid = useStaffApi ? (s.studentId || s.id) : s.studentId;
-    if (!sid) {
+    const sid = String(s.studentId || s.id || '').trim();
+    const regKey = normStudentReg(reg);
+    if (!sid && !regKey) {
       if (seq === profileLoadSeq && selectedReg === reg) updateOverviewHeader(profile);
       return;
     }
-    const full = await fetchStudentProfileFromApi(sid, reg);
+    let full = await fetchStudentProfileFromApi(sid || reg, reg);
     if (seq !== profileLoadSeq || selectedReg !== reg) return;
     if (full) {
       if (!apiProfileMatchesStudent(s, full)) {
