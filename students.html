@@ -292,11 +292,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260628l"></script>
-<script src="js/admin-api.js?v=20260628l"></script>
-<script src="js/officer-api.js?v=20260628l"></script>
-<script src="js/api.js?v=20260628l"></script>
-<script src="js/app.js?v=20260628l"></script>
+<script src="js/staff-api.js?v=20260629b"></script>
+<script src="js/admin-api.js?v=20260629b"></script>
+<script src="js/officer-api.js?v=20260629b"></script>
+<script src="js/api.js?v=20260629b"></script>
+<script src="js/app.js?v=20260629b"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin' || role === 'placement_officer';
@@ -353,6 +353,56 @@ let selectedReg = '';
 let overviewSearchTimer = null;
 let overviewSearchSeq = 0;
 let profileLoadSeq = 0;
+const RECENT_STUDENTS_KEY = 'pms_recent_students_v1';
+const RECENT_STUDENTS_MAX = 8;
+const autoSelectOverviewOnLoad = role === 'staff';
+
+function recentStudentsScope() {
+  const email = (typeof Auth !== 'undefined' && Auth.user()?.email) ? Auth.user().email : 'anon';
+  return `${role}:${String(email).toLowerCase()}`;
+}
+
+function loadRecentStudentRegs() {
+  try {
+    const all = JSON.parse(localStorage.getItem(RECENT_STUDENTS_KEY) || '{}');
+    const rows = all[recentStudentsScope()];
+    if (!Array.isArray(rows)) return [];
+    return rows.map(x => normStudentReg(x.reg)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function rememberRecentStudent(reg) {
+  const key = normStudentReg(reg);
+  if (!key) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(RECENT_STUDENTS_KEY) || '{}');
+    const scope = recentStudentsScope();
+    const prev = Array.isArray(all[scope]) ? all[scope] : [];
+    const next = [{ reg: key, at: Date.now() }, ...prev.filter(x => normStudentReg(x.reg) !== key)].slice(0, RECENT_STUDENTS_MAX);
+    all[scope] = next;
+    localStorage.setItem(RECENT_STUDENTS_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+function sortStudentsByRecent(list) {
+  const recent = loadRecentStudentRegs();
+  if (!recent.length) {
+    return [...list].sort((a, b) => String(a.name || a.registerNumber || '').localeCompare(String(b.name || b.registerNumber || ''), undefined, { sensitivity: 'base' }));
+  }
+  const rank = new Map(recent.map((reg, i) => [reg, i]));
+  return [...list].sort((a, b) => {
+    const ar = rank.get(normStudentReg(a.registerNumber));
+    const br = rank.get(normStudentReg(b.registerNumber));
+    const aRecent = ar !== undefined;
+    const bRecent = br !== undefined;
+    if (aRecent && bRecent) return ar - br;
+    if (aRecent) return -1;
+    if (bRecent) return 1;
+    return String(a.name || a.registerNumber || '').localeCompare(String(b.name || b.registerNumber || ''), undefined, { sensitivity: 'base' });
+  });
+}
 
 function studentSearchHaystack(s) {
   return [
@@ -407,8 +457,10 @@ function clearOverviewDetail() {
 
 function filteredOverviewStudents() {
   const q = document.getElementById('searchStudent').value.trim();
-  if (useLiveOverviewApi) return overviewStudents;
-  return overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+  const list = useLiveOverviewApi
+    ? overviewStudents
+    : overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+  return sortStudentsByRecent(list);
 }
 
 function syncOverviewSelectionAfterFilter() {
@@ -417,17 +469,23 @@ function syncOverviewSelectionAfterFilter() {
     clearOverviewDetail();
     return;
   }
-  if (!list.some(s => s.registerNumber === selectedReg)) {
-    selectOverviewStudent(list[0].registerNumber, { skipListRender: true });
+  if (!selectedReg) return;
+  if (!list.some(s => normStudentReg(s.registerNumber) === normStudentReg(selectedReg))) {
+    if (autoSelectOverviewOnLoad) {
+      selectOverviewStudent(list[0].registerNumber, { skipListRender: true });
+    } else {
+      clearOverviewDetail();
+    }
   }
 }
 
 function studentRow(s) {
-  const active = (s.registerNumber === selectedReg) ? 'active' : '';
+  const active = normStudentReg(s.registerNumber) === normStudentReg(selectedReg) ? 'active' : '';
+  const isRecent = loadRecentStudentRegs().includes(normStudentReg(s.registerNumber));
   return `<button type="button" class="list-group-item list-group-item-action ${active}" data-reg="${esc(s.registerNumber)}" style="border:0;border-bottom:1px solid var(--border);background:transparent">
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div>
-        <div class="fw-semibold">${esc(s.name || s.registerNumber || 'Student')}</div>
+        <div class="fw-semibold">${esc(s.name || s.registerNumber || 'Student')}${isRecent ? ' <span class="badge-soft info" style="font-size:.65rem;vertical-align:middle">Recent</span>' : ''}</div>
         <div class="small text-muted-2">${esc(s.registerNumber)} · ${esc(s.department || '—')}${s.classBatch ? ` · ${esc(s.classBatch)}` : ''}</div>
       </div>
       <span class="badge-soft ${s.placementStatus === 'placed' ? 'success' : s.placementStatus === 'pending_placement' ? 'warning' : 'muted'}">${esc(s.placementStatus === 'pending_placement' ? 'under review' : (s.placementStatus || '—'))}</span>
@@ -438,9 +496,23 @@ function studentRow(s) {
 function renderOverviewList() {
   const list = filteredOverviewStudents();
   document.getElementById('studentCount').textContent = list.length;
-  document.getElementById('studentList').innerHTML = list.length
-    ? list.map(studentRow).join('')
-    : '<div class="p-3 small text-muted-2">No students match your search.</div>';
+  if (!list.length) {
+    document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">No students match your search.</div>';
+    return;
+  }
+  const recentSet = new Set(loadRecentStudentRegs());
+  const recentList = list.filter(s => recentSet.has(normStudentReg(s.registerNumber)));
+  const otherList = list.filter(s => !recentSet.has(normStudentReg(s.registerNumber)));
+  let html = '';
+  if (recentList.length) {
+    html += '<div class="px-3 pt-2 pb-1 small fw-semibold text-muted-2">Recent</div>';
+    html += recentList.map(studentRow).join('');
+  }
+  if (otherList.length) {
+    if (recentList.length) html += '<div class="px-3 pt-2 pb-1 small fw-semibold text-muted-2 border-top" style="border-color:var(--border)!important">All students</div>';
+    html += otherList.map(studentRow).join('');
+  }
+  document.getElementById('studentList').innerHTML = html;
 }
 
 async function runOverviewSearch() {
@@ -471,12 +543,11 @@ function scheduleOverviewSearch() {
 }
 
 async function appsForStudentAsync(reg) {
-  const pool = overviewStudentsAll.length ? overviewStudentsAll : overviewStudents;
-  const s = pool.find(x => x.registerNumber === reg) || overviewStudents.find(x => x.registerNumber === reg);
+  const s = studentByReg(reg);
   if (!s) return [];
 
   if (useLiveOverviewApi) {
-    const ref = s.studentId || s.id;
+    const ref = s.studentId || s.id || reg;
     if (!ref) return [];
     let apps = null;
     if (useStaffApi) apps = await StaffApi.fetchStudentPipeline(ref);
@@ -501,64 +572,116 @@ function normStudentReg(reg) {
   return String(reg || '').trim().toUpperCase();
 }
 
-function apiProfileMatchesStudent(selected, api) {
-  if (!selected || !api) return false;
-  const selReg = normStudentReg(selected.registerNumber);
-  const apiReg = normStudentReg(api.registerNumber);
-  if (!selReg || !apiReg || selReg !== apiReg) return false;
-  if (selected.studentId && api.studentId && String(api.studentId) !== String(selected.studentId)) return false;
-  return true;
+function studentByReg(reg) {
+  const key = normStudentReg(reg);
+  if (!key) return null;
+  const pool = overviewStudentsAll.length ? overviewStudentsAll : overviewStudents;
+  return pool.find(x => normStudentReg(x.registerNumber) === key)
+    || overviewStudents.find(x => normStudentReg(x.registerNumber) === key)
+    || null;
 }
 
-function mergeApiStudentProfile(selected, api) {
-  if (!apiProfileMatchesStudent(selected, api)) return selected;
+function upsertOverviewStudentRow(profile) {
+  const key = normStudentReg(profile?.registerNumber);
+  if (!key) return;
+  const mergeRow = (list, idx) => {
+    if (idx < 0) return;
+    list[idx] = { ...list[idx], ...profile, registerNumber: String(profile.registerNumber || list[idx].registerNumber || '').trim() };
+  };
+  mergeRow(overviewStudentsAll, overviewStudentsAll.findIndex(x => normStudentReg(x.registerNumber) === key));
+  mergeRow(overviewStudents, overviewStudents.findIndex(x => normStudentReg(x.registerNumber) === key));
+}
+
+function apiProfileMatchesStudent(selected, api) {
+  if (!api) return false;
+  const selReg = normStudentReg(selected?.registerNumber || selectedReg);
+  const apiReg = normStudentReg(api.registerNumber);
+  return selReg !== '' && apiReg !== '' && selReg === apiReg;
+}
+
+function buildDisplayProfile(listRow, api) {
+  const reg = String(api.registerNumber || listRow?.registerNumber || selectedReg || '').trim();
   return {
-    ...selected,
-    resumeStatus: api.resumeStatus ?? selected.resumeStatus,
-    chancesUsed: api.chancesUsed ?? selected.chancesUsed,
-    chancesMax: api.chancesMax ?? selected.chancesMax,
-    placed: api.placed ?? selected.placed,
-    placementStatus: api.placementStatus ?? selected.placementStatus,
-    selfPlacement: api.selfPlacement ?? selected.selfPlacement,
-    status: api.status ?? selected.status,
-    blocked: api.blocked ?? selected.blocked,
-    blacklisted: api.blacklisted ?? selected.blacklisted,
-    photoProxyUrl: api.photoProxyUrl || selected.photoProxyUrl,
+    ...(listRow || {}),
+    ...api,
+    studentId: String(api.studentId || listRow?.studentId || ''),
+    registerNumber: reg,
+    name: api.name || listRow?.name || '',
+    email: api.email || api.collegeEmail || listRow?.email || '',
+    collegeEmail: api.collegeEmail || listRow?.collegeEmail || '',
+    personalEmail: api.personalEmail || listRow?.personalEmail || '',
+    phone: api.phone || listRow?.phone || '',
+    department: api.department || listRow?.department || '',
+    departmentName: api.departmentName || listRow?.departmentName || listRow?.department || '',
+    classBatch: api.classBatch || listRow?.classBatch || '',
+    cgpa: api.cgpa ?? listRow?.cgpa ?? null,
+    marks10th: api.marks10th ?? listRow?.marks10th ?? null,
+    marks12th: api.marks12th ?? listRow?.marks12th ?? listRow?.ugMarks ?? null,
+    ugMarks: api.ugMarks ?? api.marks12th ?? listRow?.ugMarks ?? listRow?.marks12th ?? null,
+    backlogs: api.backlogs ?? listRow?.backlogs ?? 0,
+    photoUrl: api.photoUrl || listRow?.photoUrl || '',
+    photo: api.photo || listRow?.photo || null,
+    resumeStatus: api.resumeStatus || listRow?.resumeStatus || 'none',
+    chancesUsed: api.chancesUsed ?? listRow?.chancesUsed ?? 0,
+    chancesMax: api.chancesMax ?? listRow?.chancesMax ?? 0,
+    status: api.status ?? listRow?.status,
+    blocked: api.blocked ?? listRow?.blocked,
+    placed: api.placed ?? listRow?.placed,
+    placementStatus: api.placementStatus ?? listRow?.placementStatus,
+    selfPlacement: api.selfPlacement ?? listRow?.selfPlacement,
+    photoProxyUrl: api.photoProxyUrl || listRow?.photoProxyUrl,
   };
 }
 
+function clearProfilePanelFields(placeholder = '—') {
+  const panel = document.getElementById('stuProfilePanel');
+  if (panel) panel.style.display = '';
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  ['spRegNo', 'spDept', 'spBatch', 'spCollegeEmail', 'spPersonalEmail', 'spPhone', 'spMarks10', 'spMarks12', 'spCgpa', 'spBacklogs', 'spResume', 'spChances'].forEach(id => set(id, placeholder));
+}
+
 async function fetchStudentProfileFromApi(studentId, registerNumber = '') {
-  if (!studentId) return null;
-  const reg = String(registerNumber || '').trim();
-  if (useStaffApi && typeof StaffApi !== 'undefined') return StaffApi.fetchStudentProfile(studentId, reg);
-  if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') return OfficerApi.fetchStudentProfile(studentId, reg);
-  if (role === 'admin' && typeof AdminApi !== 'undefined') return AdminApi.fetchStudentProfile(studentId, reg);
+  const reg = String(registerNumber || studentId || '').trim();
+  if (!reg) return null;
+  if (useStaffApi && typeof StaffApi !== 'undefined') return StaffApi.fetchStudentProfile(reg, reg);
+  if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') return OfficerApi.fetchStudentProfile(reg, reg);
+  if (role === 'admin' && typeof AdminApi !== 'undefined') return AdminApi.fetchStudentProfile(reg, reg);
   return null;
 }
 
 function renderStudentProfilePanel(s) {
   const panel = document.getElementById('stuProfilePanel');
+  if (!panel) return;
   if (!s) {
     panel.style.display = 'none';
     return;
   }
+  const regKey = normStudentReg(s.registerNumber);
+  if (selectedReg && regKey && normStudentReg(selectedReg) !== regKey) return;
   panel.style.display = '';
-  document.getElementById('spRegNo').textContent = formatProfileValue(s.registerNumber);
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  set('spRegNo', formatProfileValue(s.registerNumber));
   const deptLabel = s.departmentName || s.department || '';
-  document.getElementById('spDept').textContent = formatProfileValue(deptLabel);
-  document.getElementById('spBatch').textContent = formatProfileValue(s.classBatch);
-  document.getElementById('spCollegeEmail').textContent = formatProfileValue(s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
-  document.getElementById('spPersonalEmail').textContent = formatProfileValue(s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
-  document.getElementById('spPhone').textContent = formatProfileValue(s.phone);
-  document.getElementById('spMarks10').textContent = formatMarkPct(s.marks10th);
-  document.getElementById('spMarks12').textContent = formatMarkPct(s.marks12th ?? s.ugMarks);
-  document.getElementById('spCgpa').textContent = s.cgpa != null && Number(s.cgpa) > 0 ? Number(s.cgpa) : '—';
-  document.getElementById('spBacklogs').textContent = s.backlogs != null ? String(s.backlogs) : '—';
+  set('spDept', formatProfileValue(deptLabel));
+  set('spBatch', formatProfileValue(s.classBatch));
+  set('spCollegeEmail', formatProfileValue(s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
+  set('spPersonalEmail', formatProfileValue(s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
+  set('spPhone', formatProfileValue(s.phone));
+  set('spMarks10', formatMarkPct(s.marks10th));
+  set('spMarks12', formatMarkPct(s.marks12th ?? s.ugMarks));
+  set('spCgpa', s.cgpa != null && Number(s.cgpa) > 0 ? String(Number(s.cgpa)) : '—');
+  set('spBacklogs', s.backlogs != null ? String(s.backlogs) : '—');
   const resumeLabels = { approved: 'Verified', pending: 'Pending review', none: 'Not uploaded' };
-  document.getElementById('spResume').textContent = resumeLabels[s.resumeStatus] || formatProfileValue(s.resumeStatus);
+  set('spResume', resumeLabels[s.resumeStatus] || formatProfileValue(s.resumeStatus));
   const used = s.chancesUsed ?? 0;
   const max = s.chancesMax ?? 0;
-  document.getElementById('spChances').textContent = max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—');
+  set('spChances', max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—'));
 }
 
 function overviewStatusBadge(status) {
@@ -721,44 +844,41 @@ function setOverviewAvatar(s) {
 }
 
 function updateOverviewHeader(s) {
+  if (!s) return;
+  const regKey = normStudentReg(s.registerNumber);
+  if (selectedReg && regKey && normStudentReg(selectedReg) !== regKey) return;
   setOverviewAvatar(s);
-  document.getElementById('stuName').textContent = s.name || s.registerNumber || 'Student';
+  const nameEl = document.getElementById('stuName');
+  if (nameEl) nameEl.textContent = s.name || s.registerNumber || 'Student';
   const dept = s.departmentName || s.department || '—';
-  document.getElementById('stuMeta').textContent = `${s.registerNumber || '—'} · ${dept}${s.classBatch ? ' · ' + s.classBatch : ''} · CGPA ${s.cgpa ?? '—'}${s.email ? ' · ' + s.email : ''}`;
-  document.getElementById('stuStatus').outerHTML = userStatusBadge(s.status, s.blacklisted ? true : s.blocked);
+  const metaEl = document.getElementById('stuMeta');
+  if (metaEl) metaEl.textContent = `${s.registerNumber || '—'} · ${dept}${s.classBatch ? ' · ' + s.classBatch : ''} · CGPA ${s.cgpa ?? '—'}${s.email ? ' · ' + s.email : ''}`;
+  const statusEl = document.getElementById('stuStatus');
+  if (statusEl) statusEl.outerHTML = userStatusBadge(s.status, s.blacklisted ? true : s.blocked);
   renderStudentProfilePanel(s);
   syncVerifyPlacementBanner(s);
 }
 
-async function loadStudentProfile(s) {
-  const reg = String(s?.registerNumber || '').trim();
+async function loadStudentProfile() {
+  const regKey = normStudentReg(selectedReg);
+  if (!regKey) return;
   const seq = ++profileLoadSeq;
-  let profile = s;
+  const listRow = studentByReg(regKey);
+  let profile = listRow;
+
   if (useLiveOverviewApi) {
-    const sid = String(s.studentId || s.id || '').trim();
-    const regKey = normStudentReg(reg);
-    if (!sid && !regKey) {
-      if (seq === profileLoadSeq && selectedReg === reg) updateOverviewHeader(profile);
-      return;
-    }
-    let full = await fetchStudentProfileFromApi(sid || reg, reg);
-    if (seq !== profileLoadSeq || selectedReg !== reg) return;
-    if (full) {
-      if (!apiProfileMatchesStudent(s, full)) {
-        toast('Could not load profile for this student. Showing list details.', 'warn');
-      } else {
-        profile = mergeApiStudentProfile(s, full);
-        const mergeRow = (list, idx) => {
-          if (idx < 0) return;
-          list[idx] = mergeApiStudentProfile(list[idx], full);
-        };
-        mergeRow(overviewStudentsAll, overviewStudentsAll.findIndex(x => x.registerNumber === reg));
-        mergeRow(overviewStudents, overviewStudents.findIndex(x => x.registerNumber === reg));
-      }
+    const full = await fetchStudentProfileFromApi(regKey, regKey);
+    if (seq !== profileLoadSeq || normStudentReg(selectedReg) !== regKey) return;
+    if (full && apiProfileMatchesStudent(listRow || { registerNumber: regKey }, full)) {
+      profile = buildDisplayProfile(listRow, full);
+      upsertOverviewStudentRow(profile);
+    } else if (full) {
+      toast('Could not load profile for this student. Showing list details.', 'warn');
     }
   }
-  if (seq !== profileLoadSeq || selectedReg !== reg) return;
-  updateOverviewHeader(profile);
+
+  if (seq !== profileLoadSeq || normStudentReg(selectedReg) !== regKey) return;
+  if (profile) updateOverviewHeader(profile);
 }
 
 function updateOverviewStats(apps, student) {
@@ -794,22 +914,25 @@ function renderOverviewDetails(apps) {
 }
 
 function selectOverviewStudent(reg, opts = {}) {
-  selectedReg = reg;
+  selectedReg = String(reg || '').trim();
+  if (selectedReg) rememberRecentStudent(selectedReg);
   if (!opts.skipListRender) renderOverviewList();
-  const pool = overviewStudentsAll.length ? overviewStudentsAll : overviewStudents;
-  const s = pool.find(x => x.registerNumber === reg) || overviewStudents.find(x => x.registerNumber === reg);
+  const s = studentByReg(selectedReg);
   if (!s) {
     clearOverviewDetail();
     return;
   }
+  clearProfilePanelFields('Loading…');
   updateOverviewHeader(s);
-  loadStudentProfile(s).catch(() => {});
-  loadOverviewApps(reg);
+  loadStudentProfile().catch(() => {
+    const row = studentByReg(selectedReg);
+    if (row) updateOverviewHeader(row);
+  });
+  loadOverviewApps(selectedReg);
 }
 
 async function loadOverviewApps(reg) {
-  const pool = overviewStudentsAll.length ? overviewStudentsAll : overviewStudents;
-  const student = pool.find(x => x.registerNumber === reg) || overviewStudents.find(x => x.registerNumber === reg);
+  const student = studentByReg(reg);
   const apps = await appsForStudentAsync(reg);
   updateOverviewStats(apps, student);
   renderOverviewDetails(apps);
@@ -860,8 +983,10 @@ async function initOverview() {
   if (selectedReg) {
     selectOverviewStudent(selectedReg, { skipListRender: true });
     renderOverviewList();
-  } else if (filteredOverviewStudents()[0]?.registerNumber) {
+  } else if (autoSelectOverviewOnLoad && filteredOverviewStudents()[0]?.registerNumber) {
     selectOverviewStudent(filteredOverviewStudents()[0].registerNumber);
+  } else {
+    clearOverviewDetail();
   }
 }
 
