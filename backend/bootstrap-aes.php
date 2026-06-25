@@ -31,16 +31,19 @@ function pms_bootstrap_aes_callback(string $root): void
         require_once $middlewareFile;
     }
 
-    $servicesDir = $backend . '/services';
-    $serviceFile = $servicesDir . '/AesLoginService.php';
-    if (is_readable($serviceFile)) {
-        require_once $serviceFile;
-    }
+    require_once $backend . '/bootstrap-services.php';
+    pms_load_backend_services($backend);
 
     if (!class_exists(\PMS\Services\AesLoginService::class, false)
         && !class_exists(\PMS\Services\AesLoginService::class)) {
         http_response_code(500);
         echo 'AES login service is missing on this server. Redeploy from latest main.';
+        exit;
+    }
+    if (!class_exists(\PMS\Services\AesApiService::class, false)
+        && !class_exists(\PMS\Services\AesApiService::class)) {
+        http_response_code(500);
+        echo 'AES API service is missing on this server. Redeploy from latest main.';
         exit;
     }
 }

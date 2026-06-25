@@ -51,9 +51,11 @@ foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php',
 }
 
 // Linux/cPanel: load all services explicitly when PSR-4 case differs from backend/services/.
-$servicesDir = dirname(__DIR__) . '/services';
-foreach (glob($servicesDir . '/*.php') ?: [] as $serviceFile) {
-    require_once $serviceFile;
+require_once dirname(__DIR__) . '/bootstrap-services.php';
+pms_load_backend_services(dirname(__DIR__));
+if (!class_exists(\PMS\Services\AesApiService::class, false)
+    && !class_exists(\PMS\Services\AesApiService::class)) {
+    $emitJsonError('Server autoload error: AesApiService missing. Run composer install and redeploy from latest main.');
 }
 if (!class_exists(\PMS\Utils\Response::class, false)) {
     $emitJsonError('Server autoload error: Response utility missing. Redeploy from latest main.');
