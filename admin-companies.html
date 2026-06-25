@@ -33,7 +33,7 @@
     <div class="card-surface">
       <div class="table-wrap">
         <table class="table-modern"><thead><tr>
-          <th>Company</th><th>Website</th><th>HR Name</th><th>Email</th><th>Contact</th><th>Recommended By</th><th>Date</th><th>Status</th><th>Actions</th>
+          <th>Company</th><th>Website</th><th>HR Name</th><th>Email</th><th>Contact</th><th>Recommended By</th><th>Date</th><th>Status</th><th>Comments</th><th>Actions</th>
         </tr></thead><tbody id="recRows"></tbody></table>
       </div>
     </div>
@@ -96,6 +96,38 @@
   </form>
 </div></div></div>
 
+<div class="modal fade" id="editRecModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Edit recommendation</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="editRecForm">
+    <div class="modal-body row g-3">
+      <input type="hidden" name="recId" id="editRecId"/>
+      <input type="hidden" name="recSource" id="editRecSource"/>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" id="editRecCompanyName" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Website (optional)</label><input class="form-control" name="companyWebsite" id="editRecWebsite" placeholder="https://company.com"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">HR name</label><input class="form-control" name="hrName" id="editRecHrName"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">HR email</label><input class="form-control" type="email" name="hrEmail" id="editRecHrEmail"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Contact number</label><input class="form-control" name="contactNumber" id="editRecContact"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Status</label><select class="form-select" name="status" id="editRecStatus"><option value="pending">Pending</option><option value="contacted">Contacted</option><option value="registered">Registered</option><option value="rejected">Rejected</option></select></div>
+      <div class="col-12" id="editRecReasonWrap"><label class="form-label small fw-semibold">Staff reason</label><textarea class="form-control" name="reason" id="editRecReason" rows="2" placeholder="Why this company was recommended"></textarea></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save changes</button></div>
+  </form>
+</div></div></div>
+
+<div class="modal fade" id="commentsRecModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Placement cell comments</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="commentsRecForm">
+    <div class="modal-body">
+      <input type="hidden" name="recId" id="commentsRecId"/>
+      <input type="hidden" name="recSource" id="commentsRecSource"/>
+      <p class="small text-muted-2 mb-2" id="commentsRecLabel"></p>
+      <label class="form-label small fw-semibold">Internal notes</label>
+      <textarea class="form-control" name="adminComments" id="commentsRecText" rows="4" placeholder="Follow-up notes, contact history, or registration details (visible to admin and placement officers only)"></textarea>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save comments</button></div>
+  </form>
+</div></div></div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/admin-api.js?v=20260622d"></script>
@@ -104,6 +136,29 @@
 <script>
 const registerModal = () => bootstrap.Modal.getInstance(document.getElementById('registerModal')) || new bootstrap.Modal(document.getElementById('registerModal'));
 const canEditCompanies = () => Auth.role() === 'admin';
+const canManageRecommendations = () => ['admin', 'placement_officer'].includes(Auth.role());
+
+function escAttr(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function commentPreview(text) {
+  const t = String(text || '').trim();
+  if (!t) return '<span class="text-muted-2 small">—</span>';
+  const short = t.length > 48 ? t.slice(0, 48) + '…' : t;
+  return `<span class="small" title="${t.replace(/"/g, '&quot;')}">${short}</span>`;
+}
+
+function recommendationManageActions(r) {
+  if (!canManageRecommendations()) return '';
+  const id = escAttr(r.id);
+  const source = escAttr(r.source);
+  return `<div class="d-flex gap-1">
+    <button type="button" class="icon-btn" style="width:30px;height:30px" title="Edit" onclick="openEditRec('${id}', '${source}')"><i class="bi bi-pencil"></i></button>
+    <button type="button" class="icon-btn" style="width:30px;height:30px" title="Comments" onclick="openRecComments('${id}', '${source}')"><i class="bi bi-chat-left-text"></i></button>
+    <button type="button" class="icon-btn" style="width:30px;height:30px;color:var(--danger)" title="Delete" onclick="deleteRec('${id}', '${source}')"><i class="bi bi-trash"></i></button>
+  </div>`;
+}
 
 function companyActions(c) {
   if (!canEditCompanies()) return '';
@@ -132,6 +187,10 @@ function allRecommendations() {
     recommenderEmail: r.alumniEmail || '',
   }));
   return [...staff, ...alumni].sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+}
+
+function findRecommendation(id, source) {
+  return allRecommendations().find(r => r.id === id && r.source === source);
 }
 
 function openRegisterFromRec(rec) {
@@ -169,15 +228,17 @@ function render() {
       </td>
       <td>${formatDate(r.submittedAt)}</td>
       <td>${recStatusBadge(r.status)}</td>
+      <td>${commentPreview(r.adminComments)}</td>
       <td>
-        <div class="d-flex flex-wrap gap-1">
+        <div class="d-flex flex-wrap gap-1 align-items-center">
           <a class="btn btn-sm btn-outline-primary" href="mailto:${r.hrEmail}?subject=Campus%20Placement%20Partnership%20-%20AJCE Placements"><i class="bi bi-envelope"></i></a>
           <a class="btn btn-sm btn-outline-secondary" href="tel:${(r.contactNumber || '').replace(/\s/g,'')}"><i class="bi bi-telephone"></i></a>
-          ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${r.id}', '${r.source}')">Mark contacted</button>` : ''}
-          ${r.status !== 'registered' ? `<button class="btn btn-sm btn-primary" onclick="openRegisterFromRecId('${r.id}', '${r.source}')">Register</button>` : ''}
+          ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${escAttr(r.id)}', '${escAttr(r.source)}')">Mark contacted</button>` : ''}
+          ${r.status !== 'registered' ? `<button class="btn btn-sm btn-primary" onclick="openRegisterFromRecId('${escAttr(r.id)}', '${escAttr(r.source)}')">Register</button>` : ''}
+          ${recommendationManageActions(r)}
         </div>
       </td>
-    </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="10" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
 
   document.getElementById('regRows').innerHTML = regs.length ? regs.map(c => `
     <tr>
@@ -203,6 +264,55 @@ window.openRegisterFromRecId = (id, source) => {
   openRegisterFromRec(allRecommendations().find(r => r.id === id && r.source === source));
 };
 window.openRegisterFromRec = openRegisterFromRec;
+
+window.openEditRec = (id, source) => {
+  if (!canManageRecommendations()) return;
+  const r = findRecommendation(id, source);
+  if (!r) return;
+  document.getElementById('editRecId').value = r.id;
+  document.getElementById('editRecSource').value = r.source;
+  document.getElementById('editRecCompanyName').value = r.companyName || '';
+  document.getElementById('editRecWebsite').value = r.companyWebsite || '';
+  document.getElementById('editRecHrName').value = r.hrName || '';
+  document.getElementById('editRecHrEmail').value = r.hrEmail || '';
+  document.getElementById('editRecContact').value = r.contactNumber || '';
+  document.getElementById('editRecStatus').value = r.status || 'pending';
+  document.getElementById('editRecReason').value = r.reason || '';
+  document.getElementById('editRecReasonWrap').classList.toggle('d-none', r.source !== 'staff');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('editRecModal')).show();
+};
+
+window.openRecComments = (id, source) => {
+  if (!canManageRecommendations()) return;
+  const r = findRecommendation(id, source);
+  if (!r) return;
+  document.getElementById('commentsRecId').value = r.id;
+  document.getElementById('commentsRecSource').value = r.source;
+  document.getElementById('commentsRecLabel').textContent = `${r.companyName} · recommended by ${r.recommenderName || '—'}`;
+  document.getElementById('commentsRecText').value = r.adminComments || '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('commentsRecModal')).show();
+};
+
+window.deleteRec = async (id, source) => {
+  if (!canManageRecommendations()) return;
+  const r = findRecommendation(id, source);
+  if (!r) return;
+  if (!(await confirmAction({
+    title: 'Delete recommendation',
+    message: `Delete the recommendation for "${r.companyName}"? This cannot be undone.`,
+    confirmText: 'Delete',
+    variant: 'danger',
+  }))) return;
+  const ok = source === 'alumni'
+    ? await AlumniReferrals.remove(id)
+    : await StaffRecs.remove(id);
+  if (!ok) {
+    toast('Could not delete recommendation.', 'error');
+    return;
+  }
+  toast('Recommendation deleted.', 'success');
+  render();
+};
 
 window.openEditCompany = id => {
   if (!canEditCompanies()) return;
@@ -239,6 +349,47 @@ window.deleteCompany = async id => {
   toast('Company deleted.', 'success');
   render();
 };
+
+document.getElementById('editRecForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!canManageRecommendations()) return;
+  const data = Object.fromEntries(new FormData(e.target).entries());
+  const id = data.recId;
+  const source = data.recSource;
+  delete data.recId;
+  delete data.recSource;
+  if (source !== 'staff') delete data.reason;
+  if (!(await confirmAction({ title: 'Update recommendation', message: `Save changes to ${data.companyName || 'this recommendation'}?`, confirmText: 'Save', variant: 'primary' }))) return;
+  const ok = source === 'alumni'
+    ? await AlumniReferrals.update(id, data)
+    : await StaffRecs.update(id, data);
+  if (!ok) {
+    toast('Could not update recommendation.', 'error');
+    return;
+  }
+  toast('Recommendation updated.', 'success');
+  bootstrap.Modal.getInstance(document.getElementById('editRecModal'))?.hide();
+  render();
+});
+
+document.getElementById('commentsRecForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!canManageRecommendations()) return;
+  const data = Object.fromEntries(new FormData(e.target).entries());
+  const id = data.recId;
+  const source = data.recSource;
+  const payload = { adminComments: data.adminComments || '' };
+  const ok = source === 'alumni'
+    ? await AlumniReferrals.update(id, payload)
+    : await StaffRecs.update(id, payload);
+  if (!ok) {
+    toast('Could not save comments.', 'error');
+    return;
+  }
+  toast('Comments saved.', 'success');
+  bootstrap.Modal.getInstance(document.getElementById('commentsRecModal'))?.hide();
+  render();
+});
 
 document.getElementById('editCompanyForm')?.addEventListener('submit', async e => {
   e.preventDefault();

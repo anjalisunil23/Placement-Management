@@ -68,6 +68,60 @@ class AlumniReferralModel extends BaseModel
     }
 
     /**
+     * @param array<string, mixed> $data
+     */
+    public function updateReferral(string $id, array $data): bool
+    {
+        $existing = $this->findById($id);
+        if ($existing === null) {
+            return false;
+        }
+
+        $patch = [];
+        if (array_key_exists('companyName', $data)) {
+            $patch['companyName'] = trim((string) $data['companyName']);
+        }
+        if (array_key_exists('companyWebsite', $data)) {
+            $patch['companyWebsite'] = trim((string) $data['companyWebsite']);
+        }
+        if (array_key_exists('adminComments', $data)) {
+            $patch['adminComments'] = trim((string) $data['adminComments']);
+        }
+        if (array_key_exists('status', $data)) {
+            $status = (string) $data['status'];
+            if (!in_array($status, ['pending', 'contacted', 'registered', 'rejected'], true)) {
+                return false;
+            }
+            $patch['status'] = $status;
+        }
+
+        $contact = is_array($existing['contact'] ?? null) ? $existing['contact'] : [];
+        if (array_key_exists('hrName', $data)) {
+            $contact['name'] = trim((string) $data['hrName']);
+        }
+        if (array_key_exists('hrEmail', $data)) {
+            $contact['email'] = trim((string) $data['hrEmail']);
+        }
+        if (array_key_exists('contactNumber', $data)) {
+            $contact['phone'] = trim((string) $data['contactNumber']);
+        }
+        if ($contact !== ($existing['contact'] ?? [])) {
+            $patch['contact'] = $contact;
+        }
+
+        if ($patch === []) {
+            return true;
+        }
+
+        return $this->update($id, $patch);
+    }
+
+    public function deleteReferral(string $id): bool
+    {
+        return $this->delete($id);
+    }
+
+    /**
      * @param array<string, mixed> $rec
      * @param array<string, mixed>|null $alumniUser
      * @return array<string, mixed>
@@ -83,6 +137,7 @@ class AlumniReferralModel extends BaseModel
         $out['contactNumber'] = (string) ($contact['phone'] ?? '');
         $out['submittedAt'] = (string) ($out['createdAt'] ?? '');
         $out['status'] = (string) ($rec['status'] ?? 'pending');
+        $out['adminComments'] = (string) ($rec['adminComments'] ?? '');
         if ($alumniUser !== null) {
             $out['alumniName'] = (string) ($alumniUser['name'] ?? '');
             $out['alumniEmail'] = (string) ($alumniUser['email'] ?? '');

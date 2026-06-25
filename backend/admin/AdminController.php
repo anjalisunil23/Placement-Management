@@ -1001,6 +1001,27 @@ final class AdminController
         Response::success(null, 'Recommendation status updated.');
     }
 
+    /** PUT /api/admin/recommendations/{id} */
+    public function updateRecommendation(string $id): void
+    {
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!(new RecommendationModel())->updateRecommendation($id, $input)) {
+            Response::error('Recommendation not found or invalid data.', 422);
+        }
+        Response::success(null, 'Recommendation updated.');
+    }
+
+    /** DELETE /api/admin/recommendations/{id} */
+    public function deleteRecommendation(string $id): void
+    {
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        if (!(new RecommendationModel())->deleteRecommendation($id)) {
+            Response::notFound('Recommendation not found.');
+        }
+        Response::success(null, 'Recommendation deleted.');
+    }
+
     /** POST /api/admin/companies/register */
     public function registerCompany(): void
     {
@@ -1053,6 +1074,27 @@ final class AdminController
             Response::error('Invalid status or alumni recommendation not found.', 422);
         }
         Response::success(null, 'Alumni recommendation status updated.');
+    }
+
+    /** PUT /api/admin/alumni-referrals/{id} */
+    public function updateAlumniReferral(string $id): void
+    {
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!(new AlumniReferralModel())->updateReferral($id, $input)) {
+            Response::error('Alumni recommendation not found or invalid data.', 422);
+        }
+        Response::success(null, 'Alumni recommendation updated.');
+    }
+
+    /** DELETE /api/admin/alumni-referrals/{id} */
+    public function deleteAlumniReferral(string $id): void
+    {
+        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        if (!(new AlumniReferralModel())->deleteReferral($id)) {
+            Response::notFound('Alumni recommendation not found.');
+        }
+        Response::success(null, 'Alumni recommendation deleted.');
     }
 
     /** GET /api/admin/resumes/pending */

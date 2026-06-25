@@ -69,6 +69,8 @@ const AdminApi = {
       staffEmail: r.staffEmail || '',
       submittedAt: r.submittedAt || r.createdAt || '',
       status: r.status || 'pending',
+      reason: r.reason || '',
+      adminComments: r.adminComments || '',
     };
   },
 
@@ -86,6 +88,7 @@ const AdminApi = {
       alumniEmail: r.alumniEmail || '',
       submittedAt: r.submittedAt || r.createdAt || '',
       status,
+      adminComments: r.adminComments || '',
     };
   },
 
@@ -253,10 +256,30 @@ const AdminApi = {
     return res.data.map(r => this.mapRecommendation(r));
   },
 
+  async updateRecommendation(id, payload) {
+    const res = await api(`/admin/recommendations/${encodeURIComponent(id)}`, { method: 'PUT', body: payload });
+    return res.success;
+  },
+
+  async deleteRecommendation(id) {
+    const res = await api(`/admin/recommendations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return res.success;
+  },
+
   async fetchAlumniReferrals() {
     const res = await api('/admin/alumni-referrals');
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(r => this.mapAlumniReferral(r));
+  },
+
+  async updateAlumniReferral(id, payload) {
+    const res = await api(`/admin/alumni-referrals/${encodeURIComponent(id)}`, { method: 'PUT', body: payload });
+    return res.success;
+  },
+
+  async deleteAlumniReferral(id) {
+    const res = await api(`/admin/alumni-referrals/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return res.success;
   },
 
   async fetchBlacklist() {

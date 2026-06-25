@@ -960,6 +960,24 @@ const StaffRecs = {
     this.save(this.all().map(r => r.id === id ? { ...r, status } : r));
     return false;
   },
+  async update(id, payload) {
+    if (Auth.hasRealAuth() && typeof AdminApi !== 'undefined') {
+      const ok = await AdminApi.updateRecommendation(id, payload);
+      if (ok) { await this.fetch(); return true; }
+      return false;
+    }
+    this.save(this.all().map(r => r.id === id ? { ...r, ...payload } : r));
+    return true;
+  },
+  async remove(id) {
+    if (Auth.hasRealAuth() && typeof AdminApi !== 'undefined') {
+      const ok = await AdminApi.deleteRecommendation(id);
+      if (ok) { await this.fetch(); return true; }
+      return false;
+    }
+    this.save(this.all().filter(r => r.id !== id));
+    return true;
+  },
 };
 
 const RegisteredCompanies = {
@@ -1200,6 +1218,24 @@ const AlumniReferrals = {
     if (res.success) { await this.fetch(); return true; }
     this.save(this.all().map(r => r.id === id ? { ...r, status } : r));
     return false;
+  },
+  async update(id, payload) {
+    if (Auth.hasRealAuth() && typeof AdminApi !== 'undefined') {
+      const ok = await AdminApi.updateAlumniReferral(id, payload);
+      if (ok) { await this.fetch(); return true; }
+      return false;
+    }
+    this.save(this.all().map(r => r.id === id ? { ...r, ...payload } : r));
+    return true;
+  },
+  async remove(id) {
+    if (Auth.hasRealAuth() && typeof AdminApi !== 'undefined') {
+      const ok = await AdminApi.deleteAlumniReferral(id);
+      if (ok) { await this.fetch(); return true; }
+      return false;
+    }
+    this.save(this.all().filter(r => r.id !== id));
+    return true;
   },
 };
 
