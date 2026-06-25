@@ -566,6 +566,25 @@ body.login-page{
   color:#fff;
   overflow:hidden;
 }
+@media (min-width:992px){
+  .hero{
+    min-height:clamp(420px,58vh,680px);
+    padding:3.5rem 0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background-position:center center;
+    background-size:cover;
+  }
+  .hero > .container{width:100%}
+  #stats{
+    padding-top:2.75rem!important;
+    padding-bottom:3rem!important;
+    background:var(--bg,#fff);
+    position:relative;
+    z-index:1;
+  }
+}
 .hero::before{
   content:"";
   position:absolute;
