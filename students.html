@@ -292,11 +292,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260629a"></script>
-<script src="js/admin-api.js?v=20260629a"></script>
-<script src="js/officer-api.js?v=20260629a"></script>
-<script src="js/api.js?v=20260629a"></script>
-<script src="js/app.js?v=20260629a"></script>
+<script src="js/staff-api.js?v=20260629b"></script>
+<script src="js/admin-api.js?v=20260629b"></script>
+<script src="js/officer-api.js?v=20260629b"></script>
+<script src="js/api.js?v=20260629b"></script>
+<script src="js/app.js?v=20260629b"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin' || role === 'placement_officer';
@@ -353,6 +353,56 @@ let selectedReg = '';
 let overviewSearchTimer = null;
 let overviewSearchSeq = 0;
 let profileLoadSeq = 0;
+const RECENT_STUDENTS_KEY = 'pms_recent_students_v1';
+const RECENT_STUDENTS_MAX = 8;
+const autoSelectOverviewOnLoad = role === 'staff';
+
+function recentStudentsScope() {
+  const email = (typeof Auth !== 'undefined' && Auth.user()?.email) ? Auth.user().email : 'anon';
+  return `${role}:${String(email).toLowerCase()}`;
+}
+
+function loadRecentStudentRegs() {
+  try {
+    const all = JSON.parse(localStorage.getItem(RECENT_STUDENTS_KEY) || '{}');
+    const rows = all[recentStudentsScope()];
+    if (!Array.isArray(rows)) return [];
+    return rows.map(x => normStudentReg(x.reg)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function rememberRecentStudent(reg) {
+  const key = normStudentReg(reg);
+  if (!key) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(RECENT_STUDENTS_KEY) || '{}');
+    const scope = recentStudentsScope();
+    const prev = Array.isArray(all[scope]) ? all[scope] : [];
+    const next = [{ reg: key, at: Date.now() }, ...prev.filter(x => normStudentReg(x.reg) !== key)].slice(0, RECENT_STUDENTS_MAX);
+    all[scope] = next;
+    localStorage.setItem(RECENT_STUDENTS_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+function sortStudentsByRecent(list) {
+  const recent = loadRecentStudentRegs();
+  if (!recent.length) {
+    return [...list].sort((a, b) => String(a.name || a.registerNumber || '').localeCompare(String(b.name || b.registerNumber || ''), undefined, { sensitivity: 'base' }));
+  }
+  const rank = new Map(recent.map((reg, i) => [reg, i]));
+  return [...list].sort((a, b) => {
+    const ar = rank.get(normStudentReg(a.registerNumber));
+    const br = rank.get(normStudentReg(b.registerNumber));
+    const aRecent = ar !== undefined;
+    const bRecent = br !== undefined;
+    if (aRecent && bRecent) return ar - br;
+    if (aRecent) return -1;
+    if (bRecent) return 1;
+    return String(a.name || a.registerNumber || '').localeCompare(String(b.name || b.registerNumber || ''), undefined, { sensitivity: 'base' });
+  });
+}
 
 function studentSearchHaystack(s) {
   return [
@@ -407,8 +457,10 @@ function clearOverviewDetail() {
 
 function filteredOverviewStudents() {
   const q = document.getElementById('searchStudent').value.trim();
-  if (useLiveOverviewApi) return overviewStudents;
-  return overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+  const list = useLiveOverviewApi
+    ? overviewStudents
+    : overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+  return sortStudentsByRecent(list);
 }
 
 function syncOverviewSelectionAfterFilter() {
@@ -417,17 +469,23 @@ function syncOverviewSelectionAfterFilter() {
     clearOverviewDetail();
     return;
   }
+  if (!selectedReg) return;
   if (!list.some(s => normStudentReg(s.registerNumber) === normStudentReg(selectedReg))) {
-    selectOverviewStudent(list[0].registerNumber, { skipListRender: true });
+    if (autoSelectOverviewOnLoad) {
+      selectOverviewStudent(list[0].registerNumber, { skipListRender: true });
+    } else {
+      clearOverviewDetail();
+    }
   }
 }
 
 function studentRow(s) {
   const active = normStudentReg(s.registerNumber) === normStudentReg(selectedReg) ? 'active' : '';
+  const isRecent = loadRecentStudentRegs().includes(normStudentReg(s.registerNumber));
   return `<button type="button" class="list-group-item list-group-item-action ${active}" data-reg="${esc(s.registerNumber)}" style="border:0;border-bottom:1px solid var(--border);background:transparent">
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div>
-        <div class="fw-semibold">${esc(s.name || s.registerNumber || 'Student')}</div>
+        <div class="fw-semibold">${esc(s.name || s.registerNumber || 'Student')}${isRecent ? ' <span class="badge-soft info" style="font-size:.65rem;vertical-align:middle">Recent</span>' : ''}</div>
         <div class="small text-muted-2">${esc(s.registerNumber)} · ${esc(s.department || '—')}${s.classBatch ? ` · ${esc(s.classBatch)}` : ''}</div>
       </div>
       <span class="badge-soft ${s.placementStatus === 'placed' ? 'success' : s.placementStatus === 'pending_placement' ? 'warning' : 'muted'}">${esc(s.placementStatus === 'pending_placement' ? 'under review' : (s.placementStatus || '—'))}</span>
@@ -438,9 +496,23 @@ function studentRow(s) {
 function renderOverviewList() {
   const list = filteredOverviewStudents();
   document.getElementById('studentCount').textContent = list.length;
-  document.getElementById('studentList').innerHTML = list.length
-    ? list.map(studentRow).join('')
-    : '<div class="p-3 small text-muted-2">No students match your search.</div>';
+  if (!list.length) {
+    document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">No students match your search.</div>';
+    return;
+  }
+  const recentSet = new Set(loadRecentStudentRegs());
+  const recentList = list.filter(s => recentSet.has(normStudentReg(s.registerNumber)));
+  const otherList = list.filter(s => !recentSet.has(normStudentReg(s.registerNumber)));
+  let html = '';
+  if (recentList.length) {
+    html += '<div class="px-3 pt-2 pb-1 small fw-semibold text-muted-2">Recent</div>';
+    html += recentList.map(studentRow).join('');
+  }
+  if (otherList.length) {
+    if (recentList.length) html += '<div class="px-3 pt-2 pb-1 small fw-semibold text-muted-2 border-top" style="border-color:var(--border)!important">All students</div>';
+    html += otherList.map(studentRow).join('');
+  }
+  document.getElementById('studentList').innerHTML = html;
 }
 
 async function runOverviewSearch() {
@@ -843,6 +915,7 @@ function renderOverviewDetails(apps) {
 
 function selectOverviewStudent(reg, opts = {}) {
   selectedReg = String(reg || '').trim();
+  if (selectedReg) rememberRecentStudent(selectedReg);
   if (!opts.skipListRender) renderOverviewList();
   const s = studentByReg(selectedReg);
   if (!s) {
@@ -908,8 +981,10 @@ async function initOverview() {
   if (selectedReg) {
     selectOverviewStudent(selectedReg, { skipListRender: true });
     renderOverviewList();
-  } else if (filteredOverviewStudents()[0]?.registerNumber) {
+  } else if (autoSelectOverviewOnLoad && filteredOverviewStudents()[0]?.registerNumber) {
     selectOverviewStudent(filteredOverviewStudents()[0].registerNumber);
+  } else {
+    clearOverviewDetail();
   }
 }
 
