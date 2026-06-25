@@ -100,6 +100,13 @@ function escapeAttr(value) {
     .replace(/</g, '&lt;');
 }
 
+function cssBackgroundUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const safe = encodeURI(raw).replace(/'/g, '%27');
+  return `url('${safe}')`;
+}
+
 function userPhotoUrl(user) {
   if (!user || typeof user !== 'object') return '';
   if (typeof resolveSessionPhotoUrl === 'function') {
@@ -114,12 +121,13 @@ function userPhotoUrl(user) {
 
 function userAvatarHtml(user, size = 38, fontSize = '.85rem') {
   const url = userPhotoUrl(user);
-  const style = `width:${size}px;height:${size}px;font-size:${fontSize}`;
+  const box = `width:${size}px;height:${size}px;min-width:${size}px;min-height:${size}px;max-width:${size}px;max-height:${size}px;font-size:${fontSize}`;
   const ini = initials(user?.name);
   if (url) {
-    return `<div class="avatar has-photo" style="${style}" data-initials="${escapeAttr(ini)}"><img src="${escapeAttr(url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"/></div>`;
+    const bg = cssBackgroundUrl(url);
+    return `<div class="avatar has-photo" style="${box};background-image:${bg}" data-initials="${escapeAttr(ini)}" title="${escapeAttr(user?.name || '')}" role="img" aria-label="${escapeAttr(user?.name || 'User')}"></div>`;
   }
-  return `<div class="avatar" style="${style}">${ini}</div>`;
+  return `<div class="avatar" style="${box}">${ini}</div>`;
 }
 
 function navItemHidden(n) {
@@ -461,9 +469,10 @@ document.addEventListener('ph-user-updated', () => {
 document.addEventListener('error', (event) => {
   const img = event.target;
   if (!(img instanceof HTMLImageElement)) return;
-  const avatar = img.closest('.avatar.has-photo');
+  const avatar = img.closest('.avatar.has-photo, .settings-profile-avatar.has-photo');
   if (!avatar) return;
   avatar.classList.remove('has-photo');
+  avatar.style.backgroundImage = '';
   avatar.textContent = avatar.dataset.initials || 'U';
   img.remove();
 }, true);
