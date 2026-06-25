@@ -129,7 +129,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/staff-api.js?v=20260629c"></script>
+<script src="js/staff-api.js?v=20260630a"></script>
 <script src="js/api.js?v=20260629c"></script>
 <script src="js/charts.js?v=20260629c"></script>
 <script src="js/app.js?v=20260629c"></script>
@@ -296,9 +296,13 @@ function setDeptUI(dept) {
     badge.textContent = label || 'Your department';
     badge.className = 'badge-soft primary';
     const po = apiHiringData?.placementOfficer;
-    officerEl.innerHTML = po?.email
-      ? `Placement officer: <strong>${escHtml(po.name || po.email)}</strong> <span class="text-muted-2 small">(${escHtml(po.email)})</span>`
-      : '<span class="text-muted-2 small">Placement officer not assigned for this department yet.</span>';
+    if (po?.email) {
+      officerEl.innerHTML = `Placement officer: <strong>${escHtml(po.name || po.email)}</strong> <span class="text-muted-2 small">(${escHtml(po.email)})</span>`;
+      officerEl.style.display = '';
+    } else {
+      officerEl.textContent = '';
+      officerEl.style.display = 'none';
+    }
     if (hintEl) hintEl.textContent = 'Showing live hiring data for your department.';
     return;
   }
@@ -389,7 +393,7 @@ function renderForDept(dept) {
     document.getElementById('companyRows').innerHTML = companies.length
       ? companies.map(c => `<tr>
           <td><strong>${escHtml(c.company)}</strong></td>
-          <td>${escHtml((c.roles || ['ÔøΩ']).join(', '))}</td>
+          <td>${escHtml((c.roles || ['ù']).join(', '))}</td>
           <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
           <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
           <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
