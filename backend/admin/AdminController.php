@@ -29,6 +29,7 @@ use PMS\Services\EmailService;
 use PMS\Services\NotificationService;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
+use PMS\Services\SelfPlacementService;
 use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
@@ -863,6 +864,38 @@ final class AdminController
     {
         $scope = (new OfficerDataService())->requireScope();
         Response::success((new OfficerDataService())->studentPipelineForScope($studentId, $scope['ctx']));
+    }
+
+    /** GET /api/admin/students/{id}/self-placement */
+    public function getSelfPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new SelfPlacementService())->getReport($studentId, $scope['ctx']));
+    }
+
+    /** GET /api/admin/students/{id}/self-placement/offer-letter */
+    public function downloadSelfPlacementOfferLetter(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new SelfPlacementService())->streamOfferLetter($studentId, $scope['ctx']);
+    }
+
+    /** POST /api/admin/students/{id}/self-placement/approve */
+    public function approveSelfPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $result = (new SelfPlacementService())->approve($studentId, $scope['ctx'], $scope['user']);
+        Response::success($result, 'Placement verified and student marked as placed.');
+    }
+
+    /** POST /api/admin/students/{id}/self-placement/reject */
+    public function rejectSelfPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $reason = trim((string) ($input['reason'] ?? ''));
+        $result = (new SelfPlacementService())->reject($studentId, $scope['ctx'], $scope['user'], $reason);
+        Response::success($result, 'Placement report rejected.');
     }
 
     /** GET /api/admin/blacklist */

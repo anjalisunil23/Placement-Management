@@ -227,9 +227,19 @@ final class StaffService
         foreach ($students as $student) {
             $user = $userModel->findById((string) $student['userId']);
             $dept = $deptModel->findById((string) $student['departmentId']);
+            $enriched = (new OfficerDataService())->enrichStudentListRow([], $student, $user);
+            $displayName = (string) ($enriched['displayName'] ?? ($user['name'] ?? 'Student'));
+            $photoUrl = (string) ($enriched['photoUrl'] ?? '');
+            $hasSelfPlacement = is_array($student['selfPlacement'] ?? null)
+                && (string) ($student['selfPlacement']['companyName'] ?? '') !== '';
+            $selfStatus = $hasSelfPlacement ? (string) ($student['selfPlacement']['status'] ?? '') : '';
+            $isPlaced = !empty($student['placed']);
+            $placementStatus = $isPlaced
+                ? 'placed'
+                : ($selfStatus === 'pending' ? 'pending_placement' : 'seeking');
             $rows[] = [
                 'id'              => (string) $student['_id'],
-                'name'            => $user['name'] ?? 'Student',
+                'name'            => $displayName !== '' ? $displayName : 'Student',
                 'email'           => $user['email'] ?? '',
                 'registerNumber'  => $student['registerNumber'] ?? '',
                 'department'      => $dept['code'] ?? '',
@@ -239,12 +249,9 @@ final class StaffService
                 'marks10th'       => (float) ($student['academic']['marks10th'] ?? 0) ?: null,
                 'marks12th'       => (float) ($student['academic']['marks12th'] ?? $student['academic']['ugMarks'] ?? 0) ?: null,
                 'ugMarks'         => (float) ($student['academic']['ugMarks'] ?? $student['academic']['marks12th'] ?? 0) ?: null,
-                'photoUrl'        => trim((string) (is_array($student['photo'] ?? null) ? ($student['photo']['url'] ?? '') : '')),
-                'placementStatus' => !empty($student['placed'])
-                    ? 'placed'
-                    : ((is_array($student['selfPlacement'] ?? null) && ($student['selfPlacement']['status'] ?? '') === 'pending')
-                        ? 'pending_placement'
-                        : 'seeking'),
+                'placementStatus' => $placementStatus,
+                'photoUrl'        => $photoUrl,
+                'photo'           => $enriched['photo'] ?? null,
                 'status'          => $user['status'] ?? 'active',
                 'blacklisted'     => false,
                 'blocked'         => ($user['status'] ?? '') === 'blocked',

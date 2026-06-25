@@ -237,6 +237,18 @@ final class StudentController
     if (!empty($out['selfPlacement']) && is_array($out['selfPlacement'])) {
       unset($out['selfPlacement']['offerLetterPath']);
     }
+    if (!empty($out['placed'])) {
+      $placement = is_array($out['placement'] ?? null) ? $out['placement'] : null;
+      if ($placement === null && is_array($out['selfPlacement'] ?? null)) {
+        $sp = $out['selfPlacement'];
+        $out['placement'] = [
+          'company' => (string) ($sp['companyName'] ?? ''),
+          'role'    => (string) ($sp['role'] ?? ''),
+          'address' => (string) ($sp['companyAddress'] ?? ''),
+          'source'  => 'self_reported',
+        ];
+      }
+    }
 
     Response::success(DocumentHelper::jsonSafe($out));
   }
@@ -813,13 +825,13 @@ final class StudentController
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
 
-    if (($profile['placed'] ?? false) === true) {
-      Response::error('You are already marked as placed.', 409);
-    }
-
     $existing = $profile['selfPlacement'] ?? null;
     if (is_array($existing) && ($existing['status'] ?? '') === 'pending') {
       Response::error('Your placement report is already under review.', 409);
+    }
+
+    if (($profile['placed'] ?? false) === true) {
+      Response::error('You are already marked as placed.', 409);
     }
 
     $companyName = trim((string) ($_POST['companyName'] ?? ''));
@@ -908,13 +920,15 @@ final class StudentController
       $notifier = new NotificationService();
       $notifier->notifyPlacementCell(
         'self_placement_submitted',
-        'Student placement report',
-        "{$studentName} ({$registerNo}) submitted a placement report for {$companyName} as {$jobRole}.",
+        'Self-placement report — review required',
+        "{$studentName} ({$registerNo}) submitted a placement report for {$companyName} as {$jobRole}. Verify the offer letter and mark as placed.",
         [
+          'action'         => 'verify_self_placement',
           'studentId'      => (string) $profile['_id'],
           'registerNumber' => $registerNo,
           'companyName'    => $companyName,
           'role'           => $jobRole,
+          'link'           => 'students.html?verify=' . rawurlencode((string) $profile['_id']),
         ],
         true
       );
@@ -922,7 +936,7 @@ final class StudentController
         (string) $user['_id'],
         'placement_report_submitted',
         'Placement report submitted',
-        'Your placement details were sent to the placement cell for verification.',
+        'Your placement report for ' . $companyName . ' is under review by the placement cell.',
         ['companyName' => $companyName],
         false
       );
