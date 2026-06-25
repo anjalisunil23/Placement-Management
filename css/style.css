@@ -178,6 +178,10 @@ a{color:inherit;text-decoration:none}
   background:linear-gradient(135deg,#f472b6,#7c5cff);
   color:#fff;display:grid;place-items:center;font-weight:700;
 }
+.avatar.has-photo{
+  background-size:cover;background-position:center;background-repeat:no-repeat;
+  color:transparent;
+}
 
 /* Settings → Profile header (all roles) */
 .settings-profile-head{margin-bottom:.25rem}

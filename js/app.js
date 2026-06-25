@@ -93,6 +93,28 @@ function initials(name='') {
   return name.trim().split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase() || 'U';
 }
 
+function userPhotoUrl(user) {
+  if (!user || typeof user !== 'object') return '';
+  if (typeof resolveSessionPhotoUrl === 'function') {
+    const fromSession = resolveSessionPhotoUrl(user);
+    if (fromSession) return fromSession;
+  }
+  const direct = String(user.photoUrl || user.stud_photo || user.photo?.url || '').trim();
+  if (!direct) return '';
+  if (/^https?:\/\//i.test(direct)) return direct;
+  return direct.startsWith('/') ? direct : `/${direct}`;
+}
+
+function userAvatarHtml(user, size = 38, fontSize = '.85rem') {
+  const url = userPhotoUrl(user);
+  const style = `width:${size}px;height:${size}px;font-size:${fontSize}`;
+  if (url) {
+    const safe = url.replace(/\\/g, '\\\\').replace(/'/g, '%27');
+    return `<div class="avatar has-photo" style="${style};background-image:url('${safe}')"></div>`;
+  }
+  return `<div class="avatar" style="${style}">${initials(user?.name)}</div>`;
+}
+
 function navItemHidden(n) {
   const href = String(n?.href || '');
   const label = String(n?.label || '');
@@ -259,7 +281,7 @@ function renderShell(active) {
       </div>
       <div style="padding:1rem;border-top:1px solid var(--border)">
         <div class="d-flex align-items-center gap-2">
-          <div class="avatar" style="width:36px;height:36px;font-size:.85rem">${initials(user.name)}</div>
+          ${userAvatarHtml(user, 36, '.85rem')}
           <div style="min-width:0;flex:1">
             <div style="font-size:.85rem;font-weight:600" class="text-truncate">${user.name}</div>
             <div style="font-size:.72rem;color:var(--muted)">${ROLE_LABELS[role]}</div>
@@ -423,6 +445,11 @@ function enforcePageRole(active) {
   }
   return true;
 }
+
+document.addEventListener('ph-user-updated', () => {
+  const active = document.body.dataset.page;
+  if (active && document.getElementById('sidebar')) renderShell(active);
+});
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!document.querySelector('link[rel="icon"]')) {

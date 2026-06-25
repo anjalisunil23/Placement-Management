@@ -31,7 +31,6 @@
           <h5 class="settings-profile-title">Profile</h5>
           <div class="settings-profile-row">
             <div class="settings-profile-avatar" id="profAvatar" aria-hidden="true">U</div>
-            <button type="button" class="btn btn-outline-primary settings-profile-edit" id="profEditBtn">Edit</button>
           </div>
         </div>
         <div class="row g-3">
@@ -108,8 +107,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260626a"></script>
-<script src="js/app.js?v=20260626a"></script>
+<script src="js/api.js?v=20260627a"></script>
+<script src="js/app.js?v=20260627a"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -461,7 +460,10 @@ function syncRoleFieldsVisibility(activeRole) {
 }
 
 const profAvatarEl = document.getElementById('profAvatar');
-const profEditBtn = document.getElementById('profEditBtn');
+
+function refreshAppShell() {
+  document.dispatchEvent(new CustomEvent('ph-user-updated'));
+}
 
 function profileInitials(name) {
   return String(name || 'U').trim().split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || 'U';
@@ -528,6 +530,7 @@ async function loadSettingsProfile() {
   syncRoleFieldsVisibility(role);
   applyProfileFromUser(user, role);
   setAvatarPhoto(pickPhotoUrl(user) || user.photoUrl || user.photo?.url || '');
+  refreshAppShell();
 
   if (role === 'student' && Auth.hasRealAuth()) {
     const res = await api('/student/profile', { skipAuthRedirect: true });
@@ -589,6 +592,7 @@ async function loadSettingsProfile() {
         photo: p.photo || user.photo,
       };
       Auth.set(user, Auth.token());
+      refreshAppShell();
     }
   } else if (role === 'staff' && Auth.hasRealAuth()) {
     const res = await api('/staff/profile', { skipAuthRedirect: true });
@@ -657,110 +661,6 @@ document.getElementById('profName')?.addEventListener('input', () => {
   if (!profAvatarEl?.classList.contains('has-photo')) setAvatarInitials();
 });
 
-// Profile photo menu (students) or focus fields (other roles)
-async function uploadStudentPhoto(file) {
-  const token = Auth.token();
-  if (!token || String(token).startsWith('demo-token')) {
-    toast('Please sign in with a real account to upload a photo.', 'warn');
-    return;
-  }
-  const fd = new FormData();
-  fd.append('photo', file);
-  const res = await fetch(API_BASE + '/student/photo', {
-    method: 'POST',
-    body: fd,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    credentials: 'include',
-  });
-  const json = await res.json().catch(() => ({ success:false, message:'Bad response', data:null }));
-  if (!res.ok || !json.success) {
-    toast(json.message || 'Photo upload failed', 'error');
-    return;
-  }
-  const url = json.data?.url || '';
-  if (url) {
-    setAvatarPhoto(url);
-    Auth.set({ ...user, photoUrl: url }, token);
-  }
-  toast('Photo updated.', 'success');
-}
-
-async function removeStudentPhoto() {
-  const token = Auth.token();
-  if (!token || String(token).startsWith('demo-token')) {
-    toast('Please sign in with a real account to remove a photo.', 'warn');
-    return;
-  }
-  const res = await fetch(API_BASE + '/student/photo/remove', {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    credentials: 'include',
-  });
-  const json = await res.json().catch(() => ({ success:false, message:'Bad response', data:null }));
-  if (!res.ok || !json.success) {
-    toast(json.message || 'Remove photo failed', 'error');
-    return;
-  }
-  setAvatarInitials();
-  Auth.set({ ...user, photoUrl: '' }, token);
-  toast('Photo removed.', 'success');
-}
-
-function pickPhotoFile() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/png,image/jpeg,image/webp';
-  input.style.display = 'none';
-  input.onchange = () => {
-    const f = input.files && input.files[0];
-    if (f) uploadStudentPhoto(f);
-    input.remove();
-  };
-  document.body.appendChild(input);
-  input.click();
-}
-
-function openPhotoMenu() {
-  // Simple anchored menu (keeps markup untouched)
-  let menu = document.getElementById('ph-photo-menu');
-  if (menu) menu.remove();
-  menu = document.createElement('div');
-  menu.id = 'ph-photo-menu';
-  menu.className = 'dropdown-menu show';
-  menu.style.position = 'absolute';
-  const r = profEditBtn.getBoundingClientRect();
-  menu.style.left = (window.scrollX + r.left) + 'px';
-  menu.style.top = (window.scrollY + r.bottom + 6) + 'px';
-  menu.innerHTML = `
-    <button class="dropdown-item" type="button" id="phUploadPhoto">Upload a photo…</button>
-    <button class="dropdown-item text-danger" type="button" id="phRemovePhoto">Remove photo</button>
-  `;
-  document.body.appendChild(menu);
-
-  const close = () => { menu?.remove(); document.removeEventListener('click', onDoc, true); };
-  const onDoc = (e) => { if (!menu.contains(e.target) && e.target !== profEditBtn) close(); };
-  document.addEventListener('click', onDoc, true);
-
-  menu.querySelector('#phUploadPhoto')?.addEventListener('click', () => { close(); pickPhotoFile(); });
-  menu.querySelector('#phRemovePhoto')?.addEventListener('click', async () => {
-    close();
-    if (await confirmAction({ title: 'Remove photo', message: 'Remove profile photo?', confirmText: 'Remove', variant: 'warning' })) {
-      removeStudentPhoto();
-    }
-  });
-}
-
-function openProfileEdit() {
-  if (role === 'student') {
-    openPhotoMenu();
-    return;
-  }
-  const nameEl = document.getElementById('profName');
-  nameEl?.focus();
-  nameEl?.select();
-}
-
-profEditBtn?.addEventListener('click', openProfileEdit);
 syncRoleFieldsVisibility(role);
 
 if (role === 'alumni') {
