@@ -117,28 +117,31 @@ function userAvatarHtml(user, size = 38, fontSize = '.85rem') {
   const box = `width:${size}px;height:${size}px;min-width:${size}px;min-height:${size}px;max-width:${size}px;max-height:${size}px;font-size:${fontSize}`;
   const ini = initials(user?.name);
   if (url) {
-    return `<div class="avatar has-photo" style="${box}" data-initials="${escapeAttr(ini)}" title="${escapeAttr(user?.name || '')}" role="img" aria-label="${escapeAttr(user?.name || 'User')}"><img src="${escapeAttr(url)}" alt="" loading="lazy" decoding="async"/></div>`;
+    return `<div class="avatar has-photo shell-avatar" style="${box}" data-initials="${escapeAttr(ini)}" title="${escapeAttr(user?.name || '')}" role="img" aria-label="${escapeAttr(user?.name || 'User')}"><img src="${escapeAttr(url)}" alt="" width="${size}" height="${size}" loading="lazy" decoding="async"/></div>`;
   }
-  return `<div class="avatar" style="${box}">${ini}</div>`;
+  return `<div class="avatar shell-avatar" style="${box}">${ini}</div>`;
 }
 
 function hydrateShellAvatars() {
   const url = userPhotoUrl(Auth.user());
   if (!url) return;
-  document.querySelectorAll('#sidebar .avatar, #topbar .avatar').forEach((el) => {
+  document.querySelectorAll('.topbar-avatar-wrap .avatar, .sidebar-avatar-wrap .avatar').forEach((el) => {
     const ini = el.dataset.initials || initials(Auth.user()?.name);
+    el.dataset.initials = ini;
+    el.classList.add('has-photo');
     let img = el.querySelector('img');
     if (!img) {
       el.textContent = '';
-      el.classList.add('has-photo');
       img = document.createElement('img');
       img.alt = '';
       img.loading = 'lazy';
       img.decoding = 'async';
+      const size = parseInt(el.style.width, 10) || 38;
+      img.width = size;
+      img.height = size;
       el.appendChild(img);
     }
     if (img.getAttribute('src') !== url) img.setAttribute('src', url);
-    el.dataset.initials = ini;
   });
 }
 
@@ -308,7 +311,7 @@ function renderShell(active) {
       </div>
       <div style="padding:1rem;border-top:1px solid var(--border)">
         <div class="d-flex align-items-center gap-2">
-          ${userAvatarHtml(user, 36, '.85rem')}
+          <span class="sidebar-avatar-wrap">${userAvatarHtml(user, 36, '.85rem')}</span>
           <div style="min-width:0;flex:1">
             <div style="font-size:.85rem;font-weight:600" class="text-truncate">${user.name}</div>
             <div style="font-size:.72rem;color:var(--muted)">${ROLE_LABELS[role]}</div>
@@ -340,7 +343,7 @@ function renderShell(active) {
         <i class="bi bi-search"></i>
         <input placeholder="${TOPBAR_SEARCH[role] || 'Search…'}" />
       </div>
-      <div class="ms-auto d-flex align-items-center gap-2">
+      <div class="ms-auto topbar-actions d-flex align-items-center gap-2">
         ${quickLinks}
         ${Auth.isDemo() ? `<div class="dropdown">
           <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Preview as role">
@@ -354,7 +357,7 @@ function renderShell(active) {
         <button class="icon-btn" id="themeBtn" title="Theme"><i class="bi bi-moon-stars"></i></button>
         ${'<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>'}
         ${role !== 'student' ? '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Settings"><i class="bi bi-gear"></i></a>' : '<a href="settings.html" class="icon-btn d-none d-sm-grid" title="Profile & Resumes"><i class="bi bi-person-badge"></i></a>'}
-        ${userAvatarHtml(user, 34, '.75rem')}
+        <span class="topbar-avatar-wrap">${userAvatarHtml(user, 38, '.8rem')}</span>
       </div>`;
   }
 
