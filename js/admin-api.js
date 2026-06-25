@@ -55,13 +55,13 @@ const AdminApi = {
       studentId: this.id(row),
       role: 'student',
       name: row.displayName || u.name || '',
-      email,
-      collegeEmail: isCollege ? email : (personal.collegeEmail || ''),
-      personalEmail: personal.personalEmail || personal.email || (!isCollege ? email : ''),
-      phone: personal.phone || '',
+      email: row.collegeEmail || (isCollege ? email : (row.personalEmail || personal.personalEmail || email)),
+      collegeEmail: row.collegeEmail || (isCollege ? email : (personal.collegeEmail || '')),
+      personalEmail: row.personalEmail || personal.personalEmail || personal.email || (!isCollege ? email : ''),
+      phone: row.phone || personal.phone || '',
       registerNumber: row.registerNumber || '',
-      department: dept.code || dept.name || '',
-      departmentName: dept.name || dept.code || '',
+      department: row.departmentCode || dept.code || dept.name || '',
+      departmentName: row.departmentName || dept.name || dept.code || '',
       classBatch: row.classBatch || '',
       cgpa: academic.cgpa ?? null,
       marks10th: academic.marks10th ?? null,
@@ -273,8 +273,9 @@ const AdminApi = {
     return res.data.map(s => this.mapStudentRow(s));
   },
 
-  async fetchStudentProfile(studentId) {
-    const res = await api(`/admin/students/${encodeURIComponent(studentId)}/profile`);
+  async fetchStudentProfile(studentId, registerNumber = '') {
+    const qs = registerNumber ? `?registerNumber=${encodeURIComponent(registerNumber)}` : '';
+    const res = await api(`/admin/students/${encodeURIComponent(studentId)}/profile${qs}`);
     return res.success && res.data ? res.data : null;
   },
 

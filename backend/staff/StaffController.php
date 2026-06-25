@@ -182,7 +182,13 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
-        Response::success((new OfficerDataService())->getStudentOverview($studentId, $ctx, 'staff'));
+        $register = trim((string) ($_GET['registerNumber'] ?? ''));
+        Response::success((new OfficerDataService())->getStudentOverview(
+            $studentId,
+            $ctx,
+            'staff',
+            $register !== '' ? $register : null
+        ));
     }
 
     /** GET /api/staff/students/{id}/photo */

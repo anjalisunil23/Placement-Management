@@ -398,7 +398,13 @@ final class OfficerController
     public function studentProfile(string $studentId): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        Response::success((new OfficerDataService())->getStudentOverview($studentId, $scope['ctx'], 'officer'));
+        $register = trim((string) ($_GET['registerNumber'] ?? ''));
+        Response::success((new OfficerDataService())->getStudentOverview(
+            $studentId,
+            $scope['ctx'],
+            'officer',
+            $register !== '' ? $register : null
+        ));
     }
 
     /** GET /api/officer/students/{id}/photo */

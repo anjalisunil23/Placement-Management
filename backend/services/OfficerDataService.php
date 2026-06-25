@@ -249,11 +249,18 @@ final class OfficerDataService
      * @param array<string, mixed> $ctx
      * @return array<string, mixed>
      */
-    public function getStudentOverview(string $studentId, array $ctx, string $photoRoutePrefix = 'officer'): array
+    public function getStudentOverview(string $studentId, array $ctx, string $photoRoutePrefix = 'officer', ?string $expectedRegister = null): array
     {
         $student = $this->resolveStudentRef($studentId);
         if (!$student) {
             Response::notFound('Student not found.');
+        }
+        if ($expectedRegister !== null && $expectedRegister !== '') {
+            $expected = strtoupper(trim($expectedRegister));
+            $actual = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            if ($actual === '' || $expected !== $actual) {
+                Response::notFound('Student register number does not match.');
+            }
         }
         if (!$this->studentInScope($student, $ctx)) {
             Response::forbidden('Student is outside your department scope.');
@@ -406,6 +413,10 @@ final class OfficerDataService
         }
 
         $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
+        $aesReg = strtoupper(trim((string) ($mapped['registerNumber'] ?? '')));
+        if ($aesReg !== '' && $aesReg !== $register) {
+            return $overview;
+        }
 
         $name = trim((string) ($mapped['name'] ?? ''));
         if ($name !== '') {
@@ -582,21 +593,7 @@ final class OfficerDataService
             $row['photo'] = $photo['photo'] ?? ['url' => $photoUrl, 'source' => 'aes'];
         }
 
-        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-        if ($register !== '') {
-            $placement = $this->placementProfileForRegister($register);
-            $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
-            if (!empty($mapped['classBatch'])) {
-                $row['classBatch'] = (string) $mapped['classBatch'];
-            }
-            if (!empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
-                $academic = is_array($row['academic'] ?? null) ? $row['academic'] : (is_array($student['academic'] ?? null) ? $student['academic'] : []);
-                $academic['cgpa'] = (float) $mapped['cgpa'];
-                $row['academic'] = $academic;
-            }
-        }
-
-        return $row;
+        return $this->applyAesPlacementFieldsToRow($row, $student);
     }
 
     /**
@@ -626,6 +623,95 @@ final class OfficerDataService
             || str_contains($email, '@amaljyothi.ac.in')
             || str_ends_with($email, '@ajce.in')
             || (bool) preg_match('/@[a-z0-9.-]+\.ajce\.in$/', $email);
+    }
+
+    /**
+     * Merge AES placement profile fields into a serialized student list row.
+     *
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $student
+     * @return array<string, mixed>
+     */
+    private function applyAesPlacementFieldsToRow(array $row, array $student): array
+    {
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        if ($register === '') {
+            return $row;
+        }
+
+        $placement = $this->placementProfileForRegister($register);
+        if ($placement === []) {
+            return $row;
+        }
+
+        $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
+        $aesReg = strtoupper(trim((string) ($mapped['registerNumber'] ?? '')));
+        if ($aesReg !== '' && $aesReg !== $register) {
+            return $row;
+        }
+
+        if (!empty($mapped['classBatch'])) {
+            $row['classBatch'] = (string) $mapped['classBatch'];
+        }
+
+        $academic = is_array($row['academic'] ?? null) ? $row['academic'] : (is_array($student['academic'] ?? null) ? $student['academic'] : []);
+        if (!empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
+            $academic['cgpa'] = (float) $mapped['cgpa'];
+        }
+        if (!empty($mapped['marks10th']) && (float) $mapped['marks10th'] > 0) {
+            $academic['marks10th'] = (float) $mapped['marks10th'];
+        }
+        if (!empty($mapped['marks12th']) && (float) $mapped['marks12th'] > 0) {
+            $academic['marks12th'] = (float) $mapped['marks12th'];
+            $academic['ugMarks'] = (float) $mapped['marks12th'];
+        }
+        if (isset($mapped['backlogs'])) {
+            $academic['backlogs'] = (int) $mapped['backlogs'];
+        }
+        if ($academic !== []) {
+            $row['academic'] = $academic;
+        }
+
+        $phone = trim((string) ($mapped['phone'] ?? ''));
+        if ($phone !== '') {
+            $personal = is_array($row['personal'] ?? null) ? $row['personal'] : (is_array($student['personal'] ?? null) ? $student['personal'] : []);
+            $personal['phone'] = $phone;
+            $row['personal'] = $personal;
+            $row['phone'] = $phone;
+        }
+
+        $email = strtolower(trim((string) ($mapped['email'] ?? '')));
+        $collegeFromAes = strtolower(trim((string) ($mapped['collegeEmail'] ?? '')));
+        $personalFromAes = trim((string) ($mapped['personalEmail'] ?? ''));
+        $collegeEmail = '';
+        $personalEmail = '';
+        if ($collegeFromAes !== '' && $this->isCollegeEmailAddress($collegeFromAes)) {
+            $collegeEmail = $collegeFromAes;
+        } elseif ($email !== '' && $this->isCollegeEmailAddress($email)) {
+            $collegeEmail = $email;
+        } elseif ($email !== '' && !$this->isCollegeEmailAddress($email)) {
+            $personalEmail = $email;
+        }
+        if ($personalFromAes !== '') {
+            $personalEmail = $personalFromAes;
+        }
+        if ($collegeEmail !== '') {
+            $row['collegeEmail'] = $collegeEmail;
+        }
+        if ($personalEmail !== '') {
+            $row['personalEmail'] = $personalEmail;
+        }
+
+        $deptName = trim((string) ($placement['departmentName'] ?? $placement['deptName'] ?? $placement['branch'] ?? ''));
+        if ($deptName !== '') {
+            $row['departmentName'] = $deptName;
+        }
+        $deptCode = trim((string) ($placement['deptCode'] ?? $placement['department'] ?? ''));
+        if ($deptCode !== '') {
+            $row['departmentCode'] = $deptCode;
+        }
+
+        return $row;
     }
 
     /**
