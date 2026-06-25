@@ -120,13 +120,40 @@ function shellProfileLabel(role) {
   return 'View profile';
 }
 
+const SHELL_TOPBAR_BTN_STYLE = [
+  'width:38px', 'height:38px', 'min-width:38px', 'min-height:38px', 'flex:0 0 38px',
+  'padding:0', 'margin:0', 'border:0', 'border-radius:50%', 'overflow:hidden',
+  'background:transparent', 'line-height:0', 'cursor:pointer',
+  'display:inline-flex', 'align-items:center', 'justify-content:center',
+  'box-shadow:none', 'outline:none', '-webkit-appearance:none', 'appearance:none',
+].join(';');
+
+const SHELL_SIDEBAR_WRAP_STYLE = [
+  'width:36px', 'height:36px', 'min-width:36px', 'min-height:36px', 'flex:0 0 36px',
+  'border-radius:50%', 'overflow:hidden', 'display:inline-block', 'line-height:0', 'vertical-align:middle',
+].join(';');
+
+function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
+  const url = userPhotoUrl(user);
+  const ini = initials(user?.name);
+  const circle = [
+    `display:block`, `width:${size}px`, `height:${size}px`,
+    `min-width:${size}px`, `min-height:${size}px`,
+    'border-radius:50%', 'overflow:hidden', 'border:0', 'box-shadow:none', 'margin:0', 'padding:0',
+  ].join(';');
+  if (url) {
+    const safe = encodeURI(url).replace(/'/g, '%27');
+    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background:url('${safe}') center/cover no-repeat" role="img" aria-label="${escapeAttr(user?.name || 'User')}" title="${escapeAttr(user?.name || '')}"></span>`;
+  }
+  return `<span style="${circle};background:linear-gradient(135deg,#f472b6,#7c5cff);color:#fff;display:grid;place-items:center;font-weight:700;font-size:${fontSize}">${ini}</span>`;
+}
+
 function topbarProfileMenuHtml(user, role) {
-  const avatar = userAvatarHtml(user, 38, '.8rem');
   const profileLabel = shellProfileLabel(role);
   return `
     <div class="dropdown topbar-profile-menu">
-      <button type="button" class="topbar-avatar-btn" data-bs-toggle="dropdown" aria-expanded="false" title="${escapeAttr(user?.name || 'Account')}">
-        ${avatar}
+      <button type="button" class="topbar-avatar-btn" style="${SHELL_TOPBAR_BTN_STYLE}" data-bs-toggle="dropdown" aria-expanded="false" title="${escapeAttr(user?.name || 'Account')}">
+        ${shellPhotoCircleHtml(user, 38, '.8rem')}
       </button>
       <ul class="dropdown-menu dropdown-menu-end shadow-sm">
         <li><h6 class="dropdown-header text-truncate">${escapeAttr(user?.name || 'Account')}</h6></li>
@@ -152,36 +179,14 @@ function bindLogoutButton(btn) {
   });
 }
 
-function userAvatarHtml(user, size = 38, fontSize = '.85rem') {
-  const url = userPhotoUrl(user);
-  const box = `width:${size}px;height:${size}px;min-width:${size}px;min-height:${size}px;max-width:${size}px;max-height:${size}px;font-size:${fontSize};border-radius:50%;overflow:hidden`;
-  const ini = initials(user?.name);
-  if (url) {
-    return `<div class="avatar has-photo shell-avatar" style="${box}" data-initials="${escapeAttr(ini)}" title="${escapeAttr(user?.name || '')}" role="img" aria-label="${escapeAttr(user?.name || 'User')}"><img src="${escapeAttr(url)}" alt="" width="${size}" height="${size}" loading="lazy" decoding="async"/></div>`;
-  }
-  return `<div class="avatar shell-avatar" style="${box}">${ini}</div>`;
-}
-
 function hydrateShellAvatars() {
   const url = userPhotoUrl(Auth.user());
   if (!url) return;
-  document.querySelectorAll('.topbar-avatar-btn .avatar, .sidebar-avatar-wrap .avatar').forEach((el) => {
-    const ini = el.dataset.initials || initials(Auth.user()?.name);
-    el.dataset.initials = ini;
-    el.classList.add('has-photo');
-    let img = el.querySelector('img');
-    if (!img) {
-      el.textContent = '';
-      img = document.createElement('img');
-      img.alt = '';
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      const size = parseInt(el.style.width, 10) || 38;
-      img.width = size;
-      img.height = size;
-      el.appendChild(img);
-    }
-    if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+  const safe = encodeURI(url).replace(/'/g, '%27');
+  document.querySelectorAll('.shell-avatar-photo').forEach((el) => {
+    el.style.backgroundImage = `url('${safe}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
   });
 }
 
@@ -351,7 +356,7 @@ function renderShell(active) {
       </div>
       <div style="padding:1rem;border-top:1px solid var(--border)">
         <div class="d-flex align-items-center gap-2">
-          <span class="sidebar-avatar-wrap">${userAvatarHtml(user, 36, '.85rem')}</span>
+          <span class="sidebar-avatar-wrap" style="${SHELL_SIDEBAR_WRAP_STYLE}">${shellPhotoCircleHtml(user, 36, '.85rem')}</span>
           <div style="min-width:0;flex:1">
             <div style="font-size:.85rem;font-weight:600" class="text-truncate">${user.name}</div>
             <div style="font-size:.72rem;color:var(--muted)">${ROLE_LABELS[role]}</div>
