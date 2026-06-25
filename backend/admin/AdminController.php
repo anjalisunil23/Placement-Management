@@ -619,6 +619,12 @@ final class AdminController
     public function listDepartments(): void
     {
         RBACMiddleware::requireAdmin();
+        try {
+            (new \PMS\Services\AesApiService())->syncDepartmentsToLocal();
+        } catch (\Throwable) {
+            // Serve local departments when AES API is unreachable.
+        }
+
         $model = new DepartmentModel();
         $officerModel = new PlacementOfficerModel();
         $userModel = $this->userModel;

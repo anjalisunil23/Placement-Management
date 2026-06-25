@@ -152,16 +152,24 @@ final class PublicController
             }
         }
 
-        $rows = array_map(static function (array $dept) use ($assignedDeptIds) {
+        $rows = [];
+        foreach ($departments as $dept) {
             $serialized = DocumentHelper::serialize($dept);
-            $id = $serialized['id'] ?? $serialized['_id'] ?? '';
-            return [
+            $id = (string) ($serialized['id'] ?? $serialized['_id'] ?? '');
+            $code = strtoupper(trim((string) ($serialized['code'] ?? '')));
+            $name = trim((string) ($serialized['name'] ?? ''));
+            if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
+                continue;
+            }
+            $rows[] = [
                 'id'         => $id,
-                'name'       => $serialized['name'] ?? '',
-                'code'       => $serialized['code'] ?? '',
+                'name'       => $name,
+                'code'       => $code,
                 'hasOfficer' => isset($assignedDeptIds[$id]),
             ];
-        }, $departments);
+        }
+
+        usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));
         Response::success($rows);
     }
 

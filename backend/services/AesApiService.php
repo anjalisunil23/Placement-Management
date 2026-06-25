@@ -464,31 +464,56 @@ final class AesApiService
     }
 
     /**
-     * Pull AES departments into the local departments collection (insert missing codes only).
+     * Pull AES departments into the local departments collection and reconcile numeric AES ids to short codes.
      */
     public function syncDepartmentsToLocal(): int
     {
+        self::$departmentCache = null;
         $rows = $this->listDepartments();
         if ($rows === []) {
             return 0;
         }
 
         $model = new DepartmentModel();
-        $created = 0;
+        $changed = 0;
         foreach ($rows as $row) {
             $code = strtoupper(trim($row['code']));
             $name = trim($row['name']);
+            $aesId = trim((string) ($row['aesId'] ?? ''));
             if ($code === '' || $name === '') {
                 continue;
             }
-            if ($model->findByCode($code) !== null) {
+
+            $existing = $model->findByCode($code);
+            if ($existing !== null) {
+                if (trim((string) ($existing['name'] ?? '')) !== $name) {
+                    $model->update((string) $existing['_id'], ['name' => $name]);
+                    $changed++;
+                }
+                if ($aesId !== '') {
+                    $numeric = $model->findByCode($aesId);
+                    if ($numeric !== null && (string) ($numeric['_id'] ?? '') !== (string) ($existing['_id'] ?? '')) {
+                        $model->delete((string) $numeric['_id']);
+                        $changed++;
+                    }
+                }
                 continue;
             }
+
+            if ($aesId !== '') {
+                $numeric = $model->findByCode($aesId);
+                if ($numeric !== null) {
+                    $model->update((string) $numeric['_id'], ['code' => $code, 'name' => $name]);
+                    $changed++;
+                    continue;
+                }
+            }
+
             $model->createDepartment(['code' => $code, 'name' => $name]);
-            $created++;
+            $changed++;
         }
 
-        return $created;
+        return $changed;
     }
 
     /**
@@ -588,35 +613,72 @@ final class AesApiService
             if (!is_array($item)) {
                 continue;
             }
-            $code = strtoupper(trim((string) (
-                $item['code']
-                ?? $item['dept_code']
-                ?? $item['deptCode']
-                ?? $item['department_code']
-                ?? $item['branch_code']
-                ?? $item['br']
-                ?? ''
-            )));
-            $name = trim((string) (
-                $item['name']
-                ?? $item['dept_name']
-                ?? $item['deptName']
-                ?? $item['department_name']
-                ?? $item['department']
-                ?? $item['branch_name']
-                ?? $item['branch']
-                ?? ''
-            ));
-            if ($code === '' && $name !== '') {
-                $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? $name);
-            }
-            if ($code === '' || $name === '') {
+            $parsed = $this->parseDepartmentRow($item);
+            if ($parsed === null) {
                 continue;
             }
-            $rows[] = ['code' => $code, 'name' => $name];
+            $rows[] = $parsed;
         }
 
         return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return array{code:string,name:string,short:string,aesId:string}|null
+     */
+    private function parseDepartmentRow(array $item): ?array
+    {
+        $aesId = trim((string) (
+            $item['deptCode']
+            ?? $item['dept_code']
+            ?? $item['deptId']
+            ?? $item['dept_id']
+            ?? $item['id']
+            ?? ''
+        ));
+        $short = strtoupper(trim((string) (
+            $item['deptshort']
+            ?? $item['dept_short']
+            ?? $item['short']
+            ?? $item['br']
+            ?? $item['branch_code']
+            ?? ''
+        )));
+        $legacyCode = strtoupper(trim((string) (
+            $item['code']
+            ?? $item['department_code']
+            ?? ''
+        )));
+        $name = trim((string) (
+            $item['deptName']
+            ?? $item['dept_name']
+            ?? $item['dept_shortName']
+            ?? $item['name']
+            ?? $item['department_name']
+            ?? $item['department']
+            ?? $item['branch_name']
+            ?? $item['branch']
+            ?? ''
+        ));
+
+        $canonical = '';
+        if ($short !== '' && preg_match('/[A-Z]/i', $short) === 1) {
+            $canonical = strtoupper(preg_replace('/[^A-Z0-9]/', '', $short) ?: $short);
+        } elseif ($legacyCode !== '' && preg_match('/^\d+$/', $legacyCode) !== 1 && preg_match('/[A-Z]/i', $legacyCode) === 1) {
+            $canonical = $legacyCode;
+        }
+
+        if ($canonical === '' || $name === '') {
+            return null;
+        }
+
+        return [
+            'code'  => $canonical,
+            'name'  => $name,
+            'short' => $short !== '' ? $short : $canonical,
+            'aesId' => preg_match('/^\d+$/', $aesId) === 1 ? $aesId : '',
+        ];
     }
 
     /**

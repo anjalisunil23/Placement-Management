@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260626a';
+const APP_SCRIPT_VERSION = '20260626c';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -2119,7 +2119,9 @@ function departmentList() {
 }
 
 function departmentCodes() {
-  const codes = departmentList().map(d => String(d.code || '').trim().toUpperCase()).filter(Boolean);
+  const codes = departmentList()
+    .map(d => String(d.code || '').trim().toUpperCase())
+    .filter(c => c && !/^\d+$/.test(c));
   return codes.length ? [...new Set(codes)] : ELIGIBILITY_BRANCHES;
 }
 
@@ -2140,15 +2142,21 @@ function fillDepartmentCodeSelect(selectEl, { includeAll = false, selected = '' 
 
 function renderDepartmentBranchCheckboxes(container, { name = 'branches', checkedAll = true, selected = null } = {}) {
   if (!container) return;
-  const codes = departmentCodes();
+  const depts = departmentList().filter(d => {
+    const code = String(d.code || '').trim().toUpperCase();
+    return code && !/^\d+$/.test(code);
+  });
   const selectedSet = selected instanceof Set
     ? selected
     : (Array.isArray(selected) ? new Set(selected.map(s => String(s).trim().toUpperCase())) : null);
-  container.innerHTML = codes.length
-    ? codes.map(code => {
-        const checked = selectedSet ? selectedSet.has(String(code).toUpperCase()) : checkedAll;
+  container.innerHTML = depts.length
+    ? depts.map(d => {
+        const code = String(d.code || '').trim().toUpperCase();
+        const checked = selectedSet ? selectedSet.has(code) : checkedAll;
         const id = `br-${code}-${Math.random().toString(36).slice(2, 7)}`;
-        return `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="${name}" value="${code}" id="${id}"${checked ? ' checked' : ''}><label class="form-check-label small" for="${id}">${code}</label></div>`;
+        const label = d.name ? `${code}` : code;
+        const title = d.name ? ` title="${String(d.name).replace(/"/g, '&quot;')}"` : '';
+        return `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="${name}" value="${code}" id="${id}"${checked ? ' checked' : ''}><label class="form-check-label small" for="${id}"${title}>${label}</label></div>`;
       }).join('')
     : '<span class="small text-muted-2">No departments configured.</span>';
 }
