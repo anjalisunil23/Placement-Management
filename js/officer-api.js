@@ -14,31 +14,38 @@ const OfficerApi = {
     let placementStatus = 'registered';
     if (isPlaced) placementStatus = 'placed';
     else if (selfPlacement?.status === 'pending') placementStatus = 'pending_placement';
+    const academic = row.academic || {};
+    const personal = row.personal || {};
+    const email = u.email || '';
+    const isCollege = /@(students\.)?amaljyothi\.ac\.in$/i.test(email) || /\.ajce\.in$/i.test(email);
     return {
       id: OfficerApi.id(u) || OfficerApi.id(row),
       studentId: OfficerApi.id(row),
       role: 'student',
       name: row.displayName || u.name || '',
-      email: u.email || '',
+      email: row.collegeEmail || (isCollege ? email : (row.personalEmail || personal.personalEmail || email)),
+      collegeEmail: row.collegeEmail || (isCollege ? email : (personal.collegeEmail || '')),
+      personalEmail: row.personalEmail || personal.personalEmail || personal.email || (!isCollege ? email : ''),
+      phone: row.phone || personal.phone || '',
       registerNumber: row.registerNumber || '',
-      department: dept.code || dept.name || '',
-      departmentName: dept.name || dept.code || '',
+      department: row.departmentCode || dept.code || dept.name || '',
+      departmentName: row.departmentName || dept.name || dept.code || '',
       classBatch: row.classBatch || '',
-      cgpa: row.academic?.cgpa ?? null,
-      marks10th: row.academic?.marks10th ?? null,
-      marks12th: row.academic?.marks12th ?? row.academic?.ugMarks ?? null,
-      ugMarks: row.academic?.ugMarks ?? row.academic?.marks12th ?? null,
+      cgpa: academic.cgpa ?? row.academic?.cgpa ?? null,
+      marks10th: academic.marks10th ?? row.academic?.marks10th ?? null,
+      marks12th: academic.marks12th ?? row.academic?.marks12th ?? row.academic?.ugMarks ?? null,
+      ugMarks: academic.ugMarks ?? row.academic?.ugMarks ?? row.academic?.marks12th ?? null,
+      backlogs: academic.backlogs ?? row.academic?.backlogs ?? 0,
       photoUrl: row.photo?.url || row.photoUrl || '',
       status: u.approved ? 'approved' : 'pending',
       blocked: u.status === 'blocked',
       placed: isPlaced,
       selfPlacement,
       placementStatus,
-      photoUrl,
       photo: row.photo || u.photo || null,
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
-      resumeStatus: row.resume?.verified ? 'approved' : (row.resume?.path ? 'pending' : 'pending'),
+      resumeStatus: row.resume?.verified ? 'approved' : (row.resume?.path ? 'pending' : 'none'),
     };
   },
 
@@ -148,8 +155,9 @@ const OfficerApi = {
     return res.data.map(s => OfficerApi.mapStudentRow(s));
   },
 
-  async fetchStudentProfile(studentId) {
-    const res = await api(`/officer/students/${encodeURIComponent(studentId)}/profile`);
+  async fetchStudentProfile(studentId, registerNumber = '') {
+    const qs = registerNumber ? `?registerNumber=${encodeURIComponent(registerNumber)}` : '';
+    const res = await api(`/officer/students/${encodeURIComponent(studentId)}/profile${qs}`);
     return res.success && res.data ? res.data : null;
   },
 

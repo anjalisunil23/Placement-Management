@@ -849,7 +849,13 @@ final class AdminController
     public function studentProfile(string $studentId): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        Response::success((new OfficerDataService())->getStudentOverview($studentId, $scope['ctx'], 'admin'));
+        $register = trim((string) ($_GET['registerNumber'] ?? ''));
+        Response::success((new OfficerDataService())->getStudentOverview(
+            $studentId,
+            $scope['ctx'],
+            'admin',
+            $register !== '' ? $register : null
+        ));
     }
 
     /** GET /api/admin/students/{id}/photo */

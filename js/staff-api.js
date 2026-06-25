@@ -27,19 +27,22 @@ const StaffApi = {
     return {
       id: row.id || StaffApi.id(row),
       studentId: row.id || StaffApi.id(row),
-      name: row.name || '',
-      email: row.email || '',
+      name: row.displayName || row.name || '',
+      email: row.collegeEmail || row.email || '',
+      collegeEmail: row.collegeEmail || row.email || '',
+      personalEmail: row.personalEmail || '',
+      phone: row.phone || '',
       registerNumber: row.registerNumber || '',
-      department: row.department || '',
+      department: row.departmentCode || row.department || '',
       departmentName: row.departmentName || row.department || '',
       classBatch: row.classBatch || '',
-      cgpa: row.cgpa ?? null,
+      cgpa: row.cgpa ?? row.academic?.cgpa ?? null,
       marks10th: row.marks10th ?? row.academic?.marks10th ?? null,
       marks12th: row.marks12th ?? row.academic?.marks12th ?? row.ugMarks ?? row.academic?.ugMarks ?? null,
       ugMarks: row.ugMarks ?? row.academic?.ugMarks ?? row.marks12th ?? row.academic?.marks12th ?? null,
+      backlogs: row.academic?.backlogs ?? 0,
       photoUrl: row.photoUrl || row.photo?.url || '',
       placementStatus: row.placementStatus || 'seeking',
-      photoUrl: row.photoUrl || row.photo?.url || '',
       photo: row.photo || null,
       status: row.status || 'active',
       blacklisted: !!row.blacklisted,
@@ -151,8 +154,9 @@ const StaffApi = {
     return res.data;
   },
 
-  async fetchStudentProfile(studentId) {
-    const res = await api(`/staff/students/${encodeURIComponent(studentId)}/profile`);
+  async fetchStudentProfile(studentId, registerNumber = '') {
+    const qs = registerNumber ? `?registerNumber=${encodeURIComponent(registerNumber)}` : '';
+    const res = await api(`/staff/students/${encodeURIComponent(studentId)}/profile${qs}`);
     return res.success && res.data ? res.data : null;
   },
 
