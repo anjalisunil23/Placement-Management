@@ -9,14 +9,16 @@ const OfficerApi = {
     const dept = row.department || {};
     const chances = row.placementChances || {};
     const selfPlacement = row.selfPlacement && typeof row.selfPlacement === 'object' ? row.selfPlacement : null;
+    const isPlaced = !!row.placed;
+    const photoUrl = row.photoUrl || u.photoUrl || row.photo?.url || u.photo?.url || '';
     let placementStatus = 'registered';
-    if (row.placed) placementStatus = 'placed';
+    if (isPlaced) placementStatus = 'placed';
     else if (selfPlacement?.status === 'pending') placementStatus = 'pending_placement';
     return {
       id: OfficerApi.id(u) || OfficerApi.id(row),
       studentId: OfficerApi.id(row),
       role: 'student',
-      name: u.name || '',
+      name: row.displayName || u.name || '',
       email: u.email || '',
       registerNumber: row.registerNumber || '',
       department: dept.code || dept.name || '',
@@ -28,9 +30,11 @@ const OfficerApi = {
       ugMarks: row.academic?.ugMarks ?? row.academic?.marks12th ?? null,
       status: u.approved ? 'approved' : 'pending',
       blocked: u.status === 'blocked',
-      placed: !!row.placed,
+      placed: isPlaced,
       selfPlacement,
       placementStatus,
+      photoUrl,
+      photo: row.photo || u.photo || null,
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
       resumeStatus: row.resume?.verified ? 'approved' : (row.resume?.path ? 'pending' : 'pending'),
@@ -152,6 +156,29 @@ const OfficerApi = {
     const res = await api(`/officer/students/${encodeURIComponent(studentId)}/pipeline`);
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data;
+  },
+
+  selfPlacementBase(studentId) {
+    return `/officer/students/${encodeURIComponent(studentId)}/self-placement`;
+  },
+
+  selfPlacementOfferLetterUrl(studentId) {
+    return `${API_BASE}/officer/students/${encodeURIComponent(studentId)}/self-placement/offer-letter`;
+  },
+
+  async fetchSelfPlacement(studentId) {
+    const res = await api(OfficerApi.selfPlacementBase(studentId));
+    return res.success ? res.data : null;
+  },
+
+  async approveSelfPlacement(studentId) {
+    const res = await api(`${OfficerApi.selfPlacementBase(studentId)}/approve`, { method: 'POST' });
+    return res.success ? res.data : null;
+  },
+
+  async rejectSelfPlacement(studentId, reason = '') {
+    const res = await api(`${OfficerApi.selfPlacementBase(studentId)}/reject`, { method: 'POST', body: { reason } });
+    return res.success ? res.data : null;
   },
 
   async fetchPendingStudents() {

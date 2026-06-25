@@ -21,6 +21,12 @@ use PMS\Utils\Security;
  */
 final class OfficerDataService
 {
+    /** @var array<string, string> */
+    private static array $placementNameCache = [];
+
+    /** @var array<string, array<string, mixed>> */
+    private static array $placementProfileCache = [];
+
     /**
      * @return array{user: array<string, mixed>, ctx: array<string, mixed>}
      */
@@ -223,7 +229,7 @@ final class OfficerDataService
             $dept = $departments[$deptId] ?? null;
 
             $row = DocumentHelper::serialize($s) ?? [];
-            $row['user'] = $u ? DocumentHelper::serialize($u) : null;
+            $row = $this->enrichStudentListRow($row, $s, $u);
             $row['department'] = $dept ? [
                 'id'   => (string) $dept['_id'],
                 'name' => $dept['name'] ?? '',
@@ -243,7 +249,7 @@ final class OfficerDataService
      */
     public function getStudentOverview(string $studentId, array $ctx): array
     {
-        $student = (new StudentModel())->findById($studentId);
+        $student = $this->resolveStudentRef($studentId);
         if (!$student) {
             Response::notFound('Student not found.');
         }
@@ -257,11 +263,14 @@ final class OfficerDataService
             ? (new DepartmentModel())->findById((string) $student['departmentId'])
             : null;
 
+        $enriched = $this->enrichStudentListRow([], $student, $user);
+        $displayName = (string) ($enriched['displayName'] ?? ($user['name'] ?? 'Student'));
+        $photoUrl = (string) ($enriched['photoUrl'] ?? '');
+
         $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
         $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
-        $photo = is_array($student['photo'] ?? null) ? $student['photo'] : null;
-        $photoUrl = trim((string) ($photo['url'] ?? ''));
         $chances = is_array($student['placementChances'] ?? null) ? $student['placementChances'] : [];
+        $selfPlacement = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : null;
 
         $email = strtolower(trim((string) ($user['email'] ?? '')));
         $collegeEmail = $this->isCollegeEmailAddress($email) ? $email : '';
@@ -284,11 +293,16 @@ final class OfficerDataService
             $resumeStatus = !empty($resume['verified']) ? 'approved' : 'pending';
         }
 
+        $isPlaced = ($student['placed'] ?? false) === true;
+        $placementStatus = $isPlaced
+            ? 'placed'
+            : ((is_array($selfPlacement) && ($selfPlacement['status'] ?? '') === 'pending') ? 'pending_placement' : 'registered');
+
         return [
             'id'              => (string) ($student['_id'] ?? ''),
             'studentId'       => (string) ($student['_id'] ?? ''),
             'registerNumber'  => (string) ($student['registerNumber'] ?? ''),
-            'name'            => (string) ($user['name'] ?? 'Student'),
+            'name'            => $displayName,
             'email'           => $collegeEmail !== '' ? $collegeEmail : ($personalEmail !== '' ? $personalEmail : $email),
             'collegeEmail'    => $collegeEmail,
             'personalEmail'   => $personalEmail,
@@ -302,14 +316,59 @@ final class OfficerDataService
             'ugMarks'         => (float) ($academic['ugMarks'] ?? 0) ?: null,
             'backlogs'        => (int) ($academic['backlogs'] ?? 0),
             'photoUrl'        => $photoUrl,
+            'photo'           => $enriched['photo'] ?? null,
             'status'          => !empty($user['approved']) ? 'approved' : 'pending',
             'blocked'         => ($user['status'] ?? '') === 'blocked',
-            'placed'          => !empty($student['placed']),
-            'placementStatus' => !empty($student['placed']) ? 'placed' : 'registered',
+            'placed'          => $isPlaced,
+            'selfPlacement'   => $selfPlacement ? (DocumentHelper::serialize($selfPlacement) ?? []) : null,
+            'placementStatus' => $placementStatus,
             'resumeStatus'    => $resumeStatus,
             'chancesUsed'     => (int) ($chances['used'] ?? 0),
             'chancesMax'      => (int) (($chances['used'] ?? 0) + ($chances['remaining'] ?? 0)),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $row Serialized student row (mutated in place for list APIs).
+     * @param array<string, mixed> $student Raw student document.
+     * @param array<string, mixed>|null $user Raw user document.
+     * @return array<string, mixed>
+     */
+    public function enrichStudentListRow(array $row, array $student, ?array $user): array
+    {
+        $displayName = $this->studentDisplayName($student, $user);
+        $photo = (new AesLoginService())->resolveProfilePhoto($student, is_array($user) ? $user : []);
+        $photoUrl = (string) ($photo['photoUrl'] ?? '');
+
+        if ($photoUrl === '') {
+            $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            if ($register !== '') {
+                $placement = $this->placementProfileForRegister($register);
+                $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
+                if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+                    $photo['photoUrl'] = $photoUrl;
+                    $photo['photo'] = ['url' => $photoUrl, 'source' => 'aes'];
+                }
+            }
+        }
+
+        $userOut = $user ? (DocumentHelper::serialize($user) ?? []) : [];
+        if ($displayName !== '') {
+            $userOut['name'] = $displayName;
+        }
+        if ($photoUrl !== '') {
+            $userOut['photoUrl'] = $photoUrl;
+            $userOut['photo'] = $photo['photo'] ?? ['url' => $photoUrl, 'source' => 'aes'];
+        }
+
+        $row['user'] = $userOut !== [] ? $userOut : null;
+        $row['displayName'] = $displayName;
+        if ($photoUrl !== '') {
+            $row['photoUrl'] = $photoUrl;
+            $row['photo'] = $photo['photo'] ?? ['url' => $photoUrl, 'source' => 'aes'];
+        }
+
+        return $row;
     }
 
     /**
@@ -339,6 +398,70 @@ final class OfficerDataService
             || str_contains($email, '@amaljyothi.ac.in')
             || str_ends_with($email, '@ajce.in')
             || (bool) preg_match('/@[a-z0-9.-]+\.ajce\.in$/', $email);
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed>|null $user
+     */
+    private function studentDisplayName(array $student, ?array $user): string
+    {
+        $name = is_array($user) ? trim((string) ($user['name'] ?? '')) : '';
+        if ($name !== '') {
+            return $name;
+        }
+
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $name = trim((string) ($personal['name'] ?? $personal['fullName'] ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        if ($register === '') {
+            return '';
+        }
+
+        if (isset(self::$placementNameCache[$register])) {
+            return self::$placementNameCache[$register];
+        }
+
+        $placement = $this->placementProfileForRegister($register);
+        $resolved = trim((string) ($placement['stud_name'] ?? $placement['name'] ?? ''));
+
+        self::$placementNameCache[$register] = $resolved;
+
+        if ($resolved !== '' && is_array($user) && !empty($user['_id'])) {
+            (new UserModel())->updateUser((string) $user['_id'], ['name' => $resolved]);
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function placementProfileForRegister(string $register): array
+    {
+        $register = strtoupper(trim($register));
+        if ($register === '') {
+            return [];
+        }
+        if (isset(self::$placementProfileCache[$register])) {
+            return self::$placementProfileCache[$register];
+        }
+
+        $profile = [];
+        try {
+            $fetched = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+            $profile = is_array($fetched) ? $fetched : [];
+        } catch (\Throwable) {
+            $profile = [];
+        }
+
+        self::$placementProfileCache[$register] = $profile;
+
+        return $profile;
     }
 
     /**
@@ -372,6 +495,7 @@ final class OfficerDataService
         $dept = is_array($row['department'] ?? null) ? $row['department'] : [];
         $hay = strtolower(implode(' ', array_filter([
             (string) ($row['registerNumber'] ?? ''),
+            (string) ($row['displayName'] ?? ''),
             (string) ($user['name'] ?? ''),
             (string) ($user['email'] ?? ''),
             (string) ($dept['code'] ?? ''),
@@ -826,7 +950,7 @@ final class OfficerDataService
                 'company'        => (string) $self['companyName'],
                 'role'           => (string) ($self['role'] ?? ''),
                 'stage'          => 'self_reported',
-                'status'         => $placed ? 'placed' : (string) ($self['status'] ?? 'pending'),
+                'status'         => ($placed || (string) ($self['status'] ?? '') === 'approved') ? 'placed' : (string) ($self['status'] ?? 'pending'),
                 'appliedAt'      => $this->pipelineTimestamp($self['submittedAt'] ?? null),
                 'registerNumber' => (string) ($student['registerNumber'] ?? ''),
                 'source'         => 'self_placement',

@@ -28,6 +28,7 @@ use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\NotificationService;
 use PMS\Services\OfficerDataService;
 use PMS\Services\PlacementOfficerContext;
+use PMS\Services\SelfPlacementService;
 use PMS\Services\AesLoginService;
 use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
@@ -405,6 +406,38 @@ final class OfficerController
     {
         $scope = (new OfficerDataService())->requireScope();
         Response::success((new OfficerDataService())->studentPipelineForScope($studentId, $scope['ctx']));
+    }
+
+    /** GET /api/officer/students/{id}/self-placement */
+    public function getSelfPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new SelfPlacementService())->getReport($studentId, $scope['ctx']));
+    }
+
+    /** GET /api/officer/students/{id}/self-placement/offer-letter */
+    public function downloadSelfPlacementOfferLetter(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new SelfPlacementService())->streamOfferLetter($studentId, $scope['ctx']);
+    }
+
+    /** POST /api/officer/students/{id}/self-placement/approve */
+    public function approveSelfPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $result = (new SelfPlacementService())->approve($studentId, $scope['ctx'], $scope['user']);
+        Response::success($result, 'Placement verified and student marked as placed.');
+    }
+
+    /** POST /api/officer/students/{id}/self-placement/reject */
+    public function rejectSelfPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $reason = trim((string) ($input['reason'] ?? ''));
+        $result = (new SelfPlacementService())->reject($studentId, $scope['ctx'], $scope['user'], $reason);
+        Response::success($result, 'Placement report rejected.');
     }
 
     /** GET /api/officer/applications */

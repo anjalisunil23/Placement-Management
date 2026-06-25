@@ -45,14 +45,16 @@ const AdminApi = {
     const email = u.email || '';
     const isCollege = /@(students\.)?amaljyothi\.ac\.in$/i.test(email) || /\.ajce\.in$/i.test(email);
     const selfPlacement = row.selfPlacement && typeof row.selfPlacement === 'object' ? row.selfPlacement : null;
+    const isPlaced = !!row.placed;
+    const photoUrl = row.photoUrl || u.photoUrl || row.photo?.url || u.photo?.url || '';
     let placementStatus = 'registered';
-    if (row.placed) placementStatus = 'placed';
+    if (isPlaced) placementStatus = 'placed';
     else if (selfPlacement?.status === 'pending') placementStatus = 'pending_placement';
     return {
       id: this.id(u) || this.id(row),
       studentId: this.id(row),
       role: 'student',
-      name: u.name || '',
+      name: row.displayName || u.name || '',
       email,
       collegeEmail: isCollege ? email : (personal.collegeEmail || ''),
       personalEmail: personal.personalEmail || personal.email || (!isCollege ? email : ''),
@@ -66,10 +68,11 @@ const AdminApi = {
       marks12th: academic.marks12th ?? academic.ugMarks ?? null,
       ugMarks: academic.ugMarks ?? academic.marks12th ?? null,
       backlogs: academic.backlogs ?? 0,
-      photoUrl: photo.url || '',
+      photoUrl: row.photoUrl || photo.url || u.photoUrl || u.photo?.url || '',
+      photo: row.photo || u.photo || null,
       status: u.approved ? 'approved' : 'pending',
       blocked: u.status === 'blocked',
-      placed: !!row.placed,
+      placed: isPlaced,
       selfPlacement,
       placementStatus,
       chancesUsed: chances.used ?? 0,
@@ -279,6 +282,29 @@ const AdminApi = {
     const res = await api(`/admin/students/${encodeURIComponent(studentId)}/pipeline`);
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data;
+  },
+
+  selfPlacementBase(studentId) {
+    return `/admin/students/${encodeURIComponent(studentId)}/self-placement`;
+  },
+
+  selfPlacementOfferLetterUrl(studentId) {
+    return `${API_BASE}/admin/students/${encodeURIComponent(studentId)}/self-placement/offer-letter`;
+  },
+
+  async fetchSelfPlacement(studentId) {
+    const res = await api(this.selfPlacementBase(studentId));
+    return res.success ? res.data : null;
+  },
+
+  async approveSelfPlacement(studentId) {
+    const res = await api(`${this.selfPlacementBase(studentId)}/approve`, { method: 'POST' });
+    return res.success ? res.data : null;
+  },
+
+  async rejectSelfPlacement(studentId, reason = '') {
+    const res = await api(`${this.selfPlacementBase(studentId)}/reject`, { method: 'POST', body: { reason } });
+    return res.success ? res.data : null;
   },
 
   async fetchCompanies() {

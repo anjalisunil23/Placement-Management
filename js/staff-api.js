@@ -38,6 +38,8 @@ const StaffApi = {
       marks12th: row.marks12th ?? row.academic?.marks12th ?? row.ugMarks ?? row.academic?.ugMarks ?? null,
       ugMarks: row.ugMarks ?? row.academic?.ugMarks ?? row.marks12th ?? row.academic?.marks12th ?? null,
       placementStatus: row.placementStatus || 'seeking',
+      photoUrl: row.photoUrl || row.photo?.url || '',
+      photo: row.photo || null,
       status: row.status || 'active',
       blacklisted: !!row.blacklisted,
       blocked: !!row.blocked,

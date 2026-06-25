@@ -117,6 +117,7 @@ if (!isAdminLike) {
 
 function notifIcon(type) {
   const t = String(type || '').toLowerCase();
+  if (['self_placement_submitted', 'placement_report_submitted'].includes(t)) return ['warning', 'bi-clipboard-check-fill'];
   if (['job_poster', 'job_post', 'drive_announcement', 'broadcast'].includes(t)) return ['primary', 'bi-briefcase-fill'];
   if (['application_update', 'selection_update', 'referral', 'recommendation_update', 'application_submitted', 'registration_approved', 'officer_approved', 'resume_verified'].includes(t)) return ['info', 'bi-send-check-fill'];
   if (['resume_review', 'warning'].includes(t)) return ['warning', 'bi-exclamation-triangle-fill'];
@@ -125,12 +126,14 @@ function notifIcon(type) {
 }
 
 function notifCard(n) {
-  const icon = notifIcon(n.type);
+  const icon = notifIcon(n.rawType || n.type);
   const ago = formatDate(n.createdAt);
+  const reviewHint = (n.rawType === 'self_placement_submitted' && n.metadata?.studentId)
+    ? '<div class="small text-warning mt-1"><i class="bi bi-arrow-right-circle me-1"></i>Click to review placement report</div>' : '';
   return `<div class="notif-card ${n.read ? '' : 'unread'}" data-id="${n.id}" role="button" tabindex="0" style="cursor:pointer">
     <div class="notif-ic" style="background:color-mix(in srgb,var(--${icon[0]}) 15%,transparent);color:var(--${icon[0]})"><i class="bi ${icon[1]}"></i></div>
     <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${n.title}</strong><small class="text-muted-2">${ago}</small></div>
-    <p class="mb-0 small text-muted-2">${n.body}</p></div>
+    <p class="mb-0 small text-muted-2">${n.body}</p>${reviewHint}</div>
   </div>`;
 }
 
@@ -147,11 +150,13 @@ function normalizeNotif(n) {
   return {
     id: String(n._id || n.id || ''),
     type: n.type === 'job_poster' || n.type === 'application_update' ? n.type : mapApiNotifType(n.type),
+    rawType: String(n.type || ''),
     title: n.title || 'Notification',
     body: n.body || n.message || '',
     read: !!n.read,
     createdAt: n.createdAt,
     driveId: n.driveId || n.metadata?.driveId,
+    metadata: n.metadata && typeof n.metadata === 'object' ? n.metadata : {},
   };
 }
 
@@ -255,6 +260,23 @@ async function openNotification(id) {
   const idx = notificationRows.findIndex(n => String(n.id) === sid);
   if (idx < 0) return;
   const notif = notificationRows[idx];
+  const rawType = String(notif.rawType || '').toLowerCase();
+  const studentId = notif.metadata?.studentId;
+
+  if (isAdminLike && rawType === 'self_placement_submitted' && studentId) {
+    if (!notif.read) {
+      if (Auth.hasRealAuth() && notifApiBase) {
+        await api(`${notifApiBase}/${encodeURIComponent(sid)}/read`, { method: 'POST', skipAuthRedirect: true });
+      } else if (notifStore) {
+        notifStore.markRead(sid);
+      }
+      NotificationInbox.refreshBadge?.();
+    }
+    const link = notif.metadata?.link || (`students.html?verify=${encodeURIComponent(studentId)}`);
+    window.location.href = link;
+    return;
+  }
+
   if (notif.read) {
     showReadTab();
     return;

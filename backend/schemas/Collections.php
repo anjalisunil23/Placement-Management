@@ -124,6 +124,7 @@ final class Collections
                     'remaining' => 'int',
                 ],
                 'placed'         => 'bool',
+                'placement'      => 'array|null',
                 'placementHistory'=> 'array',
                 'createdAt'      => 'UTCDateTime',
                 'updatedAt'      => 'UTCDateTime',

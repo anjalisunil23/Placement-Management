@@ -72,7 +72,8 @@
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement chances</span><span class="fw-medium" id="spChances">—</span></div>
             </div>
           </div>
-          <div class="row g-3">
+          <div class="alert alert-warning d-none mb-3" id="verifyPlacementBanner" data-roles="admin,placement_officer"></div>
+          <div class="row g-3" id="overviewStatsRow">
             <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Applied</div><div class="val" id="statApplied">0</div></div></div>
             <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Shortlisted</div><div class="val" id="statShortlisted">0</div></div></div>
             <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Selected / Offer</div><div class="val" id="statSelected">0</div></div></div>
@@ -89,12 +90,14 @@
                 <option value="resume_verification">Resume verification</option>
                 <option value="approval">Approval</option>
                 <option value="company_selection">Company selection</option>
+                <option value="self_reported">Self reported</option>
                 <option value="rejected">Rejected</option>
               </select>
               <select class="form-select form-select-sm w-auto" id="statusFilter">
                 <option value="">All statuses</option>
                 <option value="pending">Pending</option>
                 <option value="applied">Applied</option>
+                <option value="placed">Placed</option>
                 <option value="approved">Approved</option>
                 <option value="shortlisted">Shortlisted</option>
                 <option value="rejected">Rejected</option>
@@ -248,16 +251,56 @@
 
 </div>
 
+<div class="modal fade" id="verifyPlacementModal" tabindex="-1" aria-hidden="true" data-roles="admin,placement_officer">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content card-surface border-0">
+      <div class="modal-header border-0 pb-0">
+        <div>
+          <h5 class="modal-title fw-bold mb-1">Verify self-placement report</h5>
+          <p class="small text-muted-2 mb-0" id="verifyPlacementSub">Review offer letter and mark student as placed.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div class="row g-3 mb-3">
+          <div class="col-md-6"><div class="small text-muted-2">Student</div><div class="fw-semibold" id="verifyStudentName">—</div></div>
+          <div class="col-md-3"><div class="small text-muted-2">Register no.</div><div id="verifyRegister">—</div></div>
+          <div class="col-md-3"><div class="small text-muted-2">Department</div><div id="verifyDepartment">—</div></div>
+          <div class="col-md-6"><div class="small text-muted-2">Company</div><div class="fw-semibold" id="verifyCompany">—</div></div>
+          <div class="col-md-6"><div class="small text-muted-2">Role</div><div id="verifyRole">—</div></div>
+          <div class="col-12"><div class="small text-muted-2">Company address</div><div id="verifyAddress">—</div></div>
+          <div class="col-12">
+            <div class="small text-muted-2 mb-1">Offer letter</div>
+            <a class="btn btn-sm btn-outline-primary" id="verifyOfferLink" href="#" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>View offer letter (PDF)</a>
+            <span class="small text-muted-2 ms-2 d-none" id="verifyNoOffer">No offer letter on file.</span>
+          </div>
+          <div class="col-12 d-none" id="verifyRejectWrap">
+            <label class="form-label small fw-semibold" for="verifyRejectReason">Rejection reason (optional)</label>
+            <textarea class="form-control" id="verifyRejectReason" rows="2" placeholder="Explain what the student should correct…"></textarea>
+          </div>
+        </div>
+        <div class="alert alert-info small mb-0 d-none" id="verifyAlreadyPlaced">This student is already marked as placed.</div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-outline-danger" id="verifyRejectBtn"><i class="bi bi-x-lg me-1"></i>Reject</button>
+        <button type="button" class="btn btn-success" id="verifyApproveBtn"><i class="bi bi-check2-circle me-1"></i>Mark as placed</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260628g"></script>
-<script src="js/admin-api.js?v=20260628g"></script>
-<script src="js/officer-api.js?v=20260628g"></script>
-<script src="js/api.js?v=20260628g"></script>
-<script src="js/app.js?v=20260622d"></script>
+<script src="js/staff-api.js?v=20260628i"></script>
+<script src="js/admin-api.js?v=20260628i"></script>
+<script src="js/officer-api.js?v=20260628i"></script>
+<script src="js/api.js?v=20260628i"></script>
+<script src="js/app.js?v=20260628i"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin' || role === 'placement_officer';
+const canVerifySelfPlacement = canManageRegistrations;
 const canManageApplications = role === 'admin' || role === 'placement_officer';
 const canManageBlacklist = role === 'admin';
 
@@ -383,7 +426,7 @@ function studentRow(s) {
   return `<button type="button" class="list-group-item list-group-item-action ${active}" data-reg="${esc(s.registerNumber)}" style="border:0;border-bottom:1px solid var(--border);background:transparent">
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div>
-        <div class="fw-semibold">${esc(s.name)}</div>
+        <div class="fw-semibold">${esc(s.name || s.registerNumber || 'Student')}</div>
         <div class="small text-muted-2">${esc(s.registerNumber)} · ${esc(s.department || '—')}${s.classBatch ? ` · ${esc(s.classBatch)}` : ''}</div>
       </div>
       <span class="badge-soft ${s.placementStatus === 'placed' ? 'success' : s.placementStatus === 'pending_placement' ? 'warning' : 'muted'}">${esc(s.placementStatus === 'pending_placement' ? 'under review' : (s.placementStatus || '—'))}</span>
@@ -516,13 +559,159 @@ function overviewStatusBadge(status) {
   return `<span class="badge-soft ${cls}">${esc(label)}</span>`;
 }
 
+function selfPlacementApiClient() {
+  if (role === 'placement_officer') return OfficerApi;
+  if (role === 'admin') return AdminApi;
+  return null;
+}
+
+let verifyPlacementModal = null;
+let verifyPlacementStudentId = '';
+
+async function openVerifyPlacementModal(studentId) {
+  if (!canVerifySelfPlacement) return;
+  const client = selfPlacementApiClient();
+  if (!client) return;
+  verifyPlacementStudentId = String(studentId || '');
+  if (!verifyPlacementStudentId) return;
+
+  const data = await client.fetchSelfPlacement(verifyPlacementStudentId);
+  if (!data) {
+    toast('Could not load placement report.', 'error');
+    return;
+  }
+
+  const report = data.report || {};
+  document.getElementById('verifyStudentName').textContent = data.studentName || '—';
+  document.getElementById('verifyRegister').textContent = data.registerNumber || '—';
+  document.getElementById('verifyDepartment').textContent = data.department || '—';
+  document.getElementById('verifyCompany').textContent = report.companyName || '—';
+  document.getElementById('verifyRole').textContent = report.role || '—';
+  document.getElementById('verifyAddress').textContent = report.companyAddress || '—';
+
+  const offerLink = document.getElementById('verifyOfferLink');
+  const noOffer = document.getElementById('verifyNoOffer');
+  if (data.hasOfferLetter) {
+    offerLink.href = client.selfPlacementOfferLetterUrl(verifyPlacementStudentId);
+    offerLink.classList.remove('d-none');
+    noOffer.classList.add('d-none');
+  } else {
+    offerLink.classList.add('d-none');
+    noOffer.classList.remove('d-none');
+  }
+
+  const pending = (report.status || '') === 'pending';
+  const already = !!data.placed || (report.status || '') === 'approved';
+  document.getElementById('verifyRejectWrap').classList.toggle('d-none', !pending);
+  document.getElementById('verifyApproveBtn').classList.toggle('d-none', !pending);
+  document.getElementById('verifyRejectBtn').classList.toggle('d-none', !pending);
+  document.getElementById('verifyAlreadyPlaced').classList.toggle('d-none', !already || pending);
+
+  if (!verifyPlacementModal) {
+    verifyPlacementModal = new bootstrap.Modal(document.getElementById('verifyPlacementModal'));
+  }
+  verifyPlacementModal.show();
+}
+
+async function approveVerifyPlacement() {
+  if (!(await requireWriteSession())) return;
+  const client = selfPlacementApiClient();
+  if (!client || !verifyPlacementStudentId) return;
+  if (!(await confirmAction({
+    title: 'Mark as placed',
+    message: 'Verify this self-placement report and mark the student as placed?',
+    confirmText: 'Mark placed',
+    variant: 'success',
+  }))) return;
+
+  const btn = document.getElementById('verifyApproveBtn');
+  btn.disabled = true;
+  const result = await client.approveSelfPlacement(verifyPlacementStudentId);
+  btn.disabled = false;
+  if (!result) {
+    toast('Could not approve placement report.', 'error');
+    return;
+  }
+  verifyPlacementModal?.hide();
+  toast('Student marked as placed.', 'success');
+  await refreshOverviewAfterVerification();
+}
+
+async function rejectVerifyPlacement() {
+  if (!(await requireWriteSession())) return;
+  const client = selfPlacementApiClient();
+  if (!client || !verifyPlacementStudentId) return;
+  const reason = document.getElementById('verifyRejectReason').value.trim();
+  if (!(await confirmAction({
+    title: 'Reject placement report',
+    message: 'Reject this self-placement report? The student can submit again with corrections.',
+    confirmText: 'Reject',
+    variant: 'warning',
+  }))) return;
+
+  const btn = document.getElementById('verifyRejectBtn');
+  btn.disabled = true;
+  const result = await client.rejectSelfPlacement(verifyPlacementStudentId, reason);
+  btn.disabled = false;
+  if (!result) {
+    toast('Could not reject placement report.', 'error');
+    return;
+  }
+  verifyPlacementModal?.hide();
+  toast('Placement report rejected.', 'success');
+  await refreshOverviewAfterVerification();
+}
+
+async function refreshOverviewAfterVerification() {
+  if (useLiveOverviewApi) {
+    const rows = await fetchOverviewStudentsFromApi(document.getElementById('searchStudent').value.trim());
+    if (rows) {
+      overviewStudentsAll = rows;
+      overviewStudents = rows;
+    }
+  }
+  renderOverviewList();
+  renderRegistrations();
+  if (selectedReg) await loadOverviewApps(selectedReg);
+}
+
+function syncVerifyPlacementBanner(s) {
+  const banner = document.getElementById('verifyPlacementBanner');
+  if (!banner || !canVerifySelfPlacement) return;
+  const studentId = s?.studentId || s?.id;
+  if (s?.placementStatus === 'pending_placement' && studentId) {
+    banner.classList.remove('d-none');
+    banner.innerHTML = `<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-0">
+      <span><strong>Self-placement under review.</strong> Verify the offer letter and mark as placed when confirmed.</span>
+      <button type="button" class="btn btn-sm btn-warning" id="btnReviewPlacement"><i class="bi bi-clipboard-check me-1"></i>Review report</button>
+    </div>`;
+    document.getElementById('btnReviewPlacement')?.addEventListener('click', () => openVerifyPlacementModal(studentId));
+  } else {
+    banner.classList.add('d-none');
+    banner.innerHTML = '';
+  }
+}
+
+function setOverviewAvatar(s) {
+  const el = document.getElementById('stuAvatar');
+  if (!el) return;
+  const photoUser = { name: s.name, photoUrl: s.photoUrl, photo: s.photo };
+  if (typeof shellPhotoCircleHtml === 'function') {
+    el.outerHTML = `<div class="avatar" id="stuAvatar" style="width:56px;height:56px;min-width:56px;line-height:0;flex:0 0 56px">${shellPhotoCircleHtml(photoUser, 56, '1rem')}</div>`;
+    if (typeof bindShellAvatarFallbacks === 'function') bindShellAvatarFallbacks();
+  } else {
+    el.textContent = initials(s.name || s.registerNumber || 'S');
+  }
+}
+
 function updateOverviewHeader(s) {
   setOverviewAvatar(s);
-  document.getElementById('stuName').textContent = s.name;
+  document.getElementById('stuName').textContent = s.name || s.registerNumber || 'Student';
   const dept = s.departmentName || s.department || '—';
-  document.getElementById('stuMeta').textContent = `${s.registerNumber || '—'} · ${dept}${s.classBatch ? ' · ' + s.classBatch : ''} · CGPA ${s.cgpa ?? '—'}`;
+  document.getElementById('stuMeta').textContent = `${s.registerNumber || '—'} · ${dept}${s.classBatch ? ' · ' + s.classBatch : ''} · CGPA ${s.cgpa ?? '—'}${s.email ? ' · ' + s.email : ''}`;
   document.getElementById('stuStatus').outerHTML = userStatusBadge(s.status, s.blacklisted ? true : s.blocked);
   renderStudentProfilePanel(s);
+  syncVerifyPlacementBanner(s);
 }
 
 async function loadStudentProfile(s) {
@@ -546,9 +735,13 @@ function updateOverviewStats(apps, student) {
   const applied = relevant.filter(a => a.status !== 'rejected').length;
   const shortlisted = relevant.filter(a => a.status === 'shortlisted').length;
   const selected = relevant.filter(a => ['selected', 'approved'].includes(a.status)).length;
-  const placed = student?.placementStatus === 'placed'
-    ? Math.max(1, relevant.filter(a => a.status === 'placed' || (a.source === 'recruitment_result' && a.status === 'selected')).length)
-    : relevant.filter(a => a.status === 'placed' || (a.source === 'recruitment_result' && a.status === 'selected')).length;
+  let placed = relevant.filter(a =>
+    a.status === 'placed' ||
+    (a.source === 'recruitment_result' && a.status === 'selected')
+  ).length;
+  if (placed === 0 && (student?.placementStatus === 'placed' || student?.placed)) {
+    placed = 1;
+  }
   document.getElementById('statApplied').textContent = applied;
   document.getElementById('statShortlisted').textContent = shortlisted;
   document.getElementById('statSelected').textContent = selected;
@@ -902,10 +1095,18 @@ document.getElementById('blacklistForm')?.addEventListener('submit', async e => 
 
 onAppReady(async () => {
   activateTabFromHash();
+  if (canVerifySelfPlacement) {
+    document.getElementById('verifyApproveBtn')?.addEventListener('click', () => approveVerifyPlacement().catch(() => {}));
+    document.getElementById('verifyRejectBtn')?.addEventListener('click', () => rejectVerifyPlacement().catch(() => {}));
+  }
   if ((canManageRegistrations || role === 'admin' || role === 'placement_officer') && Auth.hasRealAuth() && !Auth.isDemo()) {
     await UserRegistry.fetch();
   }
   await initOverview();
+  const verifyId = new URLSearchParams(location.search).get('verify');
+  if (verifyId && canVerifySelfPlacement) {
+    await openVerifyPlacementModal(verifyId);
+  }
   renderRegistrations();
   if (canManageApplications) {
     await Promise.all([ApplicationPipeline.fetch(), ResumeQueue.fetch()]);

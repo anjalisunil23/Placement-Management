@@ -501,8 +501,13 @@ function applySelfPlacementState(profile) {
   form.querySelectorAll('input, textarea, button').forEach((el) => { el.disabled = false; });
 
   if (placed) {
+    const pl = profile?.placement && typeof profile.placement === 'object' ? profile.placement : null;
+    const co = pl?.company || report?.companyName || '';
+    const ro = pl?.role || report?.role || '';
     statusEl.className = 'alert alert-success mb-4';
-    statusEl.textContent = 'You are already marked as placed by the placement cell.';
+    statusEl.innerHTML = co && ro
+      ? `You are placed at <strong>${escapeAttr(co)}</strong> as <strong>${escapeAttr(ro)}</strong>.`
+      : 'You are already marked as placed by the placement cell.';
     statusEl.classList.remove('d-none');
     form.querySelectorAll('input, textarea, button').forEach((el) => { el.disabled = true; });
     return;
