@@ -165,6 +165,20 @@ final class AuthMiddleware
       if ($syncedName !== '') {
         $data['name'] = $syncedName;
       }
+      $studentProfile = (new StudentModel())->findByUserId((string) $user['_id']);
+      if ($studentProfile) {
+        $service->syncStudentPlacementExtras($studentProfile);
+        $studentProfile = (new StudentModel())->findByUserId((string) $user['_id']) ?? $studentProfile;
+        $photo = is_array($studentProfile['photo'] ?? null) ? $studentProfile['photo'] : null;
+        $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+          $data['photoUrl'] = $photoUrl;
+          $data['photo'] = [
+            'url'    => $photoUrl,
+            'source' => (string) ($photo['source'] ?? 'aes'),
+          ];
+        }
+      }
     }
     if ($aesProfile !== []) {
       $aesProfile = DocumentHelper::jsonSafe($service->sanitizeAesProfileForClient($aesProfile));

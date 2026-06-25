@@ -668,7 +668,11 @@ final class AesLoginService
      */
     public function syncStudentPlacementExtras(array $profile): void
     {
-        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+        $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
+        $register = $this->resolveAesAdmissionNumber(
+            (string) ($profile['registerNumber'] ?? ''),
+            is_array($aesProfile) ? $aesProfile : []
+        );
         if ($register === '') {
             return;
         }

@@ -108,7 +108,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260627a"></script>
-<script src="js/app.js?v=20260627a"></script>
+<script src="js/app.js?v=20260627b"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -473,6 +473,7 @@ function setAvatarInitials() {
   if (!profAvatarEl) return;
   profAvatarEl.classList.remove('has-photo');
   profAvatarEl.style.backgroundImage = '';
+  profAvatarEl.querySelector('img')?.remove();
   profAvatarEl.textContent = profileInitials(document.getElementById('profName')?.value || user.name);
 }
 function setAvatarPhoto(url) {
@@ -480,9 +481,18 @@ function setAvatarPhoto(url) {
   if (!profAvatarEl) return;
   profAvatarEl.textContent = '';
   profAvatarEl.classList.add('has-photo');
-  profAvatarEl.style.backgroundImage = `url('${url}')`;
-  profAvatarEl.style.backgroundSize = 'cover';
-  profAvatarEl.style.backgroundPosition = 'center';
+  profAvatarEl.style.backgroundImage = '';
+  let img = profAvatarEl.querySelector('img');
+  if (!img) {
+    img = document.createElement('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => setAvatarInitials(), { once: true });
+    profAvatarEl.appendChild(img);
+  }
+  img.src = url;
 }
 
 function applyProfileEmails(merged) {

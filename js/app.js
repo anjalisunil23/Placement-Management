@@ -93,6 +93,13 @@ function initials(name='') {
   return name.trim().split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase() || 'U';
 }
 
+function escapeAttr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
 function userPhotoUrl(user) {
   if (!user || typeof user !== 'object') return '';
   if (typeof resolveSessionPhotoUrl === 'function') {
@@ -108,11 +115,11 @@ function userPhotoUrl(user) {
 function userAvatarHtml(user, size = 38, fontSize = '.85rem') {
   const url = userPhotoUrl(user);
   const style = `width:${size}px;height:${size}px;font-size:${fontSize}`;
+  const ini = initials(user?.name);
   if (url) {
-    const safe = url.replace(/\\/g, '\\\\').replace(/'/g, '%27');
-    return `<div class="avatar has-photo" style="${style};background-image:url('${safe}')"></div>`;
+    return `<div class="avatar has-photo" style="${style}" data-initials="${escapeAttr(ini)}"><img src="${escapeAttr(url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"/></div>`;
   }
-  return `<div class="avatar" style="${style}">${initials(user?.name)}</div>`;
+  return `<div class="avatar" style="${style}">${ini}</div>`;
 }
 
 function navItemHidden(n) {
@@ -450,6 +457,16 @@ document.addEventListener('ph-user-updated', () => {
   const active = document.body.dataset.page;
   if (active && document.getElementById('sidebar')) renderShell(active);
 });
+
+document.addEventListener('error', (event) => {
+  const img = event.target;
+  if (!(img instanceof HTMLImageElement)) return;
+  const avatar = img.closest('.avatar.has-photo');
+  if (!avatar) return;
+  avatar.classList.remove('has-photo');
+  avatar.textContent = avatar.dataset.initials || 'U';
+  img.remove();
+}, true);
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!document.querySelector('link[rel="icon"]')) {

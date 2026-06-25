@@ -183,8 +183,13 @@ a{color:inherit;text-decoration:none}
   color:#fff;display:grid;place-items:center;font-weight:700;
 }
 .avatar.has-photo{
-  background-size:cover;background-position:center;background-repeat:no-repeat;
+  background:none;
   color:transparent;
+  overflow:hidden;
+  padding:0;
+}
+.avatar.has-photo img{
+  width:100%;height:100%;object-fit:cover;display:block;
 }
 
 /* Settings → Profile header (all roles) */
@@ -205,6 +210,9 @@ a{color:inherit;text-decoration:none}
 }
 .settings-profile-avatar.has-photo{
   background-color:var(--surface-2);
+}
+.settings-profile-avatar.has-photo img{
+  width:100%;height:100%;object-fit:cover;display:block;
 }
 .settings-profile-edit{
   border-color:var(--primary);color:var(--primary);
