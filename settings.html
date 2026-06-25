@@ -5,7 +5,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
-<link href="css/style.css?v=20260628e" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260628f" rel="stylesheet"/></head>
 <body data-page="settings.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -121,8 +121,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260628e"></script>
-<script src="js/app.js?v=20260628e"></script>
+<script src="js/api.js?v=20260628f"></script>
+<script src="js/app.js?v=20260628f"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -553,12 +553,17 @@ async function submitSelfPlacement(ev) {
     return;
   }
 
-  if (!(await Auth.ensureSession())) {
-    toast('Session expired. Please sign in again with AES.', 'warn');
+  if (!(await Auth.refreshSession())) {
+    const roleHint = Auth.role() || user?.role || 'student';
+    toast('Your session expired. Redirecting to AES sign in…', 'warn');
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = submitLabel;
     }
+    setTimeout(() => {
+      Auth.clear();
+      window.location.href = authReentryUrl('settings.html#getplaced', roleHint);
+    }, 900);
     return;
   }
 
@@ -583,6 +588,15 @@ async function submitSelfPlacement(ev) {
   if (res?.success) {
     applySelfPlacementState({ placed: false, selfPlacement: res.data || { companyName, companyAddress, role: jobRole, status: 'pending' } });
     toast('Placement report submitted for verification.', 'success');
+    return;
+  }
+  if (res?.status === 401) {
+    const roleHint = Auth.role() || user?.role || 'student';
+    toast('Your session expired. Redirecting to AES sign in…', 'warn');
+    setTimeout(() => {
+      Auth.clear();
+      window.location.href = authReentryUrl('settings.html#getplaced', roleHint);
+    }, 900);
     return;
   }
   toast(res?.message || `Could not submit placement report${res?.status ? ` (${res.status})` : ''}.`, 'error');
