@@ -43,8 +43,9 @@
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profDept" disabled placeholder="From college login"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">CGPA</label><input class="form-control" id="profCgpa" type="number" step="0.1" min="0" max="10"/></div>
-          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">10th marks (%)</label><input class="form-control" id="profMarks10" type="text" disabled placeholder="From college login"/></div>
-          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">12th marks (%)</label><input class="form-control" id="profMarks12" type="text" disabled placeholder="From college login"/></div>
+          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">10th marks (%)</label><input class="form-control" id="profMarks10" type="number" step="0.01" min="0" max="100" placeholder="e.g. 85"/></div>
+          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">12th marks (%)</label><input class="form-control" id="profMarks12" type="number" step="0.01" min="0" max="100" placeholder="e.g. 78"/></div>
+          <div class="col-md-4 role-field-student d-none" id="profDegreeMarksWrap"><label class="form-label small fw-semibold">Degree marks (%) <span class="text-muted-2 fw-normal">optional</span></label><input class="form-control" id="profDegreeMarks" type="number" step="0.01" min="0" max="100" placeholder="UG degree %"/></div>
           <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profStaffDept" disabled/></div>
           <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Designation</label><input class="form-control" id="profStaffDesig" disabled/></div>
           <div class="col-md-6 role-field-officer"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profOfficerDept" disabled/></div>
@@ -313,12 +314,50 @@ function pickSchoolMark(u, markKey) {
   const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
   const keys = markKey === '10'
     ? ['marks10th', 'marks10', 'sslc', 'sslc_marks', 'sslcMarks', 'tenth_marks', 'tenth_percentage', 'mark10th']
-    : ['marks12th', 'marks12', 'hsc', 'hsc_marks', 'hscMarks', 'twelfth_marks', 'twelfth_percentage', 'mark12th', 'ugMarks'];
+    : ['marks12th', 'marks12', 'hsc', 'hsc_marks', 'hscMarks', 'twelfth_marks', 'twelfth_percentage', 'mark12th'];
   for (const key of keys) {
     const val = merged[key] ?? academic[key];
     if (val != null && val !== '' && Number(val) > 0) return Number(val);
   }
   return '';
+}
+
+function pickDegreeMark(u) {
+  const merged = mergeProfileUser(u);
+  const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
+  for (const key of ['ugMarks', 'mcaMarks', 'degreeMarks', 'degree_marks', 'ug_marks']) {
+    const val = merged[key] ?? academic[key];
+    if (val != null && val !== '' && Number(val) > 0) return Number(val);
+  }
+  return '';
+}
+
+const PG_DEPT_CODES = ['MCA', 'MBA', 'MTECH', 'M.TECH', 'ME', 'MSC', 'M.SC', 'MARCH', 'M.ARCH', 'PG', 'MPLAN', 'M.COM', 'MCOM'];
+
+function isPgStudent(u) {
+  const dept = String(pickDepartmentDisplay(u) || u?.department || u?.departmentCode || '').toUpperCase().replace(/\s+/g, '');
+  if (!dept) return false;
+  return PG_DEPT_CODES.some(code => dept === code || dept.includes(code));
+}
+
+function syncDegreeMarksFieldVisibility(u) {
+  const wrap = document.getElementById('profDegreeMarksWrap');
+  if (!wrap) return;
+  const show = isPgStudent(u);
+  wrap.classList.toggle('d-none', !show);
+}
+
+function parseMarkInput(id) {
+  const raw = String(document.getElementById(id)?.value ?? '').trim();
+  if (raw === '') return null;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : null;
+}
+
+function setMarkInput(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = value !== '' && value != null && Number(value) > 0 ? String(value) : '';
 }
 
 function pickPhotoUrl(u) {
@@ -693,12 +732,10 @@ function applyProfileFromUser(u, activeRole) {
     document.getElementById('profDept').value = dept;
     const cgpa = pickCgpa(merged);
     if (cgpa) document.getElementById('profCgpa').value = cgpa;
-    const m10 = pickSchoolMark(merged, '10');
-    const m12 = pickSchoolMark(merged, '12');
-    const m10El = document.getElementById('profMarks10');
-    const m12El = document.getElementById('profMarks12');
-    if (m10El) m10El.value = m10 ? `${m10}%` : '';
-    if (m12El) m12El.value = m12 ? `${m12}%` : '';
+    setMarkInput('profMarks10', pickSchoolMark(merged, '10'));
+    setMarkInput('profMarks12', pickSchoolMark(merged, '12'));
+    syncDegreeMarksFieldVisibility(merged);
+    setMarkInput('profDegreeMarks', pickDegreeMark(merged));
   }
   if (r === 'staff') {
     document.getElementById('profStaffDept').value = pickDepartmentDisplay(merged) || merged.department || merged.departmentName || '';
@@ -761,12 +798,10 @@ async function loadSettingsProfile() {
       document.getElementById('profRegNo').value = reg;
       document.getElementById('profDept').value = apiDept;
       if (apiCgpa) document.getElementById('profCgpa').value = apiCgpa;
-      const apiM10 = pickSchoolMark(profileCtx, '10');
-      const apiM12 = pickSchoolMark(profileCtx, '12');
-      const m10El = document.getElementById('profMarks10');
-      const m12El = document.getElementById('profMarks12');
-      if (m10El) m10El.value = apiM10 ? `${apiM10}%` : '';
-      if (m12El) m12El.value = apiM12 ? `${apiM12}%` : '';
+      setMarkInput('profMarks10', pickSchoolMark(profileCtx, '10') || (ac.marks10th > 0 ? ac.marks10th : ''));
+      setMarkInput('profMarks12', pickSchoolMark(profileCtx, '12') || (ac.marks12th > 0 ? ac.marks12th : ''));
+      syncDegreeMarksFieldVisibility(profileCtx);
+      setMarkInput('profDegreeMarks', pickDegreeMark(profileCtx) || (ac.ugMarks > 0 ? ac.ugMarks : ac.mcaMarks > 0 ? ac.mcaMarks : ''));
       const apiPhoto = pickPhotoUrl(profileCtx) || p.photoUrl || p.photo?.url || '';
       if (apiPhoto) setAvatarPhoto(apiPhoto);
       else setAvatarInitials();
@@ -1066,8 +1101,17 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
   if (role === 'student') {
     const cgpaVal = parseFloat(document.getElementById('profCgpa').value);
     const phoneVal = document.getElementById('profPhone').value.trim();
+    const academic = { cgpa: Number.isFinite(cgpaVal) ? cgpaVal : 0 };
+    const m10 = parseMarkInput('profMarks10');
+    const m12 = parseMarkInput('profMarks12');
+    if (m10 !== null) academic.marks10th = m10;
+    if (m12 !== null) academic.marks12th = m12;
+    if (isPgStudent(user)) {
+      const degree = parseMarkInput('profDegreeMarks');
+      if (degree !== null) academic.ugMarks = degree;
+    }
     const payload = {
-      academic: { cgpa: Number.isFinite(cgpaVal) ? cgpaVal : 0 },
+      academic,
       personal: { phone: phoneVal },
     };
     if (Auth.hasRealAuth()) {

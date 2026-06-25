@@ -267,7 +267,14 @@ final class StudentController
         continue;
       }
       $existing = is_array($profile[$key] ?? null) ? $profile[$key] : [];
-      $update[$key] = array_merge($existing, $input[$key]);
+      $patch = $input[$key];
+      if ($key === 'academic') {
+        $patch = $this->sanitizeAcademicPatch($patch);
+      }
+      if ($patch === []) {
+        continue;
+      }
+      $update[$key] = array_merge($existing, $patch);
     }
 
     if ($update === []) {
@@ -276,6 +283,42 @@ final class StudentController
 
     $this->studentModel->update((string) $profile['_id'], $update);
     Response::success(null, 'Profile updated.');
+  }
+
+  /**
+   * @param array<string, mixed> $academic
+   * @return array<string, mixed>
+   */
+  private function sanitizeAcademicPatch(array $academic): array
+  {
+    $out = [];
+    if (array_key_exists('cgpa', $academic) && is_numeric($academic['cgpa'])) {
+      $cgpa = (float) $academic['cgpa'];
+      if ($cgpa >= 0 && $cgpa <= 10) {
+        $out['cgpa'] = $cgpa;
+      }
+    }
+    if (array_key_exists('backlogs', $academic) && is_numeric($academic['backlogs'])) {
+      $out['backlogs'] = max(0, (int) $academic['backlogs']);
+    }
+    foreach (['marks10th', 'marks12th', 'ugMarks', 'mcaMarks'] as $markKey) {
+      if (!array_key_exists($markKey, $academic)) {
+        continue;
+      }
+      $raw = $academic[$markKey];
+      if ($raw === '' || $raw === null) {
+        continue;
+      }
+      if (!is_numeric($raw)) {
+        continue;
+      }
+      $mark = (float) $raw;
+      if ($mark > 0 && $mark <= 100) {
+        $out[$markKey] = $mark;
+      }
+    }
+
+    return $out;
   }
 
   /** POST /api/student/policy/accept */
