@@ -40,13 +40,25 @@ final class StaffService
         }
 
         $analytics = new AnalyticsService();
-        $branchStats = $analytics->getDashboardAnalytics()['branchStatistics'];
+        $deptId = $ctx['departmentId'] ?? null;
+        $allBranchStats = $analytics->getDashboardAnalytics(null)['branchStatistics'];
+        $scopedBranchStats = $deptId
+            ? $analytics->getDashboardAnalytics($deptId)['branchStatistics']
+            : $allBranchStats;
         $deptCode = (string) ($ctx['department']['code'] ?? '');
         $deptRow = null;
-        foreach ($branchStats as $row) {
+        foreach ($scopedBranchStats as $row) {
             if ($row['code'] === $deptCode) {
                 $deptRow = $row;
                 break;
+            }
+        }
+        if ($deptRow === null) {
+            foreach ($allBranchStats as $row) {
+                if ($row['code'] === $deptCode) {
+                    $deptRow = $row;
+                    break;
+                }
             }
         }
 
@@ -72,7 +84,7 @@ final class StaffService
                 'placed'     => $deptRow['placed'] ?? 0,
             ],
             'hiring' => $hiring['totals'],
-            'branchStatistics' => $branchStats,
+            'branchStatistics' => $allBranchStats,
         ];
     }
 

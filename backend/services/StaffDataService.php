@@ -84,7 +84,7 @@ final class StaffDataService
         $candidates = (new DriveModel())->findAll($filter, 100);
 
         return array_values(array_filter(
-            DocumentHelper::serializeMany($candidates),
+            $candidates,
             static fn (array $drive): bool => PlacementOfficerContext::driveMatchesDepartment($drive, $officerCtx)
         ));
     }

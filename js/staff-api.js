@@ -40,16 +40,24 @@ const StaffApi = {
   },
 
   mapDrive(d) {
+    if (typeof OfficerApi !== 'undefined') return OfficerApi.mapDrive(d);
     const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
     const status = statusMap[(d.status || '').toLowerCase()] || d.status || 'Open';
     const elig = (d.eligibility && typeof d.eligibility === 'object') ? d.eligibility : {};
     const pkg = String(elig.package || d.package || '').trim();
     const deadline = String(elig.deadline || d.deadline || '').trim();
     const jobType = String(elig.jobType || d.jobType || '').trim();
+    const title = String(d.title || '').trim();
+    let role = String(d.role || '').trim();
+    if (!role && title) {
+      if (title.includes('—')) role = title.split('—').pop().trim();
+      else if (title.includes(' - ')) role = title.split(' - ').pop().trim();
+      else role = title;
+    }
     return {
       id: StaffApi.id(d),
       company: d.companyName || d.company || '',
-      role: d.title || d.role || '',
+      role,
       type: d.type || 'pooled',
       jobType: jobType || '—',
       date: d.date || '',
@@ -61,6 +69,28 @@ const StaffApi = {
       status,
       statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
       _fromApi: true,
+    };
+  },
+
+  mapDashboard(dash) {
+    if (!dash) return null;
+    const branchStats = (dash.branchStatistics || []).map(b => ({
+      dept: b.code || b.department || '',
+      students: b.total ?? 0,
+      placed: b.placed ?? 0,
+      pct: b.percentage ?? 0,
+    }));
+    const rec = dash.recommendations || {};
+    return {
+      recommendations: {
+        total: rec.total ?? 0,
+        pending: rec.pending ?? 0,
+        registered: rec.registered ?? 0,
+        recent: Array.isArray(rec.recent) ? rec.recent : [],
+      },
+      department: dash.department || {},
+      hiring: dash.hiring || {},
+      branchStats,
     };
   },
 

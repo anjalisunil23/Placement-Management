@@ -168,19 +168,19 @@
         <div class="row g-3">
           <div class="col-md-3 col-6"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-building-add"></i></div><span class="badge-soft info">YTD</span></div>
-            <div class="val"><span class="counter" data-target="12" id="staffRecCount">0</span></div><div class="lbl">Companies Recommended</div>
+            <div class="val"><span class="counter" data-target="0" id="staffRecCount">0</span></div><div class="lbl">Companies Recommended</div>
           </div></div>
           <div class="col-md-3 col-6"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check"></i></div><span class="badge-soft success">Onboarded</span></div>
-            <div class="val"><span class="counter" data-target="7" id="staffOnboarded">0</span></div><div class="lbl">Now Onboarded</div>
+            <div class="val"><span class="counter" data-target="0" id="staffOnboarded">0</span></div><div class="lbl">Now Onboarded</div>
           </div></div>
           <div class="col-md-3 col-6"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-hourglass"></i></div><span class="badge-soft warning">Awaiting</span></div>
-            <div class="val"><span class="counter" data-target="5" id="staffPending">0</span></div><div class="lbl">Pending Review</div>
+            <div class="val"><span class="counter" data-target="0" id="staffPending">0</span></div><div class="lbl">Pending Review</div>
           </div></div>
           <div class="col-md-3 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-mortarboard-fill"></i></div><span class="badge-soft info" id="staffDeptBadge">CSE</span></div>
-            <div class="val"><span class="counter" data-target="79.2" data-decimals="1" data-suffix="%" id="staffDeptPct">0</span></div><div class="lbl">Your Dept. Placement %</div>
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-mortarboard-fill"></i></div><span class="badge-soft info" id="staffDeptBadge">—</span></div>
+            <div class="val"><span class="counter" data-target="0" data-decimals="1" data-suffix="%" id="staffDeptPct">0</span></div><div class="lbl">Your Dept. Placement %</div>
           </div></div>
         </div>
 
@@ -479,77 +479,72 @@ if (role === 'student') {
 /* Staff recommendations + department stats */
 if (role === 'staff') {
   (async () => {
-    if (Auth.hasRealAuth()) {
-      await Auth.ensureSession();
-      await StaffRecs.fetch();
-    }
-    const rec = StaffRecs.mine();
-    let myDept = (Auth.user() || user).department || 'CSE';
-    let deptRow = DEPARTMENT_PLACEMENT.find(d => d.dept === myDept) || DEPARTMENT_PLACEMENT[0];
-    let hiring = campusRecruitmentStats();
-
-    if (Auth.hasRealAuth()) {
-      const dash = await StaffApi.fetchDashboard();
-      if (dash) {
-        myDept = dash.department?.code || myDept;
-        deptRow = DEPARTMENT_PLACEMENT.find(d => d.dept === myDept) || deptRow;
-        if (dash.department?.placementPct != null) {
-          deptRow = { ...deptRow, pct: dash.department.placementPct, placed: dash.department.placed ?? deptRow.placed, students: dash.department.students ?? deptRow.students };
-        }
-        if (dash.hiring) {
-          hiring = {
-            companiesHiring: dash.hiring.companiesHiring ?? hiring.companiesHiring,
-            applicants: dash.hiring.applicants ?? hiring.applicants,
-            shortlisted: dash.hiring.shortlisted ?? hiring.shortlisted,
-            offers: dash.hiring.offers ?? hiring.offers,
-            hired: dash.hiring.hired ?? hiring.hired,
-          };
-        }
-      }
-    }
-
     const setHiringStat = (id, val) => {
       const el = document.getElementById(id);
       if (el) { el.dataset.target = val; el.dataset.animated = '0'; }
     };
-    setHiringStat('staffHiringCos', hiring.companiesHiring);
-    setHiringStat('staffHiringApps', hiring.applicants);
-    setHiringStat('staffHiringShort', hiring.shortlisted);
-    setHiringStat('staffHiringOffers', hiring.offers);
-    setHiringStat('staffHiringHired', hiring.hired);
+    const setCounter = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) { el.dataset.target = val; el.dataset.animated = '0'; }
+    };
 
-    document.getElementById('staffRecs').innerHTML = rec.length ? rec.map(r => `
+    let mapped = null;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      await Auth.ensureSession();
+      const dash = await StaffApi.fetchDashboard();
+      mapped = StaffApi.mapDashboard(dash);
+      await StaffRecs.fetch();
+    }
+
+    const myDept = mapped?.department?.code || (Auth.user() || user).department || '—';
+    const deptPct = mapped?.department?.placementPct ?? 0;
+    const recRecent = mapped?.recommendations.recent?.length
+      ? mapped.recommendations.recent
+      : (Auth.hasRealAuth() ? StaffRecs.mine().slice(0, 5) : []);
+    const recTotal = mapped?.recommendations.total ?? (Auth.hasRealAuth() ? StaffRecs.mine().length : 0);
+    const recPending = mapped?.recommendations.pending ?? recRecent.filter(r => r.status === 'pending').length;
+    const recOnboarded = mapped?.recommendations.registered ?? recRecent.filter(r => r.status === 'registered').length;
+    const hiring = mapped?.hiring || {};
+    const branchStats = mapped?.branchStats || [];
+
+    setHiringStat('staffHiringCos', hiring.companiesHiring ?? 0);
+    setHiringStat('staffHiringApps', hiring.applicants ?? 0);
+    setHiringStat('staffHiringShort', hiring.shortlisted ?? 0);
+    setHiringStat('staffHiringOffers', hiring.offers ?? 0);
+    setHiringStat('staffHiringHired', hiring.hired ?? 0);
+
+    document.getElementById('staffRecs').innerHTML = recRecent.length ? recRecent.map(r => `
       <tr><td><strong>${r.companyName}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
       : '<tr><td colspan="3" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
 
     document.getElementById('staffDeptBadge').textContent = myDept;
-    const deptPctEl = document.getElementById('staffDeptPct');
-    deptPctEl.dataset.target = deptRow.pct;
-    deptPctEl.dataset.animated = '0';
-
-    const pending = rec.filter(r => r.status === 'pending').length;
-    document.getElementById('staffRecCount').dataset.target = rec.length;
-    document.getElementById('staffRecCount').dataset.animated = '0';
-    document.getElementById('staffOnboarded').dataset.target = rec.filter(r => r.status === 'registered').length;
-    document.getElementById('staffOnboarded').dataset.animated = '0';
-    document.getElementById('staffPending').dataset.target = pending;
-    document.getElementById('staffPending').dataset.animated = '0';
+    setCounter('staffDeptPct', deptPct);
+    setCounter('staffRecCount', recTotal);
+    setCounter('staffOnboarded', recOnboarded);
+    setCounter('staffPending', recPending);
     animateCounters(document.querySelector('[data-roles="staff"]'));
 
-    document.getElementById('staffDeptRows').innerHTML = DEPARTMENT_PLACEMENT.map(d => `
+    document.getElementById('staffDeptRows').innerHTML = branchStats.length ? branchStats.map(d => `
       <tr${d.dept === myDept ? ' style="background:color-mix(in srgb,var(--primary) 6%,transparent)"' : ''}>
         <td><strong>${d.dept}</strong>${d.dept === myDept ? ' <span class="badge-soft info">Your dept.</span>' : ''}</td>
-        <td>${d.students}</td><td>${d.placed}</td><td>${d.pct}%</td><td>₹${d.avgPkg} LPA</td>
-      </tr>`).join('');
+        <td>${d.students}</td><td>${d.placed}</td><td>${d.pct}%</td><td>—</td>
+      </tr>`).join('')
+      : '<tr><td colspan="5" class="text-muted-2 p-4">No department statistics yet.</td></tr>';
 
-    Charts.bar(document.getElementById('staffDeptChart'),
-      DEPARTMENT_PLACEMENT.map(d => d.dept),
-      DEPARTMENT_PLACEMENT.map(d => d.placed),
-      'Students placed');
-    Charts.bar(document.getElementById('staffDeptPie'),
-      DEPARTMENT_PLACEMENT.map(d => d.dept),
-      DEPARTMENT_PLACEMENT.map(d => d.pct),
-      'Placement %');
+    if (branchStats.length && document.getElementById('staffDeptChart')) {
+      Charts.bar(
+        document.getElementById('staffDeptChart'),
+        branchStats.map(d => d.dept),
+        branchStats.map(d => d.placed),
+        'Students placed'
+      );
+      Charts.bar(
+        document.getElementById('staffDeptPie'),
+        branchStats.map(d => d.dept),
+        branchStats.map(d => d.pct),
+        'Placement %'
+      );
+    }
 
     if (location.hash === '#dept-stats') {
       document.getElementById('dept-stats')?.scrollIntoView({ behavior: 'smooth' });

@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace PMS\Staff;
 
 use PMS\Middleware\RBACMiddleware;
-use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
-use PMS\Models\DriveModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\RecommendationModel;
 use PMS\Models\StaffModel;
 use PMS\Models\UserModel;
+use PMS\Services\OfficerDataService;
 use PMS\Services\StaffContext;
 use PMS\Services\StaffDataService;
 use PMS\Services\StaffService;
@@ -150,24 +149,8 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
-        $rows = (new StaffDataService())->listDrives($ctx);
-        $companyModel = new CompanyModel();
-        $serialized = array_map(static function (array $drive) use ($companyModel) {
-            $out = $drive;
-            $companyId = (string) ($drive['companyId'] ?? '');
-            if ($companyId !== '' && empty($out['company'])) {
-                $company = $companyModel->findById($companyId);
-                $out['company'] = $company['companyName'] ?? '';
-            }
-            if (empty($out['role'])) {
-                $out['role'] = $drive['title'] ?? '';
-            }
-            if (empty($out['package'])) {
-                $out['package'] = $drive['tier'] ?? '';
-            }
-            return $out;
-        }, $rows);
-        Response::success($serialized);
+        $drives = (new StaffDataService())->listDrives($ctx);
+        Response::success((new OfficerDataService())->enrichDrivesWithCompany($drives));
     }
 
     /** GET /api/staff/students */

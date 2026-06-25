@@ -745,7 +745,12 @@ async function loadDrives() {
     allDrives = apiDrives ?? DriveStore.allWithCatalog();
   } else if (role === 'staff' && Auth.hasRealAuth() && typeof StaffApi !== 'undefined') {
     const staffDrives = await StaffApi.fetchDrives();
-    allDrives = staffDrives?.length ? staffDrives : DriveStore.allWithCatalog();
+    if (staffDrives === null) {
+      toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
+      allDrives = [];
+    } else {
+      allDrives = staffDrives;
+    }
   } else {
     if (canManage) await DriveStore.fetch();
     allDrives = DriveStore.allWithCatalog();
