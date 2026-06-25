@@ -14,6 +14,7 @@ const StaffApi = {
       hrName: row.hrName || contact.name || '',
       hrEmail: row.hrEmail || contact.email || '',
       contactNumber: row.contactNumber || contact.phone || '',
+      contactRole: row.contactRole || contact.role || '',
       staffName: row.staffName || '',
       staffEmail: row.staffEmail || '',
       submittedAt: row.submittedAt || row.createdAt || '',
@@ -122,6 +123,7 @@ const StaffApi = {
           name: payload.hrName,
           email: payload.hrEmail,
           phone: payload.contactNumber,
+          role: payload.contactRole || '',
         },
       },
     });

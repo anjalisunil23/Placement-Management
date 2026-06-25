@@ -24,6 +24,7 @@ class AlumniReferralModel extends BaseModel
         $hrName = trim((string) ($data['hrName'] ?? $contact['name'] ?? ''));
         $hrEmail = trim((string) ($data['hrEmail'] ?? $contact['email'] ?? ''));
         $hrPhone = trim((string) ($data['contactNumber'] ?? $contact['phone'] ?? ''));
+        $hrRole = trim((string) ($data['contactRole'] ?? $contact['role'] ?? ''));
 
         return $this->insert([
             'alumniUserId'   => Security::toObjectId($alumniUserId),
@@ -33,6 +34,7 @@ class AlumniReferralModel extends BaseModel
                 'name'  => $hrName,
                 'email' => $hrEmail,
                 'phone' => $hrPhone,
+                'role'  => $hrRole,
             ],
             'status'         => 'pending',
         ]);
@@ -105,6 +107,9 @@ class AlumniReferralModel extends BaseModel
         if (array_key_exists('contactNumber', $data)) {
             $contact['phone'] = trim((string) $data['contactNumber']);
         }
+        if (array_key_exists('contactRole', $data)) {
+            $contact['role'] = trim((string) $data['contactRole']);
+        }
         if ($contact !== ($existing['contact'] ?? [])) {
             $patch['contact'] = $contact;
         }
@@ -135,6 +140,7 @@ class AlumniReferralModel extends BaseModel
         $out['hrName'] = (string) ($contact['name'] ?? '');
         $out['hrEmail'] = (string) ($contact['email'] ?? '');
         $out['contactNumber'] = (string) ($contact['phone'] ?? '');
+        $out['contactRole'] = (string) ($contact['role'] ?? '');
         $out['submittedAt'] = (string) ($out['createdAt'] ?? '');
         $out['status'] = (string) ($rec['status'] ?? 'pending');
         $out['adminComments'] = (string) ($rec['adminComments'] ?? '');

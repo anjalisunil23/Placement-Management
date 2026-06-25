@@ -907,10 +907,12 @@ const StaffRecs = {
       hrName: payload.hrName,
       hrEmail: payload.hrEmail,
       contactNumber: payload.contactNumber,
+      contactRole: payload.contactRole || '',
       contact: {
         name: payload.hrName,
         email: payload.hrEmail,
         phone: payload.contactNumber,
+        role: payload.contactRole || '',
       },
     };
     const res = await api('/staff/recommendations', { method: 'POST', body });
@@ -926,6 +928,7 @@ const StaffRecs = {
           hrName: payload.hrName?.trim(),
           hrEmail: payload.hrEmail?.trim(),
           contactNumber: payload.contactNumber?.trim(),
+          contactRole: payload.contactRole?.trim() || '',
           staffName: u?.name || 'Staff',
           staffEmail: u?.email || '',
           submittedAt: new Date().toISOString(),
@@ -946,6 +949,7 @@ const StaffRecs = {
       hrName: payload.hrName?.trim(),
       hrEmail: payload.hrEmail?.trim(),
       contactNumber: payload.contactNumber?.trim(),
+      contactRole: payload.contactRole?.trim() || '',
       staffName: u?.name || 'Staff',
       staffEmail: u?.email || '',
       submittedAt: new Date().toISOString(),
@@ -1170,6 +1174,7 @@ const AlumniReferrals = {
             hrName: r.hrName || r.contact?.name || '',
             hrEmail: r.hrEmail || r.contact?.email || '',
             contactNumber: r.contactNumber || r.contact?.phone || '',
+            contactRole: r.contactRole || r.contact?.role || '',
             status,
             submittedAt: r.submittedAt || r.createdAt || '',
             alumniEmail: Auth.user()?.email || r.alumniEmail || '',
@@ -1189,10 +1194,12 @@ const AlumniReferrals = {
       hrName: payload.hrName,
       hrEmail: payload.hrEmail,
       contactNumber: payload.contactNumber,
+      contactRole: payload.contactRole || '',
       contact: {
         name: payload.hrName,
         email: payload.hrEmail,
         phone: payload.contactNumber,
+        role: payload.contactRole || '',
       },
     };
     const res = await api('/alumni/jobs/refer', { method: 'POST', body });
@@ -1205,6 +1212,7 @@ const AlumniReferrals = {
       hrName: payload.hrName?.trim(),
       hrEmail: payload.hrEmail?.trim(),
       contactNumber: payload.contactNumber?.trim(),
+      contactRole: payload.contactRole?.trim() || '',
       status: 'pending',
       submittedAt: new Date().toISOString(),
       alumniEmail: u?.email || '',

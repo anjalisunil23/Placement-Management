@@ -211,15 +211,16 @@ final class StaffController
      */
     private function normalizeRecommendationInput(array $input): array
     {
-        if (!empty($input['hrName']) || !empty($input['hrEmail']) || !empty($input['contactNumber'])) {
+        if (!empty($input['hrName']) || !empty($input['hrEmail']) || !empty($input['contactNumber']) || !empty($input['contactRole'])) {
             $input['contact'] = [
                 'name'  => trim((string) ($input['hrName'] ?? $input['contact']['name'] ?? '')),
                 'email' => trim((string) ($input['hrEmail'] ?? $input['contact']['email'] ?? '')),
                 'phone' => trim((string) ($input['contactNumber'] ?? $input['contact']['phone'] ?? '')),
+                'role'  => trim((string) ($input['contactRole'] ?? $input['contact']['role'] ?? '')),
             ];
         }
         if (!is_array($input['contact'] ?? null)) {
-            $input['contact'] = ['name' => '', 'email' => '', 'phone' => ''];
+            $input['contact'] = ['name' => '', 'email' => '', 'phone' => '', 'role' => ''];
         }
         $input['category'] = $input['category'] ?? 'General';
         $input['reason'] = $input['reason'] ?? 'Referred by faculty for campus recruitment.';

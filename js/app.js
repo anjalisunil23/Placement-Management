@@ -583,7 +583,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 /** Shared staff / alumni referral modals — open from any page */
 const ReferralModals = {
   mountStaff() {
-    if (document.getElementById('staffRecommendModal')) return;
+    const existing = document.getElementById('staffRecommendModal');
+    if (existing?.querySelector('[name="contactRole"]')) return;
+    existing?.remove();
     document.body.insertAdjacentHTML('beforeend', `
 <div class="modal fade" id="staffRecommendModal" tabindex="-1" aria-labelledby="staffRecommendModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -594,15 +596,16 @@ const ReferralModals = {
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body" style="max-height:min(70vh,640px);overflow-y:auto">
-          <p class="small text-muted-2 mb-3">Share recruiter details for the placement cell. Only the admin can view HR contact information.</p>
+          <p class="small text-muted-2 mb-3">Share recruiter details for the placement cell. Only the admin can view contact person information.</p>
           <div class="row g-3">
             <div class="col-12"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" required placeholder="e.g. Razorpay"/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Company website (optional)</label><input class="form-control" name="companyWebsite" placeholder="https://company.com/careers"/></div>
-            <div class="col-12"><label class="form-label small fw-semibold">HR name</label><input class="form-control" name="hrName" required placeholder="e.g. Priya Menon"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">HR email</label><input class="form-control" type="email" name="hrEmail" required placeholder="hr@company.com"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Contact person</label><input class="form-control" name="hrName" required placeholder="e.g. Priya Menon"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Role in company</label><input class="form-control" name="contactRole" placeholder="e.g. Talent Acquisition Manager"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Contact person's mail</label><input class="form-control" type="email" name="hrEmail" required placeholder="contact@company.com"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Contact number</label><input class="form-control" name="contactNumber" required placeholder="+91 98765 43210"/></div>
           </div>
-          <div class="alert alert-info small mt-3 mb-0">Only the admin can view HR contact details and follow up with the company.</div>
+          <div class="alert alert-info small mt-3 mb-0">Only the admin can view contact details and follow up with the company.</div>
         </div>
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -625,7 +628,9 @@ const ReferralModals = {
   },
 
   mountAlumni() {
-    if (document.getElementById('alumniReferralModal')) return;
+    const existing = document.getElementById('alumniReferralModal');
+    if (existing?.querySelector('[name="contactRole"]')) return;
+    existing?.remove();
     document.body.insertAdjacentHTML('beforeend', `
 <div class="modal fade" id="alumniReferralModal" tabindex="-1" aria-labelledby="alumniReferralModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -636,15 +641,16 @@ const ReferralModals = {
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body" style="max-height:min(70vh,640px);overflow-y:auto">
-          <p class="small text-muted-2 mb-3">Share recruiter details for the placement cell. Only the admin can view HR contact information.</p>
+          <p class="small text-muted-2 mb-3">Share recruiter details for the placement cell. Only the admin can view contact person information.</p>
           <div class="row g-3">
             <div class="col-12"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" required placeholder="e.g. Razorpay"/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Company website (optional)</label><input class="form-control" name="companyWebsite" placeholder="https://company.com/careers"/></div>
-            <div class="col-12"><label class="form-label small fw-semibold">HR name</label><input class="form-control" name="hrName" required placeholder="e.g. Priya Menon"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">HR email</label><input class="form-control" type="email" name="hrEmail" required placeholder="hr@company.com"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Contact person</label><input class="form-control" name="hrName" required placeholder="e.g. Priya Menon"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Role in company</label><input class="form-control" name="contactRole" placeholder="e.g. Talent Acquisition Manager"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Contact person's mail</label><input class="form-control" type="email" name="hrEmail" required placeholder="contact@company.com"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Contact number</label><input class="form-control" name="contactNumber" required placeholder="+91 98765 43210"/></div>
           </div>
-          <div class="alert alert-info small mt-3 mb-0">Only the admin can view HR contact details and follow up with the company.</div>
+          <div class="alert alert-info small mt-3 mb-0">Only the admin can view contact details and follow up with the company.</div>
         </div>
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>

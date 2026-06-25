@@ -98,6 +98,9 @@ class RecommendationModel extends BaseModel
         if (array_key_exists('contactNumber', $data)) {
             $contact['phone'] = trim((string) $data['contactNumber']);
         }
+        if (array_key_exists('contactRole', $data)) {
+            $contact['role'] = trim((string) $data['contactRole']);
+        }
         if ($contact !== ($existing['contact'] ?? [])) {
             $patch['contact'] = $contact;
         }
@@ -126,6 +129,7 @@ class RecommendationModel extends BaseModel
         $out['hrName'] = (string) ($contact['name'] ?? '');
         $out['hrEmail'] = (string) ($contact['email'] ?? '');
         $out['contactNumber'] = (string) ($contact['phone'] ?? '');
+        $out['contactRole'] = (string) ($contact['role'] ?? '');
         $out['submittedAt'] = (string) ($out['createdAt'] ?? '');
         $out['status'] = (string) ($rec['status'] ?? 'pending');
         $out['reason'] = (string) ($rec['reason'] ?? '');
@@ -165,6 +169,7 @@ class RecommendationModel extends BaseModel
             $row['hrName'] = $contact['name'] ?? '';
             $row['hrEmail'] = $contact['email'] ?? '';
             $row['contactNumber'] = $contact['phone'] ?? '';
+            $row['contactRole'] = $contact['role'] ?? '';
             $row['submittedAt'] = $row['createdAt'] ?? null;
             $rows[] = $row;
         }
