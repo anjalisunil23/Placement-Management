@@ -60,12 +60,19 @@ final class StaffController
                 'email' => (string) ($user['email'] ?? ''),
             ]
         ));
+        $photo = (new AesLoginService())->resolveProfilePhoto($profile, $user);
         $data['user'] = [
             'name'        => (string) ($merged['name'] ?? $user['name'] ?? ''),
             'email'       => (string) ($merged['email'] ?? $user['email'] ?? ''),
             'phone'       => (string) ($merged['phone'] ?? $profile['phone'] ?? ''),
             'designation' => (string) ($merged['designation'] ?? $profile['designation'] ?? ''),
+            'photoUrl'    => (string) ($photo['photoUrl'] ?? ''),
+            'photo'       => $photo['photo'],
         ];
+        if (!empty($photo['photoUrl'])) {
+            $data['photoUrl'] = (string) $photo['photoUrl'];
+            $data['photo'] = $photo['photo'];
+        }
         if ($data['department'] === '' && !empty($merged['department'])) {
             $data['department'] = (string) $merged['department'];
             $data['departmentName'] = (string) $merged['department'];

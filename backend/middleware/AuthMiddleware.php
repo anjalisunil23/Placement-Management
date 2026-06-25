@@ -117,6 +117,11 @@ final class AuthMiddleware
           ? (new DepartmentModel())->findById((string) $profile['departmentId'])
           : null;
         $data = array_merge($data, StaffModel::profileToUserFields($profile, $dept));
+        $photo = (new \PMS\Services\AesLoginService())->resolveProfilePhoto($profile, $user);
+        if (($photo['photoUrl'] ?? '') !== '') {
+          $data['photoUrl'] = $photo['photoUrl'];
+          $data['photo'] = $photo['photo'];
+        }
       }
     }
     if (($data['role'] ?? $user['role'] ?? '') === 'placement_officer') {
@@ -127,6 +132,12 @@ final class AuthMiddleware
           : null;
         $data['department'] = $dept['code'] ?? $dept['name'] ?? '';
         $data['departmentId'] = $dept ? (string) $dept['_id'] : '';
+      }
+      $staffProfile = (new StaffModel())->findByUserId((string) $user['_id']);
+      $photo = (new \PMS\Services\AesLoginService())->resolveProfilePhoto($staffProfile ?? $profile, $user);
+      if (($photo['photoUrl'] ?? '') !== '') {
+        $data['photoUrl'] = $photo['photoUrl'];
+        $data['photo'] = $photo['photo'];
       }
     }
     if (($user['role'] ?? '') === 'student') {

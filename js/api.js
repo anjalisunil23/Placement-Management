@@ -275,7 +275,7 @@ function resolveSessionCgpa(merged) {
 
 function resolveSessionPhotoUrl(merged) {
   const sources = [merged, merged.aesProfile || {}];
-  const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo'];
+  const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo', 'staff_photo', 'staffPhoto', 'emp_photo', 'employee_photo', 'faculty_photo'];
   for (const src of sources) {
     for (const key of keys) {
       const url = String(src[key] || '').trim();

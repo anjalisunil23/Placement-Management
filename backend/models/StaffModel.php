@@ -54,7 +54,7 @@ class StaffModel extends BaseModel
      */
     public function updateProfile(string $id, array $data): bool
     {
-        $allowed = ['departmentId', 'designation', 'phone'];
+        $allowed = ['departmentId', 'designation', 'phone', 'photo'];
         $update = array_intersect_key($data, array_flip($allowed));
         if (isset($update['departmentId'])) {
             $update['departmentId'] = Security::toObjectId((string) $update['departmentId']);
@@ -98,6 +98,9 @@ class StaffModel extends BaseModel
             'department'   => (string) ($department['code'] ?? ''),
             'departmentId' => (string) ($profile['departmentId'] ?? ''),
             'designation'  => (string) ($profile['designation'] ?? ''),
+            'photoUrl'     => is_array($profile['photo'] ?? null)
+                ? (string) (($profile['photo']['url'] ?? '') ?: '')
+                : '',
         ];
     }
 }

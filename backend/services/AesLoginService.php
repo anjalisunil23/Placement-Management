@@ -458,6 +458,8 @@ final class AesLoginService
         if ($aesProfile !== []) {
             $photoUrl = trim($this->pickInsensitive($aesProfile, [
                 'stud_photo', 'photoUrl', 'photo_url', 'profile_photo', 'profilePhoto',
+                'staff_photo', 'staffPhoto', 'emp_photo', 'empPhoto', 'employee_photo', 'employeePhoto',
+                'faculty_photo', 'facultyPhoto', 'user_photo', 'userPhoto',
             ]));
             if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
                 $data['photoUrl'] = $photoUrl;
@@ -1171,6 +1173,8 @@ final class AesLoginService
 
         $photoUrl = trim($this->pickInsensitive($aesDetails, [
             'stud_photo', 'photoUrl', 'photo_url', 'profile_photo', 'profilePhoto', 'student_photo', 'studentPhoto',
+            'staff_photo', 'staffPhoto', 'emp_photo', 'empPhoto', 'employee_photo', 'employeePhoto',
+            'faculty_photo', 'facultyPhoto', 'user_photo', 'userPhoto',
         ]));
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
             $mapped['photoUrl'] = $photoUrl;
@@ -1435,9 +1439,51 @@ final class AesLoginService
             $patch['departmentId'] = $deptId;
         }
 
+        $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $existingPhoto = is_array($existing['photo'] ?? null) ? $existing['photo'] : null;
+            $source = is_array($existingPhoto) ? (string) ($existingPhoto['source'] ?? '') : '';
+            if ($source !== 'upload') {
+                $existingUrl = is_array($existingPhoto) ? trim((string) ($existingPhoto['url'] ?? '')) : '';
+                if ($existingUrl !== $photoUrl) {
+                    $patch['photo'] = [
+                        'url'      => $photoUrl,
+                        'source'   => 'aes',
+                        'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+                    ];
+                }
+            }
+        }
+
         if ($patch !== []) {
             $staffModel->updateProfile((string) $existing['_id'], $patch);
         }
+    }
+
+    /**
+     * @param array<string, mixed>|null $profile
+     * @param array<string, mixed> $user
+     * @return array{photoUrl:string,photo:array<string,mixed>|null}
+     */
+    public function resolveProfilePhoto(?array $profile, array $user = []): array
+    {
+        $photo = is_array($profile['photo'] ?? null) ? $profile['photo'] : null;
+        $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
+        if ($photoUrl === '' || !filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $merged = $this->applyAesSessionToUserFields([
+                'name'  => (string) ($user['name'] ?? ''),
+                'email' => (string) ($user['email'] ?? ''),
+            ]);
+            $photoUrl = trim((string) ($merged['photoUrl'] ?? ''));
+            $photo = ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL))
+                ? ['url' => $photoUrl, 'source' => 'aes']
+                : null;
+        }
+
+        return [
+            'photoUrl' => $photoUrl,
+            'photo'    => $photo,
+        ];
     }
 
     /**

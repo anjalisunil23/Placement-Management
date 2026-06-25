@@ -305,6 +305,7 @@
 
 <script src="js/admin-api.js?v=20260626d"></script>
 <script src="js/officer-api.js?v=20260626d"></script>
+<script src="js/staff-api.js?v=20260626d"></script>
 <script src="js/api.js?v=20260626d"></script>
 
 <script src="js/app.js?v=20260626d"></script>
@@ -731,8 +732,17 @@ function enrichDriveApplicantCounts(apps) {
 
 
 
+async function loadLiveManageDrives() {
+  if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+    return OfficerApi.fetchDrives();
+  }
+  await DriveStore.fetch();
+  return DriveStore._apiCache ?? null;
+}
+
 async function loadDrives() {
-  if (isStudent && !Auth.isDemo()) {
+  const live = Auth.hasRealAuth() && !Auth.isDemo();
+  if (isStudent && live) {
     const apiDrives = await DriveStore.fetchStudentDrives();
     if (apiDrives === null) {
       toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
@@ -740,16 +750,26 @@ async function loadDrives() {
     } else {
       allDrives = apiDrives;
     }
-  } else if (alumniSeeking && !Auth.isDemo()) {
+  } else if (alumniSeeking && live) {
     const apiDrives = await DriveStore.fetchAlumniDrives();
-    allDrives = apiDrives ?? DriveStore.allWithCatalog();
-  } else if (role === 'staff' && Auth.hasRealAuth() && typeof StaffApi !== 'undefined') {
+    allDrives = apiDrives ?? [];
+  } else if (role === 'staff' && live && typeof StaffApi !== 'undefined') {
     const staffDrives = await StaffApi.fetchDrives();
     if (staffDrives === null) {
       toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
       allDrives = [];
     } else {
       allDrives = staffDrives;
+    }
+  } else if (canManage && live) {
+    const apiDrives = await loadLiveManageDrives();
+    if (apiDrives === null) {
+      toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
+      allDrives = [];
+    } else {
+      allDrives = apiDrives;
+      const apps = await ApplicationPipeline.fetch();
+      enrichDriveApplicantCounts(apps);
     }
   } else {
     if (canManage) await DriveStore.fetch();
@@ -1169,7 +1189,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || Auth.isDemo()) return;
   if (isStudent) {
     StudentApps.fetch().then(() => loadDrives()).catch(() => {});
-  } else if (alumniSeeking || canManage) {
+  } else if (alumniSeeking || canManage || (role === 'staff' && Auth.hasRealAuth())) {
     loadDrives().catch(() => {});
   }
 });

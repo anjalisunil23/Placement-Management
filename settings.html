@@ -616,9 +616,10 @@ async function loadSettingsProfile() {
       document.getElementById('profPhone').value = apiPhone;
       document.getElementById('profStaffDept').value = pickDepartmentDisplay(profileCtx) || p.department || p.departmentName || '';
       document.getElementById('profStaffDesig').value = p.designation || u.designation || '';
-      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone || p.phone, department: pickDepartmentDisplay(profileCtx) || p.department || p.departmentName, departmentName: p.departmentName || pickDepartmentDisplay(profileCtx), designation: p.designation || u.designation };
+      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone || p.phone, department: pickDepartmentDisplay(profileCtx) || p.department || p.departmentName, departmentName: p.departmentName || pickDepartmentDisplay(profileCtx), designation: p.designation || u.designation, photoUrl: pickPhotoUrl(profileCtx) || p.photoUrl || u.photoUrl || user.photoUrl || '', photo: p.photo || u.photo || user.photo };
       Auth.set(user, Auth.token());
-      setAvatarInitials();
+      setAvatarPhoto(pickPhotoUrl(profileCtx) || p.photoUrl || u.photoUrl || user.photoUrl || '');
+      if (!profAvatarEl?.classList.contains('has-photo')) setAvatarInitials();
     }
   } else if (role === 'placement_officer' && Auth.hasRealAuth()) {
     const res = await api('/officer/profile', { skipAuthRedirect: true });
@@ -636,9 +637,10 @@ async function loadSettingsProfile() {
       document.getElementById('profPersonalEmail').value = apiPersonalEmail;
       document.getElementById('profPhone').value = apiPhone;
       document.getElementById('profOfficerDept').value = apiDept;
-      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone, department: apiDept, departmentName: apiDept };
+      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone, department: apiDept, departmentName: apiDept, photoUrl: pickPhotoUrl(profileCtx) || p.photoUrl || u.photoUrl || user.photoUrl || '', photo: p.photo || u.photo || user.photo };
       Auth.set(user, Auth.token());
-      setAvatarInitials();
+      setAvatarPhoto(pickPhotoUrl(profileCtx) || p.photoUrl || u.photoUrl || user.photoUrl || '');
+      if (!profAvatarEl?.classList.contains('has-photo')) setAvatarInitials();
     }
   }
   refreshAppShell();

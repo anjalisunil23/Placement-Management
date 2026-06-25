@@ -516,7 +516,10 @@ function enforcePageRole(active) {
 
 document.addEventListener('ph-user-updated', () => {
   const active = document.body.dataset.page;
-  if (active && document.getElementById('sidebar')) renderShell(active);
+  if (active && document.getElementById('sidebar')) {
+    renderShell(active);
+    hydrateShellAvatars();
+  }
 });
 
 document.addEventListener('error', (event) => {

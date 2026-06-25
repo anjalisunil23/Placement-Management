@@ -28,6 +28,7 @@ use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\NotificationService;
 use PMS\Services\OfficerDataService;
 use PMS\Services\PlacementOfficerContext;
+use PMS\Services\AesLoginService;
 use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
@@ -62,17 +63,31 @@ final class OfficerController
 
         $ctx = PlacementOfficerContext::resolve($user);
 
-
+        $staffProfile = (new \PMS\Models\StaffModel())->findByUserId((string) $user['_id']);
+        $photoSource = $staffProfile ?? (is_array($ctx['profile'] ?? null) ? $ctx['profile'] : null);
+        $photo = (new AesLoginService())->resolveProfilePhoto($photoSource, $user);
+        $serializedUser = DocumentHelper::serialize($user) ?? [];
+        $merged = (new AesLoginService())->applyAesSessionToUserFields(is_array($serializedUser) ? $serializedUser : []);
+        $photoUrl = (string) ($photo['photoUrl'] ?? $merged['photoUrl'] ?? '');
+        $userOut = is_array($serializedUser) ? $serializedUser : [];
+        if ($photoUrl !== '') {
+            $userOut['photoUrl'] = $photoUrl;
+            $userOut['photo'] = $photo['photo'] ?? ['url' => $photoUrl, 'source' => 'aes'];
+        }
 
         Response::success([
 
-            'user'       => DocumentHelper::serialize($user),
+            'user'       => $userOut,
 
             'isAdmin'    => $ctx['isAdmin'],
 
             'department' => $ctx['department'] ? DocumentHelper::serialize($ctx['department']) : null,
 
             'designation'=> $ctx['profile']['designation'] ?? null,
+
+            'photoUrl'   => $photoUrl,
+
+            'photo'      => $photo['photo'],
 
         ]);
 
