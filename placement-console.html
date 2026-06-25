@@ -346,6 +346,23 @@ function allConsoleRecommendations() {
   return [...staff, ...alumni].sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
 }
 
+function referralActionCell(r) {
+  const mail = `<a class="btn btn-sm btn-outline-primary" href="mailto:${r.hrEmail}?subject=Campus%20Placement%20Partnership%20-%20AJCE Placements" title="Email"><i class="bi bi-envelope"></i></a>`;
+  const phone = `<a class="btn btn-sm btn-outline-secondary" href="tel:${(r.contactNumber || '').replace(/\s/g,'')}" title="Call"><i class="bi bi-telephone"></i></a>`;
+  if (!isAdmin) {
+    return `<div class="d-flex flex-wrap gap-1">${mail}${phone}</div>`;
+  }
+  const contacted = r.status !== 'contacted' && r.status !== 'registered'
+    ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${r.id}', '${r.source}')">Contacted</button>`
+    : '';
+  const register = r.status !== 'registered'
+    ? (r.source === 'staff'
+      ? `<button class="btn btn-sm btn-primary" onclick="openRegister('${r.id}')">Register</button>`
+      : `<button class="btn btn-sm btn-primary" onclick="openRegisterAlumni('${r.id}')">Register</button>`)
+    : '';
+  return `<div class="d-flex flex-wrap gap-1">${mail}${phone}${contacted}${register}</div>`;
+}
+
 function renderReferrals() {
   const recs = allConsoleRecommendations();
   document.getElementById('referralRows').innerHTML = recs.length ? recs.map(r => `
@@ -361,15 +378,12 @@ function renderReferrals() {
       <td>${r.recommenderName}<div class="small text-muted-2">${r.recommenderEmail} · ${r.source === 'alumni' ? 'Alumni' : 'Staff'}</div></td>
       <td>${formatDate(r.submittedAt)}</td>
       <td>${recStatusBadge(r.status)}</td>
-      <td><div class="d-flex gap-1 flex-wrap">
-        ${r.status !== 'contacted' && r.status !== 'registered' ? `<button class="btn btn-sm btn-outline-info" onclick="markContacted('${r.id}', '${r.source}')">Contacted</button>` : ''}
-        ${r.status !== 'registered' && r.source === 'staff' ? `<button class="btn btn-sm btn-primary" onclick="openRegister('${r.id}')">Register</button>` : ''}
-        ${r.status !== 'registered' && r.source === 'alumni' ? `<button class="btn btn-sm btn-primary" onclick="openRegisterAlumni('${r.id}')">Register</button>` : ''}
-      </div></td>
+      <td>${referralActionCell(r)}</td>
     </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
 }
 
 window.markContacted = (id, source = 'staff') => {
+  if (!isAdmin) return;
   const update = source === 'alumni'
     ? AlumniReferrals.updateStatus(id, 'contacted')
     : StaffRecs.updateStatus(id, 'contacted');
@@ -378,6 +392,7 @@ window.markContacted = (id, source = 'staff') => {
 
 const registerModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('registerModal'));
 window.openRegister = id => {
+  if (!isAdmin) return;
   const rec = StaffRecs.all().find(r => r.id === id);
   if (!rec) return;
   document.getElementById('sourceRecId').value = rec.id;
@@ -389,6 +404,7 @@ window.openRegister = id => {
   registerModal().show();
 };
 window.openRegisterAlumni = id => {
+  if (!isAdmin) return;
   const rec = AlumniReferrals.all().find(r => r.id === id);
   if (!rec) return;
   document.getElementById('sourceRecId').value = '';
@@ -629,6 +645,7 @@ document.getElementById('addStaffForm')?.addEventListener('submit', async e => {
 
 document.getElementById('registerForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if (!isAdmin) return;
   const data = Object.fromEntries(new FormData(e.target).entries());
   if (!(await confirmAction({ title: 'Register company', message: `Register ${data.companyName || 'this company'}?`, confirmText: 'Register', variant: 'primary' }))) return;
   if (!data.sourceRecommendationId) delete data.sourceRecommendationId;

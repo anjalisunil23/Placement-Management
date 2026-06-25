@@ -46,6 +46,7 @@ const AdminApi = {
       email: u.email || '',
       registerNumber: row.registerNumber || '',
       department: dept.code || dept.name || '',
+      departmentName: dept.name || dept.code || '',
       classBatch: row.classBatch || '',
       cgpa: row.academic?.cgpa ?? null,
       status: u.approved ? 'approved' : 'pending',
@@ -240,8 +241,11 @@ const AdminApi = {
     return res.data.map(u => this.mapUser(u));
   },
 
-  async fetchStudents() {
-    const res = await api('/admin/students');
+  async fetchStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/admin/students' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => this.mapStudentRow(s));
   },

@@ -389,7 +389,8 @@ final class OfficerController
     public function listStudents(): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        Response::success((new OfficerDataService())->listStudents($scope['ctx']));
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        Response::success((new OfficerDataService())->listStudents($scope['ctx'], $query !== '' ? $query : null));
     }
 
     /** GET /api/officer/applications */

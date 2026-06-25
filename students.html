@@ -35,7 +35,7 @@
           </div>
           <div class="position-relative mb-3">
             <i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i>
-            <input class="form-control ps-4" id="searchStudent" placeholder="Search name, register no, email, dept…"/>
+            <input class="form-control ps-4" id="searchStudent" placeholder="Search by name, register number, or department…" autocomplete="off"/>
           </div>
           <div class="list-group list-group-flush" id="studentList" style="max-height:520px;overflow:auto"></div>
         </div>
@@ -285,9 +285,77 @@ function activateTabFromHash() {
 }
 
 /* —— Overview —— */
-let overviewStudents = UserRegistry.byRole('student');
+let overviewStudents = [];
+let overviewStudentsAll = [];
 let useStaffApi = false;
+let useLiveOverviewApi = false;
 let selectedReg = '';
+let overviewSearchTimer = null;
+let overviewSearchSeq = 0;
+
+function studentSearchHaystack(s) {
+  return [
+    s.name,
+    s.registerNumber,
+    s.email,
+    s.department,
+    s.departmentName,
+    s.classBatch,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function studentMatchesQuery(s, q) {
+  const query = String(q || '').trim().toLowerCase();
+  if (!query) return true;
+  const tokens = query.split(/\s+/).filter(Boolean);
+  const hay = studentSearchHaystack(s);
+  return tokens.every(t => hay.includes(t));
+}
+
+async function fetchOverviewStudentsFromApi(query = '') {
+  const q = String(query || '').trim();
+  const params = q ? { q } : {};
+  if (useStaffApi && typeof StaffApi !== 'undefined') {
+    return StaffApi.fetchStudents(params);
+  }
+  if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+    return OfficerApi.fetchStudents(params);
+  }
+  if (role === 'admin' && typeof AdminApi !== 'undefined') {
+    return AdminApi.fetchStudents(params);
+  }
+  return null;
+}
+
+function clearOverviewDetail() {
+  selectedReg = '';
+  document.getElementById('stuAvatar').textContent = '—';
+  document.getElementById('stuName').textContent = 'Select a student';
+  document.getElementById('stuMeta').textContent = 'Use the list on the left or search by name, register number, or department.';
+  document.getElementById('stuStatus').outerHTML = '<span class="badge-soft muted" id="stuStatus">—</span>';
+  document.getElementById('statApplied').textContent = '0';
+  document.getElementById('statShortlisted').textContent = '0';
+  document.getElementById('statSelected').textContent = '0';
+  document.getElementById('statPlaced').textContent = '0';
+  document.getElementById('detailRows').innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4">Select a student to view placement details.</td></tr>';
+}
+
+function filteredOverviewStudents() {
+  const q = document.getElementById('searchStudent').value.trim();
+  if (useLiveOverviewApi) return overviewStudents;
+  return overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+}
+
+function syncOverviewSelectionAfterFilter() {
+  const list = filteredOverviewStudents();
+  if (!list.length) {
+    clearOverviewDetail();
+    return;
+  }
+  if (!list.some(s => s.registerNumber === selectedReg)) {
+    selectOverviewStudent(list[0].registerNumber, { skipListRender: true });
+  }
+}
 
 function studentRow(s) {
   const active = (s.registerNumber === selectedReg) ? 'active' : '';
@@ -302,12 +370,6 @@ function studentRow(s) {
   </button>`;
 }
 
-function filteredOverviewStudents() {
-  const q = document.getElementById('searchStudent').value.trim().toLowerCase();
-  if (!q) return overviewStudents;
-  return overviewStudents.filter(s => `${s.name} ${s.registerNumber} ${s.email} ${s.department}`.toLowerCase().includes(q));
-}
-
 function renderOverviewList() {
   const list = filteredOverviewStudents();
   document.getElementById('studentCount').textContent = list.length;
@@ -316,9 +378,37 @@ function renderOverviewList() {
     : '<div class="p-3 small text-muted-2">No students match your search.</div>';
 }
 
+async function runOverviewSearch() {
+  const q = document.getElementById('searchStudent').value.trim();
+  const seq = ++overviewSearchSeq;
+
+  if (useLiveOverviewApi) {
+    if (q) {
+      document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">Searching…</div>';
+    }
+    const rows = await fetchOverviewStudentsFromApi(q);
+    if (seq !== overviewSearchSeq) return;
+    if (rows) {
+      overviewStudents = rows;
+      if (!q) overviewStudentsAll = rows;
+    }
+  } else {
+    overviewStudents = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+  }
+
+  syncOverviewSelectionAfterFilter();
+  renderOverviewList();
+}
+
+function scheduleOverviewSearch() {
+  clearTimeout(overviewSearchTimer);
+  overviewSearchTimer = setTimeout(() => { runOverviewSearch().catch(() => renderOverviewList()); }, 250);
+}
+
 async function appsForStudentAsync(reg) {
+  const pool = overviewStudentsAll.length ? overviewStudentsAll : overviewStudents;
   if (useStaffApi) {
-    const s = overviewStudents.find(x => x.registerNumber === reg);
+    const s = pool.find(x => x.registerNumber === reg) || overviewStudents.find(x => x.registerNumber === reg);
     if (!s?.id) return [];
     const apps = await StaffApi.fetchStudentPipeline(s.id);
     return apps || [];
@@ -362,11 +452,15 @@ function renderOverviewDetails(apps) {
     </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No placement records for this student.</td></tr>';
 }
 
-function selectOverviewStudent(reg) {
+function selectOverviewStudent(reg, opts = {}) {
   selectedReg = reg;
-  renderOverviewList();
-  const s = overviewStudents.find(x => x.registerNumber === reg);
-  if (!s) return;
+  if (!opts.skipListRender) renderOverviewList();
+  const pool = overviewStudentsAll.length ? overviewStudentsAll : overviewStudents;
+  const s = pool.find(x => x.registerNumber === reg) || overviewStudents.find(x => x.registerNumber === reg);
+  if (!s) {
+    clearOverviewDetail();
+    return;
+  }
   updateOverviewHeader(s);
   loadOverviewApps(reg);
 }
@@ -382,23 +476,47 @@ document.getElementById('studentList').addEventListener('click', e => {
   if (!btn) return;
   selectOverviewStudent(btn.dataset.reg);
 });
-document.getElementById('searchStudent').addEventListener('input', renderOverviewList);
+document.getElementById('searchStudent').addEventListener('input', scheduleOverviewSearch);
+document.getElementById('searchStudent').addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    document.getElementById('searchStudent').value = '';
+    scheduleOverviewSearch();
+  }
+});
 ['stageFilter','statusFilter'].forEach(id => document.getElementById(id).addEventListener('change', () => {
   if (!selectedReg) return;
   loadOverviewApps(selectedReg);
 }));
 
 async function initOverview() {
-  useStaffApi = Auth.hasRealAuth() && role === 'staff';
-  if (useStaffApi) {
-    const rows = await StaffApi.fetchStudents();
-    if (rows) overviewStudents = rows;
-    else useStaffApi = false;
-  } else if (Auth.hasRealAuth() && !Auth.isDemo() && (role === 'admin' || role === 'placement_officer')) {
-    overviewStudents = UserRegistry.byRole('student');
+  useStaffApi = Auth.hasRealAuth() && !Auth.isDemo() && role === 'staff';
+  useLiveOverviewApi = Auth.hasRealAuth() && !Auth.isDemo() && (useStaffApi || role === 'admin' || role === 'placement_officer');
+
+  if (useLiveOverviewApi) {
+    const rows = await fetchOverviewStudentsFromApi('');
+    if (rows) {
+      overviewStudentsAll = rows;
+      overviewStudents = rows;
+    } else if (useStaffApi) {
+      useStaffApi = false;
+      useLiveOverviewApi = false;
+    }
   }
+
+  if (!overviewStudentsAll.length) {
+    overviewStudentsAll = UserRegistry.byRole('student');
+    overviewStudents = overviewStudentsAll;
+  }
+
+  syncOverviewSelectionAfterFilter();
   renderOverviewList();
-  if (overviewStudents[0]?.registerNumber) selectOverviewStudent(overviewStudents[0].registerNumber);
+  if (selectedReg) {
+    selectOverviewStudent(selectedReg, { skipListRender: true });
+    renderOverviewList();
+  } else if (filteredOverviewStudents()[0]?.registerNumber) {
+    selectOverviewStudent(filteredOverviewStudents()[0].registerNumber);
+  }
 }
 
 function registrationStudents() {
@@ -664,9 +782,6 @@ onAppReady(async () => {
   activateTabFromHash();
   if ((canManageRegistrations || role === 'admin' || role === 'placement_officer') && Auth.hasRealAuth() && !Auth.isDemo()) {
     await UserRegistry.fetch();
-    if (role === 'admin' || role === 'placement_officer') {
-      overviewStudents = UserRegistry.byRole('student');
-    }
   }
   await initOverview();
   renderRegistrations();

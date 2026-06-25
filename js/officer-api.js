@@ -16,6 +16,7 @@ const OfficerApi = {
       email: u.email || '',
       registerNumber: row.registerNumber || '',
       department: dept.code || dept.name || '',
+      departmentName: dept.name || dept.code || '',
       classBatch: row.classBatch || '',
       cgpa: row.academic?.cgpa ?? null,
       status: u.approved ? 'approved' : 'pending',
@@ -124,8 +125,11 @@ const OfficerApi = {
     return res.success ? res.data : null;
   },
 
-  async fetchStudents() {
-    const res = await api('/officer/students');
+  async fetchStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/officer/students' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => OfficerApi.mapStudentRow(s));
   },

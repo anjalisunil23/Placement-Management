@@ -209,7 +209,7 @@ final class StaffService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function listStudents(?string $departmentId): array
+    public function listStudents(?string $departmentId, ?string $query = null): array
     {
         $filter = [];
         if ($departmentId !== null) {
@@ -233,6 +233,7 @@ final class StaffService
                 'email'           => $user['email'] ?? '',
                 'registerNumber'  => $student['registerNumber'] ?? '',
                 'department'      => $dept['code'] ?? '',
+                'departmentName'  => $dept['name'] ?? '',
                 'classBatch'      => (string) ($student['classBatch'] ?? $student['personal']['batch'] ?? ''),
                 'cgpa'            => (float) ($student['academic']['cgpa'] ?? 0),
                 'placementStatus' => !empty($student['placed']) ? 'placed' : 'seeking',
@@ -242,7 +243,45 @@ final class StaffService
             ];
         }
 
-        return $rows;
+        return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterStudentRows(array $rows, ?string $query): array
+    {
+        $query = trim((string) ($query ?? ''));
+        if ($query === '') {
+            return $rows;
+        }
+        $tokens = preg_split('/\s+/', strtolower($query), -1, PREG_SPLIT_NO_EMPTY);
+        if ($tokens === []) {
+            return $rows;
+        }
+
+        return array_values(array_filter(
+            $rows,
+            static function (array $row) use ($tokens): bool {
+                $hay = strtolower(implode(' ', array_filter([
+                    (string) ($row['registerNumber'] ?? ''),
+                    (string) ($row['name'] ?? ''),
+                    (string) ($row['email'] ?? ''),
+                    (string) ($row['department'] ?? ''),
+                    (string) ($row['departmentName'] ?? ''),
+                    (string) ($row['classBatch'] ?? ''),
+                ], static fn (string $v): bool => $v !== '')));
+
+                foreach ($tokens as $token) {
+                    if (!str_contains($hay, $token)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+        ));
     }
 
     /**

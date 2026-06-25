@@ -9,8 +9,8 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Companies</h1><p class="page-sub">Review staff and alumni recommendations, contact recruiters, and register companies.</p></div>
-  <div class="d-flex gap-2 flex-wrap">
+  <div><h1 class="page-title">Companies</h1><p class="page-sub" id="companiesPageSub">Review staff and alumni recommendations, contact recruiters, and register companies.</p></div>
+  <div class="d-flex gap-2 flex-wrap" id="companiesPageActions">
     <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#quickAddModal"><i class="bi bi-plus-lg me-1"></i>Add company</button>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#registerModal"><i class="bi bi-building-add me-1"></i>Register with HR</button>
   </div>
@@ -33,7 +33,7 @@
     <div class="card-surface">
       <div class="table-wrap">
         <table class="table-modern"><thead><tr>
-          <th>Company</th><th>Website</th><th>Contact person</th><th>Mail</th><th>Contact</th><th>Recommended By</th><th>Date</th><th>Status</th><th>Comments</th><th>Actions</th>
+          <th>Company</th><th>Website</th><th>Contact person</th><th>Mail</th><th>Contact</th><th>Recommended By</th><th>Date</th><th>Status</th><th>Comments</th><th id="recActionsHead">Actions</th>
         </tr></thead><tbody id="recRows"></tbody></table>
       </div>
     </div>
@@ -136,8 +136,31 @@
 <script src="js/app.js?v=20260622d"></script>
 <script>
 const registerModal = () => bootstrap.Modal.getInstance(document.getElementById('registerModal')) || new bootstrap.Modal(document.getElementById('registerModal'));
-const canEditCompanies = () => Auth.role() === 'admin';
-const canManageRecommendations = () => ['admin', 'placement_officer'].includes(Auth.role());
+const isAdmin = () => Auth.role() === 'admin';
+const canViewCompaniesPage = () => ['admin', 'placement_officer'].includes(Auth.role());
+const canEditCompanies = () => isAdmin();
+const canManageRecommendations = () => isAdmin();
+const canMutateCompanies = () => isAdmin();
+
+function recommendationViewActions(r) {
+  return `<div class="d-flex flex-wrap gap-1 align-items-center">
+    <a class="btn btn-sm btn-outline-primary" href="mailto:${r.hrEmail}?subject=Campus%20Placement%20Partnership%20-%20AJCE Placements" title="Email"><i class="bi bi-envelope"></i></a>
+    <a class="btn btn-sm btn-outline-secondary" href="tel:${(r.contactNumber || '').replace(/\s/g,'')}" title="Call"><i class="bi bi-telephone"></i></a>
+  </div>`;
+}
+
+function recommendationAdminActions(r) {
+  if (!canManageRecommendations()) return recommendationViewActions(r);
+  const id = escAttr(r.id);
+  const source = escAttr(r.source);
+  return `<div class="d-flex flex-wrap gap-1 align-items-center">
+    <a class="btn btn-sm btn-outline-primary" href="mailto:${r.hrEmail}?subject=Campus%20Placement%20Partnership%20-%20AJCE Placements"><i class="bi bi-envelope"></i></a>
+    <a class="btn btn-sm btn-outline-secondary" href="tel:${(r.contactNumber || '').replace(/\s/g,'')}"><i class="bi bi-telephone"></i></a>
+    ${r.status !== 'contacted' && r.status !== 'registered' ? `<button type="button" class="icon-btn" style="width:30px;height:30px" title="Mark contacted" onclick="markContacted('${id}', '${source}')"><i class="bi bi-check2-circle"></i></button>` : ''}
+    ${r.status !== 'registered' ? `<button type="button" class="btn btn-sm btn-primary py-0 px-2 text-nowrap" style="font-size:.75rem;line-height:1.5" onclick="openRegisterFromRecId('${id}', '${source}')">Register</button>` : ''}
+    ${recommendationManageActions(r)}
+  </div>`;
+}
 
 function escAttr(s) {
   return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -194,7 +217,8 @@ function findRecommendation(id, source) {
   return allRecommendations().find(r => r.id === id && r.source === source);
 }
 
-function openRegisterFromRec(rec) {
+window.openRegisterFromRec = rec => {
+  if (!canMutateCompanies()) return;
   if (!rec) return;
   document.getElementById('sourceRecId').value = rec.source === 'staff' ? rec.id : '';
   document.getElementById('regCompanyName').value = rec.companyName;
@@ -203,13 +227,15 @@ function openRegisterFromRec(rec) {
   document.getElementById('regHrEmail').value = rec.hrEmail;
   document.getElementById('regContact').value = rec.contactNumber;
   registerModal().show();
-}
+};
 
 function render() {
   const recs = allRecommendations();
   const regs = RegisteredCompanies.all();
   const showActions = canEditCompanies();
   document.getElementById('regActionsHead')?.classList.toggle('d-none', !showActions);
+  const recActionsHead = document.getElementById('recActionsHead');
+  if (recActionsHead) recActionsHead.textContent = isAdmin() ? 'Actions' : 'Contact';
   document.getElementById('statRecs').textContent = recs.length;
   document.getElementById('statPending').textContent = recs.filter(r => r.status === 'pending').length;
   document.getElementById('statContacted').textContent = recs.filter(r => r.status === 'contacted').length;
@@ -230,15 +256,7 @@ function render() {
       <td>${formatDate(r.submittedAt)}</td>
       <td>${recStatusBadge(r.status)}</td>
       <td>${commentPreview(r.adminComments)}</td>
-      <td>
-        <div class="d-flex flex-wrap gap-1 align-items-center">
-          <a class="btn btn-sm btn-outline-primary" href="mailto:${r.hrEmail}?subject=Campus%20Placement%20Partnership%20-%20AJCE Placements"><i class="bi bi-envelope"></i></a>
-          <a class="btn btn-sm btn-outline-secondary" href="tel:${(r.contactNumber || '').replace(/\s/g,'')}"><i class="bi bi-telephone"></i></a>
-          ${r.status !== 'contacted' && r.status !== 'registered' ? `<button type="button" class="icon-btn" style="width:30px;height:30px" title="Mark contacted" onclick="markContacted('${escAttr(r.id)}', '${escAttr(r.source)}')"><i class="bi bi-check2-circle"></i></button>` : ''}
-          ${r.status !== 'registered' ? `<button type="button" class="btn btn-sm btn-primary py-0 px-2 text-nowrap" style="font-size:.75rem;line-height:1.5" onclick="openRegisterFromRecId('${escAttr(r.id)}', '${escAttr(r.source)}')">Register</button>` : ''}
-          ${recommendationManageActions(r)}
-        </div>
-      </td>
+      <td>${recommendationAdminActions(r)}</td>
     </tr>`).join('') : '<tr><td colspan="10" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
 
   document.getElementById('regRows').innerHTML = regs.length ? regs.map(c => `
@@ -256,6 +274,7 @@ function render() {
 }
 
 window.markContacted = (id, source) => {
+  if (!canManageRecommendations()) return;
   const update = source === 'alumni'
     ? AlumniReferrals.updateStatus(id, 'contacted')
     : StaffRecs.updateStatus(id, 'contacted');
@@ -264,7 +283,6 @@ window.markContacted = (id, source) => {
 window.openRegisterFromRecId = (id, source) => {
   openRegisterFromRec(allRecommendations().find(r => r.id === id && r.source === source));
 };
-window.openRegisterFromRec = openRegisterFromRec;
 
 window.openEditRec = (id, source) => {
   if (!canManageRecommendations()) return;
@@ -409,6 +427,7 @@ document.getElementById('editCompanyForm')?.addEventListener('submit', async e =
 
 document.getElementById('registerForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if (!canMutateCompanies()) return;
   const data = Object.fromEntries(new FormData(e.target).entries());
   if (!(await confirmAction({ title: 'Register company', message: `Register ${data.companyName || 'this company'}?`, confirmText: 'Register', variant: 'primary' }))) return;
   if (!data.sourceRecommendationId) delete data.sourceRecommendationId;
@@ -423,6 +442,7 @@ document.getElementById('registerForm').addEventListener('submit', async e => {
 
 document.getElementById('quickAddForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if (!canMutateCompanies()) return;
   const data = Object.fromEntries(new FormData(e.target).entries());
   if (!(await confirmAction({ title: 'Add company', message: `Add ${data.companyName || 'this company'}?`, confirmText: 'Add', variant: 'primary' }))) return;
   const ok = await RegisteredCompanies.addSimple(data);
@@ -434,6 +454,13 @@ document.getElementById('quickAddForm').addEventListener('submit', async e => {
 });
 
 async function initCompaniesPage() {
+  if (!canViewCompaniesPage()) return;
+  const actions = document.getElementById('companiesPageActions');
+  const sub = document.getElementById('companiesPageSub');
+  if (!isAdmin()) {
+    actions?.classList.add('d-none');
+    if (sub) sub.textContent = 'View staff and alumni recommendations and registered companies. Contact the admin to register or update records.';
+  }
   await Promise.all([StaffRecs.fetch(), RegisteredCompanies.fetch(), AlumniReferrals.fetch()]);
   render();
 }

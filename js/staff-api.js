@@ -31,6 +31,7 @@ const StaffApi = {
       email: row.email || '',
       registerNumber: row.registerNumber || '',
       department: row.department || '',
+      departmentName: row.departmentName || row.department || '',
       classBatch: row.classBatch || '',
       cgpa: row.cgpa ?? null,
       placementStatus: row.placementStatus || 'seeking',
@@ -129,8 +130,11 @@ const StaffApi = {
     });
   },
 
-  async fetchStudents() {
-    const res = await api('/staff/students');
+  async fetchStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/staff/students' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => StaffApi.mapStudentRow(s));
   },

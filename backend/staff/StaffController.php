@@ -165,7 +165,8 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
-        $rows = (new StaffService())->listStudents($ctx['departmentId']);
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        $rows = (new StaffService())->listStudents($ctx['departmentId'], $query !== '' ? $query : null);
         Response::success($rows);
     }
 

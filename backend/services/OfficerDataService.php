@@ -203,7 +203,7 @@ final class OfficerDataService
      * @param array<string, mixed> $ctx
      * @return array<int, array<string, mixed>>
      */
-    public function listStudents(array $ctx): array
+    public function listStudents(array $ctx, ?string $query = null): array
     {
         $studentModel = new StudentModel();
         $deptModel = new DepartmentModel();
@@ -232,7 +232,54 @@ final class OfficerDataService
             $rows[] = $row;
         }
 
-        return $rows;
+        return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterStudentRows(array $rows, ?string $query): array
+    {
+        $query = trim((string) ($query ?? ''));
+        if ($query === '') {
+            return $rows;
+        }
+        $tokens = preg_split('/\s+/', strtolower($query), -1, PREG_SPLIT_NO_EMPTY);
+        if ($tokens === []) {
+            return $rows;
+        }
+
+        return array_values(array_filter(
+            $rows,
+            fn (array $row): bool => $this->studentRowMatchesQuery($row, $tokens)
+        ));
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<int, string> $tokens
+     */
+    private function studentRowMatchesQuery(array $row, array $tokens): bool
+    {
+        $user = is_array($row['user'] ?? null) ? $row['user'] : [];
+        $dept = is_array($row['department'] ?? null) ? $row['department'] : [];
+        $hay = strtolower(implode(' ', array_filter([
+            (string) ($row['registerNumber'] ?? ''),
+            (string) ($user['name'] ?? ''),
+            (string) ($user['email'] ?? ''),
+            (string) ($dept['code'] ?? ''),
+            (string) ($dept['name'] ?? ''),
+            (string) ($row['classBatch'] ?? ''),
+        ], static fn (string $v): bool => $v !== '')));
+
+        foreach ($tokens as $token) {
+            if (!str_contains($hay, $token)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
