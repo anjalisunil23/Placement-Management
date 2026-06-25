@@ -7,6 +7,7 @@ namespace PMS\Staff;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\DepartmentModel;
 use PMS\Models\NotificationModel;
+use PMS\Models\PlacementOfficerModel;
 use PMS\Models\RecommendationModel;
 use PMS\Models\StaffModel;
 use PMS\Models\UserModel;
@@ -206,7 +207,26 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
-        Response::success((new StaffService())->hiringOverview($ctx['departmentId']));
+        $data = (new StaffService())->hiringOverview($ctx['departmentId']);
+
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $data['department'] = [
+            'code' => (string) ($dept['code'] ?? ''),
+            'name' => (string) ($dept['name'] ?? ''),
+        ];
+
+        $poProfile = !empty($ctx['departmentId'])
+            ? (new PlacementOfficerModel())->findByDepartment((string) $ctx['departmentId'])
+            : null;
+        $poUser = is_array($poProfile) && !empty($poProfile['userId'])
+            ? (new UserModel())->findById((string) $poProfile['userId'])
+            : null;
+        $data['placementOfficer'] = is_array($poUser) ? [
+            'name'  => (string) ($poUser['name'] ?? ''),
+            'email' => (string) ($poUser['email'] ?? ''),
+        ] : null;
+
+        Response::success(DocumentHelper::jsonSafe($data));
     }
 
     /** GET /api/staff/notifications */

@@ -11,7 +11,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Campus Hiring Overview</h1>
-    <p class="page-sub">Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.</p>
+    <p class="page-sub" id="pageSub">Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.</p>
   </div>
   <button class="btn btn-outline-secondary" type="button" onclick="toast('Export will be available with backend reports.', 'info')"><i class="bi bi-download me-1"></i>Export</button>
 </div>
@@ -28,7 +28,7 @@
         <span class="small text-muted-2" id="deptOfficer">?</span>
       </div>
     </div>
-    <div class="small text-muted-2">Staff and placement officers see their department automatically.</div>
+    <div class="small text-muted-2" id="viewHint">Staff and placement officers see their department automatically.</div>
   </div>
 </div>
 
@@ -129,10 +129,10 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/staff-api.js?v=20260622d"></script>
-<script src="js/api.js?v=20260622d"></script>
-<script src="js/charts.js?v=20260622d"></script>
-<script src="js/app.js?v=20260622d"></script>
+<script src="js/staff-api.js?v=20260623a"></script>
+<script src="js/api.js?v=20260623a"></script>
+<script src="js/charts.js?v=20260623a"></script>
+<script src="js/app.js?v=20260623a"></script>
 <script>
 if (!canViewCampusHiring()) {
   toast('You do not have access to this page.', 'warn');
@@ -142,6 +142,48 @@ if (!canViewCampusHiring()) {
 const stats = campusRecruitmentStats();
 let apiHiringData = null;
 let campusRecruitingData = null;
+let pipelineChart = null;
+const staffLive = Auth.hasRealAuth() && !Auth.isDemo() && Auth.role() === 'staff';
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function staffPipelineFromData(data) {
+  if (!data) return [];
+  const totals = data.totals || {};
+  const pipeline = Array.isArray(data.pipeline) ? data.pipeline : [];
+  if (pipeline.length && pipeline.some(p => Number(p.value ?? 0) > 0)) {
+    return pipeline.map(p => ({ label: p.label || 'Stage', value: Number(p.value ?? 0) }));
+  }
+  return [
+    { label: 'Applicants', value: Number(totals.applicants ?? 0) },
+    { label: 'Shortlisted', value: Number(totals.shortlisted ?? 0) },
+    { label: 'Offers', value: Number(totals.offers ?? 0) },
+    { label: 'Hired', value: Number(totals.hired ?? 0) },
+  ];
+}
+
+function renderPipelineSection(pipeline) {
+  const rows = pipeline.length ? pipeline : [
+    { label: 'Applicants', value: 0 },
+    { label: 'Shortlisted', value: 0 },
+    { label: 'Offers', value: 0 },
+    { label: 'Hired', value: 0 },
+  ];
+  if (pipelineChart) pipelineChart.destroy();
+  pipelineChart = Charts.bar(
+    document.getElementById('pipelineChart'),
+    rows.map(p => p.label),
+    rows.map(p => p.value),
+    'Candidates'
+  );
+  const maxPipeline = Math.max(...rows.map(p => p.value), 1);
+  document.getElementById('pipelineRows').innerHTML = rows.map(p => {
+    const share = ((p.value / maxPipeline) * 100).toFixed(1);
+    return `<tr><td><strong>${escHtml(p.label)}</strong></td><td>${p.value.toLocaleString('en-IN')}</td><td>${share}%</td></tr>`;
+  }).join('');
+}
 
 function recruitingViewForDept(data, deptCode) {
   if (!data) return null;
@@ -224,6 +266,24 @@ function selectedDept() {
 
 function setDeptUI(dept) {
   const badge = document.getElementById('deptBadge');
+  const officerEl = document.getElementById('deptOfficer');
+  const hintEl = document.getElementById('viewHint');
+
+  if (staffLive) {
+    const u = Auth.user() || {};
+    const deptMeta = apiHiringData?.department || {};
+    const label = String(deptMeta.name || u.departmentName || departmentDisplayName(dept) || 'Your department').trim();
+    badge.textContent = label || 'Your department';
+    badge.className = 'badge-soft primary';
+    const po = apiHiringData?.placementOfficer;
+    officerEl.innerHTML = po?.email
+      ? `Placement officer: <strong>${escHtml(po.name || po.email)}</strong> <span class="text-muted-2 small">(${escHtml(po.email)})</span>`
+      : '<span class="text-muted-2 small">Placement officer not assigned for this department yet.</span>';
+    if (hintEl) hintEl.textContent = 'Showing live hiring data for your department.';
+    deptSelect.style.display = 'none';
+    return;
+  }
+
   if (!dept) {
     badge.textContent = 'Campus';
     badge.className = 'badge-soft info';
@@ -235,18 +295,28 @@ function setDeptUI(dept) {
   const officer = dept
     ? (DeptPlacementOfficers.officerForDept(canon) || DeptPlacementOfficers.officerForDept(dept))
     : null;
-  document.getElementById('deptOfficer').innerHTML = officer
+  officerEl.innerHTML = officer
     ? `Placement officer: <strong>${officer.name || officer.email}</strong> <span class="text-muted-2 small">(${officer.email || '?'})</span>`
     : (dept ? 'Placement officer: ?' : 'Placement officer: ?');
+  if (hintEl) hintEl.textContent = 'Staff and placement officers see their department automatically.';
   deptSelect.style.display = (role === 'admin') ? '' : 'none';
 }
 
 function renderForDept(dept) {
   const apiDept = (role === 'staff' && apiHiringData) ? apiHiringData : null;
-  const recruitingDept = campusRecruitingData ? recruitingViewForDept(campusRecruitingData, dept) : null;
-  const liveDept = apiDept || recruitingDept;
-  // Counters
-  if (!dept) {
+  const recruitingDept = (!staffLive && campusRecruitingData) ? recruitingViewForDept(campusRecruitingData, dept) : null;
+  const liveDept = staffLive ? apiHiringData : (apiDept || recruitingDept);
+  const totals = liveDept?.totals || null;
+
+  if (liveDept && totals) {
+    setStat('statCompanies', totals.companiesHiring ?? 0);
+    setStat('statApplicants', totals.applicants ?? 0);
+    setStat('statShortlisted', totals.shortlisted ?? 0);
+    setStat('statOffers', totals.offers ?? 0);
+    setStat('statHired', totals.hired ?? 0);
+  } else if (staffLive) {
+    ['statCompanies', 'statApplicants', 'statShortlisted', 'statOffers', 'statHired'].forEach(id => setStat(id, 0));
+  } else if (!dept) {
     if (liveDept) {
       setStat('statCompanies', liveDept.totals?.companiesHiring ?? 0);
       setStat('statApplicants', liveDept.totals?.applicants ?? 0);
@@ -277,7 +347,20 @@ function renderForDept(dept) {
   animateCounters(document);
 
   // Companies table
-  if (!dept) {
+  if (staffLive) {
+    const companies = liveDept?.companies || [];
+    document.getElementById('activeCount').textContent = `${companies.length} active`;
+    document.getElementById('companyRows').innerHTML = companies.length
+      ? companies.map(c => `<tr>
+          <td><strong>${escHtml(c.company)}</strong></td>
+          <td>${escHtml((c.roles || ['—']).join(', '))}</td>
+          <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
+          <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
+          <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
+          <td><span class="badge-soft ${c.statusCls || 'info'}">${escHtml(c.status || 'Active')}</span></td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-muted-2 p-4">No companies are actively hiring in your department right now.</td></tr>';
+  } else if (!dept) {
     if (liveDept) {
       document.getElementById('activeCount').textContent = `${(liveDept.companies || []).length} active`;
       document.getElementById('companyRows').innerHTML = (liveDept.companies || []).length
@@ -344,20 +427,29 @@ function renderForDept(dept) {
 
   // Candidate list
   const status = document.getElementById('statusFilter').value;
-  const candidatePool = liveDept?.candidates
-    ?? (apiDept?.candidates)
-    ?? (dept ? departmentHiringOverview(dept).candidates : PLACEMENT_STUDENTS);
+  const candidatePool = staffLive
+    ? (liveDept?.candidates || [])
+    : (liveDept?.candidates
+      ?? (apiDept?.candidates)
+      ?? (dept ? departmentHiringOverview(dept).candidates : PLACEMENT_STUDENTS));
   const list = candidatePool.filter(s => !status || s.status === status);
+  const emptyCandidatesMsg = staffLive
+    ? 'No students from your department are in the hiring pipeline yet.'
+    : 'No candidates match this filter.';
   document.getElementById('candidateRows').innerHTML = list.length
     ? list.map(s => `<tr>
-        <td><strong>${s.name}</strong></td>
-        <td>${s.roll}</td>
-        <td>${s.dept}</td>
-        <td>${s.company}</td>
-        <td>${s.role}</td>
+        <td><strong>${escHtml(s.name)}</strong></td>
+        <td>${escHtml(s.roll)}</td>
+        <td>${escHtml(s.dept)}</td>
+        <td>${escHtml(s.company)}</td>
+        <td>${escHtml(s.role)}</td>
         <td>${pipelineStatusBadge(s.status)}</td>
       </tr>`).join('')
-    : '<tr><td colspan="6" class="text-muted-2 p-4">No candidates match this filter.</td></tr>';
+    : `<tr><td colspan="6" class="text-muted-2 p-4">${emptyCandidatesMsg}</td></tr>`;
+
+  if (staffLive) {
+    renderPipelineSection(staffPipelineFromData(liveDept));
+  }
 }
 
 function setStat(id, value) {
@@ -367,43 +459,38 @@ function setStat(id, value) {
   el.dataset.animated = '0';
 }
 
-setStat('statCompanies', stats.companiesHiring);
-setStat('statApplicants', stats.applicants);
-setStat('statShortlisted', stats.shortlisted);
-setStat('statOffers', stats.offers);
-setStat('statHired', stats.hired);
+if (!staffLive) {
+  setStat('statCompanies', stats.companiesHiring);
+  setStat('statApplicants', stats.applicants);
+  setStat('statShortlisted', stats.shortlisted);
+  setStat('statOffers', stats.offers);
+  setStat('statHired', stats.hired);
+}
 
 async function initHiringOverview() {
   await DepartmentStore.fetch();
   populateDeptSelect();
-  if (Auth.hasRealAuth() && role === 'staff') {
+  if (staffLive) {
+    const sub = document.getElementById('pageSub');
+    if (sub) sub.textContent = 'Live hiring snapshot for your department  companies, applicants, shortlists, offers, and placements.';
     await Auth.ensureSession();
     await Auth.enrichFromProfile();
     const data = await StaffApi.fetchHiringOverview();
     if (data) apiHiringData = data;
+    else toast('Could not load hiring overview. Refresh or sign in again.', 'warn');
   }
   if (Auth.hasRealAuth() && (role === 'admin' || role === 'placement_officer')) {
     await Auth.ensureSession();
     const data = await RecruitingStore.fetch();
     if (data) campusRecruitingData = data;
   }
-  animateCounters(document);
   setDeptUI(selectedDept());
   renderForDept(selectedDept());
-  const pipeline = (role === 'staff' && apiHiringData?.pipeline)
-    || (campusRecruitingData && recruitingViewForDept(campusRecruitingData, selectedDept())?.pipeline)
-    || stats.pipeline;
-  Charts.bar(
-    document.getElementById('pipelineChart'),
-    pipeline.map(p => p.label),
-    pipeline.map(p => p.value),
-    'Candidates'
-  );
-  const maxPipeline = Math.max(...pipeline.map(p => p.value), 1);
-  document.getElementById('pipelineRows').innerHTML = pipeline.map(p => {
-    const share = ((p.value / maxPipeline) * 100).toFixed(1);
-    return `<tr><td><strong>${p.label}</strong></td><td>${p.value.toLocaleString('en-IN')}</td><td>${share}%</td></tr>`;
-  }).join('');
+  if (!staffLive) {
+    const pipeline = (campusRecruitingData && recruitingViewForDept(campusRecruitingData, selectedDept())?.pipeline)
+      || stats.pipeline;
+    renderPipelineSection(pipeline);
+  }
 }
 
 initHiringOverview();
