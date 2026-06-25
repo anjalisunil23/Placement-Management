@@ -1397,9 +1397,12 @@ const PLACEMENT_STUDENTS = [
 function pipelineStatusBadge(status) {
   const map = {
     applied: ['muted','Applied'],
+    under_review: ['info','Under review'],
     shortlisted: ['info','Shortlisted'],
     selected: ['warning','Selected'],
+    offered: ['warning','Offered'],
     placed: ['success','Placed'],
+    rejected: ['danger','Rejected'],
   };
   const [cls, label] = map[status] || ['muted', status];
   return `<span class="badge-soft ${cls}">${label}</span>`;
