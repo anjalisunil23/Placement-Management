@@ -352,7 +352,7 @@ final class OfficerDataService
             ? 'placed'
             : ((is_array($selfPlacement) && ($selfPlacement['status'] ?? '') === 'pending') ? 'pending_placement' : 'registered');
 
-        return [
+        $overview = [
             'id'              => (string) ($student['_id'] ?? ''),
             'studentId'       => (string) ($student['_id'] ?? ''),
             'registerNumber'  => (string) ($student['registerNumber'] ?? ''),
@@ -383,6 +383,106 @@ final class OfficerDataService
             'chancesUsed'     => (int) ($chances['used'] ?? 0),
             'chancesMax'      => (int) (($chances['used'] ?? 0) + ($chances['remaining'] ?? 0)),
         ];
+
+        return $this->mergeAesPlacementIntoOverview($student, $user, $overview);
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed>|null $user
+     * @param array<string, mixed> $overview
+     * @return array<string, mixed>
+     */
+    private function mergeAesPlacementIntoOverview(array $student, ?array $user, array $overview): array
+    {
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        if ($register === '') {
+            return $overview;
+        }
+
+        $placement = $this->placementProfileForRegister($register);
+        if ($placement === []) {
+            return $overview;
+        }
+
+        $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
+
+        $name = trim((string) ($mapped['name'] ?? ''));
+        if ($name !== '') {
+            $overview['name'] = $name;
+            if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $name) {
+                (new UserModel())->updateUser((string) $user['_id'], ['name' => $name]);
+            }
+        }
+
+        $phone = trim((string) ($mapped['phone'] ?? ''));
+        if ($phone !== '') {
+            $overview['phone'] = $phone;
+        }
+
+        if (!empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
+            $overview['cgpa'] = (float) $mapped['cgpa'];
+        }
+        if (!empty($mapped['marks10th']) && (float) $mapped['marks10th'] > 0) {
+            $overview['marks10th'] = (float) $mapped['marks10th'];
+        }
+        if (!empty($mapped['marks12th']) && (float) $mapped['marks12th'] > 0) {
+            $overview['marks12th'] = (float) $mapped['marks12th'];
+            $overview['ugMarks'] = (float) $mapped['marks12th'];
+        }
+        if (isset($mapped['backlogs'])) {
+            $overview['backlogs'] = (int) $mapped['backlogs'];
+        }
+
+        $batch = trim((string) ($mapped['classBatch'] ?? ''));
+        if ($batch !== '') {
+            $overview['classBatch'] = $batch;
+        }
+
+        $collegeEmail = '';
+        $personalEmail = trim((string) ($overview['personalEmail'] ?? ''));
+        $email = strtolower(trim((string) ($mapped['email'] ?? '')));
+        if ($email !== '') {
+            if ($this->isCollegeEmailAddress($email)) {
+                $collegeEmail = $email;
+            } elseif ($personalEmail === '') {
+                $personalEmail = $email;
+            }
+        }
+        $collegeFromAes = strtolower(trim((string) ($mapped['collegeEmail'] ?? '')));
+        if ($collegeFromAes !== '' && $this->isCollegeEmailAddress($collegeFromAes)) {
+            $collegeEmail = $collegeFromAes;
+        }
+        $personalFromAes = trim((string) ($mapped['personalEmail'] ?? ''));
+        if ($personalFromAes !== '') {
+            $personalEmail = $personalFromAes;
+        }
+        if ($collegeEmail !== '') {
+            $overview['collegeEmail'] = $collegeEmail;
+            $overview['email'] = $collegeEmail;
+        } elseif ($personalEmail !== '') {
+            $overview['personalEmail'] = $personalEmail;
+            if (empty($overview['email'])) {
+                $overview['email'] = $personalEmail;
+            }
+        }
+
+        $photoUrl = trim((string) ($mapped['photoUrl'] ?? $placement['stud_photo'] ?? ''));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $overview['photoUrl'] = $photoUrl;
+            $overview['photo'] = ['url' => $photoUrl, 'source' => 'aes'];
+        }
+
+        $deptName = trim((string) ($placement['departmentName'] ?? $placement['deptName'] ?? $placement['branch'] ?? ''));
+        if ($deptName !== '' && empty($overview['departmentName'])) {
+            $overview['departmentName'] = $deptName;
+        }
+        $deptCode = trim((string) ($placement['deptCode'] ?? $placement['department'] ?? ''));
+        if ($deptCode !== '' && empty($overview['department'])) {
+            $overview['department'] = $deptCode;
+        }
+
+        return $overview;
     }
 
     /**
@@ -482,6 +582,20 @@ final class OfficerDataService
             $row['photo'] = $photo['photo'] ?? ['url' => $photoUrl, 'source' => 'aes'];
         }
 
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        if ($register !== '') {
+            $placement = $this->placementProfileForRegister($register);
+            $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
+            if (!empty($mapped['classBatch'])) {
+                $row['classBatch'] = (string) $mapped['classBatch'];
+            }
+            if (!empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
+                $academic = is_array($row['academic'] ?? null) ? $row['academic'] : (is_array($student['academic'] ?? null) ? $student['academic'] : []);
+                $academic['cgpa'] = (float) $mapped['cgpa'];
+                $row['academic'] = $academic;
+            }
+        }
+
         return $row;
     }
 
@@ -520,6 +634,21 @@ final class OfficerDataService
      */
     private function studentDisplayName(array $student, ?array $user): string
     {
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        if ($register !== '') {
+            $placement = $this->placementProfileForRegister($register);
+            $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
+            $aesName = trim((string) ($mapped['name'] ?? ''));
+            if ($aesName !== '') {
+                if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $aesName) {
+                    (new UserModel())->updateUser((string) $user['_id'], ['name' => $aesName]);
+                }
+                self::$placementNameCache[$register] = $aesName;
+
+                return $aesName;
+            }
+        }
+
         $name = is_array($user) ? trim((string) ($user['name'] ?? '')) : '';
         if ($name !== '') {
             return $name;
@@ -531,7 +660,6 @@ final class OfficerDataService
             return $name;
         }
 
-        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
         if ($register === '') {
             return '';
         }
@@ -540,16 +668,9 @@ final class OfficerDataService
             return self::$placementNameCache[$register];
         }
 
-        $placement = $this->placementProfileForRegister($register);
-        $resolved = trim((string) ($placement['stud_name'] ?? $placement['name'] ?? ''));
+        self::$placementNameCache[$register] = '';
 
-        self::$placementNameCache[$register] = $resolved;
-
-        if ($resolved !== '' && is_array($user) && !empty($user['_id'])) {
-            (new UserModel())->updateUser((string) $user['_id'], ['name' => $resolved]);
-        }
-
-        return $resolved;
+        return '';
     }
 
     /**

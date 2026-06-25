@@ -292,11 +292,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260628i"></script>
-<script src="js/admin-api.js?v=20260628i"></script>
-<script src="js/officer-api.js?v=20260628i"></script>
-<script src="js/api.js?v=20260628i"></script>
-<script src="js/app.js?v=20260628i"></script>
+<script src="js/staff-api.js?v=20260628j"></script>
+<script src="js/admin-api.js?v=20260628j"></script>
+<script src="js/officer-api.js?v=20260628j"></script>
+<script src="js/api.js?v=20260628j"></script>
+<script src="js/app.js?v=20260628j"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin' || role === 'placement_officer';
@@ -352,6 +352,7 @@ let useLiveOverviewApi = false;
 let selectedReg = '';
 let overviewSearchTimer = null;
 let overviewSearchSeq = 0;
+let profileLoadSeq = 0;
 
 function studentSearchHaystack(s) {
   return [
@@ -728,17 +729,46 @@ function updateOverviewHeader(s) {
 }
 
 async function loadStudentProfile(s) {
+  const reg = String(s?.registerNumber || '').trim();
+  const seq = ++profileLoadSeq;
   let profile = s;
-  if (useLiveOverviewApi && s.studentId) {
-    const full = await fetchStudentProfileFromApi(s.studentId);
+  if (useLiveOverviewApi) {
+    const sid = useStaffApi ? (s.studentId || s.id) : s.studentId;
+    if (!sid) {
+      if (seq === profileLoadSeq && selectedReg === reg) updateOverviewHeader(profile);
+      return;
+    }
+    const full = await fetchStudentProfileFromApi(sid);
+    if (seq !== profileLoadSeq || selectedReg !== reg) return;
     if (full) {
-      profile = { ...s, ...full };
-      const idx = overviewStudentsAll.findIndex(x => x.registerNumber === s.registerNumber);
-      if (idx >= 0) overviewStudentsAll[idx] = { ...overviewStudentsAll[idx], ...full };
-      const idx2 = overviewStudents.findIndex(x => x.registerNumber === s.registerNumber);
-      if (idx2 >= 0) overviewStudents[idx2] = { ...overviewStudents[idx2], ...full };
+      const fullReg = String(full.registerNumber || '').trim().toUpperCase();
+      const expectReg = reg.toUpperCase();
+      if (fullReg && expectReg && fullReg !== expectReg) {
+        toast('Could not load profile for this student. Try selecting again.', 'warn');
+      } else {
+        profile = {
+          ...s,
+          ...full,
+          studentId: full.studentId || s.studentId,
+          registerNumber: full.registerNumber || s.registerNumber,
+          name: full.name || s.name,
+        };
+        const mergeRow = (list, idx) => {
+          if (idx < 0) return;
+          list[idx] = {
+            ...list[idx],
+            ...full,
+            studentId: full.studentId || list[idx].studentId,
+            registerNumber: full.registerNumber || list[idx].registerNumber,
+            name: full.name || list[idx].name,
+          };
+        };
+        mergeRow(overviewStudentsAll, overviewStudentsAll.findIndex(x => x.registerNumber === reg));
+        mergeRow(overviewStudents, overviewStudents.findIndex(x => x.registerNumber === reg));
+      }
     }
   }
+  if (seq !== profileLoadSeq || selectedReg !== reg) return;
   updateOverviewHeader(profile);
 }
 
