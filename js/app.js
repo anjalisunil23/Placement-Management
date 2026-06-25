@@ -126,7 +126,7 @@ function topbarProfileMenuHtml(user, role) {
   return `
     <div class="dropdown topbar-profile-menu">
       <button type="button" class="topbar-avatar-btn" data-bs-toggle="dropdown" aria-expanded="false" title="${escapeAttr(user?.name || 'Account')}">
-        <span class="topbar-avatar-wrap">${avatar}</span>
+        ${avatar}
       </button>
       <ul class="dropdown-menu dropdown-menu-end shadow-sm">
         <li><h6 class="dropdown-header text-truncate">${escapeAttr(user?.name || 'Account')}</h6></li>
@@ -165,7 +165,7 @@ function userAvatarHtml(user, size = 38, fontSize = '.85rem') {
 function hydrateShellAvatars() {
   const url = userPhotoUrl(Auth.user());
   if (!url) return;
-  document.querySelectorAll('.topbar-avatar-wrap .avatar, .sidebar-avatar-wrap .avatar').forEach((el) => {
+  document.querySelectorAll('.topbar-avatar-btn .avatar, .sidebar-avatar-wrap .avatar').forEach((el) => {
     const ini = el.dataset.initials || initials(Auth.user()?.name);
     el.dataset.initials = ini;
     el.classList.add('has-photo');
