@@ -844,6 +844,13 @@ final class AdminController
         Response::success((new OfficerDataService())->listStudents($scope['ctx'], $query !== '' ? $query : null));
     }
 
+    /** GET /api/admin/students/{id}/profile */
+    public function studentProfile(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new OfficerDataService())->getStudentOverview($studentId, $scope['ctx']));
+    }
+
     /** GET /api/admin/blacklist */
     public function listBlacklist(): void
     {

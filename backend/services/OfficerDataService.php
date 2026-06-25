@@ -236,6 +236,112 @@ final class OfficerDataService
     }
 
     /**
+     * Full student profile for staff / placement officer / admin overview.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<string, mixed>
+     */
+    public function getStudentOverview(string $studentId, array $ctx): array
+    {
+        $student = (new StudentModel())->findById($studentId);
+        if (!$student) {
+            Response::notFound('Student not found.');
+        }
+        if (!$this->studentInScope($student, $ctx)) {
+            Response::forbidden('Student is outside your department scope.');
+        }
+
+        $userId = (string) ($student['userId'] ?? '');
+        $user = $userId ? (new UserModel())->findById($userId) : null;
+        $dept = !empty($student['departmentId'])
+            ? (new DepartmentModel())->findById((string) $student['departmentId'])
+            : null;
+
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $photo = is_array($student['photo'] ?? null) ? $student['photo'] : null;
+        $photoUrl = trim((string) ($photo['url'] ?? ''));
+        $chances = is_array($student['placementChances'] ?? null) ? $student['placementChances'] : [];
+
+        $email = strtolower(trim((string) ($user['email'] ?? '')));
+        $collegeEmail = $this->isCollegeEmailAddress($email) ? $email : '';
+        $personalEmail = trim((string) ($personal['personalEmail'] ?? $personal['email'] ?? ''));
+        if ($personalEmail === '' && $email !== '' && !$this->isCollegeEmailAddress($email)) {
+            $personalEmail = $email;
+        }
+        if ($collegeEmail === '' && $email !== '' && $this->isCollegeEmailAddress($email)) {
+            $collegeEmail = $email;
+        }
+
+        $marks12 = (float) ($academic['marks12th'] ?? 0);
+        if ($marks12 <= 0) {
+            $marks12 = (float) ($academic['ugMarks'] ?? 0);
+        }
+
+        $resume = is_array($student['resume'] ?? null) ? $student['resume'] : null;
+        $resumeStatus = 'none';
+        if ($resume && !empty($resume['path'])) {
+            $resumeStatus = !empty($resume['verified']) ? 'approved' : 'pending';
+        }
+
+        return [
+            'id'              => (string) ($student['_id'] ?? ''),
+            'studentId'       => (string) ($student['_id'] ?? ''),
+            'registerNumber'  => (string) ($student['registerNumber'] ?? ''),
+            'name'            => (string) ($user['name'] ?? 'Student'),
+            'email'           => $collegeEmail !== '' ? $collegeEmail : ($personalEmail !== '' ? $personalEmail : $email),
+            'collegeEmail'    => $collegeEmail,
+            'personalEmail'   => $personalEmail,
+            'phone'           => (string) ($personal['phone'] ?? ''),
+            'department'      => (string) ($dept['code'] ?? ''),
+            'departmentName'  => (string) ($dept['name'] ?? $dept['code'] ?? ''),
+            'classBatch'      => (string) ($student['classBatch'] ?? ''),
+            'cgpa'            => (float) ($academic['cgpa'] ?? 0) ?: null,
+            'marks10th'       => (float) ($academic['marks10th'] ?? 0) ?: null,
+            'marks12th'       => $marks12 > 0 ? $marks12 : null,
+            'ugMarks'         => (float) ($academic['ugMarks'] ?? 0) ?: null,
+            'backlogs'        => (int) ($academic['backlogs'] ?? 0),
+            'photoUrl'        => $photoUrl,
+            'status'          => !empty($user['approved']) ? 'approved' : 'pending',
+            'blocked'         => ($user['status'] ?? '') === 'blocked',
+            'placed'          => !empty($student['placed']),
+            'placementStatus' => !empty($student['placed']) ? 'placed' : 'registered',
+            'resumeStatus'    => $resumeStatus,
+            'chancesUsed'     => (int) ($chances['used'] ?? 0),
+            'chancesMax'      => (int) (($chances['used'] ?? 0) + ($chances['remaining'] ?? 0)),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $ctx
+     */
+    private function studentInScope(array $student, array $ctx): bool
+    {
+        if (!empty($ctx['isAdmin'])) {
+            return true;
+        }
+        $scopeDept = (string) ($ctx['departmentId'] ?? '');
+        if ($scopeDept === '') {
+            return true;
+        }
+        return (string) ($student['departmentId'] ?? '') === $scopeDept;
+    }
+
+    private function isCollegeEmailAddress(string $email): bool
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || !str_contains($email, '@')) {
+            return false;
+        }
+
+        return str_contains($email, '@students.amaljyothi.ac.in')
+            || str_contains($email, '@amaljyothi.ac.in')
+            || str_ends_with($email, '@ajce.in')
+            || (bool) preg_match('/@[a-z0-9.-]+\.ajce\.in$/', $email);
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */

@@ -103,6 +103,8 @@ final class Collections
                 'academic' => [
                     'ugMarks'    => 'float',
                     'mcaMarks'   => 'float',
+                    'marks10th'  => 'float',
+                    'marks12th'  => 'float',
                     'cgpa'       => 'float',
                     'backlogs'   => 'int',
                     'semesters'  => 'array',

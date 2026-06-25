@@ -460,7 +460,61 @@ final class AesApiService
             $record['backlogs'] = (int) $record['backlog'];
         }
 
+        $marks10 = $this->pickMarkPercentFromRecord($record, [
+            'marks10th', 'marks_10th', 'mark10th', 'mark_10th', 'sslc', 'sslc_marks', 'sslcMarks',
+            'sslc_percentage', 'sslcPercent', 'sslc_percent', 'stud_sslc', 'stud_sslc_marks', 'stud_sslc_percent',
+            'tenth_marks', 'tenth_percentage', 'tenthPercent', 'percent_10', 'percent10',
+            '10th_marks', '10th_percentage', 'mark_10', 'mark10', 'stud_10th', 'stud_10th_marks',
+        ]);
+        if ($marks10 !== null) {
+            $record['marks10th'] = $marks10;
+        }
+        $marks12 = $this->pickMarkPercentFromRecord($record, [
+            'marks12th', 'marks_12th', 'mark12th', 'mark_12th', 'hsc', 'hsc_marks', 'hscMarks',
+            'hsc_percentage', 'hscPercent', 'hsc_percent', 'stud_hsc', 'stud_hsc_marks', 'stud_hsc_percent',
+            'twelfth_marks', 'twelfth_percentage', 'twelfthPercent', 'percent_12', 'percent12',
+            '12th_marks', '12th_percentage', 'mark_12', 'mark12', 'stud_12th', 'stud_12th_marks',
+            'plus2', 'plus_two', 'plus2_marks', 'plus2_percentage', 'plus_two_marks',
+            'ug_marks', 'ugMarks', 'ug_percent', 'ug_percentage',
+        ]);
+        if ($marks12 !== null) {
+            $record['marks12th'] = $marks12;
+            if (!isset($record['ugMarks']) || (float) $record['ugMarks'] <= 0) {
+                $record['ugMarks'] = $marks12;
+            }
+        }
+
         return $record;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param list<string> $keys
+     */
+    private function pickMarkPercentFromRecord(array $record, array $keys): ?float
+    {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $record) || $record[$key] === '' || $record[$key] === null) {
+                continue;
+            }
+            $value = $record[$key];
+            if (is_numeric($value)) {
+                $n = (float) $value;
+                if ($n > 0 && $n <= 100) {
+                    return $n;
+                }
+                continue;
+            }
+            $text = trim((string) $value);
+            if ($text !== '' && preg_match('/(\d+(?:\.\d+)?)/', $text, $m)) {
+                $n = (float) $m[1];
+                if ($n > 0 && $n <= 100) {
+                    return $n;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

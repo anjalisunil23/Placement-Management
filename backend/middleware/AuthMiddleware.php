@@ -96,7 +96,7 @@ final class AuthMiddleware
       $data['role'] = 'admin';
       $data['dashboard'] = $config['role_dashboards']['admin'] ?? '/dashboard.html';
     } else {
-      $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/login.html';
+      $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/public-stats.html';
     }
     if (($data['role'] ?? '') === 'alumni') {
       $profile = (new AlumniModel())->findByUserId((string) $user['_id']);

@@ -83,6 +83,18 @@ final class StudentController
     if (!empty($mapped['cgpa'])) {
       $createData['academic'] = ['cgpa' => (float) $mapped['cgpa']];
     }
+    $academicCreate = $createData['academic'] ?? [];
+    foreach (['marks10th', 'marks12th'] as $markKey) {
+      if (!empty($mapped[$markKey]) && (float) $mapped[$markKey] > 0) {
+        $academicCreate[$markKey] = (float) $mapped[$markKey];
+      }
+    }
+    if (isset($academicCreate['marks12th']) && !isset($academicCreate['ugMarks'])) {
+      $academicCreate['ugMarks'] = (float) $academicCreate['marks12th'];
+    }
+    if ($academicCreate !== []) {
+      $createData['academic'] = $academicCreate;
+    }
     if (!empty($mapped['phone'])) {
       $createData['personal'] = ['phone' => (string) $mapped['phone']];
     }
@@ -201,6 +213,16 @@ final class StudentController
     $out['branch'] = $resolvedDept['name'];
     if (!empty($merged['cgpa']) && (float) $merged['cgpa'] > 0) {
       $academic['cgpa'] = (float) $merged['cgpa'];
+      $out['academic'] = $academic;
+    }
+    foreach (['marks10th', 'marks12th'] as $markKey) {
+      if (!empty($merged[$markKey]) && (float) $merged[$markKey] > 0) {
+        $academic[$markKey] = (float) $merged[$markKey];
+        $out['academic'] = $academic;
+      }
+    }
+    if (!empty($academic['marks12th']) && (float) ($academic['ugMarks'] ?? 0) <= 0) {
+      $academic['ugMarks'] = (float) $academic['marks12th'];
       $out['academic'] = $academic;
     }
     if (!empty($merged['phone']) && empty($personal['phone'])) {

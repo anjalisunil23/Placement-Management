@@ -428,7 +428,7 @@ function renderShell(active) {
     e.preventDefault();
     const key = a.dataset.role;
     if (key === 'admin') {
-      window.location.href = `login.html?next=${encodeURIComponent('dashboard.html')}`;
+      window.location.href = `public-stats.html?next=${encodeURIComponent('dashboard.html')}`;
       return;
     }
     const user = demoUserFor(key === 'alumni-seeking' ? 'alumni-seeking' : key);
@@ -504,7 +504,7 @@ function animateCounters(root = document) {
 }
 
 function enforcePageRole(active) {
-  if (!active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html') return true;
+  if (!active || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html' || active === 'login.html') return true;
   const page = active.split('#')[0];
   if (!Auth.isAllowed(page)) {
     toast(`This page isn't available for ${ROLE_LABELS[Auth.role()] || 'your role'}.`, 'warn');
@@ -543,7 +543,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   const active = document.body.dataset.page;
-  const isPublic = !active || active === 'login.html' || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html';
+  const isPublic = !active || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html' || active === 'login.html';
 
   if (isPublic) {
     document.documentElement.setAttribute('data-theme', UserPrefs.theme());
@@ -561,7 +561,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     hasSession = await Auth.bootstrap();
   }
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
-    window.location.replace(`login.html?next=${encodeURIComponent(active)}`);
+    window.location.replace(`public-stats.html?next=${encodeURIComponent(active)}`);
     return;
   }
   if (!hasSession) {
@@ -571,7 +571,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       Auth._sessionReady = true;
     } else {
       Auth.clear();
-      window.location.href = `login.html?next=${encodeURIComponent(active)}`;
+      window.location.href = `public-stats.html?next=${encodeURIComponent(active)}`;
       return;
     }
   }

@@ -481,7 +481,7 @@ async function requireWriteSession() {
   Auth._sessionReady = false;
   if (await Auth.ensureSession()) return true;
   const page = document.body?.dataset?.page || 'dashboard.html';
-  window.location.href = `login.html?next=${encodeURIComponent(page)}`;
+  window.location.href = `public-stats.html?next=${encodeURIComponent(page)}`;
   return false;
 }
 
@@ -566,7 +566,7 @@ const Auth = {
     if (!raw) return this.homePage();
     const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
     const hash = raw.includes('#') ? raw.slice(raw.indexOf('#')) : '';
-    if (page && page !== 'login.html' && this.isAllowed(page)) {
+    if (page && page !== 'public-stats.html' && page !== 'login.html' && this.isAllowed(page)) {
       return page + hash;
     }
     return this.homePage();
@@ -2140,6 +2140,57 @@ function viewerDepartment() {
   if (role === 'staff') return u?.department || '';
   if (role === 'placement_officer') return u?.department || '';
   return '';
+}
+
+/** Match a department row by code, id, AES id, or name. */
+function resolveDepartmentRecord(key) {
+  const raw = String(key || '').trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+  const depts = typeof DepartmentStore !== 'undefined' ? DepartmentStore.all() : [];
+  for (const d of depts) {
+    const code = String(d.code || '').trim().toUpperCase();
+    const id = String(d.id || '').trim();
+    const aesId = String(d.aesId || '').trim();
+    const name = String(d.name || '').trim();
+    if (code === upper || id === raw || aesId === raw || name.toUpperCase() === upper) return d;
+  }
+  return null;
+}
+
+/** Human-readable department label (name preferred over numeric AES codes). */
+function departmentDisplayName(key) {
+  const raw = String(key || '').trim();
+  if (!raw) return 'Campus';
+  const rec = resolveDepartmentRecord(raw);
+  if (rec?.name) return rec.name;
+  const u = typeof Auth !== 'undefined' ? (Auth.user() || {}) : {};
+  const userDept = String(u.department || u.departmentCode || '').trim().toUpperCase();
+  if (userDept && userDept === raw.toUpperCase()) {
+    const dn = String(u.departmentName || u.branch || u.programme || '').trim();
+    if (dn) return dn;
+  }
+  if (/^\d+$/.test(raw)) {
+    const dn = String(u.departmentName || u.branch || u.programme || '').trim();
+    if (dn) return dn;
+  }
+  return raw;
+}
+
+/** Short department code for filters and officer lookup. */
+function departmentCanonicalCode(key) {
+  const raw = String(key || '').trim();
+  if (!raw) return '';
+  const rec = resolveDepartmentRecord(raw);
+  if (rec?.code && !/^\d+$/.test(String(rec.code))) return String(rec.code).trim();
+  const u = typeof Auth !== 'undefined' ? (Auth.user() || {}) : {};
+  if (String(u.department || '').trim().toUpperCase() === raw.toUpperCase()) {
+    const dn = String(u.departmentName || u.branch || u.programme || '').trim();
+    const byName = resolveDepartmentRecord(dn);
+    if (byName?.code && !/^\d+$/.test(String(byName.code))) return String(byName.code).trim();
+    if (dn && dn.length <= 12 && !/^\d+$/.test(dn)) return dn.toUpperCase();
+  }
+  return raw;
 }
 
 function deptHiringCompanies(deptCode) {
@@ -3762,15 +3813,15 @@ async function apiFetch(path, opts = {}) {
       }
       if (!opts.skipAuthRedirect && !Auth.isDemo()) {
         const page = document.body?.dataset?.page;
-        const next = page && page !== 'login.html' ? `?next=${encodeURIComponent(page)}` : '';
+        const next = page && page !== 'public-stats.html' && page !== 'login.html' ? `?next=${encodeURIComponent(page)}` : '';
         Auth.clear();
-        window.location.href = `login.html${next}`;
+        window.location.href = `public-stats.html${next}`;
         return { success: false, message: 'Session expired', data: null, status: 401 };
       }
       return {
         success: false,
         message: Auth.isDemo()
-          ? 'Sign in with your account on the login page to save changes. Preview mode is read-only.'
+          ? 'Sign in with your college AES account on the public stats page to save changes. Preview mode is read-only.'
           : 'Session expired. Please sign in again.',
         data: null,
         status: 401,
@@ -3807,7 +3858,7 @@ async function api(path, opts = {}) {
 }
 
 function onAppReady(fn) {
-  if (document.body?.dataset?.page && document.body.dataset.page !== 'login.html') {
+  if (document.body?.dataset?.page && document.body.dataset.page !== 'public-stats.html' && document.body.dataset.page !== 'login.html') {
     document.addEventListener('ph-ready', fn, { once: true });
   } else {
     fn();

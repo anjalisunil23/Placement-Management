@@ -34,6 +34,9 @@ const StaffApi = {
       departmentName: row.departmentName || row.department || '',
       classBatch: row.classBatch || '',
       cgpa: row.cgpa ?? null,
+      marks10th: row.marks10th ?? row.academic?.marks10th ?? null,
+      marks12th: row.marks12th ?? row.academic?.marks12th ?? row.ugMarks ?? row.academic?.ugMarks ?? null,
+      ugMarks: row.ugMarks ?? row.academic?.ugMarks ?? row.marks12th ?? row.academic?.marks12th ?? null,
       placementStatus: row.placementStatus || 'seeking',
       status: row.status || 'active',
       blacklisted: !!row.blacklisted,
@@ -143,6 +146,11 @@ const StaffApi = {
     const res = await api(`/staff/students/${encodeURIComponent(studentId)}/pipeline`);
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data;
+  },
+
+  async fetchStudentProfile(studentId) {
+    const res = await api(`/staff/students/${encodeURIComponent(studentId)}/profile`);
+    return res.success && res.data ? res.data : null;
   },
 
   async fetchDrives() {

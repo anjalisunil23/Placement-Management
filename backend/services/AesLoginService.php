@@ -430,7 +430,7 @@ final class AesLoginService
                 if (!array_key_exists($key, $data) || $data[$key] === '' || $data[$key] === null) {
                     $data[$key] = $value;
                 }
-                if (in_array($key, ['cgpa', 'backlogs'], true) && ($data[$key] === 0 || $data[$key] === 0.0)) {
+                if (in_array($key, ['cgpa', 'backlogs', 'marks10th', 'marks12th'], true) && ($data[$key] === 0 || $data[$key] === 0.0)) {
                     $data[$key] = $value;
                 }
             }
@@ -706,6 +706,26 @@ final class AesLoginService
                 $academic['backlogs'] = $apiBacklogs;
                 $patch['academic'] = $academic;
             }
+        }
+
+        $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
+        foreach (['marks10th', 'marks12th'] as $markKey) {
+            if (!isset($placement[$markKey]) || !is_numeric($placement[$markKey])) {
+                continue;
+            }
+            $apiMark = (float) $placement[$markKey];
+            if ($apiMark <= 0 || $apiMark > 100) {
+                continue;
+            }
+            if ((float) ($academic[$markKey] ?? 0) !== $apiMark) {
+                $academic[$markKey] = $apiMark;
+                $patch['academic'] = $academic;
+            }
+        }
+        if (isset($patch['academic']['marks12th']) && (float) ($patch['academic']['ugMarks'] ?? $academic['ugMarks'] ?? 0) <= 0) {
+            $academic = $patch['academic'];
+            $academic['ugMarks'] = (float) $academic['marks12th'];
+            $patch['academic'] = $academic;
         }
 
         $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
@@ -1076,6 +1096,38 @@ final class AesLoginService
                         }
                     }
                 }
+
+                if (
+                    str_contains($lower, 'sslc')
+                    || str_contains($lower, 'tenth')
+                    || str_contains($lower, '10th')
+                    || preg_match('/(^|_)10($|_)/', $lower)
+                    || $lower === 'mark_10'
+                    || $lower === 'mark10'
+                ) {
+                    $mark = $this->parseMarkPercent($text);
+                    if ($mark !== null && empty($found['marks10th'])) {
+                        $found['marks10th'] = $mark;
+                    }
+                }
+
+                if (
+                    str_contains($lower, 'hsc')
+                    || str_contains($lower, 'twelfth')
+                    || str_contains($lower, '12th')
+                    || str_contains($lower, 'plus2')
+                    || str_contains($lower, 'plus_two')
+                    || str_contains($lower, 'plus-2')
+                    || str_contains($lower, 'ug_mark')
+                    || preg_match('/(^|_)12($|_)/', $lower)
+                    || $lower === 'mark_12'
+                    || $lower === 'mark12'
+                ) {
+                    $mark = $this->parseMarkPercent($text);
+                    if ($mark !== null && empty($found['marks12th'])) {
+                        $found['marks12th'] = $mark;
+                    }
+                }
             }
         };
 
@@ -1169,6 +1221,29 @@ final class AesLoginService
         $backlogs = $this->pick($aesDetails, ['backlogs', 'backlog', 'arrears', 'standing_arrears']);
         if ($backlogs !== '' && is_numeric($backlogs)) {
             $mapped['backlogs'] = (int) $backlogs;
+        }
+
+        $marks10 = $this->pick($aesDetails, [
+            'marks10th', 'marks_10th', 'mark10th', 'mark_10th', 'sslc', 'sslc_marks', 'sslcMarks',
+            'sslc_percentage', 'sslcPercent', 'sslc_percent', 'stud_sslc', 'stud_sslc_marks', 'stud_sslc_percent',
+            'tenth_marks', 'tenth_percentage', 'tenthPercent', 'percent_10', 'percent10',
+            '10th_marks', '10th_percentage', 'mark_10', 'mark10', 'stud_10th', 'stud_10th_marks',
+        ]);
+        $parsed10 = $this->parseMarkPercent($marks10);
+        if ($parsed10 !== null) {
+            $mapped['marks10th'] = $parsed10;
+        }
+        $marks12 = $this->pick($aesDetails, [
+            'marks12th', 'marks_12th', 'mark12th', 'mark_12th', 'hsc', 'hsc_marks', 'hscMarks',
+            'hsc_percentage', 'hscPercent', 'hsc_percent', 'stud_hsc', 'stud_hsc_marks', 'stud_hsc_percent',
+            'twelfth_marks', 'twelfth_percentage', 'twelfthPercent', 'percent_12', 'percent12',
+            '12th_marks', '12th_percentage', 'mark_12', 'mark12', 'stud_12th', 'stud_12th_marks',
+            'plus2', 'plus_two', 'plus2_marks', 'plus2_percentage', 'plus_two_marks',
+            'ug_marks', 'ugMarks', 'ug_percent', 'ug_percentage',
+        ]);
+        $parsed12 = $this->parseMarkPercent($marks12);
+        if ($parsed12 !== null) {
+            $mapped['marks12th'] = $parsed12;
         }
 
         $photoUrl = trim($this->pickInsensitive($aesDetails, [
@@ -1366,6 +1441,14 @@ final class AesLoginService
         }
         if (isset($extras['backlogs'])) {
             $academicPatch['backlogs'] = (int) $extras['backlogs'];
+        }
+        foreach (['marks10th', 'marks12th'] as $markKey) {
+            if (isset($extras[$markKey]) && (float) $extras[$markKey] > 0) {
+                $academicPatch[$markKey] = (float) $extras[$markKey];
+            }
+        }
+        if (isset($academicPatch['marks12th']) && (float) ($academic['ugMarks'] ?? 0) <= 0) {
+            $academicPatch['ugMarks'] = (float) $academicPatch['marks12th'];
         }
         if ($academicPatch !== []) {
             $patch['academic'] = array_merge($academic, $academicPatch);
@@ -2620,6 +2703,31 @@ final class AesLoginService
         }
 
         return $decoded;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function parseMarkPercent(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_numeric($value)) {
+            $n = (float) $value;
+            if ($n > 0 && $n <= 100) {
+                return $n;
+            }
+
+            return null;
+        }
+        $text = trim((string) $value);
+        if ($text === '' || !preg_match('/(\d+(?:\.\d+)?)/', $text, $m)) {
+            return null;
+        }
+        $n = (float) $m[1];
+
+        return ($n > 0 && $n <= 100) ? $n : null;
     }
 
     /**

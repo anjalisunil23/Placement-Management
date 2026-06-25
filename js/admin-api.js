@@ -38,23 +38,37 @@ const AdminApi = {
     const u = row.user || {};
     const dept = row.department || {};
     const chances = row.placementChances || {};
+    const academic = row.academic || {};
+    const personal = row.personal || {};
+    const photo = row.photo || {};
+    const resume = row.resume || {};
+    const email = u.email || '';
+    const isCollege = /@(students\.)?amaljyothi\.ac\.in$/i.test(email) || /\.ajce\.in$/i.test(email);
     return {
       id: this.id(u) || this.id(row),
       studentId: this.id(row),
       role: 'student',
       name: u.name || '',
-      email: u.email || '',
+      email,
+      collegeEmail: isCollege ? email : (personal.collegeEmail || ''),
+      personalEmail: personal.personalEmail || personal.email || (!isCollege ? email : ''),
+      phone: personal.phone || '',
       registerNumber: row.registerNumber || '',
       department: dept.code || dept.name || '',
       departmentName: dept.name || dept.code || '',
       classBatch: row.classBatch || '',
-      cgpa: row.academic?.cgpa ?? null,
+      cgpa: academic.cgpa ?? null,
+      marks10th: academic.marks10th ?? null,
+      marks12th: academic.marks12th ?? academic.ugMarks ?? null,
+      ugMarks: academic.ugMarks ?? academic.marks12th ?? null,
+      backlogs: academic.backlogs ?? 0,
+      photoUrl: photo.url || '',
       status: u.approved ? 'approved' : 'pending',
       blocked: u.status === 'blocked',
       placementStatus: row.placed ? 'placed' : 'registered',
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
-      resumeStatus: row.resume?.verified ? 'approved' : (row.resume?.path ? 'pending' : 'pending'),
+      resumeStatus: resume.verified ? 'approved' : (resume.path ? 'pending' : 'none'),
     };
   },
 
@@ -248,6 +262,11 @@ const AdminApi = {
     const res = await api('/admin/students' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => this.mapStudentRow(s));
+  },
+
+  async fetchStudentProfile(studentId) {
+    const res = await api(`/admin/students/${encodeURIComponent(studentId)}/profile`);
+    return res.success && res.data ? res.data : null;
   },
 
   async fetchCompanies() {

@@ -177,6 +177,14 @@ final class StaffController
         Response::success((new StaffService())->studentPipeline($studentId));
     }
 
+    /** GET /api/staff/students/{id}/profile */
+    public function studentProfile(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
+        Response::success((new OfficerDataService())->getStudentOverview($studentId, $ctx));
+    }
+
     /** GET /api/staff/hiring-overview */
     public function hiringOverview(): void
     {

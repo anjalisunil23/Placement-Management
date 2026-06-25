@@ -19,6 +19,9 @@ const OfficerApi = {
       departmentName: dept.name || dept.code || '',
       classBatch: row.classBatch || '',
       cgpa: row.academic?.cgpa ?? null,
+      marks10th: row.academic?.marks10th ?? null,
+      marks12th: row.academic?.marks12th ?? row.academic?.ugMarks ?? null,
+      ugMarks: row.academic?.ugMarks ?? row.academic?.marks12th ?? null,
       status: u.approved ? 'approved' : 'pending',
       blocked: u.status === 'blocked',
       placementStatus: row.placed ? 'placed' : 'registered',
@@ -132,6 +135,11 @@ const OfficerApi = {
     const res = await api('/officer/students' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => OfficerApi.mapStudentRow(s));
+  },
+
+  async fetchStudentProfile(studentId) {
+    const res = await api(`/officer/students/${encodeURIComponent(studentId)}/profile`);
+    return res.success && res.data ? res.data : null;
   },
 
   async fetchPendingStudents() {

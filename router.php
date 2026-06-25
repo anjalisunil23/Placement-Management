@@ -57,6 +57,13 @@ if ($uri === '/' || $uri === '/index' || $uri === '/index.html') {
     exit;
 }
 
+// Legacy login → AES public landing
+if ($uri === '/login.html' || $uri === '/frontend/pages/login.html') {
+    $qs = $_SERVER['QUERY_STRING'] ?? '';
+    header('Location: /public-stats.html' . ($qs !== '' ? '?' . $qs : ''), true, 302);
+    exit;
+}
+
 // Legacy public stats URLs
 if ($uri === '/public/stats.html' || $uri === '/public_stats.html') {
     header('Content-Type: text/html; charset=utf-8');

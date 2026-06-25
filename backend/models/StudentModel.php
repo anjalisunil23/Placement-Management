@@ -57,6 +57,8 @@ class StudentModel extends BaseModel
             'academic'       => array_merge([
                 'ugMarks'   => 0.0,
                 'mcaMarks'  => 0.0,
+                'marks10th' => 0.0,
+                'marks12th' => 0.0,
                 'cgpa'      => 0.0,
                 'backlogs'  => 0,
                 'semesters' => [],
@@ -140,6 +142,9 @@ class StudentModel extends BaseModel
             'classBatch'     => (string) ($profile['classBatch'] ?? ''),
             'cgpa'           => (float) ($academic['cgpa'] ?? 0),
             'backlogs'       => (int) ($academic['backlogs'] ?? 0),
+            'marks10th'      => (float) ($academic['marks10th'] ?? 0),
+            'marks12th'      => (float) ($academic['marks12th'] ?? $academic['ugMarks'] ?? 0),
+            'ugMarks'        => (float) ($academic['ugMarks'] ?? $academic['marks12th'] ?? 0),
             'placed'         => (bool) ($profile['placed'] ?? false),
             'phone'          => (string) ($personal['phone'] ?? ''),
             'course'         => (string) ($personal['course'] ?? ''),

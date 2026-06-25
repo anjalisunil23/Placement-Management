@@ -38,6 +38,8 @@ $checks = [
     'phone'          => trim((string) ($record['phone'] ?? $record['stud_mobiles'] ?? '')),
     'branch'         => trim((string) ($record['branch'] ?? $record['stud_cource_short'] ?? $record['stud_course'] ?? '')),
     'cgpa'           => (string) ($record['cgpa'] ?? ''),
+    'marks10th'      => (string) ($record['marks10th'] ?? ''),
+    'marks12th'      => (string) ($record['marks12th'] ?? $record['ugMarks'] ?? ''),
 ];
 
 $ok = true;
@@ -53,8 +55,12 @@ foreach ($checks as $field => $value) {
         $digits = preg_replace('/\D+/', '', $value) ?? '';
         $pass = strlen($digits) >= 10;
     }
-    echo ($pass ? 'PASS' : 'FAIL') . " {$field}: " . ($value !== '' ? $value : '(empty)') . "\n";
-    if (!$pass) {
+    if ($field === 'marks10th' || $field === 'marks12th') {
+        $pass = true;
+    }
+    $label = ($field === 'marks10th' || $field === 'marks12th') && $value === '' ? 'INFO' : ($pass ? 'PASS' : 'FAIL');
+    echo "{$label} {$field}: " . ($value !== '' ? $value : '(empty)') . "\n";
+    if (!$pass && $field !== 'marks10th' && $field !== 'marks12th') {
         $ok = false;
     }
 }
@@ -68,6 +74,8 @@ echo json_encode([
     'phone' => $checks['phone'],
     'branch' => $checks['branch'],
     'cgpa' => $checks['cgpa'],
+    'marks10th' => $checks['marks10th'],
+    'marks12th' => $checks['marks12th'],
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
 
 exit($ok ? 0 : 1);

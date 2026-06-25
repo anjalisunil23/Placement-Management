@@ -43,6 +43,8 @@
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profDept" disabled placeholder="From college login"/></div>
           <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">CGPA</label><input class="form-control" id="profCgpa" type="number" step="0.1" min="0" max="10"/></div>
+          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">10th marks (%)</label><input class="form-control" id="profMarks10" type="text" disabled placeholder="From college login"/></div>
+          <div class="col-md-4 role-field-student"><label class="form-label small fw-semibold">12th marks (%)</label><input class="form-control" id="profMarks12" type="text" disabled placeholder="From college login"/></div>
           <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profStaffDept" disabled/></div>
           <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Designation</label><input class="form-control" id="profStaffDesig" disabled/></div>
           <div class="col-md-6 role-field-officer"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profOfficerDept" disabled/></div>
@@ -299,6 +301,19 @@ function pickCgpa(u) {
   const merged = mergeProfileUser(u);
   const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
   const keys = ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa', 'totcgpa', 'curcgpa'];
+  for (const key of keys) {
+    const val = merged[key] ?? academic[key];
+    if (val != null && val !== '' && Number(val) > 0) return Number(val);
+  }
+  return '';
+}
+
+function pickSchoolMark(u, markKey) {
+  const merged = mergeProfileUser(u);
+  const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
+  const keys = markKey === '10'
+    ? ['marks10th', 'marks10', 'sslc', 'sslc_marks', 'sslcMarks', 'tenth_marks', 'tenth_percentage', 'mark10th']
+    : ['marks12th', 'marks12', 'hsc', 'hsc_marks', 'hscMarks', 'twelfth_marks', 'twelfth_percentage', 'mark12th', 'ugMarks'];
   for (const key of keys) {
     const val = merged[key] ?? academic[key];
     if (val != null && val !== '' && Number(val) > 0) return Number(val);
@@ -659,6 +674,12 @@ function applyProfileFromUser(u, activeRole) {
     document.getElementById('profDept').value = dept;
     const cgpa = pickCgpa(merged);
     if (cgpa) document.getElementById('profCgpa').value = cgpa;
+    const m10 = pickSchoolMark(merged, '10');
+    const m12 = pickSchoolMark(merged, '12');
+    const m10El = document.getElementById('profMarks10');
+    const m12El = document.getElementById('profMarks12');
+    if (m10El) m10El.value = m10 ? `${m10}%` : '';
+    if (m12El) m12El.value = m12 ? `${m12}%` : '';
   }
   if (r === 'staff') {
     document.getElementById('profStaffDept').value = pickDepartmentDisplay(merged) || merged.department || merged.departmentName || '';
@@ -721,6 +742,12 @@ async function loadSettingsProfile() {
       document.getElementById('profRegNo').value = reg;
       document.getElementById('profDept').value = apiDept;
       if (apiCgpa) document.getElementById('profCgpa').value = apiCgpa;
+      const apiM10 = pickSchoolMark(profileCtx, '10');
+      const apiM12 = pickSchoolMark(profileCtx, '12');
+      const m10El = document.getElementById('profMarks10');
+      const m12El = document.getElementById('profMarks12');
+      if (m10El) m10El.value = apiM10 ? `${apiM10}%` : '';
+      if (m12El) m12El.value = apiM12 ? `${apiM12}%` : '';
       const apiPhoto = pickPhotoUrl(profileCtx) || p.photoUrl || p.photo?.url || '';
       if (apiPhoto) setAvatarPhoto(apiPhoto);
       else setAvatarInitials();

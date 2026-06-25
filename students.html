@@ -55,6 +55,23 @@
             </div>
           </div>
           <hr style="border-color:var(--border)"/>
+          <div id="stuProfilePanel" class="mb-3" style="display:none">
+            <div class="small fw-semibold text-muted-2 mb-2">Student profile</div>
+            <div class="row g-2 g-md-3 small">
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Register no.</span><span class="fw-medium" id="spRegNo">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="spDept">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Batch / class</span><span class="fw-medium" id="spBatch">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College email</span><span class="fw-medium" id="spCollegeEmail">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal email</span><span class="fw-medium" id="spPersonalEmail">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="spPhone">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">10th marks</span><span class="fw-medium" id="spMarks10">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">12th marks</span><span class="fw-medium" id="spMarks12">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">CGPA</span><span class="fw-medium" id="spCgpa">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="spBacklogs">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="spResume">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement chances</span><span class="fw-medium" id="spChances">—</span></div>
+            </div>
+          </div>
           <div class="row g-3">
             <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Applied</div><div class="val" id="statApplied">0</div></div></div>
             <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Shortlisted</div><div class="val" id="statShortlisted">0</div></div></div>
@@ -106,7 +123,7 @@
       </ul>
       <div class="tab-content">
         <div class="tab-pane fade show active" id="pending"><div class="table-wrap"><table class="table-modern"><thead><tr>
-          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>UG</th><th>MCA</th><th>CGPA</th><th>Resume</th><th>Chances</th><th>Status</th><th></th>
+          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>10th</th><th>12th</th><th>CGPA</th><th>Resume</th><th>Chances</th><th>Status</th><th></th>
         </tr></thead><tbody id="pendingRows"></tbody></table></div></div>
         <div class="tab-pane fade" id="approved"><div class="table-wrap"><table class="table-modern"><thead><tr>
           <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Resume</th><th>Chances</th>
@@ -329,10 +346,14 @@ async function fetchOverviewStudentsFromApi(query = '') {
 
 function clearOverviewDetail() {
   selectedReg = '';
-  document.getElementById('stuAvatar').textContent = '—';
+  const avatar = document.getElementById('stuAvatar');
+  avatar.textContent = '—';
+  avatar.style.backgroundImage = '';
+  avatar.classList.remove('has-photo');
   document.getElementById('stuName').textContent = 'Select a student';
   document.getElementById('stuMeta').textContent = 'Use the list on the left or search by name, register number, or department.';
   document.getElementById('stuStatus').outerHTML = '<span class="badge-soft muted" id="stuStatus">—</span>';
+  document.getElementById('stuProfilePanel').style.display = 'none';
   document.getElementById('statApplied').textContent = '0';
   document.getElementById('statShortlisted').textContent = '0';
   document.getElementById('statSelected').textContent = '0';
@@ -420,11 +441,88 @@ async function appsForStudentAsync(reg) {
   return ApplicationPipeline.all().filter(a => (a.registerNumber || '') === reg);
 }
 
+function formatMarkPct(val) {
+  if (val == null || val === '' || Number(val) <= 0) return '—';
+  return `${Number(val)}%`;
+}
+
+function formatProfileValue(val) {
+  const s = String(val ?? '').trim();
+  return s || '—';
+}
+
+async function fetchStudentProfileFromApi(studentId) {
+  if (!studentId) return null;
+  if (useStaffApi && typeof StaffApi !== 'undefined') return StaffApi.fetchStudentProfile(studentId);
+  if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') return OfficerApi.fetchStudentProfile(studentId);
+  if (role === 'admin' && typeof AdminApi !== 'undefined') return AdminApi.fetchStudentProfile(studentId);
+  return null;
+}
+
+function setOverviewAvatar(s) {
+  const avatar = document.getElementById('stuAvatar');
+  const url = String(s.photoUrl || s.photo?.url || '').trim();
+  if (url && /^https?:\/\//i.test(url)) {
+    avatar.textContent = '';
+    avatar.classList.add('has-photo');
+    avatar.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
+    avatar.style.backgroundSize = 'cover';
+    avatar.style.backgroundPosition = 'center';
+    return;
+  }
+  avatar.classList.remove('has-photo');
+  avatar.style.backgroundImage = '';
+  avatar.textContent = initials(s.name);
+}
+
+function renderStudentProfilePanel(s) {
+  const panel = document.getElementById('stuProfilePanel');
+  if (!s) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  document.getElementById('spRegNo').textContent = formatProfileValue(s.registerNumber);
+  const deptLabel = s.departmentName || s.department || '';
+  document.getElementById('spDept').textContent = formatProfileValue(deptLabel);
+  document.getElementById('spBatch').textContent = formatProfileValue(s.classBatch);
+  document.getElementById('spCollegeEmail').textContent = formatProfileValue(s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
+  document.getElementById('spPersonalEmail').textContent = formatProfileValue(s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
+  document.getElementById('spPhone').textContent = formatProfileValue(s.phone);
+  document.getElementById('spMarks10').textContent = formatMarkPct(s.marks10th);
+  document.getElementById('spMarks12').textContent = formatMarkPct(s.marks12th ?? s.ugMarks);
+  document.getElementById('spCgpa').textContent = s.cgpa != null && Number(s.cgpa) > 0 ? Number(s.cgpa) : '—';
+  document.getElementById('spBacklogs').textContent = s.backlogs != null ? String(s.backlogs) : '—';
+  const resumeLabels = { approved: 'Verified', pending: 'Pending review', none: 'Not uploaded' };
+  document.getElementById('spResume').textContent = resumeLabels[s.resumeStatus] || formatProfileValue(s.resumeStatus);
+  const used = s.chancesUsed ?? 0;
+  const max = s.chancesMax ?? 0;
+  document.getElementById('spChances').textContent = max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—');
+}
+
 function updateOverviewHeader(s) {
-  document.getElementById('stuAvatar').textContent = initials(s.name);
+  setOverviewAvatar(s);
   document.getElementById('stuName').textContent = s.name;
-  document.getElementById('stuMeta').textContent = `${s.registerNumber} · ${s.department || '—'}${s.classBatch ? ' · ' + s.classBatch : ''} · CGPA ${s.cgpa ?? '—'} · ${s.email || ''}`.replace(/\s+·\s+$/,'');
+  const dept = s.departmentName || s.department || '—';
+  document.getElementById('stuMeta').textContent = `${s.registerNumber || '—'} · ${dept}${s.classBatch ? ' · ' + s.classBatch : ''} · CGPA ${s.cgpa ?? '—'}`;
   document.getElementById('stuStatus').outerHTML = userStatusBadge(s.status, s.blacklisted ? true : s.blocked);
+  renderStudentProfilePanel(s);
+}
+
+async function loadStudentProfile(s) {
+  let profile = s;
+  if (useLiveOverviewApi) {
+    const sid = s.studentId || s.id;
+    const full = await fetchStudentProfileFromApi(sid);
+    if (full) {
+      profile = { ...s, ...full };
+      const idx = overviewStudentsAll.findIndex(x => x.registerNumber === s.registerNumber);
+      if (idx >= 0) overviewStudentsAll[idx] = { ...overviewStudentsAll[idx], ...full };
+      const idx2 = overviewStudents.findIndex(x => x.registerNumber === s.registerNumber);
+      if (idx2 >= 0) overviewStudents[idx2] = { ...overviewStudents[idx2], ...full };
+    }
+  }
+  updateOverviewHeader(profile);
 }
 
 function updateOverviewStats(apps) {
@@ -461,7 +559,10 @@ function selectOverviewStudent(reg, opts = {}) {
     clearOverviewDetail();
     return;
   }
-  updateOverviewHeader(s);
+  loadStudentProfile(s).catch(() => {
+    updateOverviewHeader(s);
+    renderStudentProfilePanel(s);
+  });
   loadOverviewApps(reg);
 }
 
@@ -539,7 +640,7 @@ function renderRegistrations() {
 
   document.getElementById('pendingRows').innerHTML = pending.length ? pending.map(s => `
     <tr><td><strong>${s.name}</strong><div class="small text-muted-2">${s.email}</div></td><td>${s.registerNumber}</td><td>${s.department}</td>
-    <td>${s.ugMarks ?? '—'}%</td><td>${s.mcaMarks ?? '—'}${s.mcaMarks?'%':''}</td><td>${s.cgpa}</td>
+    <td>${s.marks10th ?? '—'}${s.marks10th ? '%' : ''}</td><td>${s.marks12th ?? s.ugMarks ?? '—'}${(s.marks12th ?? s.ugMarks) ? '%' : ''}</td><td>${s.cgpa}</td>
     <td><span class="badge-soft ${s.resumeStatus==='approved'?'success':'warning'}">${s.resumeStatus}</span></td>
     <td>${s.chancesUsed}/${s.chancesMax}</td><td>${userStatusBadge(s.status, s.blocked)}</td><td>${rowActions(s)}</td></tr>`).join('')
     : '<tr><td colspan="10" class="text-muted-2 p-4">No pending registrations.</td></tr>';
