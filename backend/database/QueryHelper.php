@@ -130,6 +130,14 @@ final class QueryHelper
     }
 
     /**
+     * JSON payload fields stored as arrays (e.g. branches: ["MCA","IT"]).
+     */
+    private static function isJsonArrayField(string $path): bool
+    {
+        return in_array($path, ['$.branches', '$.eligibility.branches'], true);
+    }
+
+    /**
      * @param array<int, mixed> $params
      */
     private static function equalityClause(string $path, mixed $value, array &$params): string
@@ -137,8 +145,29 @@ final class QueryHelper
         if (is_bool($value)) {
             return 'JSON_EXTRACT(payload, \'' . $path . '\') = ' . ($value ? 'true' : 'false');
         }
+
+        if (self::isJsonArrayField($path)) {
+            if (is_array($value) && $value === []) {
+                return self::jsonArrayEmptyClause($path);
+            }
+            if (is_string($value) && $value !== '') {
+                $params[] = $value;
+
+                return 'JSON_CONTAINS(JSON_EXTRACT(payload, \'' . $path . '\'), JSON_QUOTE(?))';
+            }
+        }
+
         $params[] = self::normalizeValue($value);
         return 'JSON_UNQUOTE(JSON_EXTRACT(payload, \'' . $path . '\')) = ?';
+    }
+
+    private static function jsonArrayEmptyClause(string $path): string
+    {
+        $extract = 'JSON_EXTRACT(payload, \'' . $path . '\')';
+
+        return '(' . $extract . ' IS NULL'
+            . ' OR JSON_TYPE(' . $extract . ') = \'NULL\''
+            . ' OR (JSON_TYPE(' . $extract . ') = \'ARRAY\' AND JSON_LENGTH(' . $extract . ') = 0))';
     }
 
     /**
@@ -158,6 +187,7 @@ final class QueryHelper
             '$in' => self::inClause($path, (array) $operand, false, $params),
             '$nin' => self::inClause($path, (array) $operand, true, $params),
             '$regex' => self::appendParam('LOWER(' . $extract . ') LIKE LOWER(?)', $operand, $params),
+            '$size' => self::sizeClause($path, $operand),
             default => '1=1',
         };
     }
@@ -187,6 +217,18 @@ final class QueryHelper
         }
         $op = $negate ? 'NOT IN' : 'IN';
         return "{$extract} {$op} ({$placeholders})";
+    }
+
+    private static function sizeClause(string $path, mixed $operand): string
+    {
+        $size = (int) $operand;
+        $extract = 'JSON_EXTRACT(payload, \'' . $path . '\')';
+
+        if ($size === 0) {
+            return self::jsonArrayEmptyClause($path);
+        }
+
+        return '(JSON_TYPE(' . $extract . ') = \'ARRAY\' AND JSON_LENGTH(' . $extract . ') = ' . $size . ')';
     }
 
     private static function normalizeValue(mixed $value): mixed

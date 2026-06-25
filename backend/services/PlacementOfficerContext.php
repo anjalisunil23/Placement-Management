@@ -220,7 +220,7 @@ final class PlacementOfficerContext
             $or[] = ['branches' => $deptCode];
         }
 
-        return $or;
+        return ['$or' => $or];
     }
 
     /**
