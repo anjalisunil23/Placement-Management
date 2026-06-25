@@ -241,7 +241,7 @@ final class OfficerDataService
      * @param array<string, mixed> $ctx
      * @return array<string, mixed>
      */
-    public function getStudentOverview(string $studentId, array $ctx): array
+    public function getStudentOverview(string $studentId, array $ctx, string $photoRoutePrefix = 'officer'): array
     {
         $student = (new StudentModel())->findById($studentId);
         if (!$student) {
@@ -249,6 +249,17 @@ final class OfficerDataService
         }
         if (!$this->studentInScope($student, $ctx)) {
             Response::forbidden('Student is outside your department scope.');
+        }
+
+        $placement = [];
+        $mapped = [];
+        try {
+            $placementCtx = (new AesLoginService())->refreshStudentWithPlacementContext($student);
+            $student = $placementCtx['student'];
+            $placement = $placementCtx['placement'];
+            $mapped = $placementCtx['mapped'];
+        } catch (\Throwable) {
+            // Serve stored profile when AES is unreachable.
         }
 
         $userId = (string) ($student['userId'] ?? '');
@@ -261,11 +272,26 @@ final class OfficerDataService
         $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
         $photo = is_array($student['photo'] ?? null) ? $student['photo'] : null;
         $photoUrl = trim((string) ($photo['url'] ?? ''));
+        $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
         $chances = is_array($student['placementChances'] ?? null) ? $student['placementChances'] : [];
 
         $email = strtolower(trim((string) ($user['email'] ?? '')));
         $collegeEmail = $this->isCollegeEmailAddress($email) ? $email : '';
+        if ($collegeEmail === '') {
+            $collegeEmail = strtolower(trim((string) (
+                $placement['collegeEmail']
+                ?? $mapped['collegeEmail']
+                ?? ''
+            )));
+        }
         $personalEmail = trim((string) ($personal['personalEmail'] ?? $personal['email'] ?? ''));
+        if ($personalEmail === '') {
+            $personalEmail = strtolower(trim((string) (
+                $placement['personalEmail']
+                ?? $mapped['personalEmail']
+                ?? ''
+            )));
+        }
         if ($personalEmail === '' && $email !== '' && !$this->isCollegeEmailAddress($email)) {
             $personalEmail = $email;
         }
@@ -273,9 +299,36 @@ final class OfficerDataService
             $collegeEmail = $email;
         }
 
+        $classBatch = trim((string) ($student['classBatch'] ?? ''));
+        if ($classBatch === '') {
+            $classBatch = trim((string) ($placement['classBatch'] ?? $mapped['classBatch'] ?? ''));
+        }
+
+        $phone = trim((string) ($personal['phone'] ?? ''));
+        if ($phone === '') {
+            $phone = trim((string) ($placement['phone'] ?? $mapped['phone'] ?? ''));
+        }
+
+        $marks10 = (float) ($academic['marks10th'] ?? 0);
+        if ($marks10 <= 0) {
+            $marks10 = (float) ($placement['marks10th'] ?? $mapped['marks10th'] ?? 0);
+        }
+
         $marks12 = (float) ($academic['marks12th'] ?? 0);
         if ($marks12 <= 0) {
             $marks12 = (float) ($academic['ugMarks'] ?? 0);
+        }
+        if ($marks12 <= 0) {
+            $marks12 = (float) ($placement['marks12th'] ?? $placement['ugMarks'] ?? $mapped['marks12th'] ?? 0);
+        }
+
+        if ($photoUrl === '') {
+            $photoUrl = (new AesApiService())->resolvePhotoUrl(trim((string) (
+                $placement['photoUrl']
+                ?? $placement['stud_photo']
+                ?? $mapped['photoUrl']
+                ?? ''
+            )));
         }
 
         $resume = is_array($student['resume'] ?? null) ? $student['resume'] : null;
@@ -292,16 +345,19 @@ final class OfficerDataService
             'email'           => $collegeEmail !== '' ? $collegeEmail : ($personalEmail !== '' ? $personalEmail : $email),
             'collegeEmail'    => $collegeEmail,
             'personalEmail'   => $personalEmail,
-            'phone'           => (string) ($personal['phone'] ?? ''),
+            'phone'           => $phone,
             'department'      => (string) ($dept['code'] ?? ''),
             'departmentName'  => (string) ($dept['name'] ?? $dept['code'] ?? ''),
-            'classBatch'      => (string) ($student['classBatch'] ?? ''),
+            'classBatch'      => $classBatch,
             'cgpa'            => (float) ($academic['cgpa'] ?? 0) ?: null,
-            'marks10th'       => (float) ($academic['marks10th'] ?? 0) ?: null,
+            'marks10th'       => $marks10 > 0 ? $marks10 : null,
             'marks12th'       => $marks12 > 0 ? $marks12 : null,
             'ugMarks'         => (float) ($academic['ugMarks'] ?? 0) ?: null,
             'backlogs'        => (int) ($academic['backlogs'] ?? 0),
             'photoUrl'        => $photoUrl,
+            'photoProxyUrl'   => $photoUrl !== ''
+                ? '/backend/api/' . trim($photoRoutePrefix, '/') . '/students/' . rawurlencode($studentId) . '/photo'
+                : '',
             'status'          => !empty($user['approved']) ? 'approved' : 'pending',
             'blocked'         => ($user['status'] ?? '') === 'blocked',
             'placed'          => !empty($student['placed']),
@@ -310,6 +366,63 @@ final class OfficerDataService
             'chancesUsed'     => (int) ($chances['used'] ?? 0),
             'chancesMax'      => (int) (($chances['used'] ?? 0) + ($chances['remaining'] ?? 0)),
         ];
+    }
+
+    /**
+     * Stream AES / remote student photo through the API (avoids browser mixed-content blocks).
+     *
+     * @param array<string, mixed> $ctx
+     */
+    public function streamStudentPhoto(string $studentId, array $ctx): void
+    {
+        $student = (new StudentModel())->findById($studentId);
+        if (!$student) {
+            Response::notFound('Student not found.');
+        }
+        if (!$this->studentInScope($student, $ctx)) {
+            Response::forbidden('Student is outside your department scope.');
+        }
+
+        try {
+            $student = (new AesLoginService())->refreshStudentPlacementData($student);
+        } catch (\Throwable) {
+            // continue with stored photo
+        }
+
+        $photo = is_array($student['photo'] ?? null) ? $student['photo'] : null;
+        $photoUrl = (new AesApiService())->resolvePhotoUrl(trim((string) ($photo['url'] ?? '')));
+        if ($photoUrl === '') {
+            Response::notFound('Student photo not available.');
+        }
+
+        $ch = curl_init($photoUrl);
+        if ($ch === false) {
+            Response::error('Could not load student photo.', 502);
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT        => 20,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_USERAGENT      => 'AJCE-Placements/1.0',
+        ]);
+        $body = curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        curl_close($ch);
+
+        if ($body === false || $status < 200 || $status >= 300) {
+            Response::error('Could not load student photo.', 502);
+        }
+
+        if ($contentType === '' || !str_starts_with(strtolower($contentType), 'image/')) {
+            $contentType = 'image/jpeg';
+        }
+
+        header('Content-Type: ' . $contentType);
+        header('Cache-Control: private, max-age=3600');
+        echo $body;
+        exit;
     }
 
     /**

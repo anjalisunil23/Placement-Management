@@ -463,13 +463,26 @@ async function fetchStudentProfileFromApi(studentId) {
 
 function setOverviewAvatar(s) {
   const avatar = document.getElementById('stuAvatar');
-  const url = String(s.photoUrl || s.photo?.url || '').trim();
-  if (url && /^https?:\/\//i.test(url)) {
+  if (!avatar) return;
+  const proxy = String(s.photoProxyUrl || '').trim();
+  const direct = String(s.photoUrl || s.photo?.url || '').trim();
+  const src = proxy || direct;
+  avatar.querySelector('img')?.remove();
+  if (src) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.src = src.startsWith('http') ? src : src;
+    img.onerror = () => {
+      img.remove();
+      avatar.classList.remove('has-photo');
+      avatar.style.backgroundImage = '';
+      avatar.textContent = initials(s.name);
+    };
     avatar.textContent = '';
     avatar.classList.add('has-photo');
-    avatar.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
-    avatar.style.backgroundSize = 'cover';
-    avatar.style.backgroundPosition = 'center';
+    avatar.style.backgroundImage = '';
+    avatar.appendChild(img);
     return;
   }
   avatar.classList.remove('has-photo');
@@ -527,9 +540,8 @@ function updateOverviewHeader(s) {
 
 async function loadStudentProfile(s) {
   let profile = s;
-  if (useLiveOverviewApi) {
-    const sid = s.studentId || s.id;
-    const full = await fetchStudentProfileFromApi(sid);
+  if (useLiveOverviewApi && s.studentId) {
+    const full = await fetchStudentProfileFromApi(s.studentId);
     if (full) {
       profile = { ...s, ...full };
       const idx = overviewStudentsAll.findIndex(x => x.registerNumber === s.registerNumber);

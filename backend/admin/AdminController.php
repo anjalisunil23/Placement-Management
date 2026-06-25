@@ -848,7 +848,14 @@ final class AdminController
     public function studentProfile(string $studentId): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        Response::success((new OfficerDataService())->getStudentOverview($studentId, $scope['ctx']));
+        Response::success((new OfficerDataService())->getStudentOverview($studentId, $scope['ctx'], 'admin'));
+    }
+
+    /** GET /api/admin/students/{id}/photo */
+    public function studentPhoto(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->streamStudentPhoto($studentId, $scope['ctx']);
     }
 
     /** GET /api/admin/students/{id}/pipeline */

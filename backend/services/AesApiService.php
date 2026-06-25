@@ -443,9 +443,10 @@ final class AesApiService
             ?? $record['profile_photo']
             ?? ''
         ));
-        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
-            $record['stud_photo'] = $photoUrl;
-            $record['photoUrl'] = $photoUrl;
+        $resolvedEarlyPhoto = $this->resolvePhotoUrl($photoUrl);
+        if ($resolvedEarlyPhoto !== '') {
+            $record['stud_photo'] = $resolvedEarlyPhoto;
+            $record['photoUrl'] = $resolvedEarlyPhoto;
         }
         if (!empty($record['stud_class'])) {
             $record['classBatch'] = trim((string) $record['stud_class']);
@@ -462,20 +463,25 @@ final class AesApiService
 
         $marks10 = $this->pickMarkPercentFromRecord($record, [
             'marks10th', 'marks_10th', 'mark10th', 'mark_10th', 'sslc', 'sslc_marks', 'sslcMarks',
-            'sslc_percentage', 'sslcPercent', 'sslc_percent', 'stud_sslc', 'stud_sslc_marks', 'stud_sslc_percent',
+            'sslc_percentage', 'sslcPercent', 'sslc_percent', 'sslc_per', 'sslcper', 'sslcpercent',
+            'stud_sslc', 'stud_sslc_marks', 'stud_sslc_percent', 'stud_sslcper', 'stud_sslc_per',
             'tenth_marks', 'tenth_percentage', 'tenthPercent', 'percent_10', 'percent10',
             '10th_marks', '10th_percentage', 'mark_10', 'mark10', 'stud_10th', 'stud_10th_marks',
+            'ssc', 'ssc_marks', 'ssc_percent', 'ssc_percentage', 'stud_ssc', 'stud_ssc_marks',
+            'x_marks', 'x_percent', 'x_percentage', 'stud_x', 'secondary_percentage', 'secondary_marks',
         ]);
         if ($marks10 !== null) {
             $record['marks10th'] = $marks10;
         }
         $marks12 = $this->pickMarkPercentFromRecord($record, [
             'marks12th', 'marks_12th', 'mark12th', 'mark_12th', 'hsc', 'hsc_marks', 'hscMarks',
-            'hsc_percentage', 'hscPercent', 'hsc_percent', 'stud_hsc', 'stud_hsc_marks', 'stud_hsc_percent',
+            'hsc_percentage', 'hscPercent', 'hsc_percent', 'hsc_per', 'hscper', 'hscpercent',
+            'stud_hsc', 'stud_hsc_marks', 'stud_hsc_percent', 'stud_hscper', 'stud_hsc_per',
             'twelfth_marks', 'twelfth_percentage', 'twelfthPercent', 'percent_12', 'percent12',
             '12th_marks', '12th_percentage', 'mark_12', 'mark12', 'stud_12th', 'stud_12th_marks',
-            'plus2', 'plus_two', 'plus2_marks', 'plus2_percentage', 'plus_two_marks',
+            'plus2', 'plus_two', 'plus2_marks', 'plus2_percentage', 'plus_two_marks', 'plus2_per',
             'ug_marks', 'ugMarks', 'ug_percent', 'ug_percentage',
+            'puc', 'puc_marks', 'puc_percent', 'xii_marks', 'xii_percent', 'stud_xii', 'higher_secondary',
         ]);
         if ($marks12 !== null) {
             $record['marks12th'] = $marks12;
@@ -484,7 +490,121 @@ final class AesApiService
             }
         }
 
+        $deepMarks = $this->extractSchoolMarksDeep($record);
+        if (($record['marks10th'] ?? null) === null && $deepMarks['marks10th'] !== null) {
+            $record['marks10th'] = $deepMarks['marks10th'];
+        }
+        if (($record['marks12th'] ?? null) === null && $deepMarks['marks12th'] !== null) {
+            $record['marks12th'] = $deepMarks['marks12th'];
+            if (!isset($record['ugMarks']) || (float) $record['ugMarks'] <= 0) {
+                $record['ugMarks'] = $deepMarks['marks12th'];
+            }
+        }
+
         return $record;
+    }
+
+    public function resolvePhotoUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+        if (filter_var($url, FILTER_VALIDATE_URL)) {
+            return $url;
+        }
+        if (str_starts_with($url, '//')) {
+            return 'https:' . $url;
+        }
+        if (str_starts_with($url, '/')) {
+            foreach (['https://login.aesajce.in', 'https://www.aesajce.in', 'https://api.aesajce.in'] as $base) {
+                $candidate = $base . $url;
+                if (filter_var($candidate, FILTER_VALIDATE_URL)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @return array{marks10th: ?float, marks12th: ?float}
+     */
+    private function extractSchoolMarksDeep(array $record): array
+    {
+        $found = ['marks10th' => null, 'marks12th' => null];
+        $walk = function (mixed $node) use (&$walk, &$found): void {
+            if (!is_array($node)) {
+                return;
+            }
+            foreach ($node as $key => $value) {
+                if (is_array($value)) {
+                    $walk($value);
+                    continue;
+                }
+                if (!is_scalar($value)) {
+                    continue;
+                }
+                $lower = strtolower((string) $key);
+                if ($this->isTenthMarkFieldKey($lower)) {
+                    $mark = $this->parseMarkScalar($value);
+                    if ($mark !== null && $found['marks10th'] === null) {
+                        $found['marks10th'] = $mark;
+                    }
+                }
+                if ($this->isTwelfthMarkFieldKey($lower)) {
+                    $mark = $this->parseMarkScalar($value);
+                    if ($mark !== null && $found['marks12th'] === null) {
+                        $found['marks12th'] = $mark;
+                    }
+                }
+            }
+        };
+        $walk($record);
+
+        return $found;
+    }
+
+    private function isTenthMarkFieldKey(string $lower): bool
+    {
+        if (str_contains($lower, '12') || str_contains($lower, 'hsc') || str_contains($lower, 'plus')
+            || str_contains($lower, 'xii') || str_contains($lower, 'puc') || str_contains($lower, 'ug_')) {
+            return false;
+        }
+
+        return str_contains($lower, 'sslc') || str_contains($lower, 'ssc')
+            || str_contains($lower, 'tenth') || str_contains($lower, '10th')
+            || str_contains($lower, 'secondary') || preg_match('/(^|_)10($|_)/', $lower) === 1
+            || $lower === 'x_marks' || $lower === 'x_percent' || $lower === 'stud_x';
+    }
+
+    private function isTwelfthMarkFieldKey(string $lower): bool
+    {
+        return str_contains($lower, 'hsc') || str_contains($lower, 'twelfth') || str_contains($lower, '12th')
+            || str_contains($lower, 'plus2') || str_contains($lower, 'plus_two') || str_contains($lower, 'plus-2')
+            || str_contains($lower, 'puc') || str_contains($lower, 'xii') || str_contains($lower, 'ug_mark')
+            || preg_match('/(^|_)12($|_)/', $lower) === 1;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function parseMarkScalar(mixed $value): ?float
+    {
+        if (is_numeric($value)) {
+            $n = (float) $value;
+
+            return ($n > 0 && $n <= 100) ? $n : null;
+        }
+        $text = trim((string) $value);
+        if ($text === '' || !preg_match('/(\d+(?:\.\d+)?)/', $text, $m)) {
+            return null;
+        }
+        $n = (float) $m[1];
+
+        return ($n > 0 && $n <= 100) ? $n : null;
     }
 
     /**

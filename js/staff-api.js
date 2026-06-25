@@ -37,6 +37,7 @@ const StaffApi = {
       marks10th: row.marks10th ?? row.academic?.marks10th ?? null,
       marks12th: row.marks12th ?? row.academic?.marks12th ?? row.ugMarks ?? row.academic?.ugMarks ?? null,
       ugMarks: row.ugMarks ?? row.academic?.ugMarks ?? row.marks12th ?? row.academic?.marks12th ?? null,
+      photoUrl: row.photoUrl || row.photo?.url || '',
       placementStatus: row.placementStatus || 'seeking',
       status: row.status || 'active',
       blacklisted: !!row.blacklisted,

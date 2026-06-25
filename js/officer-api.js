@@ -26,6 +26,7 @@ const OfficerApi = {
       marks10th: row.academic?.marks10th ?? null,
       marks12th: row.academic?.marks12th ?? row.academic?.ugMarks ?? null,
       ugMarks: row.academic?.ugMarks ?? row.academic?.marks12th ?? null,
+      photoUrl: row.photo?.url || row.photoUrl || '',
       status: u.approved ? 'approved' : 'pending',
       blocked: u.status === 'blocked',
       placed: !!row.placed,

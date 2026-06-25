@@ -688,11 +688,82 @@ final class AesLoginService
             return;
         }
 
+        $mapped = $this->mapAesDetailsToUserFields($placement);
+        $patch = $this->buildPlacementExtrasPatch($profile, $placement, $mapped, $register);
+
+        if ($patch !== []) {
+            (new StudentModel())->update((string) $profile['_id'], $patch);
+        }
+    }
+
+    /**
+     * Refresh student profile from AES placement API and return live placement context.
+     *
+     * @param array<string, mixed> $profile
+     * @return array{student: array<string, mixed>, placement: array<string, mixed>, mapped: array<string, mixed>}
+     */
+    public function refreshStudentWithPlacementContext(array $profile): array
+    {
+        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+        $placement = [];
+        $mapped = [];
+
+        if ($register !== '') {
+            try {
+                $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+            } catch (\Throwable) {
+                $placement = [];
+            }
+
+            if ($placement !== []) {
+                $mapped = $this->mapAesDetailsToUserFields($placement);
+                $patch = $this->buildPlacementExtrasPatch($profile, $placement, $mapped, $register);
+                if ($patch !== []) {
+                    (new StudentModel())->update((string) $profile['_id'], $patch);
+                }
+            }
+        }
+
+        $id = (string) ($profile['_id'] ?? '');
+        $student = $id !== '' ? ((new StudentModel())->findById($id) ?? $profile) : $profile;
+
+        return [
+            'student'   => $student,
+            'placement' => $placement,
+            'mapped'    => $mapped,
+        ];
+    }
+
+    /**
+     * Refresh CGPA, marks, and photo from AES for any student (staff/officer views).
+     *
+     * @param array<string, mixed> $profile
+     * @return array<string, mixed>
+     */
+    public function refreshStudentPlacementData(array $profile): array
+    {
+        return $this->refreshStudentWithPlacementContext($profile)['student'];
+    }
+
+    /**
+     * @param array<string, mixed> $profile
+     * @param array<string, mixed> $placement
+     * @param array<string, mixed> $mapped
+     * @return array<string, mixed>
+     */
+    private function buildPlacementExtrasPatch(array $profile, array $placement, array $mapped, string $register): array
+    {
         $patch = [];
         $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
 
         if (isset($placement['cgpa']) && (float) $placement['cgpa'] > 0) {
             $apiCgpa = (float) $placement['cgpa'];
+            if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
+                $academic['cgpa'] = $apiCgpa;
+                $patch['academic'] = $academic;
+            }
+        } elseif (!empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
+            $apiCgpa = (float) $mapped['cgpa'];
             if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
                 $academic['cgpa'] = $apiCgpa;
                 $patch['academic'] = $academic;
@@ -710,11 +781,13 @@ final class AesLoginService
 
         $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
         foreach (['marks10th', 'marks12th'] as $markKey) {
-            if (!isset($placement[$markKey]) || !is_numeric($placement[$markKey])) {
-                continue;
+            $apiMark = null;
+            if (isset($placement[$markKey]) && is_numeric($placement[$markKey])) {
+                $apiMark = (float) $placement[$markKey];
+            } elseif (!empty($mapped[$markKey]) && is_numeric($mapped[$markKey])) {
+                $apiMark = (float) $mapped[$markKey];
             }
-            $apiMark = (float) $placement[$markKey];
-            if ($apiMark <= 0 || $apiMark > 100) {
+            if ($apiMark === null || $apiMark <= 0 || $apiMark > 100) {
                 continue;
             }
             if ((float) ($academic[$markKey] ?? 0) !== $apiMark) {
@@ -728,8 +801,34 @@ final class AesLoginService
             $patch['academic'] = $academic;
         }
 
-        $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
-        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+        $classBatch = trim((string) ($placement['classBatch'] ?? $mapped['classBatch'] ?? ''));
+        if ($classBatch !== '' && trim((string) ($profile['classBatch'] ?? '')) !== $classBatch) {
+            $patch['classBatch'] = $classBatch;
+        }
+
+        $personal = is_array($profile['personal'] ?? null) ? $profile['personal'] : [];
+        $personalPatch = [];
+        $emailScan = $this->scanEmailsFromAesData($placement, $register);
+        $personalEmail = strtolower(trim((string) (
+            $placement['personalEmail']
+            ?? $mapped['personalEmail']
+            ?? $emailScan['personalEmail']
+            ?? ''
+        )));
+        if ($personalEmail !== '' && strtolower(trim((string) ($personal['personalEmail'] ?? ''))) !== $personalEmail) {
+            $personalPatch['personalEmail'] = $personalEmail;
+        }
+        $phone = trim((string) ($placement['phone'] ?? $mapped['phone'] ?? ''));
+        if ($phone !== '' && trim((string) ($personal['phone'] ?? '')) === '') {
+            $personalPatch['phone'] = $phone;
+        }
+        if ($personalPatch !== []) {
+            $patch['personal'] = array_merge($personal, $personalPatch);
+        }
+
+        $photoUrl = trim((string) ($mapped['photoUrl'] ?? $placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
+        $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+        if ($photoUrl !== '') {
             $existingPhoto = is_array($profile['photo'] ?? null) ? $profile['photo'] : null;
             $source = is_array($existingPhoto) ? (string) ($existingPhoto['source'] ?? '') : '';
             if ($source !== 'upload') {
@@ -744,9 +843,7 @@ final class AesLoginService
             }
         }
 
-        if ($patch !== []) {
-            (new StudentModel())->update((string) $profile['_id'], $patch);
-        }
+        return $patch;
     }
 
     /**
@@ -1225,9 +1322,12 @@ final class AesLoginService
 
         $marks10 = $this->pick($aesDetails, [
             'marks10th', 'marks_10th', 'mark10th', 'mark_10th', 'sslc', 'sslc_marks', 'sslcMarks',
-            'sslc_percentage', 'sslcPercent', 'sslc_percent', 'stud_sslc', 'stud_sslc_marks', 'stud_sslc_percent',
+            'sslc_percentage', 'sslcPercent', 'sslc_percent', 'sslc_per', 'sslcper', 'sslcpercent',
+            'stud_sslc', 'stud_sslc_marks', 'stud_sslc_percent', 'stud_sslcper', 'stud_sslc_per',
             'tenth_marks', 'tenth_percentage', 'tenthPercent', 'percent_10', 'percent10',
             '10th_marks', '10th_percentage', 'mark_10', 'mark10', 'stud_10th', 'stud_10th_marks',
+            'ssc', 'ssc_marks', 'ssc_percent', 'ssc_percentage', 'stud_ssc', 'stud_ssc_marks',
+            'x_marks', 'x_percent', 'x_percentage', 'stud_x', 'secondary_percentage', 'secondary_marks',
         ]);
         $parsed10 = $this->parseMarkPercent($marks10);
         if ($parsed10 !== null) {
@@ -1235,15 +1335,25 @@ final class AesLoginService
         }
         $marks12 = $this->pick($aesDetails, [
             'marks12th', 'marks_12th', 'mark12th', 'mark_12th', 'hsc', 'hsc_marks', 'hscMarks',
-            'hsc_percentage', 'hscPercent', 'hsc_percent', 'stud_hsc', 'stud_hsc_marks', 'stud_hsc_percent',
+            'hsc_percentage', 'hscPercent', 'hsc_percent', 'hsc_per', 'hscper', 'hscpercent',
+            'stud_hsc', 'stud_hsc_marks', 'stud_hsc_percent', 'stud_hscper', 'stud_hsc_per',
             'twelfth_marks', 'twelfth_percentage', 'twelfthPercent', 'percent_12', 'percent12',
             '12th_marks', '12th_percentage', 'mark_12', 'mark12', 'stud_12th', 'stud_12th_marks',
-            'plus2', 'plus_two', 'plus2_marks', 'plus2_percentage', 'plus_two_marks',
+            'plus2', 'plus_two', 'plus2_marks', 'plus2_percentage', 'plus_two_marks', 'plus2_per',
             'ug_marks', 'ugMarks', 'ug_percent', 'ug_percentage',
+            'puc', 'puc_marks', 'puc_percent', 'xii_marks', 'xii_percent', 'stud_xii', 'higher_secondary',
         ]);
         $parsed12 = $this->parseMarkPercent($marks12);
         if ($parsed12 !== null) {
             $mapped['marks12th'] = $parsed12;
+        }
+
+        $scan = $this->deepScanAesProfileFields($aesDetails);
+        if (empty($mapped['marks10th']) && !empty($scan['marks10th'])) {
+            $mapped['marks10th'] = (float) $scan['marks10th'];
+        }
+        if (empty($mapped['marks12th']) && !empty($scan['marks12th'])) {
+            $mapped['marks12th'] = (float) $scan['marks12th'];
         }
 
         $photoUrl = trim($this->pickInsensitive($aesDetails, [
@@ -1251,7 +1361,10 @@ final class AesLoginService
             'staff_photo', 'staffPhoto', 'emp_photo', 'empPhoto', 'employee_photo', 'employeePhoto',
             'faculty_photo', 'facultyPhoto', 'user_photo', 'userPhoto',
         ]));
-        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+        if ($photoUrl !== '') {
+            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+        }
+        if ($photoUrl !== '') {
             $mapped['photoUrl'] = $photoUrl;
         }
 
@@ -1456,6 +1569,9 @@ final class AesLoginService
 
         $personal = is_array($existing['personal'] ?? null) ? $existing['personal'] : [];
         $personalPatch = [];
+        if (!empty($extras['personalEmail'])) {
+            $personalPatch['personalEmail'] = strtolower(trim((string) $extras['personalEmail']));
+        }
         foreach (['phone', 'gender', 'bloodGroup', 'address', 'parentName', 'dob', 'aadhar', 'course', 'year', 'semester'] as $field) {
             if (!empty($extras[$field])) {
                 $personalPatch[$field] = $extras[$field];

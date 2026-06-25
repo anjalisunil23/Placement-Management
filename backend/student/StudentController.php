@@ -158,8 +158,7 @@ final class StudentController
         \PMS\Utils\Security::getSessionAesProfile(),
         ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
     ));
-    $aes->syncStudentPlacementExtras($profile);
-    $profile = $this->studentModel->findById((string) $profile['_id']) ?? $profile;
+    $profile = $aes->refreshStudentPlacementData($profile);
 
     $dept = !empty($profile['departmentId'])
       ? (new DepartmentModel())->findById((string) $profile['departmentId'])

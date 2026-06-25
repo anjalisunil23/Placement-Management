@@ -239,6 +239,7 @@ final class StaffService
                 'marks10th'       => (float) ($student['academic']['marks10th'] ?? 0) ?: null,
                 'marks12th'       => (float) ($student['academic']['marks12th'] ?? $student['academic']['ugMarks'] ?? 0) ?: null,
                 'ugMarks'         => (float) ($student['academic']['ugMarks'] ?? $student['academic']['marks12th'] ?? 0) ?: null,
+                'photoUrl'        => trim((string) (is_array($student['photo'] ?? null) ? ($student['photo']['url'] ?? '') : '')),
                 'placementStatus' => !empty($student['placed'])
                     ? 'placed'
                     : ((is_array($student['selfPlacement'] ?? null) && ($student['selfPlacement']['status'] ?? '') === 'pending')

@@ -182,7 +182,15 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
-        Response::success((new OfficerDataService())->getStudentOverview($studentId, $ctx));
+        Response::success((new OfficerDataService())->getStudentOverview($studentId, $ctx, 'staff'));
+    }
+
+    /** GET /api/staff/students/{id}/photo */
+    public function studentPhoto(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
+        (new OfficerDataService())->streamStudentPhoto($studentId, $ctx);
     }
 
     /** GET /api/staff/hiring-overview */
