@@ -414,7 +414,7 @@ function renderForDept(dept) {
     document.getElementById('companyRows').innerHTML = companies.length
       ? companies.map(c => `<tr>
           <td><strong>${escHtml(c.company)}</strong></td>
-          <td>${escHtml((c.roles || ['?']).join(', '))}</td>
+          <td>${formatRoles(c.roles)}</td>
           <td>${(c.applicants || 0).toLocaleString('en-IN')}</td>
           <td>${(c.shortlisted || 0).toLocaleString('en-IN')}</td>
           <td>${(c.selected || 0).toLocaleString('en-IN')}</td>
