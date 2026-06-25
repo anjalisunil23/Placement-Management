@@ -43,19 +43,6 @@
 <script src="js/api.js?v=20260622d"></script>
 <script src="js/app.js?v=20260622d"></script><script src="js/charts.js?v=20260622d"></script>
 <script>
-const DEMO = {
-  summary: { applied:4280, shortlisted:1820, interviewed:980, offered:312, joined:248, conversion:58 },
-  funnel: { labels:['Applied','Shortlisted','Test','Interview','Offered','Joined'], values:[4280,1820,1240,980,312,248] },
-  offerStatus: { labels:['Single Offer','Multiple Offers','No Offer Yet'], values:[182,66,2814] },
-  candidates: [
-    { student:'Aarav Mehta', company:'Google', role:'SDE-1', stage:'Final Interview', updatedAt:null, badge:'info' },
-    { student:'Rahul Verma', company:'Microsoft', role:'SWE', stage:'Offer Released', updatedAt:null, badge:'success' },
-    { student:'Kabir Singh', company:'Amazon', role:'SDE Intern', stage:'Joined', updatedAt:null, badge:'success' },
-    { student:'Sneha Iyer', company:'Deloitte', role:'Analyst', stage:'Shortlisted', updatedAt:null, badge:'info' },
-    { student:'Priya Nair', company:'Adobe', role:'PM Intern', stage:'Rejected', updatedAt:null, badge:'danger' },
-  ],
-};
-
 let barChart, pieChart;
 
 function setStat(id, value, opts = {}) {
@@ -113,17 +100,21 @@ onAppReady(async () => {
   showPageAlert('trackingAlert', 'info', 'Loading placement tracking…');
   try {
     const data = await TrackingStore.fetch();
-    if (data) {
-      showPageAlert('trackingAlert', 'hide');
-      renderTracking(data);
-    } else {
-      showPageAlert('trackingAlert', 'hide');
-      renderTracking(DEMO);
-      if (Auth.hasRealAuth()) toast('Using demo data — tracking API unavailable.', 'warn');
-    }
+    showPageAlert('trackingAlert', 'hide');
+    renderTracking(data || {
+      summary: { applied: 0, shortlisted: 0, interviewed: 0, offered: 0, joined: 0, conversion: 0 },
+      funnel: { labels: ['Applied','Shortlisted','Test','Interview','Offered','Joined'], values: [0,0,0,0,0,0] },
+      offerStatus: { labels: ['Single Offer','Multiple Offers','No Offer Yet'], values: [0,0,0] },
+      candidates: [],
+    });
   } catch (e) {
-    showPageAlert('trackingAlert', 'danger', 'Failed to load placement tracking. Showing demo data.');
-    renderTracking(DEMO);
+    showPageAlert('trackingAlert', 'danger', 'Failed to load placement tracking.');
+    renderTracking({
+      summary: { applied: 0, shortlisted: 0, interviewed: 0, offered: 0, joined: 0, conversion: 0 },
+      funnel: { labels: ['Applied','Shortlisted','Test','Interview','Offered','Joined'], values: [0,0,0,0,0,0] },
+      offerStatus: { labels: ['Single Offer','Multiple Offers','No Offer Yet'], values: [0,0,0] },
+      candidates: [],
+    });
   }
 });
 </script></body></html>

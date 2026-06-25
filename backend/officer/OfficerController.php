@@ -730,9 +730,8 @@ final class OfficerController
     public function placementTracking(): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        $deptId = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
         $limit = isset($_GET['limit']) ? min(500, max(1, (int) $_GET['limit'])) : 100;
-        Response::success((new TrackingService())->getOverview($deptId, $limit));
+        Response::success((new TrackingService())->getOverviewForContext($scope['ctx'], $limit));
     }
 
     /** GET /api/officer/analytics/extended */

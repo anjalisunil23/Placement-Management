@@ -1413,7 +1413,12 @@ final class AdminController
     {
         RBACMiddleware::requireAdmin();
         $limit = isset($_GET['limit']) ? min(500, max(1, (int) $_GET['limit'])) : 100;
-        Response::success((new TrackingService())->getOverview(null, $limit));
+        Response::success((new TrackingService())->getOverviewForContext([
+            'isAdmin'      => true,
+            'departmentId' => null,
+            'department'   => null,
+            'profile'      => null,
+        ], $limit));
     }
 
     /** GET /api/admin/analytics/extended */

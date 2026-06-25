@@ -4,15 +4,9 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
-use PMS\Models\ApplicationModel;
-use PMS\Models\CompanyModel;
-use PMS\Models\DepartmentModel;
-use PMS\Models\DriveModel;
-use PMS\Models\JobModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Utils\DocumentHelper;
-use PMS\Utils\Security;
 
 /**
  * Placement funnel tracking and candidate progress aggregation.
@@ -34,37 +28,45 @@ final class TrackingService
      */
     public function getOverview(?string $departmentId = null, int $candidateLimit = 100): array
     {
-        $apps = $this->loadApplications($departmentId);
-        $studentCache = [];
-        $funnel = array_fill_keys(array_keys(self::FUNNEL_LABELS), 0);
-        $selectedByStudent = [];
+        $ctx = [
+            'isAdmin'      => $departmentId === null,
+            'departmentId' => ($departmentId !== null && $departmentId !== '') ? $departmentId : null,
+            'department'   => null,
+            'profile'      => null,
+        ];
 
-        foreach ($apps as $app) {
-            $status = (string) ($app['status'] ?? 'applied');
-            if (in_array($status, ['rejected', 'withdrawn'], true)) {
+        return $this->getOverviewForContext($ctx, $candidateLimit);
+    }
+
+    /**
+     * @param array<string, mixed> $ctx PlacementOfficerContext shape
+     * @return array<string, mixed>
+     */
+    public function getOverviewForContext(array $ctx, int $candidateLimit = 100): array
+    {
+        $students = (new StudentModel())->findAll(PlacementOfficerContext::studentCollectionFilter($ctx), 5000);
+        $entries = $this->collectPipelineEntries($students);
+
+        $funnel = array_fill_keys(array_keys(self::FUNNEL_LABELS), 0);
+        $offersByStudent = [];
+        $activeStudentIds = [];
+
+        foreach ($entries as $entry) {
+            $student = $entry['_student'] ?? [];
+            $sid = (string) ($entry['studentId'] ?? '');
+            if ($sid !== '') {
+                $activeStudentIds[$sid] = true;
+            }
+
+            $bucket = $this->pipelineEntryBucket($entry, $student);
+            if ($bucket === 'excluded' || !isset($funnel[$bucket])) {
                 continue;
             }
+            $funnel[$bucket]++;
 
-            $bucket = $this->funnelBucket($status, $app, $studentCache);
-            if (isset($funnel[$bucket])) {
-                $funnel[$bucket]++;
-            }
-
-            if ($status === 'selected') {
-                $sid = (string) ($app['studentId'] ?? '');
+            if ($this->entryCountsAsOffer($entry)) {
                 if ($sid !== '') {
-                    $selectedByStudent[$sid] = ($selectedByStudent[$sid] ?? 0) + 1;
-                }
-            }
-        }
-
-        $activeStudentIds = [];
-        foreach ($apps as $app) {
-            $status = (string) ($app['status'] ?? 'applied');
-            if (!in_array($status, ['rejected', 'withdrawn'], true)) {
-                $sid = (string) ($app['studentId'] ?? '');
-                if ($sid !== '') {
-                    $activeStudentIds[$sid] = true;
+                    $offersByStudent[$sid] = ($offersByStudent[$sid] ?? 0) + 1;
                 }
             }
         }
@@ -73,7 +75,7 @@ final class TrackingService
         $multipleOffers = 0;
         $noOfferYet = 0;
         foreach (array_keys($activeStudentIds) as $sid) {
-            $count = $selectedByStudent[$sid] ?? 0;
+            $count = $offersByStudent[$sid] ?? 0;
             if ($count === 0) {
                 $noOfferYet++;
             } elseif ($count === 1) {
@@ -122,115 +124,159 @@ final class TrackingService
                 'labels' => ['Single Offer', 'Multiple Offers', 'No Offer Yet'],
                 'values' => [$singleOffer, $multipleOffers, $noOfferYet],
             ],
-            'candidates' => $this->buildCandidateRows($apps, $candidateLimit),
+            'candidates' => $this->buildCandidateRows($entries, $candidateLimit),
         ];
     }
 
     /**
-     * @param array<string, array<string, mixed>|null> $studentCache
-     */
-    private function funnelBucket(string $status, array $app, array &$studentCache): string
-    {
-        if ($status === 'selected') {
-            $student = $this->student((string) ($app['studentId'] ?? ''), $studentCache);
-            if ($student && !empty($student['placed'])) {
-                return 'joined';
-            }
-            return 'offered';
-        }
-
-        return match ($status) {
-            'applied', 'resume_pending', 'resume_verified' => 'applied',
-            'officer_approved' => 'shortlisted',
-            'company_review' => 'test',
-            'shortlisted' => 'interview',
-            default => 'applied',
-        };
-    }
-
-    /**
+     * @param array<int, array<string, mixed>> $students
      * @return array<int, array<string, mixed>>
      */
-    private function loadApplications(?string $departmentId): array
+    private function collectPipelineEntries(array $students): array
     {
-        $appModel = new ApplicationModel();
-        if ($departmentId === null || $departmentId === '') {
-            return $appModel->findAll([], 5000);
-        }
-
-        $studentIds = [];
-        $deptOid = Security::toObjectId($departmentId);
-        if ($deptOid === null) {
-            return [];
-        }
-
-        foreach ((new StudentModel())->findAll(['departmentId' => $deptOid], 5000) as $student) {
-            $studentIds[] = $student['_id'];
-        }
-        if ($studentIds === []) {
-            return [];
-        }
-
-        return $appModel->findAll(['studentId' => ['$in' => $studentIds]], 5000);
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $apps
-     * @return array<int, array<string, mixed>>
-     */
-    private function buildCandidateRows(array $apps, int $limit): array
-    {
-        $studentModel = new StudentModel();
+        $officer = new OfficerDataService();
         $userModel = new UserModel();
-        $companyModel = new CompanyModel();
-        $driveModel = new DriveModel();
-        $jobModel = new JobModel();
-        $departmentModel = new DepartmentModel();
-        $deptCodeCache = [];
+        $entries = [];
 
-        usort($apps, static function (array $a, array $b): int {
-            $aTime = strtotime((string) ($a['updatedAt'] ?? $a['createdAt'] ?? '')) ?: 0;
-            $bTime = strtotime((string) ($b['updatedAt'] ?? $b['createdAt'] ?? '')) ?: 0;
+        foreach ($students as $student) {
+            $sid = (string) ($student['_id'] ?? '');
+            if ($sid === '') {
+                continue;
+            }
+            $user = $userModel->findById((string) ($student['userId'] ?? ''));
+            $studentName = trim((string) ($user['name'] ?? ''));
+            if ($studentName === '') {
+                $studentName = 'Student';
+            }
+
+            foreach ($officer->buildStudentPipeline($student) as $pipeline) {
+                $status = strtolower((string) ($pipeline['status'] ?? ''));
+                if (in_array($status, ['rejected', 'withdrawn'], true)) {
+                    continue;
+                }
+                $entries[] = array_merge($pipeline, [
+                    'student'        => $studentName,
+                    'studentId'      => $sid,
+                    'registerNumber' => (string) ($student['registerNumber'] ?? ''),
+                    '_student'       => $student,
+                ]);
+            }
+        }
+
+        usort($entries, static function (array $a, array $b): int {
+            $aTime = strtotime((string) ($a['appliedAt'] ?? '')) ?: 0;
+            $bTime = strtotime((string) ($b['appliedAt'] ?? '')) ?: 0;
+
             return $bTime <=> $aTime;
         });
 
-        $rows = [];
-        foreach (array_slice($apps, 0, $limit) as $app) {
-            $student = $studentModel->findById((string) ($app['studentId'] ?? ''));
-            $user = $student ? $userModel->findById((string) ($student['userId'] ?? '')) : null;
-            $company = $companyModel->findById((string) ($app['companyId'] ?? ''));
-            $drive = $driveModel->findById((string) ($app['driveId'] ?? ''));
-            if (!$company && $drive) {
-                $company = $companyModel->findById((string) ($drive['companyId'] ?? ''));
-            }
-            $job = !empty($app['jobId']) ? $jobModel->findById((string) $app['jobId']) : null;
+        return $entries;
+    }
 
-            $status = (string) ($app['status'] ?? 'applied');
-            $stageLabel = $this->stageLabel($status, $student);
-            $deptId = (string) ($student['departmentId'] ?? '');
-            if ($deptId !== '' && !isset($deptCodeCache[$deptId])) {
-                $dept = $departmentModel->findById($deptId);
-                $deptCodeCache[$deptId] = (string) ($dept['code'] ?? $dept['name'] ?? '');
-            }
-            $badge = match ($status) {
-                'selected' => !empty($student['placed']) ? 'success' : 'success',
-                'rejected' => 'danger',
-                'shortlisted', 'company_review', 'officer_approved' => 'info',
+    /**
+     * @param array<string, mixed> $entry
+     * @param array<string, mixed> $student
+     */
+    private function pipelineEntryBucket(array $entry, array $student): string
+    {
+        $status = strtolower((string) ($entry['status'] ?? ''));
+        $stage = (string) ($entry['stage'] ?? '');
+        $source = (string) ($entry['source'] ?? '');
+        $placed = ($student['placed'] ?? false) === true;
+
+        if (in_array($status, ['rejected', 'withdrawn'], true)) {
+            return 'excluded';
+        }
+        if ($placed && in_array($status, ['placed', 'selected', 'approved'], true)) {
+            return 'joined';
+        }
+        if ($status === 'placed') {
+            return 'joined';
+        }
+        if ($status === 'selected' || ($source === 'recruitment_result' && $status !== 'rejected')) {
+            return $placed ? 'joined' : 'offered';
+        }
+        if ($status === 'shortlisted' || $stage === 'company_selection') {
+            return 'interview';
+        }
+        if (in_array($status, ['officer_approved', 'company_review', 'pending', 'approved'], true)
+            || $stage === 'self_reported'
+            || $stage === 'approval') {
+            return 'shortlisted';
+        }
+        if ($stage === 'resume_verification' || $status === 'applied') {
+            return 'applied';
+        }
+        if ($source === 'history') {
+            return $placed ? 'joined' : 'offered';
+        }
+
+        return 'applied';
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     */
+    private function entryCountsAsOffer(array $entry): bool
+    {
+        $status = strtolower((string) ($entry['status'] ?? ''));
+        $source = (string) ($entry['source'] ?? '');
+
+        if ($status === 'rejected' || $status === 'withdrawn') {
+            return false;
+        }
+        if ($status === 'placed') {
+            return true;
+        }
+        if ($status === 'selected') {
+            return true;
+        }
+        if ($source === 'recruitment_result') {
+            return true;
+        }
+        if ($source === 'self_placement' && in_array($status, ['approved', 'placed'], true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $entries
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildCandidateRows(array $entries, int $limit): array
+    {
+        $rows = [];
+        foreach (array_slice($entries, 0, $limit) as $entry) {
+            $student = is_array($entry['_student'] ?? null) ? $entry['_student'] : [];
+            $status = strtolower((string) ($entry['status'] ?? ''));
+            $stageLabel = $this->entryStageLabel($entry, $student);
+            $badge = match (true) {
+                $status === 'placed' || (!empty($student['placed']) && in_array($status, ['selected', 'approved'], true)) => 'success',
+                $status === 'selected' || ($entry['source'] ?? '') === 'recruitment_result' => 'success',
+                $status === 'rejected' => 'danger',
+                in_array($status, ['shortlisted', 'officer_approved', 'company_review', 'pending', 'approved'], true) => 'info',
                 default => 'muted',
             };
 
+            $updatedAt = $entry['appliedAt'] ?? null;
+            if (is_array($updatedAt)) {
+                $serialized = DocumentHelper::serialize(['at' => $updatedAt]);
+                $updatedAt = $serialized['at'] ?? null;
+            }
+
             $rows[] = [
-                'applicationId' => (string) ($app['_id'] ?? ''),
-                'student'       => (string) ($user['name'] ?? 'Student'),
-                'registerNumber'=> (string) ($student['registerNumber'] ?? ''),
-                'department'    => $deptCodeCache[$deptId] ?? '',
-                'cgpa'          => (float) ($student['academic']['cgpa'] ?? $student['cgpa'] ?? 0),
-                'company'       => (string) ($company['companyName'] ?? ''),
-                'role'          => (string) ($job['title'] ?? $drive['title'] ?? ''),
+                'applicationId' => (string) ($entry['id'] ?? ''),
+                'student'       => (string) ($entry['student'] ?? 'Student'),
+                'registerNumber'=> (string) ($entry['registerNumber'] ?? ''),
+                'company'       => (string) ($entry['company'] ?? ''),
+                'role'          => (string) ($entry['role'] ?? ''),
                 'stage'         => $stageLabel,
-                'updatedAt'     => DocumentHelper::serialize($app)['updatedAt'] ?? null,
+                'updatedAt'     => $updatedAt,
                 'status'        => $status,
                 'badge'         => $badge,
+                'source'        => (string) ($entry['source'] ?? ''),
             ];
         }
 
@@ -238,34 +284,43 @@ final class TrackingService
     }
 
     /**
-     * @param array<string, mixed>|null $student
+     * @param array<string, mixed> $entry
+     * @param array<string, mixed> $student
      */
-    private function stageLabel(string $status, ?array $student): string
+    private function entryStageLabel(array $entry, array $student): string
     {
-        if ($status === 'selected') {
-            return !empty($student['placed']) ? 'Joined' : 'Offer Released';
+        $status = strtolower((string) ($entry['status'] ?? ''));
+        $source = (string) ($entry['source'] ?? '');
+        $placed = ($student['placed'] ?? false) === true;
+
+        if ($placed && in_array($status, ['placed', 'selected', 'approved'], true)) {
+            return 'Joined';
+        }
+        if ($source === 'recruitment_result' && $status === 'selected') {
+            return 'Offer Released';
+        }
+        if ($source === 'self_placement') {
+            return match ($status) {
+                'pending'  => 'Self-placement (pending)',
+                'approved' => 'Self-placement (approved)',
+                'placed'   => 'Joined (self-placement)',
+                default    => 'Self-placement',
+            };
+        }
+        if ($source === 'history') {
+            return $placed ? 'Joined' : 'Placement recorded';
         }
 
         return match ($status) {
-            'applied', 'resume_pending', 'resume_verified' => 'Applied',
+            'selected' => 'Offer Released',
+            'shortlisted' => 'Shortlisted',
             'officer_approved' => 'Officer Approved',
             'company_review' => 'Under Review',
-            'shortlisted' => 'Shortlisted',
-            'rejected' => 'Rejected',
-            'withdrawn' => 'Withdrawn',
+            'applied', 'resume_pending', 'resume_verified' => 'Applied',
+            'pending' => 'Pending',
+            'approved' => 'Approved',
+            'placed' => 'Joined',
             default => ucfirst(str_replace('_', ' ', $status)),
         };
-    }
-
-    /**
-     * @param array<string, array<string, mixed>|null> $cache
-     * @return array<string, mixed>|null
-     */
-    private function student(string $studentId, array &$cache): ?array
-    {
-        if (!isset($cache[$studentId])) {
-            $cache[$studentId] = (new StudentModel())->findById($studentId);
-        }
-        return $cache[$studentId];
     }
 }
