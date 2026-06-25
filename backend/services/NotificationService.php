@@ -45,6 +45,22 @@ final class NotificationService
         }
     }
 
+    /**
+     * Notify admins and placement officers about student-submitted placement reports.
+     */
+    public function notifyPlacementCell(string $type, string $title, string $message, array $metadata = [], bool $sendEmail = true): void
+    {
+        $this->notifyAdmins($type, $title, $message, $metadata, $sendEmail);
+
+        foreach ($this->userModel->findByRole('placement_officer', 200) as $officer) {
+            $uid = (string) ($officer['_id'] ?? '');
+            if ($uid === '' || !Security::isValidId($uid)) {
+                continue;
+            }
+            $this->notifyUser($uid, $type, $title, $message, $metadata, $sendEmail);
+        }
+    }
+
     /** Broadcast drive announcement — all students or department-scoped user IDs */
     public function announceDrive(string $driveTitle, string $date, ?array $userIds = null): void
     {

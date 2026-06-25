@@ -15,7 +15,6 @@ use PMS\Models\NotificationModel;
 use PMS\Models\ResumeModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
-use PMS\Models\UserModel;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\ApplicationUploadService;
@@ -43,9 +42,57 @@ final class StudentController
   private function getStudentProfile(array $user): array
   {
     $profile = $this->studentModel->findByUserId((string) $user['_id']);
-    if (!$profile) {
-      Response::notFound('Student profile not found.');
+    if ($profile) {
+      return $profile;
     }
+
+    $aes = new AesLoginService();
+    $sessionAes = Security::getSessionAesProfile();
+    $reg = $aes->resolveAesAdmissionNumber(
+      (string) ($user['registerNumber'] ?? ''),
+      $sessionAes
+    );
+    if ($reg === '') {
+      Response::notFound('Student profile not found. Please sign in again with your college account.');
+    }
+
+    $existingByReg = $this->studentModel->findByRegisterNumber($reg);
+    if ($existingByReg) {
+      $existingUserId = (string) ($existingByReg['userId'] ?? '');
+      $currentUserId = (string) ($user['_id'] ?? '');
+      if ($existingUserId === '' || $existingUserId === $currentUserId) {
+        $linkedUserId = Security::toObjectId($currentUserId);
+        if ($linkedUserId !== null) {
+          $this->studentModel->update((string) $existingByReg['_id'], ['userId' => $linkedUserId]);
+          $profile = $this->studentModel->findById((string) $existingByReg['_id']);
+          if ($profile) {
+            return $profile;
+          }
+        }
+      }
+      Response::error('This register number is already linked to another account.', 409);
+    }
+
+    $linkedUserId = Security::toObjectId((string) $user['_id']);
+    if ($linkedUserId === null) {
+      Response::error('Invalid account session. Please sign in again.', 401);
+    }
+
+    $mapped = $aes->mapAesDetailsToUserFields($sessionAes);
+    $createData = ['registerNumber' => $reg];
+    if (!empty($mapped['cgpa'])) {
+      $createData['academic'] = ['cgpa' => (float) $mapped['cgpa']];
+    }
+    if (!empty($mapped['phone'])) {
+      $createData['personal'] = ['phone' => (string) $mapped['phone']];
+    }
+
+    $this->studentModel->createProfile((string) $user['_id'], $createData);
+    $profile = $this->studentModel->findByUserId((string) $user['_id']);
+    if (!$profile) {
+      Response::error('Could not create your student profile.', 500);
+    }
+
     return $profile;
   }
 
@@ -765,8 +812,24 @@ final class StudentController
       Response::error('Company address is required.', 422);
     }
 
-    if (!isset($_FILES['offerLetter']) || (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+    if (!isset($_FILES['offerLetter'])) {
       Response::error('Offer letter PDF is required.', 400);
+    }
+
+    $uploadError = (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($uploadError === UPLOAD_ERR_NO_FILE) {
+      Response::error('Offer letter PDF is required.', 400);
+    }
+    if ($uploadError !== UPLOAD_ERR_OK) {
+      $uploadMessages = [
+        UPLOAD_ERR_INI_SIZE   => 'Offer letter exceeds server upload limit.',
+        UPLOAD_ERR_FORM_SIZE  => 'Offer letter exceeds form upload limit.',
+        UPLOAD_ERR_PARTIAL    => 'Offer letter upload was interrupted. Try again.',
+        UPLOAD_ERR_NO_TMP_DIR => 'Server upload folder is not configured.',
+        UPLOAD_ERR_CANT_WRITE => 'Server could not save the offer letter.',
+        UPLOAD_ERR_EXTENSION  => 'Server blocked the offer letter upload.',
+      ];
+      Response::error($uploadMessages[$uploadError] ?? 'Offer letter upload failed.', 400);
     }
 
     $config = require dirname(__DIR__) . '/config/app.php';
@@ -780,8 +843,8 @@ final class StudentController
     }
 
     $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
-    if (!is_dir($dir)) {
-      mkdir($dir, 0755, true);
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+      Response::error('Server upload folder is not writable.', 500);
     }
 
     $registerNo = (string) ($profile['registerNumber'] ?? 'student');
@@ -810,38 +873,41 @@ final class StudentController
       'date'    => DocumentHelper::now(),
     ];
 
-    $this->studentModel->update((string) $profile['_id'], [
+    $saved = $this->studentModel->update((string) $profile['_id'], [
       'selfPlacement'    => $report,
       'placementHistory' => $history,
     ]);
+    if (!$saved) {
+      @unlink($path);
+      Response::error('Could not save placement report.', 500);
+    }
 
     $studentName = (string) ($user['name'] ?? $registerNo);
-    $notifier = new NotificationService();
-    $notifier->notifyAdmins(
-      'self_placement_submitted',
-      'Self-reported placement',
-      "{$studentName} ({$registerNo}) reported placement at {$companyName} as {$jobRole}.",
-      ['studentId' => (string) $profile['_id'], 'registerNumber' => $registerNo],
-      false
-    );
-    foreach ((new UserModel())->findByRole('placement_officer', 100) as $officer) {
-      $notifier->notifyUser(
-        (string) $officer['_id'],
+    try {
+      $notifier = new NotificationService();
+      $notifier->notifyPlacementCell(
         'self_placement_submitted',
         'Student placement report',
-        "{$studentName} ({$registerNo}) submitted a placement report for {$companyName}.",
-        ['studentId' => (string) $profile['_id']],
+        "{$studentName} ({$registerNo}) submitted a placement report for {$companyName} as {$jobRole}.",
+        [
+          'studentId'      => (string) $profile['_id'],
+          'registerNumber' => $registerNo,
+          'companyName'    => $companyName,
+          'role'           => $jobRole,
+        ],
+        true
+      );
+      $notifier->notifyUser(
+        (string) $user['_id'],
+        'placement_report_submitted',
+        'Placement report submitted',
+        'Your placement details were sent to the placement cell for verification.',
+        ['companyName' => $companyName],
         false
       );
+    } catch (\Throwable) {
+      // Submission succeeded; notification failure must not block the student.
     }
-    $notifier->notifyUser(
-      (string) $user['_id'],
-      'placement_report_submitted',
-      'Placement report submitted',
-      'Your placement details were sent to the placement cell for verification.',
-      [],
-      false
-    );
 
     Response::success($report, 'Placement report submitted for verification.', 201);
   }

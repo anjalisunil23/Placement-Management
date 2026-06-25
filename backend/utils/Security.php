@@ -190,7 +190,7 @@ final class Security
         $finfo = new \finfo(FILEINFO_MIME_TYPE);
         $mime = $finfo->file($file['tmp_name']);
         $allowedMimes = [
-            'pdf'  => ['application/pdf', 'application/octet-stream', 'application/x-pdf'],
+            'pdf'  => ['application/pdf', 'application/octet-stream', 'application/x-pdf', 'binary/octet-stream'],
             'doc'  => ['application/msword'],
             'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
             'jpg'  => ['image/jpeg'],
