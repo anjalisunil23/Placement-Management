@@ -162,14 +162,22 @@ final class StaffController
     public function listStudents(): void
     {
         $user = RBACMiddleware::requireStaff();
-        $ctx = StaffContext::resolve($user);
-        $officerCtx = StaffContext::officerCompatible($ctx);
-        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
-        $rows = (new OfficerDataService())->listStudents(
-            $officerCtx,
-            $query !== '' ? $query : null
-        );
-        Response::success(DocumentHelper::jsonSafe($rows));
+        try {
+            $ctx = StaffContext::resolve($user);
+            $officerCtx = StaffContext::officerCompatible($ctx);
+            $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+            $rows = (new OfficerDataService())->listStudents(
+                $officerCtx,
+                $query !== '' ? $query : null
+            );
+            Response::success(DocumentHelper::jsonSafe($rows));
+        } catch (\Throwable $e) {
+            $message = 'Could not load students.';
+            if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
+                $message = $e->getMessage();
+            }
+            Response::error($message, 500);
+        }
     }
 
     /** GET /api/staff/students/{id}/pipeline */

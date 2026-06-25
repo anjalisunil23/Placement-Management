@@ -52,7 +52,9 @@ foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php',
 
 // Linux/cPanel: load all services explicitly when PSR-4 case differs from backend/services/.
 require_once dirname(__DIR__) . '/bootstrap-services.php';
-pms_load_backend_services(dirname(__DIR__));
+$backendDir = dirname(__DIR__);
+pms_load_backend_services($backendDir);
+pms_load_module_controllers($backendDir);
 if (!class_exists(\PMS\Services\AesApiService::class, false)
     && !class_exists(\PMS\Services\AesApiService::class)) {
     $emitJsonError('Server autoload error: AesApiService missing. Run composer install and redeploy from latest main.');
@@ -357,6 +359,9 @@ try {
         if (preg_match($regex, $uri, $matches)) {
             $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
             [$class, $action] = $handler;
+            if (!class_exists($class, false) && !class_exists($class)) {
+                $emitJsonError('Server autoload error: ' . $class . ' missing. Redeploy from latest main.');
+            }
             $controller = new $class();
 
             if (empty($params)) {
