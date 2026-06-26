@@ -16,6 +16,7 @@ final class AesApiService
     private string $referer;
     private string $authKey;
     private string $refHost;
+    private bool $sslVerify;
 
     /** @var list<array{code:string,name:string,short:string}>|null */
     private static ?array $departmentCache = null;
@@ -28,96 +29,15 @@ final class AesApiService
         $this->referer = (string) ($aes['api_referer'] ?? 'https://www.aesajce.in/');
         $this->authKey = (string) ($aes['auth_key'] ?? '');
         $this->refHost = trim((string) ($aes['ref_host'] ?? ''));
+        $sslVerify = $aes['ssl_verify'] ?? true;
+        $this->sslVerify = is_bool($sslVerify) ? $sslVerify : filter_var((string) $sslVerify, FILTER_VALIDATE_BOOLEAN);
     }
 
     /**
-     * POST to https://api.aesajce.in/ with form-urlencoded body.
-     *
      * @param array<string, scalar|null> $params
-     * @param list<string> $extraHeaders
-     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     * @return array<string, scalar|null>
      */
-    public function callAESApi(string $method, array $params = [], array $extraHeaders = []): array
-    {
-        $postData = array_merge(['method' => $method], $this->stringifyParams($params));
-        if ($this->authKey !== '' && !isset($postData['authkey'])) {
-            $postData['authkey'] = $this->authKey;
-        }
-        if ($this->refHost !== '' && $this->refHost !== 'localhost' && !isset($postData['refurl'])) {
-            $postData['refurl'] = $this->refHost;
-        }
-
-        $ch = curl_init();
-        if ($ch === false) {
-            return [
-                'success' => false,
-                'status'  => 0,
-                'error'   => 'Could not initialize cURL.',
-            ];
-        }
-
-        curl_setopt($ch, CURLOPT_URL, $this->apiUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge([
-            'Accept: application/json, */*;q=0.1',
-            'Content-Type: application/x-www-form-urlencoded',
-            'Origin: ' . $this->origin,
-            'Referer: ' . $this->referer,
-            'X-Requested-With: XMLHttpRequest',
-        ], $extraHeaders));
-
-        $response = curl_exec($ch);
-        $curlErr = curl_error($ch);
-        $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($response === false) {
-            return [
-                'success' => false,
-                'status'  => $statusCode ?: 0,
-                'error'   => 'cURL error: ' . $curlErr,
-            ];
-        }
-
-        $raw = (string) $response;
-        if ($statusCode >= 400) {
-            return [
-                'success' => false,
-                'status'  => $statusCode,
-                'error'   => 'AES API HTTP ' . $statusCode,
-                'raw'     => $raw,
-            ];
-        }
-
-        $decoded = json_decode($raw, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            return [
-                'success' => trim($raw) === '',
-                'status'  => $statusCode,
-                'raw'     => $raw,
-                'note'    => trim($raw) === '' ? 'Upstream returned empty payload' : 'Upstream returned non-JSON payload',
-            ];
-        }
-
-        return [
-            'success' => true,
-            'status'  => $statusCode,
-            'data'    => $decoded,
-        ];
-    }
-
-    /**
-     * POST to AES with method in the query string (required for getStudQual4Placement).
-     *
-     * @param array<string, scalar|null> $params
-     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
-     */
-    private function callAESApiWithMethodInQuery(string $method, array $params = []): array
+    private function withAesAuthParams(array $params): array
     {
         $postData = $this->stringifyParams($params);
         if ($this->authKey !== '' && !isset($postData['authkey'])) {
@@ -127,7 +47,15 @@ final class AesApiService
             $postData['refurl'] = $this->refHost;
         }
 
-        $url = $this->apiUrl . '?method=' . rawurlencode($method);
+        return $postData;
+    }
+
+    /**
+     * @param list<string> $extraHeaders
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    private function executeAesCurl(string $url, ?string $postBody, string $httpMethod = 'POST', array $extraHeaders = []): array
+    {
         $ch = curl_init();
         if ($ch === false) {
             return [
@@ -137,20 +65,30 @@ final class AesApiService
             ];
         }
 
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Accept: application/json, */*;q=0.1',
-            'Content-Type: application/x-www-form-urlencoded',
-            'Origin: ' . $this->origin,
-            'Referer: ' . $this->referer,
-            'X-Requested-With: XMLHttpRequest',
-        ]);
+        $options = [
+            CURLOPT_URL            => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_SSL_VERIFYPEER => $this->sslVerify,
+            CURLOPT_HTTPHEADER     => array_merge([
+                'Accept: application/json, */*;q=0.1',
+                'Content-Type: application/x-www-form-urlencoded',
+                'Origin: ' . $this->origin,
+                'Referer: ' . $this->referer,
+            ], $extraHeaders),
+        ];
+
+        if ($httpMethod === 'GET') {
+            $options[CURLOPT_HTTPGET] = true;
+        } else {
+            $options[CURLOPT_POST] = true;
+            if ($postBody !== null) {
+                $options[CURLOPT_POSTFIELDS] = $postBody;
+            }
+        }
+
+        curl_setopt_array($ch, $options);
 
         $response = curl_exec($ch);
         $curlErr = curl_error($ch);
@@ -177,10 +115,10 @@ final class AesApiService
 
         if (trim($raw) === '') {
             return [
-                'success' => true,
+                'success' => false,
                 'status'  => $statusCode,
                 'raw'     => '',
-                'note'    => 'Upstream returned empty payload',
+                'error'   => 'AES API returned empty body',
             ];
         }
 
@@ -199,6 +137,41 @@ final class AesApiService
             'status'  => $statusCode,
             'data'    => $decoded,
         ];
+    }
+
+    /**
+     * POST to https://api.aesajce.in/ with form-urlencoded body.
+     *
+     * @param array<string, scalar|null> $params
+     * @param list<string> $extraHeaders
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    public function callAESApi(string $method, array $params = [], array $extraHeaders = []): array
+    {
+        $postData = array_merge(['method' => $method], $this->withAesAuthParams($params));
+
+        return $this->executeAesCurl($this->apiUrl, http_build_query($postData), 'POST', $extraHeaders);
+    }
+
+    /**
+     * AES ?method= routes often ignore the POST body — send params in the query string.
+     *
+     * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    private function callAESApiWithMethodInQuery(string $method, array $params = []): array
+    {
+        $queryData = array_merge(['method' => $method], $this->withAesAuthParams($params));
+        $query = http_build_query($queryData);
+        $url = $this->apiUrl . '?' . $query;
+        $body = http_build_query($this->withAesAuthParams($params));
+
+        $response = $this->executeAesCurl($url, $body, 'POST');
+        if ($this->extractQualificationRawRecord($response) !== []) {
+            return $response;
+        }
+
+        return $this->executeAesCurl($url, null, 'GET');
     }
 
     /**
@@ -241,24 +214,30 @@ final class AesApiService
             ];
         }
 
-        $refParams = [];
-        if ($this->refHost !== '' && $this->refHost !== 'localhost') {
-            $refParams['refurl'] = $this->refHost;
-        }
-
+        $baseParams = ['admno' => $admno];
         $lastResponse = [
-            'success' => true,
-            'status'  => 200,
-            'raw'     => '',
-            'note'    => 'Upstream returned empty payload',
+            'success' => false,
+            'status'  => 0,
+            'error'   => 'getStudQual4Placement returned no qualification data.',
         ];
 
-        // AES crashes (HTTP 500) when method is in the POST body — use ?method= only.
-        foreach ([['admno' => $admno], ['stud_admno' => $admno]] as $qualParams) {
-            $response = $this->callAESApiWithMethodInQuery(
+        $attempts = [
+            fn () => $this->callAESApi('getStudQual4Placement', $baseParams),
+            fn () => $this->callAESApiWithMethodInQuery('getStudQual4Placement', $baseParams),
+            fn () => $this->callAESApiWithMethodInQuery('getStudQual4Placement', ['stud_admno' => $admno]),
+        ];
+
+        $infoRecord = $this->extractRecord($this->getStudInfo4Placement($baseParams));
+        $registerNo = trim((string) ($infoRecord['registerno'] ?? $infoRecord['registerNumber'] ?? ''));
+        if ($registerNo !== '' && $registerNo !== $admno) {
+            $attempts[] = fn () => $this->callAESApiWithMethodInQuery(
                 'getStudQual4Placement',
-                array_merge($qualParams, $refParams)
+                array_merge($baseParams, ['registerno' => $registerNo, 'registerNumber' => $registerNo])
             );
+        }
+
+        foreach ($attempts as $attempt) {
+            $response = $attempt();
             $lastResponse = $response;
             if ($this->extractQualificationRawRecord($response) !== []) {
                 return $response;
@@ -576,13 +555,11 @@ final class AesApiService
             $record['deptCode'] = $branchInfo['parentCode'];
         }
 
-        if ($this->placementProfileNeedsQualificationEnrichment($record)) {
-            $admno = $this->resolveQualificationAdmissionNumber($record, $this->resolveAdmissionNumber($params, (string) ($request['admno'] ?? '')));
-            if ($admno !== '') {
-                $qual = $this->fetchStudentQualificationProfile(['admno' => $admno, 'stud_admno' => $admno]);
-                if ($qual !== []) {
-                    $record = $this->mergeQualificationIntoPlacement($record, $qual);
-                }
+        $admno = $this->resolveQualificationAdmissionNumber($record, $this->resolveAdmissionNumber($params, (string) ($request['admno'] ?? '')));
+        if ($admno !== '' && ctype_digit($admno)) {
+            $qual = $this->fetchStudentQualificationProfile(['admno' => $admno, 'stud_admno' => $admno]);
+            if ($qual !== []) {
+                $record = $this->mergeQualificationIntoPlacement($record, $qual);
             }
         }
 
@@ -610,6 +587,22 @@ final class AesApiService
     }
 
     /**
+     * Education table rows from getStudQual4Placement only (edu list or marks/CGPA fields).
+     *
+     * @param array<string, scalar|null> $params
+     * @return list<array{qualification: string, institution: string, registerNumber: string, monthYear: string, mark: ?float, maxMark: ?float, percentage: ?float}>
+     */
+    public function fetchStudentQualificationTableRows(array $params): array
+    {
+        $qual = $this->fetchStudentQualificationProfile($params);
+        if (!is_array($qual['qualifications'] ?? null)) {
+            return [];
+        }
+
+        return $qual['qualifications'];
+    }
+
+    /**
      * @param array<string, mixed> $record
      * @return array<string, mixed>
      */
@@ -623,6 +616,9 @@ final class AesApiService
         $qualifications = !empty($normalized['qualifications']) && is_array($normalized['qualifications'])
             ? $normalized['qualifications']
             : $this->parseEducationQualifications($normalized);
+        if ($qualifications === []) {
+            $qualifications = $this->buildQualificationTableRowsFromMarks($normalized);
+        }
         if ($qualifications !== []) {
             $normalized = $this->applySchoolMarksFromQualificationRows($normalized, $qualifications);
             $normalized['qualifications'] = $qualifications;
@@ -686,27 +682,6 @@ final class AesApiService
         }
 
         return $placement;
-    }
-
-    /**
-     * @param array<string, mixed> $record
-     */
-    private function placementProfileNeedsQualificationEnrichment(array $record): bool
-    {
-        if ((float) ($record['cgpa'] ?? 0) <= 0) {
-            return true;
-        }
-        if ((float) ($record['marks10th'] ?? 0) <= 0) {
-            return true;
-        }
-        if ((float) ($record['marks12th'] ?? 0) <= 0) {
-            return true;
-        }
-        if (empty($record['qualifications']) && empty($record['edu'])) {
-            return true;
-        }
-
-        return false;
     }
 
     /**
@@ -880,9 +855,6 @@ final class AesApiService
         }
 
         $qualifications = $this->parseEducationQualifications($record);
-        if ($qualifications === []) {
-            $qualifications = $this->buildPlacementQualificationRows($record);
-        }
         if ($qualifications !== []) {
             $record['qualifications'] = $qualifications;
         }
@@ -891,18 +863,15 @@ final class AesApiService
     }
 
     /**
-     * Build read-only qualification table rows from getStudInfo4Placement when `edu` is absent.
+     * Build qualification table rows from getStudQual4Placement marks/CGPA when `edu` is absent.
      *
      * @param array<string, mixed> $record
      * @return list<array{qualification: string, institution: string, registerNumber: string, monthYear: string, mark: ?float, maxMark: ?float, percentage: ?float}>
      */
-    public function buildPlacementQualificationRows(array $record): array
+    public function buildQualificationTableRowsFromMarks(array $record): array
     {
         $rows = [];
         $regNo = trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? $record['admission_no'] ?? $record['admno'] ?? ''));
-        $course = trim((string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? $record['branch'] ?? $record['programme'] ?? ''));
-        $classBatch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
-        $institution = trim((string) ($record['stud_branch'] ?? $record['departmentName'] ?? $record['deptName'] ?? ''));
 
         if (isset($record['marks10th']) && is_numeric($record['marks10th']) && (float) $record['marks10th'] > 0) {
             $rows[] = [
@@ -928,22 +897,12 @@ final class AesApiService
         }
         if (isset($record['cgpa']) && is_numeric($record['cgpa']) && (float) $record['cgpa'] > 0) {
             $rows[] = [
-                'qualification'  => 'Current CGPA' . ($course !== '' ? " ({$course})" : ''),
-                'institution'    => $institution !== '' ? $institution : $course,
+                'qualification'  => 'CGPA',
+                'institution'    => '',
                 'registerNumber' => $regNo,
-                'monthYear'      => $classBatch,
+                'monthYear'      => '',
                 'mark'           => (float) $record['cgpa'],
                 'maxMark'        => 10.0,
-                'percentage'     => null,
-            ];
-        } elseif ($course !== '' || $classBatch !== '') {
-            $rows[] = [
-                'qualification'  => $course !== '' ? $course : 'Programme',
-                'institution'    => $institution,
-                'registerNumber' => $regNo,
-                'monthYear'      => $classBatch,
-                'mark'           => null,
-                'maxMark'        => null,
                 'percentage'     => null,
             ];
         }

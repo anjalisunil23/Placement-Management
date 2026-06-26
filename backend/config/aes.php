@@ -76,4 +76,5 @@ return [
     'api_url' => $readEnv('AES_API_URL') ?: 'https://api.aesajce.in/',
     'api_origin' => $readEnv('AES_API_ORIGIN') ?: 'https://www.aesajce.in',
     'api_referer' => $readEnv('AES_API_REFERER') ?: 'https://www.aesajce.in/',
+    'ssl_verify' => filter_var($readEnv('AES_SSL_VERIFY') ?: 'true', FILTER_VALIDATE_BOOLEAN),
 ];

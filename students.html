@@ -652,42 +652,11 @@ function formatQualMark(val) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-function buildStudentQualificationRows(s) {
-  const quals = Array.isArray(s?.qualifications) ? s.qualifications : [];
-  if (quals.length) return quals;
-  const rows = [];
-  const regNo = String(s?.registerNumber || s?.registerno || '').trim();
-  const course = String(s?.stud_course || s?.departmentName || s?.department || '').trim();
-  const classBatch = String(s?.classBatch || s?.stud_class || '').trim();
-  const m10 = s?.marks10th;
-  const m12 = s?.marks12th ?? s?.ugMarks;
-  if (m10 != null && Number(m10) > 0) {
-    rows.push({ qualification: 'SSLC / 10th', registerNumber: regNo, percentage: Number(m10) });
-  }
-  if (m12 != null && Number(m12) > 0) {
-    rows.push({ qualification: 'HSC / 12th', registerNumber: regNo, percentage: Number(m12) });
-  }
-  if (s?.cgpa != null && Number(s.cgpa) > 0) {
-    rows.push({
-      qualification: 'Current CGPA' + (course ? ` (${course})` : ''),
-      institution: course,
-      registerNumber: regNo,
-      monthYear: classBatch,
-      mark: Number(s.cgpa),
-      maxMark: 10,
-    });
-  } else if (course || classBatch) {
-    rows.push({ qualification: course || 'Programme', registerNumber: regNo, monthYear: classBatch });
-  }
-  return rows;
-}
-
-function renderQualificationsTable(quals, bodyId, wrapId, profile = null) {
+function renderQualificationsTable(quals, bodyId, wrapId) {
   const body = document.getElementById(bodyId);
   const wrap = document.getElementById(wrapId);
   if (!body || !wrap) return;
-  let rows = Array.isArray(quals) ? quals : [];
-  if (!rows.length && profile) rows = buildStudentQualificationRows(profile);
+  const rows = Array.isArray(quals) ? quals : [];
   if (!rows.length) {
     wrap.style.display = 'none';
     body.innerHTML = '';
@@ -756,7 +725,7 @@ function renderStudentProfilePanel(s) {
   const used = s.chancesUsed ?? 0;
   const max = s.chancesMax ?? 0;
   set('spChances', max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—'));
-  renderQualificationsTable(s.qualifications, 'spQualificationsBody', 'spQualificationsWrap', s);
+  renderQualificationsTable(s.qualifications, 'spQualificationsBody', 'spQualificationsWrap');
 }
 
 function overviewStatusBadge(status) {

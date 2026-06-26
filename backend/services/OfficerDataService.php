@@ -509,10 +509,9 @@ final class OfficerDataService
             $overview['department'] = $deptName;
         }
 
-        $quals = (new AesApiService())->parseEducationQualifications($placement);
-        if ($quals === []) {
-            $quals = (new AesApiService())->buildPlacementQualificationRows($placement);
-        }
+        $aesApi = new AesApiService();
+        $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, (string) ($mapped['registerNumber'] ?? ''));
+        $quals = $qualAdmno !== '' ? $aesApi->fetchStudentQualificationTableRows(['admno' => $qualAdmno, 'stud_admno' => $qualAdmno]) : [];
         if ($quals === [] && !empty($mapped['qualifications']) && is_array($mapped['qualifications'])) {
             $quals = $mapped['qualifications'];
         }
