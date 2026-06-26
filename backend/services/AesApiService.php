@@ -117,6 +117,17 @@ final class AesApiService
     }
 
     /**
+     * POST method=getStudQual4Placement — student 10th/12th marks and CGPA from AES.
+     *
+     * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    public function getStudQual4Placement(array $params = []): array
+    {
+        return $this->callAESApi('getStudQual4Placement', $params);
+    }
+
+    /**
      * @param array<string, scalar|null> $params
      * @return array<string, scalar|null>
      */
@@ -166,6 +177,37 @@ final class AesApiService
         }
 
         return $this->getStudInfo4Placement($this->buildStudentRequestParams($params, $register));
+    }
+
+    /**
+     * POST getStudQual4Placement with admno-first params (AES expects admno for numeric IDs).
+     *
+     * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    public function postStudQual4Placement(array $params, string $registerNumber = ''): array
+    {
+        $register = strtoupper(trim($registerNumber !== ''
+            ? $registerNumber
+            : (string) ($params['admno'] ?? $params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
+
+        if ($register !== '') {
+            foreach ([
+                ['admno' => $register],
+                ['un' => $register],
+                ['username' => $register],
+                ['admission_no' => $register],
+                ['registerNumber' => $register],
+                ['studno' => $register],
+            ] as $attempt) {
+                $response = $this->getStudQual4Placement($attempt);
+                if ($this->extractQualificationRawRecord($response) !== []) {
+                    return $response;
+                }
+            }
+        }
+
+        return $this->getStudQual4Placement($this->buildStudentRequestParams($params, $register));
     }
 
     /**
@@ -356,6 +398,156 @@ final class AesApiService
             $record['dept_name'] = $branchInfo['parentName'];
             $record['deptName'] = $branchInfo['parentName'];
             $record['deptCode'] = $branchInfo['parentCode'];
+        }
+
+        if ($this->placementProfileNeedsQualificationEnrichment($record)) {
+            $qual = $this->fetchStudentQualificationProfile($params);
+            if ($qual !== []) {
+                $record = $this->mergeQualificationIntoPlacement($record, $qual);
+            }
+        }
+
+        return $record;
+    }
+
+    /**
+     * Fetch normalized 10th/12th marks, CGPA, and edu qualifications from getStudQual4Placement.
+     *
+     * @param array<string, scalar|null> $params
+     * @return array<string, mixed>
+     */
+    public function fetchStudentQualificationProfile(array $params): array
+    {
+        $request = $this->buildStudentRequestParams($params);
+        $raw = $this->extractQualificationRawRecord(
+            $this->postStudQual4Placement($params, (string) ($request['admno'] ?? ''))
+        );
+
+        return $this->normalizeQualificationRecord($raw);
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    public function normalizeQualificationRecord(array $record): array
+    {
+        if ($record === []) {
+            return [];
+        }
+
+        $normalized = $this->normalizePlacementStudentRecord($record);
+        $qualifications = !empty($normalized['qualifications']) && is_array($normalized['qualifications'])
+            ? $normalized['qualifications']
+            : $this->parseEducationQualifications($normalized);
+        if ($qualifications !== []) {
+            $normalized = $this->applySchoolMarksFromQualificationRows($normalized, $qualifications);
+            $normalized['qualifications'] = $qualifications;
+        }
+
+        $out = [];
+        if (isset($normalized['cgpa']) && (float) $normalized['cgpa'] > 0) {
+            $out['cgpa'] = (float) $normalized['cgpa'];
+        }
+        if (isset($normalized['marks10th']) && (float) $normalized['marks10th'] > 0) {
+            $out['marks10th'] = (float) $normalized['marks10th'];
+        }
+        if (isset($normalized['marks12th']) && (float) $normalized['marks12th'] > 0) {
+            $out['marks12th'] = (float) $normalized['marks12th'];
+            $out['ugMarks'] = (float) $normalized['marks12th'];
+        }
+        if (isset($normalized['backlogs']) || isset($normalized['backlog'])) {
+            $out['backlogs'] = (int) ($normalized['backlogs'] ?? $normalized['backlog'] ?? 0);
+        }
+        if ($qualifications !== []) {
+            $out['qualifications'] = $qualifications;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $placement
+     * @param array<string, mixed> $qual
+     * @return array<string, mixed>
+     */
+    private function mergeQualificationIntoPlacement(array $placement, array $qual): array
+    {
+        if ($qual === []) {
+            return $placement;
+        }
+
+        foreach (['cgpa', 'marks10th', 'marks12th'] as $key) {
+            $current = isset($placement[$key]) && is_numeric($placement[$key]) ? (float) $placement[$key] : 0.0;
+            $incoming = isset($qual[$key]) && is_numeric($qual[$key]) ? (float) $qual[$key] : 0.0;
+            if ($current <= 0 && $incoming > 0) {
+                $placement[$key] = $incoming;
+            }
+        }
+
+        if ((!isset($placement['backlogs']) && !isset($placement['backlog'])) && isset($qual['backlogs'])) {
+            $placement['backlogs'] = (int) $qual['backlogs'];
+        }
+
+        if (
+            (!isset($placement['ugMarks']) || (float) $placement['ugMarks'] <= 0)
+            && isset($placement['marks12th'])
+            && (float) $placement['marks12th'] > 0
+        ) {
+            $placement['ugMarks'] = (float) $placement['marks12th'];
+        }
+
+        $incomingQuals = !empty($qual['qualifications']) && is_array($qual['qualifications']) ? $qual['qualifications'] : [];
+        if ($incomingQuals !== []) {
+            $placement['qualifications'] = $incomingQuals;
+        }
+
+        return $placement;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     */
+    private function placementProfileNeedsQualificationEnrichment(array $record): bool
+    {
+        if ((float) ($record['cgpa'] ?? 0) <= 0) {
+            return true;
+        }
+        if ((float) ($record['marks10th'] ?? 0) <= 0) {
+            return true;
+        }
+        if ((float) ($record['marks12th'] ?? 0) <= 0) {
+            return true;
+        }
+        if (empty($record['qualifications']) && empty($record['edu'])) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param list<array{qualification: string, institution: string, registerNumber: string, monthYear: string, mark: ?float, maxMark: ?float, percentage: ?float}> $qualifications
+     * @return array<string, mixed>
+     */
+    private function applySchoolMarksFromQualificationRows(array $record, array $qualifications): array
+    {
+        foreach ($qualifications as $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            $pct = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
+            if ($pct === null || $pct <= 0) {
+                continue;
+            }
+            $label = strtoupper((string) ($q['qualification'] ?? ''));
+            if (empty($record['marks10th']) && preg_match('/\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|SECONDARY)\b/', $label)) {
+                $record['marks10th'] = $pct;
+            }
+            if (empty($record['marks12th']) && preg_match('/\b(HSC|12TH|12\s*STD|PLUS\s*TWO|PLUS2|PUC|CLASS\s*XII|HIGHER\s*SECONDARY)\b/', $label)) {
+                $record['marks12th'] = $pct;
+            }
         }
 
         return $record;
@@ -825,6 +1017,52 @@ final class AesApiService
         ];
         foreach ($scalarKeys as $key) {
             if (isset($payload[$key]) && is_scalar($payload[$key]) && trim((string) $payload[$key]) !== '') {
+                return $payload;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
+     * @return array<string, mixed>
+     */
+    private function extractQualificationRawRecord(array $result): array
+    {
+        if (($result['success'] ?? false) !== true) {
+            return [];
+        }
+
+        $payload = $result['data'] ?? null;
+        if (!is_array($payload)) {
+            return [];
+        }
+
+        if (array_is_list($payload) && isset($payload[0]) && is_array($payload[0])) {
+            return $payload[0];
+        }
+
+        if (($payload['status'] ?? true) === false || ($payload['status'] ?? null) === 'false') {
+            return [];
+        }
+
+        $record = $payload['data']
+            ?? $payload['student']
+            ?? $payload['profile']
+            ?? $payload['qual']
+            ?? $payload['qualification']
+            ?? null;
+        if (is_array($record) && $record !== []) {
+            return $record;
+        }
+
+        $qualKeys = [
+            'cgpa', 'edu', 'qualifications', 'marks10th', 'marks12th', 'sslc', 'hsc', 'sslc_marks', 'hsc_marks',
+            'mark10th', 'mark12th', 'stud_sslc', 'stud_hsc', 'backlog', 'backlogs',
+        ];
+        foreach ($qualKeys as $key) {
+            if (array_key_exists($key, $payload)) {
                 return $payload;
             }
         }

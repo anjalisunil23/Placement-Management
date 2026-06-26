@@ -40,6 +40,10 @@ if ($register !== '') {
     $resolved = $api->resolveStudentDepartment($request, $register);
     echo "\nResolved department (getStudInfo4Placement + getDepartments):\n";
     echo json_encode($resolved, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
+
+    echo "\n=== POST getStudQual4Placement ({$register}) ===\n";
+    $qual = $api->fetchStudentQualificationProfile(['admno' => $register]);
+    echo json_encode($qual, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
 } else {
     echo "\nTip: pass admission number to test getStudInfo4Placement\n";
 }
