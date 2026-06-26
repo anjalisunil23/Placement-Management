@@ -329,6 +329,19 @@ function pickSchoolMark(u, markKey) {
     const val = merged[key] ?? academic[key];
     if (val != null && val !== '' && Number(val) > 0) return Number(val);
   }
+  const quals = merged.qualifications ?? academic.qualifications ?? [];
+  if (Array.isArray(quals)) {
+    const re10 = /\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|SECONDARY)\b/i;
+    const re12 = /\b(HSC|12TH|12\s*STD|PLUS\s*TWO|PLUS2|PUC|CLASS\s*XII|HIGHER\s*SECONDARY)\b/i;
+    for (const q of quals) {
+      if (!q || typeof q !== 'object') continue;
+      const pct = Number(q.percentage ?? q.mark ?? 0);
+      if (!pct || pct <= 0 || pct > 100) continue;
+      const label = String(q.qualification || q.qual || q.degree || '');
+      if (markKey === '10' && re10.test(label)) return pct;
+      if (markKey === '12' && re12.test(label)) return pct;
+    }
+  }
   return '';
 }
 

@@ -15,6 +15,7 @@ final class AesApiService
     private string $origin;
     private string $referer;
     private string $authKey;
+    private string $refHost;
 
     /** @var list<array{code:string,name:string,short:string}>|null */
     private static ?array $departmentCache = null;
@@ -26,6 +27,7 @@ final class AesApiService
         $this->origin = (string) ($aes['api_origin'] ?? 'https://www.aesajce.in');
         $this->referer = (string) ($aes['api_referer'] ?? 'https://www.aesajce.in/');
         $this->authKey = (string) ($aes['auth_key'] ?? '');
+        $this->refHost = trim((string) ($aes['ref_host'] ?? ''));
     }
 
     /**
@@ -79,12 +81,112 @@ final class AesApiService
             ];
         }
 
-        $decoded = json_decode((string) $response, true);
+        $raw = (string) $response;
+        if ($statusCode >= 400) {
+            return [
+                'success' => false,
+                'status'  => $statusCode,
+                'error'   => 'AES API HTTP ' . $statusCode,
+                'raw'     => $raw,
+            ];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return [
+                'success' => trim($raw) === '',
+                'status'  => $statusCode,
+                'raw'     => $raw,
+                'note'    => trim($raw) === '' ? 'Upstream returned empty payload' : 'Upstream returned non-JSON payload',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'status'  => $statusCode,
+            'data'    => $decoded,
+        ];
+    }
+
+    /**
+     * POST to AES with method in the query string (required for getStudQual4Placement).
+     *
+     * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    private function callAESApiWithMethodInQuery(string $method, array $params = []): array
+    {
+        $postData = $this->stringifyParams($params);
+        if ($this->authKey !== '' && !isset($postData['authkey'])) {
+            $postData['authkey'] = $this->authKey;
+        }
+        if ($this->refHost !== '' && $this->refHost !== 'localhost' && !isset($postData['refurl'])) {
+            $postData['refurl'] = $this->refHost;
+        }
+
+        $url = $this->apiUrl . '?method=' . rawurlencode($method);
+        $ch = curl_init();
+        if ($ch === false) {
+            return [
+                'success' => false,
+                'status'  => 0,
+                'error'   => 'Could not initialize cURL.',
+            ];
+        }
+
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Accept: application/json, */*;q=0.1',
+            'Content-Type: application/x-www-form-urlencoded',
+            'Origin: ' . $this->origin,
+            'Referer: ' . $this->referer,
+            'X-Requested-With: XMLHttpRequest',
+        ]);
+
+        $response = curl_exec($ch);
+        $curlErr = curl_error($ch);
+        $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($response === false) {
+            return [
+                'success' => false,
+                'status'  => $statusCode ?: 0,
+                'error'   => 'cURL error: ' . $curlErr,
+            ];
+        }
+
+        $raw = (string) $response;
+        if ($statusCode >= 400) {
+            return [
+                'success' => false,
+                'status'  => $statusCode,
+                'error'   => 'AES API HTTP ' . $statusCode,
+                'raw'     => $raw,
+            ];
+        }
+
+        if (trim($raw) === '') {
+            return [
+                'success' => true,
+                'status'  => $statusCode,
+                'raw'     => '',
+                'note'    => 'Upstream returned empty payload',
+            ];
+        }
+
+        $decoded = json_decode($raw, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             return [
                 'success' => true,
                 'status'  => $statusCode,
-                'raw'     => (string) $response,
+                'raw'     => $raw,
                 'note'    => 'Upstream returned non-JSON payload',
             ];
         }
@@ -124,7 +226,43 @@ final class AesApiService
      */
     public function getStudQual4Placement(array $params = []): array
     {
-        return $this->callAESApi('getStudQual4Placement', $params);
+        $admno = $this->resolveQualificationAdmissionNumber(
+            $params,
+            $this->resolveAdmissionNumber($params)
+        );
+        if ($admno === '' || !ctype_digit($admno)) {
+            return [
+                'success' => false,
+                'status'  => 0,
+                'error'   => 'Numeric admno is required for getStudQual4Placement.',
+            ];
+        }
+
+        $refParams = [];
+        if ($this->refHost !== '' && $this->refHost !== 'localhost') {
+            $refParams['refurl'] = $this->refHost;
+        }
+
+        $lastResponse = [
+            'success' => true,
+            'status'  => 200,
+            'raw'     => '',
+            'note'    => 'Upstream returned empty payload',
+        ];
+
+        // AES crashes (HTTP 500) when method is in the POST body — use ?method= only.
+        foreach ([['admno' => $admno], ['stud_admno' => $admno]] as $qualParams) {
+            $response = $this->callAESApiWithMethodInQuery(
+                'getStudQual4Placement',
+                array_merge($qualParams, $refParams)
+            );
+            $lastResponse = $response;
+            if ($this->extractQualificationRawRecord($response) !== []) {
+                return $response;
+            }
+        }
+
+        return $lastResponse;
     }
 
     /**
@@ -151,17 +289,39 @@ final class AesApiService
      */
     public function resolveAdmissionNumber(array $params, string $registerNumber = ''): string
     {
-        return strtoupper(trim($registerNumber !== ''
-            ? $registerNumber
-            : (string) (
-                $params['admno']
-                ?? $params['registerNumber']
-                ?? $params['admission_no']
-                ?? $params['un']
-                ?? $params['username']
-                ?? $params['studno']
-                ?? ''
-            )));
+        if ($registerNumber !== '') {
+            return trim($registerNumber);
+        }
+
+        return trim((string) (
+            $params['admno']
+            ?? $params['stud_admno']
+            ?? $params['registerNumber']
+            ?? $params['admission_no']
+            ?? $params['un']
+            ?? $params['username']
+            ?? $params['studno']
+            ?? ''
+        ));
+    }
+
+    /**
+     * Prefer numeric AES stud_admno for qualification lookups.
+     *
+     * @param array<string, mixed> $placement
+     */
+    public function resolveQualificationAdmissionNumber(array $placement, string $fallback = ''): string
+    {
+        foreach (['stud_admno', 'admno', 'registerNumber', 'admission_no'] as $key) {
+            $value = trim((string) ($placement[$key] ?? ''));
+            if ($value !== '' && ctype_digit($value)) {
+                return $value;
+            }
+        }
+
+        $resolved = $this->resolveAdmissionNumber($placement, $fallback);
+
+        return ctype_digit($resolved) ? $resolved : trim($fallback);
     }
 
     /**
@@ -406,17 +566,9 @@ final class AesApiService
         }
 
         if ($this->placementProfileNeedsQualificationEnrichment($record)) {
-            $admno = $this->resolveAdmissionNumber($params, (string) ($request['admno'] ?? ''));
-            if ($admno === '') {
-                $admno = strtoupper(trim((string) (
-                    $record['stud_admno']
-                    ?? $record['admno']
-                    ?? $record['registerNumber']
-                    ?? ''
-                )));
-            }
+            $admno = $this->resolveQualificationAdmissionNumber($record, $this->resolveAdmissionNumber($params, (string) ($request['admno'] ?? '')));
             if ($admno !== '') {
-                $qual = $this->fetchStudentQualificationProfile(['admno' => $admno]);
+                $qual = $this->fetchStudentQualificationProfile(['admno' => $admno, 'stud_admno' => $admno]);
                 if ($qual !== []) {
                     $record = $this->mergeQualificationIntoPlacement($record, $qual);
                 }
@@ -434,13 +586,13 @@ final class AesApiService
      */
     public function fetchStudentQualificationProfile(array $params): array
     {
-        $admno = $this->resolveAdmissionNumber($params);
-        if ($admno === '') {
+        $admno = $this->resolveQualificationAdmissionNumber($params, $this->resolveAdmissionNumber($params));
+        if ($admno === '' || !ctype_digit($admno)) {
             return [];
         }
 
         $raw = $this->extractQualificationRawRecord(
-            $this->postStudQual4Placement(['admno' => $admno], $admno)
+            $this->postStudQual4Placement(['admno' => $admno, 'stud_admno' => $admno], $admno)
         );
 
         return $this->normalizeQualificationRecord($raw);
@@ -1055,12 +1207,18 @@ final class AesApiService
         }
 
         $payload = $result['data'] ?? null;
+        if ($payload === null && isset($result['raw']) && is_string($result['raw']) && trim($result['raw']) !== '') {
+            $decoded = json_decode($result['raw'], true);
+            if (is_array($decoded)) {
+                $payload = $decoded;
+            }
+        }
         if (!is_array($payload)) {
             return [];
         }
 
         if (array_is_list($payload) && isset($payload[0]) && is_array($payload[0])) {
-            return $payload[0];
+            return ['edu' => $payload];
         }
 
         if (($payload['status'] ?? true) === false || ($payload['status'] ?? null) === 'false') {
@@ -1074,12 +1232,20 @@ final class AesApiService
             ?? $payload['qualification']
             ?? null;
         if (is_array($record) && $record !== []) {
+            if (array_is_list($record) && isset($record[0]) && is_array($record[0])) {
+                return ['edu' => $record];
+            }
+
             return $record;
+        }
+
+        if (isset($payload['data']) && is_array($payload['data']) && array_is_list($payload['data'])) {
+            return ['edu' => $payload['data']];
         }
 
         $qualKeys = [
             'cgpa', 'edu', 'qualifications', 'marks10th', 'marks12th', 'sslc', 'hsc', 'sslc_marks', 'hsc_marks',
-            'mark10th', 'mark12th', 'stud_sslc', 'stud_hsc', 'backlog', 'backlogs',
+            'mark10th', 'mark12th', 'stud_sslc', 'stud_hsc', 'backlog', 'backlogs', 'ugMarks', 'ug_marks',
         ];
         foreach ($qualKeys as $key) {
             if (array_key_exists($key, $payload)) {
