@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.06.30 — fast sidebar paint before profile enrich */
-const APP_SHELL_VERSION = '2026.06.30';
+/* PlaceHub shell v2026.06.23 — paint sidebar before /auth/me + profile enrichment */
+const APP_SHELL_VERSION = '2026.06.23';
 
 const NAV = [
   { section: "Overview", roles: ROLES },
@@ -188,20 +188,6 @@ function hydrateShellAvatars() {
     el.style.backgroundSize = 'cover';
     el.style.backgroundPosition = 'center';
   });
-}
-
-/** Paint sidebar/topbar immediately from cached session (no network). */
-function paintShellEarly(active) {
-  const role = Auth.role() || localStorage.getItem('ph-role') || '';
-  if (!role) return false;
-  if (!Auth.user()?.role) {
-    Auth.set({ ...demoUserFor(role), role }, Auth.token() || 'session');
-  }
-  document.documentElement.setAttribute('data-theme', UserPrefs.theme());
-  document.documentElement.setAttribute('data-density', UserPrefs.density());
-  renderShell(active);
-  applyRoleVisibility();
-  return true;
 }
 
 function navItemHidden(n) {
@@ -569,11 +555,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  paintShellEarly(active);
+  const paintShell = () => {
+    renderShell(active);
+    applyRoleVisibility();
+  };
+
+  // Paint nav immediately from cached session so the sidebar is not blank during API calls.
+  if (Auth.role() || Auth.user()) {
+    paintShell();
+  }
 
   let hasSession = await Auth.bootstrap();
   if (!hasSession) {
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 120));
     hasSession = await Auth.bootstrap();
   }
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
@@ -592,22 +586,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (!enforcePageRole(active)) return;
-  renderShell(active);
-  applyRoleVisibility();
+  paintShell();
+
+  if (Auth.hasRealAuth()) {
+    Auth.enrichFromProfile()
+      .then(() => {
+        const page = document.body?.dataset?.page;
+        if (page) renderShell(page);
+      })
+      .catch(() => {});
+  }
+
   animateCounters();
   NotificationInbox.refreshBadge?.();
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();
-
-  if (Auth.hasRealAuth()) {
-    Auth.enrichFromProfile().then(() => {
-      renderShell(active);
-      hydrateShellAvatars();
-      NotificationInbox.refreshBadge?.();
-    });
-  } else {
-    hydrateShellAvatars();
-  }
 });
 
 /** Shared staff / alumni referral modals — open from any page */
