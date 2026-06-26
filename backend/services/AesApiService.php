@@ -133,9 +133,7 @@ final class AesApiService
      */
     public function buildStudentRequestParams(array $params, string $registerNumber = ''): array
     {
-        $register = strtoupper(trim($registerNumber !== ''
-            ? $registerNumber
-            : (string) ($params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
+        $register = $this->resolveAdmissionNumber($params, $registerNumber);
 
         $merged = array_merge([
             'admno'          => $register,
@@ -146,6 +144,24 @@ final class AesApiService
         ], $params);
 
         return $this->stringifyParams($merged);
+    }
+
+    /**
+     * @param array<string, scalar|null> $params
+     */
+    public function resolveAdmissionNumber(array $params, string $registerNumber = ''): string
+    {
+        return strtoupper(trim($registerNumber !== ''
+            ? $registerNumber
+            : (string) (
+                $params['admno']
+                ?? $params['registerNumber']
+                ?? $params['admission_no']
+                ?? $params['un']
+                ?? $params['username']
+                ?? $params['studno']
+                ?? ''
+            )));
     }
 
     /**
@@ -180,34 +196,23 @@ final class AesApiService
     }
 
     /**
-     * POST getStudQual4Placement with admno-first params (AES expects admno for numeric IDs).
+     * POST getStudQual4Placement — AES expects `admno` only.
      *
      * @param array<string, scalar|null> $params
      * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
      */
     public function postStudQual4Placement(array $params, string $registerNumber = ''): array
     {
-        $register = strtoupper(trim($registerNumber !== ''
-            ? $registerNumber
-            : (string) ($params['admno'] ?? $params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
-
-        if ($register !== '') {
-            foreach ([
-                ['admno' => $register],
-                ['un' => $register],
-                ['username' => $register],
-                ['admission_no' => $register],
-                ['registerNumber' => $register],
-                ['studno' => $register],
-            ] as $attempt) {
-                $response = $this->getStudQual4Placement($attempt);
-                if ($this->extractQualificationRawRecord($response) !== []) {
-                    return $response;
-                }
-            }
+        $admno = $this->resolveAdmissionNumber($params, $registerNumber);
+        if ($admno === '') {
+            return [
+                'success' => false,
+                'status'  => 0,
+                'error'   => 'admno is required for getStudQual4Placement.',
+            ];
         }
 
-        return $this->getStudQual4Placement($this->buildStudentRequestParams($params, $register));
+        return $this->getStudQual4Placement(['admno' => $admno]);
     }
 
     /**
@@ -401,9 +406,20 @@ final class AesApiService
         }
 
         if ($this->placementProfileNeedsQualificationEnrichment($record)) {
-            $qual = $this->fetchStudentQualificationProfile($params);
-            if ($qual !== []) {
-                $record = $this->mergeQualificationIntoPlacement($record, $qual);
+            $admno = $this->resolveAdmissionNumber($params, (string) ($request['admno'] ?? ''));
+            if ($admno === '') {
+                $admno = strtoupper(trim((string) (
+                    $record['stud_admno']
+                    ?? $record['admno']
+                    ?? $record['registerNumber']
+                    ?? ''
+                )));
+            }
+            if ($admno !== '') {
+                $qual = $this->fetchStudentQualificationProfile(['admno' => $admno]);
+                if ($qual !== []) {
+                    $record = $this->mergeQualificationIntoPlacement($record, $qual);
+                }
             }
         }
 
@@ -418,9 +434,13 @@ final class AesApiService
      */
     public function fetchStudentQualificationProfile(array $params): array
     {
-        $request = $this->buildStudentRequestParams($params);
+        $admno = $this->resolveAdmissionNumber($params);
+        if ($admno === '') {
+            return [];
+        }
+
         $raw = $this->extractQualificationRawRecord(
-            $this->postStudQual4Placement($params, (string) ($request['admno'] ?? ''))
+            $this->postStudQual4Placement(['admno' => $admno], $admno)
         );
 
         return $this->normalizeQualificationRecord($raw);
