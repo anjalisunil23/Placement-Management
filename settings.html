@@ -740,11 +740,59 @@ function formatQualMark(val) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-function renderProfileQualifications(quals) {
+function buildQualificationRowsFromProfile(u) {
+  const merged = mergeProfileUser(u);
+  const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
+  const existing = merged.qualifications ?? academic.qualifications ?? [];
+  if (Array.isArray(existing) && existing.length) return existing;
+
+  const rows = [];
+  const regNo = String(merged.registerNumber || merged.registerno || merged.admno || '').trim();
+  const course = String(merged.stud_course || merged.stud_cource_short || merged.branch || merged.programme || merged.departmentName || '').trim();
+  const classBatch = String(merged.stud_class || merged.classBatch || '').trim();
+  const institution = String(merged.stud_branch || merged.departmentName || '').trim();
+  const m10 = pickSchoolMark(merged, '10');
+  const m12 = pickSchoolMark(merged, '12');
+  const cgpa = pickCgpa(merged) || (academic.cgpa > 0 ? academic.cgpa : '');
+
+  if (m10) {
+    rows.push({ qualification: 'SSLC / 10th', institution: '', registerNumber: regNo, monthYear: '', mark: null, maxMark: null, percentage: m10 });
+  }
+  if (m12) {
+    rows.push({ qualification: 'HSC / 12th', institution: '', registerNumber: regNo, monthYear: '', mark: null, maxMark: null, percentage: m12 });
+  }
+  if (cgpa) {
+    rows.push({
+      qualification: 'Current CGPA' + (course ? ` (${course})` : ''),
+      institution: institution || course,
+      registerNumber: regNo,
+      monthYear: classBatch,
+      mark: Number(cgpa),
+      maxMark: 10,
+      percentage: null,
+    });
+  } else if (course || classBatch) {
+    rows.push({
+      qualification: course || 'Programme',
+      institution,
+      registerNumber: regNo,
+      monthYear: classBatch,
+      mark: null,
+      maxMark: null,
+      percentage: null,
+    });
+  }
+  return rows;
+}
+
+function renderProfileQualifications(quals, profileCtx = null) {
   const body = document.getElementById('profQualificationsBody');
   const wrap = document.getElementById('profQualificationsWrap');
   if (!body || !wrap) return;
-  const rows = Array.isArray(quals) ? quals : [];
+  let rows = Array.isArray(quals) ? quals : [];
+  if (!rows.length && profileCtx) {
+    rows = buildQualificationRowsFromProfile(profileCtx);
+  }
   if (!rows.length) {
     wrap.style.display = 'none';
     body.innerHTML = '';
@@ -862,7 +910,7 @@ async function loadSettingsProfile() {
       setMarkInput('profMarks12', pickSchoolMark(profileCtx, '12') || (ac.marks12th > 0 ? ac.marks12th : ''));
       syncDegreeMarksFieldVisibility(profileCtx);
       setMarkInput('profDegreeMarks', pickDegreeMark(profileCtx) || (ac.ugMarks > 0 ? ac.ugMarks : ac.mcaMarks > 0 ? ac.mcaMarks : ''));
-      renderProfileQualifications(p.qualifications || ac.qualifications || []);
+      renderProfileQualifications(p.qualifications || ac.qualifications || [], profileCtx);
       const apiPhoto = pickPhotoUrl(profileCtx) || p.photoUrl || p.photo?.url || '';
       if (apiPhoto) setAvatarPhoto(apiPhoto);
       else setAvatarInitials();

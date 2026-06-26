@@ -43,6 +43,9 @@ final class AesApiService
         if ($this->authKey !== '' && !isset($postData['authkey'])) {
             $postData['authkey'] = $this->authKey;
         }
+        if ($this->refHost !== '' && $this->refHost !== 'localhost' && !isset($postData['refurl'])) {
+            $postData['refurl'] = $this->refHost;
+        }
 
         $ch = curl_init();
         if ($ch === false) {
@@ -332,23 +335,31 @@ final class AesApiService
      */
     public function postStudInfo4Placement(array $params, string $registerNumber = ''): array
     {
-        $register = strtoupper(trim($registerNumber !== ''
+        $register = trim($registerNumber !== ''
             ? $registerNumber
-            : (string) ($params['admno'] ?? $params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? '')));
+            : (string) ($params['admno'] ?? $params['stud_admno'] ?? $params['registerNumber'] ?? $params['admission_no'] ?? $params['un'] ?? $params['username'] ?? ''));
 
+        $numericAdmno = $this->resolveQualificationAdmissionNumber($params, $register);
+        $attemptKeys = [];
+        if ($numericAdmno !== '' && ctype_digit($numericAdmno)) {
+            $attemptKeys[] = ['admno' => $numericAdmno];
+            $attemptKeys[] = ['stud_admno' => $numericAdmno];
+        }
         if ($register !== '') {
-            foreach ([
-                ['admno' => $register],
-                ['un' => $register],
-                ['username' => $register],
-                ['admission_no' => $register],
-                ['registerNumber' => $register],
-                ['studno' => $register],
-            ] as $attempt) {
-                $response = $this->getStudInfo4Placement($attempt);
-                if ($this->extractRecord($response) !== []) {
-                    return $response;
-                }
+            $registerUpper = strtoupper($register);
+            $attemptKeys[] = ['admno' => $registerUpper];
+            $attemptKeys[] = ['admno' => $register];
+            $attemptKeys[] = ['un' => $registerUpper];
+            $attemptKeys[] = ['username' => $registerUpper];
+            $attemptKeys[] = ['admission_no' => $registerUpper];
+            $attemptKeys[] = ['registerNumber' => $registerUpper];
+            $attemptKeys[] = ['studno' => $registerUpper];
+        }
+
+        foreach ($attemptKeys as $attempt) {
+            $response = $this->getStudInfo4Placement($attempt);
+            if ($this->extractRecord($response) !== []) {
+                return $response;
             }
         }
 
@@ -777,10 +788,13 @@ final class AesApiService
         }
 
         if (!empty($record['stud_admno'])) {
-            $admno = strtoupper(trim((string) $record['stud_admno']));
+            $admno = trim((string) $record['stud_admno']);
             $record['registerNumber'] = $admno;
             $record['admission_no'] = $admno;
             $record['admno'] = $admno;
+        }
+        if (!empty($record['registerno'])) {
+            $record['registerno'] = trim((string) $record['registerno']);
         }
         if (!empty($record['stud_name'])) {
             $record['name'] = trim((string) $record['stud_name']);
@@ -866,11 +880,75 @@ final class AesApiService
         }
 
         $qualifications = $this->parseEducationQualifications($record);
+        if ($qualifications === []) {
+            $qualifications = $this->buildPlacementQualificationRows($record);
+        }
         if ($qualifications !== []) {
             $record['qualifications'] = $qualifications;
         }
 
         return $record;
+    }
+
+    /**
+     * Build read-only qualification table rows from getStudInfo4Placement when `edu` is absent.
+     *
+     * @param array<string, mixed> $record
+     * @return list<array{qualification: string, institution: string, registerNumber: string, monthYear: string, mark: ?float, maxMark: ?float, percentage: ?float}>
+     */
+    public function buildPlacementQualificationRows(array $record): array
+    {
+        $rows = [];
+        $regNo = trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? $record['admission_no'] ?? $record['admno'] ?? ''));
+        $course = trim((string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? $record['branch'] ?? $record['programme'] ?? ''));
+        $classBatch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+        $institution = trim((string) ($record['stud_branch'] ?? $record['departmentName'] ?? $record['deptName'] ?? ''));
+
+        if (isset($record['marks10th']) && is_numeric($record['marks10th']) && (float) $record['marks10th'] > 0) {
+            $rows[] = [
+                'qualification'  => 'SSLC / 10th',
+                'institution'    => '',
+                'registerNumber' => $regNo,
+                'monthYear'      => '',
+                'mark'           => null,
+                'maxMark'        => null,
+                'percentage'     => (float) $record['marks10th'],
+            ];
+        }
+        if (isset($record['marks12th']) && is_numeric($record['marks12th']) && (float) $record['marks12th'] > 0) {
+            $rows[] = [
+                'qualification'  => 'HSC / 12th',
+                'institution'    => '',
+                'registerNumber' => $regNo,
+                'monthYear'      => '',
+                'mark'           => null,
+                'maxMark'        => null,
+                'percentage'     => (float) $record['marks12th'],
+            ];
+        }
+        if (isset($record['cgpa']) && is_numeric($record['cgpa']) && (float) $record['cgpa'] > 0) {
+            $rows[] = [
+                'qualification'  => 'Current CGPA' . ($course !== '' ? " ({$course})" : ''),
+                'institution'    => $institution !== '' ? $institution : $course,
+                'registerNumber' => $regNo,
+                'monthYear'      => $classBatch,
+                'mark'           => (float) $record['cgpa'],
+                'maxMark'        => 10.0,
+                'percentage'     => null,
+            ];
+        } elseif ($course !== '' || $classBatch !== '') {
+            $rows[] = [
+                'qualification'  => $course !== '' ? $course : 'Programme',
+                'institution'    => $institution,
+                'registerNumber' => $regNo,
+                'monthYear'      => $classBatch,
+                'mark'           => null,
+                'maxMark'        => null,
+                'percentage'     => null,
+            ];
+        }
+
+        return $rows;
     }
 
     /**

@@ -510,6 +510,9 @@ final class OfficerDataService
         }
 
         $quals = (new AesApiService())->parseEducationQualifications($placement);
+        if ($quals === []) {
+            $quals = (new AesApiService())->buildPlacementQualificationRows($placement);
+        }
         if ($quals === [] && !empty($mapped['qualifications']) && is_array($mapped['qualifications'])) {
             $quals = $mapped['qualifications'];
         }

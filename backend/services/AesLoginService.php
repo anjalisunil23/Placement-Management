@@ -828,6 +828,9 @@ final class AesLoginService
         $quals = !empty($mapped['qualifications']) && is_array($mapped['qualifications'])
             ? $mapped['qualifications']
             : (new AesApiService())->parseEducationQualifications($placement);
+        if ($quals === []) {
+            $quals = (new AesApiService())->buildPlacementQualificationRows($placement);
+        }
         if ($quals !== []) {
             $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
             $existingQ = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
@@ -1408,6 +1411,9 @@ final class AesLoginService
         $quals = !empty($aesDetails['qualifications']) && is_array($aesDetails['qualifications'])
             ? $aesDetails['qualifications']
             : $aesApi->parseEducationQualifications($aesDetails);
+        if ($quals === []) {
+            $quals = $aesApi->buildPlacementQualificationRows($aesDetails);
+        }
         if ($quals !== []) {
             $mapped['qualifications'] = $quals;
             foreach ($quals as $q) {
