@@ -234,6 +234,15 @@ final class StudentController
         $out['photo'] = ['url' => (string) $merged['photoUrl'], 'source' => 'aes'];
       }
     }
+    $qualifications = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+    if (!empty($merged['qualifications']) && is_array($merged['qualifications'])) {
+      $qualifications = $merged['qualifications'];
+    }
+    if ($qualifications !== []) {
+      $academic['qualifications'] = $qualifications;
+      $out['academic'] = $academic;
+      $out['qualifications'] = $qualifications;
+    }
     if (!empty($out['selfPlacement']) && is_array($out['selfPlacement'])) {
       unset($out['selfPlacement']['offerLetterPath']);
     }

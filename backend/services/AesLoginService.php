@@ -801,6 +801,18 @@ final class AesLoginService
             $patch['academic'] = $academic;
         }
 
+        $quals = !empty($mapped['qualifications']) && is_array($mapped['qualifications'])
+            ? $mapped['qualifications']
+            : (new AesApiService())->parseEducationQualifications($placement);
+        if ($quals !== []) {
+            $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
+            $existingQ = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+            if (json_encode($existingQ) !== json_encode($quals)) {
+                $academic['qualifications'] = $quals;
+                $patch['academic'] = $academic;
+            }
+        }
+
         $classBatch = trim((string) ($placement['classBatch'] ?? $mapped['classBatch'] ?? ''));
         if ($classBatch !== '' && trim((string) ($profile['classBatch'] ?? '')) !== $classBatch) {
             $patch['classBatch'] = $classBatch;
@@ -1356,6 +1368,30 @@ final class AesLoginService
             $mapped['marks12th'] = (float) $scan['marks12th'];
         }
 
+        $aesApi = new AesApiService();
+        $quals = !empty($aesDetails['qualifications']) && is_array($aesDetails['qualifications'])
+            ? $aesDetails['qualifications']
+            : $aesApi->parseEducationQualifications($aesDetails);
+        if ($quals !== []) {
+            $mapped['qualifications'] = $quals;
+            foreach ($quals as $q) {
+                if (!is_array($q)) {
+                    continue;
+                }
+                $pct = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
+                if ($pct === null || $pct <= 0) {
+                    continue;
+                }
+                $label = strtoupper((string) ($q['qualification'] ?? ''));
+                if (empty($mapped['marks10th']) && preg_match('/\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|SECONDARY)\b/', $label)) {
+                    $mapped['marks10th'] = $pct;
+                }
+                if (empty($mapped['marks12th']) && preg_match('/\b(HSC|12TH|12\s*STD|PLUS\s*TWO|PLUS2|PUC|CLASS\s*XII|HIGHER\s*SECONDARY)\b/', $label)) {
+                    $mapped['marks12th'] = $pct;
+                }
+            }
+        }
+
         $photoUrl = trim($this->pickInsensitive($aesDetails, [
             'stud_photo', 'photoUrl', 'photo_url', 'profile_photo', 'profilePhoto', 'student_photo', 'studentPhoto',
             'staff_photo', 'staffPhoto', 'emp_photo', 'empPhoto', 'employee_photo', 'employeePhoto',
@@ -1562,6 +1598,9 @@ final class AesLoginService
         }
         if (isset($academicPatch['marks12th']) && (float) ($academic['ugMarks'] ?? 0) <= 0) {
             $academicPatch['ugMarks'] = (float) $academicPatch['marks12th'];
+        }
+        if (!empty($extras['qualifications']) && is_array($extras['qualifications'])) {
+            $academicPatch['qualifications'] = $extras['qualifications'];
         }
         if ($academicPatch !== []) {
             $patch['academic'] = array_merge($academic, $academicPatch);

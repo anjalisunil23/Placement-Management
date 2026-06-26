@@ -71,6 +71,15 @@
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="spResume">—</span></div>
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement chances</span><span class="fw-medium" id="spChances">—</span></div>
             </div>
+            <div id="spQualificationsWrap" class="mt-3" style="display:none">
+              <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
+              <div class="table-wrap">
+                <table class="table-modern table-sm mb-0">
+                  <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
+                  <tbody id="spQualificationsBody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
           <div class="alert alert-warning d-none mb-3" id="verifyPlacementBanner" data-roles="admin,placement_officer"></div>
           <div class="row g-3" id="overviewStatsRow">
@@ -630,7 +639,37 @@ function buildDisplayProfile(listRow, api) {
     placementStatus: api.placementStatus ?? listRow?.placementStatus,
     selfPlacement: api.selfPlacement ?? listRow?.selfPlacement,
     photoProxyUrl: api.photoProxyUrl || listRow?.photoProxyUrl,
+    qualifications: api.qualifications ?? listRow?.qualifications ?? [],
   };
+}
+
+function formatQualMark(val) {
+  if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
+  const n = Number(val);
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+function renderQualificationsTable(quals, bodyId, wrapId) {
+  const body = document.getElementById(bodyId);
+  const wrap = document.getElementById(wrapId);
+  if (!body || !wrap) return;
+  const rows = Array.isArray(quals) ? quals : [];
+  if (!rows.length) {
+    wrap.style.display = 'none';
+    body.innerHTML = '';
+    return;
+  }
+  wrap.style.display = '';
+  body.innerHTML = rows.map(q => {
+    const qual = esc(q.qualification || '—');
+    const inst = esc(q.institution || q.instname || '—');
+    const reg = esc(q.registerNumber || q.regno || '—');
+    const my = esc(q.monthYear || q.monthyear || '—');
+    const mark = esc(formatQualMark(q.mark));
+    const max = esc(formatQualMark(q.maxMark ?? q.maxmark));
+    const pct = q.percentage != null && Number(q.percentage) > 0 ? esc(`${Number(q.percentage)}%`) : '—';
+    return `<tr><td>${qual}</td><td>${inst}</td><td>${reg}</td><td>${my}</td><td>${mark}</td><td>${max}</td><td>${pct}</td></tr>`;
+  }).join('');
 }
 
 function clearProfilePanelFields(placeholder = '—') {
@@ -641,6 +680,7 @@ function clearProfilePanelFields(placeholder = '—') {
     if (el) el.textContent = val;
   };
   ['spRegNo', 'spDept', 'spBatch', 'spCollegeEmail', 'spPersonalEmail', 'spPhone', 'spMarks10', 'spMarks12', 'spCgpa', 'spBacklogs', 'spResume', 'spChances'].forEach(id => set(id, placeholder));
+  renderQualificationsTable([], 'spQualificationsBody', 'spQualificationsWrap');
 }
 
 async function fetchStudentProfileFromApi(studentId, registerNumber = '') {
@@ -682,6 +722,7 @@ function renderStudentProfilePanel(s) {
   const used = s.chancesUsed ?? 0;
   const max = s.chancesMax ?? 0;
   set('spChances', max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—'));
+  renderQualificationsTable(s.qualifications, 'spQualificationsBody', 'spQualificationsWrap');
 }
 
 function overviewStatusBadge(status) {

@@ -328,6 +328,15 @@ final class OfficerDataService
             ? (int) $mapped['backlogs']
             : (int) ($academic['backlogs'] ?? 0);
 
+        $qualifications = [];
+        if (!empty($mapped['qualifications']) && is_array($mapped['qualifications'])) {
+            $qualifications = $mapped['qualifications'];
+        } elseif (is_array($academic['qualifications'] ?? null) && ($academic['qualifications'] ?? []) !== []) {
+            $qualifications = $academic['qualifications'];
+        } elseif ($placement !== []) {
+            $qualifications = (new AesApiService())->parseEducationQualifications($placement);
+        }
+
         $aesDeptName = trim((string) (
             $mapped['departmentName']
             ?? $mapped['branch']
@@ -393,6 +402,7 @@ final class OfficerDataService
             'resumeStatus'    => $resumeStatus,
             'chancesUsed'     => (int) ($chances['used'] ?? 0),
             'chancesMax'      => (int) (($chances['used'] ?? 0) + ($chances['remaining'] ?? 0)),
+            'qualifications'  => $qualifications !== [] ? $qualifications : null,
         ];
 
         return $this->mergeAesPlacementIntoOverview($student, $user, $overview);
@@ -497,6 +507,14 @@ final class OfficerDataService
             $overview['department'] = $deptCode;
         } elseif ($deptName !== '') {
             $overview['department'] = $deptName;
+        }
+
+        $quals = (new AesApiService())->parseEducationQualifications($placement);
+        if ($quals === [] && !empty($mapped['qualifications']) && is_array($mapped['qualifications'])) {
+            $quals = $mapped['qualifications'];
+        }
+        if ($quals !== []) {
+            $overview['qualifications'] = $quals;
         }
 
         return $overview;

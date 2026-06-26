@@ -501,7 +501,81 @@ final class AesApiService
             }
         }
 
+        $qualifications = $this->parseEducationQualifications($record);
+        if ($qualifications !== []) {
+            $record['qualifications'] = $qualifications;
+        }
+
         return $record;
+    }
+
+    /**
+     * Normalize AES getStudInfo4Placement `edu` rows.
+     *
+     * @param array<string, mixed> $record
+     * @return list<array{qualification: string, institution: string, registerNumber: string, monthYear: string, mark: ?float, maxMark: ?float, percentage: ?float}>
+     */
+    public function parseEducationQualifications(array $record): array
+    {
+        $edu = $record['edu'] ?? null;
+        if (!is_array($edu) || $edu === []) {
+            return [];
+        }
+
+        $rows = array_is_list($edu) ? $edu : array_values($edu);
+        $out = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $qualification = trim((string) ($row['qualification'] ?? $row['qual'] ?? $row['degree'] ?? ''));
+            $institution = trim((string) ($row['instname'] ?? $row['inst_name'] ?? $row['institution'] ?? ''));
+            $registerNumber = trim((string) ($row['regno'] ?? $row['reg_no'] ?? $row['registerNumber'] ?? ''));
+            $monthYear = trim((string) ($row['monthyear'] ?? $row['month_year'] ?? $row['passedYear'] ?? ''));
+
+            $mark = null;
+            if (isset($row['mark']) && $row['mark'] !== '' && is_numeric($row['mark'])) {
+                $mark = (float) $row['mark'];
+            }
+            $maxMark = null;
+            if (isset($row['maxmark']) && $row['maxmark'] !== '' && is_numeric($row['maxmark'])) {
+                $maxMark = (float) $row['maxmark'];
+            } elseif (isset($row['max_mark']) && $row['max_mark'] !== '' && is_numeric($row['max_mark'])) {
+                $maxMark = (float) $row['max_mark'];
+            }
+
+            $percentage = null;
+            if (isset($row['percentage']) && $row['percentage'] !== '' && is_numeric($row['percentage'])) {
+                $pct = (float) $row['percentage'];
+                if ($pct > 0 && $pct <= 100) {
+                    $percentage = $pct;
+                }
+            }
+            if ($percentage === null && $mark !== null && $maxMark !== null && $maxMark > 0) {
+                $pct = round(($mark / $maxMark) * 100, 2);
+                if ($pct > 0 && $pct <= 100) {
+                    $percentage = $pct;
+                }
+            }
+
+            if ($qualification === '' && $institution === '' && $registerNumber === '' && $monthYear === '' && $mark === null && $percentage === null) {
+                continue;
+            }
+
+            $out[] = [
+                'qualification'  => $qualification,
+                'institution'    => $institution,
+                'registerNumber' => $registerNumber,
+                'monthYear'      => $monthYear,
+                'mark'           => $mark,
+                'maxMark'        => $maxMark,
+                'percentage'     => $percentage,
+            ];
+        }
+
+        return $out;
     }
 
     public function resolvePhotoUrl(string $url): string
