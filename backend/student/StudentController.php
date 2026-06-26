@@ -213,10 +213,14 @@ final class StudentController
     if (!empty($merged['cgpa']) && (float) $merged['cgpa'] > 0) {
       $academic['cgpa'] = (float) $merged['cgpa'];
       $out['academic'] = $academic;
+    } elseif (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0) {
+      $out['academic'] = $academic;
     }
     foreach (['marks10th', 'marks12th'] as $markKey) {
       if (!empty($merged[$markKey]) && (float) $merged[$markKey] > 0) {
         $academic[$markKey] = (float) $merged[$markKey];
+        $out['academic'] = $academic;
+      } elseif (!empty($academic[$markKey]) && (float) $academic[$markKey] > 0) {
         $out['academic'] = $academic;
       }
     }
@@ -242,6 +246,14 @@ final class StudentController
       $academic['qualifications'] = $qualifications;
       $out['academic'] = $academic;
       $out['qualifications'] = $qualifications;
+    }
+    if (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0) {
+      $out['cgpa'] = (float) $academic['cgpa'];
+    }
+    foreach (['marks10th', 'marks12th'] as $markKey) {
+      if (!empty($academic[$markKey]) && (float) $academic[$markKey] > 0) {
+        $out[$markKey] = (float) $academic[$markKey];
+      }
     }
     if (!empty($out['selfPlacement']) && is_array($out['selfPlacement'])) {
       unset($out['selfPlacement']['offerLetterPath']);

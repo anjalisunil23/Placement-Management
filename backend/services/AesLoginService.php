@@ -720,6 +720,24 @@ final class AesLoginService
                 $patch = $this->buildPlacementExtrasPatch($profile, $placement, $mapped, $register);
                 if ($patch !== []) {
                     (new StudentModel())->update((string) $profile['_id'], $patch);
+                    $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
+                }
+            }
+
+            try {
+                $qual = (new AesApiService())->fetchStudentQualificationProfile(['admno' => $register]);
+            } catch (\Throwable) {
+                $qual = [];
+            }
+            if ($qual !== []) {
+                $qualMapped = $this->mapAesDetailsToUserFields($qual);
+                $qualPatch = $this->buildPlacementExtrasPatch($profile, $qual, $qualMapped, $register);
+                if ($qualPatch !== []) {
+                    (new StudentModel())->update((string) $profile['_id'], $qualPatch);
+                }
+                if ($placement === []) {
+                    $placement = $qual;
+                    $mapped = $qualMapped;
                 }
             }
         }
