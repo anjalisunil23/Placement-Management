@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.06.22 — hide Departments from admin sidebar */
-const APP_SHELL_VERSION = '2026.06.22';
+/* PlaceHub shell v2026.06.30 — fast sidebar paint before profile enrich */
+const APP_SHELL_VERSION = '2026.06.30';
 
 const NAV = [
   { section: "Overview", roles: ROLES },
@@ -188,6 +188,20 @@ function hydrateShellAvatars() {
     el.style.backgroundSize = 'cover';
     el.style.backgroundPosition = 'center';
   });
+}
+
+/** Paint sidebar/topbar immediately from cached session (no network). */
+function paintShellEarly(active) {
+  const role = Auth.role() || localStorage.getItem('ph-role') || '';
+  if (!role) return false;
+  if (!Auth.user()?.role) {
+    Auth.set({ ...demoUserFor(role), role }, Auth.token() || 'session');
+  }
+  document.documentElement.setAttribute('data-theme', UserPrefs.theme());
+  document.documentElement.setAttribute('data-density', UserPrefs.density());
+  renderShell(active);
+  applyRoleVisibility();
+  return true;
 }
 
 function navItemHidden(n) {
@@ -555,6 +569,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  paintShellEarly(active);
+
   let hasSession = await Auth.bootstrap();
   if (!hasSession) {
     await new Promise((r) => setTimeout(r, 250));
@@ -576,15 +592,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (!enforcePageRole(active)) return;
-  if (Auth.hasRealAuth()) {
-    await Auth.enrichFromProfile();
-  }
   renderShell(active);
   applyRoleVisibility();
   animateCounters();
   NotificationInbox.refreshBadge?.();
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();
+
+  if (Auth.hasRealAuth()) {
+    Auth.enrichFromProfile().then(() => {
+      renderShell(active);
+      hydrateShellAvatars();
+      NotificationInbox.refreshBadge?.();
+    });
+  } else {
+    hydrateShellAvatars();
+  }
 });
 
 /** Shared staff / alumni referral modals — open from any page */
