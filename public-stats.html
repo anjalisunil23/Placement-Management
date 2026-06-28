@@ -311,5 +311,19 @@ async function renderPublicPage() {
 renderPublicPage();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script type="module" src="https://login.aesajce.in/aes-login.js?api=17f7e7bf8d3ecf54364107279801e88ee6509a09"></script>
+<script id="aesLoginScript" src="/aes-login-proxy.php?v=20260628a"></script>
+<script>
+(function loadAesLoginFallback() {
+  var proxy = document.getElementById('aesLoginScript');
+  if (!proxy) return;
+  function mountDirectScript() {
+    if (document.querySelector('script[data-aes-login-fallback]')) return;
+    var s = document.createElement('script');
+    s.src = 'https://login.aesajce.in/aes-login.js?api=17f7e7bf8d3ecf54364107279801e88ee6509a09';
+    s.setAttribute('data-aes-login-fallback', '1');
+    document.body.appendChild(s);
+  }
+  proxy.addEventListener('error', mountDirectScript);
+})();
+</script>
 </body></html>

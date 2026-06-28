@@ -23,6 +23,9 @@ RewriteRule ^logo\.php$ logo.php [L,QSA]
 # Hero background endpoint
 RewriteRule ^hero-bg\.php$ hero-bg.php [L,QSA]
 
+# AES login widget (same-origin proxy — avoids cross-origin CORS on aes-login.js)
+RewriteRule ^aes-login-proxy\.php$ aes-login-proxy.php [L,QSA]
+
 # Root → public landing page
 RewriteRule ^$ public-stats.html [L]
 
