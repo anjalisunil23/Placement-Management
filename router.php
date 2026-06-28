@@ -51,11 +51,6 @@ if ($uri === '/hero-bg.php') {
     return true;
 }
 
-if ($uri === '/aes-login-proxy.php') {
-    require __DIR__ . '/aes-login-proxy.php';
-    return true;
-}
-
 // Home → landing page
 if ($uri === '/' || $uri === '/index' || $uri === '/index.html') {
     header('Location: /public-stats.html');
