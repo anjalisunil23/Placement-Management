@@ -309,32 +309,35 @@ final class OfficerDataService
             $classBatch = trim((string) ($student['classBatch'] ?? ''));
         }
 
-        $cgpa = !empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0
-            ? (float) $mapped['cgpa']
-            : (float) ($academic['cgpa'] ?? 0);
-        $marks10 = !empty($mapped['marks10th']) && (float) $mapped['marks10th'] > 0
-            ? (float) $mapped['marks10th']
-            : (float) ($academic['marks10th'] ?? 0);
-        if ($marks10 <= 0) {
-            $marks10 = (float) ($placement['marks10th'] ?? 0);
+        $cgpa = (float) ($academic['cgpa'] ?? 0);
+        if ($cgpa <= 0 && !empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
+            $cgpa = (float) $mapped['cgpa'];
         }
-        $marks12 = !empty($mapped['marks12th']) && (float) $mapped['marks12th'] > 0
-            ? (float) $mapped['marks12th']
-            : (float) ($academic['marks12th'] ?? $academic['ugMarks'] ?? 0);
-        if ($marks12 <= 0) {
-            $marks12 = (float) ($placement['marks12th'] ?? $placement['ugMarks'] ?? 0);
+        $marks10 = (float) ($academic['marks10th'] ?? 0);
+        if ($marks10 <= 0 && !empty($mapped['marks10th']) && (float) $mapped['marks10th'] > 0) {
+            $marks10 = (float) $mapped['marks10th'];
         }
-        $backlogs = isset($mapped['backlogs'])
-            ? (int) $mapped['backlogs']
-            : (int) ($academic['backlogs'] ?? 0);
+        $marks12 = (float) ($academic['marks12th'] ?? $academic['ugMarks'] ?? 0);
+        if ($marks12 <= 0 && !empty($mapped['marks12th']) && (float) $mapped['marks12th'] > 0) {
+            $marks12 = (float) $mapped['marks12th'];
+        }
+        $backlogs = isset($academic['backlogs'])
+            ? (int) $academic['backlogs']
+            : (isset($mapped['backlogs']) ? (int) $mapped['backlogs'] : 0);
 
-        $qualifications = [];
-        if (!empty($mapped['qualifications']) && is_array($mapped['qualifications'])) {
+        $qualifications = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+        if ($qualifications === [] && !empty($mapped['qualifications']) && is_array($mapped['qualifications'])) {
             $qualifications = $mapped['qualifications'];
-        } elseif (is_array($academic['qualifications'] ?? null) && ($academic['qualifications'] ?? []) !== []) {
-            $qualifications = $academic['qualifications'];
-        } elseif ($placement !== []) {
-            $qualifications = (new AesApiService())->parseEducationQualifications($placement);
+        }
+        if ($qualifications === [] && $register !== '') {
+            $aesApi = new AesApiService();
+            $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, $register);
+            if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
+                $qualifications = $aesApi->fetchStudentQualificationTableRows([
+                    'admno' => $qualAdmno,
+                    'stud_admno' => $qualAdmno,
+                ]);
+            }
         }
 
         $aesDeptName = trim((string) (
@@ -445,15 +448,41 @@ final class OfficerDataService
             $overview['phone'] = $phone;
         }
 
-        if (!empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
-            $overview['cgpa'] = (float) $mapped['cgpa'];
-        }
-        if (!empty($mapped['marks10th']) && (float) $mapped['marks10th'] > 0) {
-            $overview['marks10th'] = (float) $mapped['marks10th'];
-        }
-        if (!empty($mapped['marks12th']) && (float) $mapped['marks12th'] > 0) {
-            $overview['marks12th'] = (float) $mapped['marks12th'];
-            $overview['ugMarks'] = (float) $mapped['marks12th'];
+        $aesApi = new AesApiService();
+        $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, $register);
+        $qual = [];
+        if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
+            try {
+                $qual = $aesApi->fetchStudentQualificationProfile([
+                    'admno' => $qualAdmno,
+                    'stud_admno' => $qualAdmno,
+                ]);
+            } catch (\Throwable) {
+                $qual = [];
+            }
+            if ($qual !== []) {
+                $qualMapped = (new AesLoginService())->mapAesDetailsToUserFields($qual);
+                if (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0) {
+                    $overview['cgpa'] = (float) $qualMapped['cgpa'];
+                }
+                if (!empty($qualMapped['marks10th']) && (float) $qualMapped['marks10th'] > 0) {
+                    $overview['marks10th'] = (float) $qualMapped['marks10th'];
+                }
+                if (!empty($qualMapped['marks12th']) && (float) $qualMapped['marks12th'] > 0) {
+                    $overview['marks12th'] = (float) $qualMapped['marks12th'];
+                    $overview['ugMarks'] = (float) $qualMapped['marks12th'];
+                }
+                $quals = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
+                if ($quals === []) {
+                    $quals = $aesApi->fetchStudentQualificationTableRows([
+                        'admno' => $qualAdmno,
+                        'stud_admno' => $qualAdmno,
+                    ]);
+                }
+                if ($quals !== []) {
+                    $overview['qualifications'] = $quals;
+                }
+            }
         }
         if (isset($mapped['backlogs'])) {
             $overview['backlogs'] = (int) $mapped['backlogs'];
@@ -507,16 +536,6 @@ final class OfficerDataService
             $overview['department'] = $deptCode;
         } elseif ($deptName !== '') {
             $overview['department'] = $deptName;
-        }
-
-        $aesApi = new AesApiService();
-        $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, (string) ($mapped['registerNumber'] ?? ''));
-        $quals = $qualAdmno !== '' ? $aesApi->fetchStudentQualificationTableRows(['admno' => $qualAdmno, 'stud_admno' => $qualAdmno]) : [];
-        if ($quals === [] && !empty($mapped['qualifications']) && is_array($mapped['qualifications'])) {
-            $quals = $mapped['qualifications'];
-        }
-        if ($quals !== []) {
-            $overview['qualifications'] = $quals;
         }
 
         return $overview;
@@ -746,13 +765,13 @@ final class OfficerDataService
         }
 
         $academic = is_array($row['academic'] ?? null) ? $row['academic'] : (is_array($student['academic'] ?? null) ? $student['academic'] : []);
-        if (!empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
+        if ((float) ($academic['cgpa'] ?? 0) <= 0 && !empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
             $academic['cgpa'] = (float) $mapped['cgpa'];
         }
-        if (!empty($mapped['marks10th']) && (float) $mapped['marks10th'] > 0) {
+        if ((float) ($academic['marks10th'] ?? 0) <= 0 && !empty($mapped['marks10th']) && (float) $mapped['marks10th'] > 0) {
             $academic['marks10th'] = (float) $mapped['marks10th'];
         }
-        if (!empty($mapped['marks12th']) && (float) $mapped['marks12th'] > 0) {
+        if ((float) ($academic['marks12th'] ?? 0) <= 0 && !empty($mapped['marks12th']) && (float) $mapped['marks12th'] > 0) {
             $academic['marks12th'] = (float) $mapped['marks12th'];
             $academic['ugMarks'] = (float) $mapped['marks12th'];
         }

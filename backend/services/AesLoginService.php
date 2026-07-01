@@ -424,13 +424,13 @@ final class AesLoginService
 
         if ($aesProfile !== []) {
             foreach ($mapped as $key => $value) {
-                if ($key === 'name') {
+                if ($key === 'name' || in_array($key, ['cgpa', 'marks10th', 'marks12th', 'qualifications'], true)) {
                     continue;
                 }
                 if (!array_key_exists($key, $data) || $data[$key] === '' || $data[$key] === null) {
                     $data[$key] = $value;
                 }
-                if (in_array($key, ['cgpa', 'backlogs', 'marks10th', 'marks12th'], true) && ($data[$key] === 0 || $data[$key] === 0.0)) {
+                if (in_array($key, ['backlogs'], true) && ($data[$key] === 0 || $data[$key] === 0.0)) {
                     $data[$key] = $value;
                 }
             }
@@ -528,16 +528,6 @@ final class AesLoginService
             $data['departmentName'] = $aesDeptName;
         } elseif ($aesDept !== '') {
             $data['departmentName'] = $aesDept;
-        }
-
-        $aesCgpa = $this->pick($aesProfile, [
-            'cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa',
-        ]);
-        if ($aesCgpa === '' && isset($mapped['cgpa'])) {
-            $aesCgpa = (string) $mapped['cgpa'];
-        }
-        if ($aesCgpa !== '' && is_numeric($aesCgpa) && (float) $aesCgpa > 0) {
-            $data['cgpa'] = (float) $aesCgpa;
         }
 
         if (empty($data['department']) && empty($data['departmentName'])) {
@@ -664,7 +654,7 @@ final class AesLoginService
     }
 
     /**
-     * Sync CGPA, backlogs, and profile photo from AES getStudInfo4Placement.
+     * Sync backlogs and profile photo from AES getStudInfo4Placement; CGPA/marks from getStudQual4Placement.
      *
      * @param array<string, mixed> $profile
      */
@@ -679,8 +669,9 @@ final class AesLoginService
             return;
         }
 
+        $api = new AesApiService();
         try {
-            $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+            $placement = $api->fetchStudentPlacementProfile(['admno' => $register]);
         } catch (\Throwable) {
             return;
         }
@@ -690,6 +681,23 @@ final class AesLoginService
 
         $mapped = $this->mapAesDetailsToUserFields($placement);
         $patch = $this->buildPlacementExtrasPatch($profile, $placement, $mapped, $register);
+
+        $qualAdmno = $api->resolveQualificationAdmissionNumber($placement, $register);
+        if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
+            try {
+                $qual = $api->fetchStudentQualificationProfile([
+                    'admno' => $qualAdmno,
+                    'stud_admno' => $qualAdmno,
+                ]);
+            } catch (\Throwable) {
+                $qual = [];
+            }
+            if ($qual !== []) {
+                $qualMapped = $this->mapAesDetailsToUserFields($qual);
+                $qualPatch = $this->buildQualificationExtrasPatch($profile, $qual, $qualMapped);
+                $patch = $this->mergeProfilePatches($patch, $qualPatch);
+            }
+        }
 
         if ($patch !== []) {
             (new StudentModel())->update((string) $profile['_id'], $patch);
@@ -737,17 +745,7 @@ final class AesLoginService
                 }
                 if ($qual !== []) {
                     $qualMapped = $this->mapAesDetailsToUserFields($qual);
-                    $qualPatch = $this->buildPlacementExtrasPatch($profile, $qual, $qualMapped, $register);
-                    $qualRows = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
-                    if ($qualRows !== []) {
-                        $academic = is_array($qualPatch['academic'] ?? null)
-                            ? $qualPatch['academic']
-                            : (is_array($profile['academic'] ?? null) ? $profile['academic'] : []);
-                        if (json_encode($academic['qualifications'] ?? []) !== json_encode($qualRows)) {
-                            $academic['qualifications'] = $qualRows;
-                            $qualPatch['academic'] = $academic;
-                        }
-                    }
+                    $qualPatch = $this->buildQualificationExtrasPatch($profile, $qual, $qualMapped);
                     if ($qualPatch !== []) {
                         (new StudentModel())->update((string) $profile['_id'], $qualPatch);
                         $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
@@ -790,49 +788,12 @@ final class AesLoginService
         $patch = [];
         $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
 
-        if (isset($placement['cgpa']) && (float) $placement['cgpa'] > 0) {
-            $apiCgpa = (float) $placement['cgpa'];
-            if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
-                $academic['cgpa'] = $apiCgpa;
-                $patch['academic'] = $academic;
-            }
-        } elseif (!empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
-            $apiCgpa = (float) $mapped['cgpa'];
-            if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
-                $academic['cgpa'] = $apiCgpa;
-                $patch['academic'] = $academic;
-            }
-        }
-
         if (isset($placement['backlogs']) || isset($placement['backlog'])) {
             $apiBacklogs = (int) ($placement['backlogs'] ?? $placement['backlog'] ?? 0);
-            $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
             if ((int) ($academic['backlogs'] ?? -1) !== $apiBacklogs) {
                 $academic['backlogs'] = $apiBacklogs;
                 $patch['academic'] = $academic;
             }
-        }
-
-        $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
-        foreach (['marks10th', 'marks12th'] as $markKey) {
-            $apiMark = null;
-            if (isset($placement[$markKey]) && is_numeric($placement[$markKey])) {
-                $apiMark = (float) $placement[$markKey];
-            } elseif (!empty($mapped[$markKey]) && is_numeric($mapped[$markKey])) {
-                $apiMark = (float) $mapped[$markKey];
-            }
-            if ($apiMark === null || $apiMark <= 0 || $apiMark > 100) {
-                continue;
-            }
-            if ((float) ($academic[$markKey] ?? 0) !== $apiMark) {
-                $academic[$markKey] = $apiMark;
-                $patch['academic'] = $academic;
-            }
-        }
-        if (isset($patch['academic']['marks12th']) && (float) ($patch['academic']['ugMarks'] ?? $academic['ugMarks'] ?? 0) <= 0) {
-            $academic = $patch['academic'];
-            $academic['ugMarks'] = (float) $academic['marks12th'];
-            $patch['academic'] = $academic;
         }
 
         $classBatch = trim((string) ($placement['classBatch'] ?? $mapped['classBatch'] ?? ''));
@@ -878,6 +839,96 @@ final class AesLoginService
         }
 
         return $patch;
+    }
+
+    /**
+     * Patch CGPA, school marks, and qualifications from getStudQual4Placement only.
+     *
+     * @param array<string, mixed> $profile
+     * @param array<string, mixed> $qual
+     * @param array<string, mixed> $qualMapped
+     * @return array<string, mixed>
+     */
+    private function buildQualificationExtrasPatch(array $profile, array $qual, array $qualMapped): array
+    {
+        $patch = [];
+        $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+
+        if (isset($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
+            $apiCgpa = (float) $qual['cgpa'];
+            if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
+                $academic['cgpa'] = $apiCgpa;
+                $patch['academic'] = $academic;
+            }
+        } elseif (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0) {
+            $apiCgpa = (float) $qualMapped['cgpa'];
+            if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
+                $academic['cgpa'] = $apiCgpa;
+                $patch['academic'] = $academic;
+            }
+        }
+
+        $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
+        foreach (['marks10th', 'marks12th'] as $markKey) {
+            $apiMark = null;
+            if (isset($qual[$markKey]) && is_numeric($qual[$markKey])) {
+                $apiMark = (float) $qual[$markKey];
+            } elseif (!empty($qualMapped[$markKey]) && is_numeric($qualMapped[$markKey])) {
+                $apiMark = (float) $qualMapped[$markKey];
+            }
+            if ($apiMark === null || $apiMark <= 0 || $apiMark > 100) {
+                continue;
+            }
+            if ((float) ($academic[$markKey] ?? 0) !== $apiMark) {
+                $academic[$markKey] = $apiMark;
+                $patch['academic'] = $academic;
+            }
+        }
+        if (isset($patch['academic']['marks12th']) && (float) ($patch['academic']['ugMarks'] ?? $academic['ugMarks'] ?? 0) <= 0) {
+            $academic = $patch['academic'];
+            $academic['ugMarks'] = (float) $academic['marks12th'];
+            $patch['academic'] = $academic;
+        }
+
+        $qualRows = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
+        if ($qualRows !== []) {
+            $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
+            if (json_encode($academic['qualifications'] ?? []) !== json_encode($qualRows)) {
+                $academic['qualifications'] = $qualRows;
+                $patch['academic'] = $academic;
+            }
+        }
+
+        return $patch;
+    }
+
+    /**
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $extra
+     * @return array<string, mixed>
+     */
+    private function mergeProfilePatches(array $base, array $extra): array
+    {
+        if ($base === []) {
+            return $extra;
+        }
+        if ($extra === []) {
+            return $base;
+        }
+
+        foreach ($extra as $key => $value) {
+            if ($key === 'academic' && is_array($value) && is_array($base['academic'] ?? null)) {
+                $base['academic'] = array_merge($base['academic'], $value);
+                continue;
+            }
+            if ($key === 'personal' && is_array($value) && is_array($base['personal'] ?? null)) {
+                $base['personal'] = array_merge($base['personal'], $value);
+                continue;
+            }
+            $base[$key] = $value;
+        }
+
+        return $base;
     }
 
     /**
@@ -952,6 +1003,8 @@ final class AesLoginService
         if ($register === '') {
             return;
         }
+
+        $aesDetails = (new AesApiService())->stripInfoQualificationFields($aesDetails);
 
         $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
         if ($placement === []) {

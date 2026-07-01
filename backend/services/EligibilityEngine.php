@@ -265,22 +265,41 @@ final class EligibilityEngine
             return $student;
         }
 
-        $aesProfile = Security::getSessionAesProfile();
-        if (!is_array($aesProfile) || $aesProfile === []) {
-            return $student;
-        }
-
-        $mapped = (new AesLoginService())->mapAesDetailsToUserFields($aesProfile);
         $patch = [];
 
-        if ($needsCgpa && !empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
-            $academic['cgpa'] = (float) $mapped['cgpa'];
-            $patch['academic'] = $academic;
+        if ($needsCgpa) {
+            $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            if ($register !== '') {
+                $api = new AesApiService();
+                $qualAdmno = $api->resolveQualificationAdmissionNumber([], $register);
+                if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
+                    try {
+                        $qual = $api->fetchStudentQualificationProfile([
+                            'admno' => $qualAdmno,
+                            'stud_admno' => $qualAdmno,
+                        ]);
+                    } catch (\Throwable) {
+                        $qual = [];
+                    }
+                    $qualMapped = (new AesLoginService())->mapAesDetailsToUserFields($qual);
+                    if (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0) {
+                        $academic['cgpa'] = (float) $qualMapped['cgpa'];
+                        $patch['academic'] = $academic;
+                    }
+                }
+            }
         }
-        if ($needsBacklogs && isset($mapped['backlogs'])) {
-            $academic = $patch['academic'] ?? $academic;
-            $academic['backlogs'] = (int) $mapped['backlogs'];
-            $patch['academic'] = $academic;
+
+        if ($needsBacklogs) {
+            $aesProfile = Security::getSessionAesProfile();
+            if (is_array($aesProfile) && $aesProfile !== []) {
+                $mapped = (new AesLoginService())->mapAesDetailsToUserFields($aesProfile);
+                if (isset($mapped['backlogs'])) {
+                    $academic = $patch['academic'] ?? $academic;
+                    $academic['backlogs'] = (int) $mapped['backlogs'];
+                    $patch['academic'] = $academic;
+                }
+            }
         }
 
         if ($patch !== []) {

@@ -555,6 +555,9 @@ final class AesApiService
             $record['deptCode'] = $branchInfo['parentCode'];
         }
 
+        // CGPA, school marks, and edu rows come from getStudQual4Placement only.
+        $record = $this->stripInfoQualificationFields($record);
+
         $admno = $this->resolveQualificationAdmissionNumber($record, $this->resolveAdmissionNumber($params, (string) ($request['admno'] ?? '')));
         if ($admno !== '' && ctype_digit($admno)) {
             $qual = $this->fetchStudentQualificationProfile(['admno' => $admno, 'stud_admno' => $admno]);
@@ -657,9 +660,8 @@ final class AesApiService
         }
 
         foreach (['cgpa', 'marks10th', 'marks12th'] as $key) {
-            $current = isset($placement[$key]) && is_numeric($placement[$key]) ? (float) $placement[$key] : 0.0;
             $incoming = isset($qual[$key]) && is_numeric($qual[$key]) ? (float) $qual[$key] : 0.0;
-            if ($current <= 0 && $incoming > 0) {
+            if ($incoming > 0) {
                 $placement[$key] = $incoming;
             }
         }
@@ -682,6 +684,26 @@ final class AesApiService
         }
 
         return $placement;
+    }
+
+    /**
+     * Remove academic fields that must be sourced from getStudQual4Placement, not getStudInfo4Placement.
+     *
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    public function stripInfoQualificationFields(array $record): array
+    {
+        unset(
+            $record['cgpa'],
+            $record['marks10th'],
+            $record['marks12th'],
+            $record['ugMarks'],
+            $record['qualifications'],
+            $record['edu']
+        );
+
+        return $record;
     }
 
     /**

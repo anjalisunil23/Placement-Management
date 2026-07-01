@@ -80,17 +80,36 @@ final class StudentController
 
     $mapped = $aes->mapAesDetailsToUserFields($sessionAes);
     $createData = ['registerNumber' => $reg];
-    if (!empty($mapped['cgpa'])) {
-      $createData['academic'] = ['cgpa' => (float) $mapped['cgpa']];
-    }
-    $academicCreate = $createData['academic'] ?? [];
-    foreach (['marks10th', 'marks12th'] as $markKey) {
-      if (!empty($mapped[$markKey]) && (float) $mapped[$markKey] > 0) {
-        $academicCreate[$markKey] = (float) $mapped[$markKey];
+    $api = new AesApiService();
+    $qualAdmno = $api->resolveQualificationAdmissionNumber($sessionAes, $reg);
+    $academicCreate = [];
+    if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
+      try {
+        $qual = $api->fetchStudentQualificationProfile([
+          'admno' => $qualAdmno,
+          'stud_admno' => $qualAdmno,
+        ]);
+      } catch (\Throwable) {
+        $qual = [];
       }
-    }
-    if (isset($academicCreate['marks12th']) && !isset($academicCreate['ugMarks'])) {
-      $academicCreate['ugMarks'] = (float) $academicCreate['marks12th'];
+      if ($qual !== []) {
+        $qualMapped = $aes->mapAesDetailsToUserFields($qual);
+        if (!empty($qualMapped['cgpa'])) {
+          $academicCreate['cgpa'] = (float) $qualMapped['cgpa'];
+        }
+        foreach (['marks10th', 'marks12th'] as $markKey) {
+          if (!empty($qualMapped[$markKey]) && (float) $qualMapped[$markKey] > 0) {
+            $academicCreate[$markKey] = (float) $qualMapped[$markKey];
+          }
+        }
+        if (isset($academicCreate['marks12th']) && !isset($academicCreate['ugMarks'])) {
+          $academicCreate['ugMarks'] = (float) $academicCreate['marks12th'];
+        }
+        $qualRows = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
+        if ($qualRows !== []) {
+          $academicCreate['qualifications'] = $qualRows;
+        }
+      }
     }
     if ($academicCreate !== []) {
       $createData['academic'] = $academicCreate;
@@ -210,18 +229,14 @@ final class StudentController
     $out['departmentName'] = $resolvedDept['name'];
     $out['programme'] = $resolvedDept['name'];
     $out['branch'] = $resolvedDept['name'];
-    if (!empty($merged['cgpa']) && (float) $merged['cgpa'] > 0) {
-      $academic['cgpa'] = (float) $merged['cgpa'];
+    if (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0) {
       $out['academic'] = $academic;
-    } elseif (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0) {
-      $out['academic'] = $academic;
+      $out['cgpa'] = (float) $academic['cgpa'];
     }
     foreach (['marks10th', 'marks12th'] as $markKey) {
-      if (!empty($merged[$markKey]) && (float) $merged[$markKey] > 0) {
-        $academic[$markKey] = (float) $merged[$markKey];
+      if (!empty($academic[$markKey]) && (float) $academic[$markKey] > 0) {
         $out['academic'] = $academic;
-      } elseif (!empty($academic[$markKey]) && (float) $academic[$markKey] > 0) {
-        $out['academic'] = $academic;
+        $out[$markKey] = (float) $academic[$markKey];
       }
     }
     if (!empty($academic['marks12th']) && (float) ($academic['ugMarks'] ?? 0) <= 0) {
@@ -239,21 +254,10 @@ final class StudentController
       }
     }
     $qualifications = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
-    if (!empty($merged['qualifications']) && is_array($merged['qualifications'])) {
-      $qualifications = $merged['qualifications'];
-    }
     if ($qualifications !== []) {
       $academic['qualifications'] = $qualifications;
       $out['academic'] = $academic;
       $out['qualifications'] = $qualifications;
-    }
-    if (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0) {
-      $out['cgpa'] = (float) $academic['cgpa'];
-    }
-    foreach (['marks10th', 'marks12th'] as $markKey) {
-      if (!empty($academic[$markKey]) && (float) $academic[$markKey] > 0) {
-        $out[$markKey] = (float) $academic[$markKey];
-      }
     }
     if (!empty($out['selfPlacement']) && is_array($out['selfPlacement'])) {
       unset($out['selfPlacement']['offerLetterPath']);
