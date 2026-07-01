@@ -19,6 +19,7 @@ use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\ApplicationUploadService;
 use PMS\Services\ApplicationWorkflowService;
+use PMS\Services\AesApiService;
 use PMS\Services\AesLoginService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\NotificationService;
@@ -253,11 +254,16 @@ final class StudentController
         $out['photo'] = ['url' => (string) $merged['photoUrl'], 'source' => 'aes'];
       }
     }
-    $qualifications = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+    $qualifications = $this->liveQualificationTableRows($profile, $reg);
+    $academic = is_array($out['academic'] ?? null) ? $out['academic'] : [];
     if ($qualifications !== []) {
       $academic['qualifications'] = $qualifications;
       $out['academic'] = $academic;
       $out['qualifications'] = $qualifications;
+    } else {
+      unset($academic['qualifications']);
+      $out['academic'] = $academic;
+      $out['qualifications'] = [];
     }
     if (!empty($out['selfPlacement']) && is_array($out['selfPlacement'])) {
       unset($out['selfPlacement']['offerLetterPath']);
@@ -276,6 +282,30 @@ final class StudentController
     }
 
     Response::success(DocumentHelper::jsonSafe($out));
+  }
+
+  /**
+   * Education table rows from getStudQual4Placement only (never stored info-API edu rows).
+   *
+   * @param array<string, mixed> $profile
+   * @return list<array<string, mixed>>
+   */
+  private function liveQualificationTableRows(array $profile, string $register): array
+  {
+    $aesApi = new AesApiService();
+    $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($profile, $register);
+    if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
+      return [];
+    }
+
+    try {
+      return $aesApi->fetchStudentQualificationTableRows([
+        'admno' => $qualAdmno,
+        'stud_admno' => $qualAdmno,
+      ]);
+    } catch (\Throwable) {
+      return [];
+    }
   }
 
   /** PUT /api/student/profile */

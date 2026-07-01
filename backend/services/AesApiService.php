@@ -876,11 +876,6 @@ final class AesApiService
             }
         }
 
-        $qualifications = $this->parseEducationQualifications($record);
-        if ($qualifications !== []) {
-            $record['qualifications'] = $qualifications;
-        }
-
         return $record;
     }
 

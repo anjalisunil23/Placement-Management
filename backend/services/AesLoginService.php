@@ -752,6 +752,13 @@ final class AesLoginService
                     }
                     $placement = $placement === [] ? $qual : array_merge($placement, $qual);
                     $mapped = $mapped === [] ? $qualMapped : array_merge($mapped, $qualMapped);
+                } else {
+                    $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+                    if (!empty($academic['qualifications'])) {
+                        unset($academic['qualifications']);
+                        (new StudentModel())->update((string) $profile['_id'], ['academic' => $academic]);
+                        $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
+                    }
                 }
             }
         }
@@ -1458,7 +1465,7 @@ final class AesLoginService
         $aesApi = new AesApiService();
         $quals = !empty($aesDetails['qualifications']) && is_array($aesDetails['qualifications'])
             ? $aesDetails['qualifications']
-            : $aesApi->parseEducationQualifications($aesDetails);
+            : [];
         if ($quals !== []) {
             $mapped['qualifications'] = $quals;
             foreach ($quals as $q) {

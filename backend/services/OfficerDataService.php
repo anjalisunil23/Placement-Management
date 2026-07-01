@@ -325,18 +325,19 @@ final class OfficerDataService
             ? (int) $academic['backlogs']
             : (isset($mapped['backlogs']) ? (int) $mapped['backlogs'] : 0);
 
-        $qualifications = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
-        if ($qualifications === [] && !empty($mapped['qualifications']) && is_array($mapped['qualifications'])) {
-            $qualifications = $mapped['qualifications'];
-        }
-        if ($qualifications === [] && $register !== '') {
+        $qualifications = [];
+        if ($register !== '') {
             $aesApi = new AesApiService();
             $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, $register);
             if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
-                $qualifications = $aesApi->fetchStudentQualificationTableRows([
-                    'admno' => $qualAdmno,
-                    'stud_admno' => $qualAdmno,
-                ]);
+                try {
+                    $qualifications = $aesApi->fetchStudentQualificationTableRows([
+                        'admno' => $qualAdmno,
+                        'stud_admno' => $qualAdmno,
+                    ]);
+                } catch (\Throwable) {
+                    $qualifications = [];
+                }
             }
         }
 
