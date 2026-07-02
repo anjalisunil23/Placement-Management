@@ -585,8 +585,17 @@ final class AesApiService
         $raw = $this->extractQualificationRawRecord(
             $this->postStudQual4Placement(['admno' => $admno, 'stud_admno' => $admno], $admno)
         );
+        $out = $this->normalizeQualificationRecord($raw);
+        if (!is_array($out['qualifications'] ?? null) || $out['qualifications'] === []) {
+            return $out;
+        }
 
-        return $this->normalizeQualificationRecord($raw);
+        $infoPlacement = $this->normalizePlacementStudentRecord(
+            $this->extractRecord($this->postStudInfo4Placement(['admno' => $admno], $admno))
+        );
+        $out['qualifications'] = $this->mergeRegMonthFromInfoOntoQualRows($out['qualifications'], $infoPlacement);
+
+        return $out;
     }
 
     /**
@@ -1028,6 +1037,126 @@ final class AesApiService
         }
 
         return null;
+    }
+
+    /**
+     * Merge registerNumber / monthYear from getStudInfo4Placement onto qual-API rows.
+     * Qual-API values win when present; info-API edu rows fill gaps matched by qualification kind.
+     * Current CGPA rows also receive top-level registerno / stud_class when still empty.
+     *
+     * @param list<array{qualification: string, institution: string, registerNumber: string, monthYear: string, mark: ?float, maxMark: ?float, percentage: ?float}> $qualRows
+     * @param array<string, mixed> $infoPlacement Normalized getStudInfo4Placement record.
+     * @return list<array{qualification: string, institution: string, registerNumber: string, monthYear: string, mark: ?float, maxMark: ?float, percentage: ?float}>
+     */
+    private function mergeRegMonthFromInfoOntoQualRows(array $qualRows, array $infoPlacement): array
+    {
+        if ($qualRows === []) {
+            return [];
+        }
+
+        $infoByKey = [];
+        foreach ($this->parseEducationQualifications($infoPlacement) as $infoRow) {
+            $key = $this->qualificationMatchKey(
+                (string) ($infoRow['qualification'] ?? ''),
+                isset($infoRow['mark']) && is_numeric($infoRow['mark']) ? (float) $infoRow['mark'] : null,
+                isset($infoRow['maxMark']) && is_numeric($infoRow['maxMark']) ? (float) $infoRow['maxMark'] : null
+            );
+            $reg = trim((string) ($infoRow['registerNumber'] ?? ''));
+            $monthYear = trim((string) ($infoRow['monthYear'] ?? ''));
+            if ($reg === '' && $monthYear === '') {
+                continue;
+            }
+            if (!isset($infoByKey[$key])) {
+                $infoByKey[$key] = ['registerNumber' => '', 'monthYear' => ''];
+            }
+            if ($reg !== '' && $infoByKey[$key]['registerNumber'] === '') {
+                $infoByKey[$key]['registerNumber'] = $reg;
+            }
+            if ($monthYear !== '' && $infoByKey[$key]['monthYear'] === '') {
+                $infoByKey[$key]['monthYear'] = $monthYear;
+            }
+        }
+
+        $topRegister = trim((string) ($infoPlacement['registerno'] ?? $infoPlacement['registerNumber'] ?? ''));
+        $topBatch = trim((string) ($infoPlacement['stud_class'] ?? $infoPlacement['classBatch'] ?? ''));
+
+        $out = [];
+        foreach ($qualRows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $registerNumber = trim((string) ($row['registerNumber'] ?? ''));
+            $monthYear = trim((string) ($row['monthYear'] ?? ''));
+            $key = $this->qualificationMatchKey(
+                (string) ($row['qualification'] ?? ''),
+                isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : null,
+                isset($row['maxMark']) && is_numeric($row['maxMark']) ? (float) $row['maxMark'] : null
+            );
+
+            if (isset($infoByKey[$key])) {
+                if ($registerNumber === '' && $infoByKey[$key]['registerNumber'] !== '') {
+                    $registerNumber = $infoByKey[$key]['registerNumber'];
+                }
+                if ($monthYear === '' && $infoByKey[$key]['monthYear'] !== '') {
+                    $monthYear = $infoByKey[$key]['monthYear'];
+                }
+            }
+
+            if ($key === 'current_cgpa') {
+                if ($registerNumber === '' && $topRegister !== '') {
+                    $registerNumber = $topRegister;
+                }
+                if ($monthYear === '' && $topBatch !== '') {
+                    $monthYear = $topBatch;
+                }
+            }
+
+            $out[] = [
+                'qualification'  => (string) ($row['qualification'] ?? ''),
+                'institution'    => (string) ($row['institution'] ?? ''),
+                'registerNumber' => $registerNumber,
+                'monthYear'      => $monthYear,
+                'mark'           => isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : null,
+                'maxMark'        => isset($row['maxMark']) && is_numeric($row['maxMark']) ? (float) $row['maxMark'] : null,
+                'percentage'     => isset($row['percentage']) && is_numeric($row['percentage']) ? (float) $row['percentage'] : null,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Normalized key for matching qual-API and info-API edu rows (labels differ per endpoint).
+     */
+    private function qualificationMatchKey(string $qualification, ?float $mark, ?float $maxMark): string
+    {
+        $upper = strtoupper(trim($qualification));
+        if (preg_match('/\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|SECONDARY|TENTH)\b/', $upper)) {
+            return 'sslc';
+        }
+        if (preg_match('/\b(HSC|12TH|12\s*STD|PLUS\s*TWO|PLUS2|PLUS-2|PUC|CLASS\s*XII|HIGHER\s*SECONDARY|TWELFTH)\b/', $upper)) {
+            return 'hsc';
+        }
+        if (preg_match('/\bBCA\b/', $upper)) {
+            return 'bca';
+        }
+        if (preg_match('/\b(CGPA|CURRENT)\b/', $upper)) {
+            return 'current_cgpa';
+        }
+        if (
+            $upper === ''
+            && $mark !== null
+            && $mark > 0
+            && $mark <= 10
+            && ($maxMark === null || $maxMark <= 10)
+        ) {
+            return 'current_cgpa';
+        }
+        if (preg_match('/\b(B\.?\s*TECH|BTECH|MCA|BE|B\.?\s*SC|BSC|BACHELOR|UG)\b/', $upper)) {
+            return 'degree:' . preg_replace('/\s+/', '', $upper);
+        }
+
+        return 'label:' . $upper;
     }
 
     public function resolvePhotoUrl(string $url): string
