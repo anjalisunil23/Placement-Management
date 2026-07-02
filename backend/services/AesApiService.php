@@ -593,7 +593,7 @@ final class AesApiService
         $infoPlacement = $this->normalizePlacementStudentRecord(
             $this->extractRecord($this->postStudInfo4Placement(['admno' => $admno], $admno))
         );
-        $out['qualifications'] = $this->mergeRegMonthFromInfoOntoQualRows($out['qualifications'], $infoPlacement);
+        $out['qualifications'] = $this->mergeInfoPlacementOntoQualRows($out['qualifications'], $infoPlacement);
 
         return $out;
     }
@@ -1040,7 +1040,7 @@ final class AesApiService
     }
 
     /**
-     * Merge registerNumber / monthYear from getStudInfo4Placement onto qual-API rows.
+     * Merge institution / registerNumber / monthYear from getStudInfo4Placement onto qual-API rows.
      * Qual-API values win when present; info-API edu rows fill gaps matched by qualification kind.
      * Current CGPA rows also receive top-level registerno / stud_class when still empty.
      *
@@ -1048,7 +1048,7 @@ final class AesApiService
      * @param array<string, mixed> $infoPlacement Normalized getStudInfo4Placement record.
      * @return list<array{qualification: string, institution: string, registerNumber: string, monthYear: string, mark: ?float, maxMark: ?float, percentage: ?float}>
      */
-    private function mergeRegMonthFromInfoOntoQualRows(array $qualRows, array $infoPlacement): array
+    private function mergeInfoPlacementOntoQualRows(array $qualRows, array $infoPlacement): array
     {
         if ($qualRows === []) {
             return [];
@@ -1061,13 +1061,17 @@ final class AesApiService
                 isset($infoRow['mark']) && is_numeric($infoRow['mark']) ? (float) $infoRow['mark'] : null,
                 isset($infoRow['maxMark']) && is_numeric($infoRow['maxMark']) ? (float) $infoRow['maxMark'] : null
             );
+            $institution = trim((string) ($infoRow['institution'] ?? ''));
             $reg = trim((string) ($infoRow['registerNumber'] ?? ''));
             $monthYear = trim((string) ($infoRow['monthYear'] ?? ''));
-            if ($reg === '' && $monthYear === '') {
+            if ($institution === '' && $reg === '' && $monthYear === '') {
                 continue;
             }
             if (!isset($infoByKey[$key])) {
-                $infoByKey[$key] = ['registerNumber' => '', 'monthYear' => ''];
+                $infoByKey[$key] = ['institution' => '', 'registerNumber' => '', 'monthYear' => ''];
+            }
+            if ($institution !== '' && $infoByKey[$key]['institution'] === '') {
+                $infoByKey[$key]['institution'] = $institution;
             }
             if ($reg !== '' && $infoByKey[$key]['registerNumber'] === '') {
                 $infoByKey[$key]['registerNumber'] = $reg;
@@ -1085,6 +1089,7 @@ final class AesApiService
             if (!is_array($row)) {
                 continue;
             }
+            $institution = trim((string) ($row['institution'] ?? ''));
             $registerNumber = trim((string) ($row['registerNumber'] ?? ''));
             $monthYear = trim((string) ($row['monthYear'] ?? ''));
             $key = $this->qualificationMatchKey(
@@ -1094,6 +1099,9 @@ final class AesApiService
             );
 
             if (isset($infoByKey[$key])) {
+                if ($institution === '' && $infoByKey[$key]['institution'] !== '') {
+                    $institution = $infoByKey[$key]['institution'];
+                }
                 if ($registerNumber === '' && $infoByKey[$key]['registerNumber'] !== '') {
                     $registerNumber = $infoByKey[$key]['registerNumber'];
                 }
@@ -1113,7 +1121,7 @@ final class AesApiService
 
             $out[] = [
                 'qualification'  => (string) ($row['qualification'] ?? ''),
-                'institution'    => (string) ($row['institution'] ?? ''),
+                'institution'    => $institution,
                 'registerNumber' => $registerNumber,
                 'monthYear'      => $monthYear,
                 'mark'           => isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : null,

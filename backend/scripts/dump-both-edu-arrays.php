@@ -48,7 +48,22 @@ $infoParsed = $parseEdu->invoke($api, $infoRecord);
 $qualParsed = $parseEdu->invoke($api, is_array($qualRecord) && array_is_list($qualRecord) ? ['edu' => $qualRecord] : $qualRecord);
 
 echo "\n=== Side-by-side qualification labels (parsed) ===\n";
-printf("%-12s %-28s %-14s %-12s %-10s\n", 'matchKey', 'qualification', 'registerNumber', 'monthYear', 'source');
+printf("%-12s %-20s %-30s %-14s %-12s %-10s\n", 'matchKey', 'qualification', 'institution', 'registerNumber', 'monthYear', 'source');
+$printRow = static function (string $key, array $row, string $source) {
+    $inst = (string) ($row['institution'] ?? '');
+    if (strlen($inst) > 28) {
+        $inst = substr($inst, 0, 25) . '...';
+    }
+    printf(
+        "%-12s %-20s %-30s %-14s %-12s %-10s\n",
+        $key,
+        (string) (($row['qualification'] ?? '') !== '' ? $row['qualification'] : '(empty)'),
+        $inst,
+        (string) ($row['registerNumber'] ?? ''),
+        (string) ($row['monthYear'] ?? ''),
+        $source
+    );
+};
 foreach ($qualParsed as $row) {
     $key = $matchKey->invoke(
         $api,
@@ -56,14 +71,7 @@ foreach ($qualParsed as $row) {
         isset($row['mark']) ? (float) $row['mark'] : null,
         isset($row['maxMark']) ? (float) $row['maxMark'] : null
     );
-    printf(
-        "%-12s %-28s %-14s %-12s %-10s\n",
-        $key,
-        (string) ($row['qualification'] ?? '(empty)'),
-        (string) ($row['registerNumber'] ?? ''),
-        (string) ($row['monthYear'] ?? ''),
-        'qual-API'
-    );
+    $printRow($key, $row, 'qual-API');
 }
 foreach ($infoParsed as $row) {
     $key = $matchKey->invoke(
@@ -72,15 +80,30 @@ foreach ($infoParsed as $row) {
         isset($row['mark']) ? (float) $row['mark'] : null,
         isset($row['maxMark']) ? (float) $row['maxMark'] : null
     );
-    printf(
-        "%-12s %-28s %-14s %-12s %-10s\n",
-        $key,
-        (string) ($row['qualification'] ?? '(empty)'),
-        (string) ($row['registerNumber'] ?? ''),
-        (string) ($row['monthYear'] ?? ''),
-        'info-API'
-    );
+    $printRow($key, $row, 'info-API');
 }
 
 echo "\n=== Merged fetchStudentQualificationProfile ===\n";
-echo json_encode($api->fetchStudentQualificationProfile(['admno' => $admno]), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
+$merged = $api->fetchStudentQualificationProfile(['admno' => $admno]);
+echo json_encode($merged, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
+
+echo "\n=== Merged row completeness ===\n";
+foreach ($merged['qualifications'] ?? [] as $i => $row) {
+    $missing = [];
+    foreach (['institution', 'registerNumber', 'monthYear'] as $field) {
+        if (trim((string) ($row[$field] ?? '')) === '') {
+            $missing[] = $field;
+        }
+    }
+    $hasMarks = ($row['mark'] ?? null) !== null || ($row['percentage'] ?? null) !== null;
+    $label = (string) (($row['qualification'] ?? '') !== '' ? $row['qualification'] : '(CGPA)');
+    if ($missing === [] && $hasMarks) {
+        echo "Row {$i} ({$label}): OK\n";
+    } else {
+        echo "Row {$i} ({$label}): missing " . implode(', ', $missing ?: ['(none)']);
+        if (!$hasMarks) {
+            echo '; marks empty';
+        }
+        echo "\n";
+    }
+}
