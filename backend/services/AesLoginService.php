@@ -682,21 +682,11 @@ final class AesLoginService
         $mapped = $this->mapAesDetailsToUserFields($placement);
         $patch = $this->buildPlacementExtrasPatch($profile, $placement, $mapped, $register);
 
-        $qualAdmno = $api->resolveQualificationAdmissionNumber($placement, $register);
-        if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
-            try {
-                $qual = $api->fetchStudentQualificationProfile([
-                    'admno' => $qualAdmno,
-                    'stud_admno' => $qualAdmno,
-                ]);
-            } catch (\Throwable) {
-                $qual = [];
-            }
-            if ($qual !== []) {
-                $qualMapped = $this->mapAesDetailsToUserFields($qual);
-                $qualPatch = $this->buildQualificationExtrasPatch($profile, $qual, $qualMapped);
-                $patch = $this->mergeProfilePatches($patch, $qualPatch);
-            }
+        $qual = $api->extractQualificationFromPlacement($placement);
+        if ($qual !== []) {
+            $qualMapped = $this->mapAesDetailsToUserFields($qual);
+            $qualPatch = $this->buildQualificationExtrasPatch($profile, $qual, $qualMapped);
+            $patch = $this->mergeProfilePatches($patch, $qualPatch);
         }
 
         if ($patch !== []) {
@@ -733,26 +723,35 @@ final class AesLoginService
             }
 
             $api = new AesApiService();
-            $qualAdmno = $api->resolveQualificationAdmissionNumber($placement, $register);
-            if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
-                try {
-                    $qual = $api->fetchStudentQualificationProfile([
-                        'admno' => $qualAdmno,
-                        'stud_admno' => $qualAdmno,
-                    ]);
-                } catch (\Throwable) {
-                    $qual = [];
-                }
-                if ($qual !== []) {
-                    $qualMapped = $this->mapAesDetailsToUserFields($qual);
-                    $qualPatch = $this->buildQualificationExtrasPatch($profile, $qual, $qualMapped);
-                    if ($qualPatch !== []) {
-                        (new StudentModel())->update((string) $profile['_id'], $qualPatch);
-                        $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
+            $qual = $api->extractQualificationFromPlacement($placement);
+            if ($qual === []) {
+                $qualAdmno = $api->resolveQualificationAdmissionNumber($placement, $register);
+                if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
+                    try {
+                        $qualParams = ['admno' => $qualAdmno, 'stud_admno' => $qualAdmno];
+                        $regNo = trim((string) ($placement['registerno'] ?? $placement['registerNumber'] ?? ''));
+                        if ($regNo !== '' && $regNo !== $qualAdmno) {
+                            $qualParams['registerno'] = $regNo;
+                            $qualParams['registerNumber'] = $regNo;
+                        }
+                        $qual = $api->fetchStudentQualificationProfile($qualParams);
+                    } catch (\Throwable) {
+                        $qual = [];
                     }
-                    $placement = $placement === [] ? $qual : array_merge($placement, $qual);
-                    $mapped = $mapped === [] ? $qualMapped : array_merge($mapped, $qualMapped);
-                } else {
+                }
+            }
+            if ($qual !== []) {
+                $qualMapped = $this->mapAesDetailsToUserFields($qual);
+                $qualPatch = $this->buildQualificationExtrasPatch($profile, $qual, $qualMapped);
+                if ($qualPatch !== []) {
+                    (new StudentModel())->update((string) $profile['_id'], $qualPatch);
+                    $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
+                }
+                $placement = $placement === [] ? $qual : array_merge($placement, $qual);
+                $mapped = $mapped === [] ? $qualMapped : array_merge($mapped, $qualMapped);
+            } else {
+                $qualAdmno = $api->resolveQualificationAdmissionNumber($placement, $register);
+                if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
                     $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
                     if (!empty($academic['qualifications'])) {
                         unset($academic['qualifications']);
@@ -906,6 +905,17 @@ final class AesLoginService
             }
         }
 
+        $hasQualData = $qualRows !== []
+            || (isset($qual['cgpa']) && (float) $qual['cgpa'] > 0)
+            || (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0)
+            || (isset($qual['marks10th']) && (float) $qual['marks10th'] > 0)
+            || (isset($qual['marks12th']) && (float) $qual['marks12th'] > 0);
+        if ($hasQualData) {
+            $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
+            $academic['aesSyncedAt'] = \PMS\Utils\DocumentHelper::now();
+            $patch['academic'] = $academic;
+        }
+
         return $patch;
     }
 
@@ -1020,16 +1030,10 @@ final class AesLoginService
 
         $aesDetails = array_merge($aesDetails, $placement);
 
-        $admno = (new AesApiService())->resolveQualificationAdmissionNumber($placement, $register);
-        if ($admno !== '') {
-            try {
-                $qual = (new AesApiService())->fetchStudentQualificationProfile(['admno' => $admno, 'stud_admno' => $admno]);
-            } catch (\Throwable) {
-                $qual = [];
-            }
-            if ($qual !== []) {
-                $aesDetails = array_merge($aesDetails, $qual);
-            }
+        $api = new AesApiService();
+        $qual = $api->extractQualificationFromPlacement($placement);
+        if ($qual !== []) {
+            $aesDetails = array_merge($aesDetails, $qual);
         }
 
         if (!empty($placement['name'])) {

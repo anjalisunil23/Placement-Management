@@ -88,22 +88,26 @@ $merged = $api->fetchStudentQualificationProfile(['admno' => $admno]);
 echo json_encode($merged, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
 
 echo "\n=== Merged row completeness ===\n";
-foreach ($merged['qualifications'] ?? [] as $i => $row) {
+    foreach ($merged['qualifications'] ?? [] as $i => $row) {
     $missing = [];
-    foreach (['institution', 'registerNumber', 'monthYear'] as $field) {
+    foreach (['qualification', 'institution', 'registerNumber', 'monthYear'] as $field) {
         if (trim((string) ($row[$field] ?? '')) === '') {
             $missing[] = $field;
         }
     }
-    $hasMarks = ($row['mark'] ?? null) !== null || ($row['percentage'] ?? null) !== null;
+    if (($row['mark'] ?? null) === null) {
+        $missing[] = 'mark';
+    }
+    if (($row['maxMark'] ?? null) === null) {
+        $missing[] = 'maxMark';
+    }
+    if (($row['percentage'] ?? null) === null) {
+        $missing[] = 'percentage';
+    }
     $label = (string) (($row['qualification'] ?? '') !== '' ? $row['qualification'] : '(CGPA)');
-    if ($missing === [] && $hasMarks) {
+    if ($missing === []) {
         echo "Row {$i} ({$label}): OK\n";
     } else {
-        echo "Row {$i} ({$label}): missing " . implode(', ', $missing ?: ['(none)']);
-        if (!$hasMarks) {
-            echo '; marks empty';
-        }
-        echo "\n";
+        echo "Row {$i} ({$label}): missing " . implode(', ', $missing) . "\n";
     }
 }

@@ -178,7 +178,11 @@ final class StudentController
         \PMS\Utils\Security::getSessionAesProfile(),
         ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
     ));
-    $profile = $aes->refreshStudentPlacementData($profile);
+    $liteProfile = $this->isLiteProfileRequest();
+    $forceRefresh = $this->isForcedAesRefreshRequest();
+    if (!$liteProfile && ($forceRefresh || $this->shouldRefreshAesPlacement($profile))) {
+      $profile = $aes->refreshStudentPlacementData($profile);
+    }
 
     $dept = !empty($profile['departmentId'])
       ? (new DepartmentModel())->findById((string) $profile['departmentId'])
@@ -254,10 +258,8 @@ final class StudentController
         $out['photo'] = ['url' => (string) $merged['photoUrl'], 'source' => 'aes'];
       }
     }
-    $qualifications = $this->liveQualificationTableRows($profile, $reg);
-    $academic = is_array($out['academic'] ?? null) ? $out['academic'] : [];
+    $qualifications = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
     if ($qualifications !== []) {
-      $academic['qualifications'] = $qualifications;
       $out['academic'] = $academic;
       $out['qualifications'] = $qualifications;
     } else {
@@ -284,28 +286,34 @@ final class StudentController
     Response::success(DocumentHelper::jsonSafe($out));
   }
 
-  /**
-   * Education table rows from getStudQual4Placement only (never stored info-API edu rows).
-   *
-   * @param array<string, mixed> $profile
-   * @return list<array<string, mixed>>
-   */
-  private function liveQualificationTableRows(array $profile, string $register): array
+  private function isLiteProfileRequest(): bool
   {
-    $aesApi = new AesApiService();
-    $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($profile, $register);
-    if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
-      return [];
+    $lite = $_GET['lite'] ?? $_SERVER['HTTP_X_PROFILE_LITE'] ?? '';
+    if ($lite === '' || $lite === '0' || $lite === 'false') {
+      return false;
     }
 
-    try {
-      return $aesApi->fetchStudentQualificationTableRows([
-        'admno' => $qualAdmno,
-        'stud_admno' => $qualAdmno,
-      ]);
-    } catch (\Throwable) {
-      return [];
+    return true;
+  }
+
+  private function isForcedAesRefreshRequest(): bool
+  {
+    $refresh = $_GET['refresh'] ?? '';
+    return $refresh === '1' || $refresh === 'true';
+  }
+
+  /**
+   * @param array<string, mixed> $profile
+   */
+  private function shouldRefreshAesPlacement(array $profile): bool
+  {
+    $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+    $syncedAt = strtotime((string) ($academic['aesSyncedAt'] ?? ''));
+    if ($syncedAt !== false && $syncedAt > 0 && (time() - $syncedAt) < 300) {
+      return false;
     }
+
+    return true;
   }
 
   /** PUT /api/student/profile */

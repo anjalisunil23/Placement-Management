@@ -21,6 +21,21 @@ final class AesApiService
     /** @var list<array{code:string,name:string,short:string}>|null */
     private static ?array $departmentCache = null;
 
+    /** @var array<string, array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}> */
+    private static array $qualApiResponseCache = [];
+
+    /** @var array<string, array<string, mixed>> */
+    private static array $qualificationProfileCache = [];
+
+    /** @var array<string, array<string, mixed>> */
+    private static array $placementProfileCache = [];
+
+    /** @var array<string, array<string, mixed>> */
+    private static array $studInfoRecordCache = [];
+
+    /** @var null|'query_admno'|'query_stud_admno'|'query_register'|'body'> */
+    private static ?string $qualWinningTransport = null;
+
     public function __construct()
     {
         $aes = require dirname(__DIR__) . '/config/aes.php';
@@ -159,7 +174,7 @@ final class AesApiService
      * @param array<string, scalar|null> $params
      * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
      */
-    private function callAESApiWithMethodInQuery(string $method, array $params = []): array
+    private function callAESApiWithMethodInQuery(string $method, array $params = [], bool $allowGetFallback = true): array
     {
         $queryData = array_merge(['method' => $method], $this->withAesAuthParams($params));
         $query = http_build_query($queryData);
@@ -167,11 +182,38 @@ final class AesApiService
         $body = http_build_query($this->withAesAuthParams($params));
 
         $response = $this->executeAesCurl($url, $body, 'POST');
-        if ($this->extractQualificationRawRecord($response) !== []) {
+        if ($this->extractQualificationRawRecord($response) !== [] || !$allowGetFallback) {
             return $response;
         }
 
         return $this->executeAesCurl($url, null, 'GET');
+    }
+
+    /**
+     * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    private function callStudQual4PlacementTransport(string $transport, array $params): array
+    {
+        $admno = trim((string) ($params['admno'] ?? ''));
+        return match ($transport) {
+            'body' => $this->callAESApi('getStudQual4Placement', ['admno' => $admno]),
+            'query_stud_admno' => $this->callAESApiWithMethodInQuery(
+                'getStudQual4Placement',
+                ['stud_admno' => $admno],
+                false
+            ),
+            'query_register' => $this->callAESApiWithMethodInQuery(
+                'getStudQual4Placement',
+                $params,
+                false
+            ),
+            default => $this->callAESApiWithMethodInQuery(
+                'getStudQual4Placement',
+                ['admno' => $admno],
+                false
+            ),
+        };
     }
 
     /**
@@ -214,6 +256,10 @@ final class AesApiService
             ];
         }
 
+        if (isset(self::$qualApiResponseCache[$admno])) {
+            return self::$qualApiResponseCache[$admno];
+        }
+
         $baseParams = ['admno' => $admno];
         $lastResponse = [
             'success' => false,
@@ -221,30 +267,56 @@ final class AesApiService
             'error'   => 'getStudQual4Placement returned no qualification data.',
         ];
 
-        $attempts = [
-            fn () => $this->callAESApi('getStudQual4Placement', $baseParams),
-            fn () => $this->callAESApiWithMethodInQuery('getStudQual4Placement', $baseParams),
-            fn () => $this->callAESApiWithMethodInQuery('getStudQual4Placement', ['stud_admno' => $admno]),
-        ];
-
-        $infoRecord = $this->extractRecord($this->getStudInfo4Placement($baseParams));
-        $registerNo = trim((string) ($infoRecord['registerno'] ?? $infoRecord['registerNumber'] ?? ''));
-        if ($registerNo !== '' && $registerNo !== $admno) {
-            $attempts[] = fn () => $this->callAESApiWithMethodInQuery(
-                'getStudQual4Placement',
-                array_merge($baseParams, ['registerno' => $registerNo, 'registerNumber' => $registerNo])
-            );
+        $registerNo = trim((string) ($params['registerno'] ?? $params['registerNumber'] ?? ''));
+        if ($registerNo === '' || $registerNo === $admno) {
+            $infoRecord = $this->cachedStudInfoRecord($admno);
+            $registerNo = trim((string) ($infoRecord['registerno'] ?? $infoRecord['registerNumber'] ?? ''));
         }
 
-        foreach ($attempts as $attempt) {
-            $response = $attempt();
+        $transports = [];
+        if (self::$qualWinningTransport !== null) {
+            $transports[] = self::$qualWinningTransport;
+        }
+        foreach (['query_admno', 'query_stud_admno', 'query_register', 'body'] as $transport) {
+            if (!in_array($transport, $transports, true)) {
+                $transports[] = $transport;
+            }
+        }
+
+        foreach ($transports as $transport) {
+            $attemptParams = $baseParams;
+            if ($transport === 'query_register' && $registerNo !== '' && $registerNo !== $admno) {
+                $attemptParams['registerno'] = $registerNo;
+                $attemptParams['registerNumber'] = $registerNo;
+            }
+            $response = $this->callStudQual4PlacementTransport($transport, $attemptParams);
             $lastResponse = $response;
             if ($this->extractQualificationRawRecord($response) !== []) {
+                self::$qualWinningTransport = $transport;
+                self::$qualApiResponseCache[$admno] = $response;
+
                 return $response;
             }
         }
 
+        self::$qualApiResponseCache[$admno] = $lastResponse;
+
         return $lastResponse;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cachedStudInfoRecord(string $admno): array
+    {
+        if (isset(self::$studInfoRecordCache[$admno])) {
+            return self::$studInfoRecordCache[$admno];
+        }
+
+        $record = $this->extractRecord($this->getStudInfo4Placement(['admno' => $admno]));
+        self::$studInfoRecordCache[$admno] = $record;
+
+        return $record;
     }
 
     /**
@@ -524,11 +596,21 @@ final class AesApiService
     public function fetchStudentPlacementProfile(array $params): array
     {
         $request = $this->buildStudentRequestParams($params);
+        $cacheKey = $this->placementProfileCacheKey($params, (string) ($request['admno'] ?? ''));
+        if ($cacheKey !== '' && isset(self::$placementProfileCache[$cacheKey])) {
+            return self::$placementProfileCache[$cacheKey];
+        }
+
         $record = $this->normalizePlacementStudentRecord(
             $this->extractRecord($this->postStudInfo4Placement($params, (string) ($request['admno'] ?? '')))
         );
         if ($record === []) {
             return [];
+        }
+
+        $infoAdmno = trim((string) ($record['stud_admno'] ?? $record['admno'] ?? ''));
+        if ($infoAdmno !== '' && ctype_digit($infoAdmno)) {
+            self::$studInfoRecordCache[$infoAdmno] = $record;
         }
 
         $departments = $this->loadDepartmentsFromApi();
@@ -560,13 +642,74 @@ final class AesApiService
 
         $admno = $this->resolveQualificationAdmissionNumber($record, $this->resolveAdmissionNumber($params, (string) ($request['admno'] ?? '')));
         if ($admno !== '' && ctype_digit($admno)) {
-            $qual = $this->fetchStudentQualificationProfile(['admno' => $admno, 'stud_admno' => $admno]);
+            $qualParams = ['admno' => $admno, 'stud_admno' => $admno];
+            $regNo = trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? ''));
+            if ($regNo !== '' && $regNo !== $admno) {
+                $qualParams['registerno'] = $regNo;
+                $qualParams['registerNumber'] = $regNo;
+            }
+            $qual = $this->fetchStudentQualificationProfile($qualParams);
             if ($qual !== []) {
                 $record = $this->mergeQualificationIntoPlacement($record, $qual);
             }
         }
 
+        if ($cacheKey !== '') {
+            self::$placementProfileCache[$cacheKey] = $record;
+        }
+
         return $record;
+    }
+
+    /**
+     * Qualification fields already merged into a placement profile (avoids duplicate AES qual calls).
+     *
+     * @param array<string, mixed> $placement
+     * @return array<string, mixed>
+     */
+    public function extractQualificationFromPlacement(array $placement): array
+    {
+        $quals = is_array($placement['qualifications'] ?? null) ? $placement['qualifications'] : [];
+        $cgpa = isset($placement['cgpa']) && is_numeric($placement['cgpa']) && (float) $placement['cgpa'] > 0
+            ? (float) $placement['cgpa']
+            : null;
+        $marks10 = isset($placement['marks10th']) && is_numeric($placement['marks10th']) && (float) $placement['marks10th'] > 0
+            ? (float) $placement['marks10th']
+            : null;
+        $marks12 = isset($placement['marks12th']) && is_numeric($placement['marks12th']) && (float) $placement['marks12th'] > 0
+            ? (float) $placement['marks12th']
+            : null;
+
+        if ($quals === [] && $cgpa === null && $marks10 === null && $marks12 === null) {
+            return [];
+        }
+
+        $out = [];
+        if ($cgpa !== null) {
+            $out['cgpa'] = $cgpa;
+        }
+        if ($marks10 !== null) {
+            $out['marks10th'] = $marks10;
+        }
+        if ($marks12 !== null) {
+            $out['marks12th'] = $marks12;
+            $out['ugMarks'] = $marks12;
+        }
+        if ($quals !== []) {
+            $out['qualifications'] = $quals;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, scalar|null> $params
+     */
+    private function placementProfileCacheKey(array $params, string $register): string
+    {
+        $admno = $this->resolveQualificationAdmissionNumber($params, $register);
+
+        return $admno !== '' ? $admno : strtoupper(trim($register));
     }
 
     /**
@@ -582,11 +725,24 @@ final class AesApiService
             return [];
         }
 
+        if (isset(self::$qualificationProfileCache[$admno])) {
+            return self::$qualificationProfileCache[$admno];
+        }
+
+        $qualParams = ['admno' => $admno, 'stud_admno' => $admno];
+        $registerNo = trim((string) ($params['registerno'] ?? $params['registerNumber'] ?? ''));
+        if ($registerNo !== '' && $registerNo !== $admno) {
+            $qualParams['registerno'] = $registerNo;
+            $qualParams['registerNumber'] = $registerNo;
+        }
+
         $raw = $this->extractQualificationRawRecord(
-            $this->postStudQual4Placement(['admno' => $admno, 'stud_admno' => $admno], $admno)
+            $this->postStudQual4Placement($qualParams, $admno)
         );
         $out = $this->normalizeQualificationRecord($raw);
         if (!is_array($out['qualifications'] ?? null) || $out['qualifications'] === []) {
+            self::$qualificationProfileCache[$admno] = $out;
+
             return $out;
         }
 
@@ -594,6 +750,8 @@ final class AesApiService
             $this->extractRecord($this->postStudInfo4Placement(['admno' => $admno], $admno))
         );
         $out['qualifications'] = $this->mergeInfoPlacementOntoQualRows($out['qualifications'], $infoPlacement);
+
+        self::$qualificationProfileCache[$admno] = $out;
 
         return $out;
     }
@@ -944,7 +1102,7 @@ final class AesApiService
      */
     public function parseEducationQualifications(array $record): array
     {
-        $edu = $record['edu'] ?? null;
+        $edu = $record['edu'] ?? $record['education'] ?? $record['edudetails'] ?? null;
         if (!is_array($edu) || $edu === []) {
             return [];
         }
@@ -965,7 +1123,16 @@ final class AesApiService
                 ?? $row['institution']
                 ?? ''
             ));
-            $registerNumber = trim((string) ($row['regno'] ?? $row['reg_no'] ?? $row['registerNumber'] ?? ''));
+            $registerNumber = trim((string) (
+                $row['regno']
+                ?? $row['reg_no']
+                ?? $row['registerNumber']
+                ?? $row['registerno']
+                ?? $row['registration_no']
+                ?? $row['univ_regno']
+                ?? $row['university_regno']
+                ?? ''
+            ));
             $monthYear = trim((string) ($row['monthyear'] ?? $row['month_year'] ?? $row['passedYear'] ?? ''));
 
             $mark = null;
@@ -1119,8 +1286,13 @@ final class AesApiService
                 }
             }
 
+            $qualificationLabel = trim((string) ($row['qualification'] ?? ''));
+            if ($key === 'current_cgpa' && $qualificationLabel === '') {
+                $qualificationLabel = $this->resolveCurrentProgramQualificationLabel($infoPlacement);
+            }
+
             $out[] = [
-                'qualification'  => (string) ($row['qualification'] ?? ''),
+                'qualification'  => $qualificationLabel,
                 'institution'    => $institution,
                 'registerNumber' => $registerNumber,
                 'monthYear'      => $monthYear,
@@ -1145,7 +1317,11 @@ final class AesApiService
         if (preg_match('/\b(HSC|12TH|12\s*STD|PLUS\s*TWO|PLUS2|PLUS-2|PUC|CLASS\s*XII|HIGHER\s*SECONDARY|TWELFTH)\b/', $upper)) {
             return 'hsc';
         }
-        if (preg_match('/\bBCA\b/', $upper)) {
+        if (
+            preg_match('/\bBCA\b/', $upper)
+            || preg_match('/\bB\.?\s*C\.?\s*A\.?\b/', $upper)
+            || preg_match('/BACHELOR\s+OF\s+COMPUTER\s+APPLICATIONS?/i', $qualification)
+        ) {
             return 'bca';
         }
         if (preg_match('/\b(CGPA|CURRENT)\b/', $upper)) {
@@ -1165,6 +1341,25 @@ final class AesApiService
         }
 
         return 'label:' . $upper;
+    }
+
+    /**
+     * @param array<string, mixed> $infoPlacement
+     */
+    private function resolveCurrentProgramQualificationLabel(array $infoPlacement): string
+    {
+        $label = trim((string) (
+            $infoPlacement['stud_cource_short']
+            ?? $infoPlacement['stud_course']
+            ?? $infoPlacement['programme']
+            ?? $infoPlacement['branch']
+            ?? ''
+        ));
+        if ($label !== '') {
+            return $label;
+        }
+
+        return 'CGPA';
     }
 
     public function resolvePhotoUrl(string $url): string

@@ -588,7 +588,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (!enforcePageRole(active)) return;
   paintShell();
 
-  if (Auth.hasRealAuth()) {
+  if (Auth.hasRealAuth() && active !== 'settings.html') {
     Auth.enrichFromProfile()
       .then(() => {
         const page = document.body?.dataset?.page;

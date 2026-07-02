@@ -177,7 +177,11 @@ final class AuthMiddleware
       }
       $studentProfile = (new StudentModel())->findByUserId((string) $user['_id']);
       if ($studentProfile) {
-        $service->syncStudentPlacementExtras($studentProfile);
+        $lastSync = (int) ($_SESSION['aes_placement_sync_at'] ?? 0);
+        if ($lastSync <= 0 || (time() - $lastSync) >= 300) {
+          $service->syncStudentPlacementExtras($studentProfile);
+          $_SESSION['aes_placement_sync_at'] = time();
+        }
         $studentProfile = (new StudentModel())->findByUserId((string) $user['_id']) ?? $studentProfile;
         $photo = is_array($studentProfile['photo'] ?? null) ? $studentProfile['photo'] : null;
         $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';

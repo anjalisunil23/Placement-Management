@@ -719,7 +719,7 @@ const Auth = {
     const path = endpoints[role];
     if (!path) return false;
     try {
-      const res = await apiFetch(path, { skipAuthRedirect: true, skipAuthRetry: true });
+      const res = await apiFetch(path + (path.includes('?') ? '&' : '?') + 'lite=1', { skipAuthRedirect: true, skipAuthRetry: true });
       if (!res?.success || !res.data) return false;
       const p = res.data;
       const u = p.user || {};
