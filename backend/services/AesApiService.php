@@ -949,7 +949,13 @@ final class AesApiService
             }
 
             $qualification = trim((string) ($row['qualification'] ?? $row['qual'] ?? $row['degree'] ?? ''));
-            $institution = trim((string) ($row['instname'] ?? $row['inst_name'] ?? $row['institution'] ?? ''));
+            $institution = trim((string) (
+                $row['instname']
+                ?? $row['inst_name']
+                ?? $row['instName']
+                ?? $row['institution']
+                ?? ''
+            ));
             $registerNumber = trim((string) ($row['regno'] ?? $row['reg_no'] ?? $row['registerNumber'] ?? ''));
             $monthYear = trim((string) ($row['monthyear'] ?? $row['month_year'] ?? $row['passedYear'] ?? ''));
 
@@ -969,6 +975,16 @@ final class AesApiService
                 $pct = (float) $row['percentage'];
                 if ($pct > 0 && $pct <= 100) {
                     $percentage = $pct;
+                }
+            }
+            if ($mark === null && isset($row['mark']) && is_scalar($row['mark'])) {
+                $pctFromMark = $this->parsePercentMarkString((string) $row['mark']);
+                if ($pctFromMark !== null) {
+                    $mark = $pctFromMark;
+                    if ($maxMark === null) {
+                        $maxMark = 100.0;
+                    }
+                    $percentage = $pctFromMark;
                 }
             }
             if ($percentage === null && $mark !== null && $maxMark !== null && $maxMark > 0) {
@@ -994,6 +1010,24 @@ final class AesApiService
         }
 
         return $out;
+    }
+
+    /**
+     * Parse AES school mark strings such as "68%" or "94%" when mark is not numeric.
+     */
+    private function parsePercentMarkString(string $value): ?float
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+        if (preg_match('/(\d+(?:\.\d+)?)\s*%/', $value, $matches) === 1) {
+            $pct = (float) $matches[1];
+
+            return ($pct > 0 && $pct <= 100) ? $pct : null;
+        }
+
+        return null;
     }
 
     public function resolvePhotoUrl(string $url): string
