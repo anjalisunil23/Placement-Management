@@ -5,7 +5,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
-<link href="css/style.css?v=20260703a" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260703b" rel="stylesheet"/></head>
 <body data-page="settings.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -913,8 +913,9 @@ if (role === 'student') {
     if (Auth.isDemo()) ResumeBucket.seed();
     document.getElementById('resumeProfileType').innerHTML = RESUME_PROFILES.map(p => `<option>${p}</option>`).join('');
     await refreshResumes();
-    if (location.hash === '#resumes') {
-      document.querySelector('[href="#resumes"]')?.click();
+    const settingsHash = location.hash.replace(/^#/, '');
+    if (settingsHash === 'resumes' || settingsHash === 'getplaced') {
+      document.querySelector(`[href="#${settingsHash}"]`)?.click();
     }
   });
 } else {
