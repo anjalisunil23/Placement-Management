@@ -92,7 +92,9 @@
           <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" id="placedCompanyName" required placeholder="e.g. Infosys"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Role / job title</label><input class="form-control" name="role" id="placedRole" required placeholder="e.g. Software Engineer"/></div>
           <div class="col-12"><label class="form-label small fw-semibold">Company address</label><textarea class="form-control" name="companyAddress" id="placedCompanyAddress" rows="3" required placeholder="Full office address"></textarea></div>
-          <div class="col-md-8"><label class="form-label small fw-semibold">Offer letter (PDF)</label><input class="form-control" type="file" name="offerLetter" id="placedOfferLetter" accept=".pdf,application/pdf" required/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Offer letter (PDF)</label><input class="form-control" type="file" name="offerLetter" id="placedOfferLetter" accept=".pdf,application/pdf" required/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Company ID <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" type="file" name="companyIdDoc" id="placedCompanyIdDoc" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Salary slip <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" type="file" name="salarySlip" id="placedSalarySlip" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"/><div class="form-text">PDF or Word document</div></div>
           <div class="col-12"><button type="submit" class="btn btn-primary" id="getPlacedSubmitBtn"><i class="bi bi-briefcase me-1"></i>Submit placement report</button></div>
         </form>
       </div></div>
@@ -514,6 +516,11 @@ function applySelfPlacementState(profile) {
   }
 }
 
+function placementUploadExtOk(file, allowedExts) {
+  const name = String(file?.name || '').toLowerCase();
+  return allowedExts.some((ext) => name.endsWith(ext));
+}
+
 async function submitSelfPlacement(ev) {
   ev.preventDefault();
   const form = document.getElementById('getPlacedForm');
@@ -524,7 +531,13 @@ async function submitSelfPlacement(ev) {
   const jobRole = document.getElementById('placedRole').value.trim();
   const fileInput = document.getElementById('placedOfferLetter');
   const file = fileInput?.files?.[0];
+  const companyIdInput = document.getElementById('placedCompanyIdDoc');
+  const companyIdFile = companyIdInput?.files?.[0];
+  const salarySlipInput = document.getElementById('placedSalarySlip');
+  const salarySlipFile = salarySlipInput?.files?.[0];
   const needsFile = studentPlacementState.selfPlacement?.status !== 'rejected';
+  const companyIdExts = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.doc', '.docx'];
+  const salarySlipExts = ['.pdf', '.doc', '.docx'];
 
   if (!companyName || !companyAddress || !jobRole) {
     toast('Fill company name, address, and role.', 'warn');
@@ -536,6 +549,14 @@ async function submitSelfPlacement(ev) {
   }
   if (file && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
     toast('Offer letter must be a PDF file.', 'warn');
+    return;
+  }
+  if (companyIdFile && !placementUploadExtOk(companyIdFile, companyIdExts)) {
+    toast('Company ID must be PDF, image, or Word document.', 'warn');
+    return;
+  }
+  if (salarySlipFile && !placementUploadExtOk(salarySlipFile, salarySlipExts)) {
+    toast('Salary slip must be PDF or Word document.', 'warn');
     return;
   }
 
@@ -574,6 +595,8 @@ async function submitSelfPlacement(ev) {
   fd.append('companyAddress', companyAddress);
   fd.append('role', jobRole);
   if (file) fd.append('offerLetter', file, file.name);
+  if (companyIdFile) fd.append('companyIdDoc', companyIdFile, companyIdFile.name);
+  if (salarySlipFile) fd.append('salarySlip', salarySlipFile, salarySlipFile.name);
 
   const res = await api('/student/self-placement', {
     method: 'POST',

@@ -299,6 +299,14 @@ const AdminApi = {
     return `${API_BASE}/admin/students/${encodeURIComponent(studentId)}/self-placement/offer-letter`;
   },
 
+  selfPlacementCompanyIdUrl(studentId) {
+    return `${API_BASE}/admin/students/${encodeURIComponent(studentId)}/self-placement/company-id`;
+  },
+
+  selfPlacementSalarySlipUrl(studentId) {
+    return `${API_BASE}/admin/students/${encodeURIComponent(studentId)}/self-placement/salary-slip`;
+  },
+
   async fetchSelfPlacement(studentId) {
     const res = await api(this.selfPlacementBase(studentId));
     return res.success ? res.data : null;

@@ -435,6 +435,20 @@ final class OfficerController
         (new SelfPlacementService())->streamOfferLetter($studentId, $scope['ctx']);
     }
 
+    /** GET /api/officer/students/{id}/self-placement/company-id */
+    public function downloadSelfPlacementCompanyId(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new SelfPlacementService())->streamCompanyIdDoc($studentId, $scope['ctx']);
+    }
+
+    /** GET /api/officer/students/{id}/self-placement/salary-slip */
+    public function downloadSelfPlacementSalarySlip(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new SelfPlacementService())->streamSalarySlip($studentId, $scope['ctx']);
+    }
+
     /** POST /api/officer/students/{id}/self-placement/approve */
     public function approveSelfPlacement(string $studentId): void
     {

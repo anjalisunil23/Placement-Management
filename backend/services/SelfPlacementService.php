@@ -66,7 +66,58 @@ final class SelfPlacementService
             'report'         => $serialized,
             'hasOfferLetter' => (string) ($self['offerLetter'] ?? '') !== '',
             'offerLetterName'=> (string) ($self['offerLetter'] ?? ''),
+            'hasCompanyIdDoc'=> (string) ($self['companyIdDoc'] ?? '') !== '',
+            'hasSalarySlip'  => (string) ($self['salarySlip'] ?? '') !== '',
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     */
+    public function streamCompanyIdDoc(string $studentRef, array $ctx): void
+    {
+        $this->streamDocument($studentRef, $ctx, 'companyIdDoc');
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     */
+    public function streamSalarySlip(string $studentRef, array $ctx): void
+    {
+        $this->streamDocument($studentRef, $ctx, 'salarySlip');
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     */
+    public function streamDocument(string $studentRef, array $ctx, string $field): void
+    {
+        $allowed = ['offerLetter', 'companyIdDoc', 'salarySlip'];
+        if (!in_array($field, $allowed, true)) {
+            Response::notFound('Document not found.');
+        }
+
+        $student = $this->resolveScopedStudent($studentRef, $ctx);
+        $path = $this->selfPlacementDocPath($student, $field);
+        if ($path === null) {
+            Response::notFound('Document not found.');
+        }
+
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $mime = match ($ext) {
+            'pdf'  => 'application/pdf',
+            'png'  => 'image/png',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'webp' => 'image/webp',
+            'doc'  => 'application/msword',
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            default => 'application/octet-stream',
+        };
+
+        header('Content-Type: ' . $mime);
+        header('Content-Disposition: inline; filename="' . basename($path) . '"');
+        readfile($path);
+        exit;
     }
 
     /**
@@ -74,16 +125,7 @@ final class SelfPlacementService
      */
     public function streamOfferLetter(string $studentRef, array $ctx): void
     {
-        $student = $this->resolveScopedStudent($studentRef, $ctx);
-        $path = $this->offerLetterPath($student);
-        if ($path === null) {
-            Response::notFound('Offer letter not found.');
-        }
-
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="' . basename($path) . '"');
-        readfile($path);
-        exit;
+        $this->streamDocument($studentRef, $ctx, 'offerLetter');
     }
 
     /**
@@ -279,25 +321,34 @@ final class SelfPlacementService
     /**
      * @param array<string, mixed> $student
      */
-    private function offerLetterPath(array $student): ?string
+    private function selfPlacementDocPath(array $student, string $field): ?string
     {
         $self = $student['selfPlacement'] ?? null;
         if (!is_array($self)) {
             return null;
         }
 
-        $file = (string) ($self['offerLetter'] ?? '');
+        $file = (string) ($self[$field] ?? '');
         if ($file === '') {
             return null;
         }
 
         $config = require dirname(__DIR__) . '/config/app.php';
-        $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
-        $path = $dir . '/' . basename($file);
-        if (!is_file($path)) {
-            return null;
+        $dirs = [
+            $config['uploads']['self_placement_dir'] ?? '',
+            $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters'),
+        ];
+        $basename = basename($file);
+        foreach ($dirs as $dir) {
+            if ($dir === '') {
+                continue;
+            }
+            $path = rtrim($dir, '/\\') . '/' . $basename;
+            if (is_file($path)) {
+                return $path;
+            }
         }
 
-        return $path;
+        return null;
     }
 }

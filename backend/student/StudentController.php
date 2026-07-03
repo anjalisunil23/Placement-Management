@@ -993,6 +993,10 @@ final class StudentController
       Response::error('Failed to save offer letter.', 500);
     }
 
+    $savedPaths = [$path];
+    $companyIdDoc = $this->saveOptionalSelfPlacementUpload('companyIdDoc', $registerNo, $safeCompany, 'company_id', ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx'], $savedPaths);
+    $salarySlip = $this->saveOptionalSelfPlacementUpload('salarySlip', $registerNo, $safeCompany, 'salary_slip', ['pdf', 'doc', 'docx'], $savedPaths);
+
     $report = [
       'companyName'    => $companyName,
       'companyAddress' => $companyAddress,
@@ -1001,6 +1005,12 @@ final class StudentController
       'status'         => 'pending',
       'submittedAt'    => DocumentHelper::now(),
     ];
+    if ($companyIdDoc !== null) {
+      $report['companyIdDoc'] = $companyIdDoc;
+    }
+    if ($salarySlip !== null) {
+      $report['salarySlip'] = $salarySlip;
+    }
 
     $history = is_array($profile['placementHistory'] ?? null) ? $profile['placementHistory'] : [];
     $history[] = [
@@ -1017,7 +1027,9 @@ final class StudentController
       'placementHistory' => $history,
     ]);
     if (!$saved) {
-      @unlink($path);
+      foreach ($savedPaths as $savedPath) {
+        @unlink($savedPath);
+      }
       Response::error('Could not save placement report.', 500);
     }
 
@@ -1129,5 +1141,54 @@ final class StudentController
       'chances'  => $profile['placementChances'] ?? ['used' => 0, 'remaining' => 0],
       'placed'   => $profile['placed'] ?? false,
     ]);
+  }
+
+  /**
+   * @param string[] $savedPaths
+   */
+  private function saveOptionalSelfPlacementUpload(
+    string $field,
+    string $registerNo,
+    string $safeCompany,
+    string $prefix,
+    array $extensions,
+    array &$savedPaths
+  ): ?string {
+    if (!isset($_FILES[$field])) {
+      return null;
+    }
+
+    $uploadError = (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($uploadError === UPLOAD_ERR_NO_FILE) {
+      return null;
+    }
+    if ($uploadError !== UPLOAD_ERR_OK) {
+      Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ' upload failed.', 400);
+    }
+
+    $config = require dirname(__DIR__) . '/config/app.php';
+    $error = Security::validateUploadedFile(
+      $_FILES[$field],
+      $config['uploads']['max_resume'],
+      $extensions
+    );
+    if ($error) {
+      Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ': ' . $error, 400);
+    }
+
+    $dir = $config['uploads']['self_placement_dir'] ?? ($config['uploads']['offer_letter_dir'] . '/../self_placement');
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+      Response::error('Server upload folder is not writable.', 500);
+    }
+
+    $ext = strtolower(pathinfo((string) ($_FILES[$field]['name'] ?? ''), PATHINFO_EXTENSION));
+    $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
+    if (!move_uploaded_file($_FILES[$field]['tmp_name'], $path)) {
+      Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . '.', 500);
+    }
+
+    $savedPaths[] = $path;
+
+    return basename($path);
   }
 }

@@ -175,6 +175,14 @@ const OfficerApi = {
     return `${API_BASE}/officer/students/${encodeURIComponent(studentId)}/self-placement/offer-letter`;
   },
 
+  selfPlacementCompanyIdUrl(studentId) {
+    return `${API_BASE}/officer/students/${encodeURIComponent(studentId)}/self-placement/company-id`;
+  },
+
+  selfPlacementSalarySlipUrl(studentId) {
+    return `${API_BASE}/officer/students/${encodeURIComponent(studentId)}/self-placement/salary-slip`;
+  },
+
   async fetchSelfPlacement(studentId) {
     const res = await api(OfficerApi.selfPlacementBase(studentId));
     return res.success ? res.data : null;

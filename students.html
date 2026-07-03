@@ -283,6 +283,16 @@
             <a class="btn btn-sm btn-outline-primary" id="verifyOfferLink" href="#" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>View offer letter (PDF)</a>
             <span class="small text-muted-2 ms-2 d-none" id="verifyNoOffer">No offer letter on file.</span>
           </div>
+          <div class="col-md-6">
+            <div class="small text-muted-2 mb-1">Company ID</div>
+            <a class="btn btn-sm btn-outline-secondary" id="verifyCompanyIdLink" href="#" target="_blank" rel="noopener"><i class="bi bi-person-badge me-1"></i>View company ID</a>
+            <span class="small text-muted-2 d-none" id="verifyNoCompanyId">Not provided.</span>
+          </div>
+          <div class="col-md-6">
+            <div class="small text-muted-2 mb-1">Salary slip</div>
+            <a class="btn btn-sm btn-outline-secondary" id="verifySalarySlipLink" href="#" target="_blank" rel="noopener"><i class="bi bi-receipt me-1"></i>View salary slip</a>
+            <span class="small text-muted-2 d-none" id="verifyNoSalarySlip">Not provided.</span>
+          </div>
           <div class="col-12 d-none" id="verifyRejectWrap">
             <label class="form-label small fw-semibold" for="verifyRejectReason">Rejection reason (optional)</label>
             <textarea class="form-control" id="verifyRejectReason" rows="2" placeholder="Explain what the student should correct…"></textarea>
@@ -781,6 +791,28 @@ async function openVerifyPlacementModal(studentId) {
   } else {
     offerLink.classList.add('d-none');
     noOffer.classList.remove('d-none');
+  }
+
+  const companyIdLink = document.getElementById('verifyCompanyIdLink');
+  const noCompanyId = document.getElementById('verifyNoCompanyId');
+  if (data.hasCompanyIdDoc && client.selfPlacementCompanyIdUrl) {
+    companyIdLink.href = client.selfPlacementCompanyIdUrl(verifyPlacementStudentId);
+    companyIdLink.classList.remove('d-none');
+    noCompanyId.classList.add('d-none');
+  } else {
+    companyIdLink.classList.add('d-none');
+    noCompanyId.classList.remove('d-none');
+  }
+
+  const salarySlipLink = document.getElementById('verifySalarySlipLink');
+  const noSalarySlip = document.getElementById('verifyNoSalarySlip');
+  if (data.hasSalarySlip && client.selfPlacementSalarySlipUrl) {
+    salarySlipLink.href = client.selfPlacementSalarySlipUrl(verifyPlacementStudentId);
+    salarySlipLink.classList.remove('d-none');
+    noSalarySlip.classList.add('d-none');
+  } else {
+    salarySlipLink.classList.add('d-none');
+    noSalarySlip.classList.remove('d-none');
   }
 
   const pending = (report.status || '') === 'pending';
