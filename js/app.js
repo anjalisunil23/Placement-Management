@@ -32,6 +32,7 @@ const NAV = [
   { href: "alumni-success-stories.html", icon: "bi-star-fill", label: "Success Stories", roles: ['alumni'], alumniEmployed: true },
 
   { section: "Staff", roles: ['staff'] },
+  { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
 
   { section: "Company", roles: ['admin','placement_officer','company'] },
@@ -72,6 +73,7 @@ const PAGE_LABELS = {
   'alumni-referrals.html': 'Referrals',
   'alumni-success-stories.html': 'Success Stories',
   'staff-recommend.html': 'Recommend Company',
+  'staff-placements.html': 'Placements & Higher Education',
   'users.html': 'User Management',
   'rules.html': 'Placement Rules',
   'applications.html': 'Student · Management · Application',

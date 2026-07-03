@@ -401,6 +401,7 @@ const PAGE_PERMS = {
   'alumni-referrals.html':  ['alumni'],
   'alumni-success-stories.html': ['alumni'],
   'staff-recommend.html':   ['staff'],
+  'staff-placements.html':  ['staff'],
   'admin-companies.html':   ['admin','placement_officer'],
   'placement-console.html': ['admin','placement_officer'],
   'recruiting.html':        ['admin','placement_officer','company'],
@@ -418,7 +419,7 @@ const PAGE_PERMS = {
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html', 'recruiting.html', 'notifications.html', 'settings.html'];
-const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'drives.html', 'students.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-placements.html', 'drives.html', 'students.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'notifications.html', 'settings.html'];
 
 /** Default landing page per role after sign-in */

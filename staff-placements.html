@@ -1,0 +1,307 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Placements &amp; Higher Education | AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css" rel="stylesheet"/></head>
+<body data-page="staff-placements.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Placements &amp; Higher Education</h1>
+    <p class="page-sub">Department placement registry — filter by program, branch, and batch.</p>
+  </div>
+</div>
+
+<div class="card-surface p-3 p-md-4 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-md-3">
+      <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterProgram">Program</label>
+      <select class="form-select form-select-sm" id="filterProgram"><option value="">All programs</option></select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterBranch">Branch</label>
+      <select class="form-select form-select-sm" id="filterBranch"><option value="">All branches</option></select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterBatch">Batch</label>
+      <select class="form-select form-select-sm" id="filterBatch"><option value="">All batches</option></select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterType">Type</label>
+      <select class="form-select form-select-sm" id="filterType">
+        <option value="">All types</option>
+        <option value="placement">Placement</option>
+        <option value="higher_education">Higher Education</option>
+      </select>
+    </div>
+  </div>
+  <div class="d-flex flex-wrap gap-2 mt-3">
+    <button type="button" class="btn btn-sm btn-primary" id="btnExport"><i class="bi bi-download me-1"></i>Export</button>
+    <button type="button" class="btn btn-sm btn-info text-white" id="btnNba"><i class="bi bi-download me-1"></i>NBA</button>
+    <button type="button" class="btn btn-sm btn-success" id="btnExportGreen"><i class="bi bi-download me-1"></i>CSV</button>
+    <button type="button" class="btn btn-sm btn-danger" id="btnProof"><i class="bi bi-download me-1"></i>Proof</button>
+    <span class="small text-muted-2 align-self-center ms-auto" id="rowCount"></span>
+  </div>
+</div>
+
+<div class="card-surface">
+  <div class="p-3 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
+    <div class="d-flex align-items-center gap-2">
+      <label class="small text-muted-2 mb-0">Show</label>
+      <select class="form-select form-select-sm w-auto" id="pageSize">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <span class="small text-muted-2">entries</span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <label class="small text-muted-2 mb-0" for="tableSearch">Search</label>
+      <input type="search" class="form-control form-control-sm" id="tableSearch" placeholder="Name, employer, register…" style="min-width:220px"/>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="table-modern">
+      <thead>
+        <tr>
+          <th>Sl#</th>
+          <th>Student Name</th>
+          <th>Admission No.</th>
+          <th>Contact</th>
+          <th>Name of the Employer</th>
+          <th>Type</th>
+          <th>Employer Contact</th>
+          <th>Address</th>
+          <th>Package</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="registryRows">
+        <tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="p-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2" style="border-color:var(--border)!important">
+    <div class="small text-muted-2" id="pageInfo"></div>
+    <div class="btn-group btn-group-sm">
+      <button type="button" class="btn btn-outline-secondary" id="btnPrev">Previous</button>
+      <button type="button" class="btn btn-outline-secondary" id="btnNext">Next</button>
+    </div>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/staff-api.js?v=20260703a"></script>
+<script src="js/api.js?v=20260703a"></script>
+<script src="js/app.js?v=20260703a"></script>
+<script>
+if (Auth.role() !== 'staff') {
+  toast('You do not have access to this page.', 'warn');
+  setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
+}
+
+let allRows = [];
+let filteredRows = [];
+let page = 1;
+let pageSize = 25;
+let searchDebounce = null;
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function typeBadge(type) {
+  const isHe = type === 'Higher Education';
+  return `<span class="badge-soft ${isHe ? 'info' : 'primary'}">${esc(type || 'Placement')}</span>`;
+}
+
+function currentFilters() {
+  return {
+    program: document.getElementById('filterProgram')?.value || '',
+    branch: document.getElementById('filterBranch')?.value || '',
+    batch: document.getElementById('filterBatch')?.value || '',
+    type: document.getElementById('filterType')?.value || '',
+    q: document.getElementById('tableSearch')?.value?.trim() || '',
+  };
+}
+
+function fillSelect(id, values, allLabel) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const current = el.value;
+  el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if (current && [...el.options].some(o => o.value === current)) el.value = current;
+}
+
+function applyClientFilter() {
+  const q = (document.getElementById('tableSearch')?.value || '').trim().toLowerCase();
+  filteredRows = !q ? allRows.slice() : allRows.filter(r => {
+    const hay = [
+      r.studentName, r.registerNumber, r.admissionNo, r.employer,
+      r.contact, r.address, r.package, r.type, r.phone, r.email,
+    ].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+  page = 1;
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('registryRows');
+  const total = filteredRows.length;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (page > pages) page = pages;
+  const start = (page - 1) * pageSize;
+  const slice = filteredRows.slice(start, start + pageSize);
+
+  document.getElementById('rowCount').textContent = total
+    ? `${total} record${total === 1 ? '' : 's'}`
+    : 'No records';
+  document.getElementById('pageInfo').textContent = total
+    ? `Showing ${start + 1}–${Math.min(start + pageSize, total)} of ${total}`
+    : 'No entries to show';
+
+  if (!slice.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">No placement or higher-education records match your filters.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = slice.map((r, i) => {
+    const sl = start + i + 1;
+    const downloadBtn = r.hasOfferLetter
+      ? `<button type="button" class="btn btn-sm btn-outline-primary" title="Download offer letter" onclick="downloadOffer('${esc(r.studentId)}')"><i class="bi bi-download"></i></button>`
+      : `<button type="button" class="btn btn-sm btn-outline-secondary" disabled title="No document"><i class="bi bi-download"></i></button>`;
+    const viewBtn = `<a class="btn btn-sm btn-outline-primary" title="View student" href="students.html?verify=${encodeURIComponent(r.studentId)}"><i class="bi bi-eye"></i></a>`;
+    const editBtn = `<a class="btn btn-sm btn-outline-warning" title="Open in student management" href="students.html"><i class="bi bi-pencil-square"></i></a>`;
+    return `<tr>
+      <td>${sl}</td>
+      <td><strong>${esc(r.studentName || '—')}</strong></td>
+      <td>${esc(r.admissionNo || r.registerNumber || '—')}</td>
+      <td class="small">${esc(r.contact || '—')}</td>
+      <td>${esc(r.employer || '—')}</td>
+      <td>${typeBadge(r.type)}</td>
+      <td class="small">${esc(r.employerContact || '')}</td>
+      <td class="small">${esc(r.address || '')}</td>
+      <td>${esc(r.package || '')}</td>
+      <td>
+        <div class="d-flex flex-column gap-1">${downloadBtn}${viewBtn}${editBtn}</div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadRegistry() {
+  const tbody = document.getElementById('registryRows');
+  tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
+  const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
+  if (!data) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
+    return;
+  }
+  const filters = data.filters || {};
+  fillSelect('filterProgram', filters.programs, 'All programs');
+  fillSelect('filterBranch', filters.branches, 'All branches');
+  fillSelect('filterBatch', filters.batches, 'All batches');
+  allRows = Array.isArray(data.rows) ? data.rows : [];
+  applyClientFilter();
+}
+
+function csvEscape(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadCsv(filename, headers, rows) {
+  const lines = [headers.map(csvEscape).join(',')];
+  rows.forEach(r => lines.push(headers.map(h => csvEscape(r[h] ?? '')).join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportRows(kind) {
+  const rows = filteredRows;
+  if (!rows.length) {
+    toast('No rows to export for the current filters.', 'warn');
+    return;
+  }
+  const base = {
+    studentName: 'Student Name',
+    admissionNo: 'Admission No.',
+    registerNumber: 'Register No.',
+    contact: 'Contact',
+    employer: 'Employer / Institution',
+    type: 'Type',
+    employerContact: 'Employer Contact',
+    address: 'Address',
+    package: 'Package',
+    program: 'Program',
+    branch: 'Branch',
+    batch: 'Batch',
+  };
+  if (kind === 'nba') {
+    downloadCsv('placement-nba-export.csv',
+      ['studentName', 'admissionNo', 'program', 'branch', 'batch', 'employer', 'type', 'package'],
+      rows);
+    return;
+  }
+  if (kind === 'proof') {
+    downloadCsv('placement-proof-export.csv',
+      ['studentName', 'admissionNo', 'employer', 'type', 'package', 'address', 'contact'],
+      rows);
+    return;
+  }
+  downloadCsv('placements-higher-education.csv', Object.keys(base), rows);
+  toast('Export downloaded.', 'success');
+}
+
+async function downloadOffer(studentId) {
+  const token = localStorage.getItem('ph-token') || '';
+  const url = `/backend/api/staff/students/${encodeURIComponent(studentId)}/self-placement/offer-letter`;
+  try {
+    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'offer-letter.pdf';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch {
+    toast('Could not download offer letter.', 'warn');
+  }
+}
+
+['filterProgram', 'filterBranch', 'filterBatch', 'filterType'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', () => loadRegistry());
+});
+document.getElementById('tableSearch')?.addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(applyClientFilter, 200);
+});
+document.getElementById('pageSize')?.addEventListener('change', (e) => {
+  pageSize = Number(e.target.value) || 25;
+  page = 1;
+  renderTable();
+});
+document.getElementById('btnPrev')?.addEventListener('click', () => { if (page > 1) { page--; renderTable(); } });
+document.getElementById('btnNext')?.addEventListener('click', () => {
+  const pages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  if (page < pages) { page++; renderTable(); }
+});
+document.getElementById('btnExport')?.addEventListener('click', () => exportRows('full'));
+document.getElementById('btnNba')?.addEventListener('click', () => exportRows('nba'));
+document.getElementById('btnExportGreen')?.addEventListener('click', () => exportRows('full'));
+document.getElementById('btnProof')?.addEventListener('click', () => exportRows('proof'));
+
+onAppReady(() => loadRegistry());
+</script>
+</body></html>

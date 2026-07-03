@@ -185,4 +185,14 @@ const StaffApi = {
     const res = await api('/staff/hiring-overview');
     return res.success ? res.data : null;
   },
+
+  async fetchPlacementsHigherEducation(params = {}) {
+    const qs = new URLSearchParams();
+    ['program', 'branch', 'batch', 'type', 'q'].forEach(k => {
+      if (params[k]) qs.set(k, params[k]);
+    });
+    const q = qs.toString();
+    const res = await api('/staff/placements-higher-education' + (q ? `?${q}` : ''));
+    return res.success ? res.data : null;
+  },
 };

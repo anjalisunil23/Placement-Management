@@ -13,6 +13,8 @@ use PMS\Models\UserModel;
 use PMS\Services\OfficerDataService;
 use PMS\Services\StaffContext;
 use PMS\Services\StaffDataService;
+use PMS\Services\SelfPlacementService;
+use PMS\Services\StaffPlacementRegistryService;
 use PMS\Services\StaffService;
 use PMS\Services\AesLoginService;
 use PMS\Services\NotificationService;
@@ -207,6 +209,31 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
         (new OfficerDataService())->streamStudentPhoto($studentId, $ctx);
+    }
+
+    /** GET /api/staff/placements-higher-education */
+    public function placementsHigherEducation(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        $filters = [
+            'program' => (string) ($_GET['program'] ?? ''),
+            'branch'  => (string) ($_GET['branch'] ?? ''),
+            'batch'   => (string) ($_GET['batch'] ?? ''),
+            'type'    => (string) ($_GET['type'] ?? ''),
+            'q'       => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+        ];
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->list($ctx, $filters)
+        ));
+    }
+
+    /** GET /api/staff/students/{id}/self-placement/offer-letter */
+    public function downloadSelfPlacementOfferLetter(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
+        (new SelfPlacementService())->streamOfferLetter($studentId, $ctx);
     }
 
     /** GET /api/staff/hiring-overview */
