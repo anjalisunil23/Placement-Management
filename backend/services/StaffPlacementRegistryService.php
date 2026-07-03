@@ -6,6 +6,7 @@ namespace PMS\Services;
 
 use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
+use PMS\Models\StudentModel;
 
 /**
  * Department-scoped placement and higher-education registry for staff.
@@ -27,6 +28,8 @@ final class StaffPlacementRegistryService
     public function list(array $staffCtx, array $filters = []): array
     {
         $officerCtx = StaffContext::officerCompatible($staffCtx);
+        // Campus-wide student list so program/branch filters work across all departments.
+        $officerCtx['departmentId'] = '';
         $studentRows = $this->officerData->listStudents($officerCtx);
 
         $registry = [];
@@ -45,7 +48,7 @@ final class StaffPlacementRegistryService
             return strcasecmp((string) ($a['employer'] ?? ''), (string) ($b['employer'] ?? ''));
         });
 
-        $filterOptions = $this->buildFilterOptions($staffCtx, $studentRows);
+        $filterOptions = $this->buildFilterOptions();
         $filtered = $this->applyFilters($registry, $filters);
 
         $placementCount = 0;
@@ -238,13 +241,11 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * @param array<string, mixed> $staffCtx
-     * @param array<int, array<string, mixed>> $studentRows
      * @return array{programs: string[], branches: string[], batches: string[], departments: array<int, array{id:string,code:string,name:string}>}
      */
-    private function buildFilterOptions(array $staffCtx, array $studentRows): array
+    private function buildFilterOptions(): array
     {
-        $departments = $this->loadDepartmentsInScope($staffCtx);
+        $departments = $this->loadAllDepartments();
         $programs = [];
         $branches = [];
         foreach ($departments as $dept) {
@@ -259,11 +260,8 @@ final class StaffPlacementRegistryService
         }
 
         $batches = [];
-        foreach ($studentRows as $row) {
-            $batch = trim((string) ($row['classBatch'] ?? ''));
-            if ($batch !== '') {
-                $batches[$batch] = true;
-            }
+        foreach ($this->loadAllBatchOptions() as $batch) {
+            $batches[$batch] = true;
         }
 
         $sort = static function (array $keys): array {
@@ -282,10 +280,9 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * @param array<string, mixed> $staffCtx
      * @return array<int, array{id:string,code:string,name:string}>
      */
-    private function loadDepartmentsInScope(array $staffCtx): array
+    private function loadAllDepartments(): array
     {
         try {
             (new AesApiService())->syncDepartmentsToLocal();
@@ -293,23 +290,8 @@ final class StaffPlacementRegistryService
             // Serve local departments when AES is unreachable.
         }
 
-        $deptModel = new DepartmentModel();
-        $deptId = trim((string) ($staffCtx['departmentId'] ?? ''));
-        if ($deptId !== '') {
-            $dept = $deptModel->findById($deptId);
-            if (!$dept) {
-                return [];
-            }
-
-            return [[
-                'id'   => (string) ($dept['_id'] ?? ''),
-                'code' => strtoupper(trim((string) ($dept['code'] ?? ''))),
-                'name' => trim((string) ($dept['name'] ?? '')),
-            ]];
-        }
-
         $rows = [];
-        foreach ($deptModel->findAll([], 200) as $dept) {
+        foreach ((new DepartmentModel())->findAll([], 200) as $dept) {
             $code = strtoupper(trim((string) ($dept['code'] ?? '')));
             $name = trim((string) ($dept['name'] ?? ''));
             if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
@@ -325,6 +307,25 @@ final class StaffPlacementRegistryService
         usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));
 
         return $rows;
+    }
+
+    /**
+     * @return string[]
+     */
+    private function loadAllBatchOptions(): array
+    {
+        $batches = [];
+        foreach ((new StudentModel())->findAll([], 5000) as $student) {
+            $batch = trim((string) ($student['classBatch'] ?? ''));
+            if ($batch !== '') {
+                $batches[$batch] = true;
+            }
+        }
+
+        $list = array_keys($batches);
+        sort($list, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $list;
     }
 
     /**
