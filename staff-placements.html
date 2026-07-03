@@ -38,12 +38,8 @@
       </select>
     </div>
   </div>
-  <div class="d-flex flex-wrap gap-2 mt-3">
-    <button type="button" class="btn btn-sm btn-primary" id="btnExport"><i class="bi bi-download me-1"></i>Export</button>
-    <button type="button" class="btn btn-sm btn-info text-white" id="btnNba"><i class="bi bi-download me-1"></i>NBA</button>
-    <button type="button" class="btn btn-sm btn-success" id="btnExportGreen"><i class="bi bi-download me-1"></i>CSV</button>
-    <button type="button" class="btn btn-sm btn-danger" id="btnProof"><i class="bi bi-download me-1"></i>Proof</button>
-    <span class="small text-muted-2 align-self-center ms-auto" id="rowCount"></span>
+  <div class="mt-2 text-end">
+    <span class="small text-muted-2" id="rowCount"></span>
   </div>
 </div>
 
@@ -138,6 +134,23 @@ function fillSelect(id, values, allLabel) {
   if (current && [...el.options].some(o => o.value === current)) el.value = current;
 }
 
+function fillDepartmentSelect(id, departments, field, allLabel) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const current = el.value;
+  const options = (departments || []).map(d => {
+    if (field === 'code') {
+      const code = String(d.code || '').trim();
+      const name = String(d.name || '').trim();
+      return code ? { value: code, label: name ? `${code} (${name})` : code } : null;
+    }
+    const name = String(d.name || '').trim();
+    return name ? { value: name, label: name } : null;
+  }).filter(Boolean);
+  el.innerHTML = `<option value="">${allLabel}</option>` + options.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+  if (current && [...el.options].some(o => o.value === current)) el.value = current;
+}
+
 function applyClientFilter() {
   const q = (document.getElementById('tableSearch')?.value || '').trim().toLowerCase();
   filteredRows = !q ? allRows.slice() : allRows.filter(r => {
@@ -204,63 +217,11 @@ async function loadRegistry() {
     return;
   }
   const filters = data.filters || {};
-  fillSelect('filterProgram', filters.programs, 'All programs');
-  fillSelect('filterBranch', filters.branches, 'All branches');
+  fillDepartmentSelect('filterProgram', filters.departments, 'code', 'All programs');
+  fillDepartmentSelect('filterBranch', filters.departments, 'name', 'All branches');
   fillSelect('filterBatch', filters.batches, 'All batches');
   allRows = Array.isArray(data.rows) ? data.rows : [];
   applyClientFilter();
-}
-
-function csvEscape(v) {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function downloadCsv(filename, headers, rows) {
-  const lines = [headers.map(csvEscape).join(',')];
-  rows.forEach(r => lines.push(headers.map(h => csvEscape(r[h] ?? '')).join(',')));
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-function exportRows(kind) {
-  const rows = filteredRows;
-  if (!rows.length) {
-    toast('No rows to export for the current filters.', 'warn');
-    return;
-  }
-  const base = {
-    studentName: 'Student Name',
-    admissionNo: 'Admission No.',
-    registerNumber: 'Register No.',
-    contact: 'Contact',
-    employer: 'Employer / Institution',
-    type: 'Type',
-    employerContact: 'Employer Contact',
-    address: 'Address',
-    package: 'Package',
-    program: 'Program',
-    branch: 'Branch',
-    batch: 'Batch',
-  };
-  if (kind === 'nba') {
-    downloadCsv('placement-nba-export.csv',
-      ['studentName', 'admissionNo', 'program', 'branch', 'batch', 'employer', 'type', 'package'],
-      rows);
-    return;
-  }
-  if (kind === 'proof') {
-    downloadCsv('placement-proof-export.csv',
-      ['studentName', 'admissionNo', 'employer', 'type', 'package', 'address', 'contact'],
-      rows);
-    return;
-  }
-  downloadCsv('placements-higher-education.csv', Object.keys(base), rows);
-  toast('Export downloaded.', 'success');
 }
 
 async function downloadOffer(studentId) {
@@ -297,10 +258,6 @@ document.getElementById('btnNext')?.addEventListener('click', () => {
   const pages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   if (page < pages) { page++; renderTable(); }
 });
-document.getElementById('btnExport')?.addEventListener('click', () => exportRows('full'));
-document.getElementById('btnNba')?.addEventListener('click', () => exportRows('nba'));
-document.getElementById('btnExportGreen')?.addEventListener('click', () => exportRows('full'));
-document.getElementById('btnProof')?.addEventListener('click', () => exportRows('proof'));
 
 onAppReady(() => loadRegistry());
 </script>

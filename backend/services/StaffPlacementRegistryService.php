@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
 
 /**
@@ -44,7 +45,7 @@ final class StaffPlacementRegistryService
             return strcasecmp((string) ($a['employer'] ?? ''), (string) ($b['employer'] ?? ''));
         });
 
-        $filterOptions = $this->buildFilterOptions($registry);
+        $filterOptions = $this->buildFilterOptions($staffCtx, $studentRows);
         $filtered = $this->applyFilters($registry, $filters);
 
         $placementCount = 0;
@@ -87,22 +88,24 @@ final class StaffPlacementRegistryService
         $contact = $this->formatContact($phone, $email);
 
         $deptObj = is_array($row['department'] ?? null) ? $row['department'] : null;
-        $program = $this->resolveProgram($row, $deptObj);
-        $branch = $this->resolveBranch($row);
+        $deptFields = $this->resolveDepartmentFields($row, $deptObj);
+        $program = $deptFields['program'];
+        $branch = $deptFields['branch'];
         $batch = trim((string) ($row['classBatch'] ?? ''));
         $admissionNo = $this->resolveAdmissionNo($row, $register);
 
         $meta = [
-            'studentId'      => $studentId,
-            'studentName'    => $studentName,
-            'registerNumber' => $register,
-            'admissionNo'    => $admissionNo,
-            'phone'          => $phone,
-            'email'          => $email,
-            'contact'        => $contact,
-            'program'        => $program,
-            'branch'         => $branch,
-            'batch'          => $batch,
+            'studentId'       => $studentId,
+            'studentName'     => $studentName,
+            'registerNumber'  => $register,
+            'admissionNo'     => $admissionNo,
+            'phone'           => $phone,
+            'email'           => $email,
+            'contact'         => $contact,
+            'departmentId'    => $deptFields['departmentId'],
+            'program'         => $program,
+            'branch'          => $branch,
+            'batch'           => $batch,
         ];
 
         $entries = [];
@@ -235,24 +238,29 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * @param array<int, array<string, mixed>> $rows
-     * @return array{programs: string[], branches: string[], batches: string[]}
+     * @param array<string, mixed> $staffCtx
+     * @param array<int, array<string, mixed>> $studentRows
+     * @return array{programs: string[], branches: string[], batches: string[], departments: array<int, array{id:string,code:string,name:string}>}
      */
-    private function buildFilterOptions(array $rows): array
+    private function buildFilterOptions(array $staffCtx, array $studentRows): array
     {
+        $departments = $this->loadDepartmentsInScope($staffCtx);
         $programs = [];
         $branches = [];
+        foreach ($departments as $dept) {
+            $code = trim((string) ($dept['code'] ?? ''));
+            $name = trim((string) ($dept['name'] ?? ''));
+            if ($code !== '') {
+                $programs[$code] = true;
+            }
+            if ($name !== '') {
+                $branches[$name] = true;
+            }
+        }
+
         $batches = [];
-        foreach ($rows as $row) {
-            $program = trim((string) ($row['program'] ?? ''));
-            $branch = trim((string) ($row['branch'] ?? ''));
-            $batch = trim((string) ($row['batch'] ?? ''));
-            if ($program !== '') {
-                $programs[$program] = true;
-            }
-            if ($branch !== '') {
-                $branches[$branch] = true;
-            }
+        foreach ($studentRows as $row) {
+            $batch = trim((string) ($row['classBatch'] ?? ''));
             if ($batch !== '') {
                 $batches[$batch] = true;
             }
@@ -266,10 +274,57 @@ final class StaffPlacementRegistryService
         };
 
         return [
-            'programs' => $sort($programs),
-            'branches' => $sort($branches),
-            'batches'  => $sort($batches),
+            'programs'     => $sort($programs),
+            'branches'     => $sort($branches),
+            'batches'      => $sort($batches),
+            'departments'  => $departments,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     * @return array<int, array{id:string,code:string,name:string}>
+     */
+    private function loadDepartmentsInScope(array $staffCtx): array
+    {
+        try {
+            (new AesApiService())->syncDepartmentsToLocal();
+        } catch (\Throwable) {
+            // Serve local departments when AES is unreachable.
+        }
+
+        $deptModel = new DepartmentModel();
+        $deptId = trim((string) ($staffCtx['departmentId'] ?? ''));
+        if ($deptId !== '') {
+            $dept = $deptModel->findById($deptId);
+            if (!$dept) {
+                return [];
+            }
+
+            return [[
+                'id'   => (string) ($dept['_id'] ?? ''),
+                'code' => strtoupper(trim((string) ($dept['code'] ?? ''))),
+                'name' => trim((string) ($dept['name'] ?? '')),
+            ]];
+        }
+
+        $rows = [];
+        foreach ($deptModel->findAll([], 200) as $dept) {
+            $code = strtoupper(trim((string) ($dept['code'] ?? '')));
+            $name = trim((string) ($dept['name'] ?? ''));
+            if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
+                continue;
+            }
+            $rows[] = [
+                'id'   => (string) ($dept['_id'] ?? ''),
+                'code' => $code,
+                'name' => $name,
+            ];
+        }
+
+        usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));
+
+        return $rows;
     }
 
     /**
@@ -321,49 +376,51 @@ final class StaffPlacementRegistryService
     /**
      * @param array<string, mixed> $row
      * @param array<string, mixed>|null $dept
+     * @return array{departmentId:string,program:string,branch:string}
      */
-    private function resolveProgram(array $row, ?array $dept): string
+    private function resolveDepartmentFields(array $row, ?array $dept): array
     {
-        $fromRow = trim((string) (
-            $row['departmentCode']
-            ?? $row['course']
-            ?? $row['programme']
-            ?? $row['departmentName']
-            ?? ''
-        ));
-        if ($fromRow !== '') {
-            return $fromRow;
-        }
+        $departmentId = '';
         if (is_array($dept)) {
-            $code = trim((string) ($dept['code'] ?? ''));
-            if ($code !== '') {
-                return $code;
-            }
+            $departmentId = (string) ($dept['id'] ?? '');
+            $code = strtoupper(trim((string) ($dept['code'] ?? '')));
             $name = trim((string) ($dept['name'] ?? ''));
-            if ($name !== '') {
-                return $name;
+            if ($code !== '' || $name !== '') {
+                return [
+                    'departmentId' => $departmentId,
+                    'program'      => $code,
+                    'branch'       => $name,
+                ];
             }
         }
 
-        $batch = trim((string) ($row['classBatch'] ?? ''));
-        if ($batch !== '' && preg_match('/^([A-Za-z]+)/', $batch, $m)) {
-            return strtoupper($m[1]);
+        $departmentId = trim((string) ($row['departmentId'] ?? ''));
+        $code = strtoupper(trim((string) ($row['departmentCode'] ?? $row['department'] ?? '')));
+        $name = trim((string) ($row['departmentName'] ?? ''));
+        if ($code !== '' || $name !== '') {
+            return [
+                'departmentId' => $departmentId,
+                'program'      => $code,
+                'branch'       => $name !== '' ? $name : $code,
+            ];
         }
 
-        return '';
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function resolveBranch(array $row): string
-    {
-        $branch = trim((string) ($row['branch'] ?? $row['stud_branch'] ?? ''));
-        if ($branch !== '') {
-            return $branch;
+        if ($departmentId !== '') {
+            $deptDoc = (new DepartmentModel())->findById($departmentId);
+            if (is_array($deptDoc)) {
+                return [
+                    'departmentId' => $departmentId,
+                    'program'      => strtoupper(trim((string) ($deptDoc['code'] ?? ''))),
+                    'branch'       => trim((string) ($deptDoc['name'] ?? '')),
+                ];
+            }
         }
 
-        return 'Regular';
+        return [
+            'departmentId' => $departmentId,
+            'program'      => '',
+            'branch'       => '',
+        ];
     }
 
     /**
