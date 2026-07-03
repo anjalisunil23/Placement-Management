@@ -721,6 +721,15 @@ body.login-page{
 .modal-body{background:var(--modal-bg)}
 .modal-backdrop.show{opacity:.45}
 
+/* File picker (hidden input + button — reliable across browsers) */
+.file-picker{
+  display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;
+  padding:.5rem .75rem;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);
+}
+.file-picker-btn{flex-shrink:0}
+.file-picker-name{min-width:0;word-break:break-word}
+.file-picker-name.has-file{color:var(--text)!important;font-weight:500}
+
 /* Smooth transitions */
 *{transition:background-color .2s ease,border-color .2s ease,color .15s ease}
 
