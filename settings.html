@@ -65,6 +65,16 @@
           </div>
           <div class="col-md-6" id="alumniCompanyWrap"><label class="form-label small fw-semibold">Current company</label><input class="form-control" id="alumniCompany"/></div>
           <div class="col-md-6" id="alumniTitleWrap"><label class="form-label small fw-semibold">Role / Title</label><input class="form-control" id="alumniTitle"/></div>
+          <div class="col-12" id="alumniEmploymentDocsWrap" style="display:none">
+            <hr class="my-2"/>
+            <p class="small text-muted-2 mb-3">Upload employment documents for placement records. Offer letter is required on first upload; company ID and salary slip are optional.</p>
+            <div class="row g-3" id="alumniEmploymentDocsForm">
+              <div class="col-md-6"><label class="form-label small fw-semibold">Offer letter (PDF)</label><div class="file-picker"><input type="file" id="alumniOfferLetter" accept=".pdf" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="alumniOfferLetter"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="alumniOfferLetter">No file chosen</span></div></div>
+              <div class="col-md-6"><label class="form-label small fw-semibold">Company ID <span class="text-muted-2 fw-normal">(optional)</span></label><div class="file-picker"><input type="file" id="alumniCompanyIdDoc" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="alumniCompanyIdDoc"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="alumniCompanyIdDoc">No file chosen</span></div></div>
+              <div class="col-md-6"><label class="form-label small fw-semibold">Salary slip <span class="text-muted-2 fw-normal">(optional)</span></label><div class="file-picker"><input type="file" id="alumniSalarySlip" accept=".pdf,.doc,.docx" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="alumniSalarySlip"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="alumniSalarySlip">No file chosen</span></div><div class="form-text">PDF or Word document</div></div>
+            </div>
+            <div id="alumniEmploymentDocsStatus" class="small mt-2"></div>
+          </div>
         </div>
       </div></div>
 
@@ -137,6 +147,7 @@
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
 let studentPlacementState = { placed: false, selfPlacement: null };
+let alumniEmploymentDocs = null;
 
 const AES_PASSWORDLESS_ROLES = ['student', 'staff', 'placement_officer', 'alumni'];
 
@@ -471,20 +482,8 @@ function pickPhone(u) {
   return '';
 }
 
-function resetPlacementFilePickers() {
-  ['placedOfferLetter', 'placedCompanyIdDoc', 'placedSalarySlip'].forEach((id) => {
-    const input = document.getElementById(id);
-    if (input) input.value = '';
-    const nameEl = document.querySelector(`[data-file-picker-name="${id}"]`);
-    if (nameEl) {
-      nameEl.textContent = 'No file chosen';
-      nameEl.classList.remove('has-file');
-    }
-  });
-}
-
-function wirePlacementFilePickers() {
-  document.querySelectorAll('#getPlacedForm [data-file-picker]').forEach((btn) => {
+function wireFilePickers(rootSelector) {
+  document.querySelectorAll(`${rootSelector} [data-file-picker]`).forEach((btn) => {
     if (btn.dataset.pickerWired === '1') return;
     btn.dataset.pickerWired = '1';
     const id = btn.getAttribute('data-file-picker');
@@ -502,6 +501,107 @@ function wirePlacementFilePickers() {
       nameEl.classList.toggle('has-file', !!file);
     });
   });
+}
+
+function resetFilePickers(ids) {
+  ids.forEach((id) => {
+    const input = document.getElementById(id);
+    if (input) input.value = '';
+    const nameEl = document.querySelector(`[data-file-picker-name="${id}"]`);
+    if (nameEl) {
+      nameEl.textContent = 'No file chosen';
+      nameEl.classList.remove('has-file');
+    }
+  });
+}
+
+function resetPlacementFilePickers() {
+  resetFilePickers(['placedOfferLetter', 'placedCompanyIdDoc', 'placedSalarySlip']);
+}
+
+function wirePlacementFilePickers() {
+  wireFilePickers('#getPlacedForm');
+}
+
+function applyAlumniEmploymentDocsState(docs) {
+  alumniEmploymentDocs = docs && typeof docs === 'object' ? docs : null;
+  const statusEl = document.getElementById('alumniEmploymentDocsStatus');
+  if (!statusEl) return;
+
+  const hasOffer = !!alumniEmploymentDocs?.hasOfferLetter;
+  const offerInput = document.getElementById('alumniOfferLetter');
+  if (offerInput) offerInput.required = !hasOffer;
+
+  if (!alumniEmploymentDocs || (!hasOffer && !alumniEmploymentDocs.hasCompanyIdDoc && !alumniEmploymentDocs.hasSalarySlip)) {
+    statusEl.innerHTML = '';
+    return;
+  }
+
+  const links = [];
+  if (hasOffer) {
+    links.push(`<a href="/backend/api/alumni/employment-docs/offer-letter" target="_blank" rel="noopener">Offer letter</a> (${escapeAttr(alumniEmploymentDocs.offerLetter || 'uploaded')})`);
+  }
+  if (alumniEmploymentDocs.hasCompanyIdDoc) {
+    links.push(`<a href="/backend/api/alumni/employment-docs/company-id" target="_blank" rel="noopener">Company ID</a> (${escapeAttr(alumniEmploymentDocs.companyIdDoc || 'uploaded')})`);
+  }
+  if (alumniEmploymentDocs.hasSalarySlip) {
+    links.push(`<a href="/backend/api/alumni/employment-docs/salary-slip" target="_blank" rel="noopener">Salary slip</a> (${escapeAttr(alumniEmploymentDocs.salarySlip || 'uploaded')})`);
+  }
+  statusEl.innerHTML = links.length
+    ? `<span class="text-muted-2">On file:</span> ${links.join(' · ')}`
+    : '';
+}
+
+async function uploadAlumniEmploymentDocsIfNeeded() {
+  const working = document.getElementById('alumniWorking')?.checked;
+  if (!working || !Auth.hasRealAuth() || Auth.isDemo()) return true;
+
+  const offerFile = document.getElementById('alumniOfferLetter')?.files?.[0];
+  const companyIdFile = document.getElementById('alumniCompanyIdDoc')?.files?.[0];
+  const salarySlipFile = document.getElementById('alumniSalarySlip')?.files?.[0];
+  if (!offerFile && !companyIdFile && !salarySlipFile) return true;
+
+  const companyIdExts = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.doc', '.docx'];
+  const salarySlipExts = ['.pdf', '.doc', '.docx'];
+  const hasExistingOffer = !!alumniEmploymentDocs?.hasOfferLetter;
+
+  if (!hasExistingOffer && !offerFile) {
+    toast('Upload your offer letter (PDF).', 'warn');
+    return false;
+  }
+  if (offerFile && !String(offerFile.name || '').toLowerCase().endsWith('.pdf')) {
+    toast('Offer letter must be a PDF file.', 'warn');
+    return false;
+  }
+  if (companyIdFile && !placementUploadExtOk(companyIdFile, companyIdExts)) {
+    toast('Company ID must be PDF, image, or Word document.', 'warn');
+    return false;
+  }
+  if (salarySlipFile && !placementUploadExtOk(salarySlipFile, salarySlipExts)) {
+    toast('Salary slip must be PDF or Word document.', 'warn');
+    return false;
+  }
+
+  const fd = new FormData();
+  if (offerFile) fd.append('offerLetter', offerFile, offerFile.name);
+  if (companyIdFile) fd.append('companyIdDoc', companyIdFile, companyIdFile.name);
+  if (salarySlipFile) fd.append('salarySlip', salarySlipFile, salarySlipFile.name);
+
+  const res = await api('/alumni/employment-docs', {
+    method: 'POST',
+    body: fd,
+    noRedirectOn401: true,
+    skipAuthRedirect: true,
+  });
+
+  if (res?.success) {
+    applyAlumniEmploymentDocsState(res.data || null);
+    resetFilePickers(['alumniOfferLetter', 'alumniCompanyIdDoc', 'alumniSalarySlip']);
+    return true;
+  }
+
+  toast(res?.message || 'Could not upload employment documents.', 'error');
+  return false;
 }
 
 function setGetPlacedFormEditable(editable) {
@@ -937,10 +1037,13 @@ if (role === 'alumni') {
   document.getElementById('alumniWorking').checked = working;
   document.getElementById('alumniCompany').value = user.company || '';
   document.getElementById('alumniTitle').value = user.title || '';
+  wireFilePickers('#alumniEmploymentDocsForm');
   function syncAlumniFields() {
     const on = document.getElementById('alumniWorking').checked;
     document.getElementById('alumniCompanyWrap').style.display = on ? '' : 'none';
     document.getElementById('alumniTitleWrap').style.display = on ? '' : 'none';
+    document.getElementById('alumniEmploymentDocsWrap').style.display = on ? '' : 'none';
+    if (on) wireFilePickers('#alumniEmploymentDocsForm');
   }
   document.getElementById('alumniWorking').addEventListener('change', syncAlumniFields);
   syncAlumniFields();
@@ -951,6 +1054,7 @@ if (role === 'alumni') {
       document.getElementById('alumniWorking').checked = !!p.isWorking;
       document.getElementById('alumniCompany').value = p.company || '';
       document.getElementById('alumniTitle').value = p.title || p.role || '';
+      applyAlumniEmploymentDocsState(p.employmentDocs || null);
       Auth.set({ ...user, isWorking: !!p.isWorking, company: p.company || '', title: p.title || p.role || '' }, Auth.token());
       syncAlumniFields();
     });
@@ -1109,10 +1213,18 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
       company: working ? document.getElementById('alumniCompany').value.trim() : '',
       title: working ? document.getElementById('alumniTitle').value.trim() : '',
     };
+    if (working && !payload.company) {
+      toast('Enter your current company.', 'warn');
+      return;
+    }
     if (Auth.hasRealAuth()) {
       const res = await api('/alumni/profile', { method: 'PUT', body: payload, noRedirectOn401: true });
       if (res?.success) {
         const prof = res.data || {};
+        if (working) {
+          const docsOk = await uploadAlumniEmploymentDocsIfNeeded();
+          if (!docsOk) return;
+        }
         Auth.set({
           ...user,
           isWorking: prof.isWorking ?? working,

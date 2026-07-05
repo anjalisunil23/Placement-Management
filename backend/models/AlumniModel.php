@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Models;
 
 use PMS\Schemas\Collections;
+use PMS\Utils\DocumentHelper;
 use PMS\Utils\Security;
 
 class AlumniModel extends BaseModel
@@ -114,7 +115,31 @@ class AlumniModel extends BaseModel
         $fields = self::profileToUserFields($profile);
         $profile['title'] = $fields['title'];
         $profile['isWorking'] = $fields['isWorking'];
+        $profile['employmentDocs'] = self::serializeEmploymentDocs(
+            is_array($profile['employmentDocs'] ?? null) ? $profile['employmentDocs'] : null
+        );
         return $profile;
+    }
+
+    /**
+     * @param array<string, mixed>|null $docs
+     * @return array<string, mixed>|null
+     */
+    public static function serializeEmploymentDocs(?array $docs): ?array
+    {
+        if ($docs === null) {
+            return null;
+        }
+
+        return [
+            'offerLetter'    => (string) ($docs['offerLetter'] ?? ''),
+            'companyIdDoc'   => (string) ($docs['companyIdDoc'] ?? ''),
+            'salarySlip'     => (string) ($docs['salarySlip'] ?? ''),
+            'hasOfferLetter' => (string) ($docs['offerLetter'] ?? '') !== '',
+            'hasCompanyIdDoc'=> (string) ($docs['companyIdDoc'] ?? '') !== '',
+            'hasSalarySlip'  => (string) ($docs['salarySlip'] ?? '') !== '',
+            'updatedAt'      => isset($docs['updatedAt']) ? DocumentHelper::serialize($docs['updatedAt']) : null,
+        ];
     }
 
     /**

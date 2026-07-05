@@ -183,6 +183,7 @@ final class Collections
                 'experience' => 'int (years)',
                 'skills'     => 'array',
                 'isWorking'  => 'bool',
+                'employmentDocs' => 'array|null',
                 'createdAt'  => 'UTCDateTime',
                 'updatedAt'  => 'UTCDateTime',
             ],

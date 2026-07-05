@@ -48,6 +48,7 @@ return [
         'signed_dir' => $rootPath . '/uploads/signed_reports',
         'offer_letter_dir' => $rootPath . '/uploads/offer_letters',
         'self_placement_dir' => $rootPath . '/uploads/self_placement',
+        'alumni_employment_dir' => $rootPath . '/uploads/alumni_employment',
         'photo_dir'  => $rootPath . '/uploads/photos',
     ],
     'cors' => [

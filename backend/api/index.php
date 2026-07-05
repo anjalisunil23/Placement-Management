@@ -284,6 +284,10 @@ $routes = [
     // Alumni
     ['GET',  '/alumni/profile',     [AlumniController::class, 'getProfile']],
     ['PUT',  '/alumni/profile',     [AlumniController::class, 'updateProfile']],
+    ['POST', '/alumni/employment-docs', [AlumniController::class, 'submitEmploymentDocs']],
+    ['GET',  '/alumni/employment-docs/offer-letter', [AlumniController::class, 'downloadOfferLetter']],
+    ['GET',  '/alumni/employment-docs/company-id', [AlumniController::class, 'downloadCompanyIdDoc']],
+    ['GET',  '/alumni/employment-docs/salary-slip', [AlumniController::class, 'downloadSalarySlip']],
     ['GET',  '/alumni/dashboard',   [AlumniController::class, 'dashboard']],
     ['GET',  '/alumni/job-posts',   [AlumniController::class, 'listJobPosts']],
     ['POST', '/alumni/job-posts',   [AlumniController::class, 'createJobPost']],

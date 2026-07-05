@@ -23,6 +23,7 @@ use PMS\Services\RecruitmentResultService;
 use PMS\Services\NotificationService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
+use PMS\Utils\Security;
 use PMS\Utils\Validator;
 
 /**
@@ -56,6 +57,119 @@ final class AlumniController
     }
     $updated = $model->findById((string) $profile['_id']);
     Response::success(DocumentHelper::serialize(AlumniModel::serializeProfile($updated ?? $profile)), 'Profile updated.');
+  }
+
+  /** POST /api/alumni/employment-docs — upload offer letter, company ID, salary slip */
+  public function submitEmploymentDocs(): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $model = new AlumniModel();
+    $profile = $model->findByUserId((string) $user['_id']);
+    if (!$profile) {
+      Response::notFound('Alumni profile not found.');
+    }
+
+    $fields = AlumniModel::profileToUserFields($profile);
+    if (!$fields['isWorking']) {
+      Response::error('Employment documents can only be uploaded when you are marked as currently employed.', 422);
+    }
+
+    $company = trim((string) ($profile['company'] ?? ''));
+    if ($company === '') {
+      Response::error('Set your current company before uploading employment documents.', 422);
+    }
+
+    $existing = is_array($profile['employmentDocs'] ?? null) ? $profile['employmentDocs'] : [];
+    $hasExistingOffer = (string) ($existing['offerLetter'] ?? '') !== '';
+    $hasNewOffer = isset($_FILES['offerLetter'])
+      && (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+    $hasNewCompanyId = isset($_FILES['companyIdDoc'])
+      && (int) ($_FILES['companyIdDoc']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+    $hasNewSalarySlip = isset($_FILES['salarySlip'])
+      && (int) ($_FILES['salarySlip']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+
+    if (!$hasNewOffer && !$hasNewCompanyId && !$hasNewSalarySlip) {
+      Response::error('Choose at least one document to upload.', 422);
+    }
+    if (!$hasExistingOffer && !$hasNewOffer) {
+      Response::error('Offer letter (PDF) is required.', 422);
+    }
+
+    $userKey = preg_replace('/[^a-zA-Z0-9]+/', '', (string) ($user['_id'] ?? 'alumni')) ?: 'alumni';
+    $safeCompany = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $company) ?: 'company';
+    $savedPaths = [];
+    $docs = $existing;
+
+    try {
+      if ($hasNewOffer) {
+        $docs['offerLetter'] = $this->saveEmploymentUpload(
+          'offerLetter',
+          $userKey,
+          $safeCompany,
+          'offer',
+          ['pdf'],
+          $savedPaths
+        );
+      }
+      if ($hasNewCompanyId) {
+        $docs['companyIdDoc'] = $this->saveEmploymentUpload(
+          'companyIdDoc',
+          $userKey,
+          $safeCompany,
+          'company_id',
+          ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx'],
+          $savedPaths
+        );
+      }
+      if ($hasNewSalarySlip) {
+        $docs['salarySlip'] = $this->saveEmploymentUpload(
+          'salarySlip',
+          $userKey,
+          $safeCompany,
+          'salary_slip',
+          ['pdf', 'doc', 'docx'],
+          $savedPaths
+        );
+      }
+    } catch (\RuntimeException $e) {
+      foreach ($savedPaths as $path) {
+        @unlink($path);
+      }
+      Response::error($e->getMessage(), 400);
+    }
+
+    $docs['updatedAt'] = DocumentHelper::now();
+    if (!$model->update((string) $profile['_id'], ['employmentDocs' => $docs])) {
+      foreach ($savedPaths as $path) {
+        @unlink($path);
+      }
+      Response::error('Could not save employment documents.', 500);
+    }
+
+    $updated = $model->findById((string) $profile['_id']) ?? $profile;
+    Response::success(
+      AlumniModel::serializeEmploymentDocs(is_array($updated['employmentDocs'] ?? null) ? $updated['employmentDocs'] : $docs),
+      'Employment documents uploaded.',
+      201
+    );
+  }
+
+  /** GET /api/alumni/employment-docs/offer-letter */
+  public function downloadOfferLetter(): void
+  {
+    $this->streamEmploymentDoc('offerLetter');
+  }
+
+  /** GET /api/alumni/employment-docs/company-id */
+  public function downloadCompanyIdDoc(): void
+  {
+    $this->streamEmploymentDoc('companyIdDoc');
+  }
+
+  /** GET /api/alumni/employment-docs/salary-slip */
+  public function downloadSalarySlip(): void
+  {
+    $this->streamEmploymentDoc('salarySlip');
   }
 
   /** GET /api/alumni/dashboard */
@@ -394,5 +508,92 @@ final class AlumniController
       Response::notFound('Story not found.');
     }
     Response::success(null, 'Success story removed.');
+  }
+
+  /**
+   * @param array<int, string> $savedPaths
+   */
+  private function saveEmploymentUpload(
+    string $field,
+    string $userKey,
+    string $safeCompany,
+    string $prefix,
+    array $extensions,
+    array &$savedPaths
+  ): string {
+    if (!isset($_FILES[$field])) {
+      throw new \RuntimeException('Missing upload field.');
+    }
+
+    $uploadError = (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($uploadError === UPLOAD_ERR_NO_FILE) {
+      throw new \RuntimeException('No file uploaded.');
+    }
+    if ($uploadError !== UPLOAD_ERR_OK) {
+      throw new \RuntimeException(ucfirst(str_replace('_', ' ', $prefix)) . ' upload failed.');
+    }
+
+    $config = require dirname(__DIR__) . '/config/app.php';
+    $error = Security::validateUploadedFile(
+      $_FILES[$field],
+      $config['uploads']['max_resume'],
+      $extensions
+    );
+    if ($error) {
+      throw new \RuntimeException(ucfirst(str_replace('_', ' ', $prefix)) . ': ' . $error);
+    }
+
+    $dir = $config['uploads']['alumni_employment_dir'] ?? ($config['uploads']['self_placement_dir'] . '/../alumni_employment');
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+      throw new \RuntimeException('Server upload folder is not writable.');
+    }
+
+    $ext = strtolower(pathinfo((string) ($_FILES[$field]['name'] ?? ''), PATHINFO_EXTENSION));
+    $path = $dir . '/alumni_' . $userKey . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
+    if (!move_uploaded_file($_FILES[$field]['tmp_name'], $path)) {
+      throw new \RuntimeException('Failed to save ' . str_replace('_', ' ', $prefix) . '.');
+    }
+
+    $savedPaths[] = $path;
+
+    return basename($path);
+  }
+
+  private function streamEmploymentDoc(string $field): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
+    if (!$profile) {
+      Response::notFound('Alumni profile not found.');
+    }
+
+    $docs = is_array($profile['employmentDocs'] ?? null) ? $profile['employmentDocs'] : null;
+    $filename = (string) ($docs[$field] ?? '');
+    if ($filename === '') {
+      Response::notFound('Document not found.');
+    }
+
+    $config = require dirname(__DIR__) . '/config/app.php';
+    $dir = $config['uploads']['alumni_employment_dir'] ?? ($config['uploads']['self_placement_dir'] . '/../alumni_employment');
+    $path = $dir . '/' . basename($filename);
+    if (!is_file($path)) {
+      Response::notFound('Document file missing on server.');
+    }
+
+    $mime = match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+      'pdf'  => 'application/pdf',
+      'png'  => 'image/png',
+      'jpg', 'jpeg' => 'image/jpeg',
+      'webp' => 'image/webp',
+      'doc'  => 'application/msword',
+      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      default => 'application/octet-stream',
+    };
+
+    header('Content-Type: ' . $mime);
+    header('Content-Disposition: inline; filename="' . basename($path) . '"');
+    header('Content-Length: ' . (string) filesize($path));
+    readfile($path);
+    exit;
   }
 }
