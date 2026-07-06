@@ -2684,6 +2684,14 @@ final class AesLoginService
             return $loginCategory;
         }
 
+        $course = strtoupper(trim($this->pickInsensitive($flat, [
+            'stud_course', 'stud_cource_short', 'course', 'programme', 'program', 'degree',
+        ])));
+        $batch = strtoupper(trim($this->pickInsensitive($flat, ['stud_class', 'classbatch', 'batch'])));
+        if ($course === 'PHD' || str_contains($course, 'PHD') || preg_match('/^PHD[-_]/', $batch)) {
+            return 'staff';
+        }
+
         foreach (['staff', 'faculty', 'teacher', 'employee', 'hod', 'professor', 'lecturer', 'non-teaching', 'non_teaching'] as $needle) {
             if (str_contains($roleHint, $needle)) {
                 return 'staff';
@@ -2747,7 +2755,15 @@ final class AesLoginService
         if ($registerNumber !== '' && preg_match('/^[0-9]{2}[A-Z]{2,4}[0-9]{2,4}$/i', $registerNumber)) {
             return 'student';
         }
-        if ($registerNumber !== '' && preg_match('/^\d{4,6}$/', $registerNumber)) {
+        if (
+            $registerNumber !== ''
+            && preg_match('/^\d{4,6}$/', $registerNumber)
+            && !$this->isStaffCollegeEmail($collegeEmail)
+            && !$this->isStaffCollegeEmail($primaryEmail)
+            && $course !== 'PHD'
+            && !str_contains($course, 'PHD')
+            && !preg_match('/^PHD[-_]/', $batch)
+        ) {
             return 'student';
         }
 

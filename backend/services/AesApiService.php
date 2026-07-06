@@ -1126,8 +1126,9 @@ final class AesApiService
             $registerNumber = trim((string) (
                 $row['regno']
                 ?? $row['reg_no']
-                ?? $row['registerNumber']
                 ?? $row['registerno']
+                ?? $row['registerNumber']
+                ?? $row['register_no']
                 ?? $row['registration_no']
                 ?? $row['univ_regno']
                 ?? $row['university_regno']

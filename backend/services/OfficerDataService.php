@@ -237,6 +237,9 @@ final class OfficerDataService
                 'name' => $dept['name'] ?? '',
                 'code' => $dept['code'] ?? '',
             ] : null;
+            if (!$this->isPlacementStudentListCandidate($s, $u, $row)) {
+                continue;
+            }
             $rows[] = $row;
         }
 
@@ -744,6 +747,83 @@ final class OfficerDataService
             || str_contains($email, '@amaljyothi.ac.in')
             || str_ends_with($email, '@ajce.in')
             || (bool) preg_match('/@[a-z0-9.-]+\.ajce\.in$/', $email);
+    }
+
+    /**
+     * Faculty / staff college mailbox (not a programme student subdomain).
+     */
+    private function isFacultyCollegeEmail(string $email): bool
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || !str_contains($email, '@')) {
+            return false;
+        }
+        if (str_contains($email, '@students.amaljyothi.ac.in')) {
+            return false;
+        }
+        if (preg_match('/@(mca|cse|ece|eee|me|ce|it|cs|mba|mtech|ecea|mech|civil)\.ajce\.in$/', $email)) {
+            return false;
+        }
+
+        return str_contains($email, '@amaljyothi.ac.in') || str_ends_with($email, '@ajce.in');
+    }
+
+    /**
+     * Placement student list/search should exclude staff accounts and research (PHD) profiles.
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed>|null $user
+     * @param array<string, mixed> $row
+     */
+    private function isPlacementStudentListCandidate(array $student, ?array $user, array $row): bool
+    {
+        if (is_array($user)) {
+            $userRole = (string) ($user['role'] ?? '');
+            if ($userRole !== '' && $userRole !== 'student') {
+                return false;
+            }
+        }
+
+        $dept = is_array($row['department'] ?? null) ? $row['department'] : [];
+        $deptCode = strtoupper(trim((string) ($row['departmentCode'] ?? $dept['code'] ?? '')));
+        $deptName = strtoupper(trim((string) ($row['departmentName'] ?? $dept['name'] ?? '')));
+        foreach ([$deptCode, $deptName] as $label) {
+            if ($label === 'PHD' || str_contains($label, 'PHD')) {
+                return false;
+            }
+        }
+
+        $batch = strtoupper(trim((string) ($row['classBatch'] ?? $student['classBatch'] ?? '')));
+        if (preg_match('/^PHD[-_]/', $batch)) {
+            return false;
+        }
+
+        $userRow = is_array($row['user'] ?? null) ? $row['user'] : [];
+        $emails = array_unique(array_filter([
+            strtolower(trim((string) ($row['collegeEmail'] ?? ''))),
+            strtolower(trim((string) ($user['email'] ?? ''))),
+            strtolower(trim((string) ($userRow['email'] ?? ''))),
+        ]));
+        foreach ($emails as $email) {
+            if ($this->isFacultyCollegeEmail($email)) {
+                return false;
+            }
+        }
+
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        if ($register !== '') {
+            $placement = $this->placementProfileForRegister($register);
+            $course = strtoupper(trim((string) ($placement['stud_course'] ?? $placement['stud_cource_short'] ?? '')));
+            if ($course === 'PHD' || str_contains($course, 'PHD')) {
+                return false;
+            }
+            $aesBatch = strtoupper(trim((string) ($placement['stud_class'] ?? '')));
+            if (preg_match('/^PHD[-_]/', $aesBatch)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
