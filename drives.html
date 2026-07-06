@@ -1,6 +1,7 @@
 <!doctype html><html lang="en"><head>
 
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 
 <title>Placement Drives · AJCE Placements</title>
 
@@ -108,12 +109,14 @@
             <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="3" placeholder="Role overview, responsibilities…"></textarea></div>
           </div>
           <h6 class="fw-bold mb-3">Eligibility & schedule</h6>
-          <div class="row g-3">
-            <div class="col-12"><label class="form-label small fw-semibold">Eligible branches</label><div id="createDriveBranches" class="d-flex flex-wrap gap-2 border rounded p-2"></div></div>
+          <div class="row g-3 border rounded p-3 mb-2 bg-light">
+            <div class="col-12"><label class="form-label small fw-semibold">Eligible branches</label><div id="createDriveBranches" class="d-flex flex-wrap gap-2 border rounded p-2 bg-white"></div></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" name="minCgpa" type="number" step="0.1" value="7.0"/></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" name="maxBacklogs" type="number" value="0"/></div>
-            <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes)</label><input class="form-control" name="minPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG must meet this %</div></div>
-            <div class="col-md-3"><label class="form-label small fw-semibold">Gender</label><select class="form-select" name="gender"><option value="any" selected>Any</option><option value="male">Male only</option><option value="female">Female only</option></select></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes)</label><input class="form-control" name="minPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG</div></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Gender restriction</label><select class="form-select" name="gender" id="createDriveGender"><option value="any" selected>Any</option><option value="male">Male only</option><option value="female">Female only</option></select><div class="form-text">Only matching students see this drive</div></div>
+          </div>
+          <div class="row g-3">
             <div class="col-md-6"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" name="deadline"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Mode</label><select class="form-select" name="mode"><option>On-campus</option><option>Virtual</option><option>Hybrid</option></select></div>
           </div>
@@ -314,7 +317,7 @@
 <script src="js/admin-api.js?v=20260626d"></script>
 <script src="js/officer-api.js?v=20260626d"></script>
 <script src="js/staff-api.js?v=20260626d"></script>
-<script src="js/api.js?v=20260706b"></script>
+<script src="js/api.js?v=20260706c"></script>
 
 <script src="js/app.js?v=20260630f"></script>
 
@@ -795,6 +798,8 @@ async function loadDrives() {
 window.openCreateDrive = async () => {
   if (!canManage) return;
   document.getElementById('createDriveForm')?.reset();
+  const genderSel = document.getElementById('createDriveGender');
+  if (genderSel) genderSel.value = 'any';
   const user = Auth.user() || {};
   const deptCode = String(user.department || user.departmentCode || '').trim().toUpperCase();
   if (role === 'placement_officer' && deptCode) {
