@@ -115,6 +115,7 @@ final class CompanyController
         $eligibility = [
             'minCgpa'     => (float) ($input['minCgpa'] ?? 0),
             'maxBacklogs' => (int) ($input['maxBacklogs'] ?? 0),
+            'minPercentAllClasses' => (float) ($input['minPercentAllClasses'] ?? 0),
             'min10th'     => (float) ($input['min10th'] ?? 0),
             'min12th'     => (float) ($input['min12th'] ?? 0),
             'minUg'       => (float) ($input['minUg'] ?? 0),

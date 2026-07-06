@@ -3284,6 +3284,9 @@ const DriveStore = {
     };
     if (p.minCgpa !== undefined && p.minCgpa !== '') eligibility.minCgpa = parseFloat(p.minCgpa) || 0;
     if (p.maxBacklogs !== undefined && p.maxBacklogs !== '') eligibility.maxBacklogs = parseInt(p.maxBacklogs, 10) || 0;
+    if (p.minPercentAllClasses !== undefined && p.minPercentAllClasses !== '') {
+      eligibility.minPercentAllClasses = parseFloat(p.minPercentAllClasses) || 0;
+    }
     if (p.min10th !== undefined && p.min10th !== '') eligibility.min10th = parseFloat(p.min10th) || 0;
     if (p.min12th !== undefined && p.min12th !== '') eligibility.min12th = parseFloat(p.min12th) || 0;
     if (p.minUg !== undefined && p.minUg !== '') eligibility.minUg = parseFloat(p.minUg) || 0;
@@ -3449,6 +3452,7 @@ const DriveStore = {
       eligibility: {
         minCgpa: parseFloat(p.minCgpa) || 0,
         maxBacklogs: parseInt(p.maxBacklogs, 10) || 0,
+        minPercentAllClasses: parseFloat(p.minPercentAllClasses) || 0,
         min10th: parseFloat(p.min10th) || 0,
         min12th: parseFloat(p.min12th) || 0,
         minUg: parseFloat(p.minUg) || 0,

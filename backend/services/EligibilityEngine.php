@@ -247,6 +247,13 @@ final class EligibilityEngine
         $ug = (float) ($academic['ugMarks'] ?? 0);
         $pg = $this->studentPgMarkPercent($academic);
 
+        $minAll = $this->criteriaMinPercent(
+            $criteria,
+            'minPercentAllClasses',
+            'minAllClassPercent',
+            'minPercentAll'
+        );
+
         $checks = [
             ['min10th', 'minMarks10th', $marks10, '10th'],
             ['min12th', 'minMarks12th', $marks12, '12th'],
@@ -255,7 +262,7 @@ final class EligibilityEngine
         ];
 
         foreach ($checks as [$primary, $alternate, $actual, $label]) {
-            $min = $this->criteriaMinPercent($criteria, $primary, $alternate);
+            $min = max($minAll, $this->criteriaMinPercent($criteria, $primary, $alternate));
             if ($min <= 0) {
                 continue;
             }
