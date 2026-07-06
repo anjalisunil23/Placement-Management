@@ -65,6 +65,7 @@
       </div>
       <div class="col-md-4"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" type="number" name="minCgpa" step="0.1" min="0" max="10" value="7.0" required/></div>
       <div class="col-md-4"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" type="number" name="maxBacklogs" min="0" max="20" value="0" required/></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">Gender</label><select class="form-select" name="gender"><option value="any" selected>Any</option><option value="male">Male only</option><option value="female">Female only</option></select></div>
       <div class="col-md-4"><label class="form-label small fw-semibold">Min 10th %</label><input class="form-control" type="number" name="min10th" min="0" max="100" value="60"/></div>
       <div class="col-md-4"><label class="form-label small fw-semibold">Min 12th %</label><input class="form-control" type="number" name="min12th" min="0" max="100" value="60"/></div>
       <div class="col-12">
@@ -103,6 +104,7 @@ function eligibilityToRule(driveId, e, updatedAt) {
     maxBacklogs: e.maxBacklogs ?? 0,
     min10th: e.min10th ?? 0,
     min12th: e.min12th ?? 0,
+    gender: e.gender || 'any',
     branches: e.branches || [],
     notes: e.notes || '',
     updatedAt: updatedAt || new Date().toISOString(),
@@ -114,12 +116,12 @@ function findRoleItem(id) {
 }
 
 const PREVIEW_STUDENTS = [
-  { name:'Aarav Mehta', roll:'21CSE001', dept:'CSE', cgpa:8.92, backlogs:0 },
-  { name:'Rahul Verma', roll:'21IT012', dept:'IT', cgpa:9.10, backlogs:0 },
-  { name:'Sneha Iyer', roll:'21ECE044', dept:'ECE', cgpa:8.40, backlogs:1 },
-  { name:'Priya Nair', roll:'21CSE018', dept:'CSE', cgpa:7.20, backlogs:2 },
-  { name:'Kabir Singh', roll:'21IT025', dept:'IT', cgpa:8.55, backlogs:0 },
-  { name:'Vikram Joshi', roll:'21MCA092', dept:'MCA', cgpa:8.30, backlogs:0 },
+  { name:'Aarav Mehta', roll:'21CSE001', dept:'CSE', cgpa:8.92, backlogs:0, gender:'male' },
+  { name:'Rahul Verma', roll:'21IT012', dept:'IT', cgpa:9.10, backlogs:0, gender:'male' },
+  { name:'Sneha Iyer', roll:'21ECE044', dept:'ECE', cgpa:8.40, backlogs:1, gender:'female' },
+  { name:'Priya Nair', roll:'21CSE018', dept:'CSE', cgpa:7.20, backlogs:2, gender:'female' },
+  { name:'Kabir Singh', roll:'21IT025', dept:'IT', cgpa:8.55, backlogs:0, gender:'male' },
+  { name:'Vikram Joshi', roll:'21MCA092', dept:'MCA', cgpa:8.30, backlogs:0, gender:'male' },
 ];
 
 function driveList() {
@@ -183,6 +185,8 @@ function isStudentEligible(s, rule) {
   if (rule.branches?.length && !rule.branches.includes(s.dept)) return false;
   if (s.cgpa < rule.minCgpa) return false;
   if (s.backlogs > rule.maxBacklogs) return false;
+  const g = String(rule.gender || 'any').toLowerCase();
+  if (g && g !== 'any' && s.gender && s.gender !== g) return false;
   return true;
 }
 
@@ -221,6 +225,7 @@ async function renderPreview(rule) {
       minCgpa: rule.minCgpa,
       maxBacklogs: rule.maxBacklogs,
       branches: (rule.branches || []).join(','),
+      gender: rule.gender || 'any',
     });
     const res = await api(`/company/eligibility/preview?${qs}`, { noRedirectOn401: true });
     if (res?.success && Array.isArray(res.data)) rows = res.data;
@@ -258,6 +263,7 @@ async function renderRuleDetail(driveId) {
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Min CGPA</div><div class="val" style="font-size:1.2rem">${rule.minCgpa}</div></div></div>
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Max backlogs</div><div class="val" style="font-size:1.2rem">${rule.maxBacklogs}</div></div></div>
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Branches</div><div class="val" style="font-size:1rem">${rule.branches.join(', ') || 'All'}</div></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Gender</div><div class="val" style="font-size:1rem">${({ any:'Any', male:'Male only', female:'Female only' })[rule.gender] || 'Any'}</div></div></div>
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Min 10th %</div><div class="val" style="font-size:1.2rem">${rule.min10th}</div></div></div>
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Min 12th %</div><div class="val" style="font-size:1.2rem">${rule.min12th}</div></div></div>
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Est. eligible</div><div class="val" style="font-size:1.2rem">~${estimateEligibleCount(rule)}</div></div></div>
@@ -286,6 +292,7 @@ window.openEditRule = driveId => {
     document.querySelector('[name=maxBacklogs]').value = rule.maxBacklogs;
     document.querySelector('[name=min10th]').value = rule.min10th;
     document.querySelector('[name=min12th]').value = rule.min12th;
+    document.querySelector('[name=gender]').value = rule.gender || 'any';
     document.querySelector('[name=notes]').value = rule.notes || '';
     renderDepartmentBranchCheckboxes(document.getElementById('branchChecks'), { checkedAll: false, selected: rule.branches || [] });
   } else {
@@ -361,6 +368,7 @@ document.getElementById('ruleForm').addEventListener('submit', async e => {
     maxBacklogs: fd.get('maxBacklogs'),
     min10th: fd.get('min10th'),
     min12th: fd.get('min12th'),
+    gender: fd.get('gender') || 'any',
     branches,
     notes: fd.get('notes'),
   };

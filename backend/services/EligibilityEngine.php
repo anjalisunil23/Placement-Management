@@ -118,6 +118,7 @@ final class EligibilityEngine
         }
 
         $this->appendMarksCriteriaReasons($academic, $criteria, $reasons);
+        $this->appendGenderCriteriaReasons($student, $criteria, $reasons);
 
         // Department check
         if (!empty($allowedBranches)) {
@@ -217,6 +218,10 @@ final class EligibilityEngine
         }
 
         if (!$this->passesMarksCriteria($academic, $criteria)) {
+            return false;
+        }
+
+        if (!$this->passesGenderCriteria($student, $criteria)) {
             return false;
         }
 
@@ -471,6 +476,99 @@ final class EligibilityEngine
         }
 
         return $student;
+    }
+
+    /**
+     * Whether a student matches a drive's gender rule (if any).
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $criteria
+     */
+    public function studentMatchesGenderRule(array $student, array $criteria): bool
+    {
+        return $this->passesGenderCriteria($student, $criteria);
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $criteria
+     */
+    private function passesGenderCriteria(array $student, array $criteria): bool
+    {
+        $reasons = [];
+        $this->appendGenderCriteriaReasons($student, $criteria, $reasons);
+
+        return $reasons === [];
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $criteria
+     * @param list<string> $reasons
+     */
+    private function appendGenderCriteriaReasons(array $student, array $criteria, array &$reasons): void
+    {
+        $required = $this->requiredGender($criteria);
+        if ($required === null) {
+            return;
+        }
+
+        $actual = $this->studentGender($student);
+        if ($actual === null) {
+            $reasons[] = 'Gender is not recorded on your profile.';
+            return;
+        }
+
+        if ($actual !== $required) {
+            $label = $required === 'female' ? 'Female' : 'Male';
+            $reasons[] = "This drive is restricted to {$label} candidates only.";
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $criteria
+     */
+    private function requiredGender(array $criteria): ?string
+    {
+        $raw = strtolower(trim((string) ($criteria['gender'] ?? '')));
+        if ($raw === '' || $raw === 'any' || $raw === 'all') {
+            return null;
+        }
+
+        return match ($raw) {
+            'male', 'm', 'boys', 'boy' => 'male',
+            'female', 'f', 'girls', 'girl' => 'female',
+            default => null,
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     */
+    private function studentGender(array $student): ?string
+    {
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $raw = trim((string) ($personal['gender'] ?? $student['gender'] ?? ''));
+
+        return self::normalizeGender($raw);
+    }
+
+    private static function normalizeGender(string $raw): ?string
+    {
+        $g = strtolower(trim($raw));
+        if ($g === '') {
+            return null;
+        }
+
+        if (in_array($g, ['male', 'm', 'boy', 'boys', '1'], true) || str_starts_with($g, 'mal')) {
+            return 'male';
+        }
+
+        if (in_array($g, ['female', 'f', 'girl', 'girls', '2'], true) || str_starts_with($g, 'fem')) {
+            return 'female';
+        }
+
+        return null;
     }
 
     /**

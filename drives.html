@@ -113,6 +113,7 @@
             <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" name="minCgpa" type="number" step="0.1" value="7.0"/></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" name="maxBacklogs" type="number" value="0"/></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes)</label><input class="form-control" name="minPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG must meet this %</div></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Gender</label><select class="form-select" name="gender"><option value="any" selected>Any</option><option value="male">Male only</option><option value="female">Female only</option></select></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" name="deadline"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Mode</label><select class="form-select" name="mode"><option>On-campus</option><option>Virtual</option><option>Hybrid</option></select></div>
           </div>
@@ -158,6 +159,7 @@
         <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" id="editMinCgpa" type="number" step="0.1" min="0" max="10"/></div>
         <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" id="editMaxBacklogs" type="number" min="0"/></div>
         <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes)</label><input class="form-control" id="editMinPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG</div></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Gender</label><select class="form-select" id="editGender"><option value="any">Any</option><option value="male">Male only</option><option value="female">Female only</option></select></div>
 
         <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="editDescription" rows="3"></textarea></div>
 
@@ -312,7 +314,7 @@
 <script src="js/admin-api.js?v=20260626d"></script>
 <script src="js/officer-api.js?v=20260626d"></script>
 <script src="js/staff-api.js?v=20260626d"></script>
-<script src="js/api.js?v=20260706a"></script>
+<script src="js/api.js?v=20260706b"></script>
 
 <script src="js/app.js?v=20260630f"></script>
 
@@ -868,6 +870,7 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     minCgpa: fd.get('minCgpa'),
     maxBacklogs: fd.get('maxBacklogs'),
     minPercentAllClasses: fd.get('minPercentAllClasses'),
+    gender: fd.get('gender') || 'any',
     location: fd.get('location'),
     deadline: deadline || '',
     date: recruitmentDate || deadline,
@@ -922,6 +925,7 @@ window.openEditDrive = id => {
   document.getElementById('editMaxBacklogs').value = elig.maxBacklogs ?? '';
   document.getElementById('editMinPercentAllClasses').value = elig.minPercentAllClasses
     ?? (elig.min10th && elig.min10th === elig.min12th && elig.min10th === elig.minUg && elig.min10th === elig.minPg ? elig.min10th : '');
+  document.getElementById('editGender').value = elig.gender || 'any';
 
   document.getElementById('editDescription').value = d.description || '';
 
@@ -990,6 +994,7 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
     minCgpa: document.getElementById('editMinCgpa').value,
     maxBacklogs: document.getElementById('editMaxBacklogs').value,
     minPercentAllClasses: document.getElementById('editMinPercentAllClasses').value,
+    gender: document.getElementById('editGender').value || 'any',
 
     description: document.getElementById('editDescription').value.trim(),
 

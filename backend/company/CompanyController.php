@@ -120,6 +120,7 @@ final class CompanyController
             'min12th'     => (float) ($input['min12th'] ?? 0),
             'minUg'       => (float) ($input['minUg'] ?? 0),
             'minPg'       => (float) ($input['minPg'] ?? 0),
+            'gender'      => strtolower(trim((string) ($input['gender'] ?? 'any'))),
             'branches'    => $input['branches'] ?? [],
             'notes'       => trim((string) ($input['notes'] ?? '')),
         ];
@@ -134,6 +135,7 @@ final class CompanyController
         $minCgpa = isset($_GET['minCgpa']) ? (float) $_GET['minCgpa'] : 0;
         $maxBacklogs = isset($_GET['maxBacklogs']) ? (int) $_GET['maxBacklogs'] : 99;
         $branches = isset($_GET['branches']) ? explode(',', (string) $_GET['branches']) : [];
+        $gender = strtolower(trim((string) ($_GET['gender'] ?? '')));
 
         $students = (new StudentModel())->filterStudents([
             'minCgpa'     => $minCgpa > 0 ? $minCgpa : null,
@@ -141,6 +143,8 @@ final class CompanyController
         ], 200);
 
         $deptModel = new \PMS\Models\DepartmentModel();
+        $engine = new \PMS\Services\EligibilityEngine();
+        $genderCriteria = $gender !== '' && $gender !== 'any' ? ['gender' => $gender] : [];
         $preview = [];
         foreach ($students as $student) {
             $deptId = (string) ($student['departmentId'] ?? '');
@@ -148,6 +152,9 @@ final class CompanyController
             $code = $dept ? (string) ($dept['code'] ?? '') : '';
             $eligible = true;
             if ($branches !== [] && $branches[0] !== '' && !in_array($code, $branches, true)) {
+                $eligible = false;
+            }
+            if ($eligible && $genderCriteria !== [] && !$engine->studentMatchesGenderRule($student, $genderCriteria)) {
                 $eligible = false;
             }
             $user = (new \PMS\Models\UserModel())->findById((string) $student['userId']);

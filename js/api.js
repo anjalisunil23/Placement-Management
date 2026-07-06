@@ -2355,6 +2355,7 @@ const CompanyEligibility = {
       maxBacklogs: parseInt(payload.maxBacklogs, 10) || 0,
       min10th: parseFloat(payload.min10th) || 0,
       min12th: parseFloat(payload.min12th) || 0,
+      gender: String(payload.gender || 'any').toLowerCase(),
       branches: payload.branches || [],
       notes: payload.notes?.trim() || '',
       updatedAt: new Date().toISOString(),
@@ -3291,6 +3292,7 @@ const DriveStore = {
     if (p.min12th !== undefined && p.min12th !== '') eligibility.min12th = parseFloat(p.min12th) || 0;
     if (p.minUg !== undefined && p.minUg !== '') eligibility.minUg = parseFloat(p.minUg) || 0;
     if (p.minPg !== undefined && p.minPg !== '') eligibility.minPg = parseFloat(p.minPg) || 0;
+    if (p.gender !== undefined && p.gender !== '') eligibility.gender = String(p.gender).toLowerCase();
     const body = {
       title,
       branches,
@@ -3457,6 +3459,7 @@ const DriveStore = {
         min12th: parseFloat(p.min12th) || 0,
         minUg: parseFloat(p.minUg) || 0,
         minPg: parseFloat(p.minPg) || 0,
+        gender: String(p.gender || 'any').toLowerCase(),
         package: p.package || '',
         jobType: p.jobType || '',
         location: p.location || '',

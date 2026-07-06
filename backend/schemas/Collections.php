@@ -237,6 +237,7 @@ final class Collections
                     'min12th'      => 'float',
                     'minUg'        => 'float',
                     'minPg'        => 'float',
+                    'gender'       => 'string (any|male|female)',
                     'skills'       => 'array',
                 ],
                 'tier'        => 'string',
