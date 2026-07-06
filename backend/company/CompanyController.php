@@ -117,6 +117,8 @@ final class CompanyController
             'maxBacklogs' => (int) ($input['maxBacklogs'] ?? 0),
             'min10th'     => (float) ($input['min10th'] ?? 0),
             'min12th'     => (float) ($input['min12th'] ?? 0),
+            'minUg'       => (float) ($input['minUg'] ?? 0),
+            'minPg'       => (float) ($input['minPg'] ?? 0),
             'branches'    => $input['branches'] ?? [],
             'notes'       => trim((string) ($input['notes'] ?? '')),
         ];

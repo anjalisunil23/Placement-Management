@@ -809,12 +809,21 @@ final class StudentController
       Response::notFound('Drive not found.');
     }
 
-    $company = !empty($drive['companyId']) ? (new CompanyModel())->findById((string) $drive['companyId']) : null;
+    $studentId = (string) $profile['_id'];
+    $appModel = new ApplicationModel();
     $engine = new EligibilityEngine();
+    if (
+      !$appModel->findByStudentAndDrive($studentId, $driveId)
+      && !$engine->driveVisibleToStudent($profile, $drive)
+    ) {
+      Response::notFound('Drive not found.');
+    }
+
+    $company = !empty($drive['companyId']) ? (new CompanyModel())->findById((string) $drive['companyId']) : null;
     $enriched = (new OfficerDataService())->enrichDrivesWithCompany([$drive]);
     $out = $enriched[0] ?? DocumentHelper::serialize($drive);
     $out['company'] = $company ? DocumentHelper::serialize($company) : null;
-    $out['eligibilityCheck'] = $engine->checkForDrive((string) $profile['_id'], $driveId);
+    $out['eligibilityCheck'] = $engine->checkForDrive($studentId, $driveId);
     Response::success($out);
   }
 

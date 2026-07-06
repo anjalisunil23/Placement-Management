@@ -112,6 +112,10 @@
             <div class="col-12"><label class="form-label small fw-semibold">Eligible branches</label><div id="createDriveBranches" class="d-flex flex-wrap gap-2 border rounded p-2"></div></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" name="minCgpa" type="number" step="0.1" value="7.0"/></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" name="maxBacklogs" type="number" value="0"/></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Min 10th (%)</label><input class="form-control" name="min10th" type="number" step="0.01" min="0" max="100" placeholder="Optional"/></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Min 12th (%)</label><input class="form-control" name="min12th" type="number" step="0.01" min="0" max="100" placeholder="Optional"/></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Min UG (%)</label><input class="form-control" name="minUg" type="number" step="0.01" min="0" max="100" placeholder="Optional"/></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Min PG (%)</label><input class="form-control" name="minPg" type="number" step="0.01" min="0" max="100" placeholder="Optional"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" name="deadline"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Mode</label><select class="form-select" name="mode"><option>On-campus</option><option>Virtual</option><option>Hybrid</option></select></div>
           </div>
@@ -152,6 +156,14 @@
         <div class="col-md-4"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" id="editDeadline"/></div>
 
         <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="editStatus"><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
+
+        <div class="col-12"><h6 class="fw-bold mb-2 mt-1">Eligibility marks (%)</h6></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" id="editMinCgpa" type="number" step="0.1" min="0" max="10"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" id="editMaxBacklogs" type="number" min="0"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Min 10th (%)</label><input class="form-control" id="editMin10th" type="number" step="0.01" min="0" max="100" placeholder="Optional"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Min 12th (%)</label><input class="form-control" id="editMin12th" type="number" step="0.01" min="0" max="100" placeholder="Optional"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Min UG (%)</label><input class="form-control" id="editMinUg" type="number" step="0.01" min="0" max="100" placeholder="Optional"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Min PG (%)</label><input class="form-control" id="editMinPg" type="number" step="0.01" min="0" max="100" placeholder="Optional"/></div>
 
         <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="editDescription" rows="3"></textarea></div>
 
@@ -861,6 +873,10 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     branches: branchCodes,
     minCgpa: fd.get('minCgpa'),
     maxBacklogs: fd.get('maxBacklogs'),
+    min10th: fd.get('min10th'),
+    min12th: fd.get('min12th'),
+    minUg: fd.get('minUg'),
+    minPg: fd.get('minPg'),
     location: fd.get('location'),
     deadline: deadline || '',
     date: recruitmentDate || deadline,
@@ -909,6 +925,14 @@ window.openEditDrive = id => {
   document.getElementById('editDeadline').value = (d.deadline && d.deadline !== '—' && d.deadline !== 'TBD') ? d.deadline : '';
 
   document.getElementById('editStatus').value = d.status || 'Open';
+
+  const elig = d.eligibility && typeof d.eligibility === 'object' ? d.eligibility : {};
+  document.getElementById('editMinCgpa').value = elig.minCgpa ?? '';
+  document.getElementById('editMaxBacklogs').value = elig.maxBacklogs ?? '';
+  document.getElementById('editMin10th').value = elig.min10th ?? '';
+  document.getElementById('editMin12th').value = elig.min12th ?? '';
+  document.getElementById('editMinUg').value = elig.minUg ?? '';
+  document.getElementById('editMinPg').value = elig.minPg ?? '';
 
   document.getElementById('editDescription').value = d.description || '';
 
@@ -973,6 +997,13 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
     deadline: document.getElementById('editDeadline').value.trim(),
 
     status: document.getElementById('editStatus').value,
+
+    minCgpa: document.getElementById('editMinCgpa').value,
+    maxBacklogs: document.getElementById('editMaxBacklogs').value,
+    min10th: document.getElementById('editMin10th').value,
+    min12th: document.getElementById('editMin12th').value,
+    minUg: document.getElementById('editMinUg').value,
+    minPg: document.getElementById('editMinPg').value,
 
     description: document.getElementById('editDescription').value.trim(),
 

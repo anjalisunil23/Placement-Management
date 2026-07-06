@@ -232,6 +232,10 @@ final class Collections
                 'eligibility' => [
                     'minCgpa'      => 'float',
                     'maxBacklogs'  => 'int',
+                    'min10th'      => 'float',
+                    'min12th'      => 'float',
+                    'minUg'        => 'float',
+                    'minPg'        => 'float',
                     'skills'       => 'array',
                 ],
                 'tier'        => 'string',

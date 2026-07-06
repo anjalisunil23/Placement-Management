@@ -117,6 +117,8 @@ final class EligibilityEngine
             $reasons[] = "Backlogs ({$backlogs}) exceed maximum allowed ({$maxBacklogs}).";
         }
 
+        $this->appendMarksCriteriaReasons($academic, $criteria, $reasons);
+
         // Department check
         if (!empty($allowedBranches)) {
             $deptId = (string) ($student['departmentId'] ?? '');
@@ -171,7 +173,8 @@ final class EligibilityEngine
     }
 
     /**
-     * Whether a drive should appear in a student's drive list (eligible branch scope).
+     * Whether a drive should appear in a student's drive list (branch + academic criteria).
+     * Does not require resume or placement chances — those apply at apply time only.
      *
      * @param array<string, mixed> $student
      * @param array<string, mixed> $drive
@@ -182,17 +185,152 @@ final class EligibilityEngine
             static fn ($b) => strtoupper(trim((string) $b)),
             $this->toPlainArray($drive['branches'] ?? [])
         )));
-        if ($branches === []) {
-            return true;
-        }
-
-        foreach ($this->studentDepartmentCodes($student) as $code) {
-            if (in_array($code, $branches, true)) {
-                return true;
+        if ($branches !== []) {
+            $branchMatch = false;
+            foreach ($this->studentDepartmentCodes($student) as $code) {
+                if (in_array($code, $branches, true)) {
+                    $branchMatch = true;
+                    break;
+                }
+            }
+            if (!$branchMatch) {
+                return false;
             }
         }
 
-        return false;
+        $student = $this->enrichStudentForEligibility($student);
+        $criteria = $this->toPlainArray($drive['eligibility'] ?? []);
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        $cgpa = (float) ($academic['cgpa'] ?? 0);
+        $backlogs = (int) ($academic['backlogs'] ?? 0);
+
+        $rule = $this->ruleModel->getActiveRule();
+        $minCgpa = (float) ($criteria['minCgpa'] ?? $rule['minCgpa'] ?? 0);
+        $maxBacklogs = (int) ($criteria['maxBacklogs'] ?? $rule['maxBacklogs'] ?? 99);
+
+        if ($cgpa < $minCgpa) {
+            return false;
+        }
+
+        if ($backlogs > $maxBacklogs) {
+            return false;
+        }
+
+        if (!$this->passesMarksCriteria($academic, $criteria)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $academic
+     * @param array<string, mixed> $criteria
+     */
+    private function passesMarksCriteria(array $academic, array $criteria): bool
+    {
+        $reasons = [];
+        $this->appendMarksCriteriaReasons($academic, $criteria, $reasons);
+
+        return $reasons === [];
+    }
+
+    /**
+     * @param array<string, mixed> $academic
+     * @param array<string, mixed> $criteria
+     * @param list<string> $reasons
+     */
+    private function appendMarksCriteriaReasons(array $academic, array $criteria, array &$reasons): void
+    {
+        $marks10 = (float) ($academic['marks10th'] ?? 0);
+        $marks12 = (float) ($academic['marks12th'] ?? 0);
+        $ug = (float) ($academic['ugMarks'] ?? 0);
+        $pg = $this->studentPgMarkPercent($academic);
+
+        $checks = [
+            ['min10th', 'minMarks10th', $marks10, '10th'],
+            ['min12th', 'minMarks12th', $marks12, '12th'],
+            ['minUg', 'minUgMarks', $ug, 'UG'],
+            ['minPg', 'minPgMarks', $pg, 'PG'],
+        ];
+
+        foreach ($checks as [$primary, $alternate, $actual, $label]) {
+            $min = $this->criteriaMinPercent($criteria, $primary, $alternate);
+            if ($min <= 0) {
+                continue;
+            }
+            if ($actual < $min) {
+                $reasons[] = "{$label} marks ({$actual}%) are below the required minimum ({$min}%).";
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $criteria
+     */
+    private function criteriaMinPercent(array $criteria, string ...$keys): float
+    {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $criteria)) {
+                continue;
+            }
+            $value = $criteria[$key];
+            if ($value === '' || $value === null || !is_numeric($value)) {
+                continue;
+            }
+            $n = (float) $value;
+            if ($n > 0) {
+                return $n;
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * PG marks as % — prefer mcaMarks, else CGPA on a 10-point scale × 10.
+     *
+     * @param array<string, mixed> $academic
+     */
+    private function studentPgMarkPercent(array $academic): float
+    {
+        $mca = (float) ($academic['mcaMarks'] ?? 0);
+        if ($mca > 0) {
+            return $mca;
+        }
+
+        $cgpa = (float) ($academic['cgpa'] ?? 0);
+        if ($cgpa > 0 && $cgpa <= 10) {
+            return round($cgpa * 10, 2);
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $qualifications
+     */
+    private function ugMarkFromQualifications(array $qualifications): float
+    {
+        foreach ($qualifications as $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            $label = strtoupper(trim((string) ($q['qualification'] ?? '')));
+            if (!preg_match('/\b(BCA|B\.?\s*SC|B\.?\s*TECH|BTECH|BE|BACHELOR|UG)\b/', $label)) {
+                continue;
+            }
+            if (isset($q['percentage']) && is_numeric($q['percentage']) && (float) $q['percentage'] > 0) {
+                return (float) $q['percentage'];
+            }
+            $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
+            $max = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : null;
+            if ($mark !== null && $max !== null && $max > 0) {
+                return round(($mark / $max) * 100, 2);
+            }
+        }
+
+        return 0.0;
     }
 
     /**
@@ -257,35 +395,53 @@ final class EligibilityEngine
     private function enrichStudentForEligibility(array $student): array
     {
         $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
-        $cgpa = (float) ($academic['cgpa'] ?? 0);
-        $needsCgpa = $cgpa <= 0;
+        $needsCgpa = (float) ($academic['cgpa'] ?? 0) <= 0;
         $needsBacklogs = !array_key_exists('backlogs', $academic);
+        $needs10 = (float) ($academic['marks10th'] ?? 0) <= 0;
+        $needs12 = (float) ($academic['marks12th'] ?? 0) <= 0;
+        $needsUg = (float) ($academic['ugMarks'] ?? 0) <= 0;
 
-        if (!$needsCgpa && !$needsBacklogs) {
+        if (!$needsCgpa && !$needsBacklogs && !$needs10 && !$needs12 && !$needsUg) {
             return $student;
         }
 
         $patch = [];
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
 
-        if ($needsCgpa) {
-            $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-            if ($register !== '') {
-                $api = new AesApiService();
-                $qualAdmno = $api->resolveQualificationAdmissionNumber([], $register);
-                if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
-                    try {
-                        $qual = $api->fetchStudentQualificationProfile([
-                            'admno' => $qualAdmno,
-                            'stud_admno' => $qualAdmno,
-                        ]);
-                    } catch (\Throwable) {
-                        $qual = [];
+        if ($register !== '' && ($needsCgpa || $needs10 || $needs12 || $needsUg)) {
+            $api = new AesApiService();
+            $qualAdmno = $api->resolveQualificationAdmissionNumber([], $register);
+            if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
+                try {
+                    $qual = $api->fetchStudentQualificationProfile([
+                        'admno' => $qualAdmno,
+                        'stud_admno' => $qualAdmno,
+                    ]);
+                } catch (\Throwable) {
+                    $qual = [];
+                }
+                $qualMapped = (new AesLoginService())->mapAesDetailsToUserFields($qual);
+                if ($needsCgpa && !empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0) {
+                    $academic['cgpa'] = (float) $qualMapped['cgpa'];
+                }
+                if ($needs10 && !empty($qualMapped['marks10th']) && (float) $qualMapped['marks10th'] > 0) {
+                    $academic['marks10th'] = (float) $qualMapped['marks10th'];
+                }
+                if ($needs12 && !empty($qualMapped['marks12th']) && (float) $qualMapped['marks12th'] > 0) {
+                    $academic['marks12th'] = (float) $qualMapped['marks12th'];
+                }
+                if ($needsUg) {
+                    $ug = !empty($qualMapped['ugMarks']) && (float) $qualMapped['ugMarks'] > 0
+                        ? (float) $qualMapped['ugMarks']
+                        : $this->ugMarkFromQualifications(
+                            is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : []
+                        );
+                    if ($ug > 0) {
+                        $academic['ugMarks'] = $ug;
                     }
-                    $qualMapped = (new AesLoginService())->mapAesDetailsToUserFields($qual);
-                    if (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0) {
-                        $academic['cgpa'] = (float) $qualMapped['cgpa'];
-                        $patch['academic'] = $academic;
-                    }
+                }
+                if ($academic !== ($student['academic'] ?? [])) {
+                    $patch['academic'] = $academic;
                 }
             }
         }
