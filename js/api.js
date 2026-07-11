@@ -4214,10 +4214,28 @@ function confirmAction(opts) {
     cancelBtn.textContent = options.cancelText || 'Cancel';
     okBtn.className = `btn btn-${options.variant || 'primary'}`;
 
+    // Close any open form modal behind the confirmation (avoid stacked modals).
+    const parentModals = [...document.querySelectorAll('.modal.show')].filter(el => el.id !== 'phConfirmModal');
+    parentModals.forEach(el => {
+      const inst = bootstrap.Modal.getInstance(el);
+      if (inst) inst.hide();
+      else {
+        el.classList.remove('show');
+        el.style.display = 'none';
+        el.setAttribute('aria-hidden', 'true');
+      }
+    });
+
     let settled = false;
     const finish = (value) => {
       if (settled) return;
       settled = true;
+      // If cancelled, restore the form modal so the user can keep editing.
+      if (!value && parentModals.length) {
+        parentModals.forEach(el => {
+          bootstrap.Modal.getOrCreateInstance(el).show();
+        });
+      }
       resolve(value);
     };
 
@@ -4233,7 +4251,14 @@ function confirmAction(opts) {
 
     okBtn.addEventListener('click', onOk);
     modalEl.addEventListener('hidden.bs.modal', onHidden);
-    modal.show();
+
+    // Let parent modal hide/backdrop clear before showing confirm.
+    const showConfirm = () => modal.show();
+    if (parentModals.length) {
+      setTimeout(showConfirm, 200);
+    } else {
+      showConfirm();
+    }
   });
 }
 
