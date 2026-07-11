@@ -429,6 +429,31 @@ a{color:inherit;text-decoration:none}
   border-radius:var(--radius);
   box-shadow:var(--shadow-sm);
 }
+.student-list-item{
+  border:0!important;
+  border-bottom:1px solid var(--border)!important;
+  background:transparent!important;
+  color:var(--text)!important;
+  border-radius:10px!important;
+  margin-bottom:2px;
+}
+.student-list-item:hover,
+.student-list-item:focus{
+  background:var(--surface-2)!important;
+  color:var(--text)!important;
+}
+.student-list-item.is-selected,
+.student-list-item.is-selected:hover,
+.student-list-item.is-selected:focus{
+  background:color-mix(in srgb,var(--primary) 10%,transparent)!important;
+  color:var(--text)!important;
+  box-shadow:inset 3px 0 0 var(--primary);
+}
+.student-list-item .student-list-name,
+.student-list-item .text-muted-2{
+  color:inherit;
+}
+.student-list-item .text-muted-2{color:var(--muted)!important}
 .stat-card{
   padding:1.1rem 1.2rem;display:flex;flex-direction:column;gap:.4rem;
   position:relative;overflow:hidden;
