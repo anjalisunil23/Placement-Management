@@ -2269,7 +2269,7 @@ function companyEligibilityKey() {
 
 const ELIGIBILITY_BRANCHES = [
   'CS', 'AD', 'EC', 'EE', 'ME', 'CE', 'CH', 'FT', 'MG', 'MA', 'CY', 'CT', 'IT',
-  'MCA', 'BCA', 'INMCA', 'MCALE',
+  'MCA', 'BCA', 'INMCA',
   'MTECHCS', 'MTECHVLSI', 'MTECHES', 'MTECHEV', 'MTECHSECM', 'MTECHENV',
 ];
 
@@ -2284,7 +2284,6 @@ const DEPARTMENT_PROGRAMME_GROUPS = [
       { code: 'MCA', label: 'MCA', aliases: ['MCAR', 'MCAREG'] },
       { code: 'BCA', label: 'BCA', aliases: ['BCAH', 'BCAHONS'] },
       { code: 'INMCA', label: 'Integrated MCA', aliases: ['INTMCA', 'IMCA', 'INT MCA', 'DDMCA', 'DD MCA', 'MCA INT'] },
-      { code: 'MCALE', label: 'MCA Lateral Entry', aliases: ['MCAL', 'MCA LE'] },
     ],
   },
   {
