@@ -1,5 +1,51 @@
-/* PlaceHub shell v2026.06.23 — paint sidebar before /auth/me + profile enrichment */
-const APP_SHELL_VERSION = '2026.06.23';
+/* PlaceHub shell v2026.07.11 — navy sidebar/topbar theme */
+const APP_SHELL_VERSION = '2026.07.11';
+
+(function applyShellThemeFallback() {
+  if (typeof document === 'undefined' || document.getElementById('ph-shell-theme')) return;
+  const style = document.createElement('style');
+  style.id = 'ph-shell-theme';
+  style.textContent = `
+:root{
+  --bg:#F8FAFC;--surface:#FFFFFF;--surface-2:#F1F5F9;--border:#E2E8F0;--text:#0F172A;--muted:#64748B;
+  --primary:#2563EB;--primary-2:#3B82F6;--success:#22C55E;--warning:#F59E0B;--danger:#EF4444;
+  --sidebar-bg:#0F172A;--topbar-bg:#16213E;--shell-text:#F8FAFC;--shell-muted:#94A3B8;
+  --shell-border:rgba(226,232,240,.12);--shell-hover:rgba(248,250,252,.08);--shell-active:rgba(37,99,235,.22);
+}
+.sidebar{
+  background:var(--sidebar-bg)!important;color:var(--shell-text)!important;
+  border-right:1px solid var(--shell-border)!important;
+}
+.sidebar .brand,.sidebar .brand a,.sidebar .nav-item{color:var(--shell-text)!important}
+.sidebar .nav-label,.sidebar .nav-item i,.sidebar .nav-chevron,.sidebar .text-muted-2{color:var(--shell-muted)!important}
+.sidebar .nav-item:hover{background:var(--shell-hover)!important}
+.sidebar .nav-item.active{
+  color:#fff!important;background:var(--shell-active)!important;border-left-color:var(--primary)!important;
+}
+.sidebar .nav-item.active i{color:var(--primary-2)!important}
+.sidebar .icon-btn{
+  background:transparent!important;border-color:var(--shell-border)!important;color:var(--shell-text)!important;
+}
+.topbar{
+  background:var(--topbar-bg)!important;color:var(--shell-text)!important;
+  border-bottom:1px solid var(--shell-border)!important;
+}
+.topbar .fw-semibold,.topbar .small{color:var(--shell-text)!important}
+.topbar .text-muted-2{color:var(--shell-muted)!important}
+.topbar .search input{
+  background:rgba(248,250,252,.08)!important;border-color:var(--shell-border)!important;color:var(--shell-text)!important;
+}
+.topbar .icon-btn{
+  background:transparent!important;border-color:var(--shell-border)!important;color:var(--shell-text)!important;
+}
+.topbar .btn-outline-primary{color:#fff!important;border-color:rgba(255,255,255,.28)!important}
+.topbar .btn-outline-secondary{color:var(--shell-text)!important;border-color:rgba(255,255,255,.22)!important}
+.btn-primary{background:var(--primary)!important;border-color:var(--primary)!important}
+.btn-outline-primary{color:var(--primary)!important;border-color:var(--primary)!important}
+`;
+  const parent = document.head || document.documentElement;
+  parent.appendChild(style);
+})();
 
 const NAV = [
   { section: "Overview", roles: ROLES },
@@ -147,7 +193,7 @@ function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
     const safe = encodeURI(url).replace(/'/g, '%27');
     return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background:url('${safe}') center/cover no-repeat" role="img" aria-label="${escapeAttr(user?.name || 'User')}" title="${escapeAttr(user?.name || '')}"></span>`;
   }
-  return `<span style="${circle};background:linear-gradient(135deg,#f472b6,#7c5cff);color:#fff;display:grid;place-items:center;font-weight:700;font-size:${fontSize}">${ini}</span>`;
+  return `<span style="${circle};background:linear-gradient(135deg,#2563EB,#3B82F6);color:#fff;display:grid;place-items:center;font-weight:700;font-size:${fontSize}">${ini}</span>`;
 }
 
 function topbarProfileMenuHtml(user, role) {
