@@ -2944,6 +2944,25 @@ const ApplicationPipeline = {
     if (res.success) { await this.fetch(); return true; }
     return false;
   },
+  async shortlist(id) {
+    const path = Auth.role() === 'placement_officer'
+      ? `/officer/applications/${encodeURIComponent(id)}/shortlist`
+      : `/admin/applications/${encodeURIComponent(id)}/shortlist`;
+    const res = await api(path, { method: 'POST', body: {} });
+    if (res?.success) {
+      if (this._cache) {
+        this._cache = this._cache.map(a => a.id === id ? { ...a, status: 'shortlisted', stage: 'company_selection' } : a);
+        localStorage.setItem(APPS_KEY, JSON.stringify(this._cache));
+      }
+      return true;
+    }
+    if (!Auth.hasRealAuth() || Auth.isDemo()) {
+      this.save(this.all().map(a => a.id === id ? { ...a, status: 'shortlisted', stage: 'company_selection' } : a));
+      return true;
+    }
+    toast(res?.message || 'Could not shortlist applicant.', 'error');
+    return false;
+  },
   async approve(id) {
     if (Auth.role() === 'placement_officer') {
       const res = await api(`/officer/applications/${encodeURIComponent(id)}/approve`, { method: 'POST' });

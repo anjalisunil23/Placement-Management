@@ -185,6 +185,33 @@ final class AdminController
         Response::success(null, 'Application updated.');
     }
 
+    /** POST /api/admin/applications/{id}/shortlist */
+    public function shortlistApplication(string $appId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $app = (new OfficerDataService())->assertApplicationInScope($appId, $scope['ctx']);
+        $current = (string) ($app['status'] ?? 'applied');
+        if (in_array($current, ['shortlisted', 'selected'], true)) {
+            Response::success(null, 'Already shortlisted.');
+            return;
+        }
+        (new ApplicationWorkflowService())->transition(
+            $appId,
+            'shortlisted',
+            (string) $scope['user']['_id'],
+            'Shortlisted by campus placement staff'
+        );
+        $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
+        if ($student && !empty($student['userId'])) {
+            (new NotificationService())->notifyApplicationUpdate(
+                (string) $student['userId'],
+                'Shortlisted',
+                'You have been shortlisted for a campus drive. Check your applications for details.'
+            );
+        }
+        Response::success(null, 'Student shortlisted.');
+    }
+
     /** GET /api/admin/applications/{id}/resume */
     public function downloadApplicationResume(string $appId): void
     {
