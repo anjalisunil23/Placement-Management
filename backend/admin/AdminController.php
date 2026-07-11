@@ -879,6 +879,15 @@ final class AdminController
         Response::success((new SelfPlacementService())->getReport($studentId, $scope['ctx']));
     }
 
+    /** POST /api/admin/students/{id}/self-placement — record self-placement and mark placed */
+    public function createSelfPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $input = !empty($_POST) ? $_POST : (json_decode(file_get_contents('php://input') ?: '{}', true) ?? []);
+        $result = (new SelfPlacementService())->createForStudent($studentId, $scope['ctx'], $scope['user'], is_array($input) ? $input : []);
+        Response::success($result, 'Self-placement recorded and student marked as placed.', 201);
+    }
+
     /** GET /api/admin/students/{id}/self-placement/offer-letter */
     public function downloadSelfPlacementOfferLetter(string $studentId): void
     {

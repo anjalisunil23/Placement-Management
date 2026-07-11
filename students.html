@@ -82,6 +82,9 @@
             </div>
           </div>
           <div class="alert alert-warning d-none mb-3" id="verifyPlacementBanner" data-roles="admin,placement_officer"></div>
+          <div class="d-none mb-3" id="addSelfPlacementWrap" data-roles="admin,placement_officer">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddSelfPlacement"><i class="bi bi-briefcase me-1"></i>Add self-placement</button>
+          </div>
           <div class="row g-3" id="overviewStatsRow">
             <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Applied</div><div class="val" id="statApplied">0</div></div></div>
             <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Shortlisted</div><div class="val" id="statShortlisted">0</div></div></div>
@@ -309,11 +312,42 @@
   </div>
 </div>
 
+<div class="modal fade" id="addSelfPlacementModal" tabindex="-1" aria-hidden="true" data-roles="admin,placement_officer">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content card-surface border-0">
+      <form id="addSelfPlacementForm">
+        <div class="modal-header border-0 pb-0">
+          <div>
+            <h5 class="modal-title fw-bold mb-1">Add self-placement</h5>
+            <p class="small text-muted-2 mb-0" id="addSelfPlacementSub">Record an off-campus placement and mark the student as placed.</p>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body pt-3">
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" id="addSpCompany" required placeholder="e.g. Infosys"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Role / designation</label><input class="form-control" name="role" id="addSpRole" required placeholder="e.g. Software Engineer"/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Company address</label><textarea class="form-control" name="companyAddress" id="addSpAddress" rows="2" required placeholder="Office address"></textarea></div>
+            <div class="col-md-4"><label class="form-label small fw-semibold">Offer letter (PDF)</label><input class="form-control" type="file" name="offerLetter" id="addSpOffer" accept=".pdf"/></div>
+            <div class="col-md-4"><label class="form-label small fw-semibold">Company ID <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" type="file" name="companyIdDoc" id="addSpCompanyId" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"/></div>
+            <div class="col-md-4"><label class="form-label small fw-semibold">Salary slip <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" type="file" name="salarySlip" id="addSpSalary" accept=".pdf,.doc,.docx"/></div>
+          </div>
+          <p class="small text-muted-2 mt-3 mb-0">The student will be marked as placed immediately. Documents are optional when recording on their behalf.</p>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="addSelfPlacementSubmit"><i class="bi bi-check2-lg me-1"></i>Save &amp; mark placed</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/staff-api.js?v=20260623a"></script>
-<script src="js/admin-api.js?v=20260629b"></script>
-<script src="js/officer-api.js?v=20260629b"></script>
+<script src="js/admin-api.js?v=20260711a"></script>
+<script src="js/officer-api.js?v=20260711a"></script>
 <script src="js/api.js?v=20260711b"></script>
 <script src="js/app.js?v=20260711d"></script>
 <script>
@@ -892,18 +926,103 @@ async function refreshOverviewAfterVerification() {
 
 function syncVerifyPlacementBanner(s) {
   const banner = document.getElementById('verifyPlacementBanner');
-  if (!banner || !canVerifySelfPlacement) return;
+  const addWrap = document.getElementById('addSelfPlacementWrap');
+  if (!canVerifySelfPlacement) return;
+
   const studentId = s?.studentId || s?.id;
-  if (s?.placementStatus === 'pending_placement' && studentId) {
-    banner.classList.remove('d-none');
-    banner.innerHTML = `<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-0">
-      <span><strong>Self-placement under review.</strong> Verify the offer letter and mark as placed when confirmed.</span>
-      <button type="button" class="btn btn-sm btn-warning" id="btnReviewPlacement"><i class="bi bi-clipboard-check me-1"></i>Review report</button>
-    </div>`;
-    document.getElementById('btnReviewPlacement')?.addEventListener('click', () => openVerifyPlacementModal(studentId));
-  } else {
-    banner.classList.add('d-none');
-    banner.innerHTML = '';
+  const isPlaced = !!(s?.placed || s?.placementStatus === 'placed');
+  const pending = s?.placementStatus === 'pending_placement';
+
+  if (banner) {
+    if (pending && studentId) {
+      banner.classList.remove('d-none');
+      banner.innerHTML = `<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-0">
+        <span><strong>Self-placement under review.</strong> Verify the offer letter and mark as placed when confirmed.</span>
+        <button type="button" class="btn btn-sm btn-warning" id="btnReviewPlacement"><i class="bi bi-clipboard-check me-1"></i>Review report</button>
+      </div>`;
+      document.getElementById('btnReviewPlacement')?.addEventListener('click', () => openVerifyPlacementModal(studentId));
+    } else {
+      banner.classList.add('d-none');
+      banner.innerHTML = '';
+    }
+  }
+
+  if (addWrap) {
+    if (studentId && !isPlaced && !pending) {
+      addWrap.classList.remove('d-none');
+      addWrap.dataset.studentId = studentId;
+      addWrap.dataset.studentName = s?.name || s?.registerNumber || 'Student';
+    } else {
+      addWrap.classList.add('d-none');
+      delete addWrap.dataset.studentId;
+    }
+  }
+}
+
+let addSelfPlacementModal = null;
+
+function openAddSelfPlacementModal() {
+  const wrap = document.getElementById('addSelfPlacementWrap');
+  const studentId = wrap?.dataset?.studentId || '';
+  if (!studentId || !canVerifySelfPlacement) {
+    toast('Select a student who is not yet placed.', 'warn');
+    return;
+  }
+  const form = document.getElementById('addSelfPlacementForm');
+  form?.reset();
+  const name = wrap.dataset.studentName || 'student';
+  const sub = document.getElementById('addSelfPlacementSub');
+  if (sub) sub.textContent = `Record an off-campus placement for ${name} and mark them as placed.`;
+  if (!addSelfPlacementModal) {
+    addSelfPlacementModal = new bootstrap.Modal(document.getElementById('addSelfPlacementModal'));
+  }
+  addSelfPlacementModal.show();
+}
+
+async function submitAddSelfPlacement(e) {
+  e.preventDefault();
+  const client = selfPlacementApiClient();
+  const wrap = document.getElementById('addSelfPlacementWrap');
+  const studentId = wrap?.dataset?.studentId || '';
+  if (!client || !studentId) return;
+
+  const form = e.target;
+  const companyName = String(form.companyName?.value || '').trim();
+  const role = String(form.role?.value || '').trim();
+  const companyAddress = String(form.companyAddress?.value || '').trim();
+  if (!companyName || !role || !companyAddress) {
+    toast('Company name, role, and address are required.', 'warn');
+    return;
+  }
+
+  if (!(await confirmAction({
+    title: 'Record self-placement',
+    message: `Mark this student as placed at ${companyName} (${role})?`,
+    confirmText: 'Save & mark placed',
+    variant: 'primary',
+  }))) return;
+
+  const fd = new FormData();
+  fd.append('companyName', companyName);
+  fd.append('role', role);
+  fd.append('companyAddress', companyAddress);
+  const offer = form.offerLetter?.files?.[0];
+  const companyId = form.companyIdDoc?.files?.[0];
+  const salary = form.salarySlip?.files?.[0];
+  if (offer) fd.append('offerLetter', offer, offer.name);
+  if (companyId) fd.append('companyIdDoc', companyId, companyId.name);
+  if (salary) fd.append('salarySlip', salary, salary.name);
+
+  const btn = document.getElementById('addSelfPlacementSubmit');
+  if (btn) btn.disabled = true;
+  try {
+    const result = await client.createSelfPlacement(studentId, fd);
+    if (!result) return;
+    addSelfPlacementModal?.hide();
+    toast('Self-placement recorded. Student marked as placed.', 'success');
+    await refreshOverviewAfterVerification();
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -1334,6 +1453,8 @@ onAppReady(async () => {
   if (canVerifySelfPlacement) {
     document.getElementById('verifyApproveBtn')?.addEventListener('click', () => approveVerifyPlacement().catch(() => {}));
     document.getElementById('verifyRejectBtn')?.addEventListener('click', () => rejectVerifyPlacement().catch(() => {}));
+    document.getElementById('btnAddSelfPlacement')?.addEventListener('click', () => openAddSelfPlacementModal());
+    document.getElementById('addSelfPlacementForm')?.addEventListener('submit', e => submitAddSelfPlacement(e).catch(() => {}));
   }
   if ((canManageRegistrations || role === 'admin' || role === 'placement_officer') && Auth.hasRealAuth() && !Auth.isDemo()) {
     await UserRegistry.fetch();

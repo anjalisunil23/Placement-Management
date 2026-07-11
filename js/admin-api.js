@@ -312,6 +312,15 @@ const AdminApi = {
     return res.success ? res.data : null;
   },
 
+  async createSelfPlacement(studentId, formData) {
+    const res = await api(this.selfPlacementBase(studentId), { method: 'POST', body: formData });
+    if (!res.success) {
+      toast(res.message || 'Could not record self-placement.', 'error');
+      return null;
+    }
+    return res.data;
+  },
+
   async approveSelfPlacement(studentId) {
     const res = await api(`${this.selfPlacementBase(studentId)}/approve`, { method: 'POST' });
     return res.success ? res.data : null;

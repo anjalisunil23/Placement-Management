@@ -10,6 +10,7 @@ use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
+use PMS\Utils\Security;
 
 /**
  * Admin / placement-officer review of student self-reported placements.
@@ -126,6 +127,154 @@ final class SelfPlacementService
     public function streamOfferLetter(string $studentRef, array $ctx): void
     {
         $this->streamDocument($studentRef, $ctx, 'offerLetter');
+    }
+
+    /**
+     * Officer / admin records a self-placement for a student and marks them placed.
+     *
+     * @param array<string, mixed> $ctx
+     * @param array<string, mixed> $reviewer
+     * @param array<string, mixed> $input companyName, role, companyAddress (+ optional $_FILES)
+     * @return array<string, mixed>
+     */
+    public function createForStudent(string $studentRef, array $ctx, array $reviewer, array $input = []): array
+    {
+        $student = $this->resolveScopedStudent($studentRef, $ctx);
+        $studentId = (string) ($student['_id'] ?? '');
+
+        if (($student['placed'] ?? false) === true) {
+            Response::error('This student is already marked as placed.', 409);
+        }
+
+        $existing = $student['selfPlacement'] ?? null;
+        if (is_array($existing) && (string) ($existing['status'] ?? '') === 'pending') {
+            Response::error('A self-placement report is already under review. Approve or reject it first.', 409);
+        }
+
+        $companyName = trim((string) ($input['companyName'] ?? $_POST['companyName'] ?? ''));
+        $companyAddress = trim((string) ($input['companyAddress'] ?? $_POST['companyAddress'] ?? ''));
+        $jobRole = trim((string) ($input['role'] ?? $_POST['role'] ?? ''));
+
+        if ($companyName === '' || $jobRole === '') {
+            Response::error('Company name and role are required.', 422);
+        }
+        if ($companyAddress === '') {
+            Response::error('Company address is required.', 422);
+        }
+
+        $registerNo = (string) ($student['registerNumber'] ?? 'student');
+        $safeCompany = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $companyName) ?: 'company';
+        $savedPaths = [];
+        $offerLetter = $this->saveOptionalUpload('offerLetter', $registerNo, $safeCompany, 'offer', ['pdf'], $savedPaths);
+        $companyIdDoc = $this->saveOptionalUpload('companyIdDoc', $registerNo, $safeCompany, 'company_id', ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx'], $savedPaths);
+        $salarySlip = $this->saveOptionalUpload('salarySlip', $registerNo, $safeCompany, 'salary_slip', ['pdf', 'doc', 'docx'], $savedPaths);
+
+        $now = DocumentHelper::now();
+        $reviewerId = (string) ($reviewer['_id'] ?? '');
+        $reviewerName = (string) ($reviewer['name'] ?? 'Placement cell');
+
+        $self = [
+            'companyName'     => $companyName,
+            'companyAddress'  => $companyAddress,
+            'role'            => $jobRole,
+            'status'          => 'approved',
+            'submittedAt'     => $now,
+            'verifiedAt'      => $now,
+            'verifiedBy'      => $reviewerId,
+            'verifiedByName'  => $reviewerName,
+            'recordedByStaff' => true,
+        ];
+        if ($offerLetter !== null) {
+            $self['offerLetter'] = $offerLetter;
+        }
+        if ($companyIdDoc !== null) {
+            $self['companyIdDoc'] = $companyIdDoc;
+        }
+        if ($salarySlip !== null) {
+            $self['salarySlip'] = $salarySlip;
+        }
+
+        $history = is_array($student['placementHistory'] ?? null) ? $student['placementHistory'] : [];
+        $history[] = [
+            'type'       => 'self_reported',
+            'company'    => $companyName,
+            'address'    => $companyAddress,
+            'role'       => $jobRole,
+            'status'     => 'placed',
+            'date'       => $now,
+            'verifiedAt' => $now,
+            'verifiedBy' => $reviewerId,
+            'source'     => 'staff_recorded',
+        ];
+
+        $placement = [
+            'company'  => $companyName,
+            'role'     => $jobRole,
+            'address'  => $companyAddress,
+            'source'   => 'self_reported',
+            'placedAt' => $now,
+        ];
+
+        $saved = $this->studentModel->update($studentId, [
+            'placed'           => true,
+            'selfPlacement'    => $self,
+            'placementHistory' => $history,
+            'placement'        => $placement,
+        ]);
+        if (!$saved) {
+            foreach ($savedPaths as $path) {
+                @unlink($path);
+            }
+            Response::error('Could not save placement.', 500);
+        }
+
+        $user = null;
+        $userId = (string) ($student['userId'] ?? '');
+        if ($userId !== '') {
+            $user = (new UserModel())->findById($userId);
+        }
+        $studentName = is_array($user) ? (string) ($user['name'] ?? '') : '';
+        if ($studentName === '') {
+            $studentName = (string) ($this->officerData->enrichStudentListRow([], $student, $user)['displayName'] ?? $student['registerNumber'] ?? 'Student');
+        }
+
+        try {
+            (new RecruitmentResultModel())->upsertByRegisterCompany([
+                'studentName'    => $studentName,
+                'registerNumber' => $registerNo,
+                'company'        => $companyName,
+                'role'           => $jobRole,
+                'status'         => 'selected',
+                'departmentId'   => (string) ($student['departmentId'] ?? ''),
+            ]);
+        } catch (\Throwable) {
+        }
+
+        if ($userId !== '') {
+            try {
+                (new NotificationService())->notifyUser(
+                    $userId,
+                    'placement_approved',
+                    'Placement recorded',
+                    "The placement cell recorded your placement with {$companyName} as {$jobRole}.",
+                    [
+                        'companyName' => $companyName,
+                        'role'        => $jobRole,
+                        'studentId'   => $studentId,
+                    ],
+                    false
+                );
+            } catch (\Throwable) {
+            }
+        }
+
+        return [
+            'studentId'      => $studentId,
+            'registerNumber' => $registerNo,
+            'placed'         => true,
+            'placement'      => DocumentHelper::serialize($placement),
+            'report'         => DocumentHelper::serialize($self),
+        ];
     }
 
     /**
@@ -316,6 +465,57 @@ final class SelfPlacementService
         PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $ctx);
 
         return $student;
+    }
+
+    /**
+     * @param list<string> $savedPaths
+     */
+    private function saveOptionalUpload(
+        string $field,
+        string $registerNo,
+        string $safeCompany,
+        string $prefix,
+        array $extensions,
+        array &$savedPaths
+    ): ?string {
+        if (!isset($_FILES[$field])) {
+            return null;
+        }
+
+        $uploadError = (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($uploadError === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+        if ($uploadError !== UPLOAD_ERR_OK) {
+            Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ' upload failed.', 400);
+        }
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $error = Security::validateUploadedFile(
+            $_FILES[$field],
+            $config['uploads']['max_resume'],
+            $extensions
+        );
+        if ($error) {
+            Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ': ' . $error, 400);
+        }
+
+        $dir = $field === 'offerLetter'
+            ? ($config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters'))
+            : ($config['uploads']['self_placement_dir'] ?? ($config['uploads']['offer_letter_dir'] . '/../self_placement'));
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            Response::error('Server upload folder is not writable.', 500);
+        }
+
+        $ext = strtolower(pathinfo((string) ($_FILES[$field]['name'] ?? ''), PATHINFO_EXTENSION));
+        $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
+        if (!move_uploaded_file($_FILES[$field]['tmp_name'], $path)) {
+            Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . '.', 500);
+        }
+
+        $savedPaths[] = $path;
+
+        return basename($path);
     }
 
     /**
