@@ -11,7 +11,7 @@
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 
-<link href="css/style.css?v=20260711f" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260711g" rel="stylesheet"/></head>
 
 <body data-page="drives.html"><div class="app">
 
@@ -37,7 +37,7 @@
 
   <div class="row g-2">
 
-    <div class="col-md-5"><div class="position-relative"><i class="bi bi-search position-absolute" style="left:.8rem;top:50%;transform:translateY(-50%);color:var(--muted)"></i><input class="form-control ps-4" id="driveSearch" placeholder="Search by company, role…"/></div></div>
+    <div class="col-md-5"><div class="search-with-icon"><i class="bi bi-search"></i><input class="form-control" id="driveSearch" placeholder="Search by company, role…"/></div></div>
 
     <div class="col-6 col-md-3"><select class="form-select" id="driveStatusFilter"><option value="">All Status</option><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
 
@@ -319,7 +319,7 @@
 <script src="js/staff-api.js?v=20260626d"></script>
 <script src="js/api.js?v=20260711b"></script>
 
-<script src="js/app.js?v=20260711f"></script>
+<script src="js/app.js?v=20260711g"></script>
 
 <script>
 
@@ -339,7 +339,6 @@ function driveViewMode() {
 
 const DRIVE_TABLE_HEADS = {
   manage: [
-    { label: '', key: 'select', class: 'drives-manage-col' },
     { label: 'Company', key: 'company' },
     { label: 'Role', key: 'role' },
     { label: 'Job type', key: 'jobType' },
@@ -376,9 +375,6 @@ function renderTableHead() {
   const cols = DRIVE_TABLE_HEADS[mode];
   document.getElementById('drivesHeadRow').innerHTML = cols.map(col => {
     const cls = col.class ? ` class="${col.class}"` : '';
-    if (col.key === 'select') {
-      return `<th${cls}><input type="checkbox" id="selectAllDrives"/></th>`;
-    }
     return `<th${cls}>${col.label}</th>`;
   }).join('');
 }
@@ -397,7 +393,6 @@ function driveRowCells(d) {
   const mode = driveViewMode();
   const statusBadge = `<td><span class="badge-soft ${d.statusCls || driveStatusCls(d.status)}">${d.status || '—'}</span></td>`;
   const parts = {
-    select: `<td class="drives-manage-col"><input type="checkbox" data-drive-id="${d.id}"/></td>`,
     company: companyCell(d),
     role: roleCell(d),
     jobType: `<td>${d.jobType && d.jobType !== '—' ? d.jobType : '—'}</td>`,

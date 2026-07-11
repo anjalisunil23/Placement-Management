@@ -38,6 +38,7 @@ const APP_SHELL_VERSION = '2026.07.11f';
 .topbar .text-muted-2{color:var(--shell-muted)!important}
 .topbar .search input{
   background:rgba(248,250,252,.08)!important;border-color:var(--shell-border)!important;color:var(--shell-text)!important;
+  padding-left:2.55rem!important;
 }
 .topbar .icon-btn{
   background:transparent!important;border-color:var(--shell-border)!important;color:var(--shell-text)!important;
