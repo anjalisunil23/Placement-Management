@@ -2584,6 +2584,7 @@ function seedDepartments() {
 
 const DepartmentStore = {
   _cache: null,
+  _allCache: null,
   all() {
     if (Array.isArray(this._cache) && this._cache.length) return this._cache;
     seedDepartments();
@@ -2597,7 +2598,7 @@ const DepartmentStore = {
     return Array.isArray(this._cache) ? this._cache : [];
   },
   save(l) { this._cache = l; localStorage.setItem(DEPTS_KEY, JSON.stringify(l)); },
-  async fetch() {
+  async fetch({ includeAll = false } = {}) {
     let list = null;
     if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
       list = await AdminApi.fetchDepartments();
@@ -2614,20 +2615,30 @@ const DepartmentStore = {
       }
     }
     if (Array.isArray(list) && list.length) {
-      const usable = list.filter(d => isStudentAcademicDepartment(d.code, d.name || d.code));
-      const finalList = usable.length
-        ? usable
-        : list.filter(d => {
-            const code = String(d.code || '').trim();
-            const name = String(d.name || code).trim();
-            return code && name && !/^\d+$/.test(code);
-          });
+      const normalized = list
+        .map(d => ({
+          id: d.id || d._id,
+          name: String(d.name || '').trim(),
+          code: String(d.code || '').trim(),
+          hasOfficer: !!d.hasOfficer,
+          placementOfficer: d.placementOfficer || null,
+        }))
+        .filter(d => d.code && d.name && !/^\d+$/.test(d.code));
+
+      if (includeAll) {
+        this._allCache = normalized;
+        return normalized;
+      }
+
+      const usable = normalized.filter(d => isStudentAcademicDepartment(d.code, d.name || d.code));
+      const finalList = usable.length ? usable : normalized;
       if (finalList.length) {
         this._cache = finalList;
         localStorage.setItem(DEPTS_KEY, JSON.stringify(finalList));
         return finalList;
       }
     }
+    if (includeAll && Array.isArray(this._allCache) && this._allCache.length) return this._allCache;
     if (Array.isArray(this._cache) && this._cache.length) return this._cache;
     seedDepartments();
     try {

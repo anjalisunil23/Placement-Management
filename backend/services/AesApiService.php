@@ -1513,7 +1513,11 @@ final class AesApiService
             $code = strtoupper(trim($row['code']));
             $name = trim($row['name']);
             $aesId = trim((string) ($row['aesId'] ?? ''));
-            if ($code === '' || $name === '' || !\PMS\Models\DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+            if ($code === '' || $name === '') {
+                continue;
+            }
+            // Keep numeric AES ids out; sync academic programmes and staff/support units alike.
+            if (preg_match('/^\d+$/', $code) === 1) {
                 continue;
             }
 

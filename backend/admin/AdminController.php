@@ -244,7 +244,8 @@ final class AdminController
             if ($profile) {
                 $dept = (new DepartmentModel())->findById((string) ($profile['departmentId'] ?? ''));
                 $row['departmentId'] = (string) ($profile['departmentId'] ?? '');
-                $row['department'] = $dept['code'] ?? $dept['name'] ?? '';
+                $row['department'] = $this->formatDepartmentLabel($dept);
+                $row['departmentName'] = (string) ($dept['name'] ?? '');
                 $row['designation'] = $profile['designation'] ?? '';
             }
         }
@@ -254,7 +255,8 @@ final class AdminController
             if ($profile) {
                 $dept = (new DepartmentModel())->findById((string) ($profile['departmentId'] ?? ''));
                 $row['departmentId'] = (string) ($profile['departmentId'] ?? '');
-                $row['department'] = $dept['code'] ?? $dept['name'] ?? '';
+                $row['department'] = $this->formatDepartmentLabel($dept);
+                $row['departmentName'] = (string) ($dept['name'] ?? '');
                 $row['designation'] = $profile['designation'] ?? '';
             }
         }
@@ -281,6 +283,23 @@ final class AdminController
         }
 
         return $row;
+    }
+
+    /**
+     * @param array<string, mixed>|null $dept
+     */
+    private function formatDepartmentLabel(?array $dept): string
+    {
+        if ($dept === null) {
+            return '';
+        }
+        $name = trim((string) ($dept['name'] ?? ''));
+        $code = trim((string) ($dept['code'] ?? ''));
+        if ($name !== '' && $code !== '' && strcasecmp($name, $code) !== 0) {
+            return $name . ' (' . $code . ')';
+        }
+
+        return $name !== '' ? $name : $code;
     }
 
     /** POST /api/admin/users */
@@ -677,7 +696,7 @@ final class AdminController
             $serialized['placementOfficer'] = $assigned[$id] ?? null;
             $serialized['hasOfficer'] = isset($assigned[$id]);
             return $serialized;
-        }, $model->findAll([], 100));
+        }, $model->findAll([], 500));
 
         Response::success($departments);
     }
