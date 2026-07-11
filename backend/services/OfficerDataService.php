@@ -307,6 +307,8 @@ final class OfficerDataService
         $personalEmail = $contact['personalEmail'];
         $phone = $contact['phone'];
 
+        $gender = trim((string) ($personal['gender'] ?? $mapped['gender'] ?? ''));
+
         $classBatch = trim((string) ($mapped['classBatch'] ?? $placement['classBatch'] ?? ''));
         if ($classBatch === '') {
             $classBatch = trim((string) ($student['classBatch'] ?? ''));
@@ -395,6 +397,7 @@ final class OfficerDataService
             'collegeEmail'    => $collegeEmail,
             'personalEmail'   => $personalEmail,
             'phone'           => $phone,
+            'gender'          => $gender,
             'department'      => $aesDeptCode !== '' ? $aesDeptCode : (string) ($dept['code'] ?? ''),
             'departmentName'  => $aesDeptName !== '' ? $aesDeptName : (string) ($dept['name'] ?? $dept['code'] ?? ''),
             'classBatch'      => $classBatch,
@@ -457,6 +460,11 @@ final class OfficerDataService
         $phone = trim((string) ($mapped['phone'] ?? ''));
         if ($phone !== '') {
             $overview['phone'] = $phone;
+        }
+
+        $gender = trim((string) ($mapped['gender'] ?? ''));
+        if ($gender !== '') {
+            $overview['gender'] = $gender;
         }
 
         $aesApi = new AesApiService();
@@ -875,6 +883,12 @@ final class OfficerDataService
             $personal['phone'] = $contact['phone'];
             $row['personal'] = $personal;
             $row['phone'] = $contact['phone'];
+        }
+        $gender = trim((string) ($mapped['gender'] ?? $personal['gender'] ?? ''));
+        if ($gender !== '') {
+            $personal['gender'] = $gender;
+            $row['personal'] = $personal;
+            $row['gender'] = $gender;
         }
         if ($contact['collegeEmail'] !== '') {
             $row['collegeEmail'] = $contact['collegeEmail'];

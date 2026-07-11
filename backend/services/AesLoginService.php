@@ -823,6 +823,16 @@ final class AesLoginService
         if ($phone !== '' && trim((string) ($personal['phone'] ?? '')) !== $phone) {
             $personalPatch['phone'] = $phone;
         }
+        $gender = $this->normalizeGender((string) (
+            $mapped['gender']
+            ?? $placement['stud_gender']
+            ?? $placement['gender']
+            ?? $placement['sex']
+            ?? ''
+        ));
+        if ($gender !== '' && trim((string) ($personal['gender'] ?? '')) !== $gender) {
+            $personalPatch['gender'] = $gender;
+        }
         if ($personalPatch !== []) {
             $patch['personal'] = array_merge($personal, $personalPatch);
         }
@@ -1410,7 +1420,9 @@ final class AesLoginService
             'year'           => $this->pick($aesDetails, ['year', 'academic_year', 'academicYear', 'batch_year']),
             'semester'       => $this->pick($aesDetails, ['semester', 'sem', 'current_semester']),
             'designation'    => $this->pick($aesDetails, ['designation', 'title', 'job_title', 'jobTitle']),
-            'gender'         => $this->pick($aesDetails, ['gender', 'sex']),
+            'gender'         => $this->normalizeGender($this->pickInsensitive($aesDetails, [
+                'stud_gender', 'gender', 'sex', 'stud_sex', 'Gender', 'SEX',
+            ])),
             'bloodGroup'     => $this->pick($aesDetails, ['bloodGroup', 'blood_group', 'blood']),
             'address'        => $this->pick($aesDetails, ['address', 'addr', 'permanent_address', 'permanentAddress']),
             'parentName'     => $this->pick($aesDetails, ['parentName', 'parent_name', 'father_name', 'fatherName', 'guardian']),
@@ -2997,6 +3009,30 @@ final class AesLoginService
         $n = (float) $m[1];
 
         return ($n > 0 && $n <= 100) ? $n : null;
+    }
+
+    /**
+     * Normalize AES gender codes from getStudInfo4Placement (stud_gender: 1/2, M/F, etc.).
+     */
+    private function normalizeGender(string $raw): string
+    {
+        $value = trim($raw);
+        if ($value === '') {
+            return '';
+        }
+
+        $lower = strtolower($value);
+        if (in_array($lower, ['1', 'm', 'male', 'boy', 'man'], true)) {
+            return 'Male';
+        }
+        if (in_array($lower, ['2', 'f', 'female', 'girl', 'woman'], true)) {
+            return 'Female';
+        }
+        if (in_array($lower, ['3', 'o', 'other', 'non-binary', 'nonbinary', 'nb'], true)) {
+            return 'Other';
+        }
+
+        return $value;
     }
 
     /**

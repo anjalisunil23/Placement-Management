@@ -214,6 +214,7 @@ final class StudentController
       'collegeEmail'  => $collegeEmail,
       'personalEmail' => $personalEmail,
       'phone'         => (string) ($merged['phone'] ?? $personal['phone'] ?? ''),
+      'gender'        => (string) ($merged['gender'] ?? $personal['gender'] ?? ''),
     ];
 
     $dbDept = $dept ? [
@@ -234,6 +235,7 @@ final class StudentController
     $out['departmentName'] = $resolvedDept['name'];
     $out['programme'] = $resolvedDept['name'];
     $out['branch'] = $resolvedDept['name'];
+    $out['gender'] = (string) ($merged['gender'] ?? $personal['gender'] ?? '');
     if (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0) {
       $out['academic'] = $academic;
       $out['cgpa'] = (float) $academic['cgpa'];
@@ -250,6 +252,10 @@ final class StudentController
     }
     if (!empty($merged['phone']) && empty($personal['phone'])) {
       $personal['phone'] = (string) $merged['phone'];
+      $out['personal'] = $personal;
+    }
+    if (!empty($merged['gender']) && empty($personal['gender'])) {
+      $personal['gender'] = (string) $merged['gender'];
       $out['personal'] = $personal;
     }
     if (!empty($merged['photoUrl'])) {
