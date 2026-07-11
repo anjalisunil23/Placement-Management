@@ -401,9 +401,15 @@ a{color:inherit;text-decoration:none}
 
 /* ===== Buttons override ===== */
 .btn-primary{background:var(--primary);border-color:var(--primary);color:#fff}
-.btn-primary:hover,.btn-primary:focus{background:var(--primary-2);border-color:var(--primary-2);color:#fff}
-.btn-outline-primary{color:var(--primary);border-color:var(--primary)}
-.btn-outline-primary:hover{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn-primary:hover,.btn-primary:focus,.btn-primary:active{
+  background:var(--primary-2);border-color:var(--primary-2);color:#fff;
+}
+.btn-primary i,.btn-primary:hover i,.btn-primary:focus i{color:inherit}
+.btn-outline-primary{color:var(--primary);border-color:var(--primary);background:transparent}
+.btn-outline-primary:hover,.btn-outline-primary:focus{
+  background:var(--primary);border-color:var(--primary);color:#fff;
+}
+.btn-outline-primary:hover i,.btn-outline-primary:focus i{color:#fff}
 .btn-success{background:var(--success);border-color:var(--success)}
 .btn-warning{background:var(--warning);border-color:var(--warning);color:#0F172A}
 .btn-danger{background:var(--danger);border-color:var(--danger)}
