@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.07.11 — navy sidebar/topbar theme */
-const APP_SHELL_VERSION = '2026.07.11';
+/* PlaceHub shell v2026.07.11c — navy sidebar/topbar theme */
+const APP_SHELL_VERSION = '2026.07.11c';
 
 (function applyShellThemeFallback() {
   if (typeof document === 'undefined' || document.getElementById('ph-shell-theme')) return;
@@ -17,6 +17,7 @@ const APP_SHELL_VERSION = '2026.07.11';
   border-right:1px solid var(--shell-border)!important;
 }
 .sidebar .brand,.sidebar .brand a,.sidebar .nav-item{color:var(--shell-text)!important}
+.sidebar .brand .brand-logo{background:transparent!important;padding:0!important;border-radius:0!important}
 .sidebar .nav-label,.sidebar .nav-item i,.sidebar .nav-chevron,.sidebar .text-muted-2{color:var(--shell-muted)!important}
 .sidebar .nav-item:hover{background:var(--shell-hover)!important}
 .sidebar .nav-item.active{

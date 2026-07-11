@@ -12,7 +12,7 @@ use PMS\Models\UserModel;
 use PMS\Utils\Security;
 
 /**
- * Notification dispatch — in-app + email + WhatsApp (placement updates) + broadcasts.
+ * Notification dispatch — in-app + email (student Gmail) + WhatsApp + broadcasts.
  */
 final class NotificationService
 {
@@ -23,6 +23,17 @@ final class NotificationService
         'placement_report_submitted',
         'selection_update',
         'application_update',
+    ];
+
+    /** Student-facing types that always email (drives, applications, placements). */
+    /** @var list<string> */
+    private const EMAIL_STUDENT_TYPES = [
+        'drive_announcement',
+        'application_update',
+        'selection_update',
+        'placement_approved',
+        'placement_rejected',
+        'placement_report_submitted',
     ];
 
     private NotificationModel $notificationModel;
@@ -42,18 +53,99 @@ final class NotificationService
     {
         $this->notificationModel->notify($userId, $type, $title, $message, $metadata);
 
-        if ($sendEmail) {
-            $user = $this->userModel->findById($userId);
-            if ($user && !empty($user['email'])) {
-                $this->emailService->send(
-                    $user['email'],
-                    "[PlaceHub] {$title}",
-                    "<p>" . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . "</p>"
-                );
-            }
+        $shouldEmail = $sendEmail || in_array($type, self::EMAIL_STUDENT_TYPES, true);
+        if ($shouldEmail) {
+            $this->maybeSendStudentEmail($userId, $type, $title, $message);
         }
 
         $this->maybeSendPlacementWhatsApp($userId, $type, $title, $message);
+    }
+
+    /**
+     * Email student Gmail / personal address for drives, applications, placements.
+     */
+    private function maybeSendStudentEmail(string $userId, string $type, string $title, string $message): void
+    {
+        $email = $this->resolveStudentEmail($userId);
+        if ($email === '') {
+            return;
+        }
+
+        $safeTitle = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+        $safeMessage = nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
+        $body = <<<HTML
+<div style="font-family:Segoe UI,Arial,sans-serif;font-size:15px;line-height:1.5;color:#0F172A">
+  <p style="margin:0 0 12px;font-size:18px;font-weight:600">{$safeTitle}</p>
+  <p style="margin:0 0 16px">{$safeMessage}</p>
+  <p style="margin:0;color:#64748B;font-size:13px">AJCE Placement Cell · <a href="https://placements.amaljyothi.ac.in">placements.amaljyothi.ac.in</a></p>
+</div>
+HTML;
+
+        try {
+            $result = $this->emailService->sendMail([
+                'to'      => $email,
+                'subject' => '[AJCE Placements] ' . $title,
+                'body'    => $body,
+            ]);
+            if (!$result['ok']) {
+                error_log('[PMS Email] Failed for user ' . $userId . ': ' . ($result['error'] ?? 'unknown'));
+            }
+        } catch (\Throwable $e) {
+            error_log('[PMS Email] Exception: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Prefer personal Gmail, then other personal email, then account email.
+     */
+    private function resolveStudentEmail(string $userId): string
+    {
+        $candidates = [];
+
+        $student = (new StudentModel())->findByUserId($userId);
+        if (is_array($student)) {
+            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+            $candidates[] = (string) ($personal['personalEmail'] ?? '');
+            $candidates[] = (string) ($personal['email'] ?? '');
+            $candidates[] = (string) ($student['personalEmail'] ?? '');
+            $candidates[] = (string) ($student['stud_personal_mails'] ?? '');
+        }
+
+        $user = $this->userModel->findById($userId);
+        if (is_array($user)) {
+            $candidates[] = (string) ($user['personalEmail'] ?? '');
+            $candidates[] = (string) ($user['email'] ?? '');
+        }
+
+        $valid = [];
+        foreach ($candidates as $raw) {
+            $email = strtolower(trim($raw));
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                continue;
+            }
+            if (!in_array($email, $valid, true)) {
+                $valid[] = $email;
+            }
+        }
+
+        foreach ($valid as $email) {
+            if (str_ends_with($email, '@gmail.com') || str_ends_with($email, '@googlemail.com')) {
+                return $email;
+            }
+        }
+
+        foreach ($valid as $email) {
+            if (!$this->isCollegeEmail($email)) {
+                return $email;
+            }
+        }
+
+        return $valid[0] ?? '';
+    }
+
+    private function isCollegeEmail(string $email): bool
+    {
+        return (bool) preg_match('/@(students\.)?amaljyothi\.ac\.in$|\.ajce\.in$/i', $email);
     }
 
     /**
@@ -125,7 +217,7 @@ final class NotificationService
      */
     public function notifyPlacementCell(string $type, string $title, string $message, array $metadata = [], bool $sendEmail = true): void
     {
-        $this->notifyAdmins($type, $title, $message, $metadata, $sendEmail);
+        $this->notifyAdmins($type, $title, $message, $metadata);
 
         foreach ($this->userModel->findByRole('placement_officer', 200) as $officer) {
             $uid = (string) ($officer['_id'] ?? '');
