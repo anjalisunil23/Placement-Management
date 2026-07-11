@@ -22,7 +22,7 @@ const OfficerApi = {
       id: OfficerApi.id(u) || OfficerApi.id(row),
       studentId: OfficerApi.id(row),
       role: 'student',
-      name: row.displayName || u.name || '',
+      name: row.displayName || u.name || row.name || personal.name || personal.fullName || '',
       email: row.collegeEmail || (isCollege ? email : (row.personalEmail || personal.personalEmail || email)),
       collegeEmail: row.collegeEmail || (isCollege ? email : (personal.collegeEmail || '')),
       personalEmail: row.personalEmail || personal.personalEmail || personal.email || (!isCollege ? email : ''),

@@ -450,10 +450,18 @@ final class OfficerDataService
         }
 
         $name = trim((string) ($mapped['name'] ?? ''));
-        if ($name !== '') {
+        if ($name !== '' && $this->isUsablePersonName($name, $register)) {
             $overview['name'] = $name;
             if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $name) {
                 (new UserModel())->updateUser((string) $user['_id'], ['name' => $name]);
+            }
+        } else {
+            $aesName = trim((new AesLoginService())->displayNameFromAesProfile($placement, $register));
+            if ($aesName !== '' && $this->isUsablePersonName($aesName, $register)) {
+                $overview['name'] = $aesName;
+                if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $aesName) {
+                    (new UserModel())->updateUser((string) $user['_id'], ['name' => $aesName]);
+                }
             }
         }
 
@@ -859,6 +867,15 @@ final class OfficerDataService
             $row['classBatch'] = (string) $mapped['classBatch'];
         }
 
+        $aesName = trim((new AesLoginService())->displayNameFromAesProfile($placement, $register));
+        if ($aesName !== '' && $this->isUsablePersonName($aesName, $register)) {
+            $row['displayName'] = $aesName;
+            $userOut = is_array($row['user'] ?? null) ? $row['user'] : [];
+            $userOut['name'] = $aesName;
+            $row['user'] = $userOut;
+            self::$placementNameCache[$register] = $aesName;
+        }
+
         $academic = is_array($row['academic'] ?? null) ? $row['academic'] : (is_array($student['academic'] ?? null) ? $student['academic'] : []);
         if ((float) ($academic['cgpa'] ?? 0) <= 0 && !empty($mapped['cgpa']) && (float) $mapped['cgpa'] > 0) {
             $academic['cgpa'] = (float) $mapped['cgpa'];
@@ -918,11 +935,15 @@ final class OfficerDataService
     private function studentDisplayName(array $student, ?array $user): string
     {
         $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        if ($register !== '' && isset(self::$placementNameCache[$register]) && self::$placementNameCache[$register] !== '') {
+            return self::$placementNameCache[$register];
+        }
+
+        $aes = new AesLoginService();
         if ($register !== '') {
             $placement = $this->placementProfileForRegister($register);
-            $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
-            $aesName = trim((string) ($mapped['name'] ?? ''));
-            if ($aesName !== '') {
+            $aesName = trim($aes->displayNameFromAesProfile($placement, $register));
+            if ($aesName !== '' && $this->isUsablePersonName($aesName, $register)) {
                 if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $aesName) {
                     (new UserModel())->updateUser((string) $user['_id'], ['name' => $aesName]);
                 }
@@ -933,13 +954,13 @@ final class OfficerDataService
         }
 
         $name = is_array($user) ? trim((string) ($user['name'] ?? '')) : '';
-        if ($name !== '') {
+        if ($this->isUsablePersonName($name, $register)) {
             return $name;
         }
 
         $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
         $name = trim((string) ($personal['name'] ?? $personal['fullName'] ?? ''));
-        if ($name !== '') {
+        if ($this->isUsablePersonName($name, $register)) {
             return $name;
         }
 
@@ -947,13 +968,24 @@ final class OfficerDataService
             return '';
         }
 
-        if (isset(self::$placementNameCache[$register])) {
-            return self::$placementNameCache[$register];
+        if (!isset(self::$placementNameCache[$register])) {
+            self::$placementNameCache[$register] = '';
         }
 
-        self::$placementNameCache[$register] = '';
+        return self::$placementNameCache[$register];
+    }
 
-        return '';
+    private function isUsablePersonName(string $name, string $register): bool
+    {
+        $name = trim($name);
+        if ($name === '' || preg_match('/^\d+$/', $name)) {
+            return false;
+        }
+        if ($register !== '' && strcasecmp($name, $register) === 0) {
+            return false;
+        }
+
+        return (bool) preg_match('/[a-zA-Z]/', $name);
     }
 
     /**

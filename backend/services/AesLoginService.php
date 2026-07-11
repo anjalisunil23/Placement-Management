@@ -3588,6 +3588,28 @@ final class AesLoginService
     }
 
     /**
+     * Resolve display name from a placement/AES profile only (no session merge).
+     * Safe for staff/officer student lists where the session profile is not the student.
+     *
+     * @param array<string, mixed> $aesProfile
+     */
+    public function displayNameFromAesProfile(array $aesProfile, string $registerNumber = ''): string
+    {
+        if ($aesProfile === []) {
+            return '';
+        }
+        $mapped = $this->mapAesDetailsToUserFields($aesProfile);
+        $register = $this->resolveAesAdmissionNumber($registerNumber, $aesProfile, $mapped);
+
+        return $this->resolveAesName(
+            $aesProfile,
+            $mapped,
+            $register,
+            (string) ($mapped['personalEmail'] ?? '')
+        );
+    }
+
+    /**
      * Resolve display name for a student using session AES data and placement POST API.
      *
      * @param array<string, mixed> $extraAes
