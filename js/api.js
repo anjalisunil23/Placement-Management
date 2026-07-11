@@ -2267,91 +2267,78 @@ function companyEligibilityKey() {
   return `ph-company-eligibility-${(u?.companyName || u?.email || 'default').replace(/\s+/g, '-')}`;
 }
 
-const ELIGIBILITY_BRANCHES = ['CSE', 'IT', 'ECE', 'ME', 'EE', 'CE', 'MCA'];
+const ELIGIBILITY_BRANCHES = ['CS', 'AD', 'EC', 'EE', 'ME', 'CE', 'CH', 'FT', 'MCA', 'BCA', 'INMCA'];
 
 /**
- * Parent academic departments with programme / sub-branch codes.
- * Value for a whole department is joined codes (MCA|BCA|INMCA) so filters match any branch.
+ * AJCE parent departments with programme / sub-branch codes used on campus.
+ * Aliases map older AES labels (CSE, ECE, …) onto the college codes.
  */
 const DEPARTMENT_PROGRAMME_GROUPS = [
   {
     parent: 'Computer Applications',
     programmes: [
-      { code: 'MCA', label: 'MCA' },
-      { code: 'BCA', label: 'BCA' },
-      { code: 'INMCA', label: 'Integrated MCA' },
+      { code: 'MCA', label: 'MCA', aliases: [] },
+      { code: 'BCA', label: 'BCA', aliases: [] },
+      { code: 'INMCA', label: 'Integrated MCA', aliases: ['INTMCA', 'IMCA', 'INT MCA'] },
     ],
   },
   {
     parent: 'Computer Science & Engineering',
     programmes: [
-      { code: 'CSE', label: 'CSE' },
-      { code: 'CS', label: 'CS' },
+      { code: 'CS', label: 'CSE', aliases: ['CSE'] },
+      { code: 'CY', label: 'CSE (Cyber Security)', aliases: ['CSY'] },
+      { code: 'CT', label: 'CSE (Artificial Intelligence)', aliases: ['CSAI'] },
     ],
   },
   {
-    parent: 'Information Technology',
-    programmes: [{ code: 'IT', label: 'IT' }],
+    parent: 'AI & Information Technology',
+    programmes: [
+      { code: 'AD', label: 'AI & Data Science', aliases: ['AIDS', 'AI'] },
+      { code: 'IT', label: 'Information Technology', aliases: [] },
+    ],
   },
   {
     parent: 'Electronics & Communication',
     programmes: [
-      { code: 'ECE', label: 'ECE' },
-      { code: 'ECEA', label: 'ECEA' },
+      { code: 'EC', label: 'ECE', aliases: ['ECE', 'ECEA'] },
     ],
   },
   {
     parent: 'Electrical & Electronics',
     programmes: [
-      { code: 'EEE', label: 'EEE' },
-      { code: 'EE', label: 'EE' },
+      { code: 'EE', label: 'EEE', aliases: ['EEE'] },
     ],
   },
   {
     parent: 'Mechanical Engineering',
     programmes: [
-      { code: 'ME', label: 'ME' },
-      { code: 'MECH', label: 'MECH' },
+      { code: 'ME', label: 'Mechanical', aliases: ['MECH'] },
+      { code: 'MA', label: 'Automobile', aliases: ['AU', 'AUTO'] },
     ],
   },
   {
     parent: 'Civil Engineering',
     programmes: [
-      { code: 'CE', label: 'CE' },
-      { code: 'CIVIL', label: 'Civil' },
+      { code: 'CE', label: 'Civil', aliases: ['CIVIL'] },
     ],
   },
   {
     parent: 'Chemical Engineering',
     programmes: [
-      { code: 'CH', label: 'CH' },
-      { code: 'CHEM', label: 'Chemical' },
+      { code: 'CH', label: 'Chemical', aliases: ['CHEM'] },
     ],
   },
   {
     parent: 'Food Technology',
     programmes: [
-      { code: 'FT', label: 'FT' },
-      { code: 'FOOD', label: 'Food Technology' },
+      { code: 'FT', label: 'Food Technology', aliases: ['FOOD', 'FE'] },
     ],
   },
   {
-    parent: 'Automobile Engineering',
+    parent: 'Metallurgical & Materials',
     programmes: [
-      { code: 'AU', label: 'AU' },
-      { code: 'AUTO', label: 'Automobile' },
+      { code: 'MG', label: 'Metallurgy', aliases: ['MT', 'MET', 'MME'] },
     ],
-  },
-  {
-    parent: 'Metallurgy',
-    programmes: [
-      { code: 'MT', label: 'MT' },
-      { code: 'MET', label: 'Metallurgy' },
-    ],
-  },
-  {
-    parent: 'MBA',
-    programmes: [{ code: 'MBA', label: 'MBA' }],
   },
 ];
 
@@ -2366,28 +2353,64 @@ function splitDepartmentFilterValue(value) {
     .filter(Boolean);
 }
 
-/** Build optgroup-ready rows from known parents + any extra programme codes found live. */
+function programmeAliasSet(programme) {
+  const codes = [programme.code, ...(programme.aliases || [])]
+    .map(normalizeProgrammeCode)
+    .filter(Boolean);
+  return new Set(codes);
+}
+
+function resolveCollegeProgrammeCode(code) {
+  const needle = normalizeProgrammeCode(code);
+  if (!needle) return '';
+  for (const group of DEPARTMENT_PROGRAMME_GROUPS) {
+    for (const programme of group.programmes) {
+      if (programmeAliasSet(programme).has(needle)) {
+        return normalizeProgrammeCode(programme.code);
+      }
+    }
+  }
+  return needle;
+}
+
+/** Build AJCE department/branch options; only include branches present at this college. */
 function buildDepartmentProgrammeOptions(extraCodes = []) {
-  const known = new Map();
-  DEPARTMENT_PROGRAMME_GROUPS.forEach(group => {
-    group.programmes.forEach(p => known.set(normalizeProgrammeCode(p.code), group.parent));
+  const available = new Set();
+  const labelByCode = new Map();
+
+  const remember = (code, label = '') => {
+    const canonical = resolveCollegeProgrammeCode(code);
+    if (!canonical || !isStudentAcademicDepartment(canonical, label || canonical)) return;
+    // Keep only known AJCE programmes (no random/teacher buckets).
+    const isAjce = DEPARTMENT_PROGRAMME_GROUPS.some(g =>
+      g.programmes.some(p => programmeAliasSet(p).has(canonical) || normalizeProgrammeCode(p.code) === canonical)
+    );
+    if (!isAjce) return;
+    available.add(canonical);
+    if (label && !labelByCode.has(canonical)) labelByCode.set(canonical, String(label).trim());
+  };
+
+  (Array.isArray(extraCodes) ? extraCodes : []).forEach(raw => {
+    const code = typeof raw === 'string' ? raw : (raw?.code || raw?.dept || raw?.department || '');
+    const label = typeof raw === 'string' ? raw : (raw?.name || raw?.label || raw?.dept || raw?.department || code);
+    remember(code, label);
   });
 
-  const extras = [];
-  (Array.isArray(extraCodes) ? extraCodes : []).forEach(raw => {
-    const code = normalizeProgrammeCode(typeof raw === 'string' ? raw : (raw?.code || raw?.dept || raw?.department || ''));
-    const label = String(
-      (typeof raw === 'string' ? raw : (raw?.name || raw?.label || raw?.dept || raw?.department || code)) || code
-    ).trim();
-    if (!code || !isStudentAcademicDepartment(code, label)) return;
-    if (known.has(code)) return;
-    extras.push({ code, label: label || code });
-  });
+  // If the college catalogue/API has not loaded yet, fall back to the full AJCE branch set.
+  const useFallback = available.size === 0;
+  if (useFallback) {
+    DEPARTMENT_PROGRAMME_GROUPS.forEach(group => {
+      group.programmes.forEach(p => available.add(normalizeProgrammeCode(p.code)));
+    });
+  }
 
   const groups = DEPARTMENT_PROGRAMME_GROUPS.map(group => {
     const programmes = group.programmes
-      .filter(p => isStudentAcademicDepartment(p.code, p.label))
-      .map(p => ({ code: normalizeProgrammeCode(p.code), label: p.label || p.code }));
+      .filter(p => available.has(normalizeProgrammeCode(p.code)))
+      .map(p => ({
+        code: normalizeProgrammeCode(p.code),
+        label: labelByCode.get(normalizeProgrammeCode(p.code)) || p.label || p.code,
+      }));
     return {
       parent: group.parent,
       allValue: programmes.map(p => p.code).join('|'),
@@ -2395,7 +2418,7 @@ function buildDepartmentProgrammeOptions(extraCodes = []) {
     };
   }).filter(g => g.programmes.length);
 
-  return { groups, extras };
+  return { groups, extras: [] };
 }
 
 /** Academic / student programme departments only (exclude staff/teacher role buckets). */

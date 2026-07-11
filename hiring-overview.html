@@ -4,7 +4,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260711i" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260711j" rel="stylesheet"/></head>
 <body data-page="hiring-overview.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -16,16 +16,19 @@
   <button class="btn btn-outline-secondary" type="button" onclick="toast('Export will be available with backend reports.', 'info')"><i class="bi bi-download me-1"></i>Export</button>
 </div>
 
-<div class="card-surface p-3 p-md-4 mb-3">
-  <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
-    <div>
-      <div class="small fw-semibold text-muted-2 mb-1">View</div>
-      <div class="d-flex flex-wrap gap-2 align-items-center">
-        <select class="form-select form-select-sm w-auto" id="deptSelect">
-          <option value="">All departments</option>
-        </select>
+<div class="card-surface p-3 p-md-4 mb-3" id="viewFilterCard">
+  <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
+    <div class="flex-grow-1" style="min-width:min(100%,18rem)">
+      <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
+        <div class="small fw-semibold text-muted-2 mb-0">View</div>
         <span class="badge-soft info" id="deptBadge">Campus</span>
       </div>
+      <div class="d-flex flex-wrap gap-2 align-items-center" id="deptButtons" role="group" aria-label="Departments"></div>
+      <div class="d-none mt-3" id="branchPanel">
+        <div class="small fw-semibold text-muted-2 mb-2" id="branchPanelLabel">Branches</div>
+        <div class="d-flex flex-wrap gap-2 align-items-center" id="branchButtons" role="group" aria-label="Branches"></div>
+      </div>
+      <select class="d-none" id="deptSelect" aria-hidden="true"><option value="">All departments</option></select>
     </div>
     <div class="small text-muted-2" id="viewHint"></div>
   </div>
@@ -129,7 +132,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="js/staff-api.js?v=20260630e"></script>
-<script src="js/api.js?v=20260711j"></script>
+<script src="js/api.js?v=20260711l"></script>
 <script src="js/charts.js?v=20260630e"></script>
 <script src="js/app.js?v=20260711i"></script>
 <script>
@@ -141,8 +144,8 @@ if (!canViewCampusHiring()) {
 (function primeDeptView() {
   const r = Auth.role();
   if (r === 'staff') {
-    const sel = document.getElementById('deptSelect');
-    if (sel) sel.style.display = 'none';
+    const card = document.getElementById('viewFilterCard');
+    if (card) card.classList.add('d-none');
   }
 })();
 
@@ -153,6 +156,10 @@ let staffLive = false;
 let adminLive = false;
 let officerLive = false;
 let campusLive = false;
+let viewDeptGroups = [];
+let viewExtraProgrammes = [];
+let activeParentKey = '';
+let activeDeptFilter = '';
 
 const EMPTY_PIPELINE = [
   { label: 'Applicants', value: 0 },
@@ -326,10 +333,7 @@ function configurePageForRole(role) {
 }
 
 function populateDeptSelect(extraDepts = []) {
-  const escLabel = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const prev = deptSelect.value;
   const extraCodes = [];
-
   const pushExtra = (code, name) => {
     const raw = String(code || '').trim();
     if (!raw || /^\d+$/.test(raw)) return;
@@ -346,12 +350,17 @@ function populateDeptSelect(extraDepts = []) {
     departmentCodes().forEach(c => pushExtra(c, c));
   }
 
-  const { groups, extras } = typeof buildDepartmentProgrammeOptions === 'function'
+  const built = typeof buildDepartmentProgrammeOptions === 'function'
     ? buildDepartmentProgrammeOptions(extraCodes)
     : { groups: [], extras: extraCodes.map(e => ({ code: e.code, label: e.name || e.code })) };
 
+  viewDeptGroups = built.groups || [];
+  viewExtraProgrammes = built.extras || [];
+
+  // Keep hidden select in sync for any legacy readers.
+  const escLabel = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   let html = '<option value="">All departments</option>';
-  groups.forEach(group => {
+  viewDeptGroups.forEach(group => {
     html += `<optgroup label="${escLabel(group.parent)}">`;
     if (group.programmes.length > 1) {
       html += `<option value="${escLabel(group.allValue)}">${escLabel(group.parent)} — all branches</option>`;
@@ -361,24 +370,102 @@ function populateDeptSelect(extraDepts = []) {
     });
     html += '</optgroup>';
   });
-  if (extras.length) {
-    html += '<optgroup label="Other programmes">';
-    extras
-      .sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { sensitivity: 'base' }))
-      .forEach(p => {
-        html += `<option value="${escLabel(p.code)}">${escLabel(p.label)}</option>`;
-      });
-    html += '</optgroup>';
+  viewExtraProgrammes.forEach(p => {
+    html += `<option value="${escLabel(p.code)}">${escLabel(p.label)}</option>`;
+  });
+  deptSelect.innerHTML = html;
+  if (activeDeptFilter && [...deptSelect.options].some(o => o.value === activeDeptFilter)) {
+    deptSelect.value = activeDeptFilter;
+  } else {
+    deptSelect.value = '';
+    activeDeptFilter = '';
   }
 
-  deptSelect.innerHTML = html;
-  if (prev && [...deptSelect.options].some(o => o.value === prev)) deptSelect.value = prev;
+  renderDeptButtons();
+  renderBranchButtons();
+}
+
+function findGroupByParent(parentKey) {
+  return viewDeptGroups.find(g => g.parent === parentKey) || null;
+}
+
+function findGroupForFilter(filter) {
+  const raw = String(filter || '').trim();
+  if (!raw) return null;
+  if (raw.includes('|')) {
+    const key = splitDepartmentFilterValue(raw).map(normalizeProgrammeCode).sort().join('|');
+    return viewDeptGroups.find(g =>
+      g.programmes.map(p => normalizeProgrammeCode(p.code)).sort().join('|') === key
+    ) || null;
+  }
+  const code = normalizeProgrammeCode(raw);
+  return viewDeptGroups.find(g =>
+    g.programmes.some(p => normalizeProgrammeCode(p.code) === code)
+  ) || null;
+}
+
+function renderDeptButtons() {
+  const wrap = document.getElementById('deptButtons');
+  if (!wrap) return;
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const campusActive = !activeParentKey && !activeDeptFilter;
+  let html = `<button type="button" class="view-chip${campusActive ? ' is-active' : ''}" data-view-parent="" data-view-filter="">All departments</button>`;
+
+  viewDeptGroups.forEach(group => {
+    const active = activeParentKey === group.parent
+      || (!!activeDeptFilter && findGroupForFilter(activeDeptFilter)?.parent === group.parent);
+    html += `<button type="button" class="view-chip${active ? ' is-active' : ''}" data-view-parent="${esc(group.parent)}" data-view-filter="">${esc(group.parent)}</button>`;
+  });
+
+  viewExtraProgrammes.forEach(p => {
+    const active = activeDeptFilter === p.code && !activeParentKey;
+    html += `<button type="button" class="view-chip${active ? ' is-active' : ''}" data-view-parent="" data-view-filter="${esc(p.code)}">${esc(p.label)}</button>`;
+  });
+
+  wrap.innerHTML = html;
+}
+
+function renderBranchButtons() {
+  const panel = document.getElementById('branchPanel');
+  const wrap = document.getElementById('branchButtons');
+  const labelEl = document.getElementById('branchPanelLabel');
+  if (!panel || !wrap) return;
+
+  const group = findGroupByParent(activeParentKey);
+  if (!group || group.programmes.length <= 1) {
+    // Single-programme departments apply immediately; no branch row needed.
+    panel.classList.add('d-none');
+    wrap.innerHTML = '';
+    return;
+  }
+
+  panel.classList.remove('d-none');
+  if (labelEl) labelEl.textContent = `${group.parent} branches`;
+
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const allActive = activeDeptFilter === group.allValue;
+  let html = `<button type="button" class="view-chip view-chip-branch${allActive ? ' is-active' : ''}" data-view-branch="${esc(group.allValue)}">All branches</button>`;
+  group.programmes.forEach(p => {
+    const active = activeDeptFilter === p.code;
+    html += `<button type="button" class="view-chip view-chip-branch${active ? ' is-active' : ''}" data-view-branch="${esc(p.code)}">${esc(p.label)}</button>`;
+  });
+  wrap.innerHTML = html;
+}
+
+function applyViewFilter(filter, { parentKey = activeParentKey } = {}) {
+  activeParentKey = parentKey || '';
+  activeDeptFilter = String(filter || '').trim();
+  deptSelect.value = activeDeptFilter;
+  renderDeptButtons();
+  renderBranchButtons();
+  setDeptUI(selectedDept());
+  renderForDept(selectedDept());
 }
 
 function selectedDept() {
   const role = currentRole();
   if (role === 'staff') return viewerDepartment();
-  return deptSelect.value || '';
+  return activeDeptFilter || deptSelect.value || '';
 }
 
 function deptMatchesFilter(applicantDept, deptCode) {
@@ -386,16 +473,33 @@ function deptMatchesFilter(applicantDept, deptCode) {
   const targets = (typeof splitDepartmentFilterValue === 'function'
     ? splitDepartmentFilterValue(deptCode)
     : [deptCode]
-  ).map(c => departmentCanonicalCode(c).toUpperCase()).filter(Boolean);
+  ).map(c => {
+    const resolved = typeof resolveCollegeProgrammeCode === 'function'
+      ? resolveCollegeProgrammeCode(c)
+      : c;
+    return departmentCanonicalCode(resolved || c).toUpperCase();
+  }).filter(Boolean);
   if (!targets.length) return true;
   const raw = String(applicantDept || '').trim().toUpperCase();
   const canon = departmentCanonicalCode(applicantDept || '').toUpperCase();
-  return targets.some(target => raw === target || canon === target || raw.includes(target) || canon.includes(target));
+  const resolvedApplicant = typeof resolveCollegeProgrammeCode === 'function'
+    ? resolveCollegeProgrammeCode(applicantDept || '')
+    : '';
+  return targets.some(target =>
+    raw === target
+    || canon === target
+    || resolvedApplicant === target
+    || raw.includes(target)
+    || canon.includes(target)
+  );
 }
 
 function departmentFilterLabel(dept) {
   const raw = String(dept || '').trim();
-  if (!raw) return 'Campus';
+  if (!raw) {
+    if (activeParentKey) return `${activeParentKey} — all`;
+    return 'Campus';
+  }
   if (raw.includes('|') && typeof DEPARTMENT_PROGRAMME_GROUPS !== 'undefined') {
     const key = splitDepartmentFilterValue(raw).map(normalizeProgrammeCode).sort().join('|');
     const group = DEPARTMENT_PROGRAMME_GROUPS.find(g =>
@@ -411,9 +515,11 @@ function setDeptUI(dept) {
   const user = currentUser();
   const badge = document.getElementById('deptBadge');
   const hintEl = document.getElementById('viewHint');
+  const card = document.getElementById('viewFilterCard');
   if (!badge) return;
   const showDeptFilter = role === 'admin' || role === 'placement_officer';
-  deptSelect.style.display = showDeptFilter ? '' : 'none';
+  if (card) card.classList.toggle('d-none', !showDeptFilter && role === 'staff');
+  if (deptSelect) deptSelect.classList.add('d-none');
 
   if (staffLive) {
     const deptMeta = apiHiringData?.department || {};
@@ -425,7 +531,7 @@ function setDeptUI(dept) {
   }
 
   if (adminLive || officerLive || role === 'admin' || role === 'placement_officer') {
-    if (!dept) {
+    if (!dept && !activeParentKey) {
       badge.textContent = 'Campus';
       badge.className = 'badge-soft info';
     } else {
@@ -434,7 +540,9 @@ function setDeptUI(dept) {
     }
     if (hintEl) {
       hintEl.textContent = (adminLive || officerLive)
-        ? 'Showing live campus hiring data. Filter by department if needed.'
+        ? (activeParentKey && !dept
+          ? 'Choose a branch to view its hiring overview.'
+          : 'Showing live campus hiring data. Filter by department if needed.')
         : '';
     }
     return;
@@ -566,7 +674,61 @@ document.addEventListener('ph-user-updated', () => {
   renderForDept(selectedDept());
 });
 
-deptSelect.addEventListener('change', () => { setDeptUI(selectedDept()); renderForDept(selectedDept()); });
+deptSelect.addEventListener('change', () => {
+  activeDeptFilter = deptSelect.value || '';
+  activeParentKey = findGroupForFilter(activeDeptFilter)?.parent || '';
+  renderDeptButtons();
+  renderBranchButtons();
+  setDeptUI(selectedDept());
+  renderForDept(selectedDept());
+});
+
+document.getElementById('deptButtons')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-view-parent], [data-view-filter]');
+  if (!btn || !btn.classList.contains('view-chip')) return;
+  const parent = btn.getAttribute('data-view-parent') || '';
+  const filter = btn.getAttribute('data-view-filter') || '';
+
+  // Campus-wide
+  if (!parent && !filter) {
+    applyViewFilter('', { parentKey: '' });
+    return;
+  }
+
+  // Standalone programme (no parent group)
+  if (!parent && filter) {
+    applyViewFilter(filter, { parentKey: '' });
+    return;
+  }
+
+  // Department with branches: reveal branch buttons; wait for a branch click
+  const group = findGroupByParent(parent);
+  if (group && group.programmes.length > 1) {
+    activeParentKey = parent;
+    // Keep current filter only if it belongs to this department; otherwise clear until a branch is chosen
+    const currentGroup = findGroupForFilter(activeDeptFilter);
+    if (!currentGroup || currentGroup.parent !== parent) {
+      activeDeptFilter = '';
+      deptSelect.value = '';
+    }
+    renderDeptButtons();
+    renderBranchButtons();
+    setDeptUI(selectedDept());
+    renderForDept(selectedDept());
+    return;
+  }
+
+  // Single-programme department
+  const only = group?.programmes?.[0]?.code || filter || '';
+  applyViewFilter(only, { parentKey: parent });
+});
+
+document.getElementById('branchButtons')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-view-branch]');
+  if (!btn) return;
+  const branch = btn.getAttribute('data-view-branch') || '';
+  applyViewFilter(branch, { parentKey: activeParentKey });
+});
 
 function goToCompanies() {
   document.getElementById('companiesSection')?.scrollIntoView({ behavior:'smooth', block:'start' });
