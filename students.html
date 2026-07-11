@@ -99,8 +99,28 @@
           </div>
         </div>
         <div class="card-surface">
-          <div class="p-3 p-md-4 border-bottom" style="border-color:var(--border)!important">
+          <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
             <div><h6 class="fw-bold mb-0">Placement details</h6><small class="text-muted-2">Companies applied, stage, and current status.</small></div>
+            <div class="d-flex gap-2">
+              <select class="form-select form-select-sm w-auto" id="stageFilter">
+                <option value="">All stages</option>
+                <option value="applied">Applied</option>
+                <option value="resume_verification">Resume verification</option>
+                <option value="approval">Approval</option>
+                <option value="company_selection">Company selection</option>
+                <option value="self_reported">Self reported</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <select class="form-select form-select-sm w-auto" id="statusFilter">
+                <option value="">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="applied">Applied</option>
+                <option value="placed">Placed</option>
+                <option value="approved">Approved</option>
+                <option value="shortlisted">Shortlisted</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
           </div>
           <div class="table-wrap">
             <table class="table-modern">
@@ -1063,7 +1083,11 @@ function updateOverviewStats(apps, student) {
 }
 
 function renderOverviewDetails(apps) {
-  const list = Array.isArray(apps) ? apps : [];
+  const stage = document.getElementById('stageFilter')?.value || '';
+  const status = document.getElementById('statusFilter')?.value || '';
+  const list = (Array.isArray(apps) ? apps : []).filter(a =>
+    (!stage || a.stage === stage) && (!status || a.status === status)
+  );
   document.getElementById('detailRows').innerHTML = list.length ? list.map(a => `
     <tr>
       <td><strong>${esc(a.company)}</strong></td>
