@@ -37,6 +37,14 @@ return [
         'from'     => $_ENV['MAIL_FROM'] ?? 'noreply@localhost',
         'from_name'=> $_ENV['MAIL_FROM_NAME'] ?? 'PMS',
     ],
+    'whatsapp' => [
+        'enabled'  => filter_var($_ENV['WHATSAPP_ENABLED'] ?? 'true', FILTER_VALIDATE_BOOLEAN),
+        'endpoint' => $_ENV['WHATSAPP_ENDPOINT'] ?? 'https://wapi.aesajce.in/send',
+        'tag'      => $_ENV['WHATSAPP_TAG'] ?? 'AJCE Placements',
+        'template' => $_ENV['WHATSAPP_TEMPLATE'] ?? 'ajce_official_notification',
+        'signature'=> $_ENV['WHATSAPP_SIGNATURE'] ?? 'AJCE Placement Cell',
+        'timeout'  => (int) ($_ENV['WHATSAPP_TIMEOUT'] ?? 15),
+    ],
     'uploads' => [
         'max_resume' => (int) ($_ENV['MAX_RESUME_SIZE'] ?? 5242880),
         'max_certificate' => (int) ($_ENV['MAX_CERTIFICATE_SIZE'] ?? 5242880),

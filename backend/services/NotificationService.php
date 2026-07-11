@@ -12,18 +12,29 @@ use PMS\Models\UserModel;
 use PMS\Utils\Security;
 
 /**
- * Notification dispatch — in-app + email + broadcasts.
+ * Notification dispatch — in-app + email + WhatsApp (placement updates) + broadcasts.
  */
 final class NotificationService
 {
+    /** @var list<string> */
+    private const WHATSAPP_PLACEMENT_TYPES = [
+        'placement_approved',
+        'placement_rejected',
+        'placement_report_submitted',
+        'selection_update',
+        'application_update',
+    ];
+
     private NotificationModel $notificationModel;
     private EmailService $emailService;
+    private WhatsAppService $whatsAppService;
     private UserModel $userModel;
 
     public function __construct()
     {
         $this->notificationModel = new NotificationModel();
         $this->emailService      = new EmailService();
+        $this->whatsAppService   = new WhatsAppService();
         $this->userModel         = new UserModel();
     }
 
@@ -31,18 +42,82 @@ final class NotificationService
     {
         $this->notificationModel->notify($userId, $type, $title, $message, $metadata);
 
-        if (!$sendEmail) {
+        if ($sendEmail) {
+            $user = $this->userModel->findById($userId);
+            if ($user && !empty($user['email'])) {
+                $this->emailService->send(
+                    $user['email'],
+                    "[PlaceHub] {$title}",
+                    "<p>" . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . "</p>"
+                );
+            }
+        }
+
+        $this->maybeSendPlacementWhatsApp($userId, $type, $title, $message);
+    }
+
+    /**
+     * Send WhatsApp for student placement / application status updates.
+     */
+    private function maybeSendPlacementWhatsApp(string $userId, string $type, string $title, string $message): void
+    {
+        if (!$this->whatsAppService->isEnabled()) {
+            return;
+        }
+        if (!in_array($type, self::WHATSAPP_PLACEMENT_TYPES, true)) {
             return;
         }
 
-        $user = $this->userModel->findById($userId);
-        if ($user && !empty($user['email'])) {
-            $this->emailService->send(
-                $user['email'],
-                "[PlaceHub] {$title}",
-                "<p>" . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . "</p>"
-            );
+        $phone = $this->resolveStudentPhone($userId);
+        if ($phone === '') {
+            return;
         }
+
+        $body = trim($message);
+        if (mb_strlen($body) > 900) {
+            $body = mb_substr($body, 0, 897) . '...';
+        }
+
+        try {
+            $result = $this->whatsAppService->sendPlacementUpdate($phone, $title, $body);
+            if (!$result['ok']) {
+                error_log('[PMS WhatsApp] Failed for user ' . $userId . ': ' . ($result['error'] ?? 'unknown'));
+            }
+        } catch (\Throwable $e) {
+            error_log('[PMS WhatsApp] Exception: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Prefer student personal.phone; fall back to user / AES-synced fields.
+     */
+    private function resolveStudentPhone(string $userId): string
+    {
+        $candidates = [];
+
+        $student = (new StudentModel())->findByUserId($userId);
+        if (is_array($student)) {
+            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+            $candidates[] = (string) ($personal['phone'] ?? '');
+            $candidates[] = (string) ($personal['mobile'] ?? '');
+            $candidates[] = (string) ($student['phone'] ?? '');
+            $candidates[] = (string) ($student['stud_mobiles'] ?? '');
+        }
+
+        $user = $this->userModel->findById($userId);
+        if (is_array($user)) {
+            $candidates[] = (string) ($user['phone'] ?? '');
+            $candidates[] = (string) ($user['mobile'] ?? '');
+        }
+
+        foreach ($candidates as $raw) {
+            $normalized = $this->whatsAppService->normalizePhone($raw);
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return '';
     }
 
     /**
