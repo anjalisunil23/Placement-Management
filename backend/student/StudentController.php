@@ -1416,6 +1416,48 @@ final class StudentController
   }
 
   /**
+   * POST /api/student/placement/history-dates
+   * Update join/end dates on a past placementHistory entry.
+   */
+  public function updatePlacementHistoryDates(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $profile = $this->getStudentProfile($user);
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+
+    $history = is_array($profile['placementHistory'] ?? null) ? $profile['placementHistory'] : [];
+    $index = isset($input['historyIndex']) ? (int) $input['historyIndex'] : -1;
+    if ($index < 0 || $index >= count($history) || !is_array($history[$index] ?? null)) {
+      Response::error('Placement history entry not found.', 404);
+    }
+
+    $joinDate = trim((string) ($input['joinDate'] ?? ($history[$index]['joinDate'] ?? '')));
+    $endDate = trim((string) ($input['endDate'] ?? ($history[$index]['endDate'] ?? '')));
+
+    if ($joinDate !== '' && !$this->isValidYmdDate($joinDate)) {
+      Response::error('Join date must be YYYY-MM-DD.', 422);
+    }
+    if ($endDate !== '' && !$this->isValidYmdDate($endDate)) {
+      Response::error('End date must be YYYY-MM-DD.', 422);
+    }
+    if ($joinDate !== '' && $endDate !== '' && $endDate < $joinDate) {
+      Response::error('End date cannot be before join date.', 422);
+    }
+
+    $history[$index]['joinDate'] = $joinDate;
+    $history[$index]['endDate'] = $endDate;
+    if ($endDate !== '') {
+      $history[$index]['status'] = 'ended';
+    }
+
+    if (!$this->studentModel->update((string) $profile['_id'], ['placementHistory' => $history])) {
+      Response::error('Could not update placement dates.', 500);
+    }
+
+    Response::success(['placementHistory' => $history], 'Placement dates updated.');
+  }
+
+  /**
    * @param string[] $savedPaths
    */
   private function saveOptionalSelfPlacementUpload(

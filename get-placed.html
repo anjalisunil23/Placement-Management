@@ -14,27 +14,88 @@
     <p class="page-sub">Report off-campus offers and manage your placement details.</p>
   </div>
   <div class="d-flex flex-wrap gap-2">
-    <button type="button" class="btn btn-outline-primary d-none" id="addNextPlacementBtn"><i class="bi bi-plus-lg me-1"></i>Add next placement</button>
-    <button type="button" class="btn btn-primary" id="openPlacementModalBtn"><i class="bi bi-briefcase me-1"></i><span id="openPlacementModalLabel">Report placement</span></button>
+    <button type="button" class="btn btn-outline-primary d-none" id="newPlacementBtn"><i class="bi bi-plus-lg me-1"></i>New placement</button>
+    <button type="button" class="btn btn-primary" id="reportPlacementBtn"><i class="bi bi-briefcase me-1"></i>Report placement</button>
   </div>
 </div>
 
 <div id="getPlacedStatus" class="alert d-none mb-3" role="status"></div>
-<div id="placementHistoryList" class="mb-3"></div>
 
 <div class="card-surface p-4" id="placementSummaryCard">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
-      <h5 class="fw-bold mb-1">Your placement</h5>
+      <h5 class="fw-bold mb-0">Your placements</h5>
       <p class="small text-muted-2 mb-0" id="placementSummaryNote">No placement reported yet.</p>
     </div>
-    <button type="button" class="btn btn-sm btn-outline-primary d-none" id="summaryUpdateBtn"><i class="bi bi-pencil me-1"></i>Update</button>
   </div>
-  <div id="placementSummaryBody" class="row g-3">
-    <div class="col-12 text-muted-2 small">Use <strong>Report placement</strong> to submit company details and documents for verification.</div>
+  <div id="placementList" class="d-flex flex-column gap-2">
+    <div class="text-muted-2 small">Use <strong>Report placement</strong> to submit company details and documents for verification.</div>
   </div>
 </div>
 
+<!-- End date modal (before new placement) -->
+<div class="modal fade" id="endDateModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title fw-bold">Set end date</h5>
+          <p class="small text-muted-2 mb-0" id="endDateModalHint">Set an end date on your current placement before adding a new one.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="endDateForm">
+        <div class="modal-body">
+          <div class="small text-muted-2 mb-2" id="endDateCurrentLabel"></div>
+          <label class="form-label small fw-semibold">End date</label>
+          <input type="date" class="form-control" id="endDateOnlyInput" required/>
+          <div class="form-text">This closes the current placement so the new one can be listed separately.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="endDateSaveBtn">Save &amp; continue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Update dates modal -->
+<div class="modal fade" id="datesModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title fw-bold">Update dates</h5>
+          <p class="small text-muted-2 mb-0" id="datesModalHint">Update join / end dates for this placement.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="datesForm">
+        <div class="modal-body">
+          <input type="hidden" id="datesTarget" value="current"/>
+          <input type="hidden" id="datesHistoryIndex" value=""/>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Join date</label>
+              <input type="date" class="form-control" id="datesJoinInput"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">End date</label>
+              <input type="date" class="form-control" id="datesEndInput"/>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="datesSaveBtn">Update dates</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- New / first placement modal -->
 <div class="modal fade" id="placementModal" tabindex="-1" aria-labelledby="placementModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
@@ -54,8 +115,8 @@
             <div class="col-md-6"><label class="form-label small fw-semibold">Package</label><input class="form-control" name="package" id="placedPackage" required placeholder="e.g. ₹6 LPA"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Company address <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" name="companyAddress" id="placedCompanyAddress" placeholder="Office address"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Join date</label><input class="form-control" type="date" name="joinDate" id="placedJoinDate"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">End date <span class="text-muted-2 fw-normal">(required before next placement)</span></label><input class="form-control" type="date" name="endDate" id="placedEndDate"/></div>
-            <div class="col-12"><p class="small text-muted-2 mb-0">Documents — upload <strong>at least one</strong> (offer letter, joining letter, or company ID). You may upload all.</p></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">End date <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" type="date" name="endDate" id="placedEndDate"/></div>
+            <div class="col-12"><p class="small text-muted-2 mb-0">Documents — upload <strong>at least one</strong> (offer letter, joining letter, or company ID).</p></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Offer letter</label><div class="file-picker"><input type="file" name="offerLetter" id="placedOfferLetter" accept=".pdf" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedOfferLetter"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="placedOfferLetter">No file chosen</span></div><div class="form-text">PDF</div></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Joining letter</label><div class="file-picker"><input type="file" name="joiningLetter" id="placedJoiningLetter" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedJoiningLetter"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="placedJoiningLetter">No file chosen</span></div></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Company ID</label><div class="file-picker"><input type="file" name="companyIdDoc" id="placedCompanyIdDoc" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedCompanyIdDoc"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="placedCompanyIdDoc">No file chosen</span></div></div>
@@ -82,9 +143,16 @@ if (Auth.role() !== 'student') {
 
 let user = Auth.user() || demoUserFor('student');
 let studentPlacementState = { placed: false, selfPlacement: null, placement: null, placementHistory: [], mode: 'submit' };
+let openNewAfterEndDate = false;
 
 function placementModal() {
   return bootstrap.Modal.getOrCreateInstance(document.getElementById('placementModal'));
+}
+function endDateModal() {
+  return bootstrap.Modal.getOrCreateInstance(document.getElementById('endDateModal'));
+}
+function datesModal() {
+  return bootstrap.Modal.getOrCreateInstance(document.getElementById('datesModal'));
 }
 
 function wireFilePickers(rootSelector) {
@@ -135,147 +203,156 @@ function formatPlacementDate(value) {
   return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString();
 }
 
-function summaryField(label, value) {
-  return `<div class="col-md-6"><div class="small text-muted-2">${label}</div><div class="fw-semibold">${escapeAttr(value || '—')}</div></div>`;
+function toInputDate(value) {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
 }
 
-function renderPlacementSummary() {
-  const body = document.getElementById('placementSummaryBody');
-  const note = document.getElementById('placementSummaryNote');
-  const updateBtn = document.getElementById('summaryUpdateBtn');
-  const openBtn = document.getElementById('openPlacementModalBtn');
-  const openLabel = document.getElementById('openPlacementModalLabel');
-  const nextBtn = document.getElementById('addNextPlacementBtn');
-  if (!body || !note) return;
-
-  const report = studentPlacementState.selfPlacement;
+function currentPlacementRecord() {
   const placement = studentPlacementState.placement;
-  const pending = report?.status === 'pending';
-  const placed = !!studentPlacementState.placed;
-
-  nextBtn?.classList.add('d-none');
-  updateBtn?.classList.add('d-none');
-  if (openBtn) openBtn.disabled = false;
-
-  if (pending) {
-    note.textContent = 'Your report is awaiting verification.';
-    body.innerHTML = [
-      summaryField('Company', report.companyName),
-      summaryField('Role', report.role),
-      summaryField('Package', report.package),
-      summaryField('Address', report.companyAddress),
-      summaryField('Join date', formatPlacementDate(report.joinDate)),
-      summaryField('End date', formatPlacementDate(report.endDate)),
-    ].join('');
-    if (openBtn) {
-      openBtn.classList.add('d-none');
-    }
-    return;
+  const report = studentPlacementState.selfPlacement;
+  if (studentPlacementState.placed && placement) {
+    return {
+      company: placement.company || report?.companyName || '',
+      role: placement.role || report?.role || '',
+      package: placement.package || report?.package || '',
+      address: placement.address || report?.companyAddress || '',
+      joinDate: placement.joinDate || report?.joinDate || '',
+      endDate: placement.endDate || report?.endDate || '',
+      status: 'current',
+      source: 'current',
+    };
   }
-
-  if (placed || (report && report.status !== 'rejected')) {
-    const co = placement?.company || report?.companyName || '';
-    const ro = placement?.role || report?.role || '';
-    const pkg = placement?.package || report?.package || '';
-    const addr = placement?.address || report?.companyAddress || '';
-    const joinDate = placement?.joinDate || report?.joinDate || '';
-    const endDate = placement?.endDate || report?.endDate || '';
-    note.textContent = placed
-      ? 'Current placement details'
-      : 'Submitted placement details';
-    body.innerHTML = [
-      summaryField('Company', co),
-      summaryField('Role', ro),
-      summaryField('Package', pkg),
-      summaryField('Address', addr),
-      summaryField('Join date', formatPlacementDate(joinDate)),
-      summaryField('End date', formatPlacementDate(endDate)),
-    ].join('');
-    updateBtn?.classList.remove('d-none');
-    if (openLabel) openLabel.textContent = 'Update';
-    if (openBtn) {
-      openBtn.classList.remove('d-none');
-      openBtn.innerHTML = '<i class="bi bi-pencil me-1"></i><span id="openPlacementModalLabel">Update</span>';
-    }
-    if (endDate) {
-      nextBtn?.classList.remove('d-none');
-      nextBtn.disabled = false;
-      nextBtn.title = '';
-    } else if (placed) {
-      nextBtn?.classList.remove('d-none');
-      nextBtn.disabled = true;
-      nextBtn.title = 'Set an end date and save before adding the next placement';
-    }
-    return;
+  if (report && (report.status === 'pending' || report.status === 'rejected')) {
+    return {
+      company: report.companyName || '',
+      role: report.role || '',
+      package: report.package || '',
+      address: report.companyAddress || '',
+      joinDate: report.joinDate || '',
+      endDate: report.endDate || '',
+      status: report.status,
+      source: 'selfPlacement',
+    };
   }
-
-  note.textContent = 'No placement reported yet.';
-  body.innerHTML = '<div class="col-12 text-muted-2 small">Use <strong>Report placement</strong> to submit company details and documents for verification.</div>';
-  if (openLabel) openLabel.textContent = 'Report placement';
-  if (openBtn) {
-    openBtn.classList.remove('d-none');
-    openBtn.innerHTML = '<i class="bi bi-briefcase me-1"></i><span id="openPlacementModalLabel">Report placement</span>';
-  }
+  return null;
 }
 
-function renderPlacementHistoryList(profile) {
-  const listEl = document.getElementById('placementHistoryList');
-  if (!listEl) return;
-
-  const history = Array.isArray(profile?.placementHistory) ? profile.placementHistory : [];
-  const current = profile?.placement && typeof profile.placement === 'object' ? profile.placement : null;
-  const currentKey = [
-    String(current?.company || '').trim().toLowerCase(),
-    String(current?.role || '').trim().toLowerCase(),
-  ].join('|');
-
+function buildPlacementRows() {
   const rows = [];
   const seen = new Set();
+  const history = Array.isArray(studentPlacementState.placementHistory) ? studentPlacementState.placementHistory : [];
+  const current = currentPlacementRecord();
+  const currentKey = current
+    ? `${String(current.company).toLowerCase()}|${String(current.role).toLowerCase()}`
+    : '';
 
-  history.forEach((h) => {
+  history.forEach((h, index) => {
     if (!h || typeof h !== 'object') return;
     const status = String(h.status || '').toLowerCase();
     if (status === 'pending' || status === 'rejected') return;
-
     const company = String(h.company || h.companyName || '').trim();
     const role = String(h.role || '').trim();
     if (!company && !role) return;
-
     const endDate = String(h.endDate || '').trim();
     const isEnded = status === 'ended' || endDate !== '';
     if (!isEnded) return;
-
     const key = `${company.toLowerCase()}|${role.toLowerCase()}|${endDate}`;
     if (seen.has(key)) return;
-    if (`${company.toLowerCase()}|${role.toLowerCase()}` === currentKey && !endDate && status !== 'ended') return;
-
+    if (`${company.toLowerCase()}|${role.toLowerCase()}` === currentKey && current?.status === 'current' && !endDate) return;
     seen.add(key);
     rows.push({
       company,
       role,
       package: h.package || '',
+      address: h.address || h.companyAddress || '',
       joinDate: h.joinDate || '',
       endDate,
-      status: 'ended',
+      status: 'past',
+      source: 'history',
+      historyIndex: index,
+      canUpdateDates: true,
     });
   });
 
+  if (current) {
+    rows.push({
+      ...current,
+      canUpdateDates: current.status === 'current',
+    });
+  }
+
+  return rows;
+}
+
+function statusBadge(status) {
+  if (status === 'pending') return '<span class="badge-soft info">Under review</span>';
+  if (status === 'current') return '<span class="badge-soft success">Current</span>';
+  if (status === 'rejected') return '<span class="badge-soft warning">Rejected</span>';
+  return '<span class="badge-soft muted">Past</span>';
+}
+
+function renderPlacementList() {
+  const listEl = document.getElementById('placementList');
+  const note = document.getElementById('placementSummaryNote');
+  const reportBtn = document.getElementById('reportPlacementBtn');
+  const newBtn = document.getElementById('newPlacementBtn');
+  if (!listEl || !note) return;
+
+  const rows = buildPlacementRows();
+  const pending = studentPlacementState.selfPlacement?.status === 'pending';
+  const placed = !!studentPlacementState.placed;
+
+  reportBtn?.classList.toggle('d-none', placed || pending);
+  newBtn?.classList.toggle('d-none', !placed || pending);
+  if (newBtn) newBtn.disabled = pending;
+
   if (!rows.length) {
-    listEl.innerHTML = '';
+    note.textContent = 'No placement reported yet.';
+    listEl.innerHTML = '<div class="text-muted-2 small">Use <strong>Report placement</strong> to submit company details and documents for verification.</div>';
     return;
   }
 
-  listEl.innerHTML = rows.map((r) => `
-    <div class="border rounded-3 p-3 mb-2 bg-white">
-      <div class="d-flex justify-content-between gap-2 flex-wrap">
-        <div>
-          <div class="fw-semibold">${escapeAttr(r.company || 'Company')}${r.role ? ` · ${escapeAttr(r.role)}` : ''}</div>
-          <div class="small text-muted-2">Package: ${escapeAttr(r.package || '—')} · Join: ${escapeAttr(formatPlacementDate(r.joinDate))} · End: ${escapeAttr(formatPlacementDate(r.endDate))}</div>
+  note.textContent = pending
+    ? 'Your report is awaiting verification.'
+    : `${rows.length} placement${rows.length === 1 ? '' : 's'} listed.`;
+
+  listEl.innerHTML = rows.map((r, i) => {
+    const line = [
+      escapeAttr(r.company || 'Company'),
+      r.role ? escapeAttr(r.role) : '',
+      r.package ? `Pkg ${escapeAttr(r.package)}` : '',
+      r.address ? escapeAttr(r.address) : '',
+      `Join ${escapeAttr(formatPlacementDate(r.joinDate))}`,
+      `End ${escapeAttr(formatPlacementDate(r.endDate))}`,
+    ].filter(Boolean).join(' · ');
+
+    const updateBtn = r.canUpdateDates
+      ? `<button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" data-update-dates="${i}">Update dates</button>`
+      : '';
+
+    return `
+      <div class="border rounded-3 px-3 py-2 d-flex flex-wrap align-items-center justify-content-between gap-2" data-row-index="${i}">
+        <div class="small flex-grow-1" style="min-width:0">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            ${statusBadge(r.status)}
+            <span class="fw-semibold text-break">${line}</span>
+          </div>
         </div>
-        <span class="badge bg-secondary">Past</span>
-      </div>
-    </div>
-  `).join('');
+        ${updateBtn}
+      </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('[data-update-dates]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.getAttribute('data-update-dates'));
+      openDatesEditor(rows[idx]);
+    });
+  });
 }
 
 function fillPlacementForm(data = {}) {
@@ -283,19 +360,9 @@ function fillPlacementForm(data = {}) {
   document.getElementById('placedRole').value = data.role || '';
   document.getElementById('placedPackage').value = data.package || '';
   document.getElementById('placedCompanyAddress').value = data.companyAddress || data.address || '';
-  document.getElementById('placedJoinDate').value = data.joinDate || '';
-  document.getElementById('placedEndDate').value = data.endDate || '';
+  document.getElementById('placedJoinDate').value = toInputDate(data.joinDate) || '';
+  document.getElementById('placedEndDate').value = toInputDate(data.endDate) || '';
   resetPlacementFilePickers();
-}
-
-function setGetPlacedFormEditable(editable) {
-  const form = document.getElementById('getPlacedForm');
-  if (!form) return;
-  form.querySelectorAll('input, textarea, button').forEach((el) => {
-    if (el.getAttribute('data-bs-dismiss') === 'modal') return;
-    el.disabled = !editable;
-  });
-  if (editable) wirePlacementFilePickers();
 }
 
 function setGetPlacedMode(mode) {
@@ -305,14 +372,10 @@ function setGetPlacedMode(mode) {
   const submitBtn = document.getElementById('getPlacedSubmitBtn');
   const titleEl = document.getElementById('placementModalTitle');
   const noteEl = document.getElementById('getPlacedNote');
-  if (mode === 'update') {
-    if (submitBtn) submitBtn.innerHTML = '<i class="bi bi-save me-1"></i>Update';
-    if (titleEl) titleEl.textContent = 'Update placement';
-    if (noteEl) noteEl.textContent = 'Edit company details below. Upload a new document only if you need to replace one.';
-  } else if (mode === 'next') {
-    if (submitBtn) submitBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Submit next placement';
-    if (titleEl) titleEl.textContent = 'Add next placement';
-    if (noteEl) noteEl.textContent = 'Enter details for your next placement. It will be sent for verification.';
+  if (mode === 'next') {
+    if (submitBtn) submitBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Submit new placement';
+    if (titleEl) titleEl.textContent = 'New placement';
+    if (noteEl) noteEl.textContent = 'Enter details for the new placement. It will be listed after verification.';
   } else {
     if (submitBtn) submitBtn.innerHTML = '<i class="bi bi-briefcase me-1"></i>Submit placement report';
     if (titleEl) titleEl.textContent = 'Report your placement';
@@ -320,41 +383,62 @@ function setGetPlacedMode(mode) {
   }
 }
 
-function openPlacementEditor(mode = 'submit') {
+function openReportModal() {
   if (studentPlacementState.selfPlacement?.status === 'pending') {
     toast('Your placement report is under review.', 'info');
     return;
   }
+  setGetPlacedMode('submit');
+  fillPlacementForm(studentPlacementState.selfPlacement?.status === 'rejected' ? studentPlacementState.selfPlacement : {});
+  wirePlacementFilePickers();
+  placementModal().show();
+}
 
-  const report = studentPlacementState.selfPlacement;
-  const placement = studentPlacementState.placement;
+function openNewPlacementModal() {
+  setGetPlacedMode('next');
+  fillPlacementForm({});
+  wirePlacementFilePickers();
+  placementModal().show();
+}
 
-  if (mode === 'next') {
-    const endDate = String(placement?.endDate || report?.endDate || '').trim();
-    if (!endDate) {
-      toast('Save an end date on your current placement before adding a new one.', 'warn');
-      return;
-    }
-    setGetPlacedMode('next');
-    fillPlacementForm({});
-  } else if (studentPlacementState.placed || (report && report.status !== 'rejected' && report.status !== 'pending')) {
-    setGetPlacedMode('update');
-    fillPlacementForm({
-      company: placement?.company || report?.companyName || '',
-      role: placement?.role || report?.role || '',
-      package: placement?.package || report?.package || '',
-      address: placement?.address || report?.companyAddress || '',
-      joinDate: placement?.joinDate || report?.joinDate || '',
-      endDate: placement?.endDate || report?.endDate || '',
-    });
-  } else {
-    setGetPlacedMode('submit');
-    fillPlacementForm(report?.status === 'rejected' ? report : {});
+function startNewPlacementFlow() {
+  if (!studentPlacementState.placed) {
+    openReportModal();
+    return;
+  }
+  if (studentPlacementState.selfPlacement?.status === 'pending') {
+    toast('Wait until the current report is verified.', 'info');
+    return;
   }
 
-  setGetPlacedFormEditable(true);
-  placementModal().show();
-  setTimeout(() => document.getElementById('placedCompanyName')?.focus(), 250);
+  const current = currentPlacementRecord();
+  const endDate = String(current?.endDate || '').trim();
+  if (!endDate) {
+    openNewAfterEndDate = true;
+    const label = document.getElementById('endDateCurrentLabel');
+    if (label) {
+      label.textContent = `${current?.company || 'Current placement'}${current?.role ? ` · ${current.role}` : ''}`;
+    }
+    document.getElementById('endDateOnlyInput').value = '';
+    endDateModal().show();
+    return;
+  }
+  openNewPlacementModal();
+}
+
+function openDatesEditor(row) {
+  if (!row) return;
+  if (row.status === 'pending' && !studentPlacementState.placed) {
+    toast('Dates can be updated after verification, or wait for review.', 'info');
+    return;
+  }
+  document.getElementById('datesTarget').value = row.source === 'history' ? 'history' : 'current';
+  document.getElementById('datesHistoryIndex').value = row.historyIndex != null ? String(row.historyIndex) : '';
+  document.getElementById('datesJoinInput').value = toInputDate(row.joinDate);
+  document.getElementById('datesEndInput').value = toInputDate(row.endDate);
+  const hint = document.getElementById('datesModalHint');
+  if (hint) hint.textContent = `${row.company || 'Placement'}${row.role ? ` · ${row.role}` : ''}`;
+  datesModal().show();
 }
 
 function applySelfPlacementState(profile) {
@@ -365,44 +449,25 @@ function applySelfPlacementState(profile) {
   studentPlacementState = { placed, selfPlacement: report, placement, placementHistory: history, mode: 'submit' };
 
   const statusEl = document.getElementById('getPlacedStatus');
-  if (!statusEl) return;
+  if (statusEl) {
+    statusEl.classList.add('d-none');
+    if (report?.status === 'pending') {
+      statusEl.className = 'alert alert-info mb-3';
+      statusEl.innerHTML = `<strong>Under review.</strong> Your placement report for <strong>${escapeAttr(report.companyName || 'the company')}</strong> as <strong>${escapeAttr(report.role || '')}</strong> is awaiting verification.`;
+      statusEl.classList.remove('d-none');
+    } else if (placed) {
+      statusEl.className = 'alert alert-success mb-3';
+      statusEl.innerHTML = 'Your placements are listed below. Use <strong>New placement</strong> to add another after setting an end date on the current one.';
+      statusEl.classList.remove('d-none');
+    } else if (report?.status === 'rejected') {
+      statusEl.className = 'alert alert-warning mb-3';
+      statusEl.textContent = 'Your previous placement report was not approved. You may submit again.';
+      statusEl.classList.remove('d-none');
+    }
+  }
 
-  statusEl.classList.add('d-none');
-  renderPlacementHistoryList(profile);
   document.getElementById('placedOfferLetter').required = false;
-
-  if (report?.status === 'pending') {
-    statusEl.className = 'alert alert-info mb-3';
-    statusEl.innerHTML = `<strong>Under review.</strong> Your placement report for <strong>${escapeAttr(report.companyName || 'the company')}</strong> as <strong>${escapeAttr(report.role || '')}</strong> was submitted and is awaiting verification by the placement cell.`;
-    statusEl.classList.remove('d-none');
-    renderPlacementSummary();
-    return;
-  }
-
-  if (placed) {
-    const co = placement?.company || report?.companyName || '';
-    const ro = placement?.role || report?.role || '';
-    const pkg = placement?.package || report?.package || '';
-    const endDate = placement?.endDate || report?.endDate || '';
-    statusEl.className = 'alert alert-success mb-3';
-    statusEl.innerHTML = (co && ro
-      ? `You are placed at <strong>${escapeAttr(co)}</strong> as <strong>${escapeAttr(ro)}</strong>${pkg ? ` · Package <strong>${escapeAttr(pkg)}</strong>` : ''}.`
-      : 'You are marked as placed by the placement cell.')
-      + (endDate
-        ? ' End date is set — you can add your next placement.'
-        : ' Use <strong>Update</strong> to edit details or set an end date before adding another placement.');
-    statusEl.classList.remove('d-none');
-    renderPlacementSummary();
-    return;
-  }
-
-  if (report?.status === 'rejected') {
-    statusEl.className = 'alert alert-warning mb-3';
-    statusEl.textContent = 'Your previous placement report was not approved. You may submit updated details.';
-    statusEl.classList.remove('d-none');
-  }
-
-  renderPlacementSummary();
+  renderPlacementList();
 }
 
 function placementUploadExtOk(file, allowedExts) {
@@ -410,17 +475,109 @@ function placementUploadExtOk(file, allowedExts) {
   return allowedExts.some((ext) => name.endsWith(ext));
 }
 
-function startAddNextPlacement() {
-  openPlacementEditor('next');
+async function ensureAuthForWrite() {
+  if (!Auth.hasRealAuth() || Auth.isDemo()) {
+    toast('Sign in with your college AES account to continue.', 'warn');
+    return false;
+  }
+  if (!(await Auth.refreshSession())) {
+    toast('Your session expired. Redirecting to AES sign in…', 'warn');
+    setTimeout(() => {
+      Auth.clear();
+      window.location.href = authReentryUrl('get-placed.html', 'student');
+    }, 900);
+    return false;
+  }
+  return true;
+}
+
+async function saveCurrentPlacementDates({ joinDate, endDate, continueToNew = false }) {
+  const current = currentPlacementRecord();
+  if (!current || !studentPlacementState.placed) {
+    toast('No current placement to update.', 'warn');
+    return false;
+  }
+  if (joinDate && endDate && endDate < joinDate) {
+    toast('End date cannot be before join date.', 'warn');
+    return false;
+  }
+  if (!(await ensureAuthForWrite())) return false;
+
+  const fd = new FormData();
+  fd.append('companyName', current.company || '');
+  fd.append('companyAddress', current.address || '');
+  fd.append('role', current.role || '');
+  fd.append('package', current.package || '');
+  fd.append('joinDate', joinDate || toInputDate(current.joinDate) || '');
+  fd.append('endDate', endDate || '');
+
+  const res = await api('/student/placement/current', {
+    method: 'POST',
+    body: fd,
+    noRedirectOn401: true,
+    skipAuthRedirect: true,
+  });
+
+  if (!res?.success) {
+    toast(res?.message || 'Could not update dates.', 'error');
+    return false;
+  }
+
+  const updated = res.data || {};
+  applySelfPlacementState({
+    placed: true,
+    placement: updated.placement || {
+      ...studentPlacementState.placement,
+      company: current.company,
+      role: current.role,
+      package: current.package,
+      address: current.address,
+      joinDate: joinDate || current.joinDate,
+      endDate: endDate || '',
+    },
+    selfPlacement: updated.selfPlacement || studentPlacementState.selfPlacement,
+    placementHistory: studentPlacementState.placementHistory,
+  });
+  toast('Dates updated.', 'success');
+
+  if (continueToNew) {
+    openNewAfterEndDate = false;
+    setTimeout(() => openNewPlacementModal(), 350);
+  }
+  return true;
+}
+
+async function saveHistoryDates(historyIndex, joinDate, endDate) {
+  if (!(await ensureAuthForWrite())) return false;
+  const res = await api('/student/placement/history-dates', {
+    method: 'POST',
+    body: { historyIndex, joinDate, endDate },
+    noRedirectOn401: true,
+    skipAuthRedirect: true,
+  });
+  if (!res?.success) {
+    toast(res?.message || 'Could not update past placement dates.', 'error');
+    return false;
+  }
+  const history = Array.isArray(res.data?.placementHistory)
+    ? res.data.placementHistory
+    : studentPlacementState.placementHistory;
+  applySelfPlacementState({
+    placed: studentPlacementState.placed,
+    placement: studentPlacementState.placement,
+    selfPlacement: studentPlacementState.selfPlacement,
+    placementHistory: history,
+  });
+  toast('Dates updated.', 'success');
+  return true;
 }
 
 async function submitSelfPlacement(ev) {
   ev.preventDefault();
-  const form = document.getElementById('getPlacedForm');
   const mode = document.getElementById('getPlacedMode')?.value || studentPlacementState.mode || 'submit';
-  if (!form || studentPlacementState.selfPlacement?.status === 'pending') return;
+  if (studentPlacementState.selfPlacement?.status === 'pending') return;
   if (studentPlacementState.placed && mode === 'submit') {
-    toast('Use Update, or Add next placement after setting an end date.', 'warn');
+    toast('Use New placement to add another offer.', 'warn');
     return;
   }
 
@@ -434,14 +591,6 @@ async function submitSelfPlacement(ev) {
   const joiningFile = document.getElementById('placedJoiningLetter')?.files?.[0];
   const companyIdFile = document.getElementById('placedCompanyIdDoc')?.files?.[0];
   const docExts = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.doc', '.docx'];
-  const hasExistingDoc = mode === 'update' && !!(
-    studentPlacementState.placement?.offerLetter
-    || studentPlacementState.placement?.joiningLetter
-    || studentPlacementState.placement?.companyIdDoc
-    || studentPlacementState.selfPlacement?.offerLetter
-    || studentPlacementState.selfPlacement?.joiningLetter
-    || studentPlacementState.selfPlacement?.companyIdDoc
-  );
 
   if (!companyName || !jobRole || !packageVal) {
     toast('Fill company name, role, and package.', 'warn');
@@ -451,7 +600,7 @@ async function submitSelfPlacement(ev) {
     toast('End date cannot be before join date.', 'warn');
     return;
   }
-  if (!offerFile && !joiningFile && !companyIdFile && !hasExistingDoc) {
+  if (!offerFile && !joiningFile && !companyIdFile) {
     toast('Upload at least one document: offer letter, joining letter, or company ID.', 'warn');
     return;
   }
@@ -475,25 +624,11 @@ async function submitSelfPlacement(ev) {
     submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
   }
 
-  if (!Auth.hasRealAuth() || Auth.isDemo()) {
-    toast('Sign in with your college AES account to submit a placement report.', 'warn');
+  if (!(await ensureAuthForWrite())) {
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = submitLabel;
     }
-    return;
-  }
-
-  if (!(await Auth.refreshSession())) {
-    toast('Your session expired. Redirecting to AES sign in…', 'warn');
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = submitLabel;
-    }
-    setTimeout(() => {
-      Auth.clear();
-      window.location.href = authReentryUrl('get-placed.html', 'student');
-    }, 900);
     return;
   }
 
@@ -508,8 +643,7 @@ async function submitSelfPlacement(ev) {
   if (joiningFile) fd.append('joiningLetter', joiningFile, joiningFile.name);
   if (companyIdFile) fd.append('companyIdDoc', companyIdFile, companyIdFile.name);
 
-  const endpoint = mode === 'update' ? '/student/placement/current' : '/student/self-placement';
-  const res = await api(endpoint, {
+  const res = await api('/student/self-placement', {
     method: 'POST',
     body: fd,
     noRedirectOn401: true,
@@ -523,31 +657,17 @@ async function submitSelfPlacement(ev) {
 
   if (res?.success) {
     placementModal().hide();
-    if (mode === 'update') {
-      const updated = res.data || {};
-      applySelfPlacementState({
-        placed: true,
-        placement: updated.placement || {
-          company: companyName,
-          role: jobRole,
-          package: packageVal,
-          address: companyAddress,
-          joinDate,
-          endDate,
-        },
-        selfPlacement: updated.selfPlacement || studentPlacementState.selfPlacement,
-        placementHistory: studentPlacementState.placementHistory,
-      });
-      toast('Placement details updated.', 'success');
-      return;
-    }
+    // Keep previous placement in history/list; new report appears as pending.
+    const history = [...(studentPlacementState.placementHistory || [])];
     applySelfPlacementState({
       placed: studentPlacementState.placed,
       placement: studentPlacementState.placement,
-      placementHistory: studentPlacementState.placementHistory,
-      selfPlacement: res.data || { companyName, companyAddress, role: jobRole, package: packageVal, joinDate, endDate, status: 'pending' },
+      placementHistory: history,
+      selfPlacement: res.data || {
+        companyName, companyAddress, role: jobRole, package: packageVal, joinDate, endDate, status: 'pending',
+      },
     });
-    toast('Placement report submitted for verification.', 'success');
+    toast('New placement submitted for verification.', 'success');
     return;
   }
   if (res?.status === 401) {
@@ -576,12 +696,54 @@ async function loadPlacementProfile() {
 
 wirePlacementFilePickers();
 document.getElementById('getPlacedForm')?.addEventListener('submit', submitSelfPlacement);
-document.getElementById('addNextPlacementBtn')?.addEventListener('click', startAddNextPlacement);
-document.getElementById('openPlacementModalBtn')?.addEventListener('click', () => {
-  const mode = studentPlacementState.placed ? 'update' : 'submit';
-  openPlacementEditor(mode);
+document.getElementById('reportPlacementBtn')?.addEventListener('click', openReportModal);
+document.getElementById('newPlacementBtn')?.addEventListener('click', startNewPlacementFlow);
+
+document.getElementById('endDateForm')?.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const endDate = document.getElementById('endDateOnlyInput').value.trim();
+  if (!endDate) {
+    toast('Enter an end date.', 'warn');
+    return;
+  }
+  const btn = document.getElementById('endDateSaveBtn');
+  const label = btn?.innerHTML || '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  const current = currentPlacementRecord();
+  const ok = await saveCurrentPlacementDates({
+    joinDate: toInputDate(current?.joinDate),
+    endDate,
+    continueToNew: openNewAfterEndDate,
+  });
+  if (btn) { btn.disabled = false; btn.innerHTML = label; }
+  if (ok) endDateModal().hide();
 });
-document.getElementById('summaryUpdateBtn')?.addEventListener('click', () => openPlacementEditor('update'));
+
+document.getElementById('datesForm')?.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const target = document.getElementById('datesTarget').value;
+  const joinDate = document.getElementById('datesJoinInput').value.trim();
+  const endDate = document.getElementById('datesEndInput').value.trim();
+  if (joinDate && endDate && endDate < joinDate) {
+    toast('End date cannot be before join date.', 'warn');
+    return;
+  }
+  const btn = document.getElementById('datesSaveBtn');
+  const label = btn?.innerHTML || '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  let ok = false;
+  if (target === 'history') {
+    const historyIndex = Number(document.getElementById('datesHistoryIndex').value);
+    ok = await saveHistoryDates(historyIndex, joinDate, endDate);
+  } else {
+    ok = await saveCurrentPlacementDates({ joinDate, endDate, continueToNew: false });
+  }
+
+  if (btn) { btn.disabled = false; btn.innerHTML = label; }
+  if (ok) datesModal().hide();
+});
+
 onAppReady(() => loadPlacementProfile());
 </script>
 </body></html>
