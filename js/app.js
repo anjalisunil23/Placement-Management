@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.07.11i — navy sidebar/topbar theme */
-const APP_SHELL_VERSION = '2026.07.11i';
+/* PlaceHub shell v2026.07.11j — navy sidebar/topbar theme */
+const APP_SHELL_VERSION = '2026.07.11j';
 
 (function applyShellThemeFallback() {
   if (typeof document === 'undefined' || document.getElementById('ph-shell-theme')) return;
@@ -79,7 +79,7 @@ const NAV = [
   { href: "students.html", icon: "bi-people-fill", label: "Student", roles: ['admin','placement_officer','staff'] },
   { href: "hiring-overview.html", icon: "bi-building-check", label: "Hiring Overview", roles: ['admin','placement_officer','staff'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
-  { href: "tracking.html", icon: "bi-graph-up-arrow", label: "Placement Tracking", roles: ['admin','placement_officer'] },
+  { href: "tracking.html", icon: "bi-graph-up-arrow", label: "Placement Tracking", roles: ['placement_officer'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin','placement_officer'] },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin','placement_officer'] },
   { href: "admin-settings.html", icon: "bi-gear-wide-connected", label: "System Settings", roles: ['admin'] },
