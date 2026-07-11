@@ -426,7 +426,7 @@ const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'noti
 /** Default landing page per role after sign-in */
 const ROLE_HOME = {
   admin: 'dashboard.html',
-  placement_officer: 'placement-console.html',
+  placement_officer: 'drives.html',
   staff: 'staff-recommend.html',
   student: 'drives.html',
   company: 'company.html',
