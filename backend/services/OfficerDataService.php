@@ -1471,11 +1471,15 @@ final class OfficerDataService
         }
 
         $self = $student['selfPlacement'] ?? null;
+        $selfCompanyKeys = [];
         if (is_array($self) && (string) ($self['companyName'] ?? '') !== '') {
+            $selfCompany = (string) $self['companyName'];
+            $selfRole = (string) ($self['role'] ?? '');
+            $selfCompanyKeys[$this->pipelineCompanyKey($selfCompany)] = true;
             $pipeline[] = [
                 'id'             => 'self-placement',
-                'company'        => (string) $self['companyName'],
-                'role'           => (string) ($self['role'] ?? ''),
+                'company'        => $selfCompany,
+                'role'           => $selfRole,
                 'stage'          => 'self_reported',
                 'status'         => ($placed || (string) ($self['status'] ?? '') === 'approved') ? 'placed' : (string) ($self['status'] ?? 'pending'),
                 'appliedAt'      => $this->pipelineTimestamp($self['submittedAt'] ?? null),
@@ -1511,11 +1515,17 @@ final class OfficerDataService
 
         $resultFilter = $register !== '' ? ['registerNumber' => $register] : [];
         foreach ((new RecruitmentResultModel())->list($resultFilter, 50) as $result) {
+            $company = (string) ($result['company'] ?? '');
+            $companyKey = $this->pipelineCompanyKey($company);
+            // Self-placement already upserts a recruitment result — show only the self-reported row.
+            if ($companyKey !== '' && isset($selfCompanyKeys[$companyKey])) {
+                continue;
+            }
             $status = (string) ($result['status'] ?? 'selected');
             $serialized = DocumentHelper::serialize($result) ?? [];
             $pipeline[] = [
                 'id'             => 'result-' . (string) ($result['_id'] ?? ''),
-                'company'        => (string) ($result['company'] ?? ''),
+                'company'        => $company,
                 'role'           => (string) ($result['role'] ?? ''),
                 'stage'          => 'company_selection',
                 'status'         => $status === 'rejected' ? 'rejected' : 'selected',
@@ -1526,6 +1536,11 @@ final class OfficerDataService
         }
 
         return $pipeline;
+    }
+
+    private function pipelineCompanyKey(string $company): string
+    {
+        return strtolower(trim(preg_replace('/\s+/', ' ', $company) ?? $company));
     }
 
     private function pipelineTimestamp(mixed $value): string
