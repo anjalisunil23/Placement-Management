@@ -171,7 +171,7 @@ function shellProfileHref(role) {
 }
 
 function shellProfileLabel(role) {
-  return 'View profile';
+  return 'Profile';
 }
 
 const SHELL_TOPBAR_BTN_STYLE = [
@@ -194,6 +194,7 @@ function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
     `display:block`, `width:${size}px`, `height:${size}px`,
     `min-width:${size}px`, `min-height:${size}px`,
     'border-radius:50%', 'overflow:hidden', 'border:0', 'box-shadow:none', 'margin:0', 'padding:0',
+    'pointer-events:none',
   ].join(';');
   if (url) {
     const safe = encodeURI(url).replace(/'/g, '%27');
@@ -206,14 +207,14 @@ function topbarProfileMenuHtml(user, role) {
   const profileLabel = shellProfileLabel(role);
   return `
     <div class="dropdown topbar-profile-menu">
-      <button type="button" class="topbar-avatar-btn" style="${SHELL_TOPBAR_BTN_STYLE}" data-bs-toggle="dropdown" aria-expanded="false" title="${escapeAttr(user?.name || 'Account')}">
+      <button type="button" class="topbar-avatar-btn" id="topbarProfileBtn" style="${SHELL_TOPBAR_BTN_STYLE}" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" aria-label="Account menu" title="${escapeAttr(user?.name || 'Account')}">
         ${shellPhotoCircleHtml(user, 38, '.8rem')}
       </button>
-      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-        <li><h6 class="dropdown-header text-truncate">${escapeAttr(user?.name || 'Account')}</h6></li>
+      <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="topbarProfileBtn">
+        <li><h6 class="dropdown-header text-truncate mb-0">${escapeAttr(user?.name || 'Account')}</h6></li>
         <li><a class="dropdown-item" href="${shellProfileHref(role)}"><i class="bi bi-person me-2"></i>${profileLabel}</a></li>
         <li><hr class="dropdown-divider my-1"></li>
-        <li><button type="button" class="dropdown-item text-danger" id="topbarLogoutBtn"><i class="bi bi-box-arrow-right me-2"></i>Log out</button></li>
+        <li><button type="button" class="dropdown-item text-danger" id="topbarLogoutBtn"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></li>
       </ul>
     </div>`;
 }
