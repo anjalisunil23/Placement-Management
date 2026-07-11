@@ -914,7 +914,9 @@ const StaffRecs = {
       companyName: payload.companyName,
       companyWebsite: payload.companyWebsite || '',
       category: payload.category || 'Software',
-      reason: payload.reason || 'Referred by faculty for campus recruitment.',
+      reason: payload.reason || (Auth.role() === 'placement_officer'
+        ? 'Referred by placement officer for campus recruitment.'
+        : 'Referred by faculty for campus recruitment.'),
       hrName: payload.hrName,
       hrEmail: payload.hrEmail,
       contactNumber: payload.contactNumber,
@@ -926,9 +928,12 @@ const StaffRecs = {
         role: payload.contactRole || '',
       },
     };
-    const res = await api('/staff/recommendations', { method: 'POST', body });
+    const path = Auth.role() === 'placement_officer'
+      ? '/officer/recommendations'
+      : '/staff/recommendations';
+    const res = await api(path, { method: 'POST', body });
     if (res.success) {
-      if (Auth.role() === 'staff' && Auth.hasRealAuth()) {
+      if ((Auth.role() === 'staff' || Auth.role() === 'placement_officer') && Auth.hasRealAuth()) {
         await this.fetch();
       } else {
         const u = Auth.user();
@@ -940,8 +945,9 @@ const StaffRecs = {
           hrEmail: payload.hrEmail?.trim(),
           contactNumber: payload.contactNumber?.trim(),
           contactRole: payload.contactRole?.trim() || '',
-          staffName: u?.name || 'Staff',
+          staffName: u?.name || (Auth.role() === 'placement_officer' ? 'Placement officer' : 'Staff'),
           staffEmail: u?.email || '',
+          sourceRole: Auth.role() === 'placement_officer' ? 'placement_officer' : 'staff',
           submittedAt: new Date().toISOString(),
           status: 'pending',
         };

@@ -17,6 +17,7 @@ use PMS\Models\ApplicationModel;
 use PMS\Models\DriveModel;
 
 use PMS\Models\NotificationModel;
+use PMS\Models\RecommendationModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Services\RecruitmentResultService;
 
@@ -655,6 +656,51 @@ final class OfficerController
             );
         }
         Response::success(null, 'Student shortlisted.');
+    }
+
+    /** POST /api/officer/recommendations */
+    public function createRecommendation(): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!empty($input['hrName']) || !empty($input['hrEmail']) || !empty($input['contactNumber']) || !empty($input['contactRole'])) {
+            $input['contact'] = [
+                'name'  => trim((string) ($input['hrName'] ?? $input['contact']['name'] ?? '')),
+                'email' => trim((string) ($input['hrEmail'] ?? $input['contact']['email'] ?? '')),
+                'phone' => trim((string) ($input['contactNumber'] ?? $input['contact']['phone'] ?? '')),
+                'role'  => trim((string) ($input['contactRole'] ?? $input['contact']['role'] ?? '')),
+            ];
+        }
+        if (!is_array($input['contact'] ?? null)) {
+            $input['contact'] = ['name' => '', 'email' => '', 'phone' => '', 'role' => ''];
+        }
+        $input['category'] = $input['category'] ?? 'General';
+        $input['reason'] = $input['reason'] ?? 'Referred by placement officer for campus recruitment.';
+        $input['sourceRole'] = 'placement_officer';
+
+        $errors = Validator::validate($input, [
+            'companyName' => 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+        $contactErrors = Validator::validate($input['contact'] ?? [], [
+            'name'  => 'required',
+            'email' => 'required|email',
+            'phone' => 'required',
+        ]);
+        if (!empty($contactErrors)) {
+            Response::error('Contact validation failed.', 422, $contactErrors);
+        }
+
+        $id = (new RecommendationModel())->createRecommendation((string) $user['_id'], $input);
+        (new NotificationService())->notifyAdmins(
+            'recommendation_update',
+            'New placement officer company recommendation',
+            (string) ($user['name'] ?? 'Placement officer') . ' recommended ' . (string) ($input['companyName'] ?? 'a company') . ' for campus recruitment.',
+            ['recommendationId' => $id]
+        );
+        Response::success(['id' => $id], 'Company recommended.', 201);
     }
 
     /** GET /api/officer/applications/{id}/resume */

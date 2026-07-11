@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.07.11j — navy sidebar/topbar theme */
-const APP_SHELL_VERSION = '2026.07.11j';
+/* PlaceHub shell v2026.07.11k — navy sidebar/topbar theme */
+const APP_SHELL_VERSION = '2026.07.11k';
 
 (function applyShellThemeFallback() {
   if (typeof document === 'undefined' || document.getElementById('ph-shell-theme')) return;
@@ -804,11 +804,18 @@ const ReferralModals = {
   },
 
   openStaff() {
-    if (Auth.role() !== 'staff') return;
+    if (Auth.role() !== 'staff' && Auth.role() !== 'placement_officer') return;
     this.mountStaff();
     const form = document.getElementById('staffRecommendModalForm');
     form.reset();
+    const title = document.getElementById('staffRecommendModalLabel');
+    if (title) title.textContent = Auth.role() === 'placement_officer' ? 'Recommend a Company' : 'Recommend a Company';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('staffRecommendModal')).show();
+  },
+
+  openOfficer() {
+    if (Auth.role() !== 'placement_officer') return;
+    this.openStaff();
   },
 
   openAlumni() {
@@ -822,12 +829,13 @@ const ReferralModals = {
   init() {
     if (location.hash !== '#create') return;
     const role = Auth.role();
-    if (role === 'staff') this.openStaff();
+    if (role === 'staff' || role === 'placement_officer') this.openStaff();
     else if (role === 'alumni' && alumniIsWorking()) this.openAlumni();
   },
 };
 
 window.openStaffRecommendModal = () => ReferralModals.openStaff();
+window.openOfficerRecommendModal = () => ReferralModals.openOfficer();
 window.openReferralModal = () => ReferralModals.openAlumni();
 
 /** Hidden file input + Choose file button (avoids broken native PDF file chrome). */

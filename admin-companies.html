@@ -11,7 +11,8 @@
 <div class="page-header">
   <div><h1 class="page-title">Companies</h1><p class="page-sub" id="companiesPageSub">Review staff and alumni recommendations, contact recruiters, and register companies.</p></div>
   <div class="d-flex gap-2 flex-wrap" id="companiesPageActions">
-    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#quickAddModal"><i class="bi bi-plus-lg me-1"></i>Add company</button>
+    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#quickAddModal" data-admin-only><i class="bi bi-plus-lg me-1"></i>Add company</button>
+    <button class="btn btn-primary" type="button" id="btnOfficerRecommend" data-officer-only style="display:none"><i class="bi bi-building-add me-1"></i>Recommend Company</button>
   </div>
 </div>
 
@@ -131,8 +132,8 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/admin-api.js?v=20260622d"></script>
-<script src="js/api.js?v=20260711m"></script>
-<script src="js/app.js?v=20260711j"></script>
+<script src="js/api.js?v=20260711p"></script>
+<script src="js/app.js?v=20260711k"></script>
 <script>
 const registerModal = () => bootstrap.Modal.getInstance(document.getElementById('registerModal')) || new bootstrap.Modal(document.getElementById('registerModal'));
 const isAdmin = () => Auth.role() === 'admin';
@@ -456,13 +457,29 @@ async function initCompaniesPage() {
   if (!canViewCompaniesPage()) return;
   const actions = document.getElementById('companiesPageActions');
   const sub = document.getElementById('companiesPageSub');
-  if (!isAdmin()) {
+  const officerBtn = document.getElementById('btnOfficerRecommend');
+  document.querySelectorAll('[data-admin-only]').forEach(el => {
+    el.classList.toggle('d-none', !isAdmin());
+  });
+  if (officerBtn) {
+    officerBtn.style.display = Auth.role() === 'placement_officer' ? '' : 'none';
+    officerBtn.onclick = () => ReferralModals.openOfficer();
+  }
+  if (!isAdmin() && Auth.role() !== 'placement_officer') {
     actions?.classList.add('d-none');
+  }
+  if (Auth.role() === 'placement_officer') {
+    if (sub) sub.textContent = 'View recommendations and registered companies. Recommend a company for the placement cell to review.';
+  } else if (!isAdmin()) {
     if (sub) sub.textContent = 'View staff and alumni recommendations and registered companies. Contact the admin to register or update records.';
   }
   await Promise.all([StaffRecs.fetch(), RegisteredCompanies.fetch(), AlumniReferrals.fetch()]);
   render();
 }
+document.addEventListener('ph-staff-recommend-added', async () => {
+  await StaffRecs.fetch();
+  render();
+});
 onAppReady(() => initCompaniesPage());
 </script>
 </body></html>

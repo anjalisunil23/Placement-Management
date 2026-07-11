@@ -335,6 +335,7 @@ $routes = [
     ['POST', '/officer/applications/{id}/approve', [OfficerController::class, 'approveApplication']],
     ['POST', '/officer/applications/{id}/reject',  [OfficerController::class, 'rejectApplication']],
     ['POST', '/officer/applications/{id}/shortlist', [OfficerController::class, 'shortlistApplication']],
+    ['POST', '/officer/recommendations',              [OfficerController::class, 'createRecommendation']],
     ['GET',  '/officer/resumes/pending',           [OfficerController::class, 'listPendingResumes']],
     ['GET',  '/officer/resumes',                   [OfficerController::class, 'listResumes']],
     ['GET',  '/officer/applications/{id}/resume', [OfficerController::class, 'downloadApplicationResume']],

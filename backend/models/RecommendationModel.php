@@ -35,8 +35,13 @@ class RecommendationModel extends BaseModel
      */
     public function createRecommendation(string $staffId, array $data): string
     {
+        $sourceRole = trim((string) ($data['sourceRole'] ?? 'staff'));
+        if (!in_array($sourceRole, ['staff', 'placement_officer'], true)) {
+            $sourceRole = 'staff';
+        }
         return $this->insert([
             'staffId'        => Security::toObjectId($staffId),
+            'sourceRole'     => $sourceRole,
             'companyName'    => trim((string) ($data['companyName'] ?? '')),
             'companyWebsite' => trim((string) ($data['companyWebsite'] ?? '')),
             'category'       => trim((string) ($data['category'] ?? 'General')),
@@ -134,8 +139,14 @@ class RecommendationModel extends BaseModel
         $out['status'] = (string) ($rec['status'] ?? 'pending');
         $out['reason'] = (string) ($rec['reason'] ?? '');
         $out['adminComments'] = (string) ($rec['adminComments'] ?? '');
+        $out['sourceRole'] = (string) ($rec['sourceRole'] ?? 'staff');
         if ($staffUser !== null) {
-            $out['staffName'] = (string) ($staffUser['name'] ?? '');
+            $name = (string) ($staffUser['name'] ?? '');
+            if ($out['sourceRole'] === 'placement_officer' && $name !== '') {
+                $out['staffName'] = $name . ' (PO)';
+            } else {
+                $out['staffName'] = $name;
+            }
             $out['staffEmail'] = (string) ($staffUser['email'] ?? '');
         }
         return $out;
