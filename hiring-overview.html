@@ -16,19 +16,12 @@
   <button class="btn btn-outline-secondary" type="button" onclick="toast('Export will be available with backend reports.', 'info')"><i class="bi bi-download me-1"></i>Export</button>
 </div>
 
-<div class="card-surface p-3 p-md-4 mb-3">
-  <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
-    <div>
-      <div class="small fw-semibold text-muted-2 mb-1">View</div>
-      <div class="d-flex flex-wrap gap-2 align-items-center">
-        <select class="form-select form-select-sm w-auto" id="deptSelect">
-          <option value="">All departments</option>
-        </select>
-        <span class="badge-soft info" id="deptBadge">Campus</span>
-        <span class="small text-muted-2 d-none" id="deptOfficer"></span>
-      </div>
-    </div>
-    <div class="small text-muted-2" id="viewHint">Staff and placement officers see their department automatically.</div>
+<div class="card-surface p-3 p-md-4 mb-3 d-none" id="deptFilterCard">
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <label class="small text-muted-2 mb-0" for="deptSelect">Department</label>
+    <select class="form-select form-select-sm w-auto" id="deptSelect">
+      <option value="">All departments</option>
+    </select>
   </div>
 </div>
 
@@ -138,19 +131,6 @@ if (!canViewCampusHiring()) {
   toast('You do not have access to this page.', 'warn');
   setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
 }
-
-(function primeDeptView() {
-  const officerEl = document.getElementById('deptOfficer');
-  if (officerEl) {
-    officerEl.textContent = '';
-    officerEl.classList.add('d-none');
-  }
-  const r = Auth.role();
-  if (r === 'staff' || r === 'placement_officer') {
-    const sel = document.getElementById('deptSelect');
-    if (sel) sel.style.display = 'none';
-  }
-})();
 
 let apiHiringData = null;
 let campusRecruitingData = null;
@@ -304,7 +284,6 @@ function recruitingViewForDept(data, deptCode) {
 }
 
 function currentRole() { return Auth.role(); }
-function currentUser() { return Auth.user() || {}; }
 const deptSelect = document.getElementById('deptSelect');
 
 function escHtml(s) {
@@ -348,14 +327,6 @@ function selectedDept() {
   return deptSelect.value || '';
 }
 
-function setOfficerLine(text, html) {
-  const officerEl = document.getElementById('deptOfficer');
-  if (!officerEl) return;
-  if (html) officerEl.innerHTML = text || '';
-  else officerEl.textContent = text || '';
-  officerEl.classList.toggle('d-none', !(text || '').trim());
-}
-
 function deptMatchesFilter(applicantDept, deptCode) {
   if (!deptCode) return true;
   const target = departmentCanonicalCode(deptCode).toUpperCase();
@@ -365,86 +336,11 @@ function deptMatchesFilter(applicantDept, deptCode) {
   return raw === target || canon === target;
 }
 
-function setDeptUI(dept) {
-  const role = currentRole();
-  const user = currentUser();
-  const badge = document.getElementById('deptBadge');
-  const hintEl = document.getElementById('viewHint');
-  deptSelect.style.display = (role === 'admin') ? '' : 'none';
-
-  if (staffLive) {
-    const deptMeta = apiHiringData?.department || {};
-    const label = String(deptMeta.name || user.departmentName || departmentDisplayName(dept) || 'Your department').trim();
-    badge.textContent = label || 'Your department';
-    badge.className = 'badge-soft primary';
-    setOfficerLine('');
-    if (hintEl) hintEl.textContent = 'Showing live hiring data for your department.';
-    return;
-  }
-
-  if (adminLive) {
-    if (!dept) {
-      badge.textContent = 'Campus';
-      badge.className = 'badge-soft info';
-      setOfficerLine('Campus-wide, all departments');
-    } else {
-      badge.textContent = departmentDisplayName(dept);
-      badge.className = 'badge-soft primary';
-      const canon = departmentCanonicalCode(dept);
-      const officer = DeptPlacementOfficers.officerForDept(canon) || DeptPlacementOfficers.officerForDept(dept);
-      setOfficerLine(
-        officer
-          ? `Placement officer - <strong>${escHtml(officer.name || officer.email)}</strong>${officer.email ? ` <span class="text-muted-2 small">(${escHtml(officer.email)})</span>` : ''}`
-          : 'No placement officer assigned for this department',
-        !!officer
-      );
-    }
-    if (hintEl) hintEl.textContent = 'Showing live campus hiring data. Filter by department if needed.';
-    return;
-  }
-
-  if (role === 'placement_officer') {
-    const deptCode = dept || viewerDepartment();
-    const label = deptCode
-      ? departmentDisplayName(deptCode)
-      : (user.departmentName || user.branch || user.programme || 'Your department');
-    badge.textContent = label;
-    badge.className = 'badge-soft primary';
-    const canon = departmentCanonicalCode(deptCode);
-    const officer = DeptPlacementOfficers.officerForDept(canon) || user;
-    const name = officer?.name || user?.name || '';
-    const email = officer?.email || user?.email || '';
-    setOfficerLine(
-      name
-        ? `Placement officer - <strong>${escHtml(name)}</strong>${email ? ` <span class="text-muted-2 small">(${escHtml(email)})</span>` : ''}`
-        : 'Placement officer view',
-      !!name
-    );
-    if (hintEl) {
-      hintEl.textContent = officerLive
-        ? 'Showing live hiring data for your department.'
-        : 'Staff and placement officers see their department automatically.';
-    }
-    return;
-  }
-
-  if (!dept) {
-    badge.textContent = 'Campus';
-    badge.className = 'badge-soft info';
-    setOfficerLine('Campus-wide, all departments');
-  } else {
-    badge.textContent = departmentDisplayName(dept);
-    badge.className = 'badge-soft primary';
-    const canon = departmentCanonicalCode(dept);
-    const officer = DeptPlacementOfficers.officerForDept(canon) || DeptPlacementOfficers.officerForDept(dept);
-    setOfficerLine(
-      officer
-        ? `Placement officer - <strong>${escHtml(officer.name || officer.email)}</strong>${officer.email ? ` <span class="text-muted-2 small">(${escHtml(officer.email)})</span>` : ''}`
-        : 'No placement officer assigned for this department',
-      !!officer
-    );
-  }
-  if (hintEl) hintEl.textContent = 'Staff and placement officers see their department automatically.';
+function setDeptUI() {
+  const card = document.getElementById('deptFilterCard');
+  const isAdmin = currentRole() === 'admin';
+  if (card) card.classList.toggle('d-none', !isAdmin);
+  if (deptSelect) deptSelect.style.display = isAdmin ? '' : 'none';
 }
 
 function renderCompanyRows(companies, emptyMsg) {
@@ -530,11 +426,11 @@ async function initHiringOverview() {
     }
     updateLiveBadge();
     configurePageForRole(role);
-    setDeptUI(selectedDept());
+    setDeptUI();
     renderForDept(selectedDept());
   } catch (err) {
     console.error('Hiring overview init failed', err);
-    setDeptUI(selectedDept());
+    setDeptUI();
     renderForDept(selectedDept());
   }
 }
@@ -542,11 +438,11 @@ async function initHiringOverview() {
 onAppReady(() => initHiringOverview());
 
 document.addEventListener('ph-user-updated', () => {
-  setDeptUI(selectedDept());
+  setDeptUI();
   renderForDept(selectedDept());
 });
 
-deptSelect.addEventListener('change', () => { setDeptUI(selectedDept()); renderForDept(selectedDept()); });
+deptSelect.addEventListener('change', () => { setDeptUI(); renderForDept(selectedDept()); });
 
 function goToCompanies() {
   document.getElementById('companiesSection')?.scrollIntoView({ behavior:'smooth', block:'start' });
