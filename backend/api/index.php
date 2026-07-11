@@ -200,6 +200,8 @@ $routes = [
     ['GET',    '/admin/reports/download/{filename}', [AdminController::class, 'downloadReport']],
     ['GET',    '/admin/settings/system',             [AdminController::class, 'getSystemSettings']],
     ['PUT',    '/admin/settings/system',             [AdminController::class, 'updateSystemSettings']],
+    ['GET',    '/admin/mail/status',                 [AdminController::class, 'mailStatus']],
+    ['POST',   '/admin/mail/test',                   [AdminController::class, 'testMail']],
     ['GET',    '/admin/settings/public',             [AdminController::class, 'getPublicPageSettings']],
     ['PUT',    '/admin/settings/public',             [AdminController::class, 'updatePublicPageSettings']],
     ['GET',    '/admin/placement-news',              [AdminController::class, 'listPlacementNews']],

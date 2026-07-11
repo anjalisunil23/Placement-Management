@@ -1305,6 +1305,51 @@ final class AdminController
         Response::success($saved, 'System settings saved.');
     }
 
+    /** GET /api/admin/mail/status */
+    public function mailStatus(): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new EmailService())->status());
+    }
+
+    /** POST /api/admin/mail/test — body: { to?: string, subject?: string, message?: string } */
+    public function testMail(): void
+    {
+        $user = RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $to = strtolower(trim((string) ($input['to'] ?? ($user['email'] ?? ''))));
+        if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            Response::error('Provide a valid "to" email address.', 422);
+        }
+
+        $subject = trim((string) ($input['subject'] ?? 'AJCE Placements mail test'));
+        $message = trim((string) ($input['message'] ?? 'This is a test email from the placement portal.'));
+        $body = '<p>' . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . '</p>'
+            . '<p style="color:#64748B;font-size:13px">Sent from System Settings · AJCE Placements</p>';
+
+        $mail = new EmailService();
+        $result = $mail->sendMail([
+            'to'      => $to,
+            'subject' => $subject,
+            'body'    => $body,
+        ]);
+
+        if (!$result['ok']) {
+            Response::error($result['error'] ?? 'Email send failed.', 502, [
+                'driver'   => $result['driver'] ?? null,
+                'response' => $result['response'] ?? null,
+                'status'   => $mail->status(),
+            ]);
+        }
+
+        Response::success([
+            'to'       => $to,
+            'driver'   => $result['driver'] ?? null,
+            'response' => $result['response'] ?? null,
+            'status'   => $mail->status(),
+        ], 'Test email sent.');
+    }
+
     /** GET /api/admin/settings/public */
     public function getPublicPageSettings(): void
     {

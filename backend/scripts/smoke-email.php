@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Smoke-test ElasticEmail send (CLI).
+ * Smoke-test ElasticEmail / SMTP send (CLI).
  *
  * Usage:
  *   php backend/scripts/smoke-email.php student@gmail.com
@@ -16,6 +16,9 @@ $root = dirname(__DIR__, 2);
 if (is_file($root . '/.env')) {
     Dotenv\Dotenv::createImmutable($root)->safeLoad();
 }
+if (is_file($root . '/.env.local')) {
+    Dotenv\Dotenv::createMutable($root, '.env.local')->safeLoad();
+}
 
 $to = $argv[1] ?? '';
 if ($to === '') {
@@ -27,7 +30,12 @@ $subject = $argv[2] ?? 'AJCE Placements test';
 $message = $argv[3] ?? 'This is a test email from the placement portal.';
 
 $mail = new PMS\Services\EmailService();
-echo 'Enabled: ' . ($mail->isEnabled() ? 'yes' : 'no') . PHP_EOL;
+$status = $mail->status();
+echo 'Driver: ' . $status['driver'] . PHP_EOL;
+echo 'Enabled: ' . ($status['enabled'] ? 'yes' : 'no') . PHP_EOL;
+echo 'API key: ' . ($status['hasApiKey'] ? 'set' : 'missing') . PHP_EOL;
+echo 'SMTP: ' . ($status['hasSmtp'] ? 'set' : 'missing') . PHP_EOL;
+echo 'From: ' . ($status['from'] ?: '(none)') . PHP_EOL;
 
 $result = $mail->sendMail([
     'to'      => $to,
@@ -36,6 +44,7 @@ $result = $mail->sendMail([
 ]);
 
 echo 'OK: ' . ($result['ok'] ? 'yes' : 'no') . PHP_EOL;
+echo 'Used driver: ' . ($result['driver'] ?? '—') . PHP_EOL;
 if ($result['error']) {
     echo 'Error: ' . $result['error'] . PHP_EOL;
 }

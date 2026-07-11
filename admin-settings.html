@@ -32,6 +32,23 @@
           <label class="form-label small fw-semibold">Max upload size (MB)</label>
           <input type="number" class="form-control" id="maxUploadMb" min="1" max="100" required/>
         </div>
+        <div class="col-12">
+          <div class="p-3 rounded-3" style="background:var(--surface-2)">
+            <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
+              <div>
+                <div class="fw-semibold small">Email delivery</div>
+                <div class="small text-muted-2" id="mailStatusText">Checking…</div>
+              </div>
+              <button type="button" class="btn btn-outline-primary btn-sm" id="btnTestMail"><i class="bi bi-envelope-check me-1"></i>Send test email</button>
+            </div>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-8">
+                <label class="form-label small fw-semibold mb-1" for="mailTestTo">Test recipient</label>
+                <input type="email" class="form-control form-control-sm" id="mailTestTo" placeholder="you@gmail.com"/>
+              </div>
+            </div>
+          </div>
+        </div>
       </form>
     </div>
   </div>
@@ -261,6 +278,46 @@ document.getElementById('newsRows').addEventListener('click', e => {
   if (removeBtn) removeNews(removeBtn.dataset.removeNews);
 });
 
+async function loadMailStatus() {
+  const el = document.getElementById('mailStatusText');
+  if (!el) return;
+  if (!Auth.hasRealAuth() || Auth.isDemo()) {
+    el.textContent = 'Sign in with a live admin session to check ElasticEmail / SMTP.';
+    return;
+  }
+  const res = await api('/admin/mail/status', { noRedirectOn401: true });
+  if (!res?.success || !res.data) {
+    el.textContent = 'Could not load mail status.';
+    return;
+  }
+  const s = res.data;
+  const parts = [
+    `Driver: ${s.driver || '—'}`,
+    s.enabled ? 'enabled' : 'disabled',
+    s.hasApiKey ? 'API key set' : 'API key missing',
+    s.hasSmtp ? 'SMTP set' : 'SMTP not set',
+    s.from ? `from ${s.from}` : '',
+  ].filter(Boolean);
+  el.textContent = parts.join(' · ');
+}
+
+document.getElementById('btnTestMail')?.addEventListener('click', async () => {
+  const to = document.getElementById('mailTestTo')?.value?.trim() || '';
+  if (!to) {
+    toast('Enter a test recipient email.', 'warn');
+    return;
+  }
+  if (!(await confirmAction({ title: 'Send test email', message: `Send a test email to ${to}?`, confirmText: 'Send', variant: 'primary' }))) return;
+  const res = await api('/admin/mail/test', { method: 'POST', body: { to }, noRedirectOn401: true });
+  if (res?.success) {
+    toast(`Test email sent via ${res.data?.driver || 'mail'}.`, 'success');
+    await loadMailStatus();
+    return;
+  }
+  toast(res?.message || 'Test email failed. Check ELASTICEMAIL_API_KEY / MAIL_* in .env.', 'error');
+  await loadMailStatus();
+});
+
 async function initSettingsPage() {
   await Promise.all([
     SystemSettings.fetch(),
@@ -270,6 +327,10 @@ async function initSettingsPage() {
   loadSystem();
   loadPublic();
   renderNewsAdmin();
+  await loadMailStatus();
+  const u = Auth.user() || {};
+  const testTo = document.getElementById('mailTestTo');
+  if (testTo && !testTo.value && u.email) testTo.value = u.email;
 }
 
 onAppReady(() => initSettingsPage());

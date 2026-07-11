@@ -27,16 +27,31 @@ final class EmailService
     {
         $driver = $this->driver();
         if ($driver === 'elasticemail') {
-            return trim((string) ($this->config['api_key'] ?? '')) !== '';
+            return $this->apiKey() !== '';
         }
         if ($driver === 'smtp') {
             return trim((string) ($this->config['username'] ?? '')) !== '';
         }
-        return true; // log driver
+        return $driver === 'log';
     }
 
     /**
-     * @return array{ok:bool,response:?string,error:?string}
+     * @return array{driver:string,enabled:bool,hasApiKey:bool,hasSmtp:bool,from:string,endpoint:string}
+     */
+    public function status(): array
+    {
+        return [
+            'driver'    => $this->driver(),
+            'enabled'   => $this->isEnabled(),
+            'hasApiKey' => $this->apiKey() !== '',
+            'hasSmtp'   => trim((string) ($this->config['username'] ?? '')) !== '',
+            'from'      => (string) ($this->config['from'] ?? ''),
+            'endpoint'  => (string) ($this->config['endpoint'] ?? ''),
+        ];
+    }
+
+    /**
+     * @return array{ok:bool,response:?string,error:?string,driver:?string}
      */
     public function sendMail(array $params): array
     {
@@ -45,10 +60,10 @@ final class EmailService
         $body = (string) ($params['body'] ?? $params['bodyHtml'] ?? '');
 
         if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
-            return ['ok' => false, 'response' => null, 'error' => 'Invalid recipient'];
+            return ['ok' => false, 'response' => null, 'error' => 'Invalid recipient', 'driver' => null];
         }
         if ($subject === '') {
-            return ['ok' => false, 'response' => null, 'error' => 'Missing subject'];
+            return ['ok' => false, 'response' => null, 'error' => 'Missing subject', 'driver' => null];
         }
 
         $from = trim((string) ($params['from'] ?? $this->config['from'] ?? 'info@aessas.org'));
@@ -57,17 +72,66 @@ final class EmailService
             ? $params['attachment']
             : null;
 
-        if (!$this->isEnabled() || $this->driver() === 'log') {
+        $driver = $this->driver();
+
+        if ($driver === 'log') {
             error_log("[PMS Email] To: {$to} | Subject: {$subject}" . ($attachmentPath ? " | Attachment: {$attachmentPath}" : ''));
-            return ['ok' => true, 'response' => 'logged', 'error' => null];
+            return ['ok' => true, 'response' => 'logged', 'error' => null, 'driver' => 'log'];
         }
 
-        if ($this->driver() === 'elasticemail' && ($attachmentPath === null || $attachmentPath === '')) {
-            return $this->sendViaElasticEmail($to, $subject, $body, $from, $fromName);
+        if ($driver === 'elasticemail') {
+            if ($this->apiKey() === '') {
+                return [
+                    'ok' => false,
+                    'response' => null,
+                    'error' => 'ELASTICEMAIL_API_KEY is not configured in .env',
+                    'driver' => 'elasticemail',
+                ];
+            }
+
+            // Attachments go via SMTP when available; otherwise ElasticEmail body-only.
+            if ($attachmentPath !== null && $attachmentPath !== '' && is_file($attachmentPath)) {
+                if (trim((string) ($this->config['username'] ?? '')) !== '') {
+                    $ok = $this->sendViaSmtp($to, $subject, $body, true, $attachmentPath, $from, $fromName);
+                    return ['ok' => $ok, 'response' => null, 'error' => $ok ? null : 'SMTP send failed', 'driver' => 'smtp'];
+                }
+            }
+
+            $result = $this->sendViaElasticEmail($to, $subject, $body, $from, $fromName);
+            if ($result['ok']) {
+                return $result + ['driver' => 'elasticemail'];
+            }
+
+            // Fall back to SMTP if configured.
+            if (trim((string) ($this->config['username'] ?? '')) !== '') {
+                $ok = $this->sendViaSmtp($to, $subject, $body, true, $attachmentPath, $from, $fromName);
+                if ($ok) {
+                    return [
+                        'ok' => true,
+                        'response' => $result['response'],
+                        'error' => null,
+                        'driver' => 'smtp',
+                    ];
+                }
+            }
+
+            return $result + ['driver' => 'elasticemail'];
         }
 
-        $ok = $this->sendViaSmtp($to, $subject, $body, true, $attachmentPath, $from, $fromName);
-        return ['ok' => $ok, 'response' => null, 'error' => $ok ? null : 'SMTP send failed'];
+        if ($driver === 'smtp') {
+            if (trim((string) ($this->config['username'] ?? '')) === '') {
+                return [
+                    'ok' => false,
+                    'response' => null,
+                    'error' => 'MAIL_USERNAME is not configured in .env',
+                    'driver' => 'smtp',
+                ];
+            }
+            $ok = $this->sendViaSmtp($to, $subject, $body, true, $attachmentPath, $from, $fromName);
+            return ['ok' => $ok, 'response' => null, 'error' => $ok ? null : 'SMTP send failed', 'driver' => 'smtp'];
+        }
+
+        return ['ok' => false, 'response' => null, 'error' => 'Unknown mail driver: ' . $driver, 'driver' => $driver];
     }
 
     public function send(string $to, string $subject, string $body, bool $isHtml = true, ?string $attachmentPath = null): bool
@@ -97,16 +161,28 @@ final class EmailService
         }
     }
 
+    private function apiKey(): string
+    {
+        return trim((string) ($this->config['api_key'] ?? ''));
+    }
+
     private function driver(): string
     {
         $driver = strtolower(trim((string) ($this->config['driver'] ?? 'elasticemail')));
-        if ($driver === 'elasticemail' && trim((string) ($this->config['api_key'] ?? '')) === '') {
+        if ($driver === '') {
+            $driver = 'elasticemail';
+        }
+
+        // Only fall back to log when explicitly requested, or when nothing is configured.
+        if ($driver === 'elasticemail' && $this->apiKey() === '') {
             if (trim((string) ($this->config['username'] ?? '')) !== '') {
                 return 'smtp';
             }
-            return 'log';
+            $env = strtolower((string) (($_ENV['APP_ENV'] ?? 'production')));
+            return in_array($env, ['development', 'local', 'test'], true) ? 'log' : 'elasticemail';
         }
-        return $driver !== '' ? $driver : 'log';
+
+        return $driver;
     }
 
     /**
@@ -119,57 +195,220 @@ final class EmailService
         string $from,
         string $fromName
     ): array {
+        $endpoint = trim((string) ($this->config['endpoint'] ?? 'https://api.elasticemail.com/v2/email/send'));
+        if ($endpoint === '') {
+            $endpoint = 'https://api.elasticemail.com/v2/email/send';
+        }
+
+        // Prefer v4 when endpoint says so, otherwise try v2 then v4.
+        if (str_contains(strtolower($endpoint), '/v4/')) {
+            return $this->sendViaElasticEmailV4($to, $subject, $bodyHtml, $from, $fromName, $endpoint);
+        }
+
+        $v2 = $this->sendViaElasticEmailV2($to, $subject, $bodyHtml, $from, $fromName, $endpoint);
+        if ($v2['ok']) {
+            return $v2;
+        }
+
+        // Auto-upgrade path if v2 key/account expects REST v4.
+        $v4Endpoint = 'https://api.elasticemail.com/v4/emails/transactional';
+        $v4 = $this->sendViaElasticEmailV4($to, $subject, $bodyHtml, $from, $fromName, $v4Endpoint);
+        if ($v4['ok']) {
+            return $v4;
+        }
+
+        return [
+            'ok' => false,
+            'response' => $v4['response'] ?? $v2['response'],
+            'error' => $v2['error'] ?: ($v4['error'] ?? 'ElasticEmail rejected send'),
+        ];
+    }
+
+    /**
+     * ElasticEmail legacy HTTP API (form-urlencoded).
+     *
+     * @return array{ok:bool,response:?string,error:?string}
+     */
+    private function sendViaElasticEmailV2(
+        string $to,
+        string $subject,
+        string $bodyHtml,
+        string $from,
+        string $fromName,
+        string $endpoint
+    ): array {
         try {
             $post = [
-                'from'           => $from !== '' ? $from : 'info@aessas.org',
-                'fromName'       => $fromName !== '' ? $fromName : 'Placement Cell - Amal Jyothi',
-                'apikey'         => (string) $this->config['api_key'],
-                'subject'        => $subject,
-                'to'             => $to,
-                'bodyHtml'       => $bodyHtml,
-                'bodyText'       => trim(strip_tags($bodyHtml)),
-                'isTransactional'=> 'true',
-                'trackOpens'     => 'false',
-                'trackClicks'    => 'false',
+                'apikey'          => $this->apiKey(),
+                'from'            => $from !== '' ? $from : 'info@aessas.org',
+                'fromName'        => $fromName !== '' ? $fromName : 'Placement Cell - Amal Jyothi',
+                'subject'         => $subject,
+                'to'              => $to,
+                'bodyHtml'        => $bodyHtml,
+                'bodyText'        => trim(strip_tags($bodyHtml)),
+                'isTransactional' => 'true',
+                'trackOpens'      => 'false',
+                'trackClicks'     => 'false',
             ];
 
-            $ch = curl_init();
-            if ($ch === false) {
-                return ['ok' => false, 'response' => null, 'error' => 'Could not init cURL'];
-            }
-
-            curl_setopt_array($ch, [
-                CURLOPT_URL            => (string) ($this->config['endpoint'] ?? 'https://api.elasticemail.com/v2/email/send'),
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => $post,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_HEADER         => false,
-                CURLOPT_TIMEOUT        => (int) ($this->config['timeout'] ?? 20),
-                CURLOPT_SSL_VERIFYPEER => !empty($this->config['verify_ssl']),
+            // Must be urlencoded — array POSTFIELDS becomes multipart and ElasticEmail rejects it.
+            $result = $this->curlPost($endpoint, http_build_query($post), [
+                'Content-Type: application/x-www-form-urlencoded',
             ]);
 
-            $result = curl_exec($ch);
-            $errno = curl_errno($ch);
-            $error = $errno ? curl_error($ch) : null;
-            curl_close($ch);
-
-            if ($errno) {
-                error_log('[PMS Email] ElasticEmail cURL: ' . $error);
-                return ['ok' => false, 'response' => is_string($result) ? $result : null, 'error' => $error];
+            if (!$result['ok']) {
+                return $result;
             }
 
-            $decoded = is_string($result) ? json_decode($result, true) : null;
-            $success = is_array($decoded) ? !empty($decoded['success']) : (is_string($result) && str_contains($result, '"success":true'));
+            $raw = (string) ($result['response'] ?? '');
+            $decoded = json_decode($raw, true);
+            $success = is_array($decoded)
+                ? !empty($decoded['success'])
+                : str_contains($raw, '"success":true');
+
             if (!$success) {
-                error_log('[PMS Email] ElasticEmail response: ' . (is_string($result) ? $result : 'empty'));
-                return ['ok' => false, 'response' => is_string($result) ? $result : null, 'error' => 'ElasticEmail rejected send'];
+                $err = is_array($decoded) ? (string) ($decoded['error'] ?? 'ElasticEmail rejected send') : 'ElasticEmail rejected send';
+                error_log('[PMS Email] ElasticEmail v2: ' . $err . ' | ' . $raw);
+                return ['ok' => false, 'response' => $raw, 'error' => $err];
             }
 
-            return ['ok' => true, 'response' => is_string($result) ? $result : null, 'error' => null];
+            return ['ok' => true, 'response' => $raw, 'error' => null];
         } catch (\Throwable $ex) {
             error_log('[PMS Email] ' . $ex->getMessage());
             return ['ok' => false, 'response' => null, 'error' => $ex->getMessage()];
         }
+    }
+
+    /**
+     * ElasticEmail REST API v4 transactional send.
+     *
+     * @return array{ok:bool,response:?string,error:?string}
+     */
+    private function sendViaElasticEmailV4(
+        string $to,
+        string $subject,
+        string $bodyHtml,
+        string $from,
+        string $fromName,
+        string $endpoint
+    ): array {
+        try {
+            $fromHeader = trim(($fromName !== '' ? $fromName . ' ' : '') . '<' . ($from !== '' ? $from : 'info@aessas.org') . '>');
+            $payload = [
+                'Recipients' => [
+                    ['Email' => $to],
+                ],
+                'Content' => [
+                    'From' => $fromHeader,
+                    'Subject' => $subject,
+                    'Body' => [
+                        [
+                            'ContentType' => 'HTML',
+                            'Content' => $bodyHtml,
+                        ],
+                        [
+                            'ContentType' => 'PlainText',
+                            'Content' => trim(strip_tags($bodyHtml)),
+                        ],
+                    ],
+                ],
+                'Options' => [
+                    'TrackOpens' => false,
+                    'TrackClicks' => false,
+                ],
+            ];
+
+            $result = $this->curlPost($endpoint, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}', [
+                'Content-Type: application/json',
+                'Accept: application/json',
+                'X-ElasticEmail-ApiKey: ' . $this->apiKey(),
+            ]);
+
+            if (!$result['ok']) {
+                return $result;
+            }
+
+            $raw = (string) ($result['response'] ?? '');
+            $decoded = json_decode($raw, true);
+            // v4 success usually returns MessageID / TransactionID without a "success" flag.
+            if (is_array($decoded) && (
+                isset($decoded['MessageID'])
+                || isset($decoded['TransactionID'])
+                || isset($decoded['messageId'])
+                || isset($decoded['transactionId'])
+            )) {
+                return ['ok' => true, 'response' => $raw, 'error' => null];
+            }
+
+            if (is_array($decoded) && (!empty($decoded['Error']) || isset($decoded['error']))) {
+                $err = (string) ($decoded['Error'] ?? $decoded['error'] ?? 'ElasticEmail v4 rejected send');
+                error_log('[PMS Email] ElasticEmail v4: ' . $err . ' | ' . $raw);
+                return ['ok' => false, 'response' => $raw, 'error' => $err];
+            }
+
+            // HTTP 200 with empty/unknown body — treat as success only if no error text.
+            if ($raw === '' || $raw === '{}' || $raw === 'null') {
+                return ['ok' => true, 'response' => $raw, 'error' => null];
+            }
+
+            if (is_array($decoded) && empty($decoded['Error']) && empty($decoded['error'])) {
+                return ['ok' => true, 'response' => $raw, 'error' => null];
+            }
+
+            error_log('[PMS Email] ElasticEmail v4 unexpected: ' . $raw);
+            return ['ok' => false, 'response' => $raw, 'error' => 'ElasticEmail v4 rejected send'];
+        } catch (\Throwable $ex) {
+            error_log('[PMS Email] ' . $ex->getMessage());
+            return ['ok' => false, 'response' => null, 'error' => $ex->getMessage()];
+        }
+    }
+
+    /**
+     * @param string[] $headers
+     * @return array{ok:bool,response:?string,error:?string}
+     */
+    private function curlPost(string $url, string $body, array $headers): array
+    {
+        $ch = curl_init();
+        if ($ch === false) {
+            return ['ok' => false, 'response' => null, 'error' => 'Could not init cURL'];
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_URL            => $url,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER         => false,
+            CURLOPT_TIMEOUT        => (int) ($this->config['timeout'] ?? 20),
+            CURLOPT_SSL_VERIFYPEER => array_key_exists('verify_ssl', $this->config)
+                ? !empty($this->config['verify_ssl'])
+                : true,
+        ]);
+
+        $result = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $error = $errno ? curl_error($ch) : null;
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($errno) {
+            error_log('[PMS Email] cURL: ' . $error);
+            return ['ok' => false, 'response' => is_string($result) ? $result : null, 'error' => $error];
+        }
+
+        $raw = is_string($result) ? $result : null;
+        if ($status >= 400) {
+            $decoded = $raw ? json_decode($raw, true) : null;
+            $err = is_array($decoded)
+                ? (string) ($decoded['Error'] ?? $decoded['error'] ?? $decoded['message'] ?? ("HTTP {$status}"))
+                : ("HTTP {$status}");
+            error_log('[PMS Email] HTTP ' . $status . ': ' . ($raw ?? ''));
+            return ['ok' => false, 'response' => $raw, 'error' => $err];
+        }
+
+        return ['ok' => true, 'response' => $raw, 'error' => null];
     }
 
     private function sendViaSmtp(
@@ -183,7 +422,7 @@ final class EmailService
     ): bool {
         if (empty($this->config['username'])) {
             error_log("[PMS Email SMTP fallback] To: {$to} | Subject: {$subject}");
-            return true;
+            return false;
         }
 
         $mail = new PHPMailer(true);
@@ -202,6 +441,7 @@ final class EmailService
             if ($isHtml) {
                 $mail->isHTML(true);
                 $mail->Body = $body;
+                $mail->AltBody = trim(strip_tags($body));
             } else {
                 $mail->Body = strip_tags($body);
             }
