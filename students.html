@@ -41,6 +41,12 @@
         </div>
       </div>
       <div class="col-lg-8">
+        <div id="studentDetailEmpty" class="card-surface p-4 text-center text-muted-2">
+          <i class="bi bi-person-bounding-box d-block mb-2" style="font-size:1.75rem;opacity:.45"></i>
+          <div class="fw-semibold text-body mb-1">No student selected</div>
+          <div class="small">Search by name, register number, or department, then select a student to view their profile.</div>
+        </div>
+        <div id="studentDetailPanel" class="d-none">
         <div class="card-surface p-3 p-md-4 mb-3">
           <div class="d-flex align-items-center gap-3">
             <div class="avatar" id="stuAvatar" style="width:56px;height:56px">—</div>
@@ -93,28 +99,8 @@
           </div>
         </div>
         <div class="card-surface">
-          <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
+          <div class="p-3 p-md-4 border-bottom" style="border-color:var(--border)!important">
             <div><h6 class="fw-bold mb-0">Placement details</h6><small class="text-muted-2">Companies applied, stage, and current status.</small></div>
-            <div class="d-flex gap-2">
-              <select class="form-select form-select-sm w-auto" id="stageFilter">
-                <option value="">All stages</option>
-                <option value="applied">Applied</option>
-                <option value="resume_verification">Resume verification</option>
-                <option value="approval">Approval</option>
-                <option value="company_selection">Company selection</option>
-                <option value="self_reported">Self reported</option>
-                <option value="rejected">Rejected</option>
-              </select>
-              <select class="form-select form-select-sm w-auto" id="statusFilter">
-                <option value="">All statuses</option>
-                <option value="pending">Pending</option>
-                <option value="applied">Applied</option>
-                <option value="placed">Placed</option>
-                <option value="approved">Approved</option>
-                <option value="shortlisted">Shortlisted</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
           </div>
           <div class="table-wrap">
             <table class="table-modern">
@@ -122,6 +108,7 @@
               <tbody id="detailRows"></tbody>
             </table>
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -442,21 +429,40 @@ async function fetchOverviewStudentsFromApi(query = '') {
   return null;
 }
 
+function setStudentDetailVisible(visible) {
+  const empty = document.getElementById('studentDetailEmpty');
+  const panel = document.getElementById('studentDetailPanel');
+  if (empty) empty.classList.toggle('d-none', !!visible);
+  if (panel) panel.classList.toggle('d-none', !visible);
+}
+
 function clearOverviewDetail() {
   selectedReg = '';
+  setStudentDetailVisible(false);
   const avatar = document.getElementById('stuAvatar');
-  avatar.textContent = '—';
-  avatar.style.backgroundImage = '';
-  avatar.classList.remove('has-photo');
-  document.getElementById('stuName').textContent = 'Select a student';
-  document.getElementById('stuMeta').textContent = 'Search by name, register number, or department to find a student.';
-  document.getElementById('stuStatus').outerHTML = '<span class="badge-soft muted" id="stuStatus">—</span>';
-  document.getElementById('stuProfilePanel').style.display = 'none';
-  document.getElementById('statApplied').textContent = '0';
-  document.getElementById('statShortlisted').textContent = '0';
-  document.getElementById('statSelected').textContent = '0';
-  document.getElementById('statPlaced').textContent = '0';
-  document.getElementById('detailRows').innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4">Select a student to view placement details.</td></tr>';
+  if (avatar) {
+    avatar.textContent = '—';
+    avatar.style.backgroundImage = '';
+    avatar.classList.remove('has-photo');
+  }
+  const nameEl = document.getElementById('stuName');
+  if (nameEl) nameEl.textContent = 'Select a student';
+  const metaEl = document.getElementById('stuMeta');
+  if (metaEl) metaEl.textContent = 'Search by name, register number, or department to find a student.';
+  const statusEl = document.getElementById('stuStatus');
+  if (statusEl) statusEl.outerHTML = '<span class="badge-soft muted" id="stuStatus">—</span>';
+  const profile = document.getElementById('stuProfilePanel');
+  if (profile) profile.style.display = 'none';
+  ['statApplied', 'statShortlisted', 'statSelected', 'statPlaced'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '0';
+  });
+  const rows = document.getElementById('detailRows');
+  if (rows) rows.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4">Select a student to view placement details.</td></tr>';
+  const banner = document.getElementById('verifyPlacementBanner');
+  if (banner) { banner.classList.add('d-none'); banner.innerHTML = ''; }
+  const addWrap = document.getElementById('addSelfPlacementWrap');
+  if (addWrap) addWrap.classList.add('d-none');
 }
 
 function filteredOverviewStudents() {
@@ -1057,9 +1063,7 @@ function updateOverviewStats(apps, student) {
 }
 
 function renderOverviewDetails(apps) {
-  const stage = document.getElementById('stageFilter').value;
-  const status = document.getElementById('statusFilter').value;
-  const list = apps.filter(a => (!stage || a.stage === stage) && (!status || a.status === status));
+  const list = Array.isArray(apps) ? apps : [];
   document.getElementById('detailRows').innerHTML = list.length ? list.map(a => `
     <tr>
       <td><strong>${esc(a.company)}</strong></td>
@@ -1078,6 +1082,7 @@ function selectOverviewStudent(reg, opts = {}) {
     clearOverviewDetail();
     return;
   }
+  setStudentDetailVisible(true);
   clearProfilePanelFields('Loading…');
   updateOverviewHeader(s);
   loadStudentProfile().catch(() => {
@@ -1107,10 +1112,6 @@ document.getElementById('searchStudent').addEventListener('keydown', e => {
     scheduleOverviewSearch();
   }
 });
-['stageFilter','statusFilter'].forEach(id => document.getElementById(id).addEventListener('change', () => {
-  if (!selectedReg) return;
-  loadOverviewApps(selectedReg);
-}));
 
 async function initOverview() {
   useStaffApi = Auth.hasRealAuth() && !Auth.isDemo() && role === 'staff';

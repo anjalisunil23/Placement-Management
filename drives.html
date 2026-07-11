@@ -23,11 +23,7 @@
 
   <div><h1 class="page-title" id="drivesTitle">Placement Drives</h1><p class="page-sub" id="drivesSub">Manage all ongoing and upcoming recruitment drives.</p></div>
 
-  <div class="d-flex gap-2" id="drivesActions">
-
-    <button class="btn btn-outline-secondary"><i class="bi bi-funnel me-1"></i>Filters</button>
-
-  </div>
+  <div class="d-flex gap-2" id="drivesActions"></div>
 
 </div>
 
@@ -424,16 +420,15 @@ function setupDrivesChrome() {
   } else if (alumniSeeking) {
     document.getElementById('drivesTitle').textContent = 'Apply for Jobs';
     document.getElementById('drivesSub').textContent = 'View all lateral and alumni-eligible drives open for application.';
-    actions.innerHTML = '<button class="btn btn-outline-secondary"><i class="bi bi-funnel me-1"></i>Filters</button>';
+    actions.innerHTML = '';
   } else if (!canManage) {
     document.getElementById('drivesTitle').textContent = 'Placement Drives';
     document.getElementById('drivesSub').textContent = 'View all ongoing and upcoming recruitment drives.';
-    actions.innerHTML = '<button class="btn btn-outline-secondary"><i class="bi bi-funnel me-1"></i>Filters</button>';
+    actions.innerHTML = '';
   } else {
     document.getElementById('drivesTitle').textContent = 'Placement Drives';
     document.getElementById('drivesSub').textContent = 'Manage all ongoing and upcoming recruitment drives.';
     actions.innerHTML = `
-      <button class="btn btn-outline-secondary"><i class="bi bi-funnel me-1"></i>Filters</button>
       <button type="button" class="btn btn-primary" onclick="openCreateDrive()"><i class="bi bi-plus-lg me-1"></i>Create Drive</button>`;
   }
   renderTableHead();
