@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.07.11e — navy sidebar/topbar theme */
-const APP_SHELL_VERSION = '2026.07.11e';
+/* PlaceHub shell v2026.07.11f — navy sidebar/topbar theme */
+const APP_SHELL_VERSION = '2026.07.11f';
 
 (function applyShellThemeFallback() {
   if (typeof document === 'undefined' || document.getElementById('ph-shell-theme')) return;
@@ -206,31 +206,84 @@ function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
 function topbarProfileMenuHtml(user, role) {
   const profileLabel = shellProfileLabel(role);
   return `
-    <div class="dropdown topbar-profile-menu">
-      <button type="button" class="topbar-avatar-btn" id="topbarProfileBtn" style="${SHELL_TOPBAR_BTN_STYLE}" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" aria-label="Account menu" title="${escapeAttr(user?.name || 'Account')}">
+    <div class="topbar-profile-menu" id="topbarProfileMenu">
+      <button type="button" class="topbar-avatar-btn" id="topbarProfileBtn" style="${SHELL_TOPBAR_BTN_STYLE}" aria-expanded="false" aria-haspopup="true" aria-controls="topbarProfileDropdown" aria-label="Account menu" title="${escapeAttr(user?.name || 'Account')}">
         ${shellPhotoCircleHtml(user, 38, '.8rem')}
       </button>
-      <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="topbarProfileBtn">
-        <li><h6 class="dropdown-header text-truncate mb-0">${escapeAttr(user?.name || 'Account')}</h6></li>
-        <li><a class="dropdown-item" href="${shellProfileHref(role)}"><i class="bi bi-person me-2"></i>${profileLabel}</a></li>
-        <li><hr class="dropdown-divider my-1"></li>
-        <li><button type="button" class="dropdown-item text-danger" id="topbarLogoutBtn"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></li>
-      </ul>
+      <div class="topbar-profile-dropdown" id="topbarProfileDropdown" hidden>
+        <div class="topbar-profile-dropdown-name">${escapeAttr(user?.name || 'Account')}</div>
+        <a class="topbar-profile-dropdown-item" id="topbarProfileLink" href="${shellProfileHref(role)}"><i class="bi bi-person"></i><span>${profileLabel}</span></a>
+        <button type="button" class="topbar-profile-dropdown-item is-danger" id="topbarLogoutBtn"><i class="bi bi-box-arrow-right"></i><span>Logout</span></button>
+      </div>
     </div>`;
+}
+
+function setTopbarProfileMenuOpen(open) {
+  const menu = document.getElementById('topbarProfileMenu');
+  const btn = document.getElementById('topbarProfileBtn');
+  const panel = document.getElementById('topbarProfileDropdown');
+  if (!menu || !btn || !panel) return;
+  menu.classList.toggle('is-open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  panel.hidden = !open;
+}
+
+async function handleTopbarLogout(e) {
+  e?.preventDefault?.();
+  e?.stopPropagation?.();
+  setTopbarProfileMenuOpen(false);
+  let confirmed = true;
+  if (typeof confirmAction === 'function') {
+    confirmed = await confirmAction({
+      title: 'Sign out',
+      message: 'Sign out of your account?',
+      confirmText: 'Sign out',
+      variant: 'warning',
+    });
+  }
+  if (!confirmed) return;
+  if (typeof Auth !== 'undefined' && typeof Auth.logout === 'function') {
+    Auth.logout();
+    return;
+  }
+  window.location.href = 'public-stats.html';
+}
+
+function bindTopbarProfileMenu() {
+  const menu = document.getElementById('topbarProfileMenu');
+  const btn = document.getElementById('topbarProfileBtn');
+  const logoutBtn = document.getElementById('topbarLogoutBtn');
+  if (!menu || !btn || btn.dataset.bound === '1') {
+    if (logoutBtn) bindLogoutButton(logoutBtn);
+    return;
+  }
+  btn.dataset.bound = '1';
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const open = btn.getAttribute('aria-expanded') !== 'true';
+    setTopbarProfileMenuOpen(open);
+  });
+
+  logoutBtn?.addEventListener('click', (e) => {
+    handleTopbarLogout(e).catch(() => {});
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!menu.contains(e.target)) setTopbarProfileMenuOpen(false);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setTopbarProfileMenuOpen(false);
+  });
 }
 
 function bindLogoutButton(btn) {
   if (!btn || btn.dataset.bound === '1') return;
   btn.dataset.bound = '1';
-  btn.addEventListener('click', async () => {
-    if (await confirmAction({
-      title: 'Sign out',
-      message: 'Sign out of your account?',
-      confirmText: 'Sign out',
-      variant: 'warning',
-    })) {
-      Auth.logout();
-    }
+  btn.addEventListener('click', (e) => {
+    handleTopbarLogout(e).catch(() => {});
   });
 }
 
@@ -494,7 +547,7 @@ function renderShell(active) {
   }));
 
   document.getElementById('logoutBtn') && bindLogoutButton(document.getElementById('logoutBtn'));
-  document.getElementById('topbarLogoutBtn') && bindLogoutButton(document.getElementById('topbarLogoutBtn'));
+  bindTopbarProfileMenu();
 
   sidebar?.querySelectorAll('.nav-group-chevron-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
