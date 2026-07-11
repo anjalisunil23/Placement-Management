@@ -1704,15 +1704,15 @@ const StudentApps = {
         res = await apiFetch('/student/apply', { method: 'POST', body: form });
       } else {
         res = await api('/student/apply', {
-          method: 'POST',
-          body: {
-            driveId: drive.id,
-            resumeId: resumeId || '',
-            resumeLabel: resume?.label || '',
-            resumeFileName: resume?.fileName || '',
-            resumePath,
-          },
-        });
+        method: 'POST',
+        body: {
+          driveId: drive.id,
+          resumeId: resumeId || '',
+          resumeLabel: resume?.label || '',
+          resumeFileName: resume?.fileName || '',
+          resumePath,
+        },
+      });
       }
       if (!res.success) {
         const msg = res.message || 'Application failed.';
@@ -2274,8 +2274,8 @@ const ELIGIBILITY_BRANCHES = [
 ];
 
 /**
- * AJCE parent departments with UG/PG programme branches used on campus.
- * Aliases map AES / older labels onto the college codes.
+ * AJCE parent departments with official programme / branch codes (KTU / AES).
+ * Aliases map parent AES codes (CSE, ECE, …) and alternate labels onto branch codes.
  */
 const DEPARTMENT_PROGRAMME_GROUPS = [
   {
@@ -2289,65 +2289,65 @@ const DEPARTMENT_PROGRAMME_GROUPS = [
   {
     parent: 'Computer Science & Engineering',
     programmes: [
-      { code: 'CS', label: 'B.Tech CSE', aliases: ['CSE'] },
-      { code: 'CY', label: 'B.Tech CSE (Cyber Security)', aliases: ['CSY'] },
-      { code: 'CT', label: 'B.Tech CSE (Artificial Intelligence)', aliases: ['CSAI'] },
-      { code: 'MTECHCS', label: 'M.Tech CSE', aliases: ['MTECH CSE', 'MT CSE', 'MTECHCSE', 'PG CSE'] },
+      { code: 'CS', label: 'CS — Computer Science and Engineering', aliases: ['CSE'] },
+      { code: 'CT', label: 'CT — CSE (Artificial Intelligence)', aliases: ['CSAI'] },
+      { code: 'CY', label: 'CY — CSE (Cyber Security)', aliases: ['CSY'] },
+      { code: 'MTECHCS', label: 'M.Tech — Computer Science and Engineering', aliases: ['MTECH CSE', 'MTCSE', 'MTECHCSE', 'PGCSE'] },
     ],
   },
   {
     parent: 'AI & Information Technology',
     programmes: [
-      { code: 'AD', label: 'B.Tech AI & Data Science', aliases: ['AIDS', 'AI'] },
-      { code: 'IT', label: 'B.Tech Information Technology', aliases: [] },
+      { code: 'AD', label: 'AD — Artificial Intelligence & Data Science', aliases: ['AIDS', 'AI'] },
+      { code: 'IT', label: 'IT — Information Technology', aliases: [] },
     ],
   },
   {
     parent: 'Electronics & Communication',
     programmes: [
-      { code: 'EC', label: 'B.Tech ECE', aliases: ['ECE', 'ECEA'] },
-      { code: 'MTECHVLSI', label: 'M.Tech VLSI & Embedded Systems', aliases: ['MTECH VLSI', 'VLSI', 'MT VLSI', 'MTECHVLSI'] },
+      { code: 'EC', label: 'EC — Electronics & Communication Engineering', aliases: ['ECE', 'ECEA'] },
+      { code: 'MTECHVLSI', label: 'M.Tech — VLSI Design and Embedded Systems', aliases: ['MTECH VLSI', 'VLSI', 'MTVLSI', 'MTECHVLSI'] },
     ],
   },
   {
     parent: 'Electrical & Electronics',
     programmes: [
-      { code: 'EE', label: 'B.Tech EEE', aliases: ['EEE'] },
-      { code: 'MTECHES', label: 'M.Tech Energy Systems', aliases: ['MTECH ES', 'ENERGY SYSTEMS', 'MT ES', 'MTECHES', 'PEPS'] },
+      { code: 'EE', label: 'EE — Electrical & Electronics Engineering', aliases: ['EEE'] },
+      { code: 'MTECHES', label: 'M.Tech — Energy Systems', aliases: ['MTECH ES', 'ENERGY SYSTEMS', 'MTES', 'MTECHES', 'PEPS'] },
     ],
   },
   {
     parent: 'Mechanical Engineering',
     programmes: [
-      { code: 'ME', label: 'B.Tech Mechanical', aliases: ['MECH'] },
-      { code: 'MA', label: 'B.Tech Automobile', aliases: ['AU', 'AUTO'] },
-      { code: 'MTECHEV', label: 'M.Tech Electric Vehicle Technology', aliases: ['MTECH EV', 'EV', 'MTECHEV', 'MACHINE DESIGN', 'MTECHMD'] },
+      { code: 'ME', label: 'ME — Mechanical Engineering', aliases: ['MECH'] },
+      { code: 'MA', label: 'MA — Mechanical Engineering (Automobile)', aliases: ['AU', 'AUTO'] },
+      { code: 'MTECHEV', label: 'M.Tech — Electric Vehicle Technology', aliases: ['MTECH EV', 'EV', 'MTECHEV'] },
     ],
   },
   {
     parent: 'Civil Engineering',
     programmes: [
-      { code: 'CE', label: 'B.Tech Civil', aliases: ['CIVIL'] },
-      { code: 'MTECHSECM', label: 'M.Tech Structural Engg. & Construction Mgmt', aliases: ['MTECH SECM', 'SECM', 'STRUCTURAL', 'MTECHSECM'] },
+      { code: 'CE', label: 'CE — Civil Engineering', aliases: ['CIVIL'] },
+      { code: 'MTECHSECM', label: 'M.Tech — Structural Engg. & Construction Management', aliases: ['MTECH SECM', 'SECM', 'STRUCTURAL', 'MTECHSECM'] },
     ],
   },
   {
     parent: 'Chemical Engineering',
     programmes: [
-      { code: 'CH', label: 'B.Tech Chemical', aliases: ['CHEM'] },
-      { code: 'MTECHENV', label: 'M.Tech Environmental Engineering', aliases: ['MTECH ENV', 'ENVIRONMENTAL', 'MTECHENV'] },
+      { code: 'CH', label: 'CH — Chemical Engineering', aliases: ['CHEM', 'CHE'] },
+      { code: 'MTECHENV', label: 'M.Tech — Environmental Engineering', aliases: ['MTECH ENV', 'ENVIRONMENTAL', 'MTECHENV'] },
     ],
   },
   {
     parent: 'Food Technology',
     programmes: [
-      { code: 'FT', label: 'B.Tech Food Technology', aliases: ['FOOD', 'FE'] },
+      { code: 'FT', label: 'FT — Food Technology', aliases: ['FOOD', 'FE'] },
     ],
   },
   {
     parent: 'Metallurgical & Materials',
     programmes: [
-      { code: 'MG', label: 'B.Tech Metallurgy', aliases: ['MT', 'MET', 'MME'] },
+      { code: 'MG', label: 'MG — Metallurgical & Materials Engineering', aliases: ['MT', 'MET', 'MME'] },
     ],
   },
 ];
@@ -2385,22 +2385,15 @@ function resolveCollegeProgrammeCode(code) {
 
 /** Always list full AJCE UG/PG branches under each parent department. */
 function buildDepartmentProgrammeOptions(extraCodes = []) {
-  const labelByCode = new Map();
-
-  (Array.isArray(extraCodes) ? extraCodes : []).forEach(raw => {
-    const code = typeof raw === 'string' ? raw : (raw?.code || raw?.dept || raw?.department || '');
-    const label = typeof raw === 'string' ? raw : (raw?.name || raw?.label || raw?.dept || raw?.department || code);
-    const canonical = resolveCollegeProgrammeCode(code);
-    if (!canonical || !isStudentAcademicDepartment(canonical, label || canonical)) return;
-    if (label && !labelByCode.has(canonical)) labelByCode.set(canonical, String(label).trim());
-  });
+  // Catalogue labels win — do not let parent AES dept names (CSE, ECE, …) overwrite branch labels.
+  void extraCodes;
 
   const groups = DEPARTMENT_PROGRAMME_GROUPS.map(group => {
     const programmes = group.programmes
       .filter(p => isStudentAcademicDepartment(p.code, p.label))
       .map(p => ({
         code: normalizeProgrammeCode(p.code),
-        label: labelByCode.get(normalizeProgrammeCode(p.code)) || p.label || p.code,
+        label: p.label || p.code,
       }));
     return {
       parent: group.parent,
@@ -3865,14 +3858,14 @@ async function dashboardStats() {
     const totalStudents = stats.totalStudents ?? 0;
     const placedStudents = stats.placedStudents ?? 0;
 
-    return {
+      return {
       totalStudents,
       totalCompanies: stats.totalCompanies ?? stats.totals?.companies ?? 0,
       totalStaff: stats.totalStaff ?? 0,
       totalAlumni: stats.totalAlumni ?? 0,
       totalDrives: activeDrives ?? stats.activeDrives ?? 0,
       placedStudents,
-      pendingApprovals: stats.pendingApprovals ?? 0,
+        pendingApprovals: stats.pendingApprovals ?? 0,
       placementPct: stats.placementPercentage ?? (totalStudents > 0 ? ((placedStudents / totalStudents) * 100).toFixed(1) : 0),
       salary: {
         highest: salary.highest ?? 0,
@@ -3883,8 +3876,8 @@ async function dashboardStats() {
       branchStats,
       companyStats,
       hiringTrend: stats.hiringTrend || null,
-      department: stats.department || null,
-    };
+        department: stats.department || null,
+      };
   };
 
   if (Auth.hasRealAuth() && !Auth.isDemo()) {
