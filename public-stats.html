@@ -135,9 +135,18 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="/js/api.js?v=20260711r"></script>
-<script src="/js/app.js?v=20260711r"></script>
-<script src="/js/charts.js?v=20260624v"></script>
+
+    param($m)
+    $a = $m.Groups[1].Value
+    $b = $m.Groups[2].Value
+    if ($a -match 'app\.js' -or $b -match 'app\.js') {
+      if ($b -match 'app\.js') { $b } else { $a }
+    } else {
+      # default to incoming (ours from rebase = the commit being applied = second?)
+      # During rebase: HEAD is upstream, ======= after is our commit
+      $b
+    }
+  <script src="/js/charts.js?v=20260624v"></script>
 <script>
 (function initPublicNavBrand() {
   const el = document.getElementById('publicNavBrand');
