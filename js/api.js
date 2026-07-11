@@ -2413,7 +2413,13 @@ const DRIVE_TYPES = ['Exclusive', 'Pooled', 'Company Direct'];
 const RESUME_NAME_PATTERN = /^[A-Za-z]+_\d{2}[A-Z]{2,4}\d{2,3}_[A-Za-z0-9_]+\.pdf$/i;
 
 function seedDepartments() {
-  if (localStorage.getItem(DEPTS_KEY)) return;
+  try {
+    const raw = localStorage.getItem(DEPTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return;
+    }
+  } catch { /* reseed */ }
   localStorage.setItem(DEPTS_KEY, JSON.stringify([
     { id:'d1', name:'MCA', code:'MCA' }, { id:'d2', name:'Computer Science', code:'CSE' },
     { id:'d3', name:'Information Technology', code:'IT' }, { id:'d4', name:'Mechanical', code:'ME' },
@@ -2424,19 +2430,26 @@ function seedDepartments() {
 const DepartmentStore = {
   _cache: null,
   all() {
-    if (this._cache) return this._cache;
+    if (Array.isArray(this._cache) && this._cache.length) return this._cache;
     seedDepartments();
-    try { return JSON.parse(localStorage.getItem(DEPTS_KEY) || '[]'); } catch { return []; }
+    try {
+      const stored = JSON.parse(localStorage.getItem(DEPTS_KEY) || '[]');
+      if (Array.isArray(stored) && stored.length) {
+        this._cache = stored;
+        return stored;
+      }
+    } catch { /* ignore */ }
+    return Array.isArray(this._cache) ? this._cache : [];
   },
   save(l) { this._cache = l; localStorage.setItem(DEPTS_KEY, JSON.stringify(l)); },
   async fetch() {
     let list = null;
-    if (Auth.role() === 'admin') {
+    if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
       list = await AdminApi.fetchDepartments();
     }
-    if (!list) {
+    if (!Array.isArray(list) || !list.length) {
       const res = await apiFetch('/public/departments', { skipAuthRedirect: true });
-      if (res.success && Array.isArray(res.data)) {
+      if (res.success && Array.isArray(res.data) && res.data.length) {
         list = res.data.map(d => ({
           id: d.id || d._id,
           name: d.name || '',
@@ -2445,13 +2458,30 @@ const DepartmentStore = {
         }));
       }
     }
-    if (list) { this._cache = list; localStorage.setItem(DEPTS_KEY, JSON.stringify(list)); return list; }
-    if (Auth.role() === 'admin') {
-      this._cache = [];
-      localStorage.setItem(DEPTS_KEY, JSON.stringify([]));
-      return [];
+    if (Array.isArray(list) && list.length) {
+      const usable = list.filter(d => {
+        const code = String(d.code || '').trim();
+        const name = String(d.name || code).trim();
+        return code && name && !/^\d+$/.test(code);
+      });
+      const finalList = usable.length ? usable : list.filter(d => String(d.code || '').trim() && String(d.name || d.code || '').trim());
+      if (finalList.length) {
+        this._cache = finalList;
+        localStorage.setItem(DEPTS_KEY, JSON.stringify(finalList));
+        return finalList;
+      }
     }
-    return this.all();
+    if (Array.isArray(this._cache) && this._cache.length) return this._cache;
+    seedDepartments();
+    try {
+      const stored = JSON.parse(localStorage.getItem(DEPTS_KEY) || '[]');
+      if (Array.isArray(stored) && stored.length) {
+        this._cache = stored;
+        return stored;
+      }
+    } catch { /* ignore */ }
+    this._cache = [];
+    return [];
   },
   async add(p) {
     if (!(await requireWriteSession())) return null;
