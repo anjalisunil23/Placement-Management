@@ -281,10 +281,16 @@ final class StudentController
       if ($placement === null && is_array($out['selfPlacement'] ?? null)) {
         $sp = $out['selfPlacement'];
         $out['placement'] = [
-          'company' => (string) ($sp['companyName'] ?? ''),
-          'role'    => (string) ($sp['role'] ?? ''),
-          'address' => (string) ($sp['companyAddress'] ?? ''),
-          'source'  => 'self_reported',
+          'company'       => (string) ($sp['companyName'] ?? ''),
+          'role'          => (string) ($sp['role'] ?? ''),
+          'address'       => (string) ($sp['companyAddress'] ?? ''),
+          'package'       => (string) ($sp['package'] ?? ''),
+          'joinDate'      => (string) ($sp['joinDate'] ?? ''),
+          'endDate'       => (string) ($sp['endDate'] ?? ''),
+          'offerLetter'   => (string) ($sp['offerLetter'] ?? ''),
+          'joiningLetter' => (string) ($sp['joiningLetter'] ?? ''),
+          'companyIdDoc'  => (string) ($sp['companyIdDoc'] ?? ''),
+          'source'        => 'self_reported',
         ];
       }
     }
@@ -940,7 +946,7 @@ final class StudentController
     Response::success(['path' => basename($path)], 'Signed report uploaded.');
   }
 
-  /** POST /api/student/self-placement — off-campus / self-reported placement */
+  /** POST /api/student/self-placement — off-campus / self-reported placement (or next after end date) */
   public function submitSelfPlacement(): void
   {
     $user = RBACMiddleware::requireStudent();
@@ -951,75 +957,120 @@ final class StudentController
       Response::error('Your placement report is already under review.', 409);
     }
 
-    if (($profile['placed'] ?? false) === true) {
-      Response::error('You are already marked as placed.', 409);
+    $isPlaced = ($profile['placed'] ?? false) === true;
+    $currentPlacement = is_array($profile['placement'] ?? null) ? $profile['placement'] : [];
+    $addingNext = $isPlaced;
+
+    if ($addingNext) {
+      $prevEnd = trim((string) ($currentPlacement['endDate'] ?? ''));
+      if ($prevEnd === '') {
+        Response::error('Set an end date on your current placement before adding a new one.', 422);
+      }
     }
 
     $companyName = trim((string) ($_POST['companyName'] ?? ''));
     $companyAddress = trim((string) ($_POST['companyAddress'] ?? ''));
     $jobRole = trim((string) ($_POST['role'] ?? ''));
+    $package = trim((string) ($_POST['package'] ?? ''));
+    $joinDate = trim((string) ($_POST['joinDate'] ?? ''));
+    $endDate = trim((string) ($_POST['endDate'] ?? ''));
 
     if ($companyName === '' || $jobRole === '') {
       Response::error('Company name and role are required.', 422);
     }
-    if ($companyAddress === '') {
-      Response::error('Company address is required.', 422);
+    if ($package === '') {
+      Response::error('Package is required.', 422);
+    }
+    if ($joinDate !== '' && !$this->isValidYmdDate($joinDate)) {
+      Response::error('Join date must be YYYY-MM-DD.', 422);
+    }
+    if ($endDate !== '' && !$this->isValidYmdDate($endDate)) {
+      Response::error('End date must be YYYY-MM-DD.', 422);
+    }
+    if ($joinDate !== '' && $endDate !== '' && $endDate < $joinDate) {
+      Response::error('End date cannot be before join date.', 422);
     }
 
-    if (!isset($_FILES['offerLetter'])) {
-      Response::error('Offer letter PDF is required.', 400);
-    }
-
-    $uploadError = (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE);
-    if ($uploadError === UPLOAD_ERR_NO_FILE) {
-      Response::error('Offer letter PDF is required.', 400);
-    }
-    if ($uploadError !== UPLOAD_ERR_OK) {
-      $uploadMessages = [
-        UPLOAD_ERR_INI_SIZE   => 'Offer letter exceeds server upload limit.',
-        UPLOAD_ERR_FORM_SIZE  => 'Offer letter exceeds form upload limit.',
-        UPLOAD_ERR_PARTIAL    => 'Offer letter upload was interrupted. Try again.',
-        UPLOAD_ERR_NO_TMP_DIR => 'Server upload folder is not configured.',
-        UPLOAD_ERR_CANT_WRITE => 'Server could not save the offer letter.',
-        UPLOAD_ERR_EXTENSION  => 'Server blocked the offer letter upload.',
-      ];
-      Response::error($uploadMessages[$uploadError] ?? 'Offer letter upload failed.', 400);
+    $hasOffer = $this->hasUploadedFile('offerLetter');
+    $hasJoining = $this->hasUploadedFile('joiningLetter');
+    $hasCompanyId = $this->hasUploadedFile('companyIdDoc');
+    if (!$hasOffer && !$hasJoining && !$hasCompanyId) {
+      Response::error('Upload at least one document: offer letter, joining letter, or company ID.', 400);
     }
 
     $config = require dirname(__DIR__) . '/config/app.php';
-    $error = Security::validateUploadedFile(
-      $_FILES['offerLetter'],
-      $config['uploads']['max_resume'],
-      ['pdf']
-    );
-    if ($error) {
-      Response::error($error, 400);
-    }
-
-    $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
-    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-      Response::error('Server upload folder is not writable.', 500);
-    }
-
     $registerNo = (string) ($profile['registerNumber'] ?? 'student');
     $safeCompany = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $companyName) ?: 'company';
-    $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
-    if (!move_uploaded_file($_FILES['offerLetter']['tmp_name'], $path)) {
-      Response::error('Failed to save offer letter.', 500);
+    $savedPaths = [];
+
+    $offerLetter = null;
+    if ($hasOffer) {
+      $uploadError = (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE);
+      if ($uploadError !== UPLOAD_ERR_OK) {
+        Response::error('Offer letter upload failed.', 400);
+      }
+      $error = Security::validateUploadedFile(
+        $_FILES['offerLetter'],
+        $config['uploads']['max_resume'],
+        ['pdf']
+      );
+      if ($error) {
+        Response::error($error, 400);
+      }
+      $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
+      if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+        Response::error('Server upload folder is not writable.', 500);
+      }
+      $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
+      if (!move_uploaded_file($_FILES['offerLetter']['tmp_name'], $path)) {
+        Response::error('Failed to save offer letter.', 500);
+      }
+      $savedPaths[] = $path;
+      $offerLetter = basename($path);
     }
 
-    $savedPaths = [$path];
-    $companyIdDoc = $this->saveOptionalSelfPlacementUpload('companyIdDoc', $registerNo, $safeCompany, 'company_id', ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx'], $savedPaths);
-    $salarySlip = $this->saveOptionalSelfPlacementUpload('salarySlip', $registerNo, $safeCompany, 'salary_slip', ['pdf', 'doc', 'docx'], $savedPaths);
+    $joiningLetter = $this->saveOptionalSelfPlacementUpload(
+      'joiningLetter',
+      $registerNo,
+      $safeCompany,
+      'joining_letter',
+      ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp'],
+      $savedPaths
+    );
+    $companyIdDoc = $this->saveOptionalSelfPlacementUpload(
+      'companyIdDoc',
+      $registerNo,
+      $safeCompany,
+      'company_id',
+      ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx'],
+      $savedPaths
+    );
+    // Backward-compatible optional salary slip
+    $salarySlip = $this->saveOptionalSelfPlacementUpload(
+      'salarySlip',
+      $registerNo,
+      $safeCompany,
+      'salary_slip',
+      ['pdf', 'doc', 'docx'],
+      $savedPaths
+    );
 
     $report = [
       'companyName'    => $companyName,
       'companyAddress' => $companyAddress,
       'role'           => $jobRole,
-      'offerLetter'    => basename($path),
+      'package'        => $package,
+      'joinDate'       => $joinDate,
+      'endDate'        => $endDate,
       'status'         => 'pending',
       'submittedAt'    => DocumentHelper::now(),
     ];
+    if ($offerLetter !== null) {
+      $report['offerLetter'] = $offerLetter;
+    }
+    if ($joiningLetter !== null) {
+      $report['joiningLetter'] = $joiningLetter;
+    }
     if ($companyIdDoc !== null) {
       $report['companyIdDoc'] = $companyIdDoc;
     }
@@ -1028,19 +1079,32 @@ final class StudentController
     }
 
     $history = is_array($profile['placementHistory'] ?? null) ? $profile['placementHistory'] : [];
+    if ($addingNext && $currentPlacement !== []) {
+      $history[] = array_merge($currentPlacement, [
+        'status'  => 'ended',
+        'endedAt' => DocumentHelper::now(),
+        'type'    => (string) ($currentPlacement['source'] ?? 'placement'),
+      ]);
+    }
+
     $history[] = [
-      'type'    => 'self_reported',
-      'company' => $companyName,
-      'address' => $companyAddress,
-      'role'    => $jobRole,
-      'status'  => 'pending',
-      'date'    => DocumentHelper::now(),
+      'type'      => 'self_reported',
+      'company'   => $companyName,
+      'address'   => $companyAddress,
+      'role'      => $jobRole,
+      'package'   => $package,
+      'joinDate'  => $joinDate,
+      'endDate'   => $endDate,
+      'status'    => 'pending',
+      'date'      => DocumentHelper::now(),
     ];
 
-    $saved = $this->studentModel->update((string) $profile['_id'], [
+    $patch = [
       'selfPlacement'    => $report,
       'placementHistory' => $history,
-    ]);
+    ];
+
+    $saved = $this->studentModel->update((string) $profile['_id'], $patch);
     if (!$saved) {
       foreach ($savedPaths as $savedPath) {
         @unlink($savedPath);
@@ -1054,7 +1118,7 @@ final class StudentController
       $notifier->notifyPlacementCell(
         'self_placement_submitted',
         'Self-placement report — review required',
-        "{$studentName} ({$registerNo}) submitted a placement report for {$companyName} as {$jobRole}. Verify the offer letter and mark as placed.",
+        "{$studentName} ({$registerNo}) submitted a placement report for {$companyName} as {$jobRole}. Verify documents and mark as placed.",
         [
           'action'         => 'verify_self_placement',
           'studentId'      => (string) $profile['_id'],
@@ -1078,6 +1142,170 @@ final class StudentController
     }
 
     Response::success($report, 'Placement report submitted for verification.', 201);
+  }
+
+  /**
+   * POST /api/student/placement/current
+   * Update current placement details (package, dates, docs) when already placed.
+   */
+  public function updateCurrentPlacement(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $profile = $this->getStudentProfile($user);
+
+    if (($profile['placed'] ?? false) !== true) {
+      Response::error('You are not marked as placed yet.', 422);
+    }
+
+    $pending = $profile['selfPlacement'] ?? null;
+    if (is_array($pending) && ($pending['status'] ?? '') === 'pending') {
+      Response::error('A new placement report is under review. Wait for verification before editing.', 409);
+    }
+
+    $placement = is_array($profile['placement'] ?? null) ? $profile['placement'] : [];
+    $self = is_array($profile['selfPlacement'] ?? null) ? $profile['selfPlacement'] : [];
+
+    $companyName = trim((string) ($_POST['companyName'] ?? ($placement['company'] ?? $self['companyName'] ?? '')));
+    $jobRole = trim((string) ($_POST['role'] ?? ($placement['role'] ?? $self['role'] ?? '')));
+    $companyAddress = trim((string) ($_POST['companyAddress'] ?? ($placement['address'] ?? $self['companyAddress'] ?? '')));
+    $package = trim((string) ($_POST['package'] ?? ($placement['package'] ?? $self['package'] ?? '')));
+    $joinDate = trim((string) ($_POST['joinDate'] ?? ($placement['joinDate'] ?? $self['joinDate'] ?? '')));
+    $endDate = trim((string) ($_POST['endDate'] ?? ($placement['endDate'] ?? $self['endDate'] ?? '')));
+
+    if ($companyName === '' || $jobRole === '') {
+      Response::error('Company name and role are required.', 422);
+    }
+    if ($package === '') {
+      Response::error('Package is required.', 422);
+    }
+    if ($joinDate !== '' && !$this->isValidYmdDate($joinDate)) {
+      Response::error('Join date must be YYYY-MM-DD.', 422);
+    }
+    if ($endDate !== '' && !$this->isValidYmdDate($endDate)) {
+      Response::error('End date must be YYYY-MM-DD.', 422);
+    }
+    if ($joinDate !== '' && $endDate !== '' && $endDate < $joinDate) {
+      Response::error('End date cannot be before join date.', 422);
+    }
+
+    $registerNo = (string) ($profile['registerNumber'] ?? 'student');
+    $safeCompany = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $companyName) ?: 'company';
+    $savedPaths = [];
+    $config = require dirname(__DIR__) . '/config/app.php';
+
+    $offerLetter = (string) ($placement['offerLetter'] ?? $self['offerLetter'] ?? '');
+    $joiningLetter = (string) ($placement['joiningLetter'] ?? $self['joiningLetter'] ?? '');
+    $companyIdDoc = (string) ($placement['companyIdDoc'] ?? $self['companyIdDoc'] ?? '');
+
+    if ($this->hasUploadedFile('offerLetter')) {
+      $error = Security::validateUploadedFile($_FILES['offerLetter'], $config['uploads']['max_resume'], ['pdf']);
+      if ($error) {
+        Response::error($error, 400);
+      }
+      $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
+      if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+        Response::error('Server upload folder is not writable.', 500);
+      }
+      $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
+      if (!move_uploaded_file($_FILES['offerLetter']['tmp_name'], $path)) {
+        Response::error('Failed to save offer letter.', 500);
+      }
+      $savedPaths[] = $path;
+      $offerLetter = basename($path);
+    }
+
+    $newJoining = $this->saveOptionalSelfPlacementUpload(
+      'joiningLetter',
+      $registerNo,
+      $safeCompany,
+      'joining_letter',
+      ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp'],
+      $savedPaths
+    );
+    if ($newJoining !== null) {
+      $joiningLetter = $newJoining;
+    }
+    $newCompanyId = $this->saveOptionalSelfPlacementUpload(
+      'companyIdDoc',
+      $registerNo,
+      $safeCompany,
+      'company_id',
+      ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx'],
+      $savedPaths
+    );
+    if ($newCompanyId !== null) {
+      $companyIdDoc = $newCompanyId;
+    }
+
+    if ($offerLetter === '' && $joiningLetter === '' && $companyIdDoc === '') {
+      Response::error('At least one document is required: offer letter, joining letter, or company ID.', 422);
+    }
+
+    $placement = array_merge($placement, [
+      'company'       => $companyName,
+      'role'          => $jobRole,
+      'address'       => $companyAddress,
+      'package'       => $package,
+      'joinDate'      => $joinDate,
+      'endDate'       => $endDate,
+      'offerLetter'   => $offerLetter,
+      'joiningLetter' => $joiningLetter,
+      'companyIdDoc'  => $companyIdDoc,
+      'updatedAt'     => DocumentHelper::now(),
+    ]);
+
+    if ($self !== [] && in_array((string) ($self['status'] ?? ''), ['approved', 'placed'], true)) {
+      $self['companyName'] = $companyName;
+      $self['companyAddress'] = $companyAddress;
+      $self['role'] = $jobRole;
+      $self['package'] = $package;
+      $self['joinDate'] = $joinDate;
+      $self['endDate'] = $endDate;
+      if ($offerLetter !== '') {
+        $self['offerLetter'] = $offerLetter;
+      }
+      if ($joiningLetter !== '') {
+        $self['joiningLetter'] = $joiningLetter;
+      }
+      if ($companyIdDoc !== '') {
+        $self['companyIdDoc'] = $companyIdDoc;
+      }
+    }
+
+    $saved = $this->studentModel->update((string) $profile['_id'], [
+      'placement'     => $placement,
+      'selfPlacement' => $self !== [] ? $self : ($profile['selfPlacement'] ?? null),
+    ]);
+    if (!$saved) {
+      foreach ($savedPaths as $savedPath) {
+        @unlink($savedPath);
+      }
+      Response::error('Could not update placement details.', 500);
+    }
+
+    Response::success([
+      'placed'        => true,
+      'placement'     => DocumentHelper::serialize($placement),
+      'selfPlacement' => $self !== [] ? (DocumentHelper::serialize($self) ?? null) : null,
+      'canAddNext'    => $endDate !== '',
+    ], 'Placement details saved.');
+  }
+
+  private function hasUploadedFile(string $field): bool
+  {
+    if (!isset($_FILES[$field])) {
+      return false;
+    }
+    return (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+  }
+
+  private function isValidYmdDate(string $value): bool
+  {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+      return false;
+    }
+    [$y, $m, $d] = array_map('intval', explode('-', $value));
+    return checkdate($m, $d, $y);
   }
 
   /** POST /api/student/applications/{id}/withdraw */

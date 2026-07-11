@@ -7,6 +7,9 @@ namespace PMS\Services;
 use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
+use PMS\Utils\DocumentHelper;
+use PMS\Utils\Response;
+use PMS\Utils\Security;
 
 /**
  * Department-scoped placement and higher-education registry for staff.
@@ -123,9 +126,16 @@ final class StaffPlacementRegistryService
                 'address'          => (string) ($placement['address'] ?? ''),
                 'package'          => $this->normalizePackage($placement['package'] ?? ''),
                 'employerContact'  => (string) ($placement['employerContact'] ?? $placement['contact'] ?? ''),
+                'joinDate'         => (string) ($placement['joinDate'] ?? ''),
+                'endDate'          => (string) ($placement['endDate'] ?? ''),
                 'type'             => $this->resolveRecordType($placement),
                 'source'           => (string) ($placement['source'] ?? 'placement'),
-                'hasOfferLetter'   => false,
+                'hasOfferLetter'   => (string) ($placement['offerLetter'] ?? '') !== ''
+                    || (is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['offerLetter'] ?? '') !== ''),
+                'hasJoiningLetter' => (string) ($placement['joiningLetter'] ?? '') !== ''
+                    || (is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['joiningLetter'] ?? '') !== ''),
+                'hasCompanyIdDoc'  => (string) ($placement['companyIdDoc'] ?? '') !== ''
+                    || (is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['companyIdDoc'] ?? '') !== ''),
                 'canVerify'        => false,
             ], $seen);
         }
@@ -141,9 +151,13 @@ final class StaffPlacementRegistryService
                     'address'          => (string) ($self['companyAddress'] ?? ''),
                     'package'          => $this->normalizePackage($self['package'] ?? ''),
                     'employerContact'  => '',
+                    'joinDate'         => (string) ($self['joinDate'] ?? ''),
+                    'endDate'          => (string) ($self['endDate'] ?? ''),
                     'type'             => $this->resolveRecordType($self, 'Placement'),
                     'source'           => 'self_placement',
                     'hasOfferLetter'   => (string) ($self['offerLetter'] ?? '') !== '',
+                    'hasJoiningLetter' => (string) ($self['joiningLetter'] ?? '') !== '',
+                    'hasCompanyIdDoc'  => (string) ($self['companyIdDoc'] ?? '') !== '',
                     'canVerify'        => false,
                 ], $seen);
             }
@@ -487,5 +501,213 @@ final class StaffPlacementRegistryService
         }
 
         return trim((string) $value);
+    }
+
+    /**
+     * Staff update of a student's current placement registry fields.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function updatePlacement(array $staffCtx, string $studentId, array $input): array
+    {
+        $officerCtx = StaffContext::officerCompatible($staffCtx);
+        $student = $this->officerData->resolveStudentRef($studentId);
+        if (!$student) {
+            Response::notFound('Student not found.');
+        }
+        PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $officerCtx);
+
+        $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
+        $role = trim((string) ($input['role'] ?? ''));
+        $package = trim((string) ($input['package'] ?? ''));
+        $address = trim((string) ($input['address'] ?? $input['companyAddress'] ?? ''));
+        $employerContact = trim((string) ($input['employerContact'] ?? ''));
+        $joinDate = trim((string) ($input['joinDate'] ?? ''));
+        $endDate = trim((string) ($input['endDate'] ?? ''));
+        $typeRaw = trim((string) ($input['type'] ?? 'Placement'));
+        $recordType = stripos($typeRaw, 'higher') !== false ? 'Higher Education' : 'Placement';
+
+        if ($employer === '') {
+            Response::error('Employer / institution name is required.', 422);
+        }
+
+        $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+        $placement = array_merge($placement, [
+            'company'         => $employer,
+            'role'            => $role,
+            'package'         => $package,
+            'address'         => $address,
+            'employerContact' => $employerContact,
+            'joinDate'        => $joinDate,
+            'endDate'         => $endDate,
+            'recordType'      => $recordType,
+            'updatedAt'       => DocumentHelper::now(),
+        ]);
+
+        $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : null;
+        if (is_array($self) && in_array((string) ($self['status'] ?? ''), ['approved', 'placed', ''], true)) {
+            $self['companyName'] = $employer;
+            $self['role'] = $role;
+            $self['package'] = $package;
+            $self['companyAddress'] = $address;
+            $self['joinDate'] = $joinDate;
+            $self['endDate'] = $endDate;
+            $self['recordType'] = $recordType;
+        }
+
+        $patch = [
+            'placed'    => true,
+            'placement' => $placement,
+        ];
+        if (is_array($self)) {
+            $patch['selfPlacement'] = $self;
+        }
+
+        (new StudentModel())->update((string) $student['_id'], $patch);
+
+        return [
+            'studentId' => (string) $student['_id'],
+            'placement' => DocumentHelper::serialize($placement),
+        ];
+    }
+
+    /**
+     * Staff upload of placement documents for a student.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    public function uploadPlacementDocuments(array $staffCtx, string $studentId): array
+    {
+        $officerCtx = StaffContext::officerCompatible($staffCtx);
+        $student = $this->officerData->resolveStudentRef($studentId);
+        if (!$student) {
+            Response::notFound('Student not found.');
+        }
+        PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $officerCtx);
+
+        $hasOffer = isset($_FILES['offerLetter']) && (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+        $hasJoining = isset($_FILES['joiningLetter']) && (int) ($_FILES['joiningLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+        $hasCompanyId = isset($_FILES['companyIdDoc']) && (int) ($_FILES['companyIdDoc']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+        if (!$hasOffer && !$hasJoining && !$hasCompanyId) {
+            Response::error('Upload at least one document: offer letter, joining letter, or company ID.', 400);
+        }
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $registerNo = (string) ($student['registerNumber'] ?? 'student');
+        $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+        $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : [];
+        $company = (string) ($placement['company'] ?? $self['companyName'] ?? 'company');
+        $safeCompany = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $company) ?: 'company';
+        $savedPaths = [];
+
+        $offerLetter = (string) ($placement['offerLetter'] ?? $self['offerLetter'] ?? '');
+        $joiningLetter = (string) ($placement['joiningLetter'] ?? $self['joiningLetter'] ?? '');
+        $companyIdDoc = (string) ($placement['companyIdDoc'] ?? $self['companyIdDoc'] ?? '');
+
+        if ($hasOffer) {
+            $error = Security::validateUploadedFile($_FILES['offerLetter'], $config['uploads']['max_resume'], ['pdf']);
+            if ($error) {
+                Response::error($error, 400);
+            }
+            $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
+            if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+                Response::error('Server upload folder is not writable.', 500);
+            }
+            $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
+            if (!move_uploaded_file($_FILES['offerLetter']['tmp_name'], $path)) {
+                Response::error('Failed to save offer letter.', 500);
+            }
+            $savedPaths[] = $path;
+            $offerLetter = basename($path);
+        }
+
+        $joiningLetter = $this->saveStaffDoc('joiningLetter', $registerNo, $safeCompany, 'joining_letter', ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp'], $savedPaths) ?? $joiningLetter;
+        $companyIdDoc = $this->saveStaffDoc('companyIdDoc', $registerNo, $safeCompany, 'company_id', ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx'], $savedPaths) ?? $companyIdDoc;
+
+        $placement['offerLetter'] = $offerLetter;
+        $placement['joiningLetter'] = $joiningLetter;
+        $placement['companyIdDoc'] = $companyIdDoc;
+        $placement['updatedAt'] = DocumentHelper::now();
+
+        if ($self !== []) {
+            if ($offerLetter !== '') {
+                $self['offerLetter'] = $offerLetter;
+            }
+            if ($joiningLetter !== '') {
+                $self['joiningLetter'] = $joiningLetter;
+            }
+            if ($companyIdDoc !== '') {
+                $self['companyIdDoc'] = $companyIdDoc;
+            }
+        }
+
+        $ok = (new StudentModel())->update((string) $student['_id'], [
+            'placement'     => $placement,
+            'selfPlacement' => $self !== [] ? $self : ($student['selfPlacement'] ?? null),
+            'placed'        => true,
+        ]);
+        if (!$ok) {
+            foreach ($savedPaths as $p) {
+                @unlink($p);
+            }
+            Response::error('Could not save documents.', 500);
+        }
+
+        return [
+            'studentId'        => (string) $student['_id'],
+            'hasOfferLetter'   => $offerLetter !== '',
+            'hasJoiningLetter' => $joiningLetter !== '',
+            'hasCompanyIdDoc'  => $companyIdDoc !== '',
+        ];
+    }
+
+    /**
+     * @param string[] $savedPaths
+     */
+    private function saveStaffDoc(
+        string $field,
+        string $registerNo,
+        string $safeCompany,
+        string $prefix,
+        array $extensions,
+        array &$savedPaths
+    ): ?string {
+        if (!isset($_FILES[$field])) {
+            return null;
+        }
+        $uploadError = (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($uploadError === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+        if ($uploadError !== UPLOAD_ERR_OK) {
+            Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ' upload failed.', 400);
+        }
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $error = Security::validateUploadedFile(
+            $_FILES[$field],
+            $config['uploads']['max_resume'],
+            $extensions
+        );
+        if ($error) {
+            Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ': ' . $error, 400);
+        }
+
+        $dir = $config['uploads']['self_placement_dir'] ?? ($config['uploads']['offer_letter_dir'] . '/../self_placement');
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            Response::error('Server upload folder is not writable.', 500);
+        }
+
+        $ext = strtolower(pathinfo((string) ($_FILES[$field]['name'] ?? ''), PATHINFO_EXTENSION));
+        $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
+        if (!move_uploaded_file($_FILES[$field]['tmp_name'], $path)) {
+            Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . '.', 500);
+        }
+        $savedPaths[] = $path;
+
+        return basename($path);
     }
 }

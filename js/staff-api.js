@@ -195,4 +195,20 @@ const StaffApi = {
     const res = await api('/staff/placements-higher-education' + (q ? `?${q}` : ''));
     return res.success ? res.data : null;
   },
+
+  async updateStudentPlacement(studentId, body) {
+    const res = await api(`/staff/students/${encodeURIComponent(studentId)}/placement`, {
+      method: 'PUT',
+      body,
+    });
+    return res;
+  },
+
+  async uploadStudentPlacementDocuments(studentId, formData) {
+    const res = await api(`/staff/students/${encodeURIComponent(studentId)}/placement/documents`, {
+      method: 'POST',
+      body: formData,
+    });
+    return res;
+  },
 };

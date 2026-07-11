@@ -69,6 +69,7 @@ final class SelfPlacementService
             'offerLetterName'=> (string) ($self['offerLetter'] ?? ''),
             'hasCompanyIdDoc'=> (string) ($self['companyIdDoc'] ?? '') !== '',
             'hasSalarySlip'  => (string) ($self['salarySlip'] ?? '') !== '',
+            'hasJoiningLetter'=> (string) ($self['joiningLetter'] ?? '') !== '',
         ];
     }
 
@@ -93,7 +94,7 @@ final class SelfPlacementService
      */
     public function streamDocument(string $studentRef, array $ctx, string $field): void
     {
-        $allowed = ['offerLetter', 'companyIdDoc', 'salarySlip'];
+        $allowed = ['offerLetter', 'companyIdDoc', 'salarySlip', 'joiningLetter'];
         if (!in_array($field, $allowed, true)) {
             Response::notFound('Document not found.');
         }
@@ -303,6 +304,9 @@ final class SelfPlacementService
         $companyName = (string) ($self['companyName'] ?? '');
         $role = (string) ($self['role'] ?? '');
         $address = (string) ($self['companyAddress'] ?? '');
+        $package = (string) ($self['package'] ?? '');
+        $joinDate = (string) ($self['joinDate'] ?? '');
+        $endDate = (string) ($self['endDate'] ?? '');
         $now = DocumentHelper::now();
         $reviewerId = (string) ($reviewer['_id'] ?? '');
         $reviewerName = (string) ($reviewer['name'] ?? 'Placement cell');
@@ -321,15 +325,30 @@ final class SelfPlacementService
                 $history[$idx]['status'] = 'placed';
                 $history[$idx]['verifiedAt'] = $now;
                 $history[$idx]['verifiedBy'] = $reviewerId;
+                if ($package !== '') {
+                    $history[$idx]['package'] = $package;
+                }
+                if ($joinDate !== '') {
+                    $history[$idx]['joinDate'] = $joinDate;
+                }
+                if ($endDate !== '') {
+                    $history[$idx]['endDate'] = $endDate;
+                }
             }
         }
 
         $placement = [
-            'company'  => $companyName,
-            'role'     => $role,
-            'address'  => $address,
-            'source'   => 'self_reported',
-            'placedAt' => $now,
+            'company'       => $companyName,
+            'role'          => $role,
+            'address'       => $address,
+            'package'       => $package,
+            'joinDate'      => $joinDate,
+            'endDate'       => $endDate,
+            'offerLetter'   => (string) ($self['offerLetter'] ?? ''),
+            'joiningLetter' => (string) ($self['joiningLetter'] ?? ''),
+            'companyIdDoc'  => (string) ($self['companyIdDoc'] ?? ''),
+            'source'        => 'self_reported',
+            'placedAt'      => $now,
         ];
 
         $this->studentModel->update($studentId, [
@@ -355,8 +374,10 @@ final class SelfPlacementService
                 'registerNumber' => (string) ($student['registerNumber'] ?? ''),
                 'company'        => $companyName,
                 'role'           => $role,
+                'package'        => $package,
                 'status'         => 'selected',
                 'departmentId'   => (string) ($student['departmentId'] ?? ''),
+                'joiningDate'    => $joinDate,
             ]);
         } catch (\Throwable) {
             // Placement is saved; recruitment tally is best-effort.

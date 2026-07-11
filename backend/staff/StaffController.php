@@ -236,6 +236,30 @@ final class StaffController
         (new SelfPlacementService())->streamOfferLetter($studentId, $ctx);
     }
 
+    /** PUT /api/staff/students/{id}/placement */
+    public function updateStudentPlacement(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->updatePlacement($ctx, $studentId, $input)
+        ), 'Placement details updated.');
+    }
+
+    /** POST /api/staff/students/{id}/placement/documents */
+    public function uploadStudentPlacementDocuments(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->uploadPlacementDocuments($ctx, $studentId)
+        ), 'Documents uploaded.');
+    }
+
     /** GET /api/staff/hiring-overview */
     public function hiringOverview(): void
     {
