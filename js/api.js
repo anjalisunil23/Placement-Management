@@ -563,7 +563,7 @@ const Auth = {
   },
   resolveRedirect(next) {
     if (this.role() === 'admin') return 'dashboard.html';
-    if (this.role() === 'placement_officer') return 'placement-console.html';
+    if (this.role() === 'placement_officer') return 'drives.html';
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
     const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
