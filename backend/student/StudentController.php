@@ -205,7 +205,12 @@ final class StudentController
 
     $reg = (string) ($out['registerNumber'] ?? $merged['registerNumber'] ?? '');
     $collegeEmail = $aes->excludeSyntheticCollegeEmail((string) ($merged['collegeEmail'] ?? ''), $reg);
-    $personalEmail = (string) ($merged['personalEmail'] ?? '');
+    // Prefer user-saved personal email over AES session values.
+    $personalEmail = strtolower(trim((string) (
+      $personal['personalEmail']
+      ?? $merged['personalEmail']
+      ?? ''
+    )));
 
     $out['user'] = [
       'name'          => (string) ($merged['name'] ?? $user['name'] ?? ''),
@@ -346,6 +351,9 @@ final class StudentController
       if ($key === 'academic') {
         $patch = $this->sanitizeAcademicPatch($patch);
       }
+      if ($key === 'personal') {
+        $patch = $this->sanitizePersonalPatch($patch);
+      }
       if ($patch === []) {
         continue;
       }
@@ -358,6 +366,27 @@ final class StudentController
 
     $this->studentModel->update((string) $profile['_id'], $update);
     Response::success(null, 'Profile updated.');
+  }
+
+  /**
+   * @param array<string, mixed> $personal
+   * @return array<string, mixed>
+   */
+  private function sanitizePersonalPatch(array $personal): array
+  {
+    $out = [];
+    if (array_key_exists('phone', $personal)) {
+      $phone = trim((string) $personal['phone']);
+      $out['phone'] = $phone;
+    }
+    if (array_key_exists('personalEmail', $personal)) {
+      $email = strtolower(trim((string) $personal['personalEmail']));
+      if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $out['personalEmail'] = $email;
+      }
+    }
+
+    return $out;
   }
 
   /**

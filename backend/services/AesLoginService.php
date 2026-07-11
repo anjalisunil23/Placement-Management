@@ -816,7 +816,7 @@ final class AesLoginService
             ?? $emailScan['personalEmail']
             ?? ''
         )));
-        if ($personalEmail !== '' && strtolower(trim((string) ($personal['personalEmail'] ?? ''))) !== $personalEmail) {
+        if ($personalEmail !== '' && strtolower(trim((string) ($personal['personalEmail'] ?? ''))) === '') {
             $personalPatch['personalEmail'] = $personalEmail;
         }
         $phone = trim((string) ($placement['phone'] ?? $mapped['phone'] ?? ''));

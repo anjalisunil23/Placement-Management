@@ -34,7 +34,7 @@
         <div class="row g-3">
           <div class="col-md-6"><label class="form-label small fw-semibold">Full name</label><input class="form-control" id="profName"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">College email</label><input class="form-control" id="profCollegeEmail" disabled placeholder="Not provided by college login"/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">Personal email</label><input class="form-control" id="profPersonalEmail" disabled/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Personal email</label><input type="email" class="form-control" id="profPersonalEmail" placeholder="e.g. name@gmail.com" autocomplete="email"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
@@ -1087,8 +1087,16 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
   }
   if (role === 'student') {
     const phoneVal = document.getElementById('profPhone').value.trim();
+    const personalEmailVal = document.getElementById('profPersonalEmail').value.trim().toLowerCase();
+    if (personalEmailVal && !personalEmailVal.includes('@')) {
+      toast('Enter a valid personal email.', 'warn');
+      return;
+    }
     const payload = {
-      personal: { phone: phoneVal },
+      personal: {
+        phone: phoneVal,
+        ...(personalEmailVal ? { personalEmail: personalEmailVal } : { personalEmail: '' }),
+      },
     };
     if (Auth.hasRealAuth()) {
       const res = await api('/student/profile', { method: 'PUT', body: payload, noRedirectOn401: true });
@@ -1100,11 +1108,24 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
       ...user,
       name: document.getElementById('profName').value,
       phone: phoneVal,
+      personalEmail: personalEmailVal,
       registerNumber: document.getElementById('profRegNo').value,
     }, Auth.token());
     toast('Settings saved.', 'success');
     return;
   }
+  const personalEmailVal = (document.getElementById('profPersonalEmail')?.value || '').trim().toLowerCase();
+  const phoneVal = (document.getElementById('profPhone')?.value || '').trim();
+  if (personalEmailVal && !personalEmailVal.includes('@')) {
+    toast('Enter a valid personal email.', 'warn');
+    return;
+  }
+  Auth.set({
+    ...user,
+    name: document.getElementById('profName')?.value || user.name,
+    phone: phoneVal || user.phone,
+    personalEmail: personalEmailVal,
+  }, Auth.token());
   toast('Settings saved.', 'success');
 });
 

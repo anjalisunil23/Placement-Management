@@ -147,6 +147,7 @@ class StudentModel extends BaseModel
             'ugMarks'        => (float) ($academic['ugMarks'] ?? $academic['marks12th'] ?? 0),
             'placed'         => (bool) ($profile['placed'] ?? false),
             'phone'          => (string) ($personal['phone'] ?? ''),
+            'personalEmail'  => (string) ($personal['personalEmail'] ?? ''),
             'course'         => (string) ($personal['course'] ?? ''),
             'year'           => (string) ($personal['year'] ?? ''),
             'semester'       => (string) ($personal['semester'] ?? ''),
