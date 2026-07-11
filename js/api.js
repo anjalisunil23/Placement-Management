@@ -2269,6 +2269,135 @@ function companyEligibilityKey() {
 
 const ELIGIBILITY_BRANCHES = ['CSE', 'IT', 'ECE', 'ME', 'EE', 'CE', 'MCA'];
 
+/**
+ * Parent academic departments with programme / sub-branch codes.
+ * Value for a whole department is joined codes (MCA|BCA|INMCA) so filters match any branch.
+ */
+const DEPARTMENT_PROGRAMME_GROUPS = [
+  {
+    parent: 'Computer Applications',
+    programmes: [
+      { code: 'MCA', label: 'MCA' },
+      { code: 'BCA', label: 'BCA' },
+      { code: 'INMCA', label: 'Integrated MCA' },
+    ],
+  },
+  {
+    parent: 'Computer Science & Engineering',
+    programmes: [
+      { code: 'CSE', label: 'CSE' },
+      { code: 'CS', label: 'CS' },
+    ],
+  },
+  {
+    parent: 'Information Technology',
+    programmes: [{ code: 'IT', label: 'IT' }],
+  },
+  {
+    parent: 'Electronics & Communication',
+    programmes: [
+      { code: 'ECE', label: 'ECE' },
+      { code: 'ECEA', label: 'ECEA' },
+    ],
+  },
+  {
+    parent: 'Electrical & Electronics',
+    programmes: [
+      { code: 'EEE', label: 'EEE' },
+      { code: 'EE', label: 'EE' },
+    ],
+  },
+  {
+    parent: 'Mechanical Engineering',
+    programmes: [
+      { code: 'ME', label: 'ME' },
+      { code: 'MECH', label: 'MECH' },
+    ],
+  },
+  {
+    parent: 'Civil Engineering',
+    programmes: [
+      { code: 'CE', label: 'CE' },
+      { code: 'CIVIL', label: 'Civil' },
+    ],
+  },
+  {
+    parent: 'Chemical Engineering',
+    programmes: [
+      { code: 'CH', label: 'CH' },
+      { code: 'CHEM', label: 'Chemical' },
+    ],
+  },
+  {
+    parent: 'Food Technology',
+    programmes: [
+      { code: 'FT', label: 'FT' },
+      { code: 'FOOD', label: 'Food Technology' },
+    ],
+  },
+  {
+    parent: 'Automobile Engineering',
+    programmes: [
+      { code: 'AU', label: 'AU' },
+      { code: 'AUTO', label: 'Automobile' },
+    ],
+  },
+  {
+    parent: 'Metallurgy',
+    programmes: [
+      { code: 'MT', label: 'MT' },
+      { code: 'MET', label: 'Metallurgy' },
+    ],
+  },
+  {
+    parent: 'MBA',
+    programmes: [{ code: 'MBA', label: 'MBA' }],
+  },
+];
+
+function normalizeProgrammeCode(code) {
+  return String(code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function splitDepartmentFilterValue(value) {
+  return String(value || '')
+    .split('|')
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
+/** Build optgroup-ready rows from known parents + any extra programme codes found live. */
+function buildDepartmentProgrammeOptions(extraCodes = []) {
+  const known = new Map();
+  DEPARTMENT_PROGRAMME_GROUPS.forEach(group => {
+    group.programmes.forEach(p => known.set(normalizeProgrammeCode(p.code), group.parent));
+  });
+
+  const extras = [];
+  (Array.isArray(extraCodes) ? extraCodes : []).forEach(raw => {
+    const code = normalizeProgrammeCode(typeof raw === 'string' ? raw : (raw?.code || raw?.dept || raw?.department || ''));
+    const label = String(
+      (typeof raw === 'string' ? raw : (raw?.name || raw?.label || raw?.dept || raw?.department || code)) || code
+    ).trim();
+    if (!code || !isStudentAcademicDepartment(code, label)) return;
+    if (known.has(code)) return;
+    extras.push({ code, label: label || code });
+  });
+
+  const groups = DEPARTMENT_PROGRAMME_GROUPS.map(group => {
+    const programmes = group.programmes
+      .filter(p => isStudentAcademicDepartment(p.code, p.label))
+      .map(p => ({ code: normalizeProgrammeCode(p.code), label: p.label || p.code }));
+    return {
+      parent: group.parent,
+      allValue: programmes.map(p => p.code).join('|'),
+      programmes,
+    };
+  }).filter(g => g.programmes.length);
+
+  return { groups, extras };
+}
+
 /** Academic / student programme departments only (exclude staff/teacher role buckets). */
 function isStudentAcademicDepartment(code, name = '') {
   const rawCode = String(code || '').trim().toUpperCase();

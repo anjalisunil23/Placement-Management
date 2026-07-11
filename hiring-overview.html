@@ -129,7 +129,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="js/staff-api.js?v=20260630e"></script>
-<script src="js/api.js?v=20260711i"></script>
+<script src="js/api.js?v=20260711j"></script>
 <script src="js/charts.js?v=20260630e"></script>
 <script src="js/app.js?v=20260711i"></script>
 <script>
@@ -328,30 +328,50 @@ function configurePageForRole(role) {
 function populateDeptSelect(extraDepts = []) {
   const escLabel = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const prev = deptSelect.value;
-  const byCode = new Map();
+  const extraCodes = [];
 
-  const add = (code, name) => {
+  const pushExtra = (code, name) => {
     const raw = String(code || '').trim();
     if (!raw || /^\d+$/.test(raw)) return;
     if (typeof isStudentAcademicDepartment === 'function' && !isStudentAcademicDepartment(raw, name || raw)) return;
-    const key = raw.toUpperCase();
-    const label = String(name || departmentDisplayName(raw) || raw).trim() || raw;
-    if (!byCode.has(key)) byCode.set(key, { code: raw, label });
+    extraCodes.push({ code: raw, name: name || raw });
   };
 
-  DepartmentStore.all().forEach(d => add(d.code, d.name || d.code));
+  DepartmentStore.all().forEach(d => pushExtra(d.code, d.name || d.code));
   (Array.isArray(extraDepts) ? extraDepts : []).forEach(d => {
-    if (typeof d === 'string') add(d, d);
-    else add(d.code || d.dept || d.department, d.name || d.dept || d.department || d.code);
+    if (typeof d === 'string') pushExtra(d, d);
+    else pushExtra(d.code || d.dept || d.department, d.name || d.dept || d.department || d.code);
   });
-
-  if (!byCode.size && typeof departmentCodes === 'function') {
-    departmentCodes().forEach(c => add(c, c));
+  if (typeof departmentCodes === 'function') {
+    departmentCodes().forEach(c => pushExtra(c, c));
   }
 
-  const rows = [...byCode.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
-  deptSelect.innerHTML = '<option value="">All departments</option>' +
-    rows.map(d => `<option value="${escLabel(d.code)}">${escLabel(d.label)}</option>`).join('');
+  const { groups, extras } = typeof buildDepartmentProgrammeOptions === 'function'
+    ? buildDepartmentProgrammeOptions(extraCodes)
+    : { groups: [], extras: extraCodes.map(e => ({ code: e.code, label: e.name || e.code })) };
+
+  let html = '<option value="">All departments</option>';
+  groups.forEach(group => {
+    html += `<optgroup label="${escLabel(group.parent)}">`;
+    if (group.programmes.length > 1) {
+      html += `<option value="${escLabel(group.allValue)}">${escLabel(group.parent)} — all branches</option>`;
+    }
+    group.programmes.forEach(p => {
+      html += `<option value="${escLabel(p.code)}">${escLabel(p.label)}</option>`;
+    });
+    html += '</optgroup>';
+  });
+  if (extras.length) {
+    html += '<optgroup label="Other programmes">';
+    extras
+      .sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { sensitivity: 'base' }))
+      .forEach(p => {
+        html += `<option value="${escLabel(p.code)}">${escLabel(p.label)}</option>`;
+      });
+    html += '</optgroup>';
+  }
+
+  deptSelect.innerHTML = html;
   if (prev && [...deptSelect.options].some(o => o.value === prev)) deptSelect.value = prev;
 }
 
@@ -363,11 +383,27 @@ function selectedDept() {
 
 function deptMatchesFilter(applicantDept, deptCode) {
   if (!deptCode) return true;
-  const target = departmentCanonicalCode(deptCode).toUpperCase();
+  const targets = (typeof splitDepartmentFilterValue === 'function'
+    ? splitDepartmentFilterValue(deptCode)
+    : [deptCode]
+  ).map(c => departmentCanonicalCode(c).toUpperCase()).filter(Boolean);
+  if (!targets.length) return true;
   const raw = String(applicantDept || '').trim().toUpperCase();
   const canon = departmentCanonicalCode(applicantDept || '').toUpperCase();
-  if (!target) return true;
-  return raw === target || canon === target;
+  return targets.some(target => raw === target || canon === target || raw.includes(target) || canon.includes(target));
+}
+
+function departmentFilterLabel(dept) {
+  const raw = String(dept || '').trim();
+  if (!raw) return 'Campus';
+  if (raw.includes('|') && typeof DEPARTMENT_PROGRAMME_GROUPS !== 'undefined') {
+    const key = splitDepartmentFilterValue(raw).map(normalizeProgrammeCode).sort().join('|');
+    const group = DEPARTMENT_PROGRAMME_GROUPS.find(g =>
+      g.programmes.map(p => normalizeProgrammeCode(p.code)).sort().join('|') === key
+    );
+    if (group) return `${group.parent} — all`;
+  }
+  return departmentDisplayName(raw);
 }
 
 function setDeptUI(dept) {
@@ -393,7 +429,7 @@ function setDeptUI(dept) {
       badge.textContent = 'Campus';
       badge.className = 'badge-soft info';
     } else {
-      badge.textContent = departmentDisplayName(dept);
+      badge.textContent = departmentFilterLabel(dept);
       badge.className = 'badge-soft primary';
     }
     if (hintEl) {
@@ -408,7 +444,7 @@ function setDeptUI(dept) {
     badge.textContent = 'Campus';
     badge.className = 'badge-soft info';
   } else {
-    badge.textContent = departmentDisplayName(dept);
+    badge.textContent = departmentFilterLabel(dept);
     badge.className = 'badge-soft primary';
   }
   if (hintEl) hintEl.textContent = '';
