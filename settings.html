@@ -5,7 +5,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
-<link href="css/style.css?v=20260711i" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260711j" rel="stylesheet"/></head>
 <body data-page="settings.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -85,7 +85,7 @@
           <div class="col-md-4">
             <label class="form-label small fw-semibold">PDF / DOC file</label>
             <div class="file-picker">
-              <input class="form-control" type="file" name="file" id="resumeUploadFile" accept=".pdf,.doc,.docx" required hidden/>
+              <input type="file" name="file" id="resumeUploadFile" accept=".pdf,.doc,.docx" hidden/>
               <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="resumeUploadFile"><i class="bi bi-upload me-1"></i>Choose file</button>
               <span class="file-picker-name text-muted-2 small" data-file-picker-name="resumeUploadFile">No file chosen</span>
             </div>
@@ -838,6 +838,7 @@ if (role === 'student') {
   document.getElementById('settingsTitle').textContent = 'Profile & Resumes';
   document.getElementById('settingsSub').textContent = 'Update your profile and manage resumes in the storage bucket.';
   document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');
+  wireFilePickers('#resumeUploadForm');
   onAppReady(async () => {
     await ResumeBucket.fetch();
     if (Auth.isDemo()) ResumeBucket.seed();
@@ -865,7 +866,6 @@ if (role === 'alumni') {
   document.getElementById('alumniCompany').value = user.company || '';
   document.getElementById('alumniTitle').value = user.title || '';
   wireFilePickers('#alumniEmploymentDocsForm');
-  wireFilePickers('#resumeUploadForm');
   function syncAlumniFields() {
     const on = document.getElementById('alumniWorking').checked;
     document.getElementById('alumniCompanyWrap').style.display = on ? '' : 'none';
@@ -987,16 +987,28 @@ async function uploadResumeLocal(file, profileType, label) {
 
 document.getElementById('resumeUploadForm')?.addEventListener('submit', async e => {
   e.preventDefault();
-  const fd = new FormData(e.target);
-  const file = fd.get('file');
-  const label = fd.get('label');
-  const profileType = fd.get('profileType');
-  if (!file?.name) return;
+  const form = e.target;
+  const fileInput = document.getElementById('resumeUploadFile');
+  const file = fileInput?.files?.[0] || null;
+  const label = String(form.label?.value || '').trim();
+  const profileType = String(form.profileType?.value || '').trim();
+  if (!label) {
+    toast('Enter a resume label.', 'warn');
+    return;
+  }
+  if (!profileType) {
+    toast('Select a job profile.', 'warn');
+    return;
+  }
+  if (!file?.name) {
+    toast('Choose a PDF or DOC resume file.', 'warn');
+    return;
+  }
   if (!(await confirmAction({ title: 'Upload resume', message: `Upload "${label || file.name}" for ${profileType || 'selected profile'}?`, confirmText: 'Upload', variant: 'primary' }))) return;
 
   if (Auth.hasRealAuth()) {
     const uploadFd = new FormData();
-    uploadFd.append('file', file);
+    uploadFd.append('file', file, file.name);
     uploadFd.append('label', label);
     uploadFd.append('profileType', profileType);
     try {
@@ -1009,7 +1021,7 @@ document.getElementById('resumeUploadForm')?.addEventListener('submit', async e 
       const json = await res.json().catch(() => ({ success:false, message:'Bad response' }));
       if (res.ok && json.success) {
         toast('Resume uploaded.', 'success');
-        e.target.reset();
+        form.reset();
         resetFilePickers(['resumeUploadFile']);
         await refreshResumes();
         return;
@@ -1022,7 +1034,7 @@ document.getElementById('resumeUploadForm')?.addEventListener('submit', async e 
 
   await uploadResumeLocal(file, profileType, label);
   toast('Resume uploaded.', 'success');
-  e.target.reset();
+  form.reset();
   resetFilePickers(['resumeUploadFile']);
   resumeUseApi = false;
   await refreshResumes();
