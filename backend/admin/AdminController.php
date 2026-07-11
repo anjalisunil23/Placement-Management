@@ -1079,10 +1079,10 @@ final class AdminController
         Response::success(['id' => $id], 'Company created.', 201);
     }
 
-    /** PUT /api/admin/companies/{id} */
+    /** PUT /api/admin/companies/{id} — admin or officer may update current company details */
     public function updateCompany(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $model = new CompanyModel();
         if (!$model->findById($id)) {
             Response::notFound();

@@ -1043,18 +1043,16 @@ const RegisteredCompanies = {
   },
   async update(companyId, payload) {
     if (!(await requireWriteSession())) return null;
+    const hrName = String(payload.hrName || '').trim();
+    const hrEmail = String(payload.hrEmail || '').trim();
+    const contactNumber = String(payload.contactNumber || '').trim();
     const body = {
       companyName: String(payload.companyName || '').trim(),
       website: String(payload.website || payload.companyWebsite || '').trim(),
       category: payload.category || 'Product',
       tier: payload.tier || 'Tier 2',
+      contacts: [{ name: hrName, email: hrEmail, phone: contactNumber }],
     };
-    const hrName = String(payload.hrName || '').trim();
-    const hrEmail = String(payload.hrEmail || '').trim();
-    const contactNumber = String(payload.contactNumber || '').trim();
-    if (hrName || hrEmail || contactNumber) {
-      body.contacts = [{ name: hrName, email: hrEmail, phone: contactNumber }];
-    }
     const res = await api(`/admin/companies/${encodeURIComponent(companyId)}`, { method: 'PUT', body });
     if (res.success) {
       await this.fetch();
