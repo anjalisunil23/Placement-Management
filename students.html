@@ -1136,6 +1136,10 @@ document.getElementById('searchStudent').addEventListener('keydown', e => {
     scheduleOverviewSearch();
   }
 });
+['stageFilter', 'statusFilter'].forEach(id => document.getElementById(id)?.addEventListener('change', () => {
+  if (!selectedReg) return;
+  loadOverviewApps(selectedReg);
+}));
 
 async function initOverview() {
   useStaffApi = Auth.hasRealAuth() && !Auth.isDemo() && role === 'staff';
