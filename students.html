@@ -48,7 +48,7 @@
               <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
                 <div>
                   <h5 class="fw-bold mb-0" id="stuName">Select a student</h5>
-                  <div class="small text-muted-2" id="stuMeta">Use the list on the left.</div>
+                  <div class="small text-muted-2" id="stuMeta">Search by name, register number, or department to find a student.</div>
                 </div>
                 <span class="badge-soft muted" id="stuStatus">—</span>
               </div>
@@ -449,7 +449,7 @@ function clearOverviewDetail() {
   avatar.style.backgroundImage = '';
   avatar.classList.remove('has-photo');
   document.getElementById('stuName').textContent = 'Select a student';
-  document.getElementById('stuMeta').textContent = 'Use the list on the left or search by name, register number, or department.';
+  document.getElementById('stuMeta').textContent = 'Search by name, register number, or department to find a student.';
   document.getElementById('stuStatus').outerHTML = '<span class="badge-soft muted" id="stuStatus">—</span>';
   document.getElementById('stuProfilePanel').style.display = 'none';
   document.getElementById('statApplied').textContent = '0';
@@ -461,6 +461,7 @@ function clearOverviewDetail() {
 
 function filteredOverviewStudents() {
   const q = document.getElementById('searchStudent').value.trim();
+  if (!q) return [];
   const list = useLiveOverviewApi
     ? overviewStudents
     : overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
@@ -470,6 +471,11 @@ function filteredOverviewStudents() {
 }
 
 function syncOverviewSelectionAfterFilter() {
+  const q = document.getElementById('searchStudent').value.trim();
+  if (!q) {
+    clearOverviewDetail();
+    return;
+  }
   const list = filteredOverviewStudents();
   if (!list.length) {
     clearOverviewDetail();
@@ -477,11 +483,7 @@ function syncOverviewSelectionAfterFilter() {
   }
   if (!selectedReg) return;
   if (!list.some(s => normStudentReg(s.registerNumber) === normStudentReg(selectedReg))) {
-    if (autoSelectOverviewOnLoad) {
-      selectOverviewStudent(list[0].registerNumber, { skipListRender: true });
-    } else {
-      clearOverviewDetail();
-    }
+    clearOverviewDetail();
   }
 }
 
@@ -499,6 +501,12 @@ function studentRow(s) {
 }
 
 function renderOverviewList() {
+  const q = document.getElementById('searchStudent').value.trim();
+  if (!q) {
+    document.getElementById('studentCount').textContent = '0';
+    document.getElementById('studentList').innerHTML = '';
+    return;
+  }
   const list = filteredOverviewStudents();
   document.getElementById('studentCount').textContent = list.length;
   if (!list.length) {
@@ -512,15 +520,19 @@ async function runOverviewSearch() {
   const q = document.getElementById('searchStudent').value.trim();
   const seq = ++overviewSearchSeq;
 
+  if (!q) {
+    overviewStudents = [];
+    clearOverviewDetail();
+    renderOverviewList();
+    return;
+  }
+
   if (useLiveOverviewApi) {
-    if (q) {
-      document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">Searching…</div>';
-    }
+    document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">Searching…</div>';
     const rows = await fetchOverviewStudentsFromApi(q);
     if (seq !== overviewSearchSeq) return;
     if (rows) {
       overviewStudents = rows;
-      if (!q) overviewStudentsAll = rows;
     }
   } else {
     overviewStudents = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
@@ -852,12 +864,10 @@ async function rejectVerifyPlacement() {
 }
 
 async function refreshOverviewAfterVerification() {
-  if (useLiveOverviewApi) {
-    const rows = await fetchOverviewStudentsFromApi(document.getElementById('searchStudent').value.trim());
-    if (rows) {
-      overviewStudentsAll = rows;
-      overviewStudents = rows;
-    }
+  const q = document.getElementById('searchStudent').value.trim();
+  if (useLiveOverviewApi && q) {
+    const rows = await fetchOverviewStudentsFromApi(q);
+    if (rows) overviewStudents = rows;
   }
   renderOverviewList();
   renderRegistrations();
@@ -1097,34 +1107,18 @@ async function initOverview() {
   if (useLiveOverviewApi) {
     await Auth.ensureSession();
     if (useStaffApi) await Auth.enrichFromProfile();
-    const rows = await fetchOverviewStudentsFromApi('');
-    if (rows) {
-      overviewStudentsAll = rows;
-      overviewStudents = rows;
-    } else if (useStaffApi) {
-      useStaffApi = false;
-      useLiveOverviewApi = false;
-      const detail = (typeof StaffApi !== 'undefined' && StaffApi._lastFetchError) ? StaffApi._lastFetchError : '';
-      toast(detail
-        ? `Could not load students: ${detail}`
-        : 'Could not load students from the server. Refresh or sign in again.', 'warn');
-    }
-  }
-
-  if (!overviewStudentsAll.length && !(role === 'staff' && Auth.hasRealAuth() && !Auth.isDemo())) {
+    // Do not preload the full list — results appear only after search.
+    overviewStudentsAll = [];
+    overviewStudents = [];
+  } else if (!(role === 'staff' && Auth.hasRealAuth() && !Auth.isDemo())) {
     overviewStudentsAll = UserRegistry.byRole('student');
-    overviewStudents = overviewStudentsAll;
+    overviewStudents = [];
   }
 
-  syncOverviewSelectionAfterFilter();
+  clearOverviewDetail();
   renderOverviewList();
   if (selectedReg) {
     selectOverviewStudent(selectedReg, { skipListRender: true });
-    renderOverviewList();
-  } else if (autoSelectOverviewOnLoad && filteredOverviewStudents()[0]?.registerNumber) {
-    selectOverviewStudent(filteredOverviewStudents()[0].registerNumber);
-  } else {
-    clearOverviewDetail();
   }
 }
 

@@ -507,7 +507,6 @@ function renderShell(active) {
             ${ROLES.map(r => `<li><a class="dropdown-item ${r===role?'active':''}" href="#" data-role="${r}">${ROLE_LABELS[r]}</a></li>`).join('')}
           </ul>
         </div>` : `<span class="badge badge-soft ${ROLE_BADGES[role] || 'muted'} d-none d-sm-inline-flex align-items-center gap-1 px-2 py-1"><i class="bi bi-person-badge"></i>${ROLE_LABELS[role]}</span>`}
-        <button class="icon-btn" id="themeBtn" title="Theme"><i class="bi bi-moon-stars"></i></button>
         ${'<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>'}
         ${topbarProfileMenuHtml(user, role)}
       </div>`;
@@ -522,15 +521,9 @@ function renderShell(active) {
   menuBtn?.addEventListener("click", () => { sidebar?.classList.add("open"); back.classList.add("show"); });
   back.addEventListener("click", () => { sidebar?.classList.remove("open"); back.classList.remove("show"); });
 
-  const saved = UserPrefs.theme();
-  document.documentElement.setAttribute("data-theme", saved);
+  document.documentElement.setAttribute("data-theme", "light");
   document.documentElement.setAttribute("data-density", UserPrefs.density());
-  document.getElementById("themeBtn")?.addEventListener("click", () => {
-    const cur = UserPrefs.isDark() ? "light" : "dark";
-    UserPrefs.setTheme(cur);
-    const dk = document.getElementById("dk");
-    if (dk) dk.checked = cur === "dark";
-  });
+  UserPrefs.setTheme("light");
 
   document.querySelectorAll('[data-role]').forEach(a => a.addEventListener('click', (e) => {
     e.preventDefault();
