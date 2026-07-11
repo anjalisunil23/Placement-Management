@@ -46,6 +46,11 @@
                 <label class="form-label small fw-semibold mb-1" for="mailTestTo">Test recipient</label>
                 <input type="email" class="form-control form-control-sm" id="mailTestTo" placeholder="you@gmail.com"/>
               </div>
+              <div class="col-12">
+                <label class="form-label small fw-semibold mb-1" for="elasticEmailApiKey">ElasticEmail API key</label>
+                <input type="password" class="form-control form-control-sm" id="elasticEmailApiKey" placeholder="Paste API key (saved on server; leave blank to keep current)" autocomplete="off"/>
+                <div class="form-text">Saved in System Settings if `.env` has no key. Leave blank when saving other fields to keep the existing key.</div>
+              </div>
             </div>
           </div>
         </div>
@@ -135,6 +140,13 @@ function loadSystem() {
   document.getElementById('placementYear').value = s.placementYear || '';
   document.getElementById('emailFrom').value = s.emailFrom || '';
   document.getElementById('maxUploadMb').value = s.maxUploadMb ?? 10;
+  const keyInput = document.getElementById('elasticEmailApiKey');
+  if (keyInput) {
+    keyInput.value = '';
+    keyInput.placeholder = s.elasticEmailApiKeySet
+      ? `Key saved (${s.elasticEmailApiKey || '••••'}) — paste to replace`
+      : 'Paste ElasticEmail API key';
+  }
 }
 
 function loadPublic() {
@@ -151,12 +163,17 @@ function loadPublic() {
 
 document.getElementById('btnSaveSys').addEventListener('click', async () => {
   if (!(await confirmAction({ title: 'Save system settings', message: 'Save changes to system settings?', confirmText: 'Save', variant: 'primary' }))) return;
-  const result = await SystemSettings.save({
+  const payload = {
     placementYear: document.getElementById('placementYear').value.trim(),
     emailFrom: document.getElementById('emailFrom').value.trim(),
     maxUploadMb: parseInt(document.getElementById('maxUploadMb').value, 10) || 10,
-  });
+  };
+  const apiKey = document.getElementById('elasticEmailApiKey')?.value?.trim() || '';
+  if (apiKey) payload.elasticEmailApiKey = apiKey;
+  const result = await SystemSettings.save(payload);
   toast(result.ok ? 'System settings saved.' : (result.message || 'Saved locally (API unavailable).'), result.ok ? 'success' : 'warn');
+  loadSystem();
+  await loadMailStatus();
 });
 
 document.getElementById('btnSavePublic').addEventListener('click', async () => {

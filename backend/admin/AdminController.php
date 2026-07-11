@@ -1320,6 +1320,9 @@ final class AdminController
         if (!empty($errors)) {
             Response::error('Validation failed.', 422, $errors);
         }
+        if (isset($input['elasticEmailApiKey']) && !is_string($input['elasticEmailApiKey'])) {
+            Response::error('Invalid ElasticEmail API key.', 422);
+        }
         $saved = (new SystemSettingsModel())->save($input);
         Response::success($saved, 'System settings saved.');
     }

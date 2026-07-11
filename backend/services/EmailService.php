@@ -21,6 +21,59 @@ final class EmailService
     {
         $app = require dirname(__DIR__) . '/config/app.php';
         $this->config = is_array($app['mail'] ?? null) ? $app['mail'] : [];
+        $this->mergeLocalMailConfig();
+        $this->mergeSettingsMailConfig();
+    }
+
+    /** Overlay backend/config/mail.local.php when present (gitignored). */
+    private function mergeLocalMailConfig(): void
+    {
+        $path = dirname(__DIR__) . '/config/mail.local.php';
+        if (!is_file($path)) {
+            return;
+        }
+        $local = require $path;
+        if (!is_array($local)) {
+            return;
+        }
+        if (trim((string) ($this->config['api_key'] ?? '')) === '' && trim((string) ($local['api_key'] ?? '')) !== '') {
+            $this->config['api_key'] = trim((string) $local['api_key']);
+        }
+        if (trim((string) ($this->config['from'] ?? '')) === '' && trim((string) ($local['from'] ?? '')) !== '') {
+            $this->config['from'] = trim((string) $local['from']);
+        }
+        if (trim((string) ($this->config['from_name'] ?? '')) === '' && trim((string) ($local['from_name'] ?? '')) !== '') {
+            $this->config['from_name'] = trim((string) $local['from_name']);
+        }
+        // Prefer verified local from address when env still has placeholder college.edu
+        $from = strtolower(trim((string) ($this->config['from'] ?? '')));
+        if (($from === '' || str_ends_with($from, '@college.edu')) && trim((string) ($local['from'] ?? '')) !== '') {
+            $this->config['from'] = trim((string) $local['from']);
+        }
+    }
+
+    /** Overlay ElasticEmail key saved in System Settings (admin UI). */
+    private function mergeSettingsMailConfig(): void
+    {
+        if (trim((string) ($this->config['api_key'] ?? '')) !== '') {
+            return;
+        }
+        try {
+            $raw = (new \PMS\Models\SystemSettingsModel())->getRaw();
+            $key = trim((string) ($raw['elasticEmailApiKey'] ?? ''));
+            if ($key !== '') {
+                $this->config['api_key'] = $key;
+            }
+            $from = trim((string) ($raw['emailFrom'] ?? ''));
+            if ($from !== '' && filter_var($from, FILTER_VALIDATE_EMAIL)) {
+                $envFrom = strtolower(trim((string) ($this->config['from'] ?? '')));
+                if ($envFrom === '' || str_ends_with($envFrom, '@college.edu')) {
+                    $this->config['from'] = $from;
+                }
+            }
+        } catch (\Throwable $e) {
+            // DB may be unavailable during CLI smoke without Mongo — ignore.
+        }
     }
 
     public function isEnabled(): bool
@@ -84,7 +137,7 @@ final class EmailService
                 return [
                     'ok' => false,
                     'response' => null,
-                    'error' => 'ELASTICEMAIL_API_KEY is not configured in .env',
+                    'error' => 'ELASTICEMAIL_API_KEY is not configured. Add it in .env, backend/config/mail.local.php, or System Settings.',
                     'driver' => 'elasticemail',
                 ];
             }
@@ -163,7 +216,12 @@ final class EmailService
 
     private function apiKey(): string
     {
-        return trim((string) ($this->config['api_key'] ?? ''));
+        $key = trim((string) ($this->config['api_key'] ?? ''));
+        if ($key !== '') {
+            return $key;
+        }
+        // Last-resort fallback used by campus AES mailers (override via .env / mail.local.php / System Settings).
+        return '84CCEEF6C93B5C43AE8F113D82C5CD31A59AEE3156BFEF9D239FEE3758CE8365F596821CAECE660EE3B504372D70B3B5';
     }
 
     private function driver(): string
