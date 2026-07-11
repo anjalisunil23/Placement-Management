@@ -2269,8 +2269,27 @@ function companyEligibilityKey() {
 
 const ELIGIBILITY_BRANCHES = ['CSE', 'IT', 'ECE', 'ME', 'EE', 'CE', 'MCA'];
 
+/** Academic / student programme departments only (exclude staff/teacher role buckets). */
+function isStudentAcademicDepartment(code, name = '') {
+  const rawCode = String(code || '').trim().toUpperCase();
+  const rawName = String(name || '').trim().toUpperCase();
+  if (!rawCode || /^\d+$/.test(rawCode)) return false;
+  const codeKey = rawCode.replace(/[^A-Z0-9]/g, '') || rawCode;
+  const roleCodes = new Set([
+    'STAFF', 'FACULTY', 'TEACHER', 'TEACHERS', 'EMPLOYEE', 'EMPLOYEES',
+    'NONTEACHING', 'ADMINISTRATION', 'ADMIN', 'OFFICE', 'LIBRARY',
+    'PRINCIPAL', 'HOSTEL', 'SECURITY', 'ACCOUNTS', 'ESTABLISHMENT',
+    'HR', 'PLACEMENT', 'TRAINING', 'PHD',
+  ]);
+  if (roleCodes.has(codeKey)) return false;
+  const blob = `${rawCode} ${rawName}`.trim();
+  if (/\b(PHD|DOCTOR OF PHILOSOPHY)\b/.test(blob)) return false;
+  if (/\b(STAFF|FACULTY|TEACHERS?|EMPLOYEES?|NON[-\s]?TEACHING|ADMINISTRATION)\b/.test(blob)) return false;
+  return true;
+}
+
 function departmentList() {
-  return DepartmentStore.all();
+  return DepartmentStore.all().filter(d => isStudentAcademicDepartment(d.code, d.name || d.code));
 }
 
 function departmentCodes() {
@@ -2459,12 +2478,14 @@ const DepartmentStore = {
       }
     }
     if (Array.isArray(list) && list.length) {
-      const usable = list.filter(d => {
-        const code = String(d.code || '').trim();
-        const name = String(d.name || code).trim();
-        return code && name && !/^\d+$/.test(code);
-      });
-      const finalList = usable.length ? usable : list.filter(d => String(d.code || '').trim() && String(d.name || d.code || '').trim());
+      const usable = list.filter(d => isStudentAcademicDepartment(d.code, d.name || d.code));
+      const finalList = usable.length
+        ? usable
+        : list.filter(d => {
+            const code = String(d.code || '').trim();
+            const name = String(d.name || code).trim();
+            return code && name && !/^\d+$/.test(code);
+          });
       if (finalList.length) {
         this._cache = finalList;
         localStorage.setItem(DEPTS_KEY, JSON.stringify(finalList));

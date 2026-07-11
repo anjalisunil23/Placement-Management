@@ -779,12 +779,11 @@ final class OfficerController
         Response::success((new AnalyticsService())->getPlacementConsole($deptId));
     }
 
-    /** GET /api/officer/recruiting */
+    /** GET /api/officer/recruiting — campus-wide snapshot; UI filters by department */
     public function recruitingOverview(): void
     {
-        $scope = (new OfficerDataService())->requireScope();
-        $deptId = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
-        Response::success((new RecruitingService())->getCampusOverview($deptId));
+        (new OfficerDataService())->requireScope();
+        Response::success((new RecruitingService())->getCampusOverview(null));
     }
 
     /** GET /api/officer/notifications */

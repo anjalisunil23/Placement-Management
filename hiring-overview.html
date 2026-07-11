@@ -129,7 +129,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="js/staff-api.js?v=20260630e"></script>
-<script src="js/api.js?v=20260711h"></script>
+<script src="js/api.js?v=20260711i"></script>
 <script src="js/charts.js?v=20260630e"></script>
 <script src="js/app.js?v=20260711i"></script>
 <script>
@@ -140,7 +140,7 @@ if (!canViewCampusHiring()) {
 
 (function primeDeptView() {
   const r = Auth.role();
-  if (r === 'staff' || r === 'placement_officer') {
+  if (r === 'staff') {
     const sel = document.getElementById('deptSelect');
     if (sel) sel.style.display = 'none';
   }
@@ -317,8 +317,8 @@ function configurePageForRole(role) {
     if (title) title.textContent = 'Department Hiring Overview';
     if (sub) sub.textContent = 'Live snapshot of companies hiring your department students, pipeline stages, and recent activity.';
   } else if (role === 'placement_officer') {
-    if (title) title.textContent = 'Department Hiring Overview';
-    if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.';
+    if (title) title.textContent = 'Campus Hiring Overview';
+    if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires across campus. Filter by department if needed.';
   } else if (role === 'admin') {
     if (title) title.textContent = 'Campus Hiring Overview';
     if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.';
@@ -333,6 +333,7 @@ function populateDeptSelect(extraDepts = []) {
   const add = (code, name) => {
     const raw = String(code || '').trim();
     if (!raw || /^\d+$/.test(raw)) return;
+    if (typeof isStudentAcademicDepartment === 'function' && !isStudentAcademicDepartment(raw, name || raw)) return;
     const key = raw.toUpperCase();
     const label = String(name || departmentDisplayName(raw) || raw).trim() || raw;
     if (!byCode.has(key)) byCode.set(key, { code: raw, label });
@@ -356,7 +357,7 @@ function populateDeptSelect(extraDepts = []) {
 
 function selectedDept() {
   const role = currentRole();
-  if (role === 'staff' || role === 'placement_officer') return viewerDepartment();
+  if (role === 'staff') return viewerDepartment();
   return deptSelect.value || '';
 }
 
@@ -375,7 +376,8 @@ function setDeptUI(dept) {
   const badge = document.getElementById('deptBadge');
   const hintEl = document.getElementById('viewHint');
   if (!badge) return;
-  deptSelect.style.display = (role === 'admin') ? '' : 'none';
+  const showDeptFilter = role === 'admin' || role === 'placement_officer';
+  deptSelect.style.display = showDeptFilter ? '' : 'none';
 
   if (staffLive) {
     const deptMeta = apiHiringData?.department || {};
@@ -386,7 +388,7 @@ function setDeptUI(dept) {
     return;
   }
 
-  if (adminLive) {
+  if (adminLive || officerLive || role === 'admin' || role === 'placement_officer') {
     if (!dept) {
       badge.textContent = 'Campus';
       badge.className = 'badge-soft info';
@@ -394,19 +396,10 @@ function setDeptUI(dept) {
       badge.textContent = departmentDisplayName(dept);
       badge.className = 'badge-soft primary';
     }
-    if (hintEl) hintEl.textContent = 'Showing live campus hiring data. Filter by department if needed.';
-    return;
-  }
-
-  if (role === 'placement_officer') {
-    const deptCode = dept || viewerDepartment();
-    const label = deptCode
-      ? departmentDisplayName(deptCode)
-      : (user.departmentName || user.branch || user.programme || 'Your department');
-    badge.textContent = label;
-    badge.className = 'badge-soft primary';
     if (hintEl) {
-      hintEl.textContent = officerLive ? 'Showing live hiring data for your department.' : '';
+      hintEl.textContent = (adminLive || officerLive)
+        ? 'Showing live campus hiring data. Filter by department if needed.'
+        : '';
     }
     return;
   }
