@@ -19,16 +19,17 @@
 <div class="card-surface p-3 p-md-4 mb-3" id="viewFilterCard">
   <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
     <div class="flex-grow-1" style="min-width:min(100%,18rem)">
-      <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
-        <div class="small fw-semibold text-muted-2 mb-0">View</div>
+      <div class="small fw-semibold text-muted-2 mb-2">View</div>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <select class="form-select form-select-sm w-auto" id="deptSelect" aria-label="Department">
+          <option value="">All departments</option>
+        </select>
         <span class="badge-soft info" id="deptBadge">Campus</span>
+        <div class="d-none flex-wrap gap-2 align-items-center" id="branchPanel" role="group" aria-label="Branches">
+          <span class="small text-muted-2 me-1" id="branchPanelLabel">Branches</span>
+          <div class="d-flex flex-wrap gap-2 align-items-center" id="branchButtons"></div>
+        </div>
       </div>
-      <div class="d-flex flex-wrap gap-2 align-items-center" id="deptButtons" role="group" aria-label="Departments"></div>
-      <div class="d-none mt-3" id="branchPanel">
-        <div class="small fw-semibold text-muted-2 mb-2" id="branchPanelLabel">Branches</div>
-        <div class="d-flex flex-wrap gap-2 align-items-center" id="branchButtons" role="group" aria-label="Branches"></div>
-      </div>
-      <select class="d-none" id="deptSelect" aria-hidden="true"><option value="">All departments</option></select>
     </div>
     <div class="small text-muted-2" id="viewHint"></div>
   </div>
@@ -357,31 +358,27 @@ function populateDeptSelect(extraDepts = []) {
   viewDeptGroups = built.groups || [];
   viewExtraProgrammes = built.extras || [];
 
-  // Keep hidden select in sync for any legacy readers.
   const escLabel = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  // Dropdown lists parent departments only (AJCE). Branches appear as buttons after selection.
   let html = '<option value="">All departments</option>';
   viewDeptGroups.forEach(group => {
-    html += `<optgroup label="${escLabel(group.parent)}">`;
-    if (group.programmes.length > 1) {
-      html += `<option value="${escLabel(group.allValue)}">${escLabel(group.parent)} — all branches</option>`;
-    }
-    group.programmes.forEach(p => {
-      html += `<option value="${escLabel(p.code)}">${escLabel(p.label)}</option>`;
-    });
-    html += '</optgroup>';
+    html += `<option value="${escLabel(group.parent)}">${escLabel(group.parent)}</option>`;
   });
   viewExtraProgrammes.forEach(p => {
-    html += `<option value="${escLabel(p.code)}">${escLabel(p.label)}</option>`;
+    html += `<option value="prog:${escLabel(p.code)}">${escLabel(p.label)}</option>`;
   });
   deptSelect.innerHTML = html;
-  if (activeDeptFilter && [...deptSelect.options].some(o => o.value === activeDeptFilter)) {
-    deptSelect.value = activeDeptFilter;
+
+  if (activeParentKey && [...deptSelect.options].some(o => o.value === activeParentKey)) {
+    deptSelect.value = activeParentKey;
+  } else if (activeDeptFilter && viewExtraProgrammes.some(p => p.code === activeDeptFilter)) {
+    deptSelect.value = `prog:${activeDeptFilter}`;
   } else {
     deptSelect.value = '';
+    activeParentKey = '';
     activeDeptFilter = '';
   }
 
-  renderDeptButtons();
   renderBranchButtons();
 }
 
@@ -404,27 +401,6 @@ function findGroupForFilter(filter) {
   ) || null;
 }
 
-function renderDeptButtons() {
-  const wrap = document.getElementById('deptButtons');
-  if (!wrap) return;
-  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const campusActive = !activeParentKey && !activeDeptFilter;
-  let html = `<button type="button" class="view-chip${campusActive ? ' is-active' : ''}" data-view-parent="" data-view-filter="">All departments</button>`;
-
-  viewDeptGroups.forEach(group => {
-    const active = activeParentKey === group.parent
-      || (!!activeDeptFilter && findGroupForFilter(activeDeptFilter)?.parent === group.parent);
-    html += `<button type="button" class="view-chip${active ? ' is-active' : ''}" data-view-parent="${esc(group.parent)}" data-view-filter="">${esc(group.parent)}</button>`;
-  });
-
-  viewExtraProgrammes.forEach(p => {
-    const active = activeDeptFilter === p.code && !activeParentKey;
-    html += `<button type="button" class="view-chip${active ? ' is-active' : ''}" data-view-parent="" data-view-filter="${esc(p.code)}">${esc(p.label)}</button>`;
-  });
-
-  wrap.innerHTML = html;
-}
-
 function renderBranchButtons() {
   const panel = document.getElementById('branchPanel');
   const wrap = document.getElementById('branchButtons');
@@ -432,15 +408,17 @@ function renderBranchButtons() {
   if (!panel || !wrap) return;
 
   const group = findGroupByParent(activeParentKey);
+  // Show branch chips only after a multi-branch department is chosen from the dropdown.
   if (!group || group.programmes.length <= 1) {
-    // Single-programme departments apply immediately; no branch row needed.
     panel.classList.add('d-none');
+    panel.classList.remove('d-flex');
     wrap.innerHTML = '';
     return;
   }
 
   panel.classList.remove('d-none');
-  if (labelEl) labelEl.textContent = `${group.parent} branches`;
+  panel.classList.add('d-flex');
+  if (labelEl) labelEl.textContent = 'Branches';
 
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const allActive = activeDeptFilter === group.allValue;
@@ -455,17 +433,57 @@ function renderBranchButtons() {
 function applyViewFilter(filter, { parentKey = activeParentKey } = {}) {
   activeParentKey = parentKey || '';
   activeDeptFilter = String(filter || '').trim();
-  deptSelect.value = activeDeptFilter;
-  renderDeptButtons();
+  if (activeParentKey && [...deptSelect.options].some(o => o.value === activeParentKey)) {
+    deptSelect.value = activeParentKey;
+  } else if (!activeParentKey && activeDeptFilter && viewExtraProgrammes.some(p => p.code === activeDeptFilter)) {
+    deptSelect.value = `prog:${activeDeptFilter}`;
+  } else if (!activeParentKey && !activeDeptFilter) {
+    deptSelect.value = '';
+  }
   renderBranchButtons();
   setDeptUI(selectedDept());
   renderForDept(selectedDept());
 }
 
+function onDepartmentDropdownChange() {
+  const value = deptSelect.value || '';
+
+  // Campus-wide
+  if (!value) {
+    applyViewFilter('', { parentKey: '' });
+    return;
+  }
+
+  // Standalone programme option
+  if (value.startsWith('prog:')) {
+    applyViewFilter(value.slice(5), { parentKey: '' });
+    return;
+  }
+
+  const group = findGroupByParent(value);
+  if (!group) {
+    applyViewFilter('', { parentKey: '' });
+    return;
+  }
+
+  // Multi-branch department: show branch buttons nearby View; wait for branch click
+  if (group.programmes.length > 1) {
+    activeParentKey = group.parent;
+    activeDeptFilter = '';
+    renderBranchButtons();
+    setDeptUI('');
+    renderForDept('');
+    return;
+  }
+
+  // Single-programme department: apply immediately, no branch chips
+  applyViewFilter(group.programmes[0]?.code || '', { parentKey: group.parent });
+}
+
 function selectedDept() {
   const role = currentRole();
   if (role === 'staff') return viewerDepartment();
-  return activeDeptFilter || deptSelect.value || '';
+  return activeDeptFilter || '';
 }
 
 function deptMatchesFilter(applicantDept, deptCode) {
@@ -517,9 +535,8 @@ function setDeptUI(dept) {
   const hintEl = document.getElementById('viewHint');
   const card = document.getElementById('viewFilterCard');
   if (!badge) return;
-  const showDeptFilter = role === 'admin' || role === 'placement_officer';
-  if (card) card.classList.toggle('d-none', !showDeptFilter && role === 'staff');
-  if (deptSelect) deptSelect.classList.add('d-none');
+  if (card) card.classList.toggle('d-none', role === 'staff');
+  if (deptSelect) deptSelect.classList.toggle('d-none', role === 'staff');
 
   if (staffLive) {
     const deptMeta = apiHiringData?.department || {};
@@ -542,7 +559,7 @@ function setDeptUI(dept) {
       hintEl.textContent = (adminLive || officerLive)
         ? (activeParentKey && !dept
           ? 'Choose a branch to view its hiring overview.'
-          : 'Showing live campus hiring data. Filter by department if needed.')
+          : 'Select a department, then a branch if needed.')
         : '';
     }
     return;
@@ -674,54 +691,7 @@ document.addEventListener('ph-user-updated', () => {
   renderForDept(selectedDept());
 });
 
-deptSelect.addEventListener('change', () => {
-  activeDeptFilter = deptSelect.value || '';
-  activeParentKey = findGroupForFilter(activeDeptFilter)?.parent || '';
-  renderDeptButtons();
-  renderBranchButtons();
-  setDeptUI(selectedDept());
-  renderForDept(selectedDept());
-});
-
-document.getElementById('deptButtons')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-view-parent], [data-view-filter]');
-  if (!btn || !btn.classList.contains('view-chip')) return;
-  const parent = btn.getAttribute('data-view-parent') || '';
-  const filter = btn.getAttribute('data-view-filter') || '';
-
-  // Campus-wide
-  if (!parent && !filter) {
-    applyViewFilter('', { parentKey: '' });
-    return;
-  }
-
-  // Standalone programme (no parent group)
-  if (!parent && filter) {
-    applyViewFilter(filter, { parentKey: '' });
-    return;
-  }
-
-  // Department with branches: reveal branch buttons; wait for a branch click
-  const group = findGroupByParent(parent);
-  if (group && group.programmes.length > 1) {
-    activeParentKey = parent;
-    // Keep current filter only if it belongs to this department; otherwise clear until a branch is chosen
-    const currentGroup = findGroupForFilter(activeDeptFilter);
-    if (!currentGroup || currentGroup.parent !== parent) {
-      activeDeptFilter = '';
-      deptSelect.value = '';
-    }
-    renderDeptButtons();
-    renderBranchButtons();
-    setDeptUI(selectedDept());
-    renderForDept(selectedDept());
-    return;
-  }
-
-  // Single-programme department
-  const only = group?.programmes?.[0]?.code || filter || '';
-  applyViewFilter(only, { parentKey: parent });
-});
+deptSelect.addEventListener('change', onDepartmentDropdownChange);
 
 document.getElementById('branchButtons')?.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-view-branch]');
