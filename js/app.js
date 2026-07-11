@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.07.11d — navy sidebar/topbar theme */
-const APP_SHELL_VERSION = '2026.07.11d';
+/* PlaceHub shell v2026.07.11e — navy sidebar/topbar theme */
+const APP_SHELL_VERSION = '2026.07.11e';
 
 (function applyShellThemeFallback() {
   if (typeof document === 'undefined' || document.getElementById('ph-shell-theme')) return;
@@ -67,6 +67,7 @@ const NAV = [
     ],
   },
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
+  { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Get placed", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
   { href: "students.html", icon: "bi-people-fill", label: "Student", roles: ['admin','placement_officer','staff'] },
   { href: "hiring-overview.html", icon: "bi-building-check", label: "Hiring Overview", roles: ['admin','placement_officer','staff'] },
@@ -118,6 +119,7 @@ const PAGE_LABELS = {
   'notifications.html': 'Notifications',
   'settings.html': 'Settings',
   'settings-student': 'Profile & Resumes',
+  'get-placed.html': 'Get placed',
   'public-stats.html': 'Public Portal',
   'alumni-jobs.html': 'Job Posts',
   'alumni-referrals.html': 'Referrals',

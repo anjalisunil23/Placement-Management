@@ -397,6 +397,7 @@ const PAGE_PERMS = {
   'notifications.html': ['admin','placement_officer','student','staff','alumni','company'],
   'public-stats.html':  ROLES,
   'settings.html':      ['admin','placement_officer','student','staff','alumni','company'],
+  'get-placed.html':    ['student'],
   'alumni-jobs.html':       ['alumni'],
   'alumni-referrals.html':  ['alumni'],
   'alumni-success-stories.html': ['alumni'],
@@ -420,7 +421,7 @@ const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-ref
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html', 'recruiting.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-placements.html', 'drives.html', 'students.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
-const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'notifications.html', 'settings.html'];
+const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html'];
 
 /** Default landing page per role after sign-in */
 const ROLE_HOME = {
