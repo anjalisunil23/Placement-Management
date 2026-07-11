@@ -41,6 +41,7 @@
           <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
+          <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Gender</label><input class="form-control" id="profGender" disabled placeholder="Synced from college records"/></div>
           <div class="col-12 role-field-student" id="profQualificationsWrap" style="display:none">
             <label class="form-label small fw-semibold">Education qualifications</label>
             <p class="small text-muted-2 mb-2">Synced from college records (read-only).</p>
@@ -482,6 +483,24 @@ function pickPhone(u) {
   return '';
 }
 
+function pickGender(u) {
+  const merged = mergeProfileUser(u);
+  const personal = (merged.personal && typeof merged.personal === 'object') ? merged.personal : {};
+  const raw = String(
+    merged.gender
+    || personal.gender
+    || merged.stud_gender
+    || personal.stud_gender
+    || ''
+  ).trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (['1', 'm', 'male', 'boy', 'man'].includes(lower)) return 'Male';
+  if (['2', 'f', 'female', 'girl', 'woman'].includes(lower)) return 'Female';
+  if (['3', 'o', 'other', 'non-binary', 'nonbinary', 'nb'].includes(lower)) return 'Other';
+  return raw;
+}
+
 function wireFilePickers(rootSelector) {
   document.querySelectorAll(`${rootSelector} [data-file-picker]`).forEach((btn) => {
     if (btn.dataset.pickerWired === '1') return;
@@ -868,6 +887,8 @@ function applyProfileFromUser(u, activeRole) {
   if (roleEl) roleEl.value = ROLE_LABELS[r] || r || '';
   if (r === 'student') {
     document.getElementById('profRegNo').value = merged.registerNumber || merged.admission_no || merged.username || '';
+    const genderEl = document.getElementById('profGender');
+    if (genderEl) genderEl.value = pickGender(merged);
   }
   if (r === 'staff') {
     document.getElementById('profStaffDept').value = pickDepartmentDisplay(merged) || merged.department || merged.departmentName || '';
@@ -920,6 +941,11 @@ async function loadSettingsProfile() {
       const apiCollegeEmail = pickCollegeEmail(profileCtx);
       const apiPersonalEmail = pickPersonalEmail(profileCtx);
       const apiPhone = pickPhone(profileCtx);
+      const apiGender = pickGender({
+        ...profileCtx,
+        gender: p.gender || u.gender || personal.gender || '',
+        personal,
+      });
       const apiDept = pickDepartmentDisplay(profileCtx)
         || p.departmentName
         || p.departmentCode
@@ -932,6 +958,8 @@ async function loadSettingsProfile() {
       document.getElementById('profCollegeEmail').value = apiCollegeEmail;
       document.getElementById('profPersonalEmail').value = apiPersonalEmail;
       document.getElementById('profRegNo').value = reg;
+      const genderEl = document.getElementById('profGender');
+      if (genderEl) genderEl.value = apiGender;
       renderProfileQualifications(p.qualifications || ac.qualifications || []);
       const apiPhoto = pickPhotoUrl(profileCtx) || p.photoUrl || p.photo?.url || '';
       if (apiPhoto) setAvatarPhoto(apiPhoto);
@@ -948,6 +976,7 @@ async function loadSettingsProfile() {
         departmentName: apiDept || user.departmentName,
         cgpa: apiCgpa || user.cgpa,
         phone: apiPhone || user.phone,
+        gender: apiGender || user.gender || '',
         photoUrl: apiPhoto || user.photoUrl || '',
         photo: p.photo || user.photo,
       };
