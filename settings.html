@@ -5,7 +5,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
-<link href="css/style.css?v=20260711g" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260711i" rel="stylesheet"/></head>
 <body data-page="settings.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -82,7 +82,14 @@
         <form id="resumeUploadForm" class="row g-3 mb-4 p-3 rounded-3" style="background:var(--surface-2)">
           <div class="col-md-4"><label class="form-label small fw-semibold">Resume label</label><input class="form-control" name="label" placeholder="e.g. SDE Resume v2" required/></div>
           <div class="col-md-4"><label class="form-label small fw-semibold">Job profile</label><select class="form-select" name="profileType" id="resumeProfileType" required></select></div>
-          <div class="col-md-4"><label class="form-label small fw-semibold">PDF / DOC file</label><input class="form-control" type="file" name="file" accept=".pdf,.doc,.docx" required/></div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">PDF / DOC file</label>
+            <div class="file-picker">
+              <input class="form-control" type="file" name="file" id="resumeUploadFile" accept=".pdf,.doc,.docx" required hidden/>
+              <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="resumeUploadFile"><i class="bi bi-upload me-1"></i>Choose file</button>
+              <span class="file-picker-name text-muted-2 small" data-file-picker-name="resumeUploadFile">No file chosen</span>
+            </div>
+          </div>
           <div class="col-12"><button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up me-1"></i>Upload to bucket</button></div>
           <div class="col-12"><small class="text-muted-2">For server upload, name your file <code>Name_RegisterNo_Resume.pdf</code> (we auto-rename if needed). Any job profile can be selected — all uploaded resumes appear when you apply.</small></div>
         </form>
@@ -113,7 +120,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260711e"></script>
-<script src="js/app.js?v=20260711g"></script>
+<script src="js/app.js?v=20260711i"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -858,6 +865,7 @@ if (role === 'alumni') {
   document.getElementById('alumniCompany').value = user.company || '';
   document.getElementById('alumniTitle').value = user.title || '';
   wireFilePickers('#alumniEmploymentDocsForm');
+  wireFilePickers('#resumeUploadForm');
   function syncAlumniFields() {
     const on = document.getElementById('alumniWorking').checked;
     document.getElementById('alumniCompanyWrap').style.display = on ? '' : 'none';
@@ -1002,6 +1010,7 @@ document.getElementById('resumeUploadForm')?.addEventListener('submit', async e 
       if (res.ok && json.success) {
         toast('Resume uploaded.', 'success');
         e.target.reset();
+        resetFilePickers(['resumeUploadFile']);
         await refreshResumes();
         return;
       }
@@ -1014,6 +1023,7 @@ document.getElementById('resumeUploadForm')?.addEventListener('submit', async e 
   await uploadResumeLocal(file, profileType, label);
   toast('Resume uploaded.', 'success');
   e.target.reset();
+  resetFilePickers(['resumeUploadFile']);
   resumeUseApi = false;
   await refreshResumes();
 });

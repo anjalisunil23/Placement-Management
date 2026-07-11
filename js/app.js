@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.07.11f — navy sidebar/topbar theme */
-const APP_SHELL_VERSION = '2026.07.11f';
+/* PlaceHub shell v2026.07.11i — navy sidebar/topbar theme */
+const APP_SHELL_VERSION = '2026.07.11i';
 
 (function applyShellThemeFallback() {
   if (typeof document === 'undefined' || document.getElementById('ph-shell-theme')) return;
@@ -45,8 +45,14 @@ const APP_SHELL_VERSION = '2026.07.11f';
 }
 .topbar .btn-outline-primary{color:#fff!important;border-color:rgba(255,255,255,.28)!important}
 .topbar .btn-outline-secondary{color:var(--shell-text)!important;border-color:rgba(255,255,255,.22)!important}
-.btn-primary{background:var(--primary)!important;border-color:var(--primary)!important}
-.btn-outline-primary{color:var(--primary)!important;border-color:var(--primary)!important}
+.btn-primary{background:var(--primary)!important;border-color:var(--primary)!important;color:#fff!important}
+.btn-primary:hover,.btn-primary:focus,.btn-primary:active,.btn-primary:focus-visible{
+  background:var(--primary-2)!important;border-color:var(--primary-2)!important;color:#fff!important;
+}
+.btn-outline-primary{color:var(--primary)!important;border-color:var(--primary)!important;background:transparent!important}
+.btn-outline-primary:hover,.btn-outline-primary:focus,.btn-outline-primary:active,.btn-outline-primary:focus-visible{
+  background:var(--primary)!important;border-color:var(--primary)!important;color:#fff!important;
+}
 `;
   const parent = document.head || document.documentElement;
   parent.appendChild(style);
@@ -823,3 +829,42 @@ const ReferralModals = {
 
 window.openStaffRecommendModal = () => ReferralModals.openStaff();
 window.openReferralModal = () => ReferralModals.openAlumni();
+
+/** Hidden file input + Choose file button (avoids broken native PDF file chrome). */
+window.wireFilePickers = function wireFilePickers(rootSelector = 'body') {
+  document.querySelectorAll(`${rootSelector} [data-file-picker]`).forEach((btn) => {
+    if (btn.dataset.pickerWired === '1') return;
+    btn.dataset.pickerWired = '1';
+    const id = btn.getAttribute('data-file-picker');
+    const input = document.getElementById(id);
+    const nameEl = document.querySelector(`[data-file-picker-name="${id}"]`);
+    if (!input) return;
+    btn.addEventListener('click', () => {
+      if (input.disabled || btn.disabled) return;
+      input.click();
+    });
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      const files = input.files;
+      if (!nameEl) return;
+      if (input.multiple && files?.length > 1) {
+        nameEl.textContent = `${files.length} files selected`;
+      } else {
+        nameEl.textContent = file?.name || 'No file chosen';
+      }
+      nameEl.classList.toggle('has-file', !!(file || (files && files.length)));
+    });
+  });
+};
+
+window.resetFilePickers = function resetFilePickers(ids) {
+  (ids || []).forEach((id) => {
+    const input = document.getElementById(id);
+    if (input) input.value = '';
+    const nameEl = document.querySelector(`[data-file-picker-name="${id}"]`);
+    if (nameEl) {
+      nameEl.textContent = 'No file chosen';
+      nameEl.classList.remove('has-file');
+    }
+  });
+};
