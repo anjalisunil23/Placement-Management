@@ -70,7 +70,7 @@ const NAV = [
     href: 'drives.html',
     roles: ['admin','placement_officer','staff'],
     children: [
-      { href: 'placement-console.html', label: 'Console', roles: ['admin','placement_officer'] },
+      { href: 'placement-console.html', label: 'Console', roles: ['admin'] },
     ],
   },
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
@@ -484,7 +484,7 @@ function renderShell(active) {
   if (topbar) {
     const quickLinks = {
       admin: '<a href="placement-console.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Console</a><a href="students.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Approvals</a>',
-      placement_officer: '<a href="placement-console.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Placement Console</a>',
+      placement_officer: '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Placement Drives</a>',
       student: '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Browse Drives</a><a href="settings.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Upload Resume</a>',
       staff: '',
       company: '<a href="company.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Portal</a><a href="applicants.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Applicants</a>',

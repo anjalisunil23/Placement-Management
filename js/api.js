@@ -404,7 +404,7 @@ const PAGE_PERMS = {
   'staff-recommend.html':   ['staff'],
   'staff-placements.html':  ['staff'],
   'admin-companies.html':   ['admin','placement_officer'],
-  'placement-console.html': ['admin','placement_officer'],
+  'placement-console.html': ['admin'],
   'recruiting.html':        ['admin','placement_officer','company'],
   'student-overview.html':  ['admin','placement_officer','staff'],
   'hiring-overview.html':   ['admin','placement_officer','staff'],
