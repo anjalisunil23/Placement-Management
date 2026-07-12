@@ -407,7 +407,7 @@ const PAGE_PERMS = {
   'placement-console.html': ['admin'],
   'recruiting.html':        ['admin','placement_officer','company'],
   'student-overview.html':  ['admin','placement_officer','staff'],
-  'hiring-overview.html':   ['admin','placement_officer','staff'],
+  'hiring-overview.html':   ['admin','staff'],
   'users.html':             ['admin'],
   'rules.html':             ['admin'],
   'applications.html':      ['admin','placement_officer'],
@@ -426,7 +426,7 @@ const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'noti
 /** Default landing page per role after sign-in */
 const ROLE_HOME = {
   admin: 'dashboard.html',
-  placement_officer: 'drives.html',
+  placement_officer: 'dashboard.html',
   staff: 'staff-recommend.html',
   student: 'drives.html',
   company: 'company.html',
@@ -563,7 +563,7 @@ const Auth = {
   },
   resolveRedirect(next) {
     if (this.role() === 'admin') return 'dashboard.html';
-    if (this.role() === 'placement_officer') return 'drives.html';
+    if (this.role() === 'placement_officer') return 'dashboard.html';
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
     const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
@@ -2128,7 +2128,7 @@ function campusRecruitmentStats() {
 
 function canViewCampusHiring() {
   const role = Auth.role();
-  return role === 'admin' || role === 'placement_officer' || role === 'staff';
+  return role === 'admin' || role === 'staff';
 }
 
 function companyHiringCounts(companyName) {

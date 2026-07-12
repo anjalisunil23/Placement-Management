@@ -62,7 +62,7 @@ try {
     if (($info['role'] ?? '') === 'admin') {
         $target = '/dashboard.html';
     } elseif (($info['role'] ?? '') === 'placement_officer') {
-        $target = '/drives.html';
+        $target = '/dashboard.html';
     }
     if ($target === '' || $target[0] !== '/') {
         $target = '/' . ltrim($target, '/');

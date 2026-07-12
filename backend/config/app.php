@@ -84,7 +84,7 @@ return [
         'staff'             => '/staff-recommend.html',
         'company'           => '/company.html',
         'alumni'            => '/dashboard.html',
-        'placement_officer' => '/drives.html',
+        'placement_officer' => '/dashboard.html',
     ],
     'super_admin_emails' => array_values(array_filter(array_map(
         static fn (string $email): string => strtolower(trim($email)),

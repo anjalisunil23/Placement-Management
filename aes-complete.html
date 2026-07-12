@@ -37,7 +37,7 @@
   }
   const target = Auth.role() === 'admin'
     ? 'dashboard.html'
-    : (Auth.role() === 'placement_officer' ? 'drives.html' : Auth.resolveRedirect(next));
+    : (Auth.role() === 'placement_officer' ? 'dashboard.html' : Auth.resolveRedirect(next));
   window.location.replace(target.startsWith('/') ? target : '/' + target);
 })();
 </script>
