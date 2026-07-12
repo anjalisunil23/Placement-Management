@@ -236,7 +236,7 @@ final class AlumniController
       'companyName'   => 'required',
       'hrName'        => 'required',
       'hrEmail'       => 'required|email',
-      'contactNumber' => 'required',
+      'contactNumber' => 'required|phone',
     ]);
     if (!empty($errors)) {
       Response::error('Validation failed.', 422, $errors);

@@ -117,6 +117,9 @@ final class Collections
                     'uploadedAt' => 'UTCDateTime',
                 ],
                 'policyAccepted' => 'bool',
+                'policyAcceptedAt' => 'string',
+                'policyVersion' => 'string',
+                'placementRegistration' => 'array|null',
                 'signedReport'   => 'string|null',
                 'selfPlacement'  => 'array|null',
                 'placementChances' => [

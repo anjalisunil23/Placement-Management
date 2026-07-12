@@ -687,7 +687,7 @@ final class OfficerController
         $contactErrors = Validator::validate($input['contact'] ?? [], [
             'name'  => 'required',
             'email' => 'required|email',
-            'phone' => 'required',
+            'phone' => 'required|phone',
         ]);
         if (!empty($contactErrors)) {
             Response::error('Contact validation failed.', 422, $contactErrors);

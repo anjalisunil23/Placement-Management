@@ -211,19 +211,46 @@
     };
   };
 
-  HiringOverviewPage.prototype.configurePageForRole = function (role) {
-    const title = this.$('pageTitleText') || document.getElementById('dashTitle');
-    const sub = this.$('pageSub') || document.getElementById('dashSub') || this.root.querySelector('.page-sub');
-    if (role === 'staff') {
-      if (title) title.textContent = 'Department Hiring Overview';
-      if (sub) sub.textContent = 'Live snapshot of companies hiring your department students, pipeline stages, and recent activity.';
-    } else if (role === 'placement_officer') {
-      if (title) title.textContent = 'Campus Hiring Overview';
-      if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires across campus. Filter by department if needed.';
-    } else if (role === 'admin') {
-      if (title) title.textContent = 'Campus Hiring Overview';
-      if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.';
+  HiringOverviewPage.prototype.ownDepartmentCode = function () {
+    if (typeof viewerDepartment === 'function') {
+      const v = viewerDepartment();
+      if (v && typeof v === 'object') return String(v.code || v.name || '').trim();
+      return String(v || '').trim();
     }
+    const u = Auth.user() || {};
+    const d = u.department;
+    if (d && typeof d === 'object') return String(d.code || d.name || '').trim();
+    return String(d || u.departmentCode || '').trim();
+  };
+
+  HiringOverviewPage.prototype.findGroupForFilter = function (filter) {
+    const raw = String(filter || '').trim();
+    if (!raw) return null;
+    if (raw.includes('|')) {
+      const key = splitDepartmentFilterValue(raw).map(normalizeProgrammeCode).sort().join('|');
+      return this.viewDeptGroups.find(g =>
+        g.programmes.map(p => normalizeProgrammeCode(p.code)).sort().join('|') === key
+      ) || null;
+    }
+    const code = normalizeProgrammeCode(
+      typeof resolveCollegeProgrammeCode === 'function' ? (resolveCollegeProgrammeCode(raw) || raw) : raw
+    );
+    const name = String(filter || '').trim().toLowerCase();
+    return this.viewDeptGroups.find(g =>
+      g.parent.toLowerCase() === name
+      || g.programmes.some(p => normalizeProgrammeCode(p.code) === code)
+      || (typeof programmeAliasSet === 'function' && g.programmes.some(p => programmeAliasSet(p).has(code)))
+    ) || null;
+  };
+
+  HiringOverviewPage.prototype.selectedDept = function () {
+    const role = this.currentRole();
+    if (role === 'staff' || role === 'placement_officer') {
+      // Officers stay inside their department; branch dropdown may narrow further.
+      if (role === 'placement_officer' && this.activeDeptFilter) return this.activeDeptFilter;
+      return this.ownDepartmentCode();
+    }
+    return this.activeDeptFilter || '';
   };
 
   HiringOverviewPage.prototype.populateDeptSelect = function (extraDepts) {
@@ -253,7 +280,43 @@
     this.viewDeptGroups = built.groups || [];
     this.viewExtraProgrammes = built.extras || [];
 
+    const role = this.currentRole();
     const escLabel = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+    // Placement officers only see their own department (no campus-wide "All departments").
+    if (role === 'placement_officer') {
+      const own = this.ownDepartmentCode();
+      const ownGroup = this.findGroupForFilter(own);
+      this.viewDeptGroups = ownGroup ? [ownGroup] : [];
+      this.viewExtraProgrammes = [];
+
+      if (!ownGroup) {
+        const label = own || 'Your department';
+        deptSelect.innerHTML = `<option value="">${escLabel(label)}</option>`;
+        this.activeParentKey = '';
+        this.activeDeptFilter = own;
+        this.syncBranchSelect();
+        return;
+      }
+
+      this.activeParentKey = ownGroup.parent;
+      const ownProg = ownGroup.programmes.find(p => {
+        const code = normalizeProgrammeCode(p.code);
+        const resolved = normalizeProgrammeCode(
+          typeof resolveCollegeProgrammeCode === 'function' ? (resolveCollegeProgrammeCode(own) || own) : own
+        );
+        return code === resolved || (typeof programmeAliasSet === 'function' && programmeAliasSet(p).has(normalizeProgrammeCode(own)));
+      });
+      // Default to all branches under their department; branch dropdown can narrow.
+      this.activeDeptFilter = ownGroup.allValue || ownProg?.code || own;
+
+      deptSelect.innerHTML = `<option value="${escLabel(ownGroup.parent)}">${escLabel(ownGroup.parent)}</option>`;
+      deptSelect.value = ownGroup.parent;
+      deptSelect.disabled = true;
+      this.syncBranchSelect();
+      return;
+    }
+
     let html = '<option value="">All departments</option>';
     this.viewDeptGroups.forEach(group => {
       html += `<option value="${escLabel(group.parent)}">${escLabel(group.parent)}</option>`;
@@ -262,6 +325,7 @@
       html += `<option value="prog:${escLabel(p.code)}">${escLabel(p.label)}</option>`;
     });
     deptSelect.innerHTML = html;
+    deptSelect.disabled = false;
 
     if (this.activeParentKey && [...deptSelect.options].some(o => o.value === this.activeParentKey)) {
       deptSelect.value = this.activeParentKey;
@@ -274,6 +338,50 @@
     }
 
     this.syncBranchSelect();
+  };
+
+  HiringOverviewPage.prototype.setDeptUI = function (dept) {
+    const role = this.currentRole();
+    const hintEl = this.$('viewHint');
+    const card = this.$('viewFilterCard');
+    const deptSelect = this.$('deptSelect');
+    const branchSelect = this.$('branchSelect');
+    if (card) card.classList.toggle('d-none', role === 'staff');
+    if (deptSelect) deptSelect.classList.toggle('d-none', role === 'staff');
+    if (branchSelect) branchSelect.classList.toggle('d-none', role === 'staff');
+
+    if (this.staffLive) {
+      if (hintEl) hintEl.textContent = 'Showing live hiring data for your department.';
+      return;
+    }
+
+    if (role === 'placement_officer') {
+      const label = typeof departmentDisplayName === 'function'
+        ? departmentDisplayName(this.ownDepartmentCode())
+        : (this.ownDepartmentCode() || 'your department');
+      if (hintEl) hintEl.textContent = `Showing hiring data for ${label} only.`;
+      return;
+    }
+
+    if (hintEl) hintEl.textContent = '';
+  };
+
+  HiringOverviewPage.prototype.configurePageForRole = function (role) {
+    const title = this.$('pageTitleText') || document.getElementById('dashTitle');
+    const sub = this.$('pageSub') || document.getElementById('dashSub') || this.root.querySelector('.page-sub');
+    if (role === 'staff') {
+      if (title) title.textContent = 'Department Hiring Overview';
+      if (sub) sub.textContent = 'Live snapshot of companies hiring your department students, pipeline stages, and recent activity.';
+    } else if (role === 'placement_officer') {
+      const label = typeof departmentDisplayName === 'function'
+        ? departmentDisplayName(this.ownDepartmentCode())
+        : (this.ownDepartmentCode() || 'your department');
+      if (title) title.textContent = 'Department Hiring Overview';
+      if (sub) sub.textContent = `Live snapshot for ${label}: companies hiring, pipeline stages, and recent activity.`;
+    } else if (role === 'admin') {
+      if (title) title.textContent = 'Campus Hiring Overview';
+      if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.';
+    }
   };
 
   HiringOverviewPage.prototype.findGroupByParent = function (parentKey) {
@@ -355,11 +463,6 @@
     this.applyViewFilter(branchSelect.value || '', { parentKey: this.activeParentKey });
   };
 
-  HiringOverviewPage.prototype.selectedDept = function () {
-    if (this.currentRole() === 'staff') return typeof viewerDepartment === 'function' ? viewerDepartment() : '';
-    return this.activeDeptFilter || '';
-  };
-
   HiringOverviewPage.prototype.deptMatchesFilter = function (applicantDept, deptCode) {
     if (!deptCode) return true;
     const targets = (typeof splitDepartmentFilterValue === 'function'
@@ -384,24 +487,6 @@
       || raw.includes(target)
       || canon.includes(target)
     );
-  };
-
-  HiringOverviewPage.prototype.setDeptUI = function (dept) {
-    const role = this.currentRole();
-    const hintEl = this.$('viewHint');
-    const card = this.$('viewFilterCard');
-    const deptSelect = this.$('deptSelect');
-    const branchSelect = this.$('branchSelect');
-    if (card) card.classList.toggle('d-none', role === 'staff');
-    if (deptSelect) deptSelect.classList.toggle('d-none', role === 'staff');
-    if (branchSelect) branchSelect.classList.toggle('d-none', role === 'staff');
-
-    if (this.staffLive) {
-      if (hintEl) hintEl.textContent = 'Showing live hiring data for your department.';
-      return;
-    }
-
-    if (hintEl) hintEl.textContent = '';
   };
 
   HiringOverviewPage.prototype.renderCompanyRows = function (companies, emptyMsg) {
@@ -444,7 +529,7 @@
     this.setStat('statHired', totals.hired ?? 0);
     animateCounters(this.root === document ? document : this.root);
 
-    const companiesEmpty = this.staffLive
+    const companiesEmpty = this.staffLive || this.officerLive
       ? 'No companies are actively hiring in your department right now.'
       : (dept ? 'No active hiring data for this department yet.' : 'No companies are actively hiring right now.');
     this.renderCompanyRows(companies, companiesEmpty);
@@ -452,7 +537,7 @@
     const statusFilter = this.$('statusFilter');
     const status = statusFilter ? statusFilter.value : '';
     const list = candidates.filter(s => this.candidateMatchesFilter(s.status, status));
-    const emptyCandidatesMsg = this.staffLive
+    const emptyCandidatesMsg = this.staffLive || this.officerLive
       ? 'No students from your department are in the hiring pipeline yet.'
       : (this.campusLive ? 'No candidates match this filter.' : 'Sign in to view live hiring data.');
     const candidateRows = this.$('candidateRows');

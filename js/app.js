@@ -1,5 +1,5 @@
-/* PlaceHub shell v2026.07.11m — navy sidebar/topbar theme */
-const APP_SHELL_VERSION = '2026.07.11m';
+/* PlaceHub shell v2026.07.11o — navy sidebar/topbar theme */
+const APP_SHELL_VERSION = '2026.07.11o';
 
 (function applyShellThemeFallback() {
   if (typeof document === 'undefined' || document.getElementById('ph-shell-theme')) return;
@@ -611,7 +611,7 @@ function animateCounters(root = document) {
 }
 
 function enforcePageRole(active) {
-  if (!active || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html' || active === 'login.html') return true;
+  if (!active || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html' || active === 'login.html' || active === 'placement-registration.html') return true;
   const page = active.split('#')[0];
   if (!Auth.isAllowed(page)) {
     toast(`This page isn't available for ${ROLE_LABELS[Auth.role()] || 'your role'}.`, 'warn');
@@ -692,6 +692,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // First-time students must complete Placement Cell registration before any other page.
+  if (typeof studentNeedsPlacementRegistration === 'function' && studentNeedsPlacementRegistration()) {
+    if (active !== 'placement-registration.html') {
+      window.location.replace('placement-registration.html');
+      return;
+    }
+  } else if (active === 'placement-registration.html' && Auth.role() === 'student') {
+    window.location.replace(Auth.homePage() || 'drives.html');
+    return;
+  }
+
   if (!enforcePageRole(active)) return;
   paintShell();
 
@@ -712,15 +723,51 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 /** Shared staff / alumni referral modals — open from any page */
 const ReferralModals = {
+  phoneFieldHtml() {
+    return `<div class="col-md-6">
+      <label class="form-label small fw-semibold">Contact number</label>
+      <input class="form-control" type="tel" name="contactNumber" required
+        inputmode="tel" autocomplete="tel" maxlength="16"
+        placeholder="9876543210 or +91 98765 43210"
+        title="Enter a valid 10-digit Indian mobile number"
+        data-contact-phone="1"/>
+      <div class="form-text">10-digit Indian mobile (starts with 6–9). +91 optional.</div>
+    </div>`;
+  },
+
+  validateReferralForm(form) {
+    const phoneInput = form.querySelector('[name="contactNumber"]');
+    phoneInput?.setCustomValidity('');
+    if (!form.checkValidity()) {
+      form.reportValidity();
+      return null;
+    }
+    const data = Object.fromEntries(new FormData(form).entries());
+    const phone = String(data.contactNumber || '').trim();
+    if (typeof isValidContactPhone !== 'function' || !isValidContactPhone(phone)) {
+      toast('Enter a valid 10-digit Indian mobile number.', 'warn');
+      phoneInput?.focus();
+      phoneInput?.setCustomValidity('Enter a valid 10-digit Indian mobile number.');
+      phoneInput?.reportValidity();
+      return null;
+    }
+    phoneInput?.setCustomValidity('');
+    if (typeof normalizeContactPhone === 'function') {
+      const normalized = normalizeContactPhone(phone);
+      if (normalized) data.contactNumber = normalized;
+    }
+    return data;
+  },
+
   mountStaff() {
     const existing = document.getElementById('staffRecommendModal');
-    if (existing?.querySelector('[name="contactRole"]')) return;
+    if (existing?.querySelector('[data-contact-phone="1"]')) return;
     existing?.remove();
     document.body.insertAdjacentHTML('beforeend', `
 <div class="modal fade" id="staffRecommendModal" tabindex="-1" aria-labelledby="staffRecommendModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
-      <form id="staffRecommendModalForm">
+      <form id="staffRecommendModalForm" novalidate>
         <div class="modal-header">
           <h5 class="modal-title fw-bold" id="staffRecommendModalLabel">Recommend a Company</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -733,7 +780,7 @@ const ReferralModals = {
             <div class="col-md-6"><label class="form-label small fw-semibold">Contact person</label><input class="form-control" name="hrName" required placeholder="e.g. Priya Menon"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Role in company</label><input class="form-control" name="contactRole" placeholder="e.g. Talent Acquisition Manager"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Contact person's mail</label><input class="form-control" type="email" name="hrEmail" required placeholder="contact@company.com"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Contact number</label><input class="form-control" name="contactNumber" required placeholder="+91 98765 43210"/></div>
+            ${this.phoneFieldHtml()}
           </div>
           <div class="alert alert-info small mt-3 mb-0">Only the admin can view contact details and follow up with the company.</div>
         </div>
@@ -745,11 +792,19 @@ const ReferralModals = {
     </div>
   </div>
 </div>`);
-    document.getElementById('staffRecommendModalForm').addEventListener('submit', async (e) => {
+    const form = document.getElementById('staffRecommendModalForm');
+    const phoneInput = form.querySelector('[name="contactNumber"]');
+    phoneInput?.addEventListener('input', () => phoneInput.setCustomValidity(''));
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target).entries());
+      const data = this.validateReferralForm(e.target);
+      if (!data) return;
       if (!(await confirmAction({ title: 'Submit recommendation', message: `Recommend ${data.companyName || 'this company'} to the placement cell?`, confirmText: 'Submit', variant: 'primary' }))) return;
-      await StaffRecs.add(data);
+      const saved = await StaffRecs.add(data);
+      if (!saved && Auth.hasRealAuth() && !Auth.isDemo()) {
+        toast('Could not submit recommendation. Check the contact number and try again.', 'error');
+        return;
+      }
       bootstrap.Modal.getInstance(document.getElementById('staffRecommendModal'))?.hide();
       toast('Company recommended. The admin will review and contact them.', 'success');
       e.target.reset();
@@ -759,13 +814,13 @@ const ReferralModals = {
 
   mountAlumni() {
     const existing = document.getElementById('alumniReferralModal');
-    if (existing?.querySelector('[name="contactRole"]')) return;
+    if (existing?.querySelector('[data-contact-phone="1"]')) return;
     existing?.remove();
     document.body.insertAdjacentHTML('beforeend', `
 <div class="modal fade" id="alumniReferralModal" tabindex="-1" aria-labelledby="alumniReferralModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
-      <form id="alumniReferralModalForm">
+      <form id="alumniReferralModalForm" novalidate>
         <div class="modal-header">
           <h5 class="modal-title fw-bold" id="alumniReferralModalLabel">Recommend a Company</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -778,7 +833,7 @@ const ReferralModals = {
             <div class="col-md-6"><label class="form-label small fw-semibold">Contact person</label><input class="form-control" name="hrName" required placeholder="e.g. Priya Menon"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Role in company</label><input class="form-control" name="contactRole" placeholder="e.g. Talent Acquisition Manager"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Contact person's mail</label><input class="form-control" type="email" name="hrEmail" required placeholder="contact@company.com"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Contact number</label><input class="form-control" name="contactNumber" required placeholder="+91 98765 43210"/></div>
+            ${this.phoneFieldHtml()}
           </div>
           <div class="alert alert-info small mt-3 mb-0">Only the admin can view contact details and follow up with the company.</div>
         </div>
@@ -790,11 +845,19 @@ const ReferralModals = {
     </div>
   </div>
 </div>`);
-    document.getElementById('alumniReferralModalForm').addEventListener('submit', async (e) => {
+    const form = document.getElementById('alumniReferralModalForm');
+    const phoneInput = form.querySelector('[name="contactNumber"]');
+    phoneInput?.addEventListener('input', () => phoneInput.setCustomValidity(''));
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target).entries());
+      const data = this.validateReferralForm(e.target);
+      if (!data) return;
       if (!(await confirmAction({ title: 'Submit recommendation', message: `Recommend ${data.companyName || 'this company'} to the placement cell?`, confirmText: 'Submit', variant: 'primary' }))) return;
-      await AlumniReferrals.add(data);
+      const saved = await AlumniReferrals.add(data);
+      if (!saved && Auth.hasRealAuth() && !Auth.isDemo()) {
+        toast('Could not submit recommendation. Check the contact number and try again.', 'error');
+        return;
+      }
       bootstrap.Modal.getInstance(document.getElementById('alumniReferralModal'))?.hide();
       toast('Company recommended. The admin will review and contact them.', 'success');
       e.target.reset();
@@ -807,8 +870,9 @@ const ReferralModals = {
     this.mountStaff();
     const form = document.getElementById('staffRecommendModalForm');
     form.reset();
+    form.querySelector('[name="contactNumber"]')?.setCustomValidity('');
     const title = document.getElementById('staffRecommendModalLabel');
-    if (title) title.textContent = Auth.role() === 'placement_officer' ? 'Recommend a Company' : 'Recommend a Company';
+    if (title) title.textContent = 'Recommend a Company';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('staffRecommendModal')).show();
   },
 
@@ -822,6 +886,7 @@ const ReferralModals = {
     this.mountAlumni();
     const form = document.getElementById('alumniReferralModalForm');
     form.reset();
+    form.querySelector('[name="contactNumber"]')?.setCustomValidity('');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('alumniReferralModal')).show();
   },
 

@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Placement Cell Registration · AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260711j" rel="stylesheet"/>
+<style>
+  body.policy-page{background:linear-gradient(165deg,#eef2ff 0%,#f8fafc 40%,#f1f5f9 100%);min-height:100vh}
+  .policy-shell{max-width:920px;margin:0 auto;padding:1.25rem 1rem 3rem}
+  .policy-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:16px;box-shadow:0 12px 40px rgba(15,23,42,.06)}
+  .policy-header{text-align:center;padding:1.5rem 1.25rem 1rem;border-bottom:1px solid var(--border,#e2e8f0)}
+  .policy-header img{height:56px;object-fit:contain}
+  .policy-header h1{font-size:1.15rem;font-weight:800;letter-spacing:.02em;margin:.85rem 0 .25rem;text-transform:uppercase}
+  .policy-header .college{font-size:.85rem;color:var(--muted,#64748b);font-weight:600}
+  .policy-body{padding:1.25rem 1.35rem 1.5rem}
+  .guidelines-box{max-height:min(52vh,420px);overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:12px;padding:1rem 1.1rem;background:#f8fafc;font-size:.88rem;line-height:1.55}
+  .guidelines-box h6{font-weight:700;margin-top:1rem;margin-bottom:.4rem}
+  .guidelines-box h6:first-child{margin-top:0}
+  .guidelines-box ol,.guidelines-box ul{padding-left:1.15rem;margin-bottom:.65rem}
+  .branch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr));gap:.45rem}
+  .branch-grid label{display:flex;align-items:center;gap:.4rem;font-size:.82rem;padding:.35rem .5rem;border:1px solid var(--border,#e2e8f0);border-radius:8px;cursor:pointer;margin:0;background:#fff}
+  .branch-grid label:has(input:checked){border-color:var(--primary,#2563EB);background:color-mix(in srgb,var(--primary,#2563EB) 8%,#fff)}
+  .sign-row{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:.75rem}
+  @media (max-width:640px){.sign-row{grid-template-columns:1fr}}
+  .policy-sticky{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,rgba(248,250,252,.95) 18%,#f8fafc);padding-top:1rem}
+</style>
+</head>
+<body class="policy-page" data-page="placement-registration.html">
+<div class="policy-shell">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="small text-muted">AJCE Placements · First-time registration</div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnLogout">Sign out</button>
+  </div>
+
+  <div class="policy-card">
+    <div class="policy-header">
+      <img src="/css/ajce-logo.png?v=20260624s" alt="AJCE" onerror="this.onerror=null;this.src='/logo.php'"/>
+      <h1>Placement Cell – Registration</h1>
+      <div class="college">Amal Jyothi College of Engineering Autonomous</div>
+      <div class="badge-soft info mt-2">YoP: 2026</div>
+    </div>
+
+    <div class="policy-body">
+      <p class="small text-muted-2 mb-3">Please complete this registration and confirm that you have read the Placement Guidelines. You can access the portal only after confirmation.</p>
+
+      <form id="registrationForm" novalidate>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">University Reg. No</label>
+            <input class="form-control" name="registerNumber" id="regNo" required autocomplete="off"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Name</label>
+            <input class="form-control" name="name" id="regName" required autocomplete="name"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Mobile Number</label>
+            <input class="form-control" type="tel" name="mobile" id="regMobile" required inputmode="tel" maxlength="16" placeholder="10-digit Indian mobile"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Email ID</label>
+            <input class="form-control" type="email" name="email" id="regEmail" required autocomplete="email"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Year of Passing (YoP)</label>
+            <input class="form-control" name="yop" id="regYop" value="2026" required readonly/>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="small fw-semibold mb-2">Branch &amp; Batch</div>
+          <div class="branch-grid" id="branchGrid"></div>
+          <div class="mt-2 d-none" id="mtechWrap">
+            <label class="form-label small fw-semibold">M.Tech branch</label>
+            <input class="form-control" name="mtechBranch" id="mtechBranch" placeholder="Specify M.Tech branch"/>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h2 class="h6 fw-bold mb-0">Placement Guidelines</h2>
+            <span class="small text-muted-2">Scroll and read fully</span>
+          </div>
+          <div class="guidelines-box" id="guidelinesBox" tabindex="0">
+            <p>The Placement Cell functions as a facilitator and counselor for placement related activities. It provides placement assistance to all the registered students.</p>
+
+            <h6>Selection of Companies</h6>
+            <p>Companies will be invited and recruitment drives will be scheduled by the Placement Cell on the basis of one or more of the following parameters:</p>
+            <ol type="a">
+              <li>Job profile and growth prospects.</li>
+              <li>The pay package offered by the company.</li>
+              <li>Past record of recruitment at AJCE.</li>
+              <li>Feedback from the alumni regarding the company.</li>
+            </ol>
+
+            <h6>Eligibility Criterion</h6>
+            <ol type="a">
+              <li><strong>Green Zone:</strong> Candidates who secured an aggregate of 60% and above throughout (from SSC onwards) and having no standing backlogs in B.Tech/M.Tech/MCA. The institute will put maximum effort to place all Green Zone students.</li>
+              <li><strong>Red Zone:</strong> Students with aggregate less than 60% or having backlogs. If a company permits backlogs, they may attend. Prior to onboarding, candidates are expected to clear all arrears and complete the entire course.</li>
+              <li>For non-technical jobs, aggregate or backlogs may not be a major criterion; strong communication and soft skills are required.</li>
+              <li>Some companies recruit based on outstanding skills/certifications; aggregate or backlogs may not apply.</li>
+              <li>If at joining time the student has arrears or aggregate below company norms, the offer may stand cancelled as per company norms.</li>
+            </ol>
+
+            <h6>Rules for Placement</h6>
+            <ol>
+              <li>Only candidates looking for a career immediately after the currently pursuing course should register. Those planning entrepreneurship or higher studies should not opt for placement.</li>
+              <li>The Placement Committee strictly enforces a <strong>One-Student-One-Job Offer</strong> policy.</li>
+              <li>Companies are categorized by CTC:
+                <ul>
+                  <li><strong>Category A:</strong> CTC &gt; ₹5 LPA or Tier-1 as listed by Placement Cell.</li>
+                  <li><strong>Category B:</strong> CTC from ₹3 LPA to less than ₹5 LPA.</li>
+                  <li><strong>Category C:</strong> CTC &lt; ₹3 LPA.</li>
+                </ul>
+                <p class="mb-1">Placement in Category A removes the student from further campus attempts (with limited exceptions for B/C placements as published in the full guidelines).</p>
+              </li>
+              <li>Students must review JD, work nature, salary and company before registering. Cancelling after registration or rejecting after confirmation will not be entertained.</li>
+              <li>Students should also research employers independently.</li>
+              <li>Placement Cell does not endorse paid selections. Training fees demanded after selection must be reported; candidates decide whether to proceed at their own responsibility.</li>
+              <li>Exclusive Tier-1 recruitments require impeccable professional behaviour. Actions harming college reputation lead to debarring.</li>
+              <li>Shortlisting for limited seats may use department feedback.</li>
+              <li>Background verification is standard. False information can lead to lifetime bans by companies and immediate debar from placement.</li>
+              <li>Students are advised to also seek opportunities externally and maintain an active LinkedIn profile.</li>
+            </ol>
+
+            <h6>Placement Database</h6>
+            <ol start="11">
+              <li>Eligible candidate lists are filtered from the placement database.</li>
+              <li>Update personal/academic changes in person at Placement Cell promptly.</li>
+              <li>Details must be genuine; do not round off marks. Violations lead to debarring.</li>
+            </ol>
+
+            <h6>Recruitment Drives — Registration, Participation, Communication</h6>
+            <ol start="14">
+              <li>Register for drives before the deadline; late registrations are not entertained.</li>
+              <li>Enter contact details carefully; wrong data may be treated as unauthorized absence.</li>
+              <li>Keep resume and certificates ready (hard &amp; soft copies).</li>
+              <li>Upload correct files with the instructed naming format.</li>
+              <li>If an ineligible student receives a registration link, do not register; report to Placement Cell.</li>
+              <li>Inform genuine inability to attend in writing before the list is sent to the company.</li>
+              <li>Withdrawing mid-process disqualifies the student for the rest of the year.</li>
+              <li>Opt-out requires a written letter to the placement committee.</li>
+              <li>Check email daily; Placement Cell is not responsible for missed mail.</li>
+              <li>Do not share Placement Cell emails/links unless directed.</li>
+              <li>Once placed through college, do not attend other college-directed interviews; own-effort searches remain allowed.</li>
+              <li>Attend screening programmes when requested.</li>
+              <li>Students who apply and get shortlisted must complete the process unless rejected by the company.</li>
+              <li>Placement Cell may cancel candidature for ineligibility, misconduct, improper attire, or missing documents.</li>
+            </ol>
+
+            <h6>Training, Resume, Dress Code &amp; Discipline</h6>
+            <ol start="28">
+              <li>Attend training, mock interviews and GDs arranged by Placement Cell.</li>
+              <li>Maintain an updated ATS-friendly resume with verifiable information.</li>
+              <li>Formal college uniform and professional grooming are mandatory for company interactions.</li>
+              <li>Carry College ID, Government ID, resumes, photos and mark lists as required.</li>
+              <li>Maintain punctuality and discipline; no unfair means; no negotiation of CTC with company executives during selection.</li>
+              <li>PPT attendance is compulsory for applied drives.</li>
+            </ol>
+
+            <h6>Joining, Bond &amp; Offer Letters</h6>
+            <ol start="47">
+              <li>Selected students should expect course completion expectations, possible 18–24 month work commitment, and company bond terms. Understand terms before/during PPT.</li>
+              <li>Report job confirmations to Placement Cell immediately and submit self-attested offer copies.</li>
+              <li>Placement Cell is not responsible for company cancellation of offers/LoIs.</li>
+            </ol>
+
+            <h6>General Guidelines</h6>
+            <ol start="50">
+              <li>Placement support may continue for registered candidates for at least two years after graduation.</li>
+              <li>Do not contact company executives directly for official communication except as directed; keep Placement Cell in CC when an official company email is provided.</li>
+              <li>Background verification may include academics, character and social media.</li>
+              <li>Sign attendance for drives/events; be prepared for off-campus interviews at own expense (subject to college conveyance rules).</li>
+              <li>Report fake recruiters demanding money or bank details.</li>
+            </ol>
+
+            <h6>Caution Deposit</h6>
+            <ol start="58">
+              <li>A refundable caution deposit of <strong>₹2,000/-</strong> must be remitted at registration. Unauthorized absence after registration: first ₹1,000; second ₹2,000 and removal from placement process (except verified emergency/medical reasons).</li>
+              <li>Serious violations / fraudulent or unprofessional conduct may lead to debarring without refund of caution deposit.</li>
+              <li>Caution deposit is refunded to the candidate’s bank account after the academic year; Placement Cell is not responsible for losses due to incorrect account details.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="card-surface p-3 mb-3" style="background:#f8fafc">
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="declarationAccepted" name="declarationAccepted" required/>
+            <label class="form-check-label small" for="declarationAccepted">
+              I read and understood the rules and guidelines mentioned in this document and agree to strictly adhere to the same. Placement Cell may take appropriate action following the violation of any rules from my side.
+            </label>
+          </div>
+          <div class="sign-row">
+            <div>
+              <label class="form-label small fw-semibold">Date</label>
+              <input class="form-control" name="signedDate" id="signedDate" required/>
+            </div>
+            <div>
+              <label class="form-label small fw-semibold">Name (Signature)</label>
+              <input class="form-control" name="signedName" id="signedName" required placeholder="Type your full name"/>
+            </div>
+            <div>
+              <label class="form-label small fw-semibold">Acknowledged</label>
+              <input class="form-control" value="Digital confirmation" readonly tabindex="-1"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="policy-sticky d-flex flex-wrap gap-2 justify-content-end">
+          <button type="submit" class="btn btn-primary px-4" id="btnConfirm">
+            <i class="bi bi-check2-circle me-1"></i>Confirm &amp; continue
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=20260711x"></script>
+<script>
+const BRANCHES = [
+  'CSE-A','CSE-B','CSE-C','ECE-A','ECE-B','IT',
+  'EEE','ME','CE','AUE','MET','CHE',
+  'FT','MCA','INT MCA','M.Tech'
+];
+
+const grid = document.getElementById('branchGrid');
+grid.innerHTML = BRANCHES.map((b, i) => `
+  <label>
+    <input type="radio" name="branchBatch" value="${b}" ${i === 0 ? '' : ''} required/>
+    <span>${b}</span>
+  </label>`).join('');
+
+const mtechWrap = document.getElementById('mtechWrap');
+grid.addEventListener('change', () => {
+  const v = grid.querySelector('input[name="branchBatch"]:checked')?.value || '';
+  const isMtech = v === 'M.Tech';
+  mtechWrap.classList.toggle('d-none', !isMtech);
+  document.getElementById('mtechBranch').required = isMtech;
+});
+
+document.getElementById('signedDate').value = new Date().toISOString().slice(0, 10);
+document.getElementById('btnLogout').addEventListener('click', () => Auth.logout());
+
+function fillFromUser(u) {
+  if (!u) return;
+  if (u.registerNumber) document.getElementById('regNo').value = u.registerNumber;
+  if (u.name) {
+    document.getElementById('regName').value = u.name;
+    document.getElementById('signedName').value = u.name;
+  }
+  if (u.phone) document.getElementById('regMobile').value = u.phone;
+  const email = u.personalEmail || u.email || u.collegeEmail || '';
+  if (email) document.getElementById('regEmail').value = email;
+  const dept = String(u.department || u.departmentName || u.branch || '').trim().toUpperCase();
+  if (dept) {
+    const match = BRANCHES.find(b => dept === b || dept.includes(b) || b.includes(dept.replace(/\s+/g, '')));
+    if (match) {
+      const radio = grid.querySelector(`input[value="${match}"]`);
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }
+}
+
+async function gate() {
+  if (!Auth.role()) {
+    const ok = await Auth.bootstrap();
+    if (!ok) {
+      window.location.replace('public-stats.html?next=' + encodeURIComponent('placement-registration.html'));
+      return;
+    }
+  }
+  if (Auth.role() !== 'student') {
+    window.location.replace(Auth.homePage());
+    return;
+  }
+  if (Auth.hasRealAuth() && !Auth.isDemo()) {
+    await Auth.enrichFromProfile();
+  }
+  const u = Auth.user() || {};
+  if (u.policyAccepted) {
+    window.location.replace(Auth.homePage() || 'drives.html');
+    return;
+  }
+  fillFromUser(u);
+}
+
+document.getElementById('registrationForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const branch = form.querySelector('input[name="branchBatch"]:checked')?.value || '';
+  if (!branch) {
+    toast('Select your branch & batch.', 'warn');
+    return;
+  }
+  if (branch === 'M.Tech' && !String(form.mtechBranch.value || '').trim()) {
+    toast('Specify your M.Tech branch.', 'warn');
+    form.mtechBranch.focus();
+    return;
+  }
+  if (!form.declarationAccepted.checked) {
+    toast('Please accept the declaration to continue.', 'warn');
+    return;
+  }
+  if (!form.checkValidity()) {
+    form.reportValidity();
+    return;
+  }
+  const mobile = String(form.mobile.value || '').trim();
+  if (typeof isValidContactPhone === 'function' && !isValidContactPhone(mobile)) {
+    toast('Enter a valid 10-digit Indian mobile number.', 'warn');
+    form.mobile.focus();
+    return;
+  }
+  const payload = {
+    registerNumber: form.registerNumber.value.trim(),
+    name: form.name.value.trim(),
+    mobile: typeof normalizeContactPhone === 'function' ? (normalizeContactPhone(mobile) || mobile) : mobile,
+    email: form.email.value.trim(),
+    yop: form.yop.value.trim() || '2026',
+    branchBatch: branch,
+    mtechBranch: form.mtechBranch.value.trim(),
+    declarationAccepted: true,
+    signedName: form.signedName.value.trim(),
+    signedDate: form.signedDate.value.trim(),
+  };
+  if (payload.signedName.toLowerCase() !== payload.name.toLowerCase()) {
+    if (!(await confirmAction({
+      title: 'Name mismatch',
+      message: 'The signature name differs from the registration name. Continue anyway?',
+      confirmText: 'Continue',
+      variant: 'primary',
+    }))) return;
+  }
+
+  const btn = document.getElementById('btnConfirm');
+  btn.disabled = true;
+  const res = await api('/student/policy/accept', { method: 'POST', body: payload });
+  btn.disabled = false;
+  if (!res.success) {
+    toast(res.message || 'Could not save registration.', 'error');
+    return;
+  }
+  Auth.applySessionUser({
+    ...(Auth.user() || {}),
+    policyAccepted: true,
+    policyVersion: res.data?.policyVersion || 'ajce-2026-v1',
+    policyAcceptedAt: res.data?.policyAcceptedAt || new Date().toISOString(),
+    phone: payload.mobile,
+    name: payload.name,
+    registerNumber: payload.registerNumber,
+  });
+  toast('Registration confirmed. Opening your portal…', 'success');
+  setTimeout(() => {
+    window.location.replace(Auth.homePage() || 'drives.html');
+  }, 500);
+});
+
+gate();
+</script>
+</body>
+</html>

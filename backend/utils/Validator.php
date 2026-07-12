@@ -51,6 +51,11 @@ final class Validator
                         $errors[$field] = 'Invalid value for ' . str_replace('_', ' ', $field) . '.';
                         break;
                     }
+                } elseif ($rule === 'phone') {
+                    if ($value !== null && $value !== '' && !self::isValidPhone((string) $value)) {
+                        $errors[$field] = 'Enter a valid 10-digit Indian mobile number.';
+                        break;
+                    }
                 } elseif ($rule === 'numeric') {
                     if ($value !== null && $value !== '' && !is_numeric($value)) {
                         $errors[$field] = ucfirst(str_replace('_', ' ', $field)) . ' must be numeric.';
@@ -69,6 +74,23 @@ final class Validator
             return '';
         }
         return trim(strip_tags($value));
+    }
+
+    /** Indian mobile: 10 digits starting 6–9; optional +91 / 0 prefix. */
+    public static function isValidPhone(string $phone): bool
+    {
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+        if ($digits === '') {
+            return false;
+        }
+        if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
+            $digits = substr($digits, 2);
+        }
+        if (strlen($digits) === 11 && str_starts_with($digits, '0')) {
+            $digits = substr($digits, 1);
+        }
+
+        return (bool) preg_match('/^[6-9]\d{9}$/', $digits);
     }
 
     /**

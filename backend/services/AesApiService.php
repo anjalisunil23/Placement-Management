@@ -1728,7 +1728,7 @@ final class AesApiService
     {
         $aesId = trim((string) (
             $item['deptCode']
-            ?? $item['dept_code']
+                ?? $item['dept_code']
             ?? $item['deptId']
             ?? $item['dept_id']
             ?? $item['id']
@@ -1738,26 +1738,26 @@ final class AesApiService
             $item['deptshort']
             ?? $item['dept_short']
             ?? $item['short']
-            ?? $item['br']
+                ?? $item['br']
             ?? $item['branch_code']
             ?? ''
         )));
         $legacyCode = strtoupper(trim((string) (
             $item['code']
             ?? $item['department_code']
-            ?? ''
-        )));
-        $name = trim((string) (
+                ?? ''
+            )));
+            $name = trim((string) (
             $item['deptName']
-            ?? $item['dept_name']
+                ?? $item['dept_name']
             ?? $item['dept_shortName']
             ?? $item['name']
-            ?? $item['department_name']
-            ?? $item['department']
-            ?? $item['branch_name']
-            ?? $item['branch']
-            ?? ''
-        ));
+                ?? $item['department_name']
+                ?? $item['department']
+                ?? $item['branch_name']
+                ?? $item['branch']
+                ?? ''
+            ));
 
         $canonical = '';
         if ($short !== '' && preg_match('/[A-Z]/i', $short) === 1) {

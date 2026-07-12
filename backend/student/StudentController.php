@@ -12,6 +12,7 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
+use PMS\Models\PolicyAcceptanceLogModel;
 use PMS\Models\ResumeModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
@@ -425,13 +426,86 @@ final class StudentController
     return $out;
   }
 
-  /** POST /api/student/policy/accept */
+  /** POST /api/student/policy/accept — Placement Cell registration + guidelines confirmation */
   public function acceptPolicy(): void
   {
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
-    $this->studentModel->update((string) $profile['_id'], ['policyAccepted' => true]);
-    Response::success(null, 'Placement policy accepted.');
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+
+    $errors = Validator::validate($input, [
+      'registerNumber' => 'required',
+      'name'           => 'required|min:2',
+      'mobile'         => 'required|phone',
+      'email'          => 'required|email',
+      'branchBatch'    => 'required',
+      'yop'            => 'required',
+      'signedName'     => 'required|min:2',
+    ]);
+    if (empty($input['declarationAccepted']) && empty($input['declaration'])) {
+      $errors['declarationAccepted'] = 'You must accept the placement guidelines declaration.';
+    }
+    $branch = trim((string) ($input['branchBatch'] ?? ''));
+    $mtechBranch = trim((string) ($input['mtechBranch'] ?? ''));
+    if (strcasecmp($branch, 'M.Tech') === 0 || strcasecmp($branch, 'MTECH') === 0) {
+      if ($mtechBranch === '') {
+        $errors['mtechBranch'] = 'Please specify your M.Tech branch.';
+      }
+    }
+    if (!empty($errors)) {
+      Response::error('Validation failed.', 422, $errors);
+    }
+
+    $version = 'ajce-2026-v1';
+    $now = gmdate('c');
+    $signedName = trim((string) $input['signedName']);
+    $registration = [
+      'registerNumber' => strtoupper(trim((string) $input['registerNumber'])),
+      'name'           => trim((string) $input['name']),
+      'mobile'         => trim((string) $input['mobile']),
+      'email'          => strtolower(trim((string) $input['email'])),
+      'branchBatch'    => $branch,
+      'mtechBranch'    => $mtechBranch,
+      'yop'            => trim((string) $input['yop']),
+      'signedName'     => $signedName,
+      'signedDate'     => trim((string) ($input['signedDate'] ?? date('Y-m-d'))),
+      'declarationAccepted' => true,
+      'acceptedAt'     => $now,
+      'policyVersion'  => $version,
+    ];
+
+    $personal = is_array($profile['personal'] ?? null) ? $profile['personal'] : [];
+    $personal['phone'] = $registration['mobile'];
+    if ($registration['email'] !== '' && !str_ends_with($registration['email'], '@students.amaljyothi.ac.in')) {
+      $personal['personalEmail'] = $registration['email'];
+    }
+
+    $this->studentModel->update((string) $profile['_id'], [
+      'policyAccepted'   => true,
+      'policyAcceptedAt' => $now,
+      'policyVersion'    => $version,
+      'placementRegistration' => $registration,
+      'classBatch'       => $branch . ($mtechBranch !== '' ? ' — ' . $mtechBranch : ''),
+      'personal'         => $personal,
+    ]);
+
+    (new PolicyAcceptanceLogModel())->logAcceptance([
+      'studentId'      => (string) $profile['_id'],
+      'userId'         => (string) $user['_id'],
+      'studentName'    => $registration['name'],
+      'registerNumber' => $registration['registerNumber'],
+      'policyVersion'  => $version,
+      'acceptedAt'     => $now,
+      'acceptedIp'     => (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? ''),
+      'userAgent'      => substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500),
+      'deviceType'     => 'web',
+    ]);
+
+    Response::success([
+      'policyAccepted' => true,
+      'policyVersion'  => $version,
+      'policyAcceptedAt' => $now,
+    ], 'Placement Cell registration confirmed.');
   }
 
   /** POST /api/student/resume */

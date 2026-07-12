@@ -398,6 +398,7 @@ const PAGE_PERMS = {
   'public-stats.html':  ROLES,
   'settings.html':      ['admin','placement_officer','student','staff','alumni','company'],
   'get-placed.html':    ['student'],
+  'placement-registration.html': ['student'],
   'alumni-jobs.html':       ['alumni'],
   'alumni-referrals.html':  ['alumni'],
   'alumni-success-stories.html': ['alumni'],
@@ -421,7 +422,16 @@ const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-ref
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html', 'recruiting.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-placements.html', 'drives.html', 'students.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
-const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html'];
+const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html'];
+
+/** Placement Cell guidelines version students must accept on first login. */
+const PLACEMENT_POLICY_VERSION = 'ajce-2026-v1';
+
+function studentNeedsPlacementRegistration() {
+  if (Auth.role() !== 'student') return false;
+  if (!Auth.hasRealAuth() || Auth.isDemo()) return false;
+  return !Auth.user()?.policyAccepted;
+}
 
 /** Default landing page per role after sign-in */
 const ROLE_HOME = {
@@ -552,6 +562,9 @@ const Auth = {
     const u = this.user();
     const r = role || this.role();
     if (r === 'admin') return 'dashboard.html';
+    if (r === 'student' && studentNeedsPlacementRegistration()) {
+      return 'placement-registration.html';
+    }
     if (r === 'alumni' && u && typeof u.isWorking === 'boolean' && !u.isWorking) {
       return 'drives.html';
     }
@@ -564,6 +577,9 @@ const Auth = {
   resolveRedirect(next) {
     if (this.role() === 'admin') return 'dashboard.html';
     if (this.role() === 'placement_officer') return 'dashboard.html';
+    if (this.role() === 'student' && studentNeedsPlacementRegistration()) {
+      return 'placement-registration.html';
+    }
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
     const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
@@ -606,6 +622,9 @@ const Auth = {
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || prev.photoUrl || '',
         photo: merged.photo || prev.photo || null,
         placed: merged.placed ?? prev.placed,
+        policyAccepted: merged.policyAccepted ?? prev.policyAccepted ?? false,
+        policyVersion: merged.policyVersion || prev.policyVersion || '',
+        policyAcceptedAt: merged.policyAcceptedAt || prev.policyAcceptedAt || '',
         title: merged.title ?? prev.title ?? '',
         experience: merged.experience ?? prev.experience,
         isWorking: merged.isWorking ?? prev.isWorking,
@@ -700,7 +719,12 @@ const Auth = {
     if (role === 'alumni') return alumniPageAllowed(base);
     if (role === 'company') return COMPANY_PAGES.includes(base);
     if (role === 'staff') return STAFF_PAGES.includes(base);
-    if (role === 'student') return STUDENT_PAGES.includes(base);
+    if (role === 'student') {
+      if (studentNeedsPlacementRegistration()) {
+        return base === 'placement-registration.html';
+      }
+      return STUDENT_PAGES.includes(base) && base !== 'placement-registration.html';
+    }
     return true;
   },
   isAuthed() { return !!this.user(); },
@@ -727,16 +751,28 @@ const Auth = {
       const u = p.user || {};
       const prev = this.user() || {};
       const reg = p.registerNumber || prev.registerNumber || '';
+      const deptRaw = p.department ?? u.department ?? prev.department;
+      const deptCode = (deptRaw && typeof deptRaw === 'object')
+        ? String(deptRaw.code || deptRaw.name || '').trim()
+        : String(deptRaw || '').trim();
+      const deptName = (deptRaw && typeof deptRaw === 'object')
+        ? String(deptRaw.name || deptRaw.code || '').trim()
+        : String(p.departmentName || p.branch || p.programme || prev.departmentName || '').trim();
       const merged = {
         ...prev,
         ...u,
         registerNumber: reg,
         stud_name: u.stud_name || u.name || p.stud_name || prev.stud_name || '',
         academic: p.academic || prev.academic,
-        department: p.department || prev.department,
-        departmentName: p.departmentName || p.branch || p.programme || prev.departmentName || '',
+        department: deptCode || prev.department || '',
+        departmentCode: deptCode || prev.departmentCode || '',
+        departmentId: (deptRaw && typeof deptRaw === 'object' ? (deptRaw.id || deptRaw._id) : null) || p.departmentId || prev.departmentId || '',
+        departmentName: deptName || prev.departmentName || '',
         branch: p.branch || p.programme || prev.branch || '',
         programme: p.programme || p.branch || prev.programme || '',
+        policyAccepted: p.policyAccepted ?? u.policyAccepted ?? prev.policyAccepted ?? false,
+        policyVersion: p.policyVersion || prev.policyVersion || '',
+        policyAcceptedAt: p.policyAcceptedAt || prev.policyAcceptedAt || '',
         photoUrl: p.photoUrl || p.photo?.url || u.photoUrl || prev.photoUrl || '',
         photo: p.photo || prev.photo || null,
       };
@@ -955,7 +991,8 @@ const StaffRecs = {
       }
       return res.data;
     }
-    if (Auth.role() === 'staff' && Auth.hasRealAuth()) {
+    if ((Auth.role() === 'staff' || Auth.role() === 'placement_officer') && Auth.hasRealAuth() && !Auth.isDemo()) {
+      toast(res.message || 'Could not submit recommendation.', 'error');
       return null;
     }
     const u = Auth.user();
@@ -1219,6 +1256,10 @@ const AlumniReferrals = {
     };
     const res = await api('/alumni/jobs/refer', { method: 'POST', body });
     if (res.success) { await this.fetch(); return res.data; }
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      toast(res.message || 'Could not submit referral.', 'error');
+      return null;
+    }
     const u = Auth.user();
     const row = {
       id: 'ar-' + Date.now(),
@@ -2154,10 +2195,32 @@ function companyHiringCounts(companyName) {
 
 function viewerDepartment() {
   const role = Auth.role();
-  const u = Auth.user();
-  if (role === 'staff') return u?.department || '';
-  if (role === 'placement_officer') return u?.department || '';
-  return '';
+  const u = Auth.user() || {};
+  if (role !== 'staff' && role !== 'placement_officer') return '';
+  const dept = u.department;
+  if (dept && typeof dept === 'object') {
+    return String(dept.code || dept.name || '').trim();
+  }
+  return String(dept || u.departmentCode || u.departmentName || u.branch || '').trim();
+}
+
+/** Indian mobile: 10 digits starting 6–9; optional +91 / 0 / spaces. */
+function isValidContactPhone(raw) {
+  const digits = String(raw || '').replace(/\D+/g, '');
+  if (!digits) return false;
+  let local = digits;
+  if (local.length === 12 && local.startsWith('91')) local = local.slice(2);
+  if (local.length === 11 && local.startsWith('0')) local = local.slice(1);
+  return /^[6-9]\d{9}$/.test(local);
+}
+
+function normalizeContactPhone(raw) {
+  const digits = String(raw || '').replace(/\D+/g, '');
+  if (!digits) return '';
+  let local = digits;
+  if (local.length === 12 && local.startsWith('91')) local = local.slice(2);
+  if (local.length === 11 && local.startsWith('0')) local = local.slice(1);
+  return /^[6-9]\d{9}$/.test(local) ? local : '';
 }
 
 /** Match a department row by code, id, AES id, or name. */
