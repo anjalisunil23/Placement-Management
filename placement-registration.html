@@ -59,7 +59,11 @@
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Mobile Number</label>
-            <input class="form-control" type="tel" name="mobile" id="regMobile" required inputmode="tel" maxlength="20" placeholder="Mobile with country code if needed"/>
+            <div class="input-group" data-contact-phone="1">
+              <select class="form-select flex-grow-0" style="max-width:7.25rem" name="phoneCountryCode" id="regCountryCode" aria-label="Country code"></select>
+              <input class="form-control" type="tel" name="mobile" id="regMobile" required inputmode="numeric" autocomplete="tel-national" maxlength="15" placeholder="Phone number"/>
+            </div>
+            <div class="form-text">Select country code, then enter the number.</div>
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Email ID</label>
@@ -221,13 +225,20 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260712b"></script>
+<script src="js/api.js?v=20260712c"></script>
 <script>
 const BRANCHES = [
   'CSE-A','CSE-B','CSE-C','ECE-A','ECE-B','IT',
   'EEE','ME','CE','AUE','MET','CHE',
   'FT','MCA','INT MCA','M.Tech'
 ];
+
+(function initCountryCode() {
+  const cc = document.getElementById('regCountryCode');
+  if (cc && typeof buildPhoneCountryOptions === 'function') {
+    cc.innerHTML = buildPhoneCountryOptions('91');
+  }
+})();
 
 const grid = document.getElementById('branchGrid');
 grid.innerHTML = BRANCHES.map((b, i) => `
@@ -254,7 +265,14 @@ function fillFromUser(u) {
     document.getElementById('regName').value = u.name;
     document.getElementById('signedName').value = u.name;
   }
-  if (u.phone) document.getElementById('regMobile').value = u.phone;
+  if (u.phone) {
+    const parts = typeof splitContactPhone === 'function'
+      ? splitContactPhone(u.phone)
+      : { country: '91', local: String(u.phone).replace(/\D+/g, '') };
+    const cc = document.getElementById('regCountryCode');
+    if (cc && parts.country) cc.value = parts.country;
+    document.getElementById('regMobile').value = parts.local || '';
+  }
   const email = u.personalEmail || u.email || u.collegeEmail || '';
   if (email) document.getElementById('regEmail').value = email;
   const dept = String(u.department || u.departmentName || u.branch || '').trim().toUpperCase();
@@ -314,9 +332,11 @@ document.getElementById('registrationForm').addEventListener('submit', async (e)
     form.reportValidity();
     return;
   }
-  const mobile = String(form.mobile.value || '').trim();
+  const mobile = typeof readPhoneFieldGroup === 'function'
+    ? readPhoneFieldGroup(form)
+    : String(form.mobile.value || '').trim();
   if (typeof isValidContactPhone === 'function' && !isValidContactPhone(mobile)) {
-    toast('Enter a valid phone number (7–15 digits).', 'warn');
+    toast('Enter a valid phone number.', 'warn');
     form.mobile.focus();
     return;
   }

@@ -2255,6 +2255,93 @@ function viewerDepartment() {
   return hints[0] || '';
 }
 
+/** Common dial codes for contact phone fields (India default). */
+const CONTACT_COUNTRY_CODES = [
+  { dial: '91', label: 'India' },
+  { dial: '971', label: 'UAE' },
+  { dial: '1', label: 'USA / Canada' },
+  { dial: '44', label: 'UK' },
+  { dial: '966', label: 'Saudi Arabia' },
+  { dial: '974', label: 'Qatar' },
+  { dial: '968', label: 'Oman' },
+  { dial: '965', label: 'Kuwait' },
+  { dial: '973', label: 'Bahrain' },
+  { dial: '65', label: 'Singapore' },
+  { dial: '60', label: 'Malaysia' },
+  { dial: '61', label: 'Australia' },
+  { dial: '49', label: 'Germany' },
+  { dial: '33', label: 'France' },
+  { dial: '977', label: 'Nepal' },
+  { dial: '94', label: 'Sri Lanka' },
+  { dial: '880', label: 'Bangladesh' },
+];
+
+function buildPhoneCountryOptions(selected = '91') {
+  const sel = String(selected || '91').replace(/\D+/g, '') || '91';
+  return CONTACT_COUNTRY_CODES.map(c => {
+    const picked = c.dial === sel ? ' selected' : '';
+    return `<option value="${c.dial}"${picked} title="${c.label}">+${c.dial}</option>`;
+  }).join('');
+}
+
+/** Country-code select + national number input group. */
+function phoneFieldGroupHtml(opts = {}) {
+  const name = opts.name || 'contactNumber';
+  const id = opts.id ? ` id="${opts.id}"` : '';
+  const countryName = opts.countryName || 'phoneCountryCode';
+  const countryId = opts.countryId ? ` id="${opts.countryId}"` : '';
+  const selected = opts.selectedCountry || '91';
+  const placeholder = opts.placeholder || 'Phone number';
+  const required = opts.required === false ? '' : ' required';
+  const help = opts.help !== false
+    ? `<div class="form-text">${opts.helpText || 'Select country code, then enter the number.'}</div>`
+    : '';
+  return `<div class="input-group" data-contact-phone="1">
+      <select class="form-select flex-grow-0" style="max-width:7.25rem"${countryId} name="${countryName}" aria-label="Country code">
+        ${buildPhoneCountryOptions(selected)}
+      </select>
+      <input class="form-control" type="tel" name="${name}"${id}${required}
+        inputmode="numeric" autocomplete="tel-national" maxlength="15"
+        placeholder="${placeholder}"
+        title="Enter phone number without country code"/>
+    </div>${help}`;
+}
+
+function composeContactPhone(countryDial, localNumber) {
+  const dial = String(countryDial || '').replace(/\D+/g, '');
+  let local = String(localNumber || '').replace(/\D+/g, '').replace(/^0+/, '');
+  if (!local) return '';
+  if (dial && local.startsWith(dial) && local.length - dial.length >= 6) {
+    local = local.slice(dial.length);
+  }
+  return dial + local;
+}
+
+function splitContactPhone(raw) {
+  const digits = String(raw || '').replace(/\D+/g, '');
+  if (!digits) return { country: '91', local: '' };
+  const sorted = [...CONTACT_COUNTRY_CODES].sort((a, b) => b.dial.length - a.dial.length);
+  for (const c of sorted) {
+    if (digits.startsWith(c.dial) && digits.length > c.dial.length + 5) {
+      return { country: c.dial, local: digits.slice(c.dial.length) };
+    }
+  }
+  if (digits.length === 10) return { country: '91', local: digits };
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return { country: '91', local: digits.slice(2) };
+  }
+  return { country: '91', local: digits };
+}
+
+function readPhoneFieldGroup(root) {
+  const scope = root || document;
+  const countryEl = scope.querySelector('[name="phoneCountryCode"]');
+  const localEl = scope.querySelector('[name="contactNumber"], [name="mobile"], [data-phone-local]');
+  const dial = countryEl ? countryEl.value : '91';
+  const local = localEl ? localEl.value : '';
+  return composeContactPhone(dial, local);
+}
+
 /** International phone: 7–15 digits (E.164); allows +, spaces, dashes, parentheses. */
 function isValidContactPhone(raw) {
   const trimmed = String(raw || '').trim();

@@ -724,14 +724,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 /** Shared staff / alumni referral modals — open from any page */
 const ReferralModals = {
   phoneFieldHtml() {
+    const group = typeof phoneFieldGroupHtml === 'function'
+      ? phoneFieldGroupHtml({ name: 'contactNumber', placeholder: 'Phone number' })
+      : `<input class="form-control" type="tel" name="contactNumber" required data-contact-phone="1"/>`;
     return `<div class="col-md-6">
       <label class="form-label small fw-semibold">Contact number</label>
-      <input class="form-control" type="tel" name="contactNumber" required
-        inputmode="tel" autocomplete="tel" maxlength="20"
-        placeholder="+91 98765 43210 or +1 555 123 4567"
-        title="Enter a valid phone number (7–15 digits)"
-        data-contact-phone="1"/>
-      <div class="form-text">Include country code if outside India (e.g. +1, +44).</div>
+      ${group}
     </div>`;
   },
 
@@ -743,25 +741,27 @@ const ReferralModals = {
       return null;
     }
     const data = Object.fromEntries(new FormData(form).entries());
-    const phone = String(data.contactNumber || '').trim();
+    const phone = typeof readPhoneFieldGroup === 'function'
+      ? readPhoneFieldGroup(form)
+      : String(data.contactNumber || '').trim();
     if (typeof isValidContactPhone !== 'function' || !isValidContactPhone(phone)) {
-      toast('Enter a valid phone number (7–15 digits).', 'warn');
+      toast('Enter a valid phone number.', 'warn');
       phoneInput?.focus();
-      phoneInput?.setCustomValidity('Enter a valid phone number (7–15 digits).');
+      phoneInput?.setCustomValidity('Enter a valid phone number.');
       phoneInput?.reportValidity();
       return null;
     }
     phoneInput?.setCustomValidity('');
-    if (typeof normalizeContactPhone === 'function') {
-      const normalized = normalizeContactPhone(phone);
-      if (normalized) data.contactNumber = normalized;
-    }
+    data.contactNumber = typeof normalizeContactPhone === 'function'
+      ? (normalizeContactPhone(phone) || phone)
+      : phone;
+    delete data.phoneCountryCode;
     return data;
   },
 
   mountStaff() {
     const existing = document.getElementById('staffRecommendModal');
-    if (existing?.querySelector('[data-contact-phone="1"]')) return;
+    if (existing?.querySelector('[name="phoneCountryCode"]')) return;
     existing?.remove();
     document.body.insertAdjacentHTML('beforeend', `
 <div class="modal fade" id="staffRecommendModal" tabindex="-1" aria-labelledby="staffRecommendModalLabel" aria-hidden="true">
@@ -814,7 +814,7 @@ const ReferralModals = {
 
   mountAlumni() {
     const existing = document.getElementById('alumniReferralModal');
-    if (existing?.querySelector('[data-contact-phone="1"]')) return;
+    if (existing?.querySelector('[name="phoneCountryCode"]')) return;
     existing?.remove();
     document.body.insertAdjacentHTML('beforeend', `
 <div class="modal fade" id="alumniReferralModal" tabindex="-1" aria-labelledby="alumniReferralModalLabel" aria-hidden="true">
