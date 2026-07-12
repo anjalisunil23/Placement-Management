@@ -754,20 +754,40 @@ const Auth = {
       const deptRaw = p.department ?? u.department ?? prev.department;
       const deptCode = (deptRaw && typeof deptRaw === 'object')
         ? String(deptRaw.code || deptRaw.name || '').trim()
-        : String(deptRaw || '').trim();
+        : String(deptRaw || p.departmentCode || '').trim();
       const deptName = (deptRaw && typeof deptRaw === 'object')
         ? String(deptRaw.name || deptRaw.code || '').trim()
         : String(p.departmentName || p.branch || p.programme || prev.departmentName || '').trim();
+      const aesDeptId = String(
+        (deptRaw && typeof deptRaw === 'object' ? (deptRaw.aesId || '') : '')
+        || p.departmentAesId
+        || prev.departmentAesId
+        || (/^\d+$/.test(deptCode) ? deptCode : '')
+      ).trim();
+      const preferReadable = (name, code) => {
+        const n = String(name || '').trim();
+        const c = String(code || '').trim();
+        if (c && !/^\d+$/.test(c)) return c;
+        if (n && !/^\d+$/.test(n)) return n;
+        return c || n;
+      };
+      const readableDept = preferReadable(deptName || p.departmentName, deptCode || p.departmentCode);
+      const readableName = (deptName && !/^\d+$/.test(deptName))
+        ? deptName
+        : (String(p.departmentName || '').trim() && !/^\d+$/.test(String(p.departmentName || '').trim())
+          ? String(p.departmentName).trim()
+          : readableDept);
       const merged = {
         ...prev,
         ...u,
         registerNumber: reg,
         stud_name: u.stud_name || u.name || p.stud_name || prev.stud_name || '',
         academic: p.academic || prev.academic,
-        department: deptCode || prev.department || '',
-        departmentCode: deptCode || prev.departmentCode || '',
+        department: readableDept || prev.department || '',
+        departmentCode: (deptCode && !/^\d+$/.test(deptCode) ? deptCode : readableDept) || prev.departmentCode || '',
         departmentId: (deptRaw && typeof deptRaw === 'object' ? (deptRaw.id || deptRaw._id) : null) || p.departmentId || prev.departmentId || '',
-        departmentName: deptName || prev.departmentName || '',
+        departmentName: readableName || prev.departmentName || '',
+        departmentAesId: aesDeptId || prev.departmentAesId || '',
         branch: p.branch || p.programme || prev.branch || '',
         programme: p.programme || p.branch || prev.programme || '',
         policyAccepted: p.policyAccepted ?? u.policyAccepted ?? prev.policyAccepted ?? false,
@@ -2197,30 +2217,57 @@ function viewerDepartment() {
   const role = Auth.role();
   const u = Auth.user() || {};
   if (role !== 'staff' && role !== 'placement_officer') return '';
-  const dept = u.department;
-  if (dept && typeof dept === 'object') {
-    return String(dept.code || dept.name || '').trim();
+
+  const hints = [];
+  const push = (v) => {
+    const s = String(v || '').trim();
+    if (s && !hints.includes(s)) hints.push(s);
+  };
+  if (u.department && typeof u.department === 'object') {
+    push(u.department.name);
+    push(u.department.code);
+    push(u.department.aesId);
+    push(u.department.id);
+  } else {
+    push(u.department);
   }
-  return String(dept || u.departmentCode || u.departmentName || u.branch || '').trim();
+  push(u.departmentName);
+  push(u.departmentCode);
+  push(u.branch);
+  push(u.programme);
+  push(u.departmentId);
+  push(u.departmentAesId);
+
+  let record = null;
+  for (const h of hints) {
+    record = typeof resolveDepartmentRecord === 'function' ? resolveDepartmentRecord(h) : null;
+    if (record) break;
+  }
+
+  const nonNumeric = hints.find(h => h && !/^\d+$/.test(h));
+  if (record) {
+    const code = String(record.code || '').trim();
+    if (code && !/^\d+$/.test(code)) return code;
+    const name = String(record.name || '').trim();
+    if (name) return name;
+  }
+  if (nonNumeric) return nonNumeric;
+  return hints[0] || '';
 }
 
-/** Indian mobile: 10 digits starting 6–9; optional +91 / 0 / spaces. */
+/** International phone: 7–15 digits (E.164); allows +, spaces, dashes, parentheses. */
 function isValidContactPhone(raw) {
-  const digits = String(raw || '').replace(/\D+/g, '');
-  if (!digits) return false;
-  let local = digits;
-  if (local.length === 12 && local.startsWith('91')) local = local.slice(2);
-  if (local.length === 11 && local.startsWith('0')) local = local.slice(1);
-  return /^[6-9]\d{9}$/.test(local);
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return false;
+  if (!/^[+\d][\d\s().-]*$/.test(trimmed)) return false;
+  const digits = trimmed.replace(/\D+/g, '');
+  return digits.length >= 7 && digits.length <= 15;
 }
 
 function normalizeContactPhone(raw) {
   const digits = String(raw || '').replace(/\D+/g, '');
-  if (!digits) return '';
-  let local = digits;
-  if (local.length === 12 && local.startsWith('91')) local = local.slice(2);
-  if (local.length === 11 && local.startsWith('0')) local = local.slice(1);
-  return /^[6-9]\d{9}$/.test(local) ? local : '';
+  if (digits.length < 7 || digits.length > 15) return '';
+  return digits;
 }
 
 /** Match a department row by code, id, AES id, or name. */
@@ -2677,6 +2724,7 @@ const DepartmentStore = {
           id: d.id || d._id,
           name: d.name || '',
           code: d.code || '',
+          aesId: d.aesId || '',
           hasOfficer: !!d.hasOfficer,
         }));
       }
@@ -2687,6 +2735,7 @@ const DepartmentStore = {
           id: d.id || d._id,
           name: String(d.name || '').trim(),
           code: String(d.code || '').trim(),
+          aesId: String(d.aesId || '').trim(),
           hasOfficer: !!d.hasOfficer,
           placementOfficer: d.placementOfficer || null,
         }))

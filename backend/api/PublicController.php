@@ -161,10 +161,12 @@ final class PublicController
             if ($code === '' || $name === '' || !DepartmentModel::isStudentAcademicDepartment($code, $name)) {
                 continue;
             }
+            $aesId = trim((string) ($serialized['aesId'] ?? ''));
             $rows[] = [
                 'id'         => $id,
                 'name'       => $name,
                 'code'       => $code,
+                'aesId'      => preg_match('/^\d+$/', $aesId) === 1 ? $aesId : '',
                 'hasOfficer' => isset($assignedDeptIds[$id]),
             ];
         }

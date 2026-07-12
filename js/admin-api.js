@@ -259,6 +259,7 @@ const AdminApi = {
       id: this.id(d),
       name: d.name || '',
       code: d.code || '',
+      aesId: d.aesId || '',
       placementOfficer: d.placementOfficer || null,
       hasOfficer: !!d.hasOfficer,
     };

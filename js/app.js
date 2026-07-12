@@ -727,11 +727,11 @@ const ReferralModals = {
     return `<div class="col-md-6">
       <label class="form-label small fw-semibold">Contact number</label>
       <input class="form-control" type="tel" name="contactNumber" required
-        inputmode="tel" autocomplete="tel" maxlength="16"
-        placeholder="9876543210 or +91 98765 43210"
-        title="Enter a valid 10-digit Indian mobile number"
+        inputmode="tel" autocomplete="tel" maxlength="20"
+        placeholder="+91 98765 43210 or +1 555 123 4567"
+        title="Enter a valid phone number (7–15 digits)"
         data-contact-phone="1"/>
-      <div class="form-text">10-digit Indian mobile (starts with 6–9). +91 optional.</div>
+      <div class="form-text">Include country code if outside India (e.g. +1, +44).</div>
     </div>`;
   },
 
@@ -745,9 +745,9 @@ const ReferralModals = {
     const data = Object.fromEntries(new FormData(form).entries());
     const phone = String(data.contactNumber || '').trim();
     if (typeof isValidContactPhone !== 'function' || !isValidContactPhone(phone)) {
-      toast('Enter a valid 10-digit Indian mobile number.', 'warn');
+      toast('Enter a valid phone number (7–15 digits).', 'warn');
       phoneInput?.focus();
-      phoneInput?.setCustomValidity('Enter a valid 10-digit Indian mobile number.');
+      phoneInput?.setCustomValidity('Enter a valid phone number (7–15 digits).');
       phoneInput?.reportValidity();
       return null;
     }

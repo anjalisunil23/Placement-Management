@@ -59,7 +59,7 @@
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Mobile Number</label>
-            <input class="form-control" type="tel" name="mobile" id="regMobile" required inputmode="tel" maxlength="16" placeholder="10-digit Indian mobile"/>
+            <input class="form-control" type="tel" name="mobile" id="regMobile" required inputmode="tel" maxlength="20" placeholder="Mobile with country code if needed"/>
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Email ID</label>
@@ -221,7 +221,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260711x"></script>
+<script src="js/api.js?v=20260712b"></script>
 <script>
 const BRANCHES = [
   'CSE-A','CSE-B','CSE-C','ECE-A','ECE-B','IT',
@@ -316,7 +316,7 @@ document.getElementById('registrationForm').addEventListener('submit', async (e)
   }
   const mobile = String(form.mobile.value || '').trim();
   if (typeof isValidContactPhone === 'function' && !isValidContactPhone(mobile)) {
-    toast('Enter a valid 10-digit Indian mobile number.', 'warn');
+    toast('Enter a valid phone number (7–15 digits).', 'warn');
     form.mobile.focus();
     return;
   }

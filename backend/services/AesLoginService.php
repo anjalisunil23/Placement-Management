@@ -2517,22 +2517,41 @@ final class AesLoginService
         }
 
         $deptModel = new DepartmentModel();
-        $dept = $deptModel->findByCode($departmentCode);
+        $raw = trim($departmentCode);
+        $dept = $deptModel->findByCode($raw);
+        if ($dept === null && preg_match('/^\d+$/', $raw) === 1) {
+            $dept = $deptModel->findByAesId($raw);
+        }
         if ($dept) {
             return (string) $dept['_id'];
         }
 
         try {
             (new AesApiService())->syncDepartmentsToLocal();
-            $dept = $deptModel->findByCode($departmentCode);
+            $dept = $deptModel->findByCode($raw);
+            if ($dept === null && preg_match('/^\d+$/', $raw) === 1) {
+                $dept = $deptModel->findByAesId($raw);
+            }
             if ($dept) {
                 return (string) $dept['_id'];
+            }
+            // Numeric AES ids may map to a short code only after listing AES rows.
+            if (preg_match('/^\d+$/', $raw) === 1) {
+                foreach ((new AesApiService())->listDepartments() as $row) {
+                    if (trim((string) ($row['aesId'] ?? '')) === $raw) {
+                        $dept = $deptModel->findByCode((string) ($row['code'] ?? ''));
+                        if ($dept) {
+                            return (string) $dept['_id'];
+                        }
+                        break;
+                    }
+                }
             }
         } catch (\Throwable) {
             // Local departments only.
         }
 
-        $code = strtoupper(trim($departmentCode));
+        $code = strtoupper($raw);
         if ($dept === null && preg_match('/^[A-Z]{2,12}$/', $code)) {
             try {
                 $deptModel->createDepartment(['code' => $code, 'name' => $code]);

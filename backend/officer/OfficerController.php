@@ -77,19 +77,65 @@ final class OfficerController
             $userOut['photo'] = $photo['photo'] ?? ['url' => $photoUrl, 'source' => 'aes'];
         }
 
+        $deptDoc = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($deptDoc['code'] ?? '')));
+        $deptName = trim((string) ($deptDoc['name'] ?? ''));
+        $aesDeptId = trim((string) ($deptDoc['aesId'] ?? ''));
+        if ($deptCode !== '' && ctype_digit($deptCode)) {
+            try {
+                foreach ((new AesApiService())->listDepartments() as $row) {
+                    if (trim((string) ($row['aesId'] ?? '')) !== $deptCode) {
+                        continue;
+                    }
+                    $resolvedCode = strtoupper(trim((string) ($row['code'] ?? '')));
+                    $resolvedName = trim((string) ($row['name'] ?? ''));
+                    if ($resolvedCode !== '' && !ctype_digit($resolvedCode)) {
+                        $deptCode = $resolvedCode;
+                    }
+                    if ($resolvedName !== '') {
+                        $deptName = $resolvedName;
+                    }
+                    $aesDeptId = trim((string) ($row['aesId'] ?? '')) ?: $aesDeptId;
+                    break;
+                }
+            } catch (\Throwable) {
+                // Keep stored values when AES is unreachable.
+            }
+        }
+        $deptOut = $deptDoc ? DocumentHelper::serialize($deptDoc) : null;
+        if (is_array($deptOut)) {
+            if ($deptCode !== '') {
+                $deptOut['code'] = $deptCode;
+            }
+            if ($deptName !== '') {
+                $deptOut['name'] = $deptName;
+            }
+            if ($aesDeptId !== '') {
+                $deptOut['aesId'] = $aesDeptId;
+            }
+        }
+
         Response::success([
 
-            'user'       => $userOut,
+            'user'            => $userOut,
 
-            'isAdmin'    => $ctx['isAdmin'],
+            'isAdmin'         => $ctx['isAdmin'],
 
-            'department' => $ctx['department'] ? DocumentHelper::serialize($ctx['department']) : null,
+            'department'      => $deptOut,
 
-            'designation'=> $ctx['profile']['designation'] ?? null,
+            'departmentCode'  => $deptCode,
 
-            'photoUrl'   => $photoUrl,
+            'departmentName'  => $deptName !== '' ? $deptName : $deptCode,
 
-            'photo'      => $photo['photo'],
+            'departmentId'    => $ctx['departmentId'],
+
+            'departmentAesId' => $aesDeptId,
+
+            'designation'     => $ctx['profile']['designation'] ?? null,
+
+            'photoUrl'        => $photoUrl,
+
+            'photo'           => $photo['photo'],
 
         ]);
 

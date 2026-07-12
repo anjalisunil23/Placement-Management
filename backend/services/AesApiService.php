@@ -1523,8 +1523,15 @@ final class AesApiService
 
             $existing = $model->findByCode($code);
             if ($existing !== null) {
+                $patch = [];
                 if (trim((string) ($existing['name'] ?? '')) !== $name) {
-                    $model->update((string) $existing['_id'], ['name' => $name]);
+                    $patch['name'] = $name;
+                }
+                if ($aesId !== '' && trim((string) ($existing['aesId'] ?? '')) !== $aesId) {
+                    $patch['aesId'] = $aesId;
+                }
+                if ($patch !== []) {
+                    $model->update((string) $existing['_id'], $patch);
                     $changed++;
                 }
                 if ($aesId !== '') {
@@ -1538,15 +1545,19 @@ final class AesApiService
             }
 
             if ($aesId !== '') {
-                $numeric = $model->findByCode($aesId);
+                $numeric = $model->findByCode($aesId) ?? $model->findByAesId($aesId);
                 if ($numeric !== null) {
-                    $model->update((string) $numeric['_id'], ['code' => $code, 'name' => $name]);
+                    $model->update((string) $numeric['_id'], [
+                        'code'  => $code,
+                        'name'  => $name,
+                        'aesId' => $aesId,
+                    ]);
                     $changed++;
                     continue;
                 }
             }
 
-            $model->createDepartment(['code' => $code, 'name' => $name]);
+            $model->createDepartment(['code' => $code, 'name' => $name, 'aesId' => $aesId]);
             $changed++;
         }
 

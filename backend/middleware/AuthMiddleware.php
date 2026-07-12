@@ -129,8 +129,45 @@ final class AuthMiddleware
         $dept = !empty($profile['departmentId'])
           ? (new DepartmentModel())->findById((string) $profile['departmentId'])
           : null;
-        $data['department'] = $dept['code'] ?? $dept['name'] ?? '';
+        $deptCode = trim((string) ($dept['code'] ?? ''));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $aesDeptId = trim((string) ($dept['aesId'] ?? ''));
+        // Resolve legacy numeric AES department codes to short code + name.
+        if ($deptCode !== '' && ctype_digit($deptCode)) {
+          try {
+            foreach ((new \PMS\Services\AesApiService())->listDepartments() as $row) {
+              if (trim((string) ($row['aesId'] ?? '')) !== $deptCode) {
+                continue;
+              }
+              $resolvedCode = strtoupper(trim((string) ($row['code'] ?? '')));
+              $resolvedName = trim((string) ($row['name'] ?? ''));
+              if ($resolvedCode !== '' && !ctype_digit($resolvedCode)) {
+                $deptCode = $resolvedCode;
+              }
+              if ($resolvedName !== '') {
+                $deptName = $resolvedName;
+              }
+              $aesDeptId = trim((string) ($row['aesId'] ?? '')) ?: $deptCode;
+              break;
+            }
+          } catch (\Throwable) {
+            // Keep stored department fields when AES is unreachable.
+          }
+        }
+        // Prefer readable code/name over numeric AES ids in the session.
+        if ($deptCode !== '' && !ctype_digit($deptCode)) {
+          $data['department'] = $deptCode;
+        } elseif ($deptName !== '' && !ctype_digit($deptName)) {
+          $data['department'] = $deptName;
+        } else {
+          $data['department'] = $deptCode !== '' ? $deptCode : $deptName;
+        }
+        $data['departmentCode'] = $deptCode;
+        $data['departmentName'] = $deptName !== '' ? $deptName : $deptCode;
         $data['departmentId'] = $dept ? (string) $dept['_id'] : '';
+        if ($aesDeptId !== '') {
+          $data['departmentAesId'] = $aesDeptId;
+        }
       }
       $staffProfile = (new StaffModel())->findByUserId((string) $user['_id']);
       $photo = (new \PMS\Services\AesLoginService())->resolveProfilePhoto($staffProfile ?? $profile, $user);

@@ -53,7 +53,7 @@ final class Validator
                     }
                 } elseif ($rule === 'phone') {
                     if ($value !== null && $value !== '' && !self::isValidPhone((string) $value)) {
-                        $errors[$field] = 'Enter a valid 10-digit Indian mobile number.';
+                        $errors[$field] = 'Enter a valid phone number (7–15 digits).';
                         break;
                     }
                 } elseif ($rule === 'numeric') {
@@ -76,21 +76,28 @@ final class Validator
         return trim(strip_tags($value));
     }
 
-    /** Indian mobile: 10 digits starting 6–9; optional +91 / 0 prefix. */
+    /** International phone: 7–15 digits (E.164); allows +, spaces, dashes, parentheses. */
     public static function isValidPhone(string $phone): bool
     {
-        $digits = preg_replace('/\D+/', '', $phone) ?? '';
-        if ($digits === '') {
+        $trimmed = trim($phone);
+        if ($trimmed === '' || preg_match('/^[+\d][\d\s().-]*$/', $trimmed) !== 1) {
             return false;
         }
-        if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
-            $digits = substr($digits, 2);
-        }
-        if (strlen($digits) === 11 && str_starts_with($digits, '0')) {
-            $digits = substr($digits, 1);
-        }
+        $digits = preg_replace('/\D+/', '', $trimmed) ?? '';
+        $len = strlen($digits);
 
-        return (bool) preg_match('/^[6-9]\d{9}$/', $digits);
+        return $len >= 7 && $len <= 15;
+    }
+
+    /**
+     * Digits-only form of a valid phone, or empty string if invalid.
+     */
+    public static function normalizePhone(string $phone): string
+    {
+        if (!self::isValidPhone($phone)) {
+            return '';
+        }
+        return preg_replace('/\D+/', '', trim($phone)) ?? '';
     }
 
     /**

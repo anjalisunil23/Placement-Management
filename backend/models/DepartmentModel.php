@@ -18,15 +18,29 @@ class DepartmentModel extends BaseModel
         return $this->findOne(['code' => strtoupper(trim($code))]);
     }
 
+    public function findByAesId(string $aesId): ?array
+    {
+        $aesId = trim($aesId);
+        if ($aesId === '' || preg_match('/^\d+$/', $aesId) !== 1) {
+            return null;
+        }
+        return $this->findOne(['aesId' => $aesId]);
+    }
+
     /**
      * @param array<string, mixed> $data
      */
     public function createDepartment(array $data): string
     {
-        return $this->insert([
+        $row = [
             'name' => $data['name'],
             'code' => strtoupper(trim($data['code'])),
-        ]);
+        ];
+        $aesId = trim((string) ($data['aesId'] ?? ''));
+        if ($aesId !== '' && preg_match('/^\d+$/', $aesId) === 1) {
+            $row['aesId'] = $aesId;
+        }
+        return $this->insert($row);
     }
 
     /**

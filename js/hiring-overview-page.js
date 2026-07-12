@@ -211,16 +211,47 @@
     };
   };
 
-  HiringOverviewPage.prototype.ownDepartmentCode = function () {
-    if (typeof viewerDepartment === 'function') {
-      const v = viewerDepartment();
-      if (v && typeof v === 'object') return String(v.code || v.name || '').trim();
-      return String(v || '').trim();
-    }
+  HiringOverviewPage.prototype.ownDepartmentMeta = function () {
     const u = Auth.user() || {};
-    const d = u.department;
-    if (d && typeof d === 'object') return String(d.code || d.name || '').trim();
-    return String(d || u.departmentCode || '').trim();
+    const hints = [];
+    const push = (v) => {
+      const s = String(v || '').trim();
+      if (s && !hints.includes(s)) hints.push(s);
+    };
+    if (u.department && typeof u.department === 'object') {
+      push(u.department.name);
+      push(u.department.code);
+      push(u.department.aesId);
+      push(u.department.id);
+    } else {
+      push(u.department);
+    }
+    push(u.departmentName);
+    push(u.departmentCode);
+    push(u.branch);
+    push(u.programme);
+    push(u.departmentId);
+    push(u.departmentAesId);
+    if (typeof viewerDepartment === 'function') push(viewerDepartment());
+
+    let record = null;
+    for (const h of hints) {
+      record = typeof resolveDepartmentRecord === 'function' ? resolveDepartmentRecord(h) : null;
+      if (record) break;
+    }
+
+    const codeFromRecord = record && String(record.code || '').trim();
+    const nameFromRecord = record && String(record.name || '').trim();
+    const nonNumeric = hints.find(h => h && !/^\d+$/.test(h)) || '';
+    const code = (codeFromRecord && !/^\d+$/.test(codeFromRecord)) ? codeFromRecord : nonNumeric;
+    const name = nameFromRecord || String(u.departmentName || '').trim() || nonNumeric || code;
+
+    return { code, name, record, hints };
+  };
+
+  HiringOverviewPage.prototype.ownDepartmentCode = function () {
+    const meta = this.ownDepartmentMeta();
+    return meta.code || meta.name || '';
   };
 
   HiringOverviewPage.prototype.findGroupForFilter = function (filter) {
@@ -232,15 +263,79 @@
         g.programmes.map(p => normalizeProgrammeCode(p.code)).sort().join('|') === key
       ) || null;
     }
+
+    // Resolve numeric AES ids / store ids to a readable code or name first.
+    let needle = raw;
+    if (/^\d+$/.test(raw) && typeof resolveDepartmentRecord === 'function') {
+      const rec = resolveDepartmentRecord(raw);
+      if (rec) {
+        const code = String(rec.code || '').trim();
+        const name = String(rec.name || '').trim();
+        if (code && !/^\d+$/.test(code)) needle = code;
+        else if (name) needle = name;
+      }
+    }
+
     const code = normalizeProgrammeCode(
-      typeof resolveCollegeProgrammeCode === 'function' ? (resolveCollegeProgrammeCode(raw) || raw) : raw
+      typeof resolveCollegeProgrammeCode === 'function' ? (resolveCollegeProgrammeCode(needle) || needle) : needle
     );
-    const name = String(filter || '').trim().toLowerCase();
-    return this.viewDeptGroups.find(g =>
-      g.parent.toLowerCase() === name
-      || g.programmes.some(p => normalizeProgrammeCode(p.code) === code)
+    const name = String(needle || '').trim().toLowerCase();
+    const nameCompact = name.replace(/[^a-z0-9]+/g, '');
+
+    const byProgramme = this.viewDeptGroups.find(g =>
+      g.programmes.some(p => normalizeProgrammeCode(p.code) === code)
       || (typeof programmeAliasSet === 'function' && g.programmes.some(p => programmeAliasSet(p).has(code)))
-    ) || null;
+    );
+    if (byProgramme) return byProgramme;
+
+    const byParentExact = this.viewDeptGroups.find(g => g.parent.toLowerCase() === name);
+    if (byParentExact) return byParentExact;
+
+    const byParentFuzzy = this.viewDeptGroups.find(g => {
+      const parent = g.parent.toLowerCase();
+      const parentCompact = parent.replace(/[^a-z0-9]+/g, '');
+      if (!nameCompact) return false;
+      return parent.includes(name)
+        || name.includes(parent)
+        || parentCompact.includes(nameCompact)
+        || nameCompact.includes(parentCompact);
+    });
+    if (byParentFuzzy) return byParentFuzzy;
+
+    // Common AES short labels → catalogue parents.
+    const keywordMap = [
+      { re: /\b(cse|cs|computer\s*science)\b/i, parent: 'Computer Science & Engineering' },
+      { re: /\b(ece|ec|electronics)\b/i, parent: 'Electronics & Communication' },
+      { re: /\b(eee|ee|electrical)\b/i, parent: 'Electrical & Electronics' },
+      { re: /\b(me|mech|mechanical)\b/i, parent: 'Mechanical Engineering' },
+      { re: /\b(ce|civil)\b/i, parent: 'Civil Engineering' },
+      { re: /\b(it|aids|artificial\s*intelligence)\b/i, parent: 'AI & Information Technology' },
+      { re: /\b(mca|bca|computer\s*applications)\b/i, parent: 'Computer Applications' },
+      { re: /\b(che|chem|chemical)\b/i, parent: 'Chemical Engineering' },
+      { re: /\b(ft|food)\b/i, parent: 'Food Technology' },
+      { re: /\b(met|mme|metallurg)/i, parent: 'Metallurgical & Materials' },
+      { re: /\b(aue|auto|automobile)\b/i, parent: 'Mechanical Engineering' },
+    ];
+    for (const row of keywordMap) {
+      if (row.re.test(needle) || row.re.test(name)) {
+        const g = this.viewDeptGroups.find(x => x.parent === row.parent);
+        if (g) return g;
+      }
+    }
+    return null;
+  };
+
+  HiringOverviewPage.prototype.findOwnDepartmentGroup = function () {
+    const meta = this.ownDepartmentMeta();
+    const tried = [];
+    for (const hint of [meta.code, meta.name, ...(meta.hints || [])]) {
+      const h = String(hint || '').trim();
+      if (!h || tried.includes(h)) continue;
+      tried.push(h);
+      const g = this.findGroupForFilter(h);
+      if (g) return g;
+    }
+    return null;
   };
 
   HiringOverviewPage.prototype.selectedDept = function () {
@@ -248,7 +343,8 @@
     if (role === 'staff' || role === 'placement_officer') {
       // Officers stay inside their department; branch dropdown may narrow further.
       if (role === 'placement_officer' && this.activeDeptFilter) return this.activeDeptFilter;
-      return this.ownDepartmentCode();
+      const meta = this.ownDepartmentMeta();
+      return meta.code || meta.name || '';
     }
     return this.activeDeptFilter || '';
   };
@@ -285,32 +381,43 @@
 
     // Placement officers only see their own department (no campus-wide "All departments").
     if (role === 'placement_officer') {
-      const own = this.ownDepartmentCode();
-      const ownGroup = this.findGroupForFilter(own);
+      const meta = this.ownDepartmentMeta();
+      const ownGroup = this.findOwnDepartmentGroup();
       this.viewDeptGroups = ownGroup ? [ownGroup] : [];
       this.viewExtraProgrammes = [];
 
       if (!ownGroup) {
-        const label = own || 'Your department';
-        deptSelect.innerHTML = `<option value="">${escLabel(label)}</option>`;
+        const label = (meta.name && !/^\d+$/.test(meta.name))
+          ? meta.name
+          : (meta.code && !/^\d+$/.test(meta.code) ? meta.code : (meta.name || meta.code || 'Your department'));
+        const value = meta.code || meta.name || label;
+        deptSelect.innerHTML = `<option value="${escLabel(value)}">${escLabel(label)}</option>`;
+        deptSelect.value = value;
+        deptSelect.disabled = true;
         this.activeParentKey = '';
-        this.activeDeptFilter = own;
+        this.activeDeptFilter = value;
         this.syncBranchSelect();
         return;
       }
 
       this.activeParentKey = ownGroup.parent;
+      const ownNeedle = normalizeProgrammeCode(meta.code || meta.name || '');
       const ownProg = ownGroup.programmes.find(p => {
         const code = normalizeProgrammeCode(p.code);
         const resolved = normalizeProgrammeCode(
-          typeof resolveCollegeProgrammeCode === 'function' ? (resolveCollegeProgrammeCode(own) || own) : own
+          typeof resolveCollegeProgrammeCode === 'function'
+            ? (resolveCollegeProgrammeCode(meta.code || meta.name) || meta.code || meta.name)
+            : (meta.code || meta.name)
         );
-        return code === resolved || (typeof programmeAliasSet === 'function' && programmeAliasSet(p).has(normalizeProgrammeCode(own)));
+        return code === resolved
+          || code === ownNeedle
+          || (typeof programmeAliasSet === 'function' && programmeAliasSet(p).has(ownNeedle));
       });
       // Default to all branches under their department; branch dropdown can narrow.
-      this.activeDeptFilter = ownGroup.allValue || ownProg?.code || own;
+      this.activeDeptFilter = ownGroup.allValue || ownProg?.code || meta.code || meta.name;
 
-      deptSelect.innerHTML = `<option value="${escLabel(ownGroup.parent)}">${escLabel(ownGroup.parent)}</option>`;
+      const parentLabel = ownGroup.parent || meta.name || meta.code || 'Your department';
+      deptSelect.innerHTML = `<option value="${escLabel(ownGroup.parent)}">${escLabel(parentLabel)}</option>`;
       deptSelect.value = ownGroup.parent;
       deptSelect.disabled = true;
       this.syncBranchSelect();
@@ -356,9 +463,8 @@
     }
 
     if (role === 'placement_officer') {
-      const label = typeof departmentDisplayName === 'function'
-        ? departmentDisplayName(this.ownDepartmentCode())
-        : (this.ownDepartmentCode() || 'your department');
+      const meta = this.ownDepartmentMeta();
+      const label = meta.name || meta.code || 'your department';
       if (hintEl) hintEl.textContent = `Showing hiring data for ${label} only.`;
       return;
     }
@@ -373,9 +479,8 @@
       if (title) title.textContent = 'Department Hiring Overview';
       if (sub) sub.textContent = 'Live snapshot of companies hiring your department students, pipeline stages, and recent activity.';
     } else if (role === 'placement_officer') {
-      const label = typeof departmentDisplayName === 'function'
-        ? departmentDisplayName(this.ownDepartmentCode())
-        : (this.ownDepartmentCode() || 'your department');
+      const meta = this.ownDepartmentMeta();
+      const label = meta.name || meta.code || 'your department';
       if (title) title.textContent = 'Department Hiring Overview';
       if (sub) sub.textContent = `Live snapshot for ${label}: companies hiring, pipeline stages, and recent activity.`;
     } else if (role === 'admin') {
