@@ -2280,7 +2280,7 @@ function buildPhoneCountryOptions(selected = '91') {
   const sel = String(selected || '91').replace(/\D+/g, '') || '91';
   return CONTACT_COUNTRY_CODES.map(c => {
     const picked = c.dial === sel ? ' selected' : '';
-    return `<option value="${c.dial}"${picked} title="${c.label}">+${c.dial}</option>`;
+    return `<option value="${c.dial}"${picked}>+${c.dial} ${c.label}</option>`;
   }).join('');
 }
 
@@ -2297,7 +2297,7 @@ function phoneFieldGroupHtml(opts = {}) {
     ? `<div class="form-text">${opts.helpText || 'Select country code, then enter the number.'}</div>`
     : '';
   return `<div class="input-group" data-contact-phone="1">
-      <select class="form-select flex-grow-0" style="max-width:7.25rem"${countryId} name="${countryName}" aria-label="Country code">
+      <select class="form-select ph-phone-cc"${countryId} name="${countryName}" aria-label="Country code" title="Country code">
         ${buildPhoneCountryOptions(selected)}
       </select>
       <input class="form-control" type="tel" name="${name}"${id}${required}
