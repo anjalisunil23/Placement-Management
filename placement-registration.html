@@ -74,6 +74,7 @@
     display:block;
   }
   .policy-header-text{min-width:0;flex:1}
+  .policy-header #btnLogout{flex:0 0 auto;align-self:center;margin-left:auto}
   .policy-header h1{
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
     font-size:clamp(1.35rem,3vw,2rem);
@@ -96,6 +97,7 @@
   @media (max-width:520px){
     .policy-shell{padding:1rem}
     .policy-header{flex-direction:column;align-items:flex-start;text-align:left}
+    .policy-header #btnLogout{margin-left:0;align-self:flex-end}
     .policy-logo-mark{max-width:100%;padding:0}
     .policy-logo-mark img{height:44px !important}
   }
@@ -194,10 +196,6 @@
 </head>
 <body class="policy-page" data-page="placement-registration.html">
 <div class="policy-shell">
-  <div class="d-flex justify-content-end align-items-center mb-3">
-    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnLogout">Sign out</button>
-  </div>
-
   <div class="policy-card">
     <div class="policy-header">
       <div class="policy-logo-mark">
@@ -207,6 +205,7 @@
         <h1>Placement Cell – Registration</h1>
         <div class="college">Amal Jyothi College of Engineering Autonomous</div>
       </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnLogout">Sign out</button>
     </div>
 
     <div class="policy-body">

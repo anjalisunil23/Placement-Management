@@ -928,7 +928,12 @@ window.wireFilePickers = function wireFilePickers(rootSelector = 'body') {
       const files = input.files;
       if (!nameEl) return;
       if (input.multiple && files?.length > 1) {
-        nameEl.textContent = `${files.length} files selected`;
+        const names = [...files].map(f => f.name).filter(Boolean);
+        nameEl.textContent = names.length > 2
+          ? `${names.length} files selected`
+          : names.join(', ');
+      } else if (input.multiple && files?.length === 1) {
+        nameEl.textContent = file?.name || 'No file chosen';
       } else {
         nameEl.textContent = file?.name || 'No file chosen';
       }
@@ -943,7 +948,7 @@ window.resetFilePickers = function resetFilePickers(ids) {
     if (input) input.value = '';
     const nameEl = document.querySelector(`[data-file-picker-name="${id}"]`);
     if (nameEl) {
-      nameEl.textContent = 'No file chosen';
+      nameEl.textContent = 'No files chosen';
       nameEl.classList.remove('has-file');
     }
   });

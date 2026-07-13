@@ -97,6 +97,17 @@
   }
   .drive-detail-meta span{display:inline-flex;align-items:flex-start;gap:.35rem}
   .drive-detail-branches{line-height:1.45}
+  .apply-cert-list{
+    display:flex;flex-direction:column;gap:.35rem;
+    max-height:140px;overflow:auto;
+    border:1px solid var(--border,#e2e8f0);border-radius:8px;
+    padding:.35rem .5rem;background:var(--surface,#fff);
+  }
+  .apply-cert-item{
+    display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+    font-size:.85rem;line-height:1.3;
+  }
+  .apply-cert-item span{min-width:0;word-break:break-word}
 </style>
 </head>
 
@@ -278,10 +289,12 @@
     <div class="small text-muted-2" id="applyResumeMeta"></div>
 
     <label class="form-label small fw-semibold mt-3">Certificates <span class="text-muted fw-normal">(optional)</span></label>
+    <div class="form-text mb-2">Add one or more certificates (PDF or image). Use <strong>Add certificates</strong> again to attach more files.</div>
+    <div id="applyCertList" class="apply-cert-list mb-2 d-none" aria-live="polite"></div>
     <div class="file-picker">
       <input type="file" id="applyCertificates" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple hidden/>
-      <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="applyCertificates"><i class="bi bi-upload me-1"></i>Choose files</button>
-      <span class="file-picker-name text-muted-2 small" data-file-picker-name="applyCertificates">No file chosen</span>
+      <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="applyCertificates"><i class="bi bi-upload me-1"></i>Add certificates</button>
+      <span class="file-picker-name text-muted-2 small" data-file-picker-name="applyCertificates">No files chosen</span>
     </div>
     <div class="small text-muted-2 mt-1" id="applyCertMeta"></div>
 
@@ -455,8 +468,68 @@ let canManage = false;
 let isStudent = false;
 let alumniSeeking = false;
 let pendingDrive = null;
+let applyCertificateFiles = [];
 let allDrives = [];
 let editingDrive = null;
+
+function certificateFileKey(file) {
+  return `${file?.name || ''}|${file?.size || 0}|${file?.lastModified || 0}`;
+}
+
+function renderApplyCertificateList() {
+  const list = document.getElementById('applyCertList');
+  const meta = document.getElementById('applyCertMeta');
+  const nameEl = document.querySelector('[data-file-picker-name="applyCertificates"]');
+  if (!list) return;
+
+  if (!applyCertificateFiles.length) {
+    list.innerHTML = '';
+    list.classList.add('d-none');
+    if (meta) meta.textContent = '';
+    if (nameEl) {
+      nameEl.textContent = 'No files chosen';
+      nameEl.classList.remove('has-file');
+    }
+    return;
+  }
+
+  list.classList.remove('d-none');
+  list.innerHTML = applyCertificateFiles.map((file, index) => `
+    <div class="apply-cert-item">
+      <span><i class="bi bi-file-earmark-text me-1"></i>${file.name}</span>
+      <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-remove-cert="${index}" aria-label="Remove ${file.name}">Remove</button>
+    </div>`).join('');
+
+  list.querySelectorAll('[data-remove-cert]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.getAttribute('data-remove-cert'));
+      if (!Number.isFinite(idx)) return;
+      applyCertificateFiles.splice(idx, 1);
+      renderApplyCertificateList();
+    });
+  });
+
+  const names = applyCertificateFiles.map(f => f.name).join(', ');
+  if (meta) {
+    meta.textContent = applyCertificateFiles.length === 1
+      ? `Selected: ${names}`
+      : `Selected ${applyCertificateFiles.length} certificates: ${names}`;
+  }
+  if (nameEl) {
+    nameEl.textContent = applyCertificateFiles.length === 1
+      ? applyCertificateFiles[0].name
+      : `${applyCertificateFiles.length} files selected`;
+    nameEl.classList.add('has-file');
+  }
+}
+
+function resetApplyCertificates() {
+  applyCertificateFiles = [];
+  const certInput = document.getElementById('applyCertificates');
+  if (typeof resetFilePickers === 'function') resetFilePickers(['applyCertificates']);
+  else if (certInput) certInput.value = '';
+  renderApplyCertificateList();
+}
 
 function driveViewMode() {
   if (canManage) return 'manage';
@@ -601,31 +674,6 @@ function driveDetailValue(v) {
   return s && s !== '—' ? s : '—';
 }
 
-function resolveDriveBranches(active, list) {
-  const fromDrive = (d) => {
-    if (!d) return '';
-    if (typeof formatDriveBranches === 'function') {
-      return formatDriveBranches(d.branches)
-        || formatDriveBranches(d.eligibility?.branches);
-    }
-    return driveDetailValue(d.branches);
-  };
-  if (active) {
-    const direct = fromDrive(active);
-    if (direct && direct !== '—') return direct;
-  }
-  const merged = new Set();
-  (list || []).forEach((d) => {
-    const text = fromDrive(d);
-    if (!text || text === '—') return;
-    text.split(/,\s*/).forEach((code) => {
-      const c = String(code).trim();
-      if (c) merged.add(c);
-    });
-  });
-  return merged.size ? [...merged].join(', ') : '';
-}
-
 function fillDriveDetailPanel(list, selectedId) {
   const panel = document.getElementById('driveDetailPanel') || document.getElementById('driveDetailBody');
   const applyBtn = document.getElementById('driveDetailApplyBtn');
@@ -647,14 +695,12 @@ function fillDriveDetailPanel(list, selectedId) {
     deadline: '—',
     mode: '—',
     location: '—',
-    branches: list.map(d => d.branches).filter(Boolean)[0] || '—',
     status: list[0].status,
     statusCls: list[0].statusCls,
     profile: '',
   };
   const applied = active && driveAlreadyApplied(active);
   const pending = multi && !active;
-  const branchesText = resolveDriveBranches(active, list);
 
   const roleField = multi
     ? `<dd>
@@ -695,7 +741,6 @@ function fillDriveDetailPanel(list, selectedId) {
       ${field('Registration deadline', pending ? '—' : driveDetailValue(display.deadline))}
       ${field('Mode', pending ? '—' : driveDetailValue(display.mode))}
       ${display.location && display.location !== '—' ? field('Location', driveDetailValue(display.location)) : ''}
-      ${field('Eligible branches', branchesText || '—')}
     </dl>
     ${!multi && display.profile ? `<div class="small text-muted-2">${display.profile}</div>` : ''}
     ${applied ? `<div>${applyAction(active)}</div>` : ''}`;
@@ -1505,10 +1550,7 @@ window.openApply = async driveId => {
 
   const sel = document.getElementById('applyResumeSelect');
 
-  const certInput = document.getElementById('applyCertificates');
-  if (typeof resetFilePickers === 'function') resetFilePickers(['applyCertificates']);
-  else if (certInput) certInput.value = '';
-  document.getElementById('applyCertMeta').textContent = '';
+  resetApplyCertificates();
 
   if (!resumes.length) {
 
@@ -1560,10 +1602,18 @@ document.getElementById('driveDetailApplyBtn')?.addEventListener('click', () => 
 });
 
 document.getElementById('applyCertificates')?.addEventListener('change', () => {
-  const files = [...(document.getElementById('applyCertificates')?.files || [])];
-  document.getElementById('applyCertMeta').textContent = files.length
-    ? `Selected: ${files.map(f => f.name).join(', ')}`
-    : '';
+  const input = document.getElementById('applyCertificates');
+  const incoming = [...(input?.files || [])];
+  const seen = new Set(applyCertificateFiles.map(certificateFileKey));
+  incoming.forEach((file) => {
+    const key = certificateFileKey(file);
+    if (!seen.has(key)) {
+      seen.add(key);
+      applyCertificateFiles.push(file);
+    }
+  });
+  if (input) input.value = '';
+  renderApplyCertificateList();
 });
 
 window.openAlumniApply = async driveId => {
@@ -1588,7 +1638,7 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
 
   if (!resumeId) { toast('Upload a resume for this job profile first.', 'warn'); return; }
 
-  const certFiles = [...(document.getElementById('applyCertificates')?.files || [])];
+  const certFiles = [...applyCertificateFiles];
   const app = alumniSeeking
     ? await AlumniApps.apply(pendingDrive, resumeId, certFiles)
     : await StudentApps.apply(pendingDrive, resumeId, certFiles);
