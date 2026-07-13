@@ -453,26 +453,32 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260713p"></script>
-<script src="js/app.js?v=20260713p"></script>
+<script src="js/api.js?v=20260713w"></script>
+<script src="js/app.js?v=20260713w"></script>
 <script>
-window.__phDriveExtras = (function loadRoleScripts() {
-  const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
-  const needManage = role === 'admin' || role === 'placement_officer' || role === 'staff';
-  if (!needManage) return Promise.resolve();
+window.__phDriveExtras = Promise.resolve();
+async function loadDriveRoleScripts() {
+  const currentRole = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
+  const needManage = currentRole === 'admin' || currentRole === 'placement_officer' || currentRole === 'staff';
+  if (!needManage) return;
+  if (typeof OfficerApi !== 'undefined' && typeof AdminApi !== 'undefined' && typeof StaffApi !== 'undefined') return;
   const tags = [
-    'js/admin-api.js?v=20260713p',
-    'js/officer-api.js?v=20260713p',
-    'js/staff-api.js?v=20260713p',
+    'js/admin-api.js?v=20260713w',
+    'js/officer-api.js?v=20260713w',
+    'js/staff-api.js?v=20260713w',
   ];
-  return Promise.all(tags.map((src) => new Promise((resolve) => {
+  await Promise.all(tags.map((src) => new Promise((resolve) => {
+    if ([...document.scripts].some((s) => (s.src || '').includes(src.split('?')[0]))) {
+      resolve();
+      return;
+    }
     const s = document.createElement('script');
     s.src = src;
     s.onload = resolve;
     s.onerror = resolve;
     document.head.appendChild(s);
   })));
-})();
+}
 </script>
 <script>
 
@@ -1192,9 +1198,13 @@ async function loadDriveResults(driveId) {
 
 window.openDriveApplicants = async driveId => {
   if (!canManage) return;
-  const d = DriveStore.get(driveId);
-  if (!d) return;
-  activeDriveId = driveId;
+  const id = String(driveId || '').trim();
+  const d = allDrives.find(x => String(x.id) === id) || DriveStore.get(id);
+  if (!d) {
+    toast('Could not open this drive. Refresh and try again.', 'warn');
+    return;
+  }
+  activeDriveId = d.id;
   activeDrive = d;
   driveApplicantsTab = 'all';
   driveDetailMainTab = 'applicants';
@@ -1298,7 +1308,12 @@ function enrichDriveApplicantCounts(apps) {
 
 async function loadLiveManageDrives() {
   if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') {
-    return OfficerApi.fetchDrives();
+    const list = await OfficerApi.fetchDrives();
+    if (list) {
+      DriveStore._apiCache = list;
+      DriveStore.save(list);
+    }
+    return list;
   }
   await DriveStore.fetch();
   return DriveStore._apiCache ?? null;
@@ -1496,7 +1511,7 @@ window.openEditDrive = id => {
 
 window.deleteDrive = async id => {
   if (!canManage) return;
-  const d = DriveStore.get(id);
+  const d = allDrives.find(x => String(x.id) === String(id)) || DriveStore.get(id);
   if (!d) return;
 
   if (!(await confirmAction({
@@ -1782,7 +1797,7 @@ document.getElementById('driveResultForm')?.addEventListener('submit', async e =
 });
 
 onAppReady(async () => {
-  await (window.__phDriveExtras || Promise.resolve());
+  await loadDriveRoleScripts();
   if (typeof wireFilePickers === 'function') wireFilePickers('#applyModal');
   setupDrivesChrome();
   // Branch checkboxes only needed when creating/editing drives.
