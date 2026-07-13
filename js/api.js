@@ -561,7 +561,8 @@ const Auth = {
   token() { return localStorage.getItem('ph-token') || ''; },
   role() {
     const u = this.user();
-    return (u && u.role) ? u.role : '';
+    if (u && u.role) return u.role;
+    return localStorage.getItem('ph-role') || '';
   },
   homePage(role) {
     const u = this.user();
@@ -4564,21 +4565,45 @@ function toast(msg, kind='info') {
 function applyRoleVisibility(root = document) {
   const role = Auth.role();
   const employed = alumniIsWorking();
+  const docRoot = document.documentElement;
+
+  if (role) docRoot.setAttribute('data-ph-role', role);
+  else docRoot.removeAttribute('data-ph-role');
+
+  if (role === 'alumni') {
+    docRoot.setAttribute('data-ph-alumni', employed ? 'employed' : 'seeking');
+  } else {
+    docRoot.removeAttribute('data-ph-alumni');
+  }
+
   root.querySelectorAll('[data-roles]').forEach(el => {
-    const ok = el.dataset.roles.split(',').map(s=>s.trim()).includes(role);
-    el.style.display = ok ? '' : 'none';
+    const ok = el.dataset.roles.split(',').map(s => s.trim()).includes(role);
+    el.style.setProperty('display', ok ? 'block' : 'none', 'important');
   });
   root.querySelectorAll('[data-not-roles]').forEach(el => {
-    const blocked = el.dataset.notRoles.split(',').map(s=>s.trim()).includes(role);
-    el.style.display = blocked ? 'none' : '';
+    const blocked = el.dataset.notRoles.split(',').map(s => s.trim()).includes(role);
+    el.style.setProperty('display', blocked ? 'none' : 'block', 'important');
   });
   root.querySelectorAll('[data-alumni-employed]').forEach(el => {
-    el.style.display = (role === 'alumni' && employed) ? '' : 'none';
+    el.style.setProperty('display', (role === 'alumni' && employed) ? 'block' : 'none', 'important');
   });
   root.querySelectorAll('[data-alumni-seeking]').forEach(el => {
-    el.style.display = (role === 'alumni' && !employed) ? '' : 'none';
+    el.style.setProperty('display', (role === 'alumni' && !employed) ? 'block' : 'none', 'important');
   });
 }
+
+(function primeRoleVisibility() {
+  function run() {
+    if (Auth.role() || document.documentElement.getAttribute('data-ph-role')) {
+      applyRoleVisibility();
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+})();
 
 (function patchAuthCacheIsolation() {
   const origClear = Auth.clear.bind(Auth);

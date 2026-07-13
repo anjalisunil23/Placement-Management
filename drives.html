@@ -286,10 +286,8 @@
 
     <select class="form-select mb-2" id="applyResumeSelect"></select>
 
-    <div class="small text-muted-2" id="applyResumeMeta"></div>
-
     <label class="form-label small fw-semibold mt-3">Certificates <span class="text-muted fw-normal">(optional)</span></label>
-    <div class="form-text mb-2">Add one or more certificates (PDF or image). Use <strong>Add certificates</strong> again to attach more files.</div>
+    <div class="form-text mb-2">Add one or more certificates (PDF or image).</div>
     <div id="applyCertList" class="apply-cert-list mb-2 d-none" aria-live="polite"></div>
     <div class="file-picker">
       <input type="file" id="applyCertificates" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple hidden/>
@@ -298,7 +296,7 @@
     </div>
     <div class="small text-muted-2 mt-1" id="applyCertMeta"></div>
 
-    <div class="alert alert-info small mt-3 mb-0">Upload a resume in <a href="settings.html#resumes">Profile &amp; Resumes</a> before applying.</div>
+    <div class="alert alert-info small mt-3 mb-0 d-none" id="applyResumeHint">Upload a resume in <a href="settings.html#resumes">Profile &amp; Resumes</a> before applying.</div>
 
   </div>
 
@@ -1549,29 +1547,16 @@ window.openApply = async driveId => {
   document.getElementById('applyDriveInfo').textContent = `${pendingDrive.company} · ${pendingDrive.role} · ${pendingDrive.package}${pendingDrive.profile ? ` (Profile: ${pendingDrive.profile})` : ''}`;
 
   const sel = document.getElementById('applyResumeSelect');
+  const resumeHint = document.getElementById('applyResumeHint');
 
   resetApplyCertificates();
 
   if (!resumes.length) {
-
     sel.innerHTML = '<option value="">No resumes found — upload one first</option>';
-
-    document.getElementById('applyResumeMeta').innerHTML = 'Upload in <a href="settings.html">Profile & Resumes</a>, then apply again.';
-
+    resumeHint?.classList.remove('d-none');
   } else {
-
     sel.innerHTML = resumes.map(r => `<option value="${r.id}">${r.label} — ${r.fileName}</option>`).join('');
-
-    sel.onchange = () => {
-
-      const r = resumes.find(x => x.id === sel.value);
-
-      document.getElementById('applyResumeMeta').textContent = r ? `Selected: ${r.fileName}` : '';
-
-    };
-
-    sel.dispatchEvent(new Event('change'));
-
+    resumeHint?.classList.add('d-none');
   }
 
   const detailModalEl = document.getElementById('driveDetailModal');

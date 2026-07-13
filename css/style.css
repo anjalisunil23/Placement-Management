@@ -27,6 +27,27 @@
   --modal-bg:#F8FAFC;
   --modal-header-bg:#FFFFFF;
 }
+
+/* Hide role-specific panels until the signed-in role is applied (prevents admin flash). */
+[data-roles],
+[data-not-roles],
+[data-alumni-employed],
+[data-alumni-seeking] {
+  display: none !important;
+}
+
+html[data-ph-role="admin"] [data-roles*="admin"],
+html[data-ph-role="placement_officer"] [data-roles*="placement_officer"],
+html[data-ph-role="student"] [data-roles*="student"],
+html[data-ph-role="staff"] [data-roles*="staff"],
+html[data-ph-role="company"] [data-roles*="company"] {
+  display: block !important;
+}
+
+html[data-ph-alumni="employed"] [data-alumni-employed],
+html[data-ph-alumni="seeking"] [data-alumni-seeking] {
+  display: block !important;
+}
 [data-theme="dark"]{
   --bg:#0B1020;
   --surface:#121833;
