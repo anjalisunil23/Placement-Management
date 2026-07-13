@@ -514,17 +514,22 @@ final class StudentController
       'personal'         => $personal,
     ]);
 
-    (new PolicyAcceptanceLogModel())->logAcceptance([
-      'studentId'      => (string) $profile['_id'],
-      'userId'         => (string) $user['_id'],
-      'studentName'    => $registration['name'],
-      'registerNumber' => $registration['registerNumber'],
-      'policyVersion'  => $version,
-      'acceptedAt'     => $now,
-      'acceptedIp'     => (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? ''),
-      'userAgent'      => substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500),
-      'deviceType'     => 'web',
-    ]);
+    try {
+      (new PolicyAcceptanceLogModel())->logAcceptance([
+        'studentId'      => (string) $profile['_id'],
+        'userId'         => (string) $user['_id'],
+        'studentName'    => $registration['name'],
+        'registerNumber' => $registration['registerNumber'],
+        'policyVersion'  => $version,
+        'acceptedAt'     => $now,
+        'acceptedIp'     => (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? ''),
+        'userAgent'      => substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500),
+        'deviceType'     => 'web',
+      ]);
+    } catch (\Throwable $e) {
+      // Registration itself already saved; do not block the student on audit-log failure.
+      error_log('policy_acceptance_logs insert failed: ' . $e->getMessage());
+    }
 
     Response::success([
       'policyAccepted' => true,
