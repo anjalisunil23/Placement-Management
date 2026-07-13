@@ -183,7 +183,7 @@ final class StaffService
                         continue;
                     }
                 }
-                $row = $officerData->enrichStudentListRow([], $student, $user);
+                $row = $officerData->enrichStudentListRow([], $student, $user, false);
                 $apps = $appModel->findByStudent((string) $student['_id']);
                 $latest = $apps[0] ?? null;
                 $companyName = '';
@@ -275,7 +275,7 @@ final class StaffService
         foreach ($students as $student) {
             $user = $userModel->findById((string) $student['userId']);
             $dept = $deptModel->findById((string) $student['departmentId']);
-            $row = (new OfficerDataService())->enrichStudentListRow([], $student, $user);
+            $row = (new OfficerDataService())->enrichStudentListRow([], $student, $user, false);
             $displayName = (string) ($row['displayName'] ?? ($user['name'] ?? 'Student'));
             $photoUrl = (string) ($row['photoUrl'] ?? '');
             $academic = is_array($row['academic'] ?? null) ? $row['academic'] : (is_array($student['academic'] ?? null) ? $student['academic'] : []);
