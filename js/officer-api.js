@@ -75,7 +75,9 @@ const OfficerApi = {
       package: pkg || '—',
       deadline: (deadline && deadline !== 'TBD') ? deadline : '—',
       description: String(elig.description || d.description || '').trim(),
-      branches: Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || ''),
+      branches: typeof formatDriveBranches === 'function'
+        ? formatDriveBranches(d.branches ?? elig.branches ?? '')
+        : (Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '')),
       tier: d.tier || 'Tier 2',
       eligibility: { ...elig, package: pkg, deadline, jobType },
       status,

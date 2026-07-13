@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260629b';
+const APP_SCRIPT_VERSION = '20260713p';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -12,8 +12,13 @@ const BRAND = {
 };
 
 function brandLogoHtml(height = 34, className = 'brand-logo') {
-  const src = BRAND.logoDataUri || BRAND.logoSrc;
-  return `<img src="${src}" alt="${BRAND.logoAlt}" class="${className}" height="${height}" decoding="async"/>`;
+  // Prefer the cached PNG over the large inline data URI so api.js parses faster.
+  const src = BRAND.logoSrc || BRAND.logoDataUri;
+  const fallback = BRAND.logoDataUri || BRAND.logoFallbackSrc || '';
+  const onerr = fallback
+    ? ` onerror="this.onerror=null;this.src='${fallback}'"`
+    : '';
+  return `<img src="${src}" alt="${BRAND.logoAlt}" class="${className}" height="${height}" decoding="async"${onerr}/>`;
 }
 
 function brandBlockHtml(opts = {}) {
@@ -732,7 +737,7 @@ const Auth = {
     const t = this.token();
     return !!t && !String(t).startsWith('demo-token');
   },
-  async enrichFromProfile() {
+  async enrichFromProfile(opts = {}) {
     if (!this.hasRealAuth() || this.isDemo()) return false;
     const endpoints = {
       student: '/student/profile',
@@ -745,7 +750,9 @@ const Auth = {
     const path = endpoints[role];
     if (!path) return false;
     try {
-      const qs = role === 'student' ? 'refresh=1' : 'lite=1';
+      // lite=1 avoids AES refresh on every page. Use { refresh: true } only when
+      // CGPA/placement data must be re-synced (registration / settings).
+      const qs = opts.refresh ? 'refresh=1' : 'lite=1';
       const res = await apiFetch(path + (path.includes('?') ? '&' : '?') + qs, { skipAuthRedirect: true, skipAuthRetry: true });
       if (!res?.success || !res.data) return false;
       const p = res.data;
@@ -2597,6 +2604,28 @@ function resolveCollegeProgrammeCode(code) {
   return needle;
 }
 
+/** Normalize drive branch codes (array, CSV, or pipe-list) for student/officer UI. */
+function formatDriveBranches(branches) {
+  if (branches == null) return '';
+  let items = [];
+  if (Array.isArray(branches)) {
+    items = branches.map((b) => {
+      if (b && typeof b === 'object') {
+        return String(b.code || b.label || b.name || '').trim();
+      }
+      return String(b).trim();
+    }).filter(Boolean);
+  } else {
+    const raw = String(branches).trim();
+    if (!raw) return '';
+    if (/^all$/i.test(raw)) return 'All branches';
+    items = raw.split(/[,|]/).map(s => s.trim()).filter(Boolean);
+  }
+  if (!items.length) return '';
+  const labels = items.map((code) => resolveCollegeProgrammeCode(code) || code);
+  return [...new Set(labels)].join(', ');
+}
+
 /** Always list full AJCE UG/PG branches under each parent department. */
 function buildDepartmentProgrammeOptions(extraCodes = []) {
   // Catalogue labels win — do not let parent AES dept names (CSE, ECE, …) overwrite branch labels.
@@ -3754,12 +3783,11 @@ const DriveStore = {
         role = parts.slice(1).join(' — ');
       }
     }
-    const elig = (d.eligibility && typeof d.eligibility === 'object' && d.eligibility.eligible === undefined)
-      ? d.eligibility
-      : {};
-    const rawBranches = d.branches || d.eligibleBranches || elig.branches || elig.eligibleBranches || '';
-    const branches = Array.isArray(rawBranches) ? rawBranches.join(', ') : String(rawBranches).trim();
-    const check = d.eligibilityCheck || (d.eligibility?.eligible !== undefined ? d.eligibility : null);
+    const eligSrc = (d.eligibility && typeof d.eligibility === 'object') ? d.eligibility : {};
+    const elig = { ...eligSrc };
+    delete elig.eligible;
+    delete elig.reasons;
+    const check = d.eligibilityCheck || (eligSrc.eligible !== undefined ? eligSrc : null);
     const pkg = String(d.package || elig.package || '').trim();
     const regDeadline = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
     const recruitmentDate = String(d.recruitmentDate || d.date || '').trim();
@@ -3767,6 +3795,7 @@ const DriveStore = {
     const mode = String(d.mode || elig.mode || '').trim();
     const tier = String(d.tier || '').trim();
     const location = String(d.location || elig.location || '').trim();
+    const branches = formatDriveBranches(d.branches ?? elig.branches ?? '');
     return {
       id: d._id || d.id,
       companyId: d.companyId || '',

@@ -680,8 +680,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   let hasSession = await Auth.bootstrap();
-  if (!hasSession) {
-    await new Promise((r) => setTimeout(r, 120));
+  // Only retry once if we had a cached role but the first /auth/me failed (cookie race).
+  if (!hasSession && (Auth.role() || Auth.user())) {
     hasSession = await Auth.bootstrap();
   }
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
@@ -723,7 +723,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   animateCounters();
-  NotificationInbox.refreshBadge?.();
+  // Defer badge refresh so it doesn't contend with the page's first data fetch.
+  setTimeout(() => { NotificationInbox.refreshBadge?.(); }, 0);
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();
 });

@@ -1003,8 +1003,10 @@ input[type="file"].form-control:focus::file-selector-button{
   background:var(--primary);border-color:var(--primary);color:#fff;
 }
 
-/* Smooth transitions */
-*{transition:background-color .2s ease,border-color .2s ease,color .15s ease}
+/* Smooth transitions — scoped to interactive controls (avoid * for paint cost) */
+.btn,.form-control,.form-select,.nav-link,.sidebar .nav a,.icon-btn,.badge-soft,.drive-card{
+  transition:background-color .2s ease,border-color .2s ease,color .15s ease,box-shadow .15s ease;
+}
 
 /* ===== Landing page (converted from React index) ===== */
 .landing-page{
