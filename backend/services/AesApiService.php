@@ -1925,7 +1925,7 @@ final class AesApiService
     }
 
     /**
-     * Placement branches within a programme (e.g. Regular, Integrated).
+     * Placement branches — distinct stud_branch from getStudInfo4Placement for the programme.
      *
      * @return list<string>
      */
@@ -1935,6 +1935,14 @@ final class AesApiService
         $programmeCode = trim($programmeCode);
         if ($deptAesId === '' || $programmeCode === '') {
             return [];
+        }
+
+        foreach ($this->placementCourseParamVariants($programmeCode) as $courseParams) {
+            $params = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
+            $labels = $this->fetchStudInfoFieldLabels($params, 'stud_branch', $programmeCode);
+            if ($labels !== []) {
+                return $labels;
+            }
         }
 
         $methods = ['getBranches4Placement', 'getBranch4Placement'];
@@ -1978,14 +1986,14 @@ final class AesApiService
                 $params['stud_branch'] = $branch;
             }
 
-            $labels = $this->fetchStudClassBatchesFromStudInfo($params, $programmeCode);
+            $labels = $this->fetchStudInfoFieldLabels($params, 'stud_class', $programmeCode, $branch);
             if ($labels !== []) {
                 return $labels;
             }
 
             if ($branch !== '') {
                 $withoutBranch = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
-                $labels = $this->fetchStudClassBatchesFromStudInfo($withoutBranch, $programmeCode);
+                $labels = $this->fetchStudInfoFieldLabels($withoutBranch, 'stud_class', $programmeCode);
                 if ($labels !== []) {
                     return $labels;
                 }
@@ -1999,11 +2007,24 @@ final class AesApiService
      * @param array<string, scalar|null> $params
      * @return list<string>
      */
-    private function fetchStudClassBatchesFromStudInfo(array $params, string $programmeCode = ''): array
-    {
+    private function fetchStudInfoFieldLabels(
+        array $params,
+        string $field,
+        string $programmeCode = '',
+        string $branchFilter = ''
+    ): array {
         $result = $this->callPlacementFilterApi('getStudInfo4Placement', $params);
 
-        return $this->normalizeStudClassBatchLabels($result, $programmeCode);
+        return $this->normalizeStudInfoFieldLabels($result, $field, $programmeCode, $branchFilter);
+    }
+
+    /**
+     * @param array<string, scalar|null> $params
+     * @return list<string>
+     */
+    private function fetchStudClassBatchesFromStudInfo(array $params, string $programmeCode = '', string $branch = ''): array
+    {
+        return $this->fetchStudInfoFieldLabels($params, 'stud_class', $programmeCode, $branch);
     }
 
     /**
@@ -2024,7 +2045,7 @@ final class AesApiService
 
             foreach ($methods as $method) {
                 $result = $this->callPlacementFilterApi($method, $params);
-                $labels = $this->normalizeStudClassBatchLabels($result, $programmeCode);
+                $labels = $this->normalizeStudClassBatchLabels($result, $programmeCode, $branch);
                 if ($labels !== []) {
                     return $labels;
                 }
@@ -2034,7 +2055,7 @@ final class AesApiService
                 $withoutBranch = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
                 foreach ($methods as $method) {
                     $result = $this->callPlacementFilterApi($method, $withoutBranch);
-                    $labels = $this->normalizeStudClassBatchLabels($result, $programmeCode);
+                    $labels = $this->normalizeStudClassBatchLabels($result, $programmeCode, $branch);
                     if ($labels !== []) {
                         return $labels;
                     }
@@ -2167,13 +2188,17 @@ final class AesApiService
     }
 
     /**
-     * Distinct stud_class labels from getStudInfo4Placement (or compatible list payloads).
+     * Distinct stud_branch / stud_class labels from getStudInfo4Placement.
      *
      * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
      * @return list<string>
      */
-    private function normalizeStudClassBatchLabels(array $result, string $programmeCode = ''): array
-    {
+    private function normalizeStudInfoFieldLabels(
+        array $result,
+        string $field,
+        string $programmeCode = '',
+        string $branchFilter = ''
+    ): array {
         if (($result['success'] ?? false) !== true) {
             return [];
         }
@@ -2193,7 +2218,19 @@ final class AesApiService
             return [];
         }
 
-        $list = $payload['data']
+        $list = $this->studInfoListFromPayload($payload);
+        $labels = [];
+        $this->collectStudInfoFieldLabels($list, $labels, $field, $programmeCode, $branchFilter);
+
+        return array_values(array_unique(array_filter($labels, static fn (string $label) => $label !== '')));
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function studInfoListFromPayload(array $payload): mixed
+    {
+        return $payload['data']
             ?? $payload['students']
             ?? $payload['student_list']
             ?? $payload['studentList']
@@ -2202,80 +2239,159 @@ final class AesApiService
             ?? $payload['class_list']
             ?? $payload['classList']
             ?? $payload;
-        $labels = [];
-        $this->collectStudClassBatchLabels($list, $labels, $programmeCode);
-
-        return array_values(array_unique(array_filter($labels, static fn (string $label) => $label !== '')));
     }
 
     /**
      * @param list<string> $out
      */
-    private function collectStudClassBatchLabels(mixed $node, array &$out, string $programmeCode): void
-    {
-        if (is_string($node)) {
-            $label = trim($node);
-            if ($label !== '') {
-                if (str_contains($label, ',')) {
-                    foreach (preg_split('/\s*,\s*/', $label) ?: [] as $part) {
-                        $this->collectStudClassBatchLabels($part, $out, $programmeCode);
-                    }
-
-                    return;
-                }
-                $out[] = $this->tagBatchLabelWithProgramme($label, $programmeCode);
-            }
-
-            return;
-        }
-
+    private function collectStudInfoFieldLabels(
+        mixed $node,
+        array &$out,
+        string $field,
+        string $programmeCode,
+        string $branchFilter
+    ): void {
         if (!is_array($node)) {
             return;
         }
 
         if ($this->isAssoc($node)) {
-            $studClass = trim((string) ($node['stud_class'] ?? ''));
-            if ($studClass !== '') {
-                $course = strtoupper(trim((string) (
-                    $node['stud_course']
-                    ?? $node['stud_cource_short']
-                    ?? $node['course']
-                    ?? $node['programme']
-                    ?? $programmeCode
-                )));
-                $out[] = $this->tagBatchLabelWithProgramme($studClass, $course !== '' ? $course : $programmeCode);
-
+            if ($this->isStudInfoRow($node) && !$this->rowMatchesStudInfoScope($node, $programmeCode, $branchFilter)) {
                 return;
             }
 
-            $fallback = trim((string) (
-                $node['class_name']
-                ?? $node['className']
-                ?? $node['batch']
-                ?? $node['classBatch']
-                ?? $node['class']
-                ?? $node['name']
-                ?? ''
-            ));
-            if ($fallback !== '') {
-                $out[] = $this->tagBatchLabelWithProgramme($fallback, $programmeCode);
+            $value = $this->studInfoFieldValue($node, $field);
+            if ($value !== '' && ($field !== 'stud_branch' || $this->rowMatchesProgramme($node, $programmeCode))) {
+                if ($field === 'stud_class') {
+                    $course = strtoupper(trim((string) (
+                        $node['stud_course']
+                        ?? $node['stud_cource_short']
+                        ?? $node['course']
+                        ?? $node['programme']
+                        ?? $programmeCode
+                    )));
+                    $out[] = $this->tagBatchLabelWithProgramme($value, $course !== '' ? $course : $programmeCode);
+                } else {
+                    $out[] = $value;
+                }
 
                 return;
             }
         }
 
         foreach ($node as $item) {
-            $this->collectStudClassBatchLabels($item, $out, $programmeCode);
+            $this->collectStudInfoFieldLabels($item, $out, $field, $programmeCode, $branchFilter);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function isStudInfoRow(array $row): bool
+    {
+        foreach (['stud_class', 'stud_branch', 'stud_course', 'stud_cource_short', 'registerno', 'admno', 'stud_admno'] as $key) {
+            if (!empty($row[$key]) && is_scalar($row[$key])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function rowMatchesStudInfoScope(array $row, string $programmeCode, string $branchFilter): bool
+    {
+        if (!$this->rowMatchesProgramme($row, $programmeCode)) {
+            return false;
+        }
+
+        if ($branchFilter === '') {
+            return true;
+        }
+
+        $rowBranch = $this->studInfoFieldValue($row, 'stud_branch');
+
+        return $rowBranch !== '' && strcasecmp($rowBranch, $branchFilter) === 0;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function rowMatchesProgramme(array $row, string $programmeCode): bool
+    {
+        if ($programmeCode === '') {
+            return true;
+        }
+
+        $rowCourse = trim((string) (
+            $row['stud_course']
+            ?? $row['stud_cource_short']
+            ?? $row['course']
+            ?? $row['programme']
+            ?? ''
+        ));
+        if ($rowCourse === '') {
+            return true;
+        }
+
+        $targets = array_values(array_unique(array_filter([
+            trim($programmeCode),
+            DepartmentProgrammeCatalog::resolveProgrammeCode($programmeCode),
+        ], static fn (string $code) => $code !== '')));
+
+        foreach ($targets as $target) {
+            if (strcasecmp($rowCourse, $target) === 0) {
+                return true;
+            }
+            if (strcasecmp(
+                DepartmentProgrammeCatalog::normalizeCode($rowCourse),
+                DepartmentProgrammeCatalog::normalizeCode($target)
+            ) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function studInfoFieldValue(array $row, string $field): string
+    {
+        if ($field === 'stud_branch') {
+            return trim((string) (
+                $row['stud_branch']
+                ?? $row['branch_name']
+                ?? $row['branchName']
+                ?? $row['branch']
+                ?? ''
+            ));
+        }
+
+        return trim((string) ($row['stud_class'] ?? ''));
+    }
+
+    /**
+     * Distinct stud_class labels from getStudInfo4Placement (or compatible list payloads).
+     *
+     * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
+     * @return list<string>
+     */
+    private function normalizeStudClassBatchLabels(array $result, string $programmeCode = '', string $branchFilter = ''): array
+    {
+        return $this->normalizeStudInfoFieldLabels($result, 'stud_class', $programmeCode, $branchFilter);
     }
 
     /**
      * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
      * @return list<string>
      */
-    private function normalizePlacementClassBatchLabels(array $result, string $programmeCode = ''): array
+    private function normalizePlacementClassBatchLabels(array $result, string $programmeCode = '', string $branchFilter = ''): array
     {
-        return $this->normalizeStudClassBatchLabels($result, $programmeCode);
+        return $this->normalizeStudClassBatchLabels($result, $programmeCode, $branchFilter);
     }
 
     /**
@@ -2283,7 +2399,15 @@ final class AesApiService
      */
     private function collectPlacementClassLabels(mixed $node, array &$out, string $programmeCode): void
     {
-        $this->collectStudClassBatchLabels($node, $out, $programmeCode);
+        $this->collectStudInfoFieldLabels($node, $out, 'stud_class', $programmeCode, '');
+    }
+
+    /**
+     * @param list<string> $out
+     */
+    private function collectStudClassBatchLabels(mixed $node, array &$out, string $programmeCode, string $branchFilter = ''): void
+    {
+        $this->collectStudInfoFieldLabels($node, $out, 'stud_class', $programmeCode, $branchFilter);
     }
 
     private function tagBatchLabelWithProgramme(string $label, string $programmeCode): string

@@ -48,31 +48,11 @@ final class PlacementFilterService
             ? (new AesApiService())->fetchPlacementCourses($deptAesId)
             : [];
 
-        $programs = $fromAes !== []
-            ? $fromAes
-            : $this->fallbackProgrammes($ctx);
-
-        return $this->sortLabels($this->filterProgramsWithBranches($deptAesId, $programs));
-    }
-
-    /**
-     * @param list<string> $programs
-     * @return list<string>
-     */
-    private function filterProgramsWithBranches(string $deptAesId, array $programs): array
-    {
-        $withBranches = [];
-        foreach ($programs as $program) {
-            $program = trim((string) $program);
-            if ($program === '') {
-                continue;
-            }
-            if ($this->resolveBranchLabels($deptAesId, $program) !== []) {
-                $withBranches[] = $program;
-            }
+        if ($fromAes !== []) {
+            return $this->sortLabels($fromAes);
         }
 
-        return $withBranches;
+        return $this->sortLabels($this->fallbackProgrammes($ctx));
     }
 
     /**
