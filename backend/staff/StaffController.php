@@ -289,7 +289,12 @@ final class StaffController
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
         $batch = trim((string) ($_GET['batch'] ?? ''));
-        $data = (new StaffService())->hiringOverview($ctx, $batch !== '' ? $batch : null);
+        $branch = trim((string) ($_GET['branch'] ?? ''));
+        $data = (new StaffService())->hiringOverview(
+            $ctx,
+            $batch !== '' ? $batch : null,
+            $branch !== '' ? $branch : null
+        );
 
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $data['department'] = [

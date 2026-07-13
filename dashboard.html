@@ -330,35 +330,6 @@
             </div>
           </div>
         </div>
-
-        <div class="row g-3 mt-1">
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-building-add"></i></div><span class="badge-soft info">YTD</span></div>
-            <div class="val"><span class="counter" data-target="0" id="staffRecCount">0</span></div><div class="lbl">Companies Recommended</div>
-          </div></div>
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check"></i></div><span class="badge-soft success">Onboarded</span></div>
-            <div class="val"><span class="counter" data-target="0" id="staffOnboarded">0</span></div><div class="lbl">Now Onboarded</div>
-          </div></div>
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-hourglass"></i></div><span class="badge-soft warning">Awaiting</span></div>
-            <div class="val"><span class="counter" data-target="0" id="staffPending">0</span></div><div class="lbl">Pending Review</div>
-          </div></div>
-        </div>
-
-        <div class="card-surface p-4 mt-3 d-flex flex-wrap gap-3 align-items-center justify-content-between">
-          <div><h6 class="mb-1 fw-bold">Recommend a Company</h6><small class="text-muted-2">Add company name, contact person, role, mail, and phone for admin review.</small></div>
-          <button type="button" class="btn btn-primary" onclick="ReferralModals.openStaff()"><i class="bi bi-plus-lg me-1"></i>Recommend Company</button>
-        </div>
-        <div class="card-surface mt-3">
-          <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Your Recent Recommendations</h6></div>
-          <div class="table-wrap">
-            <table class="table-modern">
-              <thead><tr><th>Company</th><th>Submitted</th><th>Status</th></tr></thead>
-              <tbody id="staffRecs"></tbody>
-            </table>
-          </div>
-        </div>
       </div>
 
       <!-- ===== COMPANY ===== -->
@@ -641,39 +612,9 @@ if (role === 'student') {
   })();
 }
 
-/* Staff hiring overview + recommendations */
+/* Staff hiring overview */
 if (role === 'staff') {
   HiringOverviewPage.init({ root: '#staffHiringRoot' });
-  (async () => {
-    const setCounter = (id, val) => {
-      const el = document.getElementById(id);
-      if (el) { el.dataset.target = val; el.dataset.animated = '0'; }
-    };
-
-    let mapped = null;
-    if (dashLive) {
-      await Auth.ensureSession();
-      const dash = await StaffApi.fetchDashboard();
-      mapped = StaffApi.mapDashboard(dash);
-      await StaffRecs.fetch();
-    }
-
-    const recRecent = mapped?.recommendations?.recent?.length
-      ? mapped.recommendations.recent
-      : (dashLive ? StaffRecs.mine().slice(0, 5) : []);
-    const recTotal = mapped?.recommendations?.total ?? (dashLive ? StaffRecs.mine().length : 0);
-    const recPending = mapped?.recommendations?.pending ?? recRecent.filter(r => r.status === 'pending').length;
-    const recOnboarded = mapped?.recommendations?.registered ?? recRecent.filter(r => r.status === 'registered').length;
-
-    document.getElementById('staffRecs').innerHTML = recRecent.length ? recRecent.map(r => `
-      <tr><td><strong>${r.companyName}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
-      : '<tr><td colspan="3" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
-
-    setCounter('staffRecCount', recTotal);
-    setCounter('staffOnboarded', recOnboarded);
-    setCounter('staffPending', recPending);
-    animateCounters(document.querySelector('[data-roles="staff"] .row.g-3.mt-1'));
-  })();
 }
 
 /* Company recruitment overview */

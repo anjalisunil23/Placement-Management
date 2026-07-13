@@ -184,6 +184,7 @@ const StaffApi = {
   async fetchHiringOverview(params = {}) {
     const qs = new URLSearchParams();
     if (params.batch) qs.set('batch', params.batch);
+    if (params.branch) qs.set('branch', params.branch);
     const q = qs.toString();
     const res = await api('/staff/hiring-overview' + (q ? `?${q}` : ''));
     return res.success ? res.data : null;

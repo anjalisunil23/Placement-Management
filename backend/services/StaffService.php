@@ -84,11 +84,12 @@ final class StaffService
      * @param array<string, mixed> $ctx
      * @return array<string, mixed>
      */
-    public function hiringOverview(array $ctx, ?string $batchFilter = null): array
+    public function hiringOverview(array $ctx, ?string $batchFilter = null, ?string $branchFilter = null): array
     {
         $departmentId = $ctx['departmentId'] ?? null;
         $batchFilter = trim((string) ($batchFilter ?? ''));
-        $studentOids = $this->studentObjectIdsInScope($ctx, $batchFilter !== '' ? $batchFilter : null);
+        $branchFilter = trim((string) ($branchFilter ?? ''));
+        $studentOids = $this->studentObjectIdsInScope($ctx, $batchFilter !== '' ? $batchFilter : null, $branchFilter);
         $appModel = new ApplicationModel();
         $companyModel = new CompanyModel();
         $userModel = new UserModel();
@@ -171,14 +172,17 @@ final class StaffService
                 if (!StaffContext::studentMatchesScope($student, $ctx)) {
                     continue;
                 }
+                $user = $userModel->findById((string) ($student['userId'] ?? ''));
+                $dept = $deptModel->findById((string) ($student['departmentId'] ?? ''));
+                if (!$this->studentMatchesBranchFilter($student, $user, $dept, $branchFilter)) {
+                    continue;
+                }
                 if ($batchFilter !== '') {
                     $studentBatch = trim((string) ($student['classBatch'] ?? ''));
                     if ($studentBatch === '' || strcasecmp($studentBatch, $batchFilter) !== 0) {
                         continue;
                     }
                 }
-                $user = $userModel->findById((string) ($student['userId'] ?? ''));
-                $dept = $deptModel->findById((string) ($student['departmentId'] ?? ''));
                 $row = $officerData->enrichStudentListRow([], $student, $user);
                 $apps = $appModel->findByStudent((string) $student['_id']);
                 $latest = $apps[0] ?? null;
@@ -223,7 +227,7 @@ final class StaffService
             ],
             'companies'    => $companies,
             'candidates'   => $candidates,
-            'batchOptions' => $this->batchOptionsForScope($ctx),
+            'batchOptions' => $this->batchOptionsForScope($ctx, $branchFilter),
         ];
     }
 
@@ -369,18 +373,27 @@ final class StaffService
      * @param array<string, mixed> $ctx
      * @return list<string>
      */
-    private function batchOptionsForScope(array $ctx): array
+    private function batchOptionsForScope(array $ctx, string $branchFilter = ''): array
     {
+        $branchFilter = trim($branchFilter);
         $assigned = StaffContext::assignedClassBatches($ctx);
         if ($assigned !== []) {
+            $assigned = $this->filterBatchLabelsForBranch($assigned, $branchFilter);
             sort($assigned, SORT_NATURAL | SORT_FLAG_CASE);
 
             return $assigned;
         }
 
         $batches = [];
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
         foreach ((new StudentModel())->findAll(StaffContext::studentCollectionFilter($ctx), 5000) as $student) {
             if (!StaffContext::studentMatchesScope($student, $ctx)) {
+                continue;
+            }
+            $user = $userModel->findById((string) ($student['userId'] ?? ''));
+            $dept = $deptModel->findById((string) ($student['departmentId'] ?? ''));
+            if (!$this->studentMatchesBranchFilter($student, $user, $dept, $branchFilter)) {
                 continue;
             }
             $batch = trim((string) ($student['classBatch'] ?? ''));
@@ -396,17 +409,96 @@ final class StaffService
     }
 
     /**
+     * @return list<string>
+     */
+    private function branchFilterTargets(string $branchFilter): array
+    {
+        $branchFilter = trim($branchFilter);
+        if ($branchFilter === '') {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn ($part) => strtoupper(trim((string) $part)),
+            preg_split('/\|/', $branchFilter) ?: []
+        ), static fn ($part) => $part !== ''));
+    }
+
+    /**
+     * @param list<string> $batches
+     * @return list<string>
+     */
+    private function filterBatchLabelsForBranch(array $batches, string $branchFilter): array
+    {
+        $targets = $this->branchFilterTargets($branchFilter);
+        if ($targets === []) {
+            return $batches;
+        }
+
+        return array_values(array_filter($batches, static function (string $batch) use ($targets): bool {
+            $label = strtoupper(trim($batch));
+            if ($label === '') {
+                return false;
+            }
+            foreach ($targets as $target) {
+                if ($label === $target || str_starts_with($label, $target)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed>|null $user
+     * @param array<string, mixed>|null $dept
+     */
+    private function studentMatchesBranchFilter(array $student, ?array $user, ?array $dept, string $branchFilter): bool
+    {
+        $targets = $this->branchFilterTargets($branchFilter);
+        if ($targets === []) {
+            return true;
+        }
+
+        $row = (new OfficerDataService())->enrichStudentListRow([], $student, $user);
+        $deptCode = strtoupper(trim((string) ($row['departmentCode'] ?? $dept['code'] ?? '')));
+        $deptName = strtoupper(trim((string) ($row['departmentName'] ?? $dept['name'] ?? '')));
+        $batch = strtoupper(trim((string) ($student['classBatch'] ?? $row['classBatch'] ?? '')));
+
+        foreach ($targets as $target) {
+            if ($deptCode === $target || $deptName === $target) {
+                return true;
+            }
+            if ($batch !== '' && (str_starts_with($batch, $target) || str_contains($batch, $target))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param array<string, mixed> $ctx
      * @return array<int, string>
      */
-    private function studentObjectIdsInScope(array $ctx, ?string $batchFilter): array
+    private function studentObjectIdsInScope(array $ctx, ?string $batchFilter, string $branchFilter = ''): array
     {
         $students = (new StudentModel())->findAll(StaffContext::studentCollectionFilter($ctx), 5000);
         $ids = [];
         $batchFilter = trim((string) ($batchFilter ?? ''));
+        $branchFilter = trim($branchFilter);
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
 
         foreach ($students as $student) {
             if (!StaffContext::studentMatchesScope($student, $ctx)) {
+                continue;
+            }
+            $user = $userModel->findById((string) ($student['userId'] ?? ''));
+            $dept = $deptModel->findById((string) ($student['departmentId'] ?? ''));
+            if (!$this->studentMatchesBranchFilter($student, $user, $dept, $branchFilter)) {
                 continue;
             }
             if ($batchFilter !== '') {
