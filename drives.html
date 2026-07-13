@@ -75,9 +75,9 @@
 
     <div class="col-md-5"><div class="search-with-icon"><i class="bi bi-search"></i><input class="form-control" id="driveSearch" placeholder="Search by company, role…"/></div></div>
 
-    <div class="col-6 col-md-3"><select class="form-select" id="driveStatusFilter"><option value="">All Status</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Closed">Closed</option></select></div>
+    <div class="col-6 col-md-3" id="driveStatusFilterWrap"><select class="form-select" id="driveStatusFilter"><option value="">All Status</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Closed">Closed</option></select></div>
 
-    <div class="col-6 col-md-4"><select class="form-select" id="driveJobTypeFilter"><option value="">All job types</option><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
+    <div class="col-6 col-md-4" id="driveJobTypeFilterWrap"><select class="form-select" id="driveJobTypeFilter"><option value="">All job types</option><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
 
   </div>
 
@@ -91,7 +91,7 @@
 
     <div><h6 class="fw-bold mb-0"><span id="drivesListTitle">All Drives</span> <span class="badge-soft muted ms-1" id="driveCount">0</span></h6></div>
 
-    <div class="d-flex gap-2"><button class="btn btn-sm btn-outline-secondary btn-icon" type="button" title="Export"><i class="bi bi-download"></i></button></div>
+    <div class="d-flex gap-2" id="drivesExportWrap"><button class="btn btn-sm btn-outline-secondary btn-icon" type="button" title="Export" id="drivesExportBtn"><i class="bi bi-download"></i></button></div>
 
   </div>
 
@@ -484,16 +484,23 @@ function companyDriveCardHtml(drives) {
   const list = Array.isArray(drives) ? drives.filter(Boolean) : [];
   if (!list.length) return '';
   const multi = list.length > 1;
-  const selectedId = String(list.find(d => (isStudent && StudentApps.hasApplied(d.id)) || (alumniSeeking && AlumniApps.hasApplied(d.id)))?.id || list[0].id);
-  const active = list.find(d => String(d.id) === selectedId) || list[0];
-  const name = active.company || '—';
+  const appliedDrive = list.find(d =>
+    (isStudent && (StudentApps.hasApplied(d.id) || d.applied))
+    || (alumniSeeking && (AlumniApps.hasApplied(d.id) || d.applied))
+  );
+  const selectedId = appliedDrive ? String(appliedDrive.id) : '';
+  const active = selectedId
+    ? (list.find(d => String(d.id) === selectedId) || list[0])
+    : (multi ? null : list[0]);
+  const name = (active || list[0]).company || '—';
   const initial = (name && name !== '—') ? name[0].toUpperCase() : '?';
-  const groupId = `driveRole_${String(active.companyId || name).replace(/[^a-zA-Z0-9_-]/g, '_')}_${list[0].id}`;
+  const groupId = `driveRole_${String((active || list[0]).companyId || name).replace(/[^a-zA-Z0-9_-]/g, '_')}_${list[0].id}`;
 
   const roleBlock = multi
     ? `<div class="drive-card-role-wrap">
         <label for="${groupId}">Role</label>
         <select class="form-select form-select-sm drive-card-role-select" id="${groupId}" data-company-role-select>
+          <option value="" ${selectedId ? '' : 'selected'}>Select role</option>
           ${list.map(d => {
             const applied = (isStudent && (StudentApps.hasApplied(d.id) || d.applied))
               || (alumniSeeking && (AlumniApps.hasApplied(d.id) || d.applied));
@@ -502,14 +509,22 @@ function companyDriveCardHtml(drives) {
           }).join('')}
         </select>
       </div>`
-    : `<div class="drive-card-role">${active.role || '—'}${(isStudent || alumniSeeking) && active.profile ? `<div class="small text-muted-2 mt-1">${active.profile}</div>` : ''}</div>`;
+    : `<div class="drive-card-role">${list[0].role || '—'}${(isStudent || alumniSeeking) && list[0].profile ? `<div class="small text-muted-2 mt-1">${list[0].profile}</div>` : ''}</div>`;
 
-  const status = `<span class="badge-soft ${active.statusCls || driveStatusCls(active.status)}" data-card-status>${active.status || '—'}</span>`;
+  const display = active || {
+    status: list[0].status,
+    statusCls: list[0].statusCls,
+    jobType: list[0].jobType,
+    package: '—',
+    deadline: '—',
+    branches: list.map(d => d.branches).filter(Boolean)[0] || '',
+  };
+  const status = `<span class="badge-soft ${display.statusCls || driveStatusCls(display.status)}" data-card-status>${display.status || '—'}</span>`;
   const action = (isStudent || alumniSeeking)
-    ? `<div data-card-action>${applyAction(active)}</div>`
+    ? `<div data-card-action>${active ? applyAction(active) : '<button type="button" class="btn btn-sm btn-primary" disabled title="Select a role first">Apply</button>'}</div>`
     : '';
   const clickable = canManage && !multi
-    ? ` data-drive-id="${active.id}" class="drive-card drive-row-clickable" style="cursor:pointer"`
+    ? ` data-drive-id="${list[0].id}" class="drive-card drive-row-clickable" style="cursor:pointer"`
     : ' class="drive-card"';
 
   return `<article${clickable} data-company-card data-drive-ids="${list.map(d => d.id).join(',')}">
@@ -518,23 +533,43 @@ function companyDriveCardHtml(drives) {
         <div class="drive-card-avatar">${initial}</div>
         <div>
           <strong>${name}</strong>
-          <div class="small text-muted-2" data-card-jobtype>${active.jobType && active.jobType !== '—' ? active.jobType : 'Job opening'}${multi ? ` · ${list.length} roles` : ''}</div>
+          <div class="small text-muted-2" data-card-jobtype>${(active || list[0]).jobType && (active || list[0]).jobType !== '—' ? (active || list[0]).jobType : 'Job opening'}${multi ? ` · ${list.length} roles` : ''}</div>
         </div>
       </div>
       ${status}
     </div>
     ${roleBlock}
     <div class="drive-card-meta">
-      <span data-card-package><i class="bi bi-cash-stack"></i>${active.package || '—'}</span>
-      <span data-card-deadline><i class="bi bi-calendar-event"></i>${active.deadline || '—'}</span>
-      <span data-card-branches ${active.branches ? '' : 'hidden'}><i class="bi bi-diagram-3"></i><span data-card-branches-text>${active.branches || ''}</span></span>
+      <span data-card-package><i class="bi bi-cash-stack"></i>${display.package || '—'}</span>
+      <span data-card-deadline><i class="bi bi-calendar-event"></i>${display.deadline || '—'}</span>
+      <span data-card-branches ${display.branches ? '' : 'hidden'}><i class="bi bi-diagram-3"></i><span data-card-branches-text>${display.branches || ''}</span></span>
     </div>
     ${action ? `<div class="drive-card-actions">${action}</div>` : ''}
   </article>`;
 }
 
 function syncCompanyDriveCard(card, drive) {
-  if (!card || !drive) return;
+  if (!card) return;
+  if (!drive) {
+    const statusEl = card.querySelector('[data-card-status]');
+    if (statusEl) {
+      const firstId = String(card.getAttribute('data-drive-ids') || '').split(',')[0];
+      const first = allDrives.find(d => String(d.id) === firstId);
+      if (first) {
+        statusEl.className = `badge-soft ${first.statusCls || driveStatusCls(first.status)}`;
+        statusEl.textContent = first.status || '—';
+      }
+    }
+    const pkg = card.querySelector('[data-card-package]');
+    if (pkg) pkg.innerHTML = '<i class="bi bi-cash-stack"></i>—';
+    const deadline = card.querySelector('[data-card-deadline]');
+    if (deadline) deadline.innerHTML = '<i class="bi bi-calendar-event"></i>—';
+    const actionWrap = card.querySelector('[data-card-action]');
+    if (actionWrap) {
+      actionWrap.innerHTML = '<button type="button" class="btn btn-sm btn-primary" disabled title="Select a role first">Apply</button>';
+    }
+    return;
+  }
   const statusEl = card.querySelector('[data-card-status]');
   if (statusEl) {
     statusEl.className = `badge-soft ${drive.statusCls || driveStatusCls(drive.status)}`;
@@ -569,7 +604,12 @@ function wireCompanyDriveCards(root) {
     sel.dataset.wired = '1';
     sel.addEventListener('change', () => {
       const card = sel.closest('[data-company-card]');
-      const drive = allDrives.find(d => String(d.id) === String(sel.value));
+      const value = String(sel.value || '').trim();
+      if (!value) {
+        syncCompanyDriveCard(card, null);
+        return;
+      }
+      const drive = allDrives.find(d => String(d.id) === value);
       if (drive) syncCompanyDriveCard(card, drive);
     });
   });
@@ -577,13 +617,25 @@ function wireCompanyDriveCards(root) {
 
 function setupStatusFilter() {
   const sel = document.getElementById('driveStatusFilter');
+  const statusWrap = document.getElementById('driveStatusFilterWrap');
+  const jobWrap = document.getElementById('driveJobTypeFilterWrap');
+  const exportWrap = document.getElementById('drivesExportWrap');
   if (!sel) return;
   if (isStudent || alumniSeeking) {
     sel.innerHTML = '<option value="Open" selected>Open</option>';
     sel.value = 'Open';
-    sel.title = 'Only open drives are shown';
-  } else if (!sel.querySelector('option[value=""]')) {
-    sel.innerHTML = '<option value="">All Status</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Closed">Closed</option>';
+    statusWrap?.classList.add('d-none');
+    exportWrap?.classList.add('d-none');
+    if (jobWrap) {
+      jobWrap.className = 'col-12 col-md-7';
+    }
+  } else {
+    statusWrap?.classList.remove('d-none');
+    exportWrap?.classList.remove('d-none');
+    if (jobWrap) jobWrap.className = 'col-6 col-md-4';
+    if (!sel.querySelector('option[value=""]')) {
+      sel.innerHTML = '<option value="">All Status</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Closed">Closed</option>';
+    }
   }
 }
 
@@ -1305,9 +1357,12 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
 
 window.openApply = async driveId => {
 
-  pendingDrive = DriveStore.get(driveId);
+  pendingDrive = DriveStore.get(driveId) || allDrives.find(d => String(d.id) === String(driveId)) || null;
 
-  if (!pendingDrive) return;
+  if (!pendingDrive) {
+    toast('Could not load this drive. Refresh and try again.', 'warn');
+    return;
+  }
 
   if (isStudent || alumniSeeking) {
     await ResumeBucket.fetchForApplicant();

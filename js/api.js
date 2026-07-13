@@ -3762,6 +3762,7 @@ const DriveStore = {
     const jobType = String(d.jobType || elig.jobType || '').trim();
     return {
       id: d._id || d.id,
+      companyId: d.companyId || '',
       company: company || '—',
       role,
       package: pkg || '—',

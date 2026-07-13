@@ -493,11 +493,17 @@ function renderShell(active) {
     }[role] || '';
 
     const hideSearch = role === 'student' || activeBase === 'dashboard.html';
+    const studentName = String(user?.name || '').trim();
+    const useStudentNameInTopbar = role === 'student' && activeBase === 'dashboard.html' && studentName;
+    const topbarTitle = useStudentNameInTopbar ? studentName : pageLabel;
+    const topbarSub = useStudentNameInTopbar
+      ? ''
+      : (role === 'student' ? '' : `${ROLE_LABELS[role]} workspace`);
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
       ${showTopbarTitle ? `<div class="d-none d-md-block">
-        <div class="fw-semibold" style="font-size:.95rem;line-height:1.2">${pageLabel}</div>
-        <div class="small text-muted-2">${ROLE_LABELS[role]} workspace</div>
+        <div class="fw-semibold" style="font-size:.95rem;line-height:1.2">${escapeAttr(topbarTitle)}</div>
+        ${topbarSub ? `<div class="small text-muted-2">${escapeAttr(topbarSub)}</div>` : ''}
       </div>` : ''}
       ${hideSearch ? '<div class="flex-grow-1"></div>' : `<div class="search ms-md-3">
         <i class="bi bi-search"></i>

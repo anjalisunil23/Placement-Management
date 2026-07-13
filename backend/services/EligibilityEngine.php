@@ -174,8 +174,8 @@ final class EligibilityEngine
     }
 
     /**
-     * Whether a drive should appear in a student's drive list (branch + academic criteria).
-     * Does not require resume or placement chances — those apply at apply time only.
+     * Whether a drive should appear in a student's browse list.
+     * Only branch targeting is used for visibility; CGPA/marks gate Apply via eligibilityCheck.
      *
      * @param array<string, mixed> $student
      * @param array<string, mixed> $drive
@@ -186,46 +186,48 @@ final class EligibilityEngine
             static fn ($b) => strtoupper(trim((string) $b)),
             $this->toPlainArray($drive['branches'] ?? [])
         )));
-        if ($branches !== []) {
-            $branchMatch = false;
-            foreach ($this->studentDepartmentCodes($student) as $code) {
-                if (in_array($code, $branches, true)) {
-                    $branchMatch = true;
-                    break;
-                }
+        if ($branches === []) {
+            return true;
+        }
+
+        $studentCodes = $this->studentDepartmentCodes($student);
+        if ($studentCodes === []) {
+            // Unknown branch — still show open drives so new listings are not invisible.
+            return true;
+        }
+
+        foreach ($studentCodes as $code) {
+            if ($this->branchCodesMatch($code, $branches)) {
+                return true;
             }
-            if (!$branchMatch) {
-                return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param list<string> $allowedBranches
+     */
+    private function branchCodesMatch(string $studentCode, array $allowedBranches): bool
+    {
+        $studentCode = strtoupper(trim($studentCode));
+        if ($studentCode === '') {
+            return false;
+        }
+        foreach ($allowedBranches as $allowed) {
+            $allowed = strtoupper(trim((string) $allowed));
+            if ($allowed === '') {
+                continue;
+            }
+            if ($studentCode === $allowed) {
+                return true;
+            }
+            if (str_contains($allowed, $studentCode) || str_contains($studentCode, $allowed)) {
+                return true;
             }
         }
 
-        $student = $this->enrichStudentForEligibility($student);
-        $criteria = $this->toPlainArray($drive['eligibility'] ?? []);
-        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
-        $cgpa = (float) ($academic['cgpa'] ?? 0);
-        $backlogs = (int) ($academic['backlogs'] ?? 0);
-
-        $rule = $this->ruleModel->getActiveRule();
-        $minCgpa = (float) ($criteria['minCgpa'] ?? $rule['minCgpa'] ?? 0);
-        $maxBacklogs = (int) ($criteria['maxBacklogs'] ?? $rule['maxBacklogs'] ?? 99);
-
-        if ($cgpa < $minCgpa) {
-            return false;
-        }
-
-        if ($backlogs > $maxBacklogs) {
-            return false;
-        }
-
-        if (!$this->passesMarksCriteria($academic, $criteria)) {
-            return false;
-        }
-
-        if (!$this->passesGenderCriteria($student, $criteria)) {
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
     /**
@@ -355,8 +357,36 @@ final class EligibilityEngine
         $deptId = (string) ($student['departmentId'] ?? '');
         if ($deptId !== '') {
             $dept = $this->departmentModel->findById($deptId);
-            if (is_array($dept) && !empty($dept['code'])) {
-                $codes[] = strtoupper(trim((string) $dept['code']));
+            if (is_array($dept)) {
+                if (!empty($dept['code'])) {
+                    $codes[] = strtoupper(trim((string) $dept['code']));
+                }
+                if (!empty($dept['name'])) {
+                    $codes[] = strtoupper(trim((string) $dept['name']));
+                }
+            }
+        }
+
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        foreach ([
+            $personal['course'] ?? null,
+            $personal['branch'] ?? null,
+            $personal['programme'] ?? null,
+            $academic['branch'] ?? null,
+            $academic['programme'] ?? null,
+            $academic['course'] ?? null,
+            $student['branch'] ?? null,
+            $student['programme'] ?? null,
+            $student['department'] ?? null,
+            $student['departmentCode'] ?? null,
+            $student['departmentName'] ?? null,
+        ] as $extra) {
+            if (is_string($extra) || is_numeric($extra)) {
+                $text = strtoupper(trim((string) $extra));
+                if ($text !== '' && !preg_match('/^\d+$/', $text)) {
+                    $codes[] = $text;
+                }
             }
         }
 
@@ -368,8 +398,13 @@ final class EligibilityEngine
         $aesProfile = Security::getSessionAesProfile();
         if (is_array($aesProfile) && $aesProfile !== []) {
             $mapped = (new AesLoginService())->mapAesDetailsToUserFields($aesProfile);
-            if (!empty($mapped['department'])) {
-                $codes[] = strtoupper(trim((string) $mapped['department']));
+            foreach (['department', 'departmentName', 'branch', 'programme', 'course'] as $key) {
+                if (!empty($mapped[$key])) {
+                    $text = strtoupper(trim((string) $mapped[$key]));
+                    if ($text !== '' && !preg_match('/^\d+$/', $text)) {
+                        $codes[] = $text;
+                    }
+                }
             }
         }
 
