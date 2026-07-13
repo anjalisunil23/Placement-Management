@@ -830,6 +830,13 @@ function setupStatusFilter() {
     if (jobWrap) {
       jobWrap.className = 'col-12 col-md-7';
     }
+  } else if (isStaff) {
+    statusWrap?.classList.add('d-none');
+    exportWrap?.classList.add('d-none');
+    sel.value = '';
+    const searchCol = document.getElementById('driveSearch')?.closest('[class*="col-"]');
+    if (searchCol) searchCol.className = 'col-md-8';
+    if (jobWrap) jobWrap.className = 'col-12 col-md-4';
   } else {
     statusWrap?.classList.remove('d-none');
     exportWrap?.classList.remove('d-none');
