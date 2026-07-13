@@ -1,24 +1,56 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Student · Management · AJCE Placements</title>
+<title>Students · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260711i" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260713d" rel="stylesheet"/></head>
 <body data-page="students.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
   <div>
-    <h1 class="page-title">Management</h1>
-    <p class="page-sub" id="pageSub">Search students, view placement pipeline, and manage registrations.</p>
+    <h1 class="page-title">Students</h1>
+    <p class="page-sub" id="pageSub">Look up profiles, manage portal access, and track drive applications.</p>
+  </div>
+</div>
+
+<div class="card-surface p-3 mb-3" id="studentsGuide">
+  <div class="row g-3 g-lg-2 align-items-stretch">
+    <div class="col-md-4">
+      <div class="d-flex gap-2 h-100">
+        <div class="ic flex-shrink-0" style="width:2.25rem;height:2.25rem;background:color-mix(in srgb,var(--info) 14%,transparent);color:var(--info)"><i class="bi bi-search"></i></div>
+        <div>
+          <div class="fw-semibold small">Find student</div>
+          <div class="small text-muted-2">Search one student and open their profile, academics, and application history.</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4" data-roles="admin,placement_officer">
+      <div class="d-flex gap-2 h-100">
+        <div class="ic flex-shrink-0" style="width:2.25rem;height:2.25rem;background:color-mix(in srgb,var(--success) 14%,transparent);color:var(--success)"><i class="bi bi-person-check"></i></div>
+        <div>
+          <div class="fw-semibold small">Portal registration</div>
+          <div class="small text-muted-2">Students who joined the Placement Cell portal — approve access, block, or remove accounts. Not drive sign-ups.</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4" data-roles="admin,placement_officer">
+      <div class="d-flex gap-2 h-100">
+        <div class="ic flex-shrink-0" style="width:2.25rem;height:2.25rem;background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary)"><i class="bi bi-briefcase"></i></div>
+        <div>
+          <div class="fw-semibold small">Drive applications</div>
+          <div class="small text-muted-2">Who applied to a campus drive, resume checks for those applications, and eligible students who have not applied yet.</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="mainTabs">
-  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Overview</a></li>
-  <li class="nav-item" id="registrationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabRegistrations" id="linkRegistrations">Registrations</a></li>
-  <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Applications</a></li>
+  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find student</a></li>
+  <li class="nav-item" id="registrationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabRegistrations" id="linkRegistrations">Portal registration</a></li>
+  <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive applications</a></li>
   <li class="nav-item" id="blacklistTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabBlacklist" id="linkBlacklist">Blacklist</a></li>
 </ul>
 
@@ -134,57 +166,75 @@
     </div>
   </div>
 
-  <!-- Registrations: approve / block / manage -->
+  <!-- Portal registration: approve / block / manage Placement Cell accounts -->
   <div class="tab-pane fade" id="tabRegistrations">
+    <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
+      <i class="bi bi-info-circle text-primary mt-1"></i>
+      <div>
+        <strong>Portal registration</strong> — students who registered for the Placement Cell portal (policy form / account access).
+        <div class="small text-muted-2 mt-1">This is <em>not</em> drive registration. To see who applied to a company drive, open <strong>Drive applications</strong>.</div>
+      </div>
+    </div>
     <div class="row g-3 mb-3" id="stats"></div>
     <div class="card-surface">
       <ul class="nav nav-tabs px-3 pt-2" role="tablist">
-        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#pending" id="tabPending">Pending</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#approved">Approved</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#all">All students</a></li>
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#pending" id="tabPending">Awaiting approval</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#approved">Active accounts</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#all">All accounts</a></li>
       </ul>
       <div class="tab-content">
         <div class="tab-pane fade show active" id="pending"><div class="table-wrap"><table class="table-modern"><thead><tr>
-          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>10th</th><th>12th</th><th>CGPA</th><th>Resume</th><th>Chances</th><th>Status</th><th></th>
+          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>10th</th><th>12th</th><th>CGPA</th><th>Resume on file</th><th>Chances</th><th>Account</th><th></th>
         </tr></thead><tbody id="pendingRows"></tbody></table></div></div>
         <div class="tab-pane fade" id="approved"><div class="table-wrap"><table class="table-modern"><thead><tr>
-          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Resume</th><th>Chances</th>
+          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Resume on file</th><th>Chances</th>
         </tr></thead><tbody id="approvedRows"></tbody></table></div></div>
         <div class="tab-pane fade" id="all"><div class="table-wrap"><table class="table-modern"><thead><tr>
-          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Certs</th><th>Status</th><th>Actions</th>
+          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Certs</th><th>Account</th><th>Actions</th>
         </tr></thead><tbody id="allRows"></tbody></table></div></div>
       </div>
     </div>
   </div>
 
-  <!-- Applications + Resume -->
+  <!-- Drive applications + resume checks + eligible not applied -->
   <div class="tab-pane fade" id="tabApplications">
+    <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
+      <i class="bi bi-info-circle text-primary mt-1"></i>
+      <div>
+        <strong>Drive applications</strong> — students who applied to a specific campus drive (company / role).
+        <div class="small text-muted-2 mt-1">Resume checks here are for drive applications. Portal account approval is under <strong>Portal registration</strong>.</div>
+      </div>
+    </div>
     <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="appSubTabs">
-      <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabAppList" id="linkAppApplications">Applications</a></li>
-      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppResumes" id="linkAppResumes">Resume</a></li>
-      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppNonApplicants" id="linkAppNonApplicants">Not applied</a></li>
+      <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabAppList" id="linkAppApplications">By drive</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppResumes" id="linkAppResumes">Resume checks</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppNonApplicants" id="linkAppNonApplicants">Eligible, not applied</a></li>
     </ul>
     <div class="tab-content">
       <div class="tab-pane fade show active" id="tabAppList">
         <div class="card-surface p-3 mb-3">
-          <div class="small fw-semibold text-muted-2 mb-2">Workflow</div>
+          <div class="small fw-semibold text-muted-2 mb-2">Drive application workflow</div>
           <div class="d-flex flex-wrap align-items-center gap-2 small">
-            <span class="badge-soft muted">Student applies</span>
+            <span class="badge-soft muted">Student applies to drive</span>
             <i class="bi bi-arrow-right text-muted-2"></i>
             <span class="badge-soft warning">Resume verification</span>
             <i class="bi bi-arrow-right text-muted-2"></i>
-            <span class="badge-soft info">Approval</span>
+            <span class="badge-soft info">Officer approval</span>
             <i class="bi bi-arrow-right text-muted-2"></i>
             <span class="badge-soft primary">Company selection</span>
           </div>
         </div>
         <div class="row g-3 mb-3">
-          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Total applications</div><div class="val" id="statTotal">0</div></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending review</div><div class="val" id="statPending">0</div></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">In company selection</div><div class="val" id="statCompany">0</div></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Drive applications</div><div class="val" id="statTotal">0</div></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Needs review</div><div class="val" id="statPending">0</div></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">With company</div><div class="val" id="statCompany">0</div></div></div>
           <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Rejected</div><div class="val" id="statRejected">0</div></div></div>
         </div>
         <div class="card-surface">
+          <div class="p-3 pb-0">
+            <h6 class="fw-bold mb-0">Applications to campus drives</h6>
+            <small class="text-muted-2">Each row is one student applying to one company drive</small>
+          </div>
           <div class="table-wrap">
             <table class="table-modern"><thead><tr>
               <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>Resume</th><th>Stage</th><th>Status</th><th>Applied</th><th>Actions</th>
@@ -196,8 +246,8 @@
         <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
           <i class="bi bi-info-circle text-primary mt-1"></i>
           <div>
-            <strong>Resume naming rule:</strong> <code>Name_RegisterNo_Role.pdf</code>
-            <div class="small text-muted-2 mt-1">Example: <code>John_22MCA101_Developer.pdf</code></div>
+            <strong>Resume checks for drive applications</strong> — verify files students submitted when applying to a drive.
+            <div class="small text-muted-2 mt-1"><strong>Naming rule:</strong> <code>Name_RegisterNo_Role.pdf</code> · Example: <code>John_22MCA101_Developer.pdf</code></div>
           </div>
         </div>
         <div class="row g-3 mb-3">
@@ -241,8 +291,8 @@
         <div class="card-surface">
           <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
             <div>
-              <h6 class="fw-bold mb-0">Eligible, not applied</h6>
-              <small class="text-muted-2">Students who meet drive criteria but have not applied yet</small>
+              <h6 class="fw-bold mb-0">Eligible for a drive, not applied yet</h6>
+              <small class="text-muted-2">Students who meet that drive’s criteria but have not submitted an application</small>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
               <select class="form-select form-select-sm" id="nonApplicantDriveSelect" style="min-width:min(100%,16rem)" aria-label="Select drive">
@@ -414,7 +464,7 @@
 <script src="js/admin-api.js?v=20260711g"></script>
 <script src="js/officer-api.js?v=20260713c"></script>
 <script src="js/api.js?v=20260711r"></script>
-<script src="js/app.js?v=20260711l"></script>
+<script src="js/app.js?v=20260713d"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin' || role === 'placement_officer';
@@ -462,7 +512,29 @@ function activateTabFromHash() {
   } else if (hash === 'overview' || !hash) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkOverview')).show();
   }
+  syncPageSubFromActiveTab();
 }
+
+const PAGE_SUB_BY_TAB = {
+  tabOverview: 'Search one student and open their full profile and application history.',
+  tabRegistrations: 'Approve or manage Placement Cell portal accounts — not drive applications.',
+  tabApplications: 'Track who applied to campus drives, check resumes, and find eligible non-applicants.',
+  tabBlacklist: 'Students barred from placement activities.',
+};
+
+function syncPageSubFromActiveTab() {
+  const sub = document.getElementById('pageSub');
+  if (!sub) return;
+  const active = document.querySelector('#mainTabs .nav-link.active');
+  const href = (active?.getAttribute('href') || '#tabOverview').replace('#', '');
+  sub.textContent = PAGE_SUB_BY_TAB[href] || PAGE_SUB_BY_TAB.tabOverview;
+}
+
+document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
+  const href = (e.target?.getAttribute('href') || '').replace('#', '');
+  const sub = document.getElementById('pageSub');
+  if (sub && PAGE_SUB_BY_TAB[href]) sub.textContent = PAGE_SUB_BY_TAB[href];
+});
 
 /* —— Overview —— */
 let overviewStudents = [];
@@ -1267,26 +1339,28 @@ function renderRegistrations() {
   const pending = regStudents.filter(s => s.status === 'pending');
   const approved = regStudents.filter(s => s.status === 'approved');
   document.getElementById('stats').innerHTML = `
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registered</div><div class="val">${regStudents.length}</div></div></div>
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending</div><div class="val">${pending.length}</div></div></div>
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Approved</div><div class="val">${approved.length}</div></div></div>
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Placed</div><div class="val">${regStudents.filter(s=>s.placementStatus==='placed').length}</div></div></div>`;
-  document.getElementById('tabPending').innerHTML = `Pending <span class="badge-soft warning ms-1">${pending.length}</span>`;
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Portal accounts</div><div class="val">${regStudents.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Awaiting approval</div><div class="val">${pending.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Active accounts</div><div class="val">${approved.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Already placed</div><div class="val">${regStudents.filter(s=>s.placementStatus==='placed').length}</div></div></div>`;
+  document.getElementById('tabPending').innerHTML = `Awaiting approval <span class="badge-soft warning ms-1">${pending.length}</span>`;
 
   document.getElementById('pendingRows').innerHTML = pending.length ? pending.map(s => `
     <tr><td><strong>${s.name}</strong><div class="small text-muted-2">${s.email}</div></td><td>${s.registerNumber}</td><td>${s.department}</td>
     <td>${s.marks10th ?? '—'}${s.marks10th ? '%' : ''}</td><td>${s.marks12th ?? s.ugMarks ?? '—'}${(s.marks12th ?? s.ugMarks) ? '%' : ''}</td><td>${s.cgpa}</td>
     <td><span class="badge-soft ${s.resumeStatus==='approved'?'success':'warning'}">${s.resumeStatus}</span></td>
     <td>${s.chancesUsed}/${s.chancesMax}</td><td>${userStatusBadge(s.status, s.blocked)}</td><td>${rowActions(s)}</td></tr>`).join('')
-    : '<tr><td colspan="10" class="text-muted-2 p-4">No pending registrations.</td></tr>';
+    : '<tr><td colspan="10" class="text-muted-2 p-4">No students waiting for portal access approval.</td></tr>';
 
-  document.getElementById('approvedRows').innerHTML = approved.map(s => `
+  document.getElementById('approvedRows').innerHTML = approved.length ? approved.map(s => `
     <tr><td><strong>${s.name}</strong></td><td>${s.registerNumber}</td><td>${s.department}</td><td>${s.cgpa}</td>
-    <td>${s.placementStatus || '—'}</td><td>${s.resumeStatus}</td><td>${s.chancesUsed}/${s.chancesMax}</td></tr>`).join('');
+    <td>${s.placementStatus || '—'}</td><td>${s.resumeStatus}</td><td>${s.chancesUsed}/${s.chancesMax}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="text-muted-2 p-4">No active portal accounts yet.</td></tr>';
 
-  document.getElementById('allRows').innerHTML = regStudents.map(s => `
+  document.getElementById('allRows').innerHTML = regStudents.length ? regStudents.map(s => `
     <tr><td><strong>${s.name}</strong></td><td>${s.registerNumber}</td><td>${s.department}</td><td>${s.cgpa}</td>
-    <td class="small">${s.certifications || '—'}</td><td>${userStatusBadge(s.status, s.blacklisted?'blocked':s.blocked)}</td><td>${rowActions(s)}</td></tr>`).join('');
+    <td class="small">${s.certifications || '—'}</td><td>${userStatusBadge(s.status, s.blacklisted?'blocked':s.blocked)}</td><td>${rowActions(s)}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="text-muted-2 p-4">No portal registrations found.</td></tr>';
 }
 
 function rowActions(s) {
@@ -1372,7 +1446,7 @@ function renderApplications() {
         <button class="btn btn-sm btn-success" onclick="approveApp('${a.id}')" title="Approve"><i class="bi bi-check2"></i></button>
         <button class="btn btn-sm btn-outline-danger" onclick="rejectApp('${a.id}')" title="Reject"><i class="bi bi-x"></i></button>
       </div>` : '<span class="small text-muted-2">—</span>'}</td>
-    </tr>`).join('') : '<tr><td colspan="10" class="text-muted-2 p-4">No applications in the pipeline.</td></tr>';
+    </tr>`).join('')     : '<tr><td colspan="10" class="text-muted-2 p-4">No drive applications in the pipeline yet.</td></tr>';
 }
 
 /* —— Resumes —— */
