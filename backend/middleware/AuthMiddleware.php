@@ -117,6 +117,13 @@ final class AuthMiddleware
         ? (new DepartmentModel())->findById((string) $profile['departmentId'])
         : null;
       $data = array_merge($data, StaffModel::profileToUserFields($profile, $dept));
+      $assigned = \PMS\Services\StaffContext::assignedClassBatches([
+        'profile' => $profile,
+        'departmentId' => (string) ($profile['departmentId'] ?? ''),
+      ]);
+      if ($assigned !== []) {
+        $data['assignedClassBatches'] = $assigned;
+      }
       $photo = (new \PMS\Services\AesLoginService())->resolveProfilePhoto($profile, $user);
       if (($photo['photoUrl'] ?? '') !== '') {
         $data['photoUrl'] = $photo['photoUrl'];
@@ -132,8 +139,8 @@ final class AuthMiddleware
         $deptCode = trim((string) ($dept['code'] ?? ''));
         $deptName = trim((string) ($dept['name'] ?? ''));
         $aesDeptId = trim((string) ($dept['aesId'] ?? ''));
-        // Resolve legacy numeric AES department codes to short code + name.
-        if ($deptCode !== '' && ctype_digit($deptCode)) {
+        // Resolve legacy numeric AES department codes only when the DB has no readable name.
+        if ($deptCode !== '' && ctype_digit($deptCode) && ($deptName === '' || ctype_digit($deptName))) {
           try {
             foreach ((new \PMS\Services\AesApiService())->listDepartments() as $row) {
               if (trim((string) ($row['aesId'] ?? '')) !== $deptCode) {
@@ -214,12 +221,6 @@ final class AuthMiddleware
       }
       $studentProfile = (new StudentModel())->findByUserId((string) $user['_id']);
       if ($studentProfile) {
-        $lastSync = (int) ($_SESSION['aes_placement_sync_at'] ?? 0);
-        if ($lastSync <= 0 || (time() - $lastSync) >= 300) {
-          $service->syncStudentPlacementExtras($studentProfile);
-          $_SESSION['aes_placement_sync_at'] = time();
-        }
-        $studentProfile = (new StudentModel())->findByUserId((string) $user['_id']) ?? $studentProfile;
         $photo = is_array($studentProfile['photo'] ?? null) ? $studentProfile['photo'] : null;
         $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {

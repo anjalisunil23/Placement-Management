@@ -435,19 +435,75 @@ final class StaffService
             return $batches;
         }
 
-        return array_values(array_filter($batches, static function (string $batch) use ($targets): bool {
-            $label = strtoupper(trim($batch));
-            if ($label === '') {
+        $resolvedTargets = array_values(array_unique(array_filter(array_map(
+            fn (string $target) => $this->normalizeBranchTargetCode($target),
+            $targets
+        ), static fn (string $code) => $code !== '')));
+
+        return array_values(array_filter($batches, function (string $batch) use ($resolvedTargets): bool {
+            $batchProg = $this->batchProgrammeFromLabel($batch);
+            if ($batchProg === '') {
                 return false;
             }
-            foreach ($targets as $target) {
-                if ($label === $target || str_starts_with($label, $target)) {
+            foreach ($resolvedTargets as $target) {
+                if ($batchProg === $target) {
                     return true;
                 }
             }
 
             return false;
         }));
+    }
+
+  /**
+   * Map a batch label (e.g. MCA2025-27-S3) to its programme code (MCA, BCA, INMCA).
+   */
+    private function batchProgrammeFromLabel(string $batch): string
+    {
+        $label = strtoupper(preg_replace('/[^A-Z0-9]/', '', $batch) ?? '');
+        if ($label === '') {
+            return '';
+        }
+
+        $programmes = [
+            ['INMCA', ['INTMCA', 'IMCA', 'DDMCA', 'INTMCA']],
+            ['MCA', ['MCAR', 'MCAREG']],
+            ['BCA', ['BCAH', 'BCAHONS']],
+        ];
+        usort($programmes, static fn (array $a, array $b) => strlen($b[0]) <=> strlen($a[0]));
+
+        foreach ($programmes as [$code, $aliases]) {
+            $codes = array_merge([$code], $aliases);
+            usort($codes, static fn (string $a, string $b) => strlen($b) <=> strlen($a));
+            foreach ($codes as $candidate) {
+                $needle = strtoupper(preg_replace('/[^A-Z0-9]/', '', $candidate) ?? '');
+                if ($needle !== '' && ($label === $needle || str_starts_with($label, $needle))) {
+                    return $code;
+                }
+            }
+        }
+
+        return $label;
+    }
+
+    private function normalizeBranchTargetCode(string $branch): string
+    {
+        $branch = strtoupper(preg_replace('/[^A-Z0-9]/', '', $branch) ?? '');
+        if ($branch === '') {
+            return '';
+        }
+
+        $map = [
+            'INTMCA' => 'INMCA',
+            'IMCA' => 'INMCA',
+            'DDMCA' => 'INMCA',
+            'MCAR' => 'MCA',
+            'MCAREG' => 'MCA',
+            'BCAH' => 'BCA',
+            'BCAHONS' => 'BCA',
+        ];
+
+        return $map[$branch] ?? $branch;
     }
 
     /**
@@ -468,11 +524,15 @@ final class StaffService
         $batch = strtoupper(trim((string) ($student['classBatch'] ?? $row['classBatch'] ?? '')));
 
         foreach ($targets as $target) {
-            if ($deptCode === $target || $deptName === $target) {
+            $resolvedTarget = $this->normalizeBranchTargetCode($target);
+            if ($deptCode === $target || $deptName === $target || $deptCode === $resolvedTarget || $deptName === $resolvedTarget) {
                 return true;
             }
-            if ($batch !== '' && (str_starts_with($batch, $target) || str_contains($batch, $target))) {
-                return true;
+            if ($batch !== '') {
+                $batchProg = $this->batchProgrammeFromLabel($batch);
+                if ($batchProg !== '' && $batchProg === $resolvedTarget) {
+                    return true;
+                }
             }
         }
 

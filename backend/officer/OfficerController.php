@@ -81,7 +81,13 @@ final class OfficerController
         $deptCode = strtoupper(trim((string) ($deptDoc['code'] ?? '')));
         $deptName = trim((string) ($deptDoc['name'] ?? ''));
         $aesDeptId = trim((string) ($deptDoc['aesId'] ?? ''));
-        if ($deptCode !== '' && ctype_digit($deptCode)) {
+        $liteProfile = $this->isLiteProfileRequest();
+        if (
+            !$liteProfile
+            && $deptCode !== ''
+            && ctype_digit($deptCode)
+            && ($deptName === '' || ctype_digit($deptName))
+        ) {
             try {
                 foreach ((new AesApiService())->listDepartments() as $row) {
                     if (trim((string) ($row['aesId'] ?? '')) !== $deptCode) {
@@ -979,6 +985,16 @@ final class OfficerController
         $user = RBACMiddleware::requirePlacementOfficer();
         $count = (new NotificationModel())->markAllRead((string) $user['_id']);
         Response::success(['updated' => $count], 'All notifications marked as read.');
+    }
+
+    private function isLiteProfileRequest(): bool
+    {
+        $lite = $_GET['lite'] ?? $_SERVER['HTTP_X_PROFILE_LITE'] ?? '';
+        if ($lite === '' || $lite === '0' || $lite === 'false') {
+            return false;
+        }
+
+        return true;
     }
 
 }

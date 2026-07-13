@@ -167,21 +167,23 @@ final class StudentController
         (string) ($profile['registerNumber'] ?? ''),
         $sessionAes
     );
-    if ($reg !== '' && (string) ($profile['registerNumber'] ?? '') === '') {
-      $this->studentModel->update((string) $profile['_id'], ['registerNumber' => $reg]);
-      $profile['registerNumber'] = $reg;
-    }
-    $apiName = $aes->syncStudentNameFromPlacement($user, $reg);
-    if ($apiName !== '') {
-      $user['name'] = $apiName;
-    }
-    $aes->syncStudentDepartmentIfMissing($profile, array_merge(
-        \PMS\Utils\Security::getSessionAesProfile(),
-        ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
-    ));
     $liteProfile = $this->isLiteProfileRequest();
     $forceRefresh = $this->isForcedAesRefreshRequest();
-    if (!$liteProfile && ($forceRefresh || $this->shouldRefreshAesPlacement($profile))) {
+    if (!$liteProfile || $forceRefresh) {
+      if ($reg !== '' && (string) ($profile['registerNumber'] ?? '') === '') {
+        $this->studentModel->update((string) $profile['_id'], ['registerNumber' => $reg]);
+        $profile['registerNumber'] = $reg;
+      }
+      $apiName = $aes->syncStudentNameFromPlacement($user, $reg);
+      if ($apiName !== '') {
+        $user['name'] = $apiName;
+      }
+      $aes->syncStudentDepartmentIfMissing($profile, array_merge(
+          \PMS\Utils\Security::getSessionAesProfile(),
+          ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
+      ));
+    }
+    if ($forceRefresh || (!$liteProfile && $this->shouldRefreshAesPlacement($profile))) {
       $profile = $aes->refreshStudentPlacementData($profile);
     }
 

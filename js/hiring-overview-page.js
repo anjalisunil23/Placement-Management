@@ -359,21 +359,45 @@
     return raw.toUpperCase() === String(batchCode).trim().toUpperCase();
   };
 
+  HiringOverviewPage.prototype.batchProgrammeFromLabel = function (batchLabel) {
+    const raw = normalizeProgrammeCode(batchLabel);
+    if (!raw) return '';
+    const programmes = [];
+    if (typeof DEPARTMENT_PROGRAMME_GROUPS !== 'undefined') {
+      DEPARTMENT_PROGRAMME_GROUPS.forEach((g) => {
+        g.programmes.forEach((p) => programmes.push(p));
+      });
+    }
+    programmes.sort((a, b) => normalizeProgrammeCode(b.code).length - normalizeProgrammeCode(a.code).length);
+    for (const p of programmes) {
+      const codes = [p.code, ...(p.aliases || [])]
+        .map((c) => normalizeProgrammeCode(c))
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+      for (const code of codes) {
+        if (raw === code || raw.startsWith(code)) {
+          return normalizeProgrammeCode(p.code);
+        }
+      }
+    }
+    return raw;
+  };
+
   HiringOverviewPage.prototype.batchMatchesBranch = function (batchLabel, branchCode) {
     if (!branchCode) return true;
-    const batch = String(batchLabel || '').trim().toUpperCase();
-    if (!batch) return false;
+    const batchProg = this.batchProgrammeFromLabel(batchLabel);
+    if (!batchProg) return false;
     const targets = (typeof splitDepartmentFilterValue === 'function'
       ? splitDepartmentFilterValue(branchCode)
       : [branchCode]
-    ).map(c => {
+    ).map((c) => {
       const resolved = typeof resolveCollegeProgrammeCode === 'function'
         ? resolveCollegeProgrammeCode(c)
         : c;
       return normalizeProgrammeCode(resolved || c);
     }).filter(Boolean);
     if (!targets.length) return true;
-    return targets.some(target => batch === target || batch.startsWith(target));
+    return targets.some((target) => batchProg === target);
   };
 
   HiringOverviewPage.prototype.selectedBranchForApi = function () {
@@ -411,8 +435,8 @@
     }
 
     const branch = this.selectedBranchForApi();
-    if (branch && batches.length && !this.apiHiringData?.batchOptions?.length) {
-      batches = batches.filter(b => this.batchMatchesBranch(b, branch));
+    if (branch && batches.length) {
+      batches = batches.filter((b) => this.batchMatchesBranch(b, branch));
     }
     return batches;
   };
@@ -465,6 +489,7 @@
     if (data) {
       this.apiHiringData = data;
       if (data.hiringTrend) this.hiringTrendData = data.hiringTrend;
+      this.populateBatchSelect();
     }
   };
 
@@ -617,8 +642,7 @@
     const title = this.$('pageTitleText') || document.getElementById('dashTitle');
     const sub = this.$('pageSub') || document.getElementById('dashSub') || this.root.querySelector('.page-sub');
     if (role === 'staff') {
-      if (title) title.textContent = 'Department Hiring Overview';
-      if (sub) sub.textContent = 'Live snapshot of companies hiring your department students, pipeline stages, and recent activity.';
+      // Staff dashboard uses topbar username only — no page title/subtitle here.
     } else if (role === 'placement_officer') {
       const meta = this.ownDepartmentMeta();
       const label = meta.name || meta.code || 'your department';
@@ -864,20 +888,20 @@
       }
       this.refreshLiveFlags();
       const role = this.currentRole();
-      if (this.staffLive || this.officerLive) {
-        await Auth.enrichFromProfile();
-      }
 
       await DepartmentStore.fetch();
       this.populateDeptSelect();
 
       if (this.staffLive) {
-        const data = await StaffApi.fetchHiringOverview();
+        const branch = this.selectedBranchForApi();
+        const params = branch ? { branch } : {};
+        const data = await StaffApi.fetchHiringOverview(params);
         if (data) this.apiHiringData = data;
         else {
           toast('Could not load hiring overview. Refresh or sign in again.', 'warn');
           document.getElementById('dashLiveBadge')?.classList.add('d-none');
         }
+        this.populateBatchSelect();
       }
       if (this.campusLive) {
         const data = await RecruitingStore.fetch();

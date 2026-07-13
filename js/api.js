@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260713p';
+const APP_SCRIPT_VERSION = '20260713r';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -523,12 +523,8 @@ async function performServerLogin(email, password, next = '') {
   }
   localStorage.setItem('ph-token', 'session');
   Auth.applySessionUser(user);
-  Auth._sessionReady = false;
-  const verified = await Auth.bootstrap();
-  if (!verified) {
-    Auth.clear();
-    return { success: false, message: 'Sign-in succeeded but the session could not be verified. Try again.' };
-  }
+  Auth._sessionReady = true;
+  Auth.bootstrap().catch(() => { Auth._sessionReady = false; });
   const redirect = Auth.resolveRedirect(next);
   if (user.role === 'company' && !Auth.isAllowed(redirect.split('#')[0])) {
     return { success: true, redirect: absAppPath(Auth.homePage('company')) };
@@ -743,6 +739,10 @@ const Auth = {
   },
   async enrichFromProfile(opts = {}) {
     if (!this.hasRealAuth() || this.isDemo()) return false;
+    if (this._profileEnrichPromise && !opts.refresh) {
+      return this._profileEnrichPromise;
+    }
+    const run = async () => {
     const endpoints = {
       student: '/student/profile',
       staff: '/staff/profile',
@@ -832,6 +832,14 @@ const Auth = {
     } catch {
       return false;
     }
+    };
+    if (opts.refresh) {
+      return run();
+    }
+    this._profileEnrichPromise = run().finally(() => {
+      this._profileEnrichPromise = null;
+    });
+    return this._profileEnrichPromise;
   },
 };
 

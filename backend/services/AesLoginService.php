@@ -174,47 +174,30 @@ final class AesLoginService
     public function loginFromAesPayload(array $payload): array
     {
         $aesDetails = $this->collectAesDetails($payload);
-        try {
-            $extended = $this->fetchExtendedProfileFromAes($payload);
-        } catch (\Throwable) {
-            $extended = [];
+        // The AES callback is already authenticated and normally contains enough
+        // identity data to establish the PlaceHub session. Do not put optional
+        // AES API calls (up to 15 seconds each) on the redirect's critical path.
+        $profile = $this->extractProfile(array_merge($payload, $aesDetails), false);
+        if ($profile['registerNumber'] === '' && $profile['email'] === '') {
+            try {
+                $extended = $this->fetchExtendedProfileFromAes($payload);
+            } catch (\Throwable) {
+                $extended = [];
+            }
+            if ($extended !== []) {
+                $aesDetails = array_merge($aesDetails, $this->collectAesDetails($extended));
+                $payload = array_merge($payload, $extended);
+                $profile = $this->extractProfile(array_merge($payload, $aesDetails), false);
+            }
         }
-        if ($extended !== []) {
-            $aesDetails = array_merge($aesDetails, $this->collectAesDetails($extended));
-            $payload = array_merge($payload, $extended);
-        }
-
-        $profile = $this->extractProfile(array_merge($payload, $aesDetails));
         $register = $this->resolveAesRegisterNumber($profile, $aesDetails, $payload);
         if ($register !== '' && $profile['registerNumber'] === '') {
             $profile['registerNumber'] = $register;
         }
 
-        try {
-            $this->enrichAesDetailsFromPlacementApi($profile, $aesDetails, $register);
-        } catch (\Throwable) {
-            // Placement API is optional during login; do not block AES sign-in.
-        }
-
         $register = strtoupper((string) ($profile['registerNumber'] ?? $register));
         $mapped = $this->mapAesDetailsToUserFields($aesDetails);
         $emails = $this->resolveAesEmails($aesDetails, $mapped, $register, '');
-        try {
-            if ($profile['departmentCode'] === '' && $register !== '') {
-                $resolved = (new AesApiService())->resolveStudentDepartment(['admno' => $register], $register);
-                if ($resolved['code'] !== '') {
-                    $profile['departmentCode'] = $resolved['code'];
-                    $aesDetails['department'] = $resolved['code'];
-                    $aesDetails['deptCode'] = $resolved['code'];
-                    if ($resolved['name'] !== '') {
-                        $aesDetails['departmentName'] = $resolved['name'];
-                        $aesDetails['deptName'] = $resolved['name'];
-                    }
-                }
-            }
-        } catch (\Throwable) {
-            // Department lookup must not block login.
-        }
         if ($emails['collegeEmail'] !== '') {
             $aesDetails['collegeEmail'] = $emails['collegeEmail'];
         }
@@ -2039,7 +2022,7 @@ final class AesLoginService
      * @param array<string, mixed> $payload
      * @return array{name:string,email:string,registerNumber:string,role:string,departmentCode:string}
      */
-    private function extractProfile(array $payload): array
+    private function extractProfile(array $payload, bool $allowRemoteLookup = true): array
     {
         $flat = $this->flattenPayload($payload);
 
@@ -2086,7 +2069,7 @@ final class AesLoginService
         if ($departmentCode === '' && $departmentName !== '') {
             $departmentCode = strtoupper($departmentName);
         }
-        if ($departmentCode === '' && $registerNumber !== '') {
+        if ($allowRemoteLookup && $departmentCode === '' && $registerNumber !== '') {
             $inferred = $this->inferDepartmentFromRegisterNumber($registerNumber);
             if ($inferred['code'] !== '') {
                 $departmentCode = $inferred['code'];
@@ -2103,7 +2086,7 @@ final class AesLoginService
             $cgpaRaw = (string) $contactScan['cgpa'];
         }
 
-        if ($name === '' && $registerNumber !== '') {
+        if ($allowRemoteLookup && $name === '' && $registerNumber !== '') {
             $name = $this->fetchStudentNameFromPlacementApi($registerNumber);
         }
         if ($name === '') {
