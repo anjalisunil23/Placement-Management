@@ -54,10 +54,20 @@ class StaffModel extends BaseModel
      */
     public function updateProfile(string $id, array $data): bool
     {
-        $allowed = ['departmentId', 'designation', 'phone', 'photo'];
+        $allowed = ['departmentId', 'designation', 'phone', 'photo', 'assignedClassBatches'];
         $update = array_intersect_key($data, array_flip($allowed));
         if (isset($update['departmentId'])) {
             $update['departmentId'] = Security::toObjectId((string) $update['departmentId']);
+        }
+        if (isset($update['assignedClassBatches'])) {
+            $raw = $update['assignedClassBatches'];
+            if (is_string($raw)) {
+                $raw = preg_split('/\s*,\s*/', trim($raw)) ?: [];
+            }
+            $update['assignedClassBatches'] = array_values(array_filter(array_map(
+                static fn ($batch) => trim((string) $batch),
+                is_array($raw) ? $raw : []
+            ), static fn ($batch) => $batch !== ''));
         }
         if ($update === []) {
             return false;

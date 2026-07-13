@@ -479,7 +479,9 @@ if (!(role === 'admin' || role === 'placement_officer' || role === 'staff')) {
 }
 
 if (!canManageRegistrations && !canManageApplications) {
-  document.getElementById('pageSub').textContent = 'Search or select a student to view profile and placement pipeline.';
+  document.getElementById('pageSub').textContent = role === 'staff'
+    ? 'Search students in your department to view profile and placement pipeline.'
+    : 'Search or select a student to view profile and placement pipeline.';
 }
 if (!canManageRegistrations) {
   document.getElementById('registrationsTabItem')?.remove();
@@ -565,6 +567,19 @@ function studentMatchesQuery(s, q) {
   const tokens = query.split(/\s+/).filter(Boolean);
   const hay = studentSearchHaystack(s);
   return tokens.every(t => hay.includes(t));
+}
+
+function staffDepartmentCode() {
+  const u = Auth.user() || {};
+  return String(u.department || '').trim().toUpperCase();
+}
+
+function studentInStaffScope(s) {
+  if (role !== 'staff') return true;
+  const dept = staffDepartmentCode();
+  if (!dept) return false;
+  const studentDept = String(s.department || s.departmentName || '').trim().toUpperCase();
+  return studentDept === dept;
 }
 
 async function fetchOverviewStudentsFromApi(query = '') {
@@ -1318,6 +1333,9 @@ async function initOverview() {
     overviewStudents = [];
   } else if (!(role === 'staff' && Auth.hasRealAuth() && !Auth.isDemo())) {
     overviewStudentsAll = UserRegistry.byRole('student');
+    if (role === 'staff') {
+      overviewStudentsAll = overviewStudentsAll.filter(studentInStaffScope);
+    }
     overviewStudents = [];
   }
 

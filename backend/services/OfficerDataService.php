@@ -357,6 +357,12 @@ final class OfficerDataService
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $rows = [];
         foreach ($studentModel->findAll($filter, 500) as $s) {
+            if (!empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($s, [
+                'departmentId' => $ctx['departmentId'] ?? '',
+                'profile'      => $ctx['profile'] ?? null,
+            ])) {
+                continue;
+            }
             $userId = (string) ($s['userId'] ?? '');
             $deptId = (string) ($s['departmentId'] ?? '');
             $u = $userId ? $userModel->findById($userId) : null;
@@ -876,6 +882,12 @@ final class OfficerDataService
     {
         if (!empty($ctx['isAdmin'])) {
             return true;
+        }
+        if (!empty($ctx['staffScope'])) {
+            return StaffContext::studentMatchesScope($student, [
+                'departmentId' => $ctx['departmentId'] ?? '',
+                'profile'      => $ctx['profile'] ?? null,
+            ]);
         }
         $scopeDept = (string) ($ctx['departmentId'] ?? '');
         if ($scopeDept === '') {
@@ -1608,6 +1620,12 @@ final class OfficerDataService
             Response::notFound('Student not found.');
         }
         PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $ctx);
+        if (!empty($ctx['staffScope'])) {
+            StaffContext::assertStudentInScope($student, [
+                'departmentId' => $ctx['departmentId'] ?? '',
+                'profile'      => $ctx['profile'] ?? null,
+            ]);
+        }
 
         return $this->buildStudentPipeline($student);
     }

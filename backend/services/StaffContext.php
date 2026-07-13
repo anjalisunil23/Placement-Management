@@ -37,6 +37,82 @@ final class StaffContext
     }
 
     /**
+     * Staff must have a department before accessing student or placement data.
+     *
+     * @param array<string, mixed> $ctx
+     */
+    public static function requireDepartmentScope(array $ctx): void
+    {
+        if (empty($ctx['departmentId'])) {
+            Response::forbidden('Your staff profile has no department assigned. Contact the placement cell.');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    public static function assignedClassBatches(array $ctx): array
+    {
+        $profile = is_array($ctx['profile'] ?? null) ? $ctx['profile'] : [];
+        $raw = $profile['assignedClassBatches'] ?? [];
+        if (!is_array($raw)) {
+            if (is_string($raw) && trim($raw) !== '') {
+                $raw = preg_split('/\s*,\s*/', trim($raw)) ?: [];
+            } else {
+                return [];
+            }
+        }
+
+        return array_values(array_filter(array_map(
+            static fn ($batch) => trim((string) $batch),
+            $raw
+        ), static fn ($batch) => $batch !== ''));
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $ctx
+     */
+    public static function studentMatchesScope(array $student, array $ctx): bool
+    {
+        $scopeDept = (string) ($ctx['departmentId'] ?? '');
+        if ($scopeDept === '' || (string) ($student['departmentId'] ?? '') !== $scopeDept) {
+            return false;
+        }
+
+        $batches = self::assignedClassBatches($ctx);
+        if ($batches === []) {
+            return true;
+        }
+
+        $studentBatch = strtoupper(trim((string) ($student['classBatch'] ?? '')));
+        if ($studentBatch === '') {
+            return false;
+        }
+
+        foreach ($batches as $batch) {
+            if (strcasecmp($studentBatch, trim((string) $batch)) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $ctx
+     */
+    public static function assertStudentInScope(array $student, array $ctx): void
+    {
+        self::requireDepartmentScope($ctx);
+        if (!self::studentMatchesScope($student, $ctx)) {
+            Response::forbidden('This student is outside your assigned class.');
+        }
+    }
+
+    /**
      * Ensure a staff profile exists (AES sign-in may create the user before the profile row).
      *
      * @param array<string, mixed> $user
@@ -112,6 +188,7 @@ final class StaffContext
             'departmentId' => $staffCtx['departmentId'] ?? '',
             'department'   => $staffCtx['department'],
             'profile'      => $staffCtx['profile'],
+            'staffScope'   => true,
         ];
     }
 
@@ -121,11 +198,10 @@ final class StaffContext
      */
     public static function studentCollectionFilter(array $ctx): array
     {
-        if (empty($ctx['departmentId'])) {
-            return [];
-        }
-        $oid = Security::toObjectId($ctx['departmentId']);
-        return $oid ? ['departmentId' => $oid] : [];
+        self::requireDepartmentScope($ctx);
+        $oid = Security::toObjectId((string) $ctx['departmentId']);
+
+        return $oid ? ['departmentId' => $oid] : ['registerNumber' => '__staff_scope_none__'];
     }
 
     /**

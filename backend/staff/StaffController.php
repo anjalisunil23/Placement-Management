@@ -81,6 +81,13 @@ final class StaffController
         if (!empty($merged['phone'])) {
             $data['phone'] = (string) $merged['phone'];
         }
+        $assigned = StaffContext::assignedClassBatches([
+            'profile' => $profile,
+            'departmentId' => $departmentId,
+        ]);
+        if ($assigned !== []) {
+            $data['assignedClassBatches'] = $assigned;
+        }
 
         Response::success(DocumentHelper::jsonSafe($data));
     }
@@ -154,6 +161,7 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
         $drives = (new StaffDataService())->listDrives($ctx);
         Response::success(DocumentHelper::jsonSafe(
             (new OfficerDataService())->enrichDrivesWithCompany($drives)
@@ -166,6 +174,7 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         try {
             $ctx = StaffContext::resolve($user);
+            StaffContext::requireDepartmentScope($ctx);
             $officerCtx = StaffContext::officerCompatible($ctx);
             $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
             $rows = (new OfficerDataService())->listStudents(
@@ -185,19 +194,24 @@ final class StaffController
     /** GET /api/staff/students/{id}/pipeline */
     public function studentPipeline(string $studentId): void
     {
-        RBACMiddleware::requireStaff();
-        Response::success((new StaffService())->studentPipeline($studentId));
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $officerCtx = StaffContext::officerCompatible($ctx);
+        Response::success((new OfficerDataService())->studentPipelineForScope($studentId, $officerCtx));
     }
 
     /** GET /api/staff/students/{id}/profile */
     public function studentProfile(string $studentId): void
     {
         $user = RBACMiddleware::requireStaff();
-        $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $officerCtx = StaffContext::officerCompatible($ctx);
         $register = trim((string) ($_GET['registerNumber'] ?? ''));
         Response::success((new OfficerDataService())->getStudentOverview(
             $studentId,
-            $ctx,
+            $officerCtx,
             'staff',
             $register !== '' ? $register : null
         ));
@@ -207,8 +221,10 @@ final class StaffController
     public function studentPhoto(string $studentId): void
     {
         $user = RBACMiddleware::requireStaff();
-        $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
-        (new OfficerDataService())->streamStudentPhoto($studentId, $ctx);
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $officerCtx = StaffContext::officerCompatible($ctx);
+        (new OfficerDataService())->streamStudentPhoto($studentId, $officerCtx);
     }
 
     /** GET /api/staff/placements-higher-education */
@@ -216,6 +232,7 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
         $filters = [
             'program' => (string) ($_GET['program'] ?? ''),
             'branch'  => (string) ($_GET['branch'] ?? ''),
@@ -232,8 +249,10 @@ final class StaffController
     public function downloadSelfPlacementOfferLetter(string $studentId): void
     {
         $user = RBACMiddleware::requireStaff();
-        $ctx = StaffContext::officerCompatible(StaffContext::resolve($user));
-        (new SelfPlacementService())->streamOfferLetter($studentId, $ctx);
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $officerCtx = StaffContext::officerCompatible($ctx);
+        (new SelfPlacementService())->streamOfferLetter($studentId, $officerCtx);
     }
 
     /** PUT /api/staff/students/{id}/placement */
@@ -241,6 +260,7 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         if (!is_array($input)) {
             $input = [];
@@ -255,6 +275,7 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->uploadPlacementDocuments($ctx, $studentId)
         ), 'Documents uploaded.');
@@ -265,6 +286,7 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
         $data = (new StaffService())->hiringOverview($ctx['departmentId']);
 
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;

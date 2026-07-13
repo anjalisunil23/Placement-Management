@@ -22,6 +22,7 @@ final class StaffDataService
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
         return [
             'user'        => $user,
             'ctx'         => $ctx,
@@ -74,6 +75,10 @@ final class StaffDataService
      */
     public function listDrives(array $ctx): array
     {
+        if (empty($ctx['departmentId'])) {
+            return [];
+        }
+
         $officerCtx = [
             'isAdmin'      => false,
             'departmentId' => $ctx['departmentId'] ?? '',

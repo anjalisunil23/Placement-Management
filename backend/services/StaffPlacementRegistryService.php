@@ -30,9 +30,8 @@ final class StaffPlacementRegistryService
      */
     public function list(array $staffCtx, array $filters = []): array
     {
+        StaffContext::requireDepartmentScope($staffCtx);
         $officerCtx = StaffContext::officerCompatible($staffCtx);
-        // Campus-wide student list so program/branch filters work across all departments.
-        $officerCtx['departmentId'] = '';
         $studentRows = $this->officerData->listStudents($officerCtx);
 
         $registry = [];
@@ -51,7 +50,7 @@ final class StaffPlacementRegistryService
             return strcasecmp((string) ($a['employer'] ?? ''), (string) ($b['employer'] ?? ''));
         });
 
-        $filterOptions = $this->buildFilterOptions();
+        $filterOptions = $this->buildFilterOptions($staffCtx);
         $filtered = $this->applyFilters($registry, $filters);
 
         $placementCount = 0;
@@ -255,11 +254,12 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * @param array<string, mixed> $staffCtx
      * @return array{programs: string[], branches: string[], batches: string[], departments: array<int, array{id:string,code:string,name:string}>}
      */
-    private function buildFilterOptions(): array
+    private function buildFilterOptions(array $staffCtx): array
     {
-        $departments = $this->loadAllDepartments();
+        $departments = $this->loadScopedDepartments($staffCtx);
         $programs = [];
         $branches = [];
         foreach ($departments as $dept) {
@@ -274,7 +274,7 @@ final class StaffPlacementRegistryService
         }
 
         $batches = [];
-        foreach ($this->loadAllBatchOptions() as $batch) {
+        foreach ($this->loadScopedBatchOptions($staffCtx) as $batch) {
             $batches[$batch] = true;
         }
 
@@ -291,6 +291,29 @@ final class StaffPlacementRegistryService
             'batches'      => $sort($batches),
             'departments'  => $departments,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     * @return array<int, array{id:string,code:string,name:string}>
+     */
+    private function loadScopedDepartments(array $staffCtx): array
+    {
+        $dept = is_array($staffCtx['department'] ?? null) ? $staffCtx['department'] : null;
+        if (!$dept) {
+            return [];
+        }
+        $code = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $name = trim((string) ($dept['name'] ?? ''));
+        if ($code === '' || $name === '') {
+            return [];
+        }
+
+        return [[
+            'id'   => (string) ($dept['_id'] ?? $staffCtx['departmentId'] ?? ''),
+            'code' => $code,
+            'name' => $name,
+        ]];
     }
 
     /**
@@ -321,6 +344,30 @@ final class StaffPlacementRegistryService
         usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));
 
         return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     * @return string[]
+     */
+    private function loadScopedBatchOptions(array $staffCtx): array
+    {
+        $filter = StaffContext::studentCollectionFilter($staffCtx);
+        $batches = [];
+        foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
+            if (!StaffContext::studentMatchesScope($student, $staffCtx)) {
+                continue;
+            }
+            $batch = trim((string) ($student['classBatch'] ?? ''));
+            if ($batch !== '') {
+                $batches[$batch] = true;
+            }
+        }
+
+        $list = array_keys($batches);
+        sort($list, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $list;
     }
 
     /**
@@ -517,7 +564,7 @@ final class StaffPlacementRegistryService
         if (!$student) {
             Response::notFound('Student not found.');
         }
-        PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $officerCtx);
+        StaffContext::assertStudentInScope($student, $staffCtx);
 
         $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
         $role = trim((string) ($input['role'] ?? ''));
@@ -586,7 +633,7 @@ final class StaffPlacementRegistryService
         if (!$student) {
             Response::notFound('Student not found.');
         }
-        PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $officerCtx);
+        StaffContext::assertStudentInScope($student, $staffCtx);
 
         $hasOffer = isset($_FILES['offerLetter']) && (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
         $hasJoining = isset($_FILES['joiningLetter']) && (int) ($_FILES['joiningLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;

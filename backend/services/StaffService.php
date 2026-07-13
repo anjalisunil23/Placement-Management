@@ -27,6 +27,7 @@ final class StaffService
     public function getDashboard(array $user): array
     {
         $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
         $userId = (string) $user['_id'];
         $recModel = new RecommendationModel();
         $recs = $recModel->findByStaffUserId($userId);
@@ -41,24 +42,15 @@ final class StaffService
 
         $analytics = new AnalyticsService();
         $deptId = $ctx['departmentId'] ?? null;
-        $allBranchStats = $analytics->getDashboardAnalytics(null)['branchStatistics'];
         $scopedBranchStats = $deptId
             ? $analytics->getDashboardAnalytics($deptId)['branchStatistics']
-            : $allBranchStats;
+            : [];
         $deptCode = (string) ($ctx['department']['code'] ?? '');
         $deptRow = null;
         foreach ($scopedBranchStats as $row) {
             if ($row['code'] === $deptCode) {
                 $deptRow = $row;
                 break;
-            }
-        }
-        if ($deptRow === null) {
-            foreach ($allBranchStats as $row) {
-                if ($row['code'] === $deptCode) {
-                    $deptRow = $row;
-                    break;
-                }
             }
         }
 
@@ -84,7 +76,7 @@ final class StaffService
                 'placed'     => $deptRow['placed'] ?? 0,
             ],
             'hiring' => $hiring['totals'],
-            'branchStatistics' => $allBranchStats,
+            'branchStatistics' => $deptRow ? [$deptRow] : [],
         ];
     }
 

@@ -1801,6 +1801,11 @@ final class AesLoginService
             $patch['departmentId'] = $deptId;
         }
 
+        $assignedClasses = $this->normalizeAssignedClassBatches($extras, $aesDetails);
+        if ($assignedClasses !== []) {
+            $patch['assignedClassBatches'] = $assignedClasses;
+        }
+
         $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
             $existingPhoto = is_array($existing['photo'] ?? null) ? $existing['photo'] : null;
@@ -1820,6 +1825,35 @@ final class AesLoginService
         if ($patch !== []) {
             $staffModel->updateProfile((string) $existing['_id'], $patch);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $extras
+     * @param array<string, mixed> $aesDetails
+     * @return list<string>
+     */
+    private function normalizeAssignedClassBatches(array $extras, array $aesDetails): array
+    {
+        $raw = $this->pick($aesDetails, [
+            'assigned_classes', 'assignedClasses', 'classes', 'class_list', 'classList',
+            'assigned_batches', 'assignedBatches', 'batches', 'stud_classes', 'stud_class_list',
+        ]);
+        if ($raw === '' || $raw === null) {
+            $raw = $extras['assignedClassBatches'] ?? $extras['classBatch'] ?? '';
+        }
+
+        if (is_array($raw)) {
+            $items = $raw;
+        } elseif (is_string($raw) && trim($raw) !== '') {
+            $items = preg_split('/\s*,\s*/', trim($raw)) ?: [];
+        } else {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn ($batch) => trim((string) $batch),
+            $items
+        ), static fn ($batch) => $batch !== ''));
     }
 
     /**
