@@ -259,7 +259,7 @@
           <i class="bi bi-people text-success mt-1"></i>
           <div>
             <strong>Company shortlisted</strong> — students shortlisted by the company after they applied.
-            <div class="small text-muted-2 mt-1">Filter by company below. Upload a company shortlist document and register numbers to mark applicants shortlisted for that drive.</div>
+            <div class="small text-muted-2 mt-1">Filter by company below. Upload the shortlist document the company sent for that drive.</div>
           </div>
         </div>
 
@@ -272,32 +272,24 @@
             <span class="small text-muted-2" id="shortlistUploadDriveHint"></span>
           </div>
           <div class="row g-2 align-items-end">
-            <div class="col-md-3">
+            <div class="col-md-4">
               <label class="form-label small mb-1" for="shortlistCompanyFilter">Company</label>
               <select class="form-select form-select-sm" id="shortlistCompanyFilter" aria-label="Filter by company">
                 <option value="">All companies</option>
               </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
               <label class="form-label small mb-1" for="shortlistDriveSelect">Drive / role</label>
               <select class="form-select form-select-sm" id="shortlistDriveSelect" aria-label="Select drive for upload">
                 <option value="">Select a drive…</option>
               </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
               <label class="form-label small mb-1" for="shortlistDocument">Shortlist document</label>
-              <input type="file" class="form-control form-control-sm" id="shortlistDocument" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp">
+              <input type="file" class="form-control form-control-sm" id="shortlistDocument" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.csv,.txt">
             </div>
-            <div class="col-md-3">
-              <label class="form-label small mb-1" for="shortlistCsv">Register list (CSV)</label>
-              <input type="file" class="form-control form-control-sm" id="shortlistCsv" accept=".csv,.txt">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small mb-1" for="shortlistRolls">Or paste register numbers</label>
-              <input type="text" class="form-control form-control-sm" id="shortlistRolls" placeholder="e.g. 21CSE018, 21IT012">
-            </div>
-            <div class="col-md-6 d-flex flex-wrap gap-2 align-items-center">
-              <button type="button" class="btn btn-sm btn-primary" id="btnUploadCompanyShortlist"><i class="bi bi-upload me-1"></i>Upload &amp; shortlist</button>
+            <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+              <button type="button" class="btn btn-sm btn-primary" id="btnUploadCompanyShortlist"><i class="bi bi-upload me-1"></i>Upload shortlist</button>
               <a class="btn btn-sm btn-outline-secondary d-none" id="btnViewCompanyShortlistDoc" href="#" target="_blank" rel="noopener">View document</a>
             </div>
           </div>
@@ -537,11 +529,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260713u"></script>
-<script src="js/admin-api.js?v=20260713u"></script>
-<script src="js/officer-api.js?v=20260713u"></script>
-<script src="js/api.js?v=20260713u"></script>
-<script src="js/app.js?v=20260713u"></script>
+<script src="js/staff-api.js?v=20260713v"></script>
+<script src="js/admin-api.js?v=20260713v"></script>
+<script src="js/officer-api.js?v=20260713v"></script>
+<script src="js/api.js?v=20260713v"></script>
+<script src="js/app.js?v=20260713v"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin';
@@ -1675,13 +1667,9 @@ async function submitCompanyShortlistUpload() {
     return;
   }
   const docInput = document.getElementById('shortlistDocument');
-  const csvInput = document.getElementById('shortlistCsv');
-  const rollsInput = document.getElementById('shortlistRolls');
   const documentFile = docInput?.files?.[0] || null;
-  const csvFile = csvInput?.files?.[0] || null;
-  const registerNumbers = (rollsInput?.value || '').trim();
-  if (!documentFile && !csvFile && !registerNumbers) {
-    toast('Choose a shortlist document and/or provide register numbers.', 'warn');
+  if (!documentFile) {
+    toast('Choose a shortlist document to upload.', 'warn');
     return;
   }
   const btn = document.getElementById('btnUploadCompanyShortlist');
@@ -1689,8 +1677,6 @@ async function submitCompanyShortlistUpload() {
   try {
     const result = await OfficerApi.uploadDriveShortlist(driveId, {
       document: documentFile,
-      csv: csvFile,
-      registerNumbers,
     });
     if (!result) return;
     toast(result.message || 'Shortlist uploaded.', 'success');
@@ -1700,7 +1686,7 @@ async function submitCompanyShortlistUpload() {
       out.classList.remove('d-none');
       out.innerHTML = [
         result.documentSaved ? 'Document saved.' : '',
-        `${result.updated || 0} marked shortlisted.`,
+        result.updated ? `${result.updated} marked shortlisted.` : '',
         result.alreadyShortlisted ? `${result.alreadyShortlisted} already shortlisted.` : '',
         result.failed ? `${result.failed} could not be matched.` : '',
         errs.length ? `<div class="mt-1">${errs.map((e) => `<div>${esc(e)}</div>`).join('')}</div>` : '',
@@ -1719,8 +1705,6 @@ async function submitCompanyShortlistUpload() {
     await ApplicationPipeline.fetch().catch(() => null);
     refreshShortlistedPanel();
     if (docInput) docInput.value = '';
-    if (csvInput) csvInput.value = '';
-    if (rollsInput) rollsInput.value = '';
   } finally {
     if (btn) btn.disabled = false;
   }

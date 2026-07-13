@@ -205,6 +205,8 @@ final class Security
             'jpeg' => ['image/jpeg'],
             'png'  => ['image/png'],
             'webp' => ['image/webp'],
+            'csv'  => ['text/plain', 'text/csv', 'application/csv', 'application/vnd.ms-excel', 'application/octet-stream'],
+            'txt'  => ['text/plain', 'application/octet-stream'],
         ];
         $validMimes = [];
         foreach ($allowedExtensions as $e) {

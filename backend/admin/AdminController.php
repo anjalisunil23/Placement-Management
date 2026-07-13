@@ -174,9 +174,14 @@ final class AdminController
         if (!empty($result['documentSaved'])) {
             $parts[] = 'Shortlist document saved.';
         }
-        $parts[] = (int) ($result['updated'] ?? 0) . ' student(s) marked shortlisted.';
+        if (!empty($result['updated'])) {
+            $parts[] = (int) $result['updated'] . ' student(s) marked shortlisted.';
+        }
         if (!empty($result['alreadyShortlisted'])) {
             $parts[] = (int) $result['alreadyShortlisted'] . ' already shortlisted.';
+        }
+        if ($parts === []) {
+            $parts[] = 'Shortlist document saved.';
         }
         Response::success($result, implode(' ', $parts));
     }

@@ -345,31 +345,23 @@
             <li class="nav-item"><button type="button" class="nav-link" data-tab="shortlisted">Company shortlisted <span class="badge bg-secondary ms-1" id="tabCountShortlisted">0</span></button></li>
             <li class="nav-item"><button type="button" class="nav-link" data-tab="placed">Placed <span class="badge bg-secondary ms-1" id="tabCountPlaced">0</span></button></li>
           </ul>
-          <p class="small text-muted-2 mb-2" id="driveShortlistHint">Companies shortlist via their portal, or send a list as a document. Upload that document (and register numbers) here so students see Shortlisted on their applications.</p>
+          <p class="small text-muted-2 mb-2" id="driveShortlistHint">Companies shortlist via their portal, or send a list as a document. Upload that document here.</p>
 
           <div class="border rounded-3 p-3 mb-3 bg-light-subtle" id="driveShortlistUploadPanel">
             <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
               <div>
                 <div class="fw-semibold">Upload company shortlist</div>
-                <div class="small text-muted-2">PDF/DOC from the company, plus CSV or register numbers to mark applicants shortlisted.</div>
+                <div class="small text-muted-2">Upload the shortlist document the company sent (PDF, DOC, CSV, or image).</div>
               </div>
               <div id="driveShortlistDocStatus" class="small text-muted-2"></div>
             </div>
             <div class="row g-2 align-items-end">
-              <div class="col-md-4">
+              <div class="col-md-8">
                 <label class="form-label small mb-1" for="driveShortlistDocument">Shortlist document</label>
-                <input type="file" class="form-control form-control-sm" id="driveShortlistDocument" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp">
+                <input type="file" class="form-control form-control-sm" id="driveShortlistDocument" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.csv,.txt">
               </div>
-              <div class="col-md-4">
-                <label class="form-label small mb-1" for="driveShortlistCsv">Register list (CSV)</label>
-                <input type="file" class="form-control form-control-sm" id="driveShortlistCsv" accept=".csv,.txt">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label small mb-1" for="driveShortlistRolls">Or paste register numbers</label>
-                <input type="text" class="form-control form-control-sm" id="driveShortlistRolls" placeholder="e.g. 21CSE018, 21IT012">
-              </div>
-              <div class="col-12 d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-sm btn-primary" id="btnUploadDriveShortlist"><i class="bi bi-upload me-1"></i>Upload &amp; shortlist</button>
+              <div class="col-md-4 d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-primary" id="btnUploadDriveShortlist"><i class="bi bi-upload me-1"></i>Upload shortlist</button>
                 <a class="btn btn-sm btn-outline-secondary d-none" id="btnViewDriveShortlistDoc" href="#" target="_blank" rel="noopener">View uploaded document</a>
               </div>
             </div>
@@ -1043,7 +1035,7 @@ function updateDriveApplicantTabCounts() {
   if (hint) {
     hint.textContent = driveApplicantsTab === 'shortlisted'
       ? 'Students shortlisted by the company (portal) or from an uploaded company shortlist document.'
-      : 'Companies shortlist via their portal, or send a list as a document. Upload that document (and register numbers) here so students see Shortlisted on their applications.';
+      : 'Companies shortlist via their portal, or send a list as a document. Upload that document here.';
   }
 }
 
@@ -1219,7 +1211,7 @@ window.openDriveApplicants = async driveId => {
     uploadResult.classList.add('d-none');
     uploadResult.textContent = '';
   }
-  ['driveShortlistDocument', 'driveShortlistCsv', 'driveShortlistRolls'].forEach(id => {
+  ['driveShortlistDocument'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -1239,13 +1231,9 @@ window.openDriveApplicants = async driveId => {
 async function submitDriveShortlistUpload() {
   if (!canManage || !activeDriveId || typeof OfficerApi === 'undefined') return;
   const docInput = document.getElementById('driveShortlistDocument');
-  const csvInput = document.getElementById('driveShortlistCsv');
-  const rollsInput = document.getElementById('driveShortlistRolls');
   const documentFile = docInput?.files?.[0] || null;
-  const csvFile = csvInput?.files?.[0] || null;
-  const registerNumbers = (rollsInput?.value || '').trim();
-  if (!documentFile && !csvFile && !registerNumbers) {
-    toast('Choose a shortlist document and/or provide register numbers.', 'warn');
+  if (!documentFile) {
+    toast('Choose a shortlist document to upload.', 'warn');
     return;
   }
   const btn = document.getElementById('btnUploadDriveShortlist');
@@ -1253,8 +1241,6 @@ async function submitDriveShortlistUpload() {
   try {
     const result = await OfficerApi.uploadDriveShortlist(activeDriveId, {
       document: documentFile,
-      csv: csvFile,
-      registerNumbers,
     });
     if (!result) return;
     toast(result.message || 'Shortlist uploaded.', 'success');
@@ -1264,7 +1250,7 @@ async function submitDriveShortlistUpload() {
       out.classList.remove('d-none');
       out.innerHTML = [
         result.documentSaved ? 'Document saved.' : '',
-        `${result.updated || 0} marked shortlisted.`,
+        result.updated ? `${result.updated} marked shortlisted.` : '',
         result.alreadyShortlisted ? `${result.alreadyShortlisted} already shortlisted.` : '',
         result.failed ? `${result.failed} could not be matched.` : '',
         errs.length ? `<div class="mt-1">${errs.map(e => `<div>${e}</div>`).join('')}</div>` : '',
@@ -1293,8 +1279,6 @@ async function submitDriveShortlistUpload() {
     updateDriveApplicantTabCounts();
     renderDriveApplicantRows();
     if (docInput) docInput.value = '';
-    if (csvInput) csvInput.value = '';
-    if (rollsInput) rollsInput.value = '';
   } finally {
     if (btn) btn.disabled = false;
   }

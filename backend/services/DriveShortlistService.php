@@ -50,6 +50,7 @@ final class DriveShortlistService
         $documentSaved = false;
         $documentName = (string) ($drive['shortlistDocumentName'] ?? '');
         $documentPath = (string) ($drive['shortlistDocument'] ?? '');
+        $documentCsvText = '';
 
         if (is_array($documentFile) && ($documentFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
             $config = require dirname(__DIR__) . '/config/app.php';
@@ -57,10 +58,16 @@ final class DriveShortlistService
             $error = Security::validateUploadedFile(
                 $documentFile,
                 $max,
-                ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp']
+                ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'csv', 'txt']
             );
             if ($error) {
                 Response::error($error, 400);
+            }
+
+            $ext = strtolower(pathinfo((string) ($documentFile['name'] ?? ''), PATHINFO_EXTENSION));
+            $tmp = (string) ($documentFile['tmp_name'] ?? '');
+            if (in_array($ext, ['csv', 'txt'], true) && $tmp !== '' && is_readable($tmp)) {
+                $documentCsvText = (string) file_get_contents($tmp);
             }
 
             $dir = (string) ($config['uploads']['shortlist_dir'] ?? ($config['uploads']['jd_dir'] . '/shortlists'));
@@ -85,7 +92,9 @@ final class DriveShortlistService
             ]);
         }
 
-        $rolls = $this->extractRegisterNumbers($csvContent, $registerList);
+        // Prefer explicit CSV/list payload; otherwise parse rolls from a CSV/TXT document upload.
+        $rollsSource = $csvContent !== '' ? $csvContent : $documentCsvText;
+        $rolls = $this->extractRegisterNumbers($rollsSource, $registerList);
         $result = [
             'driveId' => $driveId,
             'documentSaved' => $documentSaved,
@@ -100,7 +109,7 @@ final class DriveShortlistService
 
         if ($rolls === []) {
             if (!$documentSaved) {
-                Response::error('Upload a shortlist document and/or provide register numbers (CSV or list).', 422);
+                Response::error('Upload a shortlist document.', 422);
             }
             return $result;
         }
