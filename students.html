@@ -666,7 +666,10 @@ let staffFilterProgram = '';
 let staffFilterBranch = '';
 let staffFilterBatch = '';
 let staffScopeBatchSet = new Set();
-const autoSelectOverviewOnLoad = role === 'staff';
+
+function isOverviewSearchActive() {
+  return !!document.getElementById('searchStudent')?.value.trim();
+}
 
 function isPolicyRegistered(s) {
   return !!(s && s.policyAccepted);
@@ -861,12 +864,12 @@ function clearOverviewDetail() {
 
 function filteredOverviewStudents() {
   const q = document.getElementById('searchStudent').value.trim();
+  if (!q) return [];
+
   let list;
   if (useLiveOverviewApi) {
     const pool = (useStaffApi && deptStudentsLoaded) ? overviewStudentsAll : overviewStudents;
-    list = q || !(useStaffApi && deptStudentsLoaded)
-      ? pool.filter(s => studentMatchesQuery(s, q))
-      : pool.slice();
+    list = pool.filter(s => studentMatchesQuery(s, q));
   } else {
     list = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
   }
@@ -879,9 +882,7 @@ function filteredOverviewStudents() {
 }
 
 function syncOverviewSelectionAfterFilter() {
-  const q = document.getElementById('searchStudent').value.trim();
-  const staffDeptList = useStaffApi && deptStudentsLoaded;
-  if (!q && !staffDeptList) {
+  if (!isOverviewSearchActive()) {
     clearOverviewDetail();
     return;
   }
@@ -927,57 +928,79 @@ function studentRow(s) {
 
 function renderOverviewList() {
   const q = document.getElementById('searchStudent').value.trim();
-  const staffDeptList = useStaffApi && deptStudentsLoaded;
-  if (!q && !staffDeptList) {
+  const listEl = document.getElementById('studentList');
+  if (!listEl) return;
+
+  if (!q) {
     document.getElementById('studentCount').textContent = '0';
-    document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">Type a name, register number, or department to find students.</div>';
+    listEl.innerHTML = '';
+    listEl.classList.add('d-none');
     return;
   }
+
   const list = filteredOverviewStudents();
   document.getElementById('studentCount').textContent = list.length;
-  if (!list.length) {
-    document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">No students match your search.</div>';
+
+  if (list.length === 1) {
+    listEl.innerHTML = '';
+    listEl.classList.add('d-none');
+    const reg = list[0].registerNumber;
+    if (normStudentReg(selectedReg) !== normStudentReg(reg)) {
+      selectOverviewStudent(reg, { skipListRender: true });
+    }
     return;
   }
-  document.getElementById('studentList').innerHTML = list.map(studentRow).join('');
+
+  listEl.classList.remove('d-none');
+  if (!list.length) {
+    listEl.innerHTML = '<div class="p-3 small text-muted-2">No students match your search.</div>';
+    clearOverviewDetail();
+    return;
+  }
+  listEl.innerHTML = list.map(studentRow).join('');
 }
 
 async function runOverviewSearch() {
   const q = document.getElementById('searchStudent').value.trim();
   const seq = ++overviewSearchSeq;
 
-  if (!q && !(useStaffApi && deptStudentsLoaded)) {
+  if (!q) {
     overviewStudents = [];
     clearOverviewDetail();
     renderOverviewList();
     return;
   }
 
-  if (useLiveOverviewApi && !(useStaffApi && deptStudentsLoaded && !q)) {
-    document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">Searching…</div>';
-    const rows = await fetchOverviewStudentsFromApi(q);
-    if (seq !== overviewSearchSeq) return;
-    if (rows) {
-      const prevByReg = new Map(
-        (overviewStudents || []).map(s => [normStudentReg(s.registerNumber), s]).filter(([k]) => k)
-      );
-      overviewStudents = rows.map(row => {
-        const prev = prevByReg.get(normStudentReg(row.registerNumber));
-        if (!prev) return row;
-        const mergedName = overviewStudentName(row) || overviewStudentName(prev) || prev.name || row.name || '';
-        return {
-          ...prev,
-          ...row,
-          name: mergedName || row.name || prev.name || '',
-          photoUrl: row.photoUrl || prev.photoUrl || '',
-          photo: row.photo || prev.photo || null,
-          classBatch: row.classBatch || prev.classBatch || '',
-          placementStatus: row.placementStatus || prev.placementStatus,
-          policyAccepted: row.policyAccepted ?? prev.policyAccepted ?? false,
-          policyAcceptedAt: row.policyAcceptedAt || prev.policyAcceptedAt || '',
-          policyVersion: row.policyVersion || prev.policyVersion || '',
-        };
-      });
+  if (useLiveOverviewApi) {
+    if (useStaffApi && deptStudentsLoaded) {
+      overviewStudents = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+    } else {
+      document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">Searching…</div>';
+      document.getElementById('studentList').classList.remove('d-none');
+      const rows = await fetchOverviewStudentsFromApi(q);
+      if (seq !== overviewSearchSeq) return;
+      if (rows) {
+        const prevByReg = new Map(
+          (overviewStudents || []).map(s => [normStudentReg(s.registerNumber), s]).filter(([k]) => k)
+        );
+        overviewStudents = rows.map(row => {
+          const prev = prevByReg.get(normStudentReg(row.registerNumber));
+          if (!prev) return row;
+          const mergedName = overviewStudentName(row) || overviewStudentName(prev) || prev.name || row.name || '';
+          return {
+            ...prev,
+            ...row,
+            name: mergedName || row.name || prev.name || '',
+            photoUrl: row.photoUrl || prev.photoUrl || '',
+            photo: row.photo || prev.photo || null,
+            classBatch: row.classBatch || prev.classBatch || '',
+            placementStatus: row.placementStatus || prev.placementStatus,
+            policyAccepted: row.policyAccepted ?? prev.policyAccepted ?? false,
+            policyAcceptedAt: row.policyAcceptedAt || prev.policyAcceptedAt || '',
+            policyVersion: row.policyVersion || prev.policyVersion || '',
+          };
+        });
+      }
     }
   } else {
     overviewStudents = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
@@ -1626,8 +1649,12 @@ async function onStaffScopeFilterChange(changed) {
   }
 
   await loadStaffScopeFilters();
-  syncOverviewSelectionAfterFilter();
-  renderOverviewList();
+  if (isOverviewSearchActive()) {
+    await runOverviewSearch();
+  } else {
+    syncOverviewSelectionAfterFilter();
+    renderOverviewList();
+  }
   renderStaffPolicyTab();
 }
 
