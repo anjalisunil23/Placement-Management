@@ -1002,6 +1002,9 @@ body.login-page{
 .modal-header,.modal-footer{background:var(--modal-header-bg);border-color:var(--border)}
 .modal-body{background:var(--modal-bg)}
 .modal-backdrop.show{opacity:.45}
+/* Closed modals must not eat clicks — PO role CSS used to force display:block on them. */
+.modal:not(.show){pointer-events:none!important}
+.modal.show{pointer-events:auto}
 
 /* File picker (hidden input + button — reliable across browsers) */
 .file-picker{
