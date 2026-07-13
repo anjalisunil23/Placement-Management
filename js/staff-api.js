@@ -121,6 +121,11 @@ const StaffApi = {
     return res.success ? res.data : null;
   },
 
+  async fetchDashboardStats() {
+    const res = await api('/staff/dashboard-stats');
+    return res.success ? res.data : null;
+  },
+
   async fetchRecommendations() {
     const res = await api('/staff/recommendations');
     if (!res.success || !Array.isArray(res.data)) return null;

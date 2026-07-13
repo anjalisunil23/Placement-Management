@@ -63,7 +63,7 @@
     this.staffLive = live && role === 'staff';
     this.adminLive = live && role === 'admin';
     this.officerLive = live && role === 'placement_officer';
-    this.campusLive = this.adminLive || this.officerLive;
+    this.campusLive = this.adminLive || this.officerLive || this.staffLive;
   };
 
   HiringOverviewPage.prototype.updateLiveBadge = function () {
@@ -77,7 +77,6 @@
   };
 
   HiringOverviewPage.prototype.liveHiringView = function (dept) {
-    if (this.staffLive) return this.apiHiringData;
     if (this.campusLive && this.campusRecruitingData) {
       return this.recruitingViewForDept(this.campusRecruitingData, dept || '', this.selectedBatch());
     }
@@ -179,9 +178,6 @@
   };
 
   HiringOverviewPage.prototype.placementSourceRows = function () {
-    if (Array.isArray(this.apiHiringData?.placements) && this.apiHiringData.placements.length) {
-      return this.apiHiringData.placements;
-    }
     if (Array.isArray(this.campusRecruitingData?.placements)) {
       return this.campusRecruitingData.placements;
     }
@@ -523,9 +519,6 @@
   };
 
   HiringOverviewPage.prototype.allBatchOptions = function () {
-    if (Array.isArray(this.apiHiringData?.batchOptions) && this.apiHiringData.batchOptions.length) {
-      return [...this.apiHiringData.batchOptions];
-    }
     if (Array.isArray(this.campusRecruitingData?.batchOptions) && this.campusRecruitingData.batchOptions.length) {
       return [...this.campusRecruitingData.batchOptions];
     }
@@ -610,30 +603,9 @@
     }
   };
 
-  HiringOverviewPage.prototype.reloadStaffHiringData = async function () {
-    if (!this.staffLive || typeof StaffApi === 'undefined') return;
-    const branch = this.selectedBranchForApi();
-    const batch = this.selectedBatch();
-    const params = {};
-    if (batch) params.batch = batch;
-    if (branch) params.branch = branch;
-    const data = await StaffApi.fetchHiringOverview(params);
-    if (data) {
-      this.apiHiringData = data;
-      if (data.hiringTrend) this.hiringTrendThisYear = data.hiringTrend;
-      if (data.hiringTrendLastYear) this.hiringTrendLastYear = data.hiringTrendLastYear;
-      if (Array.isArray(data.placements)) this.placementRows = data.placements;
-      this.populateBatchSelect();
-      this.applyTrendYearMode();
-    }
-  };
-
   HiringOverviewPage.prototype.onBatchDropdownChange = async function () {
     const batchSelect = this.$('batchSelect');
     this.activeBatchFilter = batchSelect?.value || '';
-    if (this.staffLive) {
-      await this.reloadStaffHiringData();
-    }
     this.renderForDept(this.selectedDept());
   };
 
@@ -877,9 +849,6 @@
     if (batchSelect) batchSelect.value = '';
     this.populateBatchSelect();
     this.setDeptUI(this.selectedDept());
-    if (this.staffLive) {
-      await this.reloadStaffHiringData();
-    }
     this.renderForDept(this.selectedDept());
   };
 
@@ -1034,21 +1003,6 @@
       await DepartmentStore.fetch();
       this.populateDeptSelect();
 
-      if (this.staffLive) {
-        const branch = this.selectedBranchForApi();
-        const params = branch ? { branch } : {};
-        const data = await StaffApi.fetchHiringOverview(params);
-        if (data) {
-          this.apiHiringData = data;
-          if (data.hiringTrend) this.hiringTrendThisYear = data.hiringTrend;
-          if (data.hiringTrendLastYear) this.hiringTrendLastYear = data.hiringTrendLastYear;
-          if (Array.isArray(data.placements)) this.placementRows = data.placements;
-        } else {
-          toast('Could not load hiring overview. Refresh or sign in again.', 'warn');
-          document.getElementById('dashLiveBadge')?.classList.add('d-none');
-        }
-        this.populateBatchSelect();
-      }
       if (this.campusLive) {
         const data = await RecruitingStore.fetch();
         if (data) {
@@ -1077,10 +1031,6 @@
         } catch (_) {
           /* keep prior trend data */
         }
-      }
-      if (this.staffLive && this.apiHiringData?.hiringTrend) {
-        this.hiringTrendThisYear = this.apiHiringData.hiringTrend;
-        this.hiringTrendLastYear = this.apiHiringData.hiringTrendLastYear || this.hiringTrendLastYear;
       }
       this.applyTrendYearMode();
       this.updateLiveBadge();

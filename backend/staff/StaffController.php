@@ -17,6 +17,7 @@ use PMS\Services\SelfPlacementService;
 use PMS\Services\PlacementFilterService;
 use PMS\Services\StaffPlacementRegistryService;
 use PMS\Services\StaffService;
+use PMS\Services\RecruitingService;
 use PMS\Services\AesLoginService;
 use PMS\Services\NotificationService;
 use PMS\Utils\DocumentHelper;
@@ -302,6 +303,24 @@ final class StaffController
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->uploadPlacementDocuments($ctx, $studentId)
         ), 'Documents uploaded.');
+    }
+
+    /** GET /api/staff/recruiting — campus snapshot; UI filters by department (same as placement officer). */
+    public function recruitingOverview(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        Response::success(DocumentHelper::jsonSafe((new RecruitingService())->getCampusOverview(null)));
+    }
+
+    /** GET /api/staff/dashboard-stats — department-scoped analytics (hiring trend, placement stats). */
+    public function dashboardStats(): void
+    {
+        $scope = (new StaffDataService())->requireScope();
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffDataService())->dashboardStats($scope['officerCtx'], (string) $scope['user']['_id'])
+        ));
     }
 
     /** GET /api/staff/hiring-overview */

@@ -4172,6 +4172,10 @@ async function dashboardStats() {
       const stats = await OfficerApi.fetchDashboard();
       return mapLiveDashboard(stats);
     }
+    if (Auth.role() === 'staff' && typeof StaffApi !== 'undefined') {
+      const stats = await StaffApi.fetchDashboardStats();
+      return mapLiveDashboard(stats);
+    }
     if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
       const stats = await AdminApi.fetchDashboard();
       return mapLiveDashboard(stats, stats?.activeDrives ?? 0);
@@ -4207,6 +4211,7 @@ const RecruitingStore = {
       company: '/company/recruiting',
       admin: '/admin/recruiting',
       placement_officer: '/officer/recruiting',
+      staff: '/staff/recruiting',
     };
     const path = paths[Auth.role()];
     if (!path) return null;

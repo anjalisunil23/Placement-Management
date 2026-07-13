@@ -287,6 +287,8 @@ $routes = [
     ['GET',  '/staff/students/{id}/self-placement/offer-letter', [StaffController::class, 'downloadSelfPlacementOfferLetter']],
     ['PUT',  '/staff/students/{id}/placement', [StaffController::class, 'updateStudentPlacement']],
     ['POST', '/staff/students/{id}/placement/documents', [StaffController::class, 'uploadStudentPlacementDocuments']],
+    ['GET',  '/staff/recruiting',                 [StaffController::class, 'recruitingOverview']],
+    ['GET',  '/staff/dashboard-stats',            [StaffController::class, 'dashboardStats']],
     ['GET',  '/staff/hiring-overview',            [StaffController::class, 'hiringOverview']],
     ['GET',  '/staff/notifications',              [StaffController::class, 'notifications']],
     ['POST', '/staff/notifications/read-all',     [StaffController::class, 'markAllNotificationsRead']],
