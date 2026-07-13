@@ -77,6 +77,12 @@ class AlumniModel extends BaseModel
         if (array_key_exists('isWorking', $input)) {
             $update['isWorking'] = $this->normalizeIsWorking($input, $update['company'] ?? null);
         }
+        if (array_key_exists('photo', $input) && is_array($input['photo'])) {
+            $update['photo'] = $input['photo'];
+        }
+        if (array_key_exists('registerNumber', $input)) {
+            $update['registerNumber'] = strtoupper(trim((string) $input['registerNumber']));
+        }
         if (empty($update)) {
             return false;
         }
@@ -97,13 +103,21 @@ class AlumniModel extends BaseModel
             ? (bool) $profile['isWorking']
             : $company !== '';
 
-        return [
+        $photo = is_array($profile['photo'] ?? null) ? $profile['photo'] : null;
+        $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
+        $fields = [
             'company'    => $company,
             'title'      => trim((string) ($profile['role'] ?? '')),
             'experience' => (int) ($profile['experience'] ?? 0),
             'skills'     => $profile['skills'] ?? [],
             'isWorking'  => $isWorking,
         ];
+        if ($photoUrl !== '') {
+            $fields['photoUrl'] = $photoUrl;
+            $fields['photo'] = $photo;
+        }
+
+        return $fields;
     }
 
     /**
@@ -118,6 +132,11 @@ class AlumniModel extends BaseModel
         $profile['employmentDocs'] = self::serializeEmploymentDocs(
             is_array($profile['employmentDocs'] ?? null) ? $profile['employmentDocs'] : null
         );
+        $photo = is_array($profile['photo'] ?? null) ? $profile['photo'] : null;
+        $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
+        if ($photoUrl !== '') {
+            $profile['photoUrl'] = $photoUrl;
+        }
         return $profile;
     }
 

@@ -884,7 +884,16 @@ if (role === 'alumni') {
       document.getElementById('alumniCompany').value = p.company || '';
       document.getElementById('alumniTitle').value = p.title || p.role || '';
       applyAlumniEmploymentDocsState(p.employmentDocs || null);
-      Auth.set({ ...user, isWorking: !!p.isWorking, company: p.company || '', title: p.title || p.role || '' }, Auth.token());
+      const alumniPhoto = p.photoUrl || p.photo?.url || '';
+      if (alumniPhoto) setAvatarPhoto(alumniPhoto);
+      Auth.set({
+        ...user,
+        isWorking: !!p.isWorking,
+        company: p.company || '',
+        title: p.title || p.role || '',
+        photoUrl: alumniPhoto || user.photoUrl || '',
+        photo: p.photo || user.photo || null,
+      }, Auth.token());
       syncAlumniFields();
     });
   }

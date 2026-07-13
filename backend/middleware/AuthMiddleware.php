@@ -104,6 +104,11 @@ final class AuthMiddleware
       if ($profile) {
         $data = array_merge($data, AlumniModel::profileToUserFields($profile));
       }
+      $photo = $aesService->resolveAlumniProfilePhoto($user, $profile, false);
+      if (($photo['photoUrl'] ?? '') !== '') {
+        $data['photoUrl'] = $photo['photoUrl'];
+        $data['photo'] = $photo['photo'];
+      }
     }
     if (($data['role'] ?? $user['role'] ?? '') === 'company') {
       $company = (new CompanyModel())->findByUserId((string) $user['_id']);

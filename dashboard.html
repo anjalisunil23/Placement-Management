@@ -321,25 +321,6 @@
             <div class="val"><span class="counter" data-target="11">0</span></div><div class="lbl">Referrals Made</div>
           </div></div>
         </div>
-        <div class="row g-3 mt-1">
-          <div class="col-lg-6"><div class="card-surface p-4 h-100 d-flex flex-wrap gap-3 align-items-center justify-content-between">
-            <div><h6 class="mb-1 fw-bold">Post a job opening</h6><small class="text-muted-2">Share lateral or alumni-network roles from your company.</small></div>
-            <a href="alumni-jobs.html" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Post a Job</a>
-          </div></div>
-          <div class="col-lg-6"><div class="card-surface p-4 h-100 d-flex flex-wrap gap-3 align-items-center justify-content-between">
-            <div><h6 class="mb-1 fw-bold">Recommend a company</h6><small class="text-muted-2">Refer a recruiter to the placement cell.</small></div>
-            <button type="button" class="btn btn-outline-primary" onclick="ReferralModals.openAlumni()"><i class="bi bi-building-add me-1"></i>Recommend Company</button>
-          </div></div>
-        </div>
-        <div class="card-surface mt-3">
-          <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Recent referrals</h6></div>
-          <div class="table-wrap">
-            <table class="table-modern">
-              <thead><tr><th>Company</th><th>Submitted</th><th>Status</th></tr></thead>
-              <tbody id="alumniReferrals"></tbody>
-            </table>
-          </div>
-        </div>
       </div>
 
       <!-- ===== ALUMNI (JOB SEEKING) ===== -->
@@ -374,7 +355,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260713t"></script>
-<script src="js/app.js?v=20260713u"></script>
+<script src="js/app.js?v=20260713v"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -418,7 +399,7 @@ const titles = {
   student: ['Dashboard', ''],
   staff: ['Department Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.'],
   company: [`${user.companyName || user.name} · Recruiter`, 'Active companies, department-wise applicants, and candidate list.'],
-  alumni: [`Welcome, ${user.name?.split(' ')[0] || 'Alumnus'}`, alumniIsWorking() ? 'Post jobs and refer talent from your network.' : 'Find lateral roles and apply to open drives.'],
+  alumni: ['', ''],
 };
 document.getElementById('dashTitle').textContent = titles[role][0];
 document.getElementById('dashSub').textContent = titles[role][1];
@@ -432,8 +413,8 @@ if (['admin', 'placement_officer', 'staff'].includes(role)) {
 if (!titles[role][1]) {
   document.getElementById('dashSub').hidden = true;
 }
-// Student name already appears in the topbar — hide the duplicate page heading.
-if (role === 'student') {
+// Student/alumni name appears in the topbar — hide the duplicate page heading.
+if (role === 'student' || role === 'alumni') {
   document.querySelector('.page-header')?.classList.add('d-none');
 }
 
@@ -443,9 +424,7 @@ const   actions = {
   student: '',
   staff: '',
   company: '<a class="btn btn-outline-secondary" href="company.html"><i class="bi bi-building me-1"></i>Company Portal</a><a class="btn btn-outline-secondary" href="eligibility.html"><i class="bi bi-check2-square me-1"></i>Eligibility</a><a class="btn btn-primary" href="applicants.html"><i class="bi bi-person-lines-fill me-1"></i>Applicants</a>',
-  alumni: alumniIsWorking()
-    ? '<a class="btn btn-outline-secondary" href="settings.html"><i class="bi bi-person-gear me-1"></i>Update Profile</a><a class="btn btn-primary" href="alumni-jobs.html"><i class="bi bi-plus-lg me-1"></i>Post a Job</a>'
-    : '<a class="btn btn-outline-secondary" href="settings.html"><i class="bi bi-person-gear me-1"></i>Update Profile</a><a class="btn btn-primary" href="drives.html"><i class="bi bi-search me-1"></i>Apply for Jobs</a>',
+  alumni: '',
 };
 document.getElementById('dashActions').innerHTML = actions[role] || '';
 
@@ -588,11 +567,6 @@ if (role === 'alumni') {
   (async () => {
     if (alumniIsWorking()) {
       document.getElementById('alumniCo').textContent = user.company || '—';
-      if (Auth.hasRealAuth() && !Auth.isDemo()) await AlumniReferrals.fetch();
-      const refs = AlumniReferrals.mine();
-      document.getElementById('alumniReferrals').innerHTML = refs.length ? refs.map(r => `
-        <tr><td><strong>${r.companyName || '—'}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
-        : '<tr><td colspan="3" class="text-muted-2 p-3">No referrals yet.</td></tr>';
     } else {
       if (Auth.hasRealAuth() && !Auth.isDemo()) {
         await Promise.all([DriveStore.fetchAlumniDrives(), AlumniApps.fetch()]);

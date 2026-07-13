@@ -1951,6 +1951,152 @@ final class AesLoginService
     }
 
     /**
+     * Resolve admission number for an alumni account (user, alumni profile, linked student, AES session).
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $alumniProfile
+     */
+    public function resolveAlumniAdmissionNumber(array $user, ?array $alumniProfile = null): string
+    {
+        $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
+        $mapped = $this->mapAesDetailsToUserFields($aesProfile);
+        $register = $this->resolveAesAdmissionNumber(
+            (string) ($user['registerNumber'] ?? ''),
+            $aesProfile,
+            $mapped
+        );
+        if ($register === '' && $alumniProfile !== null) {
+            $register = $this->resolveAesAdmissionNumber(
+                (string) ($alumniProfile['registerNumber'] ?? ''),
+                $aesProfile,
+                $mapped
+            );
+        }
+        if ($register === '') {
+            $student = (new StudentModel())->findByUserId((string) ($user['_id'] ?? ''));
+            if ($student) {
+                $register = $this->resolveAesAdmissionNumber(
+                    (string) ($student['registerNumber'] ?? ''),
+                    $aesProfile,
+                    $mapped
+                );
+            }
+        }
+
+        return $register;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $alumniProfile
+     * @return array{photoUrl:string,photo:array<string,mixed>|null}
+     */
+    public function resolveAlumniProfilePhoto(array $user, ?array $alumniProfile = null, bool $fetchFromAes = true): array
+    {
+        $photo = is_array($alumniProfile['photo'] ?? null) ? $alumniProfile['photo'] : null;
+        $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            return [
+                'photoUrl' => $photoUrl,
+                'photo'    => $photo,
+            ];
+        }
+
+        $sessionPhoto = $this->resolveProfilePhoto($alumniProfile, $user);
+        if (($sessionPhoto['photoUrl'] ?? '') !== '') {
+            return $sessionPhoto;
+        }
+
+        $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
+        $mapped = $this->mapAesDetailsToUserFields($aesProfile);
+        $sessionUrl = trim((string) ($mapped['photoUrl'] ?? $aesProfile['stud_photo'] ?? ''));
+        $sessionUrl = (new AesApiService())->resolvePhotoUrl($sessionUrl);
+        if ($sessionUrl !== '' && filter_var($sessionUrl, FILTER_VALIDATE_URL)) {
+            return [
+                'photoUrl' => $sessionUrl,
+                'photo'    => ['url' => $sessionUrl, 'source' => 'aes'],
+            ];
+        }
+
+        if (!$fetchFromAes) {
+            return ['photoUrl' => '', 'photo' => null];
+        }
+
+        $register = $this->resolveAlumniAdmissionNumber($user, $alumniProfile);
+        if ($register === '') {
+            return ['photoUrl' => '', 'photo' => null];
+        }
+
+        try {
+            $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+        } catch (\Throwable) {
+            return ['photoUrl' => '', 'photo' => null];
+        }
+
+        $placementMapped = $this->mapAesDetailsToUserFields($placement);
+        $photoUrl = trim((string) (
+            $placementMapped['photoUrl']
+            ?? $placement['photoUrl']
+            ?? $placement['stud_photo']
+            ?? ''
+        ));
+        $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+        if ($photoUrl === '' || !filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            return ['photoUrl' => '', 'photo' => null];
+        }
+
+        return [
+            'photoUrl' => $photoUrl,
+            'photo'    => [
+                'url'      => $photoUrl,
+                'source'   => 'aes',
+                'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+            ],
+        ];
+    }
+
+    /**
+     * Fetch alumni photo from AES placement info when missing and persist on the alumni profile.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $alumniProfile
+     * @return array<string, mixed>|null
+     */
+    public function syncAlumniPlacementPhoto(array $user, ?array $alumniProfile): ?array
+    {
+        if ($alumniProfile === null) {
+            return null;
+        }
+
+        $resolved = $this->resolveAlumniProfilePhoto($user, $alumniProfile, true);
+        if (($resolved['photoUrl'] ?? '') === '') {
+            return $alumniProfile;
+        }
+
+        $existingPhoto = is_array($alumniProfile['photo'] ?? null) ? $alumniProfile['photo'] : null;
+        $source = is_array($existingPhoto) ? (string) ($existingPhoto['source'] ?? '') : '';
+        if ($source === 'upload') {
+            return $alumniProfile;
+        }
+
+        $existingUrl = is_array($existingPhoto) ? trim((string) ($existingPhoto['url'] ?? '')) : '';
+        if ($existingUrl === $resolved['photoUrl']) {
+            return $alumniProfile;
+        }
+
+        $patch = ['photo' => $resolved['photo']];
+        $register = $this->resolveAlumniAdmissionNumber($user, $alumniProfile);
+        if ($register !== '' && trim((string) ($alumniProfile['registerNumber'] ?? '')) === '') {
+            $patch['registerNumber'] = $register;
+        }
+
+        $alumniModel = new AlumniModel();
+        $alumniModel->update((string) $alumniProfile['_id'], $patch);
+
+        return array_merge($alumniProfile, $patch);
+    }
+
+    /**
      * @param array<string, mixed> $user
      * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
      * @param array<string, mixed> $mapped
@@ -2023,25 +2169,46 @@ final class AesLoginService
                 'experience' => (int) ($extras['experience'] ?? 0),
                 'isWorking'  => $company !== '',
             ]);
+            $existing = $alumniModel->findByUserId((string) $user['_id']);
+        } else {
+            $patch = [];
+            if ($company !== '') {
+                $patch['company'] = $company;
+                $patch['isWorking'] = true;
+            }
+            if ($title !== '') {
+                $patch['role'] = $title;
+                $patch['title'] = $title;
+            }
+            if (isset($extras['experience'])) {
+                $patch['experience'] = (int) $extras['experience'];
+            }
 
-            return;
+            $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
+            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+            if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+                $existingPhoto = is_array($existing['photo'] ?? null) ? $existing['photo'] : null;
+                $source = is_array($existingPhoto) ? (string) ($existingPhoto['source'] ?? '') : '';
+                if ($source !== 'upload') {
+                    $existingUrl = is_array($existingPhoto) ? trim((string) ($existingPhoto['url'] ?? '')) : '';
+                    if ($existingUrl !== $photoUrl) {
+                        $patch['photo'] = [
+                            'url'      => $photoUrl,
+                            'source'   => 'aes',
+                            'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+                        ];
+                    }
+                }
+            }
+
+            if ($patch !== []) {
+                $alumniModel->update((string) $existing['_id'], $patch);
+                $existing = $alumniModel->findById((string) $existing['_id']) ?? $existing;
+            }
         }
 
-        $patch = [];
-        if ($company !== '') {
-            $patch['company'] = $company;
-            $patch['isWorking'] = true;
-        }
-        if ($title !== '') {
-            $patch['role'] = $title;
-            $patch['title'] = $title;
-        }
-        if (isset($extras['experience'])) {
-            $patch['experience'] = (int) $extras['experience'];
-        }
-
-        if ($patch !== []) {
-            $alumniModel->updateProfile((string) $existing['_id'], $patch);
+        if ($existing) {
+            $this->syncAlumniPlacementPhoto($user, $existing);
         }
     }
 

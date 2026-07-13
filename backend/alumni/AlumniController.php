@@ -16,6 +16,7 @@ use PMS\Models\CompanyModel;
 use PMS\Models\ResumeModel;
 use PMS\Models\StudentModel;
 use PMS\Models\SuccessStoryModel;
+use PMS\Services\AesLoginService;
 use PMS\Services\ApplicationUploadService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\OfficerDataService;
@@ -35,11 +36,20 @@ final class AlumniController
   public function getProfile(): void
   {
     $user = RBACMiddleware::requireAlumni();
-    $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
+    $model = new AlumniModel();
+    $profile = $model->findByUserId((string) $user['_id']);
     if (!$profile) {
       Response::notFound('Alumni profile not found.');
     }
-    Response::success(DocumentHelper::serialize(AlumniModel::serializeProfile($profile)));
+    $aes = new AesLoginService();
+    $profile = $aes->syncAlumniPlacementPhoto($user, $profile) ?? $profile;
+    $photo = $aes->resolveAlumniProfilePhoto($user, $profile, false);
+    $out = AlumniModel::serializeProfile($profile);
+    if (($photo['photoUrl'] ?? '') !== '') {
+      $out['photoUrl'] = $photo['photoUrl'];
+      $out['photo'] = $photo['photo'];
+    }
+    Response::success(DocumentHelper::serialize($out));
   }
 
   /** PUT /api/alumni/profile */
