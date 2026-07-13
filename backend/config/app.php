@@ -58,6 +58,8 @@ return [
         'certificate_dir' => $rootPath . '/uploads/certificates',
         'reports_dir'=> $rootPath . '/uploads/reports',
         'jd_dir'     => $rootPath . '/uploads/jd',
+        'shortlist_dir' => $rootPath . '/uploads/shortlists',
+        'max_shortlist' => (int) ($_ENV['MAX_SHORTLIST_SIZE'] ?? 10485760),
         'signed_dir' => $rootPath . '/uploads/signed_reports',
         'offer_letter_dir' => $rootPath . '/uploads/offer_letters',
         'self_placement_dir' => $rootPath . '/uploads/self_placement',

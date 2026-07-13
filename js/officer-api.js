@@ -84,6 +84,10 @@ const OfficerApi = {
       statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
       applied: d.applied ?? 0,
       profile: d.profile || 'General',
+      hasShortlistDocument: !!(d.hasShortlistDocument || d.shortlistDocumentName),
+      shortlistDocumentName: d.shortlistDocumentName || '',
+      shortlistUploadedAt: d.shortlistUploadedAt || '',
+      shortlistDocumentUrl: d.shortlistDocumentUrl || '',
       _fromApi: true,
     };
   },
@@ -240,6 +244,43 @@ const OfficerApi = {
     const res = await api(`/officer/drives/${id}/non-applicants` + (q ? `?${q}` : ''));
     if (!res.success || !res.data || typeof res.data !== 'object') return null;
     return res.data;
+  },
+
+  shortlistUploadPath(driveId) {
+    const id = encodeURIComponent(String(driveId || '').trim());
+    const role = typeof Auth !== 'undefined' ? Auth.role() : '';
+    return role === 'admin'
+      ? `/admin/drives/${id}/shortlist-upload`
+      : `/officer/drives/${id}/shortlist-upload`;
+  },
+
+  shortlistDocumentPath(driveId) {
+    const id = encodeURIComponent(String(driveId || '').trim());
+    const role = typeof Auth !== 'undefined' ? Auth.role() : '';
+    return role === 'admin'
+      ? `/admin/drives/${id}/shortlist-document`
+      : `/officer/drives/${id}/shortlist-document`;
+  },
+
+  /**
+   * Upload company shortlist document and/or import register numbers.
+   * @param {string} driveId
+   * @param {{ document?: File|null, csv?: File|null, csvText?: string, registerNumbers?: string }} payload
+   */
+  async uploadDriveShortlist(driveId, payload = {}) {
+    const path = OfficerApi.shortlistUploadPath(driveId);
+    if (!path.includes('/drives/') || path.endsWith('/drives/')) return null;
+    const fd = new FormData();
+    if (payload.document instanceof File) fd.append('document', payload.document, payload.document.name);
+    if (payload.csv instanceof File) fd.append('csv', payload.csv, payload.csv.name);
+    if (payload.csvText) fd.append('csvText', String(payload.csvText));
+    if (payload.registerNumbers) fd.append('registerNumbers', String(payload.registerNumbers));
+    const res = await api(path, { method: 'POST', body: fd });
+    if (!res.success) {
+      toast(res.message || 'Could not upload shortlist.', 'error');
+      return null;
+    }
+    return { ...(res.data || {}), message: res.message || '' };
   },
 
   async fetchPendingResumes() {

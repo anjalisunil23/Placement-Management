@@ -4172,7 +4172,7 @@ async function dashboardStats() {
 }
 
 function stageBadge(stage) {
-  const map = { applied:['muted','Applied'], resume_verification:['warning','Resume verify'], approval:['info','Approval'], company_selection:['primary','Company'], rejected:['danger','Rejected'], shortlisted:['success','Shortlisted'], self_reported:['info','Self reported'], self_reported_placement:['info','Self reported'], placement:['muted','Placement'] };
+  const map = { applied:['muted','Applied'], resume_verification:['warning','Resume check'], approval:['info','Approval'], company_selection:['primary','With company'], shortlisted:['success','Company shortlisted'], rejected:['danger','Rejected'], self_reported:['info','Self reported'], self_reported_placement:['info','Self reported'], placement:['muted','Placement'] };
   const [cls, label] = map[stage] || ['muted', stage];
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }

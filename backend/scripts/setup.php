@@ -581,7 +581,7 @@ foreach ($seedNotifs as $group) {
 
 // Create upload directories
 $config = require dirname(__DIR__) . '/config/app.php';
-foreach (['resume_dir', 'reports_dir', 'jd_dir'] as $key) {
+foreach (['resume_dir', 'reports_dir', 'jd_dir', 'shortlist_dir'] as $key) {
     $dir = $config['uploads'][$key];
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);

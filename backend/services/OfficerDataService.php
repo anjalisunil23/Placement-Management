@@ -85,10 +85,11 @@ final class OfficerDataService
 
             $status = $app['status'] ?? 'applied';
             $stage = match ($status) {
-                'applied', 'resume_pending' => 'resume_verification',
+                'applied', 'resume_pending' => 'applied',
                 'resume_verified' => 'resume_verification',
                 'officer_approved' => 'approval',
-                'company_review', 'shortlisted' => 'company_selection',
+                'company_review' => 'company_selection',
+                'shortlisted' => 'shortlisted',
                 'selected' => 'company_selection',
                 'rejected' => 'rejected',
                 default => $status,
@@ -1452,6 +1453,21 @@ final class OfficerDataService
                 'jobType'  => $jobType,
                 'mode'     => $mode,
             ]);
+
+            $hasShortlistDoc = trim((string) ($row['shortlistDocument'] ?? '')) !== ''
+                || trim((string) ($row['shortlistDocumentName'] ?? '')) !== '';
+            $row['hasShortlistDocument'] = $hasShortlistDoc;
+            $row['shortlistDocumentName'] = (string) ($row['shortlistDocumentName'] ?? '');
+            $row['shortlistUploadedAt'] = (string) ($row['shortlistUploadedAt'] ?? '');
+            if ($hasShortlistDoc) {
+                $driveId = (string) ($row['id'] ?? $row['_id'] ?? '');
+                $row['shortlistDocumentUrl'] = $driveId !== ''
+                    ? '/api/officer/drives/' . rawurlencode($driveId) . '/shortlist-document'
+                    : '';
+            } else {
+                $row['shortlistDocumentUrl'] = '';
+            }
+            unset($row['shortlistDocument'], $row['shortlistUploadedBy']);
 
             $rows[] = $row;
         }

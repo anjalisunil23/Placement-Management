@@ -144,6 +144,62 @@ final class AdminController
         Response::success(null, 'Drive deleted.');
     }
 
+    /** POST /api/admin/drives/{id}/shortlist-upload */
+    public function uploadDriveShortlist(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $csvContent = '';
+        if (isset($_FILES['csv']) && ($_FILES['csv']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $tmp = (string) ($_FILES['csv']['tmp_name'] ?? '');
+            if ($tmp !== '' && is_readable($tmp)) {
+                $csvContent = (string) file_get_contents($tmp);
+            }
+        } elseif (isset($_POST['csvText'])) {
+            $csvContent = (string) $_POST['csvText'];
+        }
+
+        $registerList = (string) ($_POST['registerNumbers'] ?? '');
+        $document = isset($_FILES['document']) ? $_FILES['document'] : null;
+
+        $result = (new \PMS\Services\DriveShortlistService())->upload(
+            $id,
+            $scope['ctx'],
+            (string) $scope['user']['_id'],
+            is_array($document) ? $document : null,
+            $csvContent,
+            $registerList
+        );
+
+        $parts = [];
+        if (!empty($result['documentSaved'])) {
+            $parts[] = 'Shortlist document saved.';
+        }
+        $parts[] = (int) ($result['updated'] ?? 0) . ' student(s) marked shortlisted.';
+        if (!empty($result['alreadyShortlisted'])) {
+            $parts[] = (int) $result['alreadyShortlisted'] . ' already shortlisted.';
+        }
+        Response::success($result, implode(' ', $parts));
+    }
+
+    /** GET /api/admin/drives/{id}/shortlist-document */
+    public function downloadDriveShortlistDocument(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $file = (new \PMS\Services\DriveShortlistService())->documentForDrive($id, $scope['ctx']);
+        if ($file === null) {
+            Response::notFound('No shortlist document uploaded for this drive.');
+        }
+
+        $path = $file['path'];
+        $filename = $file['filename'];
+        $mime = mime_content_type($path) ?: 'application/octet-stream';
+        header('Content-Type: ' . $mime);
+        header('Content-Disposition: inline; filename="' . str_replace('"', '', $filename) . '"');
+        header('Content-Length: ' . (string) filesize($path));
+        readfile($path);
+        exit;
+    }
+
     // --- Applications (Admin can view and transition any application) ---
 
     /** GET /api/admin/applications */
