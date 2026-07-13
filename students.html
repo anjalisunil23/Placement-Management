@@ -162,6 +162,7 @@
     <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="appSubTabs">
       <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabAppList" id="linkAppApplications">Applications</a></li>
       <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppResumes" id="linkAppResumes">Resume</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppNonApplicants" id="linkAppNonApplicants">Not applied</a></li>
     </ul>
     <div class="tab-content">
       <div class="tab-pane fade show active" id="tabAppList">
@@ -233,6 +234,43 @@
                 <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Status</th><th>Submitted</th><th>Actions</th>
               </tr></thead><tbody id="resumeAllRows"></tbody></table></div>
             </div>
+          </div>
+        </div>
+      </div>
+      <div class="tab-pane fade" id="tabAppNonApplicants">
+        <div class="card-surface">
+          <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
+            <div>
+              <h6 class="fw-bold mb-0">Eligible, not applied</h6>
+              <small class="text-muted-2">Students who meet drive criteria but have not applied yet</small>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <select class="form-select form-select-sm" id="nonApplicantDriveSelect" style="min-width:min(100%,16rem)" aria-label="Select drive">
+                <option value="">Select a drive…</option>
+              </select>
+              <span class="badge-soft warning" id="nonApplicantCount">0 pending</span>
+            </div>
+          </div>
+          <div class="px-3 px-md-4 pt-3 d-flex flex-wrap gap-2 align-items-center justify-content-between">
+            <div class="small text-muted-2" id="nonApplicantMeta">Choose an open drive to list eligible non-applicants.</div>
+            <input class="form-control form-control-sm" id="nonApplicantSearch" type="search" placeholder="Search name or roll…" style="max-width:14rem" disabled/>
+          </div>
+          <div class="table-wrap">
+            <table class="table-modern">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Register No</th>
+                  <th>Dept</th>
+                  <th>CGPA</th>
+                  <th>Resume</th>
+                  <th>Chances</th>
+                </tr>
+              </thead>
+              <tbody id="nonApplicantRows">
+                <tr><td colspan="6" class="text-muted-2 p-4">Select a drive to load students.</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -375,7 +413,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/staff-api.js?v=20260623a"></script>
 <script src="js/admin-api.js?v=20260711g"></script>
-<script src="js/officer-api.js?v=20260711g"></script>
+<script src="js/officer-api.js?v=20260713c"></script>
 <script src="js/api.js?v=20260711r"></script>
 <script src="js/app.js?v=20260711l"></script>
 <script>
@@ -411,10 +449,12 @@ function activateTabFromHash() {
   const hash = (location.hash || '').replace('#', '');
   if (hash === 'blacklist' && canManageBlacklist) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkBlacklist')).show();
-  } else if ((hash === 'applications' || hash === 'resumes' || hash === 'resume') && canManageApplications) {
+  } else if ((hash === 'applications' || hash === 'resumes' || hash === 'resume' || hash === 'not-applied' || hash === 'non-applicants') && canManageApplications) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkApplications')).show();
     if (hash === 'resumes' || hash === 'resume') {
       bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppResumes')).show();
+    } else if (hash === 'not-applied' || hash === 'non-applicants') {
+      bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppNonApplicants')).show();
     } else {
       bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppApplications')).show();
     }
@@ -1395,6 +1435,124 @@ async function rejectResume(id) {
   });
 }
 
+/* —— Eligible not applied —— */
+let nonApplicantCache = { driveId: '', students: [] };
+let nonApplicantsWired = false;
+
+function renderNonApplicantRows(list) {
+  const rowsEl = document.getElementById('nonApplicantRows');
+  if (!rowsEl) return;
+  if (!list.length) {
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">No eligible students pending application for this drive.</td></tr>';
+    return;
+  }
+  rowsEl.innerHTML = list.map((s) => {
+    const cgpa = Number(s.cgpa);
+    const cgpaLabel = Number.isFinite(cgpa) && cgpa > 0 ? cgpa.toFixed(cgpa % 1 ? 2 : 1) : '—';
+    const resume = s.hasResume
+      ? '<span class="badge-soft success">Uploaded</span>'
+      : '<span class="badge-soft muted">Missing</span>';
+    return `<tr>
+      <td><strong>${esc(s.name || '—')}</strong>${s.placed ? ' <span class="badge-soft info">Placed</span>' : ''}</td>
+      <td>${esc(s.registerNumber || '—')}</td>
+      <td>${esc(s.department || '—')}</td>
+      <td>${cgpaLabel}</td>
+      <td>${resume}</td>
+      <td>${Number(s.chancesRemaining) || 0}</td>
+    </tr>`;
+  }).join('');
+}
+
+function applyNonApplicantSearch() {
+  const searchEl = document.getElementById('nonApplicantSearch');
+  const q = String(searchEl?.value || '').trim().toLowerCase();
+  const filtered = !q ? nonApplicantCache.students : nonApplicantCache.students.filter((s) => {
+    const hay = `${s.name || ''} ${s.registerNumber || ''} ${s.department || ''}`.toLowerCase();
+    return hay.includes(q);
+  });
+  renderNonApplicantRows(filtered);
+}
+
+async function loadNonApplicants(driveId) {
+  const rowsEl = document.getElementById('nonApplicantRows');
+  const countEl = document.getElementById('nonApplicantCount');
+  const metaEl = document.getElementById('nonApplicantMeta');
+  const searchEl = document.getElementById('nonApplicantSearch');
+  if (!rowsEl) return;
+
+  if (!driveId) {
+    nonApplicantCache = { driveId: '', students: [] };
+    if (countEl) countEl.textContent = '0 pending';
+    if (metaEl) metaEl.textContent = 'Choose an open drive to list eligible non-applicants.';
+    if (searchEl) { searchEl.value = ''; searchEl.disabled = true; }
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Select a drive to load students.</td></tr>';
+    return;
+  }
+
+  rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Loading eligible non-applicants…</td></tr>';
+  if (searchEl) searchEl.disabled = true;
+
+  const data = typeof OfficerApi !== 'undefined' && OfficerApi.fetchNonApplicants
+    ? await OfficerApi.fetchNonApplicants(driveId)
+    : null;
+  if (!data) {
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Could not load non-applicants. Try again.</td></tr>';
+    if (countEl) countEl.textContent = '—';
+    if (metaEl) metaEl.textContent = 'Request failed.';
+    return;
+  }
+
+  nonApplicantCache = { driveId, students: Array.isArray(data.students) ? data.students : [] };
+  const pending = Number(data.eligibleNotAppliedCount) || nonApplicantCache.students.length;
+  const applied = Number(data.appliedCount) || 0;
+  if (countEl) countEl.textContent = `${pending} pending`;
+  if (metaEl) {
+    const label = data.company || data.driveTitle || 'Drive';
+    metaEl.textContent = `${label} · ${applied} applied · ${pending} eligible not applied`;
+  }
+  if (searchEl) { searchEl.value = ''; searchEl.disabled = nonApplicantCache.students.length === 0; }
+  applyNonApplicantSearch();
+}
+
+async function initNonApplicants() {
+  if (!canManageApplications) return;
+  const driveSelect = document.getElementById('nonApplicantDriveSelect');
+  const rowsEl = document.getElementById('nonApplicantRows');
+  const searchEl = document.getElementById('nonApplicantSearch');
+  if (!driveSelect || !rowsEl) return;
+
+  if (!nonApplicantsWired) {
+    driveSelect.addEventListener('change', () => loadNonApplicants(driveSelect.value));
+    searchEl?.addEventListener('input', applyNonApplicantSearch);
+    nonApplicantsWired = true;
+  }
+
+  if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
+    driveSelect.innerHTML = '<option value="">Sign in to load drives</option>';
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Sign in to track eligible students who have not applied.</td></tr>';
+    return;
+  }
+
+  const drives = typeof OfficerApi !== 'undefined' && OfficerApi.fetchDrives
+    ? await OfficerApi.fetchDrives()
+    : null;
+  const open = (drives || []).filter((d) => {
+    const st = String(d.status || '').toLowerCase();
+    return st !== 'completed' && st !== 'closed';
+  });
+  driveSelect.innerHTML = '<option value="">Select a drive…</option>' + open.map((d) => {
+    const label = [d.company, d.role || d.title].filter(Boolean).join(' — ') || d.title || d.id;
+    return `<option value="${esc(d.id)}">${esc(label)}</option>`;
+  }).join('');
+
+  if (open.length === 1) {
+    driveSelect.value = open[0].id;
+    await loadNonApplicants(open[0].id);
+  } else {
+    await loadNonApplicants('');
+  }
+}
+
 function renderResumeTable(id, list, showActions, showStatus) {
   const cols = showStatus ? 10 : 9;
   document.getElementById(id).innerHTML = list.length
@@ -1497,6 +1655,7 @@ onAppReady(async () => {
     await Promise.all([ApplicationPipeline.fetch(), ResumeQueue.fetch()]);
     renderApplications();
     renderResumes();
+    await initNonApplicants();
   }
   if (canManageBlacklist) {
     await BlacklistStore.fetch();
