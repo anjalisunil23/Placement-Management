@@ -49,8 +49,17 @@
     font-size:1.05rem;font-weight:650;
   }
   .form-control[readonly]{background:#f8fafc;color:var(--text,#0f172a);cursor:default}
-  .sign-row{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:.75rem}
-  @media (max-width:640px){.sign-row{grid-template-columns:1fr}}
+  .declaration-cell{
+    border:1px solid var(--border,#cbd5e1);
+    border-radius:12px;
+    padding:1rem 1.15rem;
+    background:#fff;
+    font-size:.95rem;
+    line-height:1.6;
+  }
+  .declaration-cell .form-check{margin:0;display:flex;gap:.65rem;align-items:flex-start}
+  .declaration-cell .form-check-input{margin-top:.35rem;flex-shrink:0}
+  .declaration-cell .form-check-label{color:#0f172a}
   .policy-sticky{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,rgba(248,250,252,.95) 18%,#f8fafc);padding-top:1rem}
 </style>
 </head>
@@ -234,26 +243,18 @@
           </div>
         </div>
 
-        <div class="card-surface p-3 mb-3" style="background:#f8fafc">
-          <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" id="declarationAccepted" name="declarationAccepted" required/>
-            <label class="form-check-label small" for="declarationAccepted">
-              I read and understood the rules and guidelines mentioned in this document and agree to strictly adhere to the same. Placement Cell may take appropriate action following the violation of any rules from my side.
-            </label>
+        <div class="mb-3">
+          <div class="declaration-cell">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="declarationAccepted" name="declarationAccepted" required/>
+              <label class="form-check-label" for="declarationAccepted" id="declarationText">
+                I (<span id="declarationStudentName">student</span>) read and understood the rules and guidelines mentioned in this document and agree to strictly adhere to the same. Placement Cell may take appropriate action following the violation of any rules from my side.
+              </label>
+            </div>
           </div>
-          <div class="sign-row">
-            <div>
-              <label class="form-label small fw-semibold">Date</label>
-              <input class="form-control" name="signedDate" id="signedDate" required/>
-            </div>
-            <div>
-              <label class="form-label small fw-semibold">Name (Signature)</label>
-              <input class="form-control" name="signedName" id="signedName" required placeholder="Type your full name"/>
-            </div>
-            <div>
-              <label class="form-label small fw-semibold">Acknowledged</label>
-              <input class="form-control" value="Digital confirmation" readonly tabindex="-1"/>
-            </div>
+          <div class="mt-3" style="max-width:220px">
+            <label class="form-label small fw-semibold">Date</label>
+            <input class="form-control" name="signedDate" id="signedDate" required/>
           </div>
         </div>
 
@@ -324,7 +325,8 @@ function fillFromUser(u) {
   if (u.registerNumber) document.getElementById('regNo').value = u.registerNumber;
   if (u.name) {
     document.getElementById('regName').value = u.name;
-    document.getElementById('signedName').value = u.name;
+    const nameSpan = document.getElementById('declarationStudentName');
+    if (nameSpan) nameSpan.textContent = u.name;
   }
   if (u.phone) {
     const parts = typeof splitContactPhone === 'function'
@@ -398,17 +400,9 @@ document.getElementById('registrationForm').addEventListener('submit', async (e)
     branchBatch: branch,
     mtechBranch: '',
     declarationAccepted: true,
-    signedName: form.signedName.value.trim(),
+    signedName: form.name.value.trim(),
     signedDate: form.signedDate.value.trim(),
   };
-  if (payload.signedName.toLowerCase() !== payload.name.toLowerCase()) {
-    if (!(await confirmAction({
-      title: 'Name mismatch',
-      message: 'The signature name differs from the registration name. Continue anyway?',
-      confirmText: 'Continue',
-      variant: 'primary',
-    }))) return;
-  }
 
   const btn = document.getElementById('btnConfirm');
   btn.disabled = true;

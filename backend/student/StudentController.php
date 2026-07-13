@@ -467,7 +467,6 @@ final class StudentController
       'email'          => 'required|email',
       'branchBatch'    => 'required',
       'yop'            => 'required',
-      'signedName'     => 'required|min:2',
     ]);
     if (empty($input['declarationAccepted']) && empty($input['declaration'])) {
       $errors['declarationAccepted'] = 'You must accept the placement guidelines declaration.';
@@ -480,10 +479,14 @@ final class StudentController
 
     $version = 'ajce-2026-v1';
     $now = gmdate('c');
-    $signedName = trim((string) $input['signedName']);
+    $studentName = trim((string) $input['name']);
+    $signedName = trim((string) ($input['signedName'] ?? ''));
+    if ($signedName === '') {
+      $signedName = $studentName;
+    }
     $registration = [
       'registerNumber' => strtoupper(trim((string) $input['registerNumber'])),
-      'name'           => trim((string) $input['name']),
+      'name'           => $studentName,
       'mobile'         => trim((string) $input['mobile']),
       'email'          => strtolower(trim((string) $input['email'])),
       'branchBatch'    => $branch,
