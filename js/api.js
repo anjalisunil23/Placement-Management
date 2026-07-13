@@ -4596,6 +4596,16 @@ function applyRoleVisibility(root = document) {
 
   root.querySelectorAll('[data-roles]').forEach(el => {
     const ok = el.dataset.roles.split(',').map(s => s.trim()).includes(role);
+    if (el.classList.contains('modal')) {
+      // Never force display:block on closed modals — they are full-viewport and block clicks.
+      if (ok) el.style.removeProperty('display');
+      else el.style.setProperty('display', 'none', 'important');
+      return;
+    }
+    if (ok && (el.classList.contains('d-none') || el.classList.contains('nav-item'))) {
+      el.style.removeProperty('display');
+      return;
+    }
     el.style.setProperty('display', ok ? 'block' : 'none', 'important');
   });
   root.querySelectorAll('[data-not-roles]').forEach(el => {

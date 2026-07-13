@@ -36,11 +36,22 @@
   display: none !important;
 }
 
-html[data-ph-role="admin"] [data-roles*="admin"],
-html[data-ph-role="placement_officer"] [data-roles*="placement_officer"],
-html[data-ph-role="student"] [data-roles*="student"],
-html[data-ph-role="staff"] [data-roles*="staff"],
-html[data-ph-role="company"] [data-roles*="company"] {
+html[data-ph-role="admin"] [data-roles*="admin"]:not(.modal),
+html[data-ph-role="placement_officer"] [data-roles*="placement_officer"]:not(.modal),
+html[data-ph-role="student"] [data-roles*="student"]:not(.modal),
+html[data-ph-role="staff"] [data-roles*="staff"]:not(.modal),
+html[data-ph-role="company"] [data-roles*="company"]:not(.modal),
+html[data-ph-role="alumni"] [data-roles*="alumni"]:not(.modal) {
+  display: block !important;
+}
+
+/* Bootstrap modals must stay display:none until .show — forcing block traps all clicks. */
+html[data-ph-role="admin"] .modal[data-roles*="admin"].show,
+html[data-ph-role="placement_officer"] .modal[data-roles*="placement_officer"].show,
+html[data-ph-role="student"] .modal[data-roles*="student"].show,
+html[data-ph-role="staff"] .modal[data-roles*="staff"].show,
+html[data-ph-role="company"] .modal[data-roles*="company"].show,
+html[data-ph-role="alumni"] .modal[data-roles*="alumni"].show {
   display: block !important;
 }
 
