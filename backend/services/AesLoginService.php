@@ -1488,11 +1488,25 @@ final class AesLoginService
                 if (!is_array($q)) {
                     continue;
                 }
+                $label = strtoupper((string) ($q['qualification'] ?? ''));
+                $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
+                $maxMark = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : null;
+                if (
+                    empty($mapped['cgpa'])
+                    && $mark !== null
+                    && $mark > 0
+                    && $mark <= 10
+                    && (
+                        preg_match('/\b(CGPA|CURRENT)\b/', $label) === 1
+                        || ($label === '' && ($maxMark === null || $maxMark <= 10))
+                    )
+                ) {
+                    $mapped['cgpa'] = $mark;
+                }
                 $pct = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
                 if ($pct === null || $pct <= 0) {
                     continue;
                 }
-                $label = strtoupper((string) ($q['qualification'] ?? ''));
                 if (empty($mapped['marks10th']) && preg_match('/\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|SECONDARY)\b/', $label)) {
                     $mapped['marks10th'] = $pct;
                 }

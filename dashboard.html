@@ -242,20 +242,6 @@
 
       <!-- ===== STUDENT ===== -->
       <div data-roles="student">
-        <div class="card-surface p-3 p-md-4 mb-3" id="studentProfileStrip">
-          <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
-            <div>
-              <div class="small text-muted-2 text-uppercase fw-semibold" style="letter-spacing:.06em">Student profile</div>
-              <div class="fw-bold mt-1" id="studentDashName">—</div>
-              <div class="small text-muted-2 mt-1" id="studentDashMeta">—</div>
-            </div>
-            <div class="text-md-end">
-              <div class="small text-muted-2">Current CGPA</div>
-              <div class="fw-bold" style="font-size:1.75rem;line-height:1.1" id="studentCgpaDisplay">—</div>
-            </div>
-          </div>
-        </div>
-
         <div class="row g-3">
           <div class="col-md-4 col-6"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-mortarboard-fill"></i></div></div>
@@ -482,13 +468,16 @@ if (!role || !ROLE_HOME[role]) {
 const titles = {
   admin: ['Administrator Console', 'Institute-wide overview & approvals.'],
   placement_officer: ['Campus Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires across campus.'],
-  student: ['Student Dashboard', 'Academic profile, applications, and placement activity.'],
+  student: [user.name || 'Student', ''],
   staff: ['Staff Dashboard', `Track recommendations and ${user.department || 'department'} placement statistics.`],
   company: [`${user.companyName || user.name} · Recruiter`, 'Active companies, department-wise applicants, and candidate list.'],
   alumni: [`Welcome, ${user.name?.split(' ')[0] || 'Alumnus'}`, alumniIsWorking() ? 'Post jobs and refer talent from your network.' : 'Find lateral roles and apply to open drives.'],
 };
 document.getElementById('dashTitle').textContent = titles[role][0];
 document.getElementById('dashSub').textContent = titles[role][1];
+if (!titles[role][1]) {
+  document.getElementById('dashSub').hidden = true;
+}
 
 const   actions = {
   admin: '<a class="btn btn-outline-secondary" href="hiring-overview.html"><i class="bi bi-building-check me-1"></i>Hiring Overview</a><a class="btn btn-outline-secondary" href="users.html"><i class="bi bi-person-gear me-1"></i>Users</a><a class="btn btn-primary" href="placement-console.html"><i class="bi bi-sliders me-1"></i>Placement Console</a>',
@@ -575,25 +564,11 @@ if (role === 'student') {
       ? (Math.round(cgpaNum * 100) / 100).toFixed(cgpaNum % 1 ? 2 : 1)
       : '—';
 
-    const dept = String(
-      liveUser.departmentName
-      || (typeof liveUser.department === 'object' ? (liveUser.department.name || liveUser.department.code) : liveUser.department)
-      || liveUser.branch
-      || liveUser.programme
-      || ''
-    ).trim();
-    const reg = String(liveUser.registerNumber || '').trim();
-    const nameEl = document.getElementById('studentDashName');
-    const metaEl = document.getElementById('studentDashMeta');
-    if (nameEl) nameEl.textContent = liveUser.name || 'Student';
-    if (metaEl) {
-      metaEl.textContent = [reg ? `Reg. No ${reg}` : '', dept || ''].filter(Boolean).join(' · ') || 'Profile details from college records';
-    }
+    const titleEl = document.getElementById('dashTitle');
+    if (titleEl && liveUser.name) titleEl.textContent = liveUser.name;
 
     const cgpaStat = document.getElementById('studentCgpa');
-    const cgpaHero = document.getElementById('studentCgpaDisplay');
     if (cgpaStat) cgpaStat.textContent = cgpaLabel;
-    if (cgpaHero) cgpaHero.textContent = cgpaLabel;
 
     document.getElementById('studentApps').dataset.target = apps.length;
     document.getElementById('studentResumes').dataset.target = resumes.length;

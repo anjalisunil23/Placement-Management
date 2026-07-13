@@ -794,6 +794,13 @@ final class AesApiService
             $normalized['qualifications'] = $qualifications;
         }
 
+        if ((empty($normalized['cgpa']) || (float) $normalized['cgpa'] <= 0) && $qualifications !== []) {
+            $fromRows = $this->pickCgpaFromQualificationRows($qualifications);
+            if ($fromRows !== null) {
+                $normalized['cgpa'] = $fromRows;
+            }
+        }
+
         $out = [];
         if (isset($normalized['cgpa']) && (float) $normalized['cgpa'] > 0) {
             $out['cgpa'] = (float) $normalized['cgpa'];
@@ -884,11 +891,31 @@ final class AesApiService
             if (!is_array($q)) {
                 continue;
             }
+            $label = strtoupper((string) ($q['qualification'] ?? ''));
+            $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
+            $maxMark = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : null;
+            $isCgpaRow = preg_match('/\b(CGPA|CURRENT)\b/', $label) === 1
+                || (
+                    $label === ''
+                    && $mark !== null
+                    && $mark > 0
+                    && $mark <= 10
+                    && ($maxMark === null || $maxMark <= 10)
+                );
+            if (
+                (empty($record['cgpa']) || (float) $record['cgpa'] <= 0)
+                && $isCgpaRow
+                && $mark !== null
+                && $mark > 0
+                && $mark <= 10
+            ) {
+                $record['cgpa'] = $mark;
+            }
+
             $pct = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
             if ($pct === null || $pct <= 0) {
                 continue;
             }
-            $label = strtoupper((string) ($q['qualification'] ?? ''));
             if (empty($record['marks10th']) && preg_match('/\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|SECONDARY)\b/', $label)) {
                 $record['marks10th'] = $pct;
             }
@@ -972,11 +999,9 @@ final class AesApiService
         if (!empty($record['stud_personal_mails'])) {
             $record['personalEmail'] = strtolower(trim((string) $record['stud_personal_mails']));
         }
-        if (isset($record['cgpa']) && $record['cgpa'] !== '' && is_numeric($record['cgpa'])) {
-            $cgpa = (float) $record['cgpa'];
-            if ($cgpa > 0) {
-                $record['cgpa'] = $cgpa;
-            }
+        $cgpa = $this->pickCgpaFromRecord($record);
+        if ($cgpa !== null) {
+            $record['cgpa'] = $cgpa;
         }
         $photoUrl = trim((string) (
             $record['stud_photo']
@@ -1497,6 +1522,77 @@ final class AesApiService
     }
 
     /**
+     * Resolve CGPA from getStudQual4Placement top-level aliases (totcgpa, curcgpa, …).
+     *
+     * @param array<string, mixed> $record
+     */
+    private function pickCgpaFromRecord(array $record): ?float
+    {
+        $keys = [
+            'cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa',
+            'totcgpa', 'tot_cgpa', 'totCgpa', 'curcgpa', 'cur_cgpa', 'curCgpa', 'grade_point', 'gradePoint',
+            'stud_cgpa', 'stud_curcgpa', 'stud_totcgpa', 'sgpa', 'SGPA',
+        ];
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $record) || $record[$key] === '' || $record[$key] === null) {
+                continue;
+            }
+            $value = $record[$key];
+            if (is_array($value)) {
+                $nested = $this->pickCgpaFromRecord($value);
+                if ($nested !== null) {
+                    return $nested;
+                }
+                continue;
+            }
+            if (is_numeric($value)) {
+                $n = (float) $value;
+                if ($n > 0 && $n <= 10) {
+                    return $n;
+                }
+                continue;
+            }
+            $text = trim((string) $value);
+            if ($text !== '' && preg_match('/(\d+(?:\.\d+)?)/', $text, $m)) {
+                $n = (float) $m[1];
+                if ($n > 0 && $n <= 10) {
+                    return $n;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<array{qualification?: string, mark?: ?float, maxMark?: ?float}> $qualifications
+     */
+    private function pickCgpaFromQualificationRows(array $qualifications): ?float
+    {
+        foreach ($qualifications as $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            $label = strtoupper((string) ($q['qualification'] ?? ''));
+            $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
+            $maxMark = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : null;
+            $isCgpaRow = preg_match('/\b(CGPA|CURRENT)\b/', $label) === 1
+                || (
+                    $label === ''
+                    && $mark !== null
+                    && $mark > 0
+                    && $mark <= 10
+                    && ($maxMark === null || $maxMark <= 10)
+                );
+            if ($isCgpaRow && $mark !== null && $mark > 0 && $mark <= 10) {
+                return $mark;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Pull AES departments into the local departments collection and reconcile numeric AES ids to short codes.
      */
     public function syncDepartmentsToLocal(): int
@@ -1680,7 +1776,8 @@ final class AesApiService
         }
 
         $qualKeys = [
-            'cgpa', 'edu', 'qualifications', 'marks10th', 'marks12th', 'sslc', 'hsc', 'sslc_marks', 'hsc_marks',
+            'cgpa', 'totcgpa', 'tot_cgpa', 'curcgpa', 'cur_cgpa', 'current_cgpa', 'gpa', 'stud_cgpa',
+            'edu', 'qualifications', 'marks10th', 'marks12th', 'sslc', 'hsc', 'sslc_marks', 'hsc_marks',
             'mark10th', 'mark12th', 'stud_sslc', 'stud_hsc', 'backlog', 'backlogs', 'ugMarks', 'ug_marks',
         ];
         foreach ($qualKeys as $key) {

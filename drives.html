@@ -47,6 +47,9 @@
   }
   .drive-card-meta span{display:inline-flex;align-items:center;gap:.3rem}
   .drive-card-actions{margin-top:auto;padding-top:.25rem;display:flex;justify-content:flex-end}
+  .drive-card-role-select{width:100%;font-weight:600;font-size:.95rem}
+  .drive-card-role-wrap{display:flex;flex-direction:column;gap:.35rem}
+  .drive-card-role-wrap > label{font-size:.75rem;font-weight:600;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.04em}
 </style>
 </head>
 
@@ -457,33 +460,119 @@ function driveRowCells(d) {
   return DRIVE_TABLE_HEADS[mode].map(col => parts[col.key]).join('');
 }
 
+function companyGroupKey(d) {
+  const id = String(d.companyId || '').trim();
+  if (id) return `id:${id}`;
+  return `name:${String(d.company || '').trim().toLowerCase()}`;
+}
+
+function groupDrivesByCompany(list) {
+  const map = new Map();
+  list.forEach((d) => {
+    const key = companyGroupKey(d);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(d);
+  });
+  return [...map.values()];
+}
+
 function driveCardHtml(d) {
-  const name = d.company || '—';
+  return companyDriveCardHtml([d]);
+}
+
+function companyDriveCardHtml(drives) {
+  const list = Array.isArray(drives) ? drives.filter(Boolean) : [];
+  if (!list.length) return '';
+  const multi = list.length > 1;
+  const selectedId = String(list.find(d => (isStudent && StudentApps.hasApplied(d.id)) || (alumniSeeking && AlumniApps.hasApplied(d.id)))?.id || list[0].id);
+  const active = list.find(d => String(d.id) === selectedId) || list[0];
+  const name = active.company || '—';
   const initial = (name && name !== '—') ? name[0].toUpperCase() : '?';
-  const profile = (isStudent || alumniSeeking) && d.profile
-    ? `<div class="small text-muted-2 mt-1">${d.profile}</div>` : '';
-  const status = `<span class="badge-soft ${d.statusCls || driveStatusCls(d.status)}">${d.status || '—'}</span>`;
-  const action = (isStudent || alumniSeeking) ? applyAction(d) : '';
-  const clickable = canManage ? ` data-drive-id="${d.id}" class="drive-card drive-row-clickable" style="cursor:pointer"` : ' class="drive-card"';
-  return `<article${clickable}>
+  const groupId = `driveRole_${String(active.companyId || name).replace(/[^a-zA-Z0-9_-]/g, '_')}_${list[0].id}`;
+
+  const roleBlock = multi
+    ? `<div class="drive-card-role-wrap">
+        <label for="${groupId}">Role</label>
+        <select class="form-select form-select-sm drive-card-role-select" id="${groupId}" data-company-role-select>
+          ${list.map(d => {
+            const applied = (isStudent && (StudentApps.hasApplied(d.id) || d.applied))
+              || (alumniSeeking && (AlumniApps.hasApplied(d.id) || d.applied));
+            const label = `${d.role || 'Role'}${applied ? ' · Applied' : ''}`;
+            return `<option value="${d.id}" ${String(d.id) === selectedId ? 'selected' : ''}>${label}</option>`;
+          }).join('')}
+        </select>
+      </div>`
+    : `<div class="drive-card-role">${active.role || '—'}${(isStudent || alumniSeeking) && active.profile ? `<div class="small text-muted-2 mt-1">${active.profile}</div>` : ''}</div>`;
+
+  const status = `<span class="badge-soft ${active.statusCls || driveStatusCls(active.status)}" data-card-status>${active.status || '—'}</span>`;
+  const action = (isStudent || alumniSeeking)
+    ? `<div data-card-action>${applyAction(active)}</div>`
+    : '';
+  const clickable = canManage && !multi
+    ? ` data-drive-id="${active.id}" class="drive-card drive-row-clickable" style="cursor:pointer"`
+    : ' class="drive-card"';
+
+  return `<article${clickable} data-company-card data-drive-ids="${list.map(d => d.id).join(',')}">
     <div class="drive-card-top">
       <div class="drive-card-company">
         <div class="drive-card-avatar">${initial}</div>
         <div>
           <strong>${name}</strong>
-          <div class="small text-muted-2">${d.jobType && d.jobType !== '—' ? d.jobType : 'Job opening'}</div>
+          <div class="small text-muted-2" data-card-jobtype>${active.jobType && active.jobType !== '—' ? active.jobType : 'Job opening'}${multi ? ` · ${list.length} roles` : ''}</div>
         </div>
       </div>
       ${status}
     </div>
-    <div class="drive-card-role">${d.role || '—'}${profile}</div>
+    ${roleBlock}
     <div class="drive-card-meta">
-      <span><i class="bi bi-cash-stack"></i>${d.package || '—'}</span>
-      <span><i class="bi bi-calendar-event"></i>${d.deadline || '—'}</span>
-      ${d.branches ? `<span><i class="bi bi-diagram-3"></i>${d.branches}</span>` : ''}
+      <span data-card-package><i class="bi bi-cash-stack"></i>${active.package || '—'}</span>
+      <span data-card-deadline><i class="bi bi-calendar-event"></i>${active.deadline || '—'}</span>
+      <span data-card-branches ${active.branches ? '' : 'hidden'}><i class="bi bi-diagram-3"></i><span data-card-branches-text>${active.branches || ''}</span></span>
     </div>
     ${action ? `<div class="drive-card-actions">${action}</div>` : ''}
   </article>`;
+}
+
+function syncCompanyDriveCard(card, drive) {
+  if (!card || !drive) return;
+  const statusEl = card.querySelector('[data-card-status]');
+  if (statusEl) {
+    statusEl.className = `badge-soft ${drive.statusCls || driveStatusCls(drive.status)}`;
+    statusEl.textContent = drive.status || '—';
+  }
+  const jobTypeEl = card.querySelector('[data-card-jobtype]');
+  if (jobTypeEl) {
+    const ids = String(card.getAttribute('data-drive-ids') || '').split(',').filter(Boolean);
+    const roleCount = ids.length > 1 ? ` · ${ids.length} roles` : '';
+    jobTypeEl.textContent = `${drive.jobType && drive.jobType !== '—' ? drive.jobType : 'Job opening'}${roleCount}`;
+  }
+  const pkg = card.querySelector('[data-card-package]');
+  if (pkg) pkg.innerHTML = `<i class="bi bi-cash-stack"></i>${drive.package || '—'}`;
+  const deadline = card.querySelector('[data-card-deadline]');
+  if (deadline) deadline.innerHTML = `<i class="bi bi-calendar-event"></i>${drive.deadline || '—'}`;
+  const branchesWrap = card.querySelector('[data-card-branches]');
+  const branchesText = card.querySelector('[data-card-branches-text]');
+  if (branchesWrap) {
+    branchesWrap.hidden = !drive.branches;
+    if (branchesText) branchesText.textContent = drive.branches || '';
+  }
+  const actionWrap = card.querySelector('[data-card-action]');
+  if (actionWrap) actionWrap.innerHTML = applyAction(drive);
+  if (canManage && !card.querySelector('[data-company-role-select]')) {
+    card.setAttribute('data-drive-id', drive.id);
+  }
+}
+
+function wireCompanyDriveCards(root) {
+  root?.querySelectorAll('[data-company-role-select]').forEach((sel) => {
+    if (sel.dataset.wired === '1') return;
+    sel.dataset.wired = '1';
+    sel.addEventListener('change', () => {
+      const card = sel.closest('[data-company-card]');
+      const drive = allDrives.find(d => String(d.id) === String(sel.value));
+      if (drive) syncCompanyDriveCard(card, drive);
+    });
+  });
 }
 
 function setupStatusFilter() {
@@ -618,9 +707,15 @@ function renderRows() {
     : 'No drives match your filters';
 
   if (useCards) {
-    cards.innerHTML = list.length
-      ? list.map(driveCardHtml).join('')
+    const groups = groupDrivesByCompany(list);
+    cards.innerHTML = groups.length
+      ? groups.map(companyDriveCardHtml).join('')
       : '<div class="text-muted-2 p-4 text-center" style="grid-column:1/-1">No open drives right now.</div>';
+    wireCompanyDriveCards(cards);
+    document.getElementById('driveCount').textContent = groups.length;
+    document.getElementById('driveShowing').textContent = groups.length
+      ? `Showing ${groups.length} compan${groups.length === 1 ? 'y' : 'ies'} (${list.length} role${list.length === 1 ? '' : 's'})`
+      : 'No drives match your filters';
     document.getElementById('rows').innerHTML = '';
     return;
   }

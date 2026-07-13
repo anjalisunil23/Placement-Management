@@ -196,6 +196,33 @@ final class StudentController
 
     $academic = is_array($out['academic'] ?? null) ? $out['academic'] : [];
     $personal = is_array($out['personal'] ?? null) ? $out['personal'] : [];
+    if (
+      (empty($academic['cgpa']) || (float) $academic['cgpa'] <= 0)
+      && !empty($academic['qualifications'])
+      && is_array($academic['qualifications'])
+    ) {
+      foreach ($academic['qualifications'] as $q) {
+        if (!is_array($q)) {
+          continue;
+        }
+        $label = strtoupper((string) ($q['qualification'] ?? ''));
+        $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
+        $maxMark = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : null;
+        if (
+          $mark !== null
+          && $mark > 0
+          && $mark <= 10
+          && (
+            preg_match('/\b(CGPA|CURRENT)\b/', $label) === 1
+            || ($label === '' && ($maxMark === null || $maxMark <= 10))
+          )
+        ) {
+          $academic['cgpa'] = $mark;
+          $out['academic'] = $academic;
+          break;
+        }
+      }
+    }
     $merged = $aes->applyAesSessionToUserFields(array_merge(
       StudentModel::profileToUserFields($profile, $dept),
       [

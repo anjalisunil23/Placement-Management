@@ -745,7 +745,8 @@ const Auth = {
     const path = endpoints[role];
     if (!path) return false;
     try {
-      const res = await apiFetch(path + (path.includes('?') ? '&' : '?') + 'lite=1', { skipAuthRedirect: true, skipAuthRetry: true });
+      const qs = role === 'student' ? 'refresh=1' : 'lite=1';
+      const res = await apiFetch(path + (path.includes('?') ? '&' : '?') + qs, { skipAuthRedirect: true, skipAuthRetry: true });
       if (!res?.success || !res.data) return false;
       const p = res.data;
       const u = p.user || {};
@@ -777,12 +778,21 @@ const Auth = {
         : (String(p.departmentName || '').trim() && !/^\d+$/.test(String(p.departmentName || '').trim())
           ? String(p.departmentName).trim()
           : readableDept);
+      const profileForCgpa = {
+        ...prev,
+        ...u,
+        ...p,
+        academic: p.academic || u.academic || prev.academic,
+        cgpa: p.cgpa ?? u.cgpa ?? p.academic?.cgpa,
+      };
+      const resolvedCgpa = resolveSessionCgpa(profileForCgpa);
       const merged = {
         ...prev,
         ...u,
         registerNumber: reg,
         stud_name: u.stud_name || u.name || p.stud_name || prev.stud_name || '',
         academic: p.academic || prev.academic,
+        cgpa: resolvedCgpa ?? prev.cgpa,
         department: readableDept || prev.department || '',
         departmentCode: (deptCode && !/^\d+$/.test(deptCode) ? deptCode : readableDept) || prev.departmentCode || '',
         departmentId: (deptRaw && typeof deptRaw === 'object' ? (deptRaw.id || deptRaw._id) : null) || p.departmentId || prev.departmentId || '',
@@ -801,6 +811,7 @@ const Auth = {
         name: resolveSessionName(merged, reg) || merged.name || prev.name || '',
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || '',
         phone: resolveSessionPhone(merged) || merged.phone || prev.phone || '',
+        cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
       return true;

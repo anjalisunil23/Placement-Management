@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Get placed · AJCE Placements</title>
+<title>Placement details · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -10,8 +10,8 @@
 
 <div class="page-header">
   <div>
-    <h1 class="page-title">Get placed</h1>
-    <p class="page-sub">Report off-campus offers and manage your placement details.</p>
+    <h1 class="page-title">Placement details</h1>
+    <p class="page-sub">View current and past placements, and report new offers.</p>
   </div>
   <div class="d-flex flex-wrap gap-2">
     <button type="button" class="btn btn-outline-primary d-none" id="newPlacementBtn"><i class="bi bi-plus-lg me-1"></i>New placement</button>
@@ -24,7 +24,7 @@
 <div class="card-surface" id="placementSummaryCard">
   <div class="p-3 p-md-4 border-bottom" style="border-color:var(--border)!important">
     <h5 class="fw-bold mb-0">Your placements</h5>
-    <p class="small text-muted-2 mb-0" id="placementSummaryNote">No placement reported yet.</p>
+    <p class="small text-muted-2 mb-0" id="placementSummaryNote">No placement reported yet. Current and past placements appear here.</p>
   </div>
   <div class="table-wrap">
     <table class="table-modern mb-0">
@@ -265,6 +265,7 @@ function buildPlacementRows() {
     ? `${String(current.company).toLowerCase()}|${String(current.role).toLowerCase()}`
     : '';
 
+  // Past / archived placements from history (keep old details in the table).
   history.forEach((h, index) => {
     if (!h || typeof h !== 'object') return;
     const status = String(h.status || '').toLowerCase();
@@ -274,10 +275,11 @@ function buildPlacementRows() {
     if (!company && !role) return;
     const endDate = String(h.endDate || '').trim();
     const isEnded = status === 'ended' || endDate !== '';
-    if (!isEnded) return;
-    const key = `${company.toLowerCase()}|${role.toLowerCase()}|${endDate}`;
+    const keyBase = `${company.toLowerCase()}|${role.toLowerCase()}`;
+    // Skip duplicate of the live current placement when history still has the active entry.
+    if (keyBase === currentKey && current?.status === 'current' && !isEnded) return;
+    const key = `${keyBase}|${endDate}|${h.endedAt || h.date || h.placedAt || index}`;
     if (seen.has(key)) return;
-    if (`${company.toLowerCase()}|${role.toLowerCase()}` === currentKey && current?.status === 'current' && !endDate) return;
     seen.add(key);
     rows.push({
       company,
@@ -293,10 +295,19 @@ function buildPlacementRows() {
     });
   });
 
-  if (current) {
+  // Pending / rejected report (not yet verified as current).
+  if (current && current.status !== 'current') {
     rows.push({
       ...current,
-      canUpdateDates: current.status === 'current',
+      canUpdateDates: false,
+    });
+  }
+
+  // Current placement last.
+  if (current && current.status === 'current') {
+    rows.push({
+      ...current,
+      canUpdateDates: true,
     });
   }
 
@@ -688,14 +699,21 @@ async function submitSelfPlacement(ev) {
 
 async function loadPlacementProfile() {
   if (!Auth.hasRealAuth()) {
-    applySelfPlacementState({ placed: false, selfPlacement: null });
+    applySelfPlacementState({ placed: false, selfPlacement: null, placementHistory: [] });
     return;
   }
   const res = await api('/student/profile', { skipAuthRedirect: true });
   if (res?.success && res.data) {
-    applySelfPlacementState(res.data);
+    let history = Array.isArray(res.data.placementHistory) ? res.data.placementHistory : [];
+    if (!history.length) {
+      const histRes = await api('/student/placement-history', { skipAuthRedirect: true });
+      if (histRes?.success && Array.isArray(histRes.data?.history)) {
+        history = histRes.data.history;
+      }
+    }
+    applySelfPlacementState({ ...res.data, placementHistory: history });
   } else {
-    applySelfPlacementState({ placed: false, selfPlacement: null });
+    applySelfPlacementState({ placed: false, selfPlacement: null, placementHistory: [] });
   }
 }
 
