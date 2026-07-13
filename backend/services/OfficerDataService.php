@@ -230,13 +230,13 @@ final class OfficerDataService
             $user = $userId !== '' ? $userModel->findById($userId) : null;
             $dept = $departments[$deptId] ?? null;
             $row = DocumentHelper::serialize($student) ?? [];
-            $row = $this->enrichStudentListRow($row, $student, $user);
+            $row = $this->enrichStudentListRow($row, $student, $user, false);
             $row['department'] = $dept ? [
                 'id'   => (string) $dept['_id'],
                 'name' => $dept['name'] ?? '',
                 'code' => $dept['code'] ?? '',
             ] : null;
-            if (!$this->isPlacementStudentListCandidate($student, $user, $row)) {
+            if (!$this->isPlacementStudentListCandidate($student, $user, $row, false)) {
                 continue;
             }
 
@@ -370,13 +370,14 @@ final class OfficerDataService
             $dept = $departments[$deptId] ?? null;
 
             $row = DocumentHelper::serialize($s) ?? [];
-            $row = $this->enrichStudentListRow($row, $s, $u);
+            // List views must stay local-only — AES-per-row freezes Students page load.
+            $row = $this->enrichStudentListRow($row, $s, $u, false);
             $row['department'] = $dept ? [
                 'id'   => (string) $dept['_id'],
                 'name' => $dept['name'] ?? '',
                 'code' => $dept['code'] ?? '',
             ] : null;
-            if (!$this->isPlacementStudentListCandidate($s, $u, $row)) {
+            if (!$this->isPlacementStudentListCandidate($s, $u, $row, false)) {
                 continue;
             }
             $rows[] = $row;
@@ -838,21 +839,43 @@ final class OfficerDataService
      * @param array<string, mixed>|null $user Raw user document.
      * @return array<string, mixed>
      */
-    public function enrichStudentListRow(array $row, array $student, ?array $user): array
+    public function enrichStudentListRow(array $row, array $student, ?array $user, bool $liveAes = true): array
     {
-        $displayName = $this->studentDisplayName($student, $user);
-        $photo = (new AesLoginService())->resolveProfilePhoto($student, is_array($user) ? $user : []);
-        $photoUrl = (string) ($photo['photoUrl'] ?? '');
+        $displayName = $liveAes
+            ? $this->studentDisplayName($student, $user)
+            : $this->localStudentDisplayName($student, $user);
 
-        if ($photoUrl === '') {
-            $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-            if ($register !== '') {
-                $placement = $this->placementProfileForRegister($register);
-                $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
-                if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
-                    $photo['photoUrl'] = $photoUrl;
-                    $photo['photo'] = ['url' => $photoUrl, 'source' => 'aes'];
+        $photoUrl = '';
+        $photoMeta = null;
+        if ($liveAes) {
+            $photo = (new AesLoginService())->resolveProfilePhoto($student, is_array($user) ? $user : []);
+            $photoUrl = (string) ($photo['photoUrl'] ?? '');
+            $photoMeta = $photo['photo'] ?? null;
+
+            if ($photoUrl === '') {
+                $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+                if ($register !== '') {
+                    $placement = $this->placementProfileForRegister($register);
+                    $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
+                    if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+                        $photoMeta = ['url' => $photoUrl, 'source' => 'aes'];
+                    } else {
+                        $photoUrl = '';
+                    }
                 }
+            }
+        } else {
+            $stored = is_array($student['photo'] ?? null) ? $student['photo'] : null;
+            $photoUrl = is_array($stored) ? trim((string) ($stored['url'] ?? '')) : '';
+            if ($photoUrl === '' && is_array($user)) {
+                $userPhoto = is_array($user['photo'] ?? null) ? $user['photo'] : null;
+                $photoUrl = trim((string) ($user['photoUrl'] ?? (is_array($userPhoto) ? ($userPhoto['url'] ?? '') : '')));
+                $stored = is_array($userPhoto) ? $userPhoto : $stored;
+            }
+            if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+                $photoMeta = is_array($stored) ? $stored : ['url' => $photoUrl, 'source' => 'stored'];
+            } else {
+                $photoUrl = '';
             }
         }
 
@@ -862,17 +885,21 @@ final class OfficerDataService
         }
         if ($photoUrl !== '') {
             $userOut['photoUrl'] = $photoUrl;
-            $userOut['photo'] = $photo['photo'] ?? ['url' => $photoUrl, 'source' => 'aes'];
+            $userOut['photo'] = $photoMeta ?? ['url' => $photoUrl, 'source' => 'stored'];
         }
 
         $row['user'] = $userOut !== [] ? $userOut : null;
         $row['displayName'] = $displayName;
         if ($photoUrl !== '') {
             $row['photoUrl'] = $photoUrl;
-            $row['photo'] = $photo['photo'] ?? ['url' => $photoUrl, 'source' => 'aes'];
+            $row['photo'] = $photoMeta ?? ['url' => $photoUrl, 'source' => 'stored'];
         }
 
-        return $this->applyAesPlacementFieldsToRow($row, $student);
+        if ($liveAes) {
+            return $this->applyAesPlacementFieldsToRow($row, $student);
+        }
+
+        return $row;
     }
 
     /**
@@ -936,7 +963,7 @@ final class OfficerDataService
      * @param array<string, mixed>|null $user
      * @param array<string, mixed> $row
      */
-    private function isPlacementStudentListCandidate(array $student, ?array $user, array $row): bool
+    private function isPlacementStudentListCandidate(array $student, ?array $user, array $row, bool $liveAes = true): bool
     {
         if (is_array($user)) {
             $userRole = (string) ($user['role'] ?? '');
@@ -971,16 +998,18 @@ final class OfficerDataService
             }
         }
 
-        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-        if ($register !== '') {
-            $placement = $this->placementProfileForRegister($register);
-            $course = strtoupper(trim((string) ($placement['stud_course'] ?? $placement['stud_cource_short'] ?? '')));
-            if ($course === 'PHD' || str_contains($course, 'PHD')) {
-                return false;
-            }
-            $aesBatch = strtoupper(trim((string) ($placement['stud_class'] ?? '')));
-            if (preg_match('/^PHD[-_]/', $aesBatch)) {
-                return false;
+        if ($liveAes) {
+            $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            if ($register !== '') {
+                $placement = $this->placementProfileForRegister($register);
+                $course = strtoupper(trim((string) ($placement['stud_course'] ?? $placement['stud_cource_short'] ?? '')));
+                if ($course === 'PHD' || str_contains($course, 'PHD')) {
+                    return false;
+                }
+                $aesBatch = strtoupper(trim((string) ($placement['stud_class'] ?? '')));
+                if (preg_match('/^PHD[-_]/', $aesBatch)) {
+                    return false;
+                }
             }
         }
 
@@ -1077,6 +1106,27 @@ final class OfficerDataService
      * @param array<string, mixed> $student
      * @param array<string, mixed>|null $user
      */
+    private function localStudentDisplayName(array $student, ?array $user): string
+    {
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+        $name = is_array($user) ? trim((string) ($user['name'] ?? '')) : '';
+        if ($this->isUsablePersonName($name, $register)) {
+            return $name;
+        }
+
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $name = trim((string) ($personal['name'] ?? $personal['fullName'] ?? $student['displayName'] ?? ''));
+        if ($this->isUsablePersonName($name, $register)) {
+            return $name;
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed>|null $user
+     */
     private function studentDisplayName(array $student, ?array $user): string
     {
         $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
@@ -1098,26 +1148,7 @@ final class OfficerDataService
             }
         }
 
-        $name = is_array($user) ? trim((string) ($user['name'] ?? '')) : '';
-        if ($this->isUsablePersonName($name, $register)) {
-            return $name;
-        }
-
-        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
-        $name = trim((string) ($personal['name'] ?? $personal['fullName'] ?? ''));
-        if ($this->isUsablePersonName($name, $register)) {
-            return $name;
-        }
-
-        if ($register === '') {
-            return '';
-        }
-
-        if (!isset(self::$placementNameCache[$register])) {
-            self::$placementNameCache[$register] = '';
-        }
-
-        return self::$placementNameCache[$register];
+        return $this->localStudentDisplayName($student, $user);
     }
 
     private function isUsablePersonName(string $name, string $register): bool
