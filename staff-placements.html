@@ -190,9 +190,9 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260713p"></script>
-<script src="js/api.js?v=20260713p"></script>
-<script src="js/app.js?v=20260713p"></script>
+<script src="js/staff-api.js?v=20260713v"></script>
+<script src="js/api.js?v=20260713v"></script>
+<script src="js/app.js?v=20260713v"></script>
 <script>
 if (Auth.role() !== 'staff') {
   toast('You do not have access to this page.', 'warn');
@@ -204,6 +204,9 @@ let filteredRows = [];
 let page = 1;
 let pageSize = 25;
 let searchDebounce = null;
+let filterProgram = '';
+let filterBranch = '';
+let filterBatch = '';
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -216,20 +219,43 @@ function typeBadge(type) {
 
 function currentFilters() {
   return {
-    program: document.getElementById('filterProgram')?.value || '',
-    branch: document.getElementById('filterBranch')?.value || '',
-    batch: document.getElementById('filterBatch')?.value || '',
+    program: filterProgram,
+    branch: filterBranch,
+    batch: filterBatch,
     type: document.getElementById('filterType')?.value || '',
     q: document.getElementById('tableSearch')?.value?.trim() || '',
   };
 }
 
-function fillSelect(id, values, allLabel) {
+function fillSelect(id, values, allLabel, selected = '') {
   const el = document.getElementById(id);
   if (!el) return;
-  const current = el.value;
+  const current = selected || el.value;
   el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
   if (current && [...el.options].some(o => o.value === current)) el.value = current;
+  else el.value = '';
+}
+
+async function loadPlacementFilters() {
+  if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
+  const data = await StaffApi.fetchPlacementFilters({
+    program: filterProgram,
+    branch: filterBranch,
+  });
+  if (!data) return;
+
+  fillSelect('filterProgram', data.programs || [], 'All programs', filterProgram);
+  fillSelect('filterBranch', data.branches || [], 'All branches', filterBranch);
+  fillSelect('filterBatch', data.batches || [], 'All batches', filterBatch);
+
+  filterProgram = document.getElementById('filterProgram')?.value || '';
+  filterBranch = document.getElementById('filterBranch')?.value || '';
+  filterBatch = document.getElementById('filterBatch')?.value || '';
+
+  const branchEl = document.getElementById('filterBranch');
+  const batchEl = document.getElementById('filterBatch');
+  if (branchEl) branchEl.disabled = !filterProgram;
+  if (batchEl) batchEl.disabled = !filterProgram;
 }
 
 function fillDepartmentSelect(id, departments, field, allLabel) {
@@ -421,17 +447,30 @@ async function loadRegistry() {
     tbody.innerHTML = '<tr><td colspan="10" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
     return;
   }
-  const filters = data.filters || {};
-  fillSelect('filterProgram', filters.programs || filters.departments?.map(d => d.code), 'All programs');
-  fillSelect('filterBranch', filters.branches, 'All branches');
-  fillSelect('filterBatch', filters.batches, 'All batches');
-  const program = document.getElementById('filterProgram')?.value || '';
-  const branchEl = document.getElementById('filterBranch');
-  const batchEl = document.getElementById('filterBatch');
-  if (branchEl) branchEl.disabled = !program;
-  if (batchEl) batchEl.disabled = !program;
   allRows = Array.isArray(data.rows) ? data.rows : [];
   applyClientFilter();
+}
+
+async function onScopeFilterChange(changed) {
+  if (changed === 'filterProgram') {
+    filterProgram = document.getElementById('filterProgram')?.value || '';
+    filterBranch = '';
+    filterBatch = '';
+    const branchEl = document.getElementById('filterBranch');
+    const batchEl = document.getElementById('filterBatch');
+    if (branchEl) branchEl.value = '';
+    if (batchEl) batchEl.value = '';
+  } else if (changed === 'filterBranch') {
+    filterBranch = document.getElementById('filterBranch')?.value || '';
+    filterBatch = '';
+    const batchEl = document.getElementById('filterBatch');
+    if (batchEl) batchEl.value = '';
+  } else if (changed === 'filterBatch') {
+    filterBatch = document.getElementById('filterBatch')?.value || '';
+  }
+
+  await loadPlacementFilters();
+  await loadRegistry();
 }
 
 async function downloadOffer(studentId) {
@@ -451,19 +490,13 @@ async function downloadOffer(studentId) {
   }
 }
 
-['filterProgram', 'filterBranch', 'filterBatch', 'filterType'].forEach(id => {
+['filterProgram', 'filterBranch', 'filterBatch'].forEach(id => {
   document.getElementById(id)?.addEventListener('change', () => {
-    if (id === 'filterProgram') {
-      const branchEl = document.getElementById('filterBranch');
-      const batchEl = document.getElementById('filterBatch');
-      if (branchEl) branchEl.value = '';
-      if (batchEl) batchEl.value = '';
-    } else if (id === 'filterBranch') {
-      const batchEl = document.getElementById('filterBatch');
-      if (batchEl) batchEl.value = '';
-    }
-    loadRegistry();
+    onScopeFilterChange(id).catch(() => loadRegistry());
   });
+});
+document.getElementById('filterType')?.addEventListener('change', () => {
+  loadRegistry();
 });
 document.getElementById('tableSearch')?.addEventListener('input', () => {
   clearTimeout(searchDebounce);
@@ -484,7 +517,7 @@ document.getElementById('uploadPlacementForm')?.addEventListener('submit', saveU
 
 onAppReady(() => {
   if (typeof wireFilePickers === 'function') wireFilePickers('#uploadPlacementModal');
-  loadRegistry();
+  loadPlacementFilters().then(() => loadRegistry()).catch(() => loadRegistry());
 });
 </script>
 </body></html>

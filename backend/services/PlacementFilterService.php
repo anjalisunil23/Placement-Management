@@ -72,8 +72,27 @@ final class PlacementFilterService
         }
 
         $branches = (new AesApiService())->fetchPlacementBranches($deptAesId, $program);
+        if ($branches === []) {
+            $branches = $this->fallbackBranchOptions($program);
+        }
 
         return $this->sortLabels($branches);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function fallbackBranchOptions(string $program): array
+    {
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
+        if (in_array($resolved, ['MCA', 'BCA', 'INMCA'], true)) {
+            return ['Integrated', 'Regular'];
+        }
+        if ($resolved !== '') {
+            return ['Regular'];
+        }
+
+        return [];
     }
 
     /**
