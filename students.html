@@ -259,14 +259,56 @@
           <i class="bi bi-people text-success mt-1"></i>
           <div>
             <strong>Company shortlisted</strong> — students shortlisted by the company after they applied.
-            <div class="small text-muted-2 mt-1">Companies shortlist from their portal, or send a list as a document that placement officers/admins upload on the drive. Students see Shortlisted on My applications.</div>
+            <div class="small text-muted-2 mt-1">Filter by company below. Upload a company shortlist document and register numbers to mark applicants shortlisted for that drive.</div>
           </div>
         </div>
+
+        <div class="card-surface p-3 mb-3" id="shortlistUploadCard">
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+            <div>
+              <div class="fw-semibold">Add company shortlist</div>
+              <div class="small text-muted-2">Choose company and drive, then upload the list the company sent.</div>
+            </div>
+            <span class="small text-muted-2" id="shortlistUploadDriveHint"></span>
+          </div>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label small mb-1" for="shortlistCompanyFilter">Company</label>
+              <select class="form-select form-select-sm" id="shortlistCompanyFilter" aria-label="Filter by company">
+                <option value="">All companies</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1" for="shortlistDriveSelect">Drive / role</label>
+              <select class="form-select form-select-sm" id="shortlistDriveSelect" aria-label="Select drive for upload">
+                <option value="">Select a drive…</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1" for="shortlistDocument">Shortlist document</label>
+              <input type="file" class="form-control form-control-sm" id="shortlistDocument" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1" for="shortlistCsv">Register list (CSV)</label>
+              <input type="file" class="form-control form-control-sm" id="shortlistCsv" accept=".csv,.txt">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small mb-1" for="shortlistRolls">Or paste register numbers</label>
+              <input type="text" class="form-control form-control-sm" id="shortlistRolls" placeholder="e.g. 21CSE018, 21IT012">
+            </div>
+            <div class="col-md-6 d-flex flex-wrap gap-2 align-items-center">
+              <button type="button" class="btn btn-sm btn-primary" id="btnUploadCompanyShortlist"><i class="bi bi-upload me-1"></i>Upload &amp; shortlist</button>
+              <a class="btn btn-sm btn-outline-secondary d-none" id="btnViewCompanyShortlistDoc" href="#" target="_blank" rel="noopener">View document</a>
+            </div>
+          </div>
+          <div class="small text-muted-2 mt-2 d-none" id="shortlistUploadResult"></div>
+        </div>
+
         <div class="card-surface">
           <div class="p-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
               <h6 class="fw-bold mb-0">Shortlisted by company</h6>
-              <small class="text-muted-2">Portal shortlists and lists uploaded from company documents</small>
+              <small class="text-muted-2" id="shortlistTableSub">Portal shortlists and lists uploaded from company documents</small>
             </div>
             <span class="badge-soft success" id="shortlistedCountLabel">0 shortlisted</span>
           </div>
@@ -495,11 +537,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260713t"></script>
-<script src="js/admin-api.js?v=20260713t"></script>
-<script src="js/officer-api.js?v=20260713t"></script>
-<script src="js/api.js?v=20260713t"></script>
-<script src="js/app.js?v=20260713t"></script>
+<script src="js/staff-api.js?v=20260713u"></script>
+<script src="js/admin-api.js?v=20260713u"></script>
+<script src="js/officer-api.js?v=20260713u"></script>
+<script src="js/api.js?v=20260713u"></script>
+<script src="js/app.js?v=20260713u"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin';
@@ -1467,6 +1509,223 @@ function isCompanyShortlisted(a) {
   return String(a?.status || '').toLowerCase() === 'shortlisted';
 }
 
+let shortlistDrivesCache = [];
+let shortlistToolsWired = false;
+
+function normCompanyKey(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function shortlistCompanyNames() {
+  const names = new Map();
+  ApplicationPipeline.all().forEach((a) => {
+    const c = String(a.company || '').trim();
+    if (c) names.set(normCompanyKey(c), c);
+  });
+  shortlistDrivesCache.forEach((d) => {
+    const c = String(d.company || '').trim();
+    if (c) names.set(normCompanyKey(c), c);
+  });
+  return [...names.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function selectedShortlistCompany() {
+  return String(document.getElementById('shortlistCompanyFilter')?.value || '').trim();
+}
+
+function drivesForShortlistCompany(company) {
+  const key = normCompanyKey(company);
+  if (!key) return shortlistDrivesCache.slice();
+  return shortlistDrivesCache.filter((d) => normCompanyKey(d.company) === key);
+}
+
+function filteredShortlistedApps(allShortlisted) {
+  const company = selectedShortlistCompany();
+  if (!company) return allShortlisted;
+  const key = normCompanyKey(company);
+  return allShortlisted.filter((a) => normCompanyKey(a.company) === key);
+}
+
+function populateShortlistCompanyFilter() {
+  const sel = document.getElementById('shortlistCompanyFilter');
+  if (!sel) return;
+  const prev = sel.value;
+  const companies = shortlistCompanyNames();
+  sel.innerHTML = '<option value="">All companies</option>' + companies.map((c) =>
+    `<option value="${esc(c)}">${esc(c)}</option>`
+  ).join('');
+  if (prev && companies.some((c) => c === prev)) sel.value = prev;
+}
+
+function populateShortlistDriveSelect() {
+  const sel = document.getElementById('shortlistDriveSelect');
+  const hint = document.getElementById('shortlistUploadDriveHint');
+  if (!sel) return;
+  const company = selectedShortlistCompany();
+  const prev = sel.value;
+  if (!company) {
+    sel.innerHTML = '<option value="">Select a company first…</option>';
+    if (hint) hint.textContent = 'Pick a company to choose its drive and upload a shortlist.';
+    updateShortlistDocLink(null);
+    return;
+  }
+  const drives = drivesForShortlistCompany(company).filter((d) => {
+    const st = String(d.status || '').toLowerCase();
+    return st !== 'closed';
+  });
+  if (!drives.length) {
+    sel.innerHTML = '<option value="">No drives for this company</option>';
+    if (hint) hint.textContent = 'No open drives found for this company.';
+    updateShortlistDocLink(null);
+    return;
+  }
+  sel.innerHTML = '<option value="">Select a drive…</option>' + drives.map((d) => {
+    const label = [d.company, d.role || d.title].filter(Boolean).join(' — ') || d.id;
+    return `<option value="${esc(d.id)}">${esc(label)}</option>`;
+  }).join('');
+  if (prev && drives.some((d) => d.id === prev)) sel.value = prev;
+  else if (drives.length === 1) sel.value = drives[0].id;
+  if (hint) hint.textContent = `${drives.length} drive${drives.length === 1 ? '' : 's'} for ${company}`;
+  updateShortlistDocLink(sel.value);
+}
+
+function updateShortlistDocLink(driveId) {
+  const link = document.getElementById('btnViewCompanyShortlistDoc');
+  if (!link) return;
+  const drive = shortlistDrivesCache.find((d) => d.id === driveId);
+  if (driveId && drive?.hasShortlistDocument && typeof OfficerApi !== 'undefined') {
+    link.href = `${API_BASE}${OfficerApi.shortlistDocumentPath(driveId)}`;
+    link.classList.remove('d-none');
+  } else {
+    link.classList.add('d-none');
+    link.removeAttribute('href');
+  }
+}
+
+function renderShortlistedRows(list) {
+  const rows = document.getElementById('shortlistedRows');
+  const badge = document.getElementById('shortlistedTabBadge');
+  const label = document.getElementById('shortlistedCountLabel');
+  const sub = document.getElementById('shortlistTableSub');
+  const company = selectedShortlistCompany();
+  if (badge) badge.textContent = String(list.length);
+  if (label) label.textContent = `${list.length} shortlisted`;
+  if (sub) {
+    sub.textContent = company
+      ? `Showing shortlists for ${company}`
+      : 'Portal shortlists and lists uploaded from company documents';
+  }
+  if (!rows) return;
+  const emptyMsg = company
+    ? `No shortlisted students for ${esc(company)} yet. Upload the company list above.`
+    : 'No company shortlists yet. Filter by company and upload a list, or wait for portal shortlists.';
+  rows.innerHTML = list.length ? list.map(a => `
+    <tr>
+      <td class="fw-semibold small">${esc(a.studentName)}</td>
+      <td>${esc(a.registerNumber)}</td>
+      <td>${esc(a.department)}</td>
+      <td>${esc(a.company)}</td>
+      <td>${esc(a.role)}</td>
+      <td>${resumeCell(a)}</td>
+      <td>${appStatusBadge(a.status)}</td>
+      <td>${formatDate(a.appliedAt)}</td>
+    </tr>`).join('') : `<tr><td colspan="8" class="text-muted-2 p-4">${emptyMsg}</td></tr>`;
+}
+
+function refreshShortlistedPanel() {
+  if (!canManageApplications) return;
+  populateShortlistCompanyFilter();
+  populateShortlistDriveSelect();
+  const all = ApplicationPipeline.all().filter(isCompanyShortlisted);
+  renderShortlistedRows(filteredShortlistedApps(all));
+}
+
+async function initShortlistTools() {
+  if (!canManageApplications) return;
+  if (typeof OfficerApi !== 'undefined' && OfficerApi.fetchDrives) {
+    shortlistDrivesCache = (await OfficerApi.fetchDrives().catch(() => null)) || [];
+  }
+  if (!shortlistToolsWired) {
+    document.getElementById('shortlistCompanyFilter')?.addEventListener('change', () => {
+      populateShortlistDriveSelect();
+      const all = ApplicationPipeline.all().filter(isCompanyShortlisted);
+      renderShortlistedRows(filteredShortlistedApps(all));
+    });
+    document.getElementById('shortlistDriveSelect')?.addEventListener('change', (e) => {
+      updateShortlistDocLink(e.target.value);
+    });
+    document.getElementById('btnUploadCompanyShortlist')?.addEventListener('click', () => {
+      submitCompanyShortlistUpload().catch(() => {});
+    });
+    shortlistToolsWired = true;
+  }
+  refreshShortlistedPanel();
+}
+
+async function submitCompanyShortlistUpload() {
+  if (!canManageApplications || typeof OfficerApi === 'undefined') return;
+  const driveId = String(document.getElementById('shortlistDriveSelect')?.value || '').trim();
+  if (!driveId) {
+    toast('Select a company drive before uploading the shortlist.', 'warn');
+    return;
+  }
+  const company = selectedShortlistCompany();
+  if (!company) {
+    toast('Select a company first, then its drive.', 'warn');
+    return;
+  }
+  const docInput = document.getElementById('shortlistDocument');
+  const csvInput = document.getElementById('shortlistCsv');
+  const rollsInput = document.getElementById('shortlistRolls');
+  const documentFile = docInput?.files?.[0] || null;
+  const csvFile = csvInput?.files?.[0] || null;
+  const registerNumbers = (rollsInput?.value || '').trim();
+  if (!documentFile && !csvFile && !registerNumbers) {
+    toast('Choose a shortlist document and/or provide register numbers.', 'warn');
+    return;
+  }
+  const btn = document.getElementById('btnUploadCompanyShortlist');
+  if (btn) btn.disabled = true;
+  try {
+    const result = await OfficerApi.uploadDriveShortlist(driveId, {
+      document: documentFile,
+      csv: csvFile,
+      registerNumbers,
+    });
+    if (!result) return;
+    toast(result.message || 'Shortlist uploaded.', 'success');
+    const out = document.getElementById('shortlistUploadResult');
+    if (out) {
+      const errs = Array.isArray(result.errors) ? result.errors.slice(0, 8) : [];
+      out.classList.remove('d-none');
+      out.innerHTML = [
+        result.documentSaved ? 'Document saved.' : '',
+        `${result.updated || 0} marked shortlisted.`,
+        result.alreadyShortlisted ? `${result.alreadyShortlisted} already shortlisted.` : '',
+        result.failed ? `${result.failed} could not be matched.` : '',
+        errs.length ? `<div class="mt-1">${errs.map((e) => `<div>${esc(e)}</div>`).join('')}</div>` : '',
+      ].filter(Boolean).join(' ');
+    }
+    shortlistDrivesCache = shortlistDrivesCache.map((d) =>
+      d.id === driveId
+        ? {
+          ...d,
+          hasShortlistDocument: !!(result.documentSaved || result.documentName || d.hasShortlistDocument),
+          shortlistDocumentName: result.documentName || d.shortlistDocumentName || '',
+        }
+        : d
+    );
+    updateShortlistDocLink(driveId);
+    await ApplicationPipeline.fetch().catch(() => null);
+    refreshShortlistedPanel();
+    if (docInput) docInput.value = '';
+    if (csvInput) csvInput.value = '';
+    if (rollsInput) rollsInput.value = '';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function canActApp(a) {
   return a.stage !== 'rejected' && a.stage !== 'company_selection' && a.status !== 'rejected' && a.status !== 'shortlisted' && a.status !== 'selected' && a.status !== 'withdrawn';
 }
@@ -1487,26 +1746,6 @@ function resumeCell(a) {
   if (!a.hasResume && !a.resumeUrl) return '<span class="small text-muted-2">—</span>';
   const label = a.resumeFileName || a.resumeLabel || 'View resume';
   return `<a href="${a.resumeUrl}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" title="${label}"><i class="bi bi-file-earmark-pdf me-1"></i>${label.length > 24 ? label.slice(0, 21) + '…' : label}</a>`;
-}
-
-function renderShortlistedRows(list) {
-  const rows = document.getElementById('shortlistedRows');
-  const badge = document.getElementById('shortlistedTabBadge');
-  const label = document.getElementById('shortlistedCountLabel');
-  if (badge) badge.textContent = String(list.length);
-  if (label) label.textContent = `${list.length} shortlisted`;
-  if (!rows) return;
-  rows.innerHTML = list.length ? list.map(a => `
-    <tr>
-      <td class="fw-semibold small">${esc(a.studentName)}</td>
-      <td>${esc(a.registerNumber)}</td>
-      <td>${esc(a.department)}</td>
-      <td>${esc(a.company)}</td>
-      <td>${esc(a.role)}</td>
-      <td>${resumeCell(a)}</td>
-      <td>${appStatusBadge(a.status)}</td>
-      <td>${formatDate(a.appliedAt)}</td>
-    </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No company shortlists yet. Portal shortlists and document uploads appear here.</td></tr>';
 }
 
 function renderApplications() {
@@ -1536,7 +1775,7 @@ function renderApplications() {
       </div>` : '<span class="small text-muted-2">—</span>'}</td>
     </tr>`).join('') : '<tr><td colspan="10" class="text-muted-2 p-4">No drive applications in the pipeline yet.</td></tr>';
 
-  renderShortlistedRows(shortlisted);
+  refreshShortlistedPanel();
 }
 
 /* —— Resumes —— */
@@ -1804,6 +2043,7 @@ onAppReady(async () => {
     Promise.all([
       ApplicationPipeline.fetch().catch(() => null),
       ResumeQueue.fetch().catch(() => null),
+      initShortlistTools().catch(() => {}),
     ]).then(async () => {
       renderApplications();
       renderResumes();
