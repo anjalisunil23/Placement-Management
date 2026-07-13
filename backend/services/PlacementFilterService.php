@@ -48,11 +48,52 @@ final class PlacementFilterService
             ? (new AesApiService())->fetchPlacementCourses($deptAesId)
             : [];
 
-        if ($fromAes !== []) {
-            return $this->sortLabels($fromAes);
+        $programs = $fromAes !== []
+            ? $fromAes
+            : $this->fallbackProgrammes($ctx);
+
+        return $this->sortLabels($this->filterProgramsWithBranches($deptAesId, $programs));
+    }
+
+    /**
+     * @param list<string> $programs
+     * @return list<string>
+     */
+    private function filterProgramsWithBranches(string $deptAesId, array $programs): array
+    {
+        $withBranches = [];
+        foreach ($programs as $program) {
+            $program = trim((string) $program);
+            if ($program === '') {
+                continue;
+            }
+            if ($this->resolveBranchLabels($deptAesId, $program) !== []) {
+                $withBranches[] = $program;
+            }
         }
 
-        return $this->sortLabels($this->fallbackProgrammes($ctx));
+        return $withBranches;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function resolveBranchLabels(string $deptAesId, string $program): array
+    {
+        $program = trim($program);
+        if ($program === '') {
+            return [];
+        }
+
+        $branches = $deptAesId !== ''
+            ? (new AesApiService())->fetchPlacementBranches($deptAesId, $program)
+            : [];
+
+        if ($branches !== []) {
+            return $this->sortLabels($branches);
+        }
+
+        return $this->sortLabels($this->fallbackBranchOptions($program));
     }
 
     /**
@@ -71,12 +112,7 @@ final class PlacementFilterService
             return [];
         }
 
-        $branches = (new AesApiService())->fetchPlacementBranches($deptAesId, $program);
-        if ($branches === []) {
-            $branches = $this->fallbackBranchOptions($program);
-        }
-
-        return $this->sortLabels($branches);
+        return $this->resolveBranchLabels($deptAesId, $program);
     }
 
     /**
@@ -87,9 +123,6 @@ final class PlacementFilterService
         $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
         if (in_array($resolved, ['MCA', 'BCA', 'INMCA'], true)) {
             return ['Integrated', 'Regular'];
-        }
-        if ($resolved !== '') {
-            return ['Regular'];
         }
 
         return [];

@@ -1955,7 +1955,7 @@ final class AesApiService
     }
 
     /**
-     * Placement class/batch list for a department programme.
+     * Placement class/batch list — distinct stud_class from getStudInfo4Placement.
      *
      * @return list<string>
      */
@@ -1968,8 +1968,50 @@ final class AesApiService
 
         $programmeCode = trim($programmeCode);
         $branch = trim($branch);
-        $methods = ['getClasses4Placement', 'getClass4Placement', 'getBatches4Placement', 'getBatch4Placement'];
+        $courseVariants = $programmeCode !== ''
+            ? $this->placementCourseParamVariants($programmeCode)
+            : [[]];
 
+        foreach ($courseVariants as $courseParams) {
+            $params = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
+            if ($branch !== '') {
+                $params['stud_branch'] = $branch;
+            }
+
+            $labels = $this->fetchStudClassBatchesFromStudInfo($params, $programmeCode);
+            if ($labels !== []) {
+                return $labels;
+            }
+
+            if ($branch !== '') {
+                $withoutBranch = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
+                $labels = $this->fetchStudClassBatchesFromStudInfo($withoutBranch, $programmeCode);
+                if ($labels !== []) {
+                    return $labels;
+                }
+            }
+        }
+
+        return $this->fetchLegacyPlacementClassBatches($deptAesId, $programmeCode, $branch);
+    }
+
+    /**
+     * @param array<string, scalar|null> $params
+     * @return list<string>
+     */
+    private function fetchStudClassBatchesFromStudInfo(array $params, string $programmeCode = ''): array
+    {
+        $result = $this->callPlacementFilterApi('getStudInfo4Placement', $params);
+
+        return $this->normalizeStudClassBatchLabels($result, $programmeCode);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function fetchLegacyPlacementClassBatches(string $deptAesId, string $programmeCode, string $branch): array
+    {
+        $methods = ['getClasses4Placement', 'getClass4Placement', 'getBatches4Placement', 'getBatch4Placement'];
         $courseVariants = $programmeCode !== ''
             ? $this->placementCourseParamVariants($programmeCode)
             : [[]];
@@ -1982,7 +2024,7 @@ final class AesApiService
 
             foreach ($methods as $method) {
                 $result = $this->callPlacementFilterApi($method, $params);
-                $labels = $this->normalizePlacementClassBatchLabels($result, $programmeCode);
+                $labels = $this->normalizeStudClassBatchLabels($result, $programmeCode);
                 if ($labels !== []) {
                     return $labels;
                 }
@@ -1992,7 +2034,7 @@ final class AesApiService
                 $withoutBranch = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
                 foreach ($methods as $method) {
                     $result = $this->callPlacementFilterApi($method, $withoutBranch);
-                    $labels = $this->normalizePlacementClassBatchLabels($result, $programmeCode);
+                    $labels = $this->normalizeStudClassBatchLabels($result, $programmeCode);
                     if ($labels !== []) {
                         return $labels;
                     }
@@ -2125,10 +2167,12 @@ final class AesApiService
     }
 
     /**
+     * Distinct stud_class labels from getStudInfo4Placement (or compatible list payloads).
+     *
      * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
      * @return list<string>
      */
-    private function normalizePlacementClassBatchLabels(array $result, string $programmeCode = ''): array
+    private function normalizeStudClassBatchLabels(array $result, string $programmeCode = ''): array
     {
         if (($result['success'] ?? false) !== true) {
             return [];
@@ -2149,10 +2193,17 @@ final class AesApiService
             return [];
         }
 
-        $list = $payload['data'] ?? $payload['classes'] ?? $payload['batches']
-            ?? $payload['class_list'] ?? $payload['classList'] ?? $payload;
+        $list = $payload['data']
+            ?? $payload['students']
+            ?? $payload['student_list']
+            ?? $payload['studentList']
+            ?? $payload['classes']
+            ?? $payload['batches']
+            ?? $payload['class_list']
+            ?? $payload['classList']
+            ?? $payload;
         $labels = [];
-        $this->collectPlacementClassLabels($list, $labels, $programmeCode);
+        $this->collectStudClassBatchLabels($list, $labels, $programmeCode);
 
         return array_values(array_unique(array_filter($labels, static fn (string $label) => $label !== '')));
     }
@@ -2160,14 +2211,14 @@ final class AesApiService
     /**
      * @param list<string> $out
      */
-    private function collectPlacementClassLabels(mixed $node, array &$out, string $programmeCode): void
+    private function collectStudClassBatchLabels(mixed $node, array &$out, string $programmeCode): void
     {
         if (is_string($node)) {
             $label = trim($node);
             if ($label !== '') {
                 if (str_contains($label, ',')) {
                     foreach (preg_split('/\s*,\s*/', $label) ?: [] as $part) {
-                        $this->collectPlacementClassLabels($part, $out, $programmeCode);
+                        $this->collectStudClassBatchLabels($part, $out, $programmeCode);
                     }
 
                     return;
@@ -2183,9 +2234,22 @@ final class AesApiService
         }
 
         if ($this->isAssoc($node)) {
-            $label = trim((string) (
-                $node['stud_class']
-                ?? $node['class_name']
+            $studClass = trim((string) ($node['stud_class'] ?? ''));
+            if ($studClass !== '') {
+                $course = strtoupper(trim((string) (
+                    $node['stud_course']
+                    ?? $node['stud_cource_short']
+                    ?? $node['course']
+                    ?? $node['programme']
+                    ?? $programmeCode
+                )));
+                $out[] = $this->tagBatchLabelWithProgramme($studClass, $course !== '' ? $course : $programmeCode);
+
+                return;
+            }
+
+            $fallback = trim((string) (
+                $node['class_name']
                 ?? $node['className']
                 ?? $node['batch']
                 ?? $node['classBatch']
@@ -2193,22 +2257,33 @@ final class AesApiService
                 ?? $node['name']
                 ?? ''
             ));
-            $course = strtoupper(trim((string) (
-                $node['stud_course']
-                ?? $node['course']
-                ?? $node['programme']
-                ?? $programmeCode
-            )));
-            if ($label !== '') {
-                $out[] = $this->tagBatchLabelWithProgramme($label, $course);
+            if ($fallback !== '') {
+                $out[] = $this->tagBatchLabelWithProgramme($fallback, $programmeCode);
 
                 return;
             }
         }
 
         foreach ($node as $item) {
-            $this->collectPlacementClassLabels($item, $out, $programmeCode);
+            $this->collectStudClassBatchLabels($item, $out, $programmeCode);
         }
+    }
+
+    /**
+     * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
+     * @return list<string>
+     */
+    private function normalizePlacementClassBatchLabels(array $result, string $programmeCode = ''): array
+    {
+        return $this->normalizeStudClassBatchLabels($result, $programmeCode);
+    }
+
+    /**
+     * @param list<string> $out
+     */
+    private function collectPlacementClassLabels(mixed $node, array &$out, string $programmeCode): void
+    {
+        $this->collectStudClassBatchLabels($node, $out, $programmeCode);
     }
 
     private function tagBatchLabelWithProgramme(string $label, string $programmeCode): string
