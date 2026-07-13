@@ -483,8 +483,8 @@ function renderShell(active) {
   if (topbar) {
     const quickLinks = {
       admin: '<a href="placement-console.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Console</a><a href="students.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Approvals</a>',
-      placement_officer: '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Placement Drives</a>',
-      student: '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Browse Drives</a><a href="settings.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Upload Resume</a>',
+      placement_officer: '',
+      student: '',
       staff: '',
       company: '<a href="company.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Portal</a><a href="applicants.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Applicants</a>',
       alumni: alumniIsWorking()
@@ -492,16 +492,17 @@ function renderShell(active) {
         : '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Apply</a>',
     }[role] || '';
 
+    const hideSearch = role === 'student' || activeBase === 'dashboard.html';
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
       ${showTopbarTitle ? `<div class="d-none d-md-block">
         <div class="fw-semibold" style="font-size:.95rem;line-height:1.2">${pageLabel}</div>
         <div class="small text-muted-2">${ROLE_LABELS[role]} workspace</div>
       </div>` : ''}
-      <div class="search ms-md-3">
+      ${hideSearch ? '<div class="flex-grow-1"></div>' : `<div class="search ms-md-3">
         <i class="bi bi-search"></i>
         <input placeholder="${TOPBAR_SEARCH[role] || 'Search…'}" />
-      </div>
+      </div>`}
       <div class="ms-auto topbar-actions d-flex align-items-center gap-2">
         ${quickLinks}
         ${Auth.isDemo() ? `<div class="dropdown">

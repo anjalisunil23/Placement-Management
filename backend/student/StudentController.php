@@ -447,11 +447,6 @@ final class StudentController
     }
     $branch = trim((string) ($input['branchBatch'] ?? ''));
     $mtechBranch = trim((string) ($input['mtechBranch'] ?? ''));
-    if (strcasecmp($branch, 'M.Tech') === 0 || strcasecmp($branch, 'MTECH') === 0) {
-      if ($mtechBranch === '') {
-        $errors['mtechBranch'] = 'Please specify your M.Tech branch.';
-      }
-    }
     if (!empty($errors)) {
       Response::error('Validation failed.', 422, $errors);
     }

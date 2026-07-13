@@ -6,24 +6,49 @@
 <title>Placement Cell Registration · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260712d" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260713a" rel="stylesheet"/>
 <style>
-  body.policy-page{background:linear-gradient(165deg,#eef2ff 0%,#f8fafc 40%,#f1f5f9 100%);min-height:100vh}
+  body.policy-page{
+    background:linear-gradient(165deg,#eef2ff 0%,#f8fafc 40%,#f1f5f9 100%);
+    min-height:100vh;
+    font-family:'Source Sans 3',system-ui,sans-serif;
+    color:#0f172a;
+  }
   .policy-shell{max-width:920px;margin:0 auto;padding:1.25rem 1rem 3rem}
   .policy-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:16px;box-shadow:0 12px 40px rgba(15,23,42,.06)}
   .policy-header{text-align:center;padding:1.5rem 1.25rem 1rem;border-bottom:1px solid var(--border,#e2e8f0)}
-  .policy-header img{height:56px;object-fit:contain}
-  .policy-header h1{font-size:1.15rem;font-weight:800;letter-spacing:.02em;margin:.85rem 0 .25rem;text-transform:uppercase}
-  .policy-header .college{font-size:.85rem;color:var(--muted,#64748b);font-weight:600}
-  .policy-body{padding:1.25rem 1.35rem 1.5rem}
-  .guidelines-box{max-height:min(52vh,420px);overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:12px;padding:1rem 1.1rem;background:#f8fafc;font-size:.88rem;line-height:1.55}
-  .guidelines-box h6{font-weight:700;margin-top:1rem;margin-bottom:.4rem}
+  .policy-header .policy-college-logo,
+  .policy-header img.brand-logo{
+    height:72px;max-width:min(340px,88vw);width:auto;object-fit:contain;
+    background:#fff;padding:8px 14px;border-radius:10px;
+    border:1px solid var(--border,#e2e8f0);
+  }
+  .policy-header h1{
+    font-family:'Source Serif 4',Georgia,'Times New Roman',serif;
+    font-size:1.35rem;font-weight:700;letter-spacing:.01em;margin:.85rem 0 .35rem;
+  }
+  .policy-header .college{font-size:.9rem;color:var(--muted,#64748b);font-weight:600}
+  .policy-body{padding:1.25rem 1.35rem 1.5rem;font-size:.95rem;line-height:1.55}
+  .policy-body .form-label,.policy-body .form-text,.policy-body .small{font-family:'Source Sans 3',system-ui,sans-serif}
+  .guidelines-box{
+    max-height:min(52vh,420px);overflow:auto;border:1px solid var(--border,#e2e8f0);
+    border-radius:12px;padding:1rem 1.15rem;background:#f8fafc;
+    font-family:'Source Serif 4',Georgia,'Times New Roman',serif;
+    font-size:.92rem;line-height:1.65;font-optical-sizing:auto;
+  }
+  .guidelines-box h6{
+    font-family:'Source Sans 3',system-ui,sans-serif;
+    font-weight:700;font-size:.82rem;letter-spacing:.04em;text-transform:uppercase;
+    margin-top:1.1rem;margin-bottom:.45rem;color:#1e293b;
+  }
   .guidelines-box h6:first-child{margin-top:0}
   .guidelines-box ol,.guidelines-box ul{padding-left:1.15rem;margin-bottom:.65rem}
-  .branch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr));gap:.45rem}
-  .branch-grid label{display:flex;align-items:center;gap:.4rem;font-size:.82rem;padding:.35rem .5rem;border:1px solid var(--border,#e2e8f0);border-radius:8px;cursor:pointer;margin:0;background:#fff}
-  .branch-grid label:has(input:checked){border-color:var(--primary,#2563EB);background:color-mix(in srgb,var(--primary,#2563EB) 8%,#fff)}
+  .policy-body h2.h6{
+    font-family:'Source Serif 4',Georgia,'Times New Roman',serif;
+    font-size:1.05rem;font-weight:650;
+  }
+  .form-control[readonly]{background:#f8fafc;color:var(--text,#0f172a);cursor:default}
   .sign-row{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:.75rem}
   @media (max-width:640px){.sign-row{grid-template-columns:1fr}}
   .policy-sticky{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,rgba(248,250,252,.95) 18%,#f8fafc);padding-top:1rem}
@@ -38,7 +63,7 @@
 
   <div class="policy-card">
     <div class="policy-header">
-      <img src="/css/ajce-logo.png?v=20260624s" alt="AJCE" onerror="this.onerror=null;this.src='/logo.php'"/>
+      <img id="collegeLogo" class="policy-college-logo brand-logo" alt="Amal Jyothi College of Engineering" height="72" decoding="async"/>
       <h1>Placement Cell – Registration</h1>
       <div class="college">Amal Jyothi College of Engineering Autonomous</div>
       <div class="badge-soft info mt-2">YoP: 2026</div>
@@ -51,11 +76,13 @@
         <div class="row g-3 mb-3">
           <div class="col-md-6">
             <label class="form-label small fw-semibold">University Reg. No</label>
-            <input class="form-control" name="registerNumber" id="regNo" required autocomplete="off"/>
+            <input class="form-control" name="registerNumber" id="regNo" required readonly autocomplete="off"/>
+            <div class="form-text">From your college profile</div>
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Name</label>
-            <input class="form-control" name="name" id="regName" required autocomplete="name"/>
+            <input class="form-control" name="name" id="regName" required readonly autocomplete="name"/>
+            <div class="form-text">From your college profile</div>
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Mobile Number</label>
@@ -90,15 +117,13 @@
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Year of Passing (YoP)</label>
             <input class="form-control" name="yop" id="regYop" value="2026" required readonly/>
+            <div class="form-text">Fixed for this registration cycle</div>
           </div>
-        </div>
-
-        <div class="mb-3">
-          <div class="small fw-semibold mb-2">Branch &amp; Batch</div>
-          <div class="branch-grid" id="branchGrid"></div>
-          <div class="mt-2 d-none" id="mtechWrap">
-            <label class="form-label small fw-semibold">M.Tech branch</label>
-            <input class="form-control" name="mtechBranch" id="mtechBranch" placeholder="Specify M.Tech branch"/>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Branch</label>
+            <input class="form-control" id="regBranchDisplay" readonly placeholder="Your branch"/>
+            <input type="hidden" name="branchBatch" id="regBranchBatch" required/>
+            <div class="form-text">From your college profile</div>
           </div>
         </div>
 
@@ -243,13 +268,22 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260712d"></script>
+<script src="js/api.js?v=20260713a"></script>
 <script>
-const BRANCHES = [
-  'CSE-A','CSE-B','CSE-C','ECE-A','ECE-B','IT',
-  'EEE','ME','CE','AUE','MET','CHE',
-  'FT','MCA','INT MCA','M.Tech'
-];
+(function initCollegeLogo() {
+  const el = document.getElementById('collegeLogo');
+  if (!el) return;
+  if (typeof BRAND !== 'undefined') {
+    el.src = BRAND.logoDataUri || BRAND.logoSrc || BRAND.logoFallbackSrc || '';
+    el.alt = BRAND.logoAlt || 'Amal Jyothi College of Engineering';
+    el.onerror = () => {
+      if (BRAND.logoFallbackSrc && el.src !== BRAND.logoFallbackSrc) {
+        el.onerror = null;
+        el.src = BRAND.logoFallbackSrc;
+      }
+    };
+  }
+})();
 
 (function initCountryCode() {
   const cc = document.getElementById('regCountryCode');
@@ -259,23 +293,31 @@ const BRANCHES = [
   }
 })();
 
-const grid = document.getElementById('branchGrid');
-grid.innerHTML = BRANCHES.map((b, i) => `
-  <label>
-    <input type="radio" name="branchBatch" value="${b}" ${i === 0 ? '' : ''} required/>
-    <span>${b}</span>
-  </label>`).join('');
-
-const mtechWrap = document.getElementById('mtechWrap');
-grid.addEventListener('change', () => {
-  const v = grid.querySelector('input[name="branchBatch"]:checked')?.value || '';
-  const isMtech = v === 'M.Tech';
-  mtechWrap.classList.toggle('d-none', !isMtech);
-  document.getElementById('mtechBranch').required = isMtech;
-});
-
 document.getElementById('signedDate').value = new Date().toISOString().slice(0, 10);
 document.getElementById('btnLogout').addEventListener('click', () => Auth.logout());
+
+function resolveStudentBranch(u) {
+  const academic = u?.academic && typeof u.academic === 'object' ? u.academic : {};
+  const candidates = [
+    u?.branch,
+    u?.programme,
+    academic.branch,
+    academic.programme,
+    academic.course,
+    u?.departmentName,
+    typeof u?.department === 'object' ? (u.department.name || u.department.code) : u?.department,
+    academic.department,
+  ];
+  for (const c of candidates) {
+    const s = String(c || '').trim();
+    if (s && !/^\d+$/.test(s)) return s;
+  }
+  if (typeof departmentDisplayName === 'function') {
+    const label = departmentDisplayName(u?.department || u?.departmentCode || u?.departmentName || '');
+    if (label && label !== 'Campus' && !/^\d+$/.test(label)) return label;
+  }
+  return '';
+}
 
 function fillFromUser(u) {
   if (!u) return;
@@ -294,17 +336,10 @@ function fillFromUser(u) {
   }
   const email = u.personalEmail || u.email || u.collegeEmail || '';
   if (email) document.getElementById('regEmail').value = email;
-  const dept = String(u.department || u.departmentName || u.branch || '').trim().toUpperCase();
-  if (dept) {
-    const match = BRANCHES.find(b => dept === b || dept.includes(b) || b.includes(dept.replace(/\s+/g, '')));
-    if (match) {
-      const radio = grid.querySelector(`input[value="${match}"]`);
-      if (radio) {
-        radio.checked = true;
-        radio.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    }
-  }
+
+  const branch = resolveStudentBranch(u);
+  document.getElementById('regBranchDisplay').value = branch || 'Not available in profile';
+  document.getElementById('regBranchBatch').value = branch;
 }
 
 async function gate() {
@@ -324,7 +359,7 @@ async function gate() {
   }
   const u = Auth.user() || {};
   if (u.policyAccepted) {
-    window.location.replace(Auth.homePage() || 'drives.html');
+    window.location.replace('dashboard.html');
     return;
   }
   fillFromUser(u);
@@ -333,14 +368,9 @@ async function gate() {
 document.getElementById('registrationForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.target;
-  const branch = form.querySelector('input[name="branchBatch"]:checked')?.value || '';
+  const branch = String(form.branchBatch.value || document.getElementById('regBranchBatch').value || '').trim();
   if (!branch) {
-    toast('Select your branch & batch.', 'warn');
-    return;
-  }
-  if (branch === 'M.Tech' && !String(form.mtechBranch.value || '').trim()) {
-    toast('Specify your M.Tech branch.', 'warn');
-    form.mtechBranch.focus();
+    toast('Your branch is missing from your profile. Contact the Placement Cell.', 'warn');
     return;
   }
   if (!form.declarationAccepted.checked) {
@@ -366,7 +396,7 @@ document.getElementById('registrationForm').addEventListener('submit', async (e)
     email: form.email.value.trim(),
     yop: form.yop.value.trim() || '2026',
     branchBatch: branch,
-    mtechBranch: form.mtechBranch.value.trim(),
+    mtechBranch: '',
     declarationAccepted: true,
     signedName: form.signedName.value.trim(),
     signedDate: form.signedDate.value.trim(),
@@ -397,9 +427,9 @@ document.getElementById('registrationForm').addEventListener('submit', async (e)
     name: payload.name,
     registerNumber: payload.registerNumber,
   });
-  toast('Registration confirmed. Opening your portal…', 'success');
+  toast('Registration confirmed. Opening your dashboard…', 'success');
   setTimeout(() => {
-    window.location.replace(Auth.homePage() || 'drives.html');
+    window.location.replace('dashboard.html');
   }, 500);
 });
 
