@@ -654,6 +654,12 @@ function driveAlreadyApplied(d) {
   return false;
 }
 
+function driveVisibleToApplicant(d) {
+  if (!isStudent && !alumniSeeking) return true;
+  if (driveAlreadyApplied(d)) return true;
+  return d.eligible !== false;
+}
+
 function driveDetailValue(v) {
   if (Array.isArray(v) || (v && typeof v === 'object')) {
     const formatted = typeof formatDriveBranches === 'function' ? formatDriveBranches(v) : '';
@@ -861,6 +867,8 @@ function filteredDrives() {
     else if (status && d.status !== status) return false;
 
     if (jobType && (d.jobType || '') !== jobType) return false;
+
+    if (!driveVisibleToApplicant(d)) return false;
 
     return true;
 

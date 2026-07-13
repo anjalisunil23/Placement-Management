@@ -876,6 +876,17 @@ final class StudentController
       return $row;
     }, $enriched);
 
+    $result = array_values(array_filter(
+        $result,
+        static function (array $row): bool {
+            if (!empty($row['applied'])) {
+                return true;
+            }
+
+            return ($row['eligibilityCheck']['eligible'] ?? false) === true;
+        }
+    ));
+
     $register = (string) ($profile['registerNumber'] ?? '');
     if ($register !== '') {
       $lookupRows = array_map(static fn (array $row): array => [
@@ -940,6 +951,13 @@ final class StudentController
       ];
     }
 
+    $rows = array_values(array_filter(
+        $rows,
+        static function (array $row): bool {
+            return ($row['eligible'] ?? false) === true;
+        }
+    ));
+
     Response::success($rows);
   }
 
@@ -957,18 +975,19 @@ final class StudentController
     $studentId = (string) $profile['_id'];
     $appModel = new ApplicationModel();
     $engine = new EligibilityEngine();
+    $eligibility = $engine->checkForDrive($studentId, $driveId);
     if (
-      !$appModel->findByStudentAndDrive($studentId, $driveId)
-      && !$engine->driveVisibleToStudent($profile, $drive)
+        !$appModel->findByStudentAndDrive($studentId, $driveId)
+        && !($eligibility['eligible'] ?? false)
     ) {
-      Response::notFound('Drive not found.');
+        Response::notFound('Drive not found.');
     }
 
     $company = !empty($drive['companyId']) ? (new CompanyModel())->findById((string) $drive['companyId']) : null;
     $enriched = (new OfficerDataService())->enrichDrivesWithCompany([$drive]);
     $out = $enriched[0] ?? DocumentHelper::serialize($drive);
     $out['company'] = $company ? DocumentHelper::serialize($company) : null;
-    $out['eligibilityCheck'] = $engine->checkForDrive($studentId, $driveId);
+    $out['eligibilityCheck'] = $eligibility;
     Response::success($out);
   }
 

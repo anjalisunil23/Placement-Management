@@ -295,6 +295,17 @@ final class AlumniController
       return $serialized;
     }, $drives);
 
+    $result = array_values(array_filter(
+        $result,
+        static function (array $row): bool {
+            if (!empty($row['applied'])) {
+                return true;
+            }
+
+            return ($row['eligibility']['eligible'] ?? false) === true;
+        }
+    ));
+
     Response::success($result);
   }
 

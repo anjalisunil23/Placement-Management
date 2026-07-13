@@ -3820,19 +3820,23 @@ const DriveStore = {
       _fromApi: true,
     };
   },
+  filterApplicantDrives(list) {
+    if (!Array.isArray(list)) return [];
+    return list.filter(d => d.eligible !== false || d.applied || d.applicationStatus);
+  },
   async fetchStudentDrives() {
     if (Auth.role() !== 'student' || Auth.isDemo()) return null;
     this._studentCache = null;
     const res = await api('/student/drives', { skipAuthRedirect: true });
     if (!res.success || !Array.isArray(res.data)) return null;
-    this._studentCache = res.data.map(d => this.mapStudentDrive(d));
+    this._studentCache = this.filterApplicantDrives(res.data.map(d => this.mapStudentDrive(d)));
     return this._studentCache;
   },
   async fetchAlumniDrives() {
     if (Auth.role() !== 'alumni' || Auth.isDemo()) return null;
     const res = await api('/alumni/drives');
     if (!res.success || !Array.isArray(res.data)) return null;
-    this._alumniCache = res.data.map(d => this.mapStudentDrive(d));
+    this._alumniCache = this.filterApplicantDrives(res.data.map(d => this.mapStudentDrive(d)));
     return this._alumniCache;
   },
   allWithCatalog() {
