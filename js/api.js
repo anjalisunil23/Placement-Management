@@ -623,6 +623,9 @@ const Auth = {
         registerNumber: merged.registerNumber || prev.registerNumber || '',
         studentId: merged.studentId || prev.studentId || '',
         classBatch: merged.classBatch || prev.classBatch || '',
+        assignedClassBatches: Array.isArray(merged.assignedClassBatches)
+          ? merged.assignedClassBatches
+          : (Array.isArray(prev.assignedClassBatches) ? prev.assignedClassBatches : []),
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
         backlogs: merged.backlogs ?? prev.backlogs,
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || prev.photoUrl || '',
@@ -813,6 +816,9 @@ const Auth = {
         policyAcceptedAt: p.policyAcceptedAt || prev.policyAcceptedAt || '',
         photoUrl: p.photoUrl || p.photo?.url || u.photoUrl || prev.photoUrl || '',
         photo: p.photo || prev.photo || null,
+        assignedClassBatches: Array.isArray(p.assignedClassBatches)
+          ? p.assignedClassBatches
+          : (Array.isArray(prev.assignedClassBatches) ? prev.assignedClassBatches : []),
       };
       this.applySessionUser({
         ...merged,
@@ -4222,6 +4228,7 @@ const RecruitingStore = {
       name: st.name || row.studentName || 'Student',
       roll: st.registerNumber || row.registerNumber || '',
       dept: st.department || row.department || '',
+      classBatch: st.classBatch || row.classBatch || '',
       cgpa: parseFloat(st.cgpa ?? row.cgpa ?? 0) || 0,
       company: row.companyName || row.company?.companyName || '',
       role: job.title || drive?.title || row.role || '—',

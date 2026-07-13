@@ -181,8 +181,11 @@ const StaffApi = {
     return res.data.map(d => StaffApi.mapDrive(d));
   },
 
-  async fetchHiringOverview() {
-    const res = await api('/staff/hiring-overview');
+  async fetchHiringOverview(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.batch) qs.set('batch', params.batch);
+    const q = qs.toString();
+    const res = await api('/staff/hiring-overview' + (q ? `?${q}` : ''));
     return res.success ? res.data : null;
   },
 

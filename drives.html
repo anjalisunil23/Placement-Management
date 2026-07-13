@@ -463,6 +463,7 @@ window.__phDriveExtras = (function loadRoleScripts() {
 let role = '';
 let canManage = false;
 let isStudent = false;
+let isStaff = false;
 let alumniSeeking = false;
 let pendingDrive = null;
 let applyCertificateFiles = [];
@@ -520,10 +521,19 @@ function resetApplyCertificates() {
   renderApplyCertificateList();
 }
 
+function canApplyToDrives() {
+  return isStudent || alumniSeeking;
+}
+
 function driveViewMode() {
   if (canManage) return 'manage';
-  if (isStudent || alumniSeeking) return 'apply';
+  if (canApplyToDrives()) return 'apply';
   return 'browse';
+}
+
+function usesDriveCards() {
+  if (isStaff) return false;
+  return driveViewMode() === 'apply' || driveViewMode() === 'browse';
 }
 
 const DRIVE_TABLE_HEADS = {
@@ -703,7 +713,7 @@ function fillDriveDetailPanel(list, selectedId) {
           <option value="" ${detailSelectedDriveId ? '' : 'selected'}>Select role</option>
           ${list.map(d => {
             const roleApplied = driveAlreadyApplied(d);
-            return `<option value="${d.id}" ${String(d.id) === detailSelectedDriveId ? 'selected' : ''}>${d.role || 'Role'}${roleApplied ? ' · Applied' : ''}</option>`;
+            return `<option value="${d.id}" ${String(d.id) === detailSelectedDriveId ? 'selected' : ''}>${d.role || 'Role'}${(!isStaff && roleApplied) ? ' · Applied' : ''}</option>`;
           }).join('')}
         </select>
       </dd>`
@@ -737,11 +747,11 @@ function fillDriveDetailPanel(list, selectedId) {
       ${field('Mode', pending ? '—' : driveDetailValue(display.mode))}
       ${display.location && display.location !== '—' ? field('Location', driveDetailValue(display.location)) : ''}
     </dl>
-    ${!multi && display.profile ? `<div class="small text-muted-2">${display.profile}</div>` : ''}
-    ${applied ? `<div>${applyAction(active)}</div>` : ''}`;
+    ${!multi && display.profile && canApplyToDrives() ? `<div class="small text-muted-2">${display.profile}</div>` : ''}
+    ${applied && canApplyToDrives() ? `<div>${applyAction(active)}</div>` : ''}`;
 
   if (applyBtn) {
-    if (applied) {
+    if (isStaff || applied || !canApplyToDrives()) {
       applyBtn.classList.add('d-none');
     } else {
       applyBtn.classList.remove('d-none');
@@ -812,6 +822,7 @@ function setupDrivesChrome() {
   role = Auth.role();
   canManage = canManageDrives();
   isStudent = role === 'student';
+  isStaff = role === 'staff';
   alumniSeeking = role === 'alumni' && !alumniIsWorking();
 
   const actions = document.getElementById('drivesActions');
@@ -826,6 +837,11 @@ function setupDrivesChrome() {
     document.getElementById('drivesTitle').textContent = 'Apply for Jobs';
     document.getElementById('drivesSub').textContent = 'View open drives available for application.';
     actions.innerHTML = '';
+  } else if (isStaff) {
+    document.getElementById('drivesTitle').textContent = 'Placement Drives';
+    document.getElementById('drivesSub').textContent = 'View active drives and company details for your department.';
+    actions.innerHTML = '';
+    document.getElementById('driveDetailApplyBtn')?.classList.add('d-none');
   } else if (!canManage) {
     document.getElementById('drivesTitle').textContent = 'Placement Drives';
     document.getElementById('drivesSub').textContent = 'View all ongoing and upcoming recruitment drives.';
@@ -844,7 +860,11 @@ function setupDrivesChrome() {
   tableWrap?.classList.toggle('d-none', useCards);
   cards?.classList.toggle('d-none', !useCards);
   const listTitle = document.getElementById('drivesListTitle');
-  if (listTitle) listTitle.textContent = (isStudent || alumniSeeking) ? 'Open Drives' : 'All Drives';
+  if (listTitle) {
+    listTitle.textContent = isStaff
+      ? 'Department Drives'
+      : ((isStudent || alumniSeeking) ? 'Open Drives' : 'All Drives');
+  }
 }
 
 
@@ -944,7 +964,7 @@ function renderRows() {
   }
 
   document.getElementById('rows').innerHTML = list.length ? list.map(d => {
-    const rowAttrs = canManage ? ` data-drive-id="${d.id}" class="drive-row-clickable" style="cursor:pointer"` : '';
+    const rowAttrs = (canManage || isStaff) ? ` data-drive-id="${d.id}" class="drive-row-clickable" style="cursor:pointer"` : '';
     return `<tr${rowAttrs}>${driveRowCells(d)}</tr>`;
   }).join('')
     : `<tr><td colspan="${colCount}" class="text-muted-2 p-4 text-center">No drives found.</td></tr>`;
@@ -1576,6 +1596,7 @@ window.openApply = async driveId => {
 };
 
 document.getElementById('driveDetailApplyBtn')?.addEventListener('click', () => {
+  if (isStaff) return;
   const id = detailSelectedDriveId
     || (detailDriveGroup.length === 1 ? String(detailDriveGroup[0].id) : '');
   if (!id) {
@@ -1645,10 +1666,15 @@ document.getElementById('driveStatusFilter')?.addEventListener('change', renderR
 document.getElementById('driveJobTypeFilter')?.addEventListener('change', renderRows);
 
 document.getElementById('rows')?.addEventListener('click', e => {
-  if (!canManage) return;
   if (e.target.closest('button, a, input[type="checkbox"]')) return;
   const tr = e.target.closest('tr[data-drive-id]');
-  if (tr) openDriveApplicants(tr.dataset.driveId);
+  if (!tr) return;
+  if (isStaff) {
+    openCompanyDriveDetail(tr.dataset.driveId);
+    return;
+  }
+  if (!canManage) return;
+  openDriveApplicants(tr.dataset.driveId);
 });
 
 document.getElementById('driveApplicantTabs')?.addEventListener('click', e => {

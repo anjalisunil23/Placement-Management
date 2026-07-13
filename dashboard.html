@@ -19,7 +19,7 @@
 
       <div class="page-header">
         <div>
-          <h1 class="page-title" id="dashTitle">Dashboard</h1>
+          <h1 class="page-title"><span id="dashTitle">Dashboard</span> <span class="badge-soft success d-none align-middle" id="dashLiveBadge" style="font-size:.55rem;vertical-align:middle">Live</span></h1>
           <p class="page-sub" id="dashSub">Welcome back.</p>
         </div>
         <div class="d-flex gap-2" id="dashActions"></div>
@@ -131,6 +131,9 @@
                 </select>
                 <select class="form-select form-select-sm w-auto" id="branchSelect" aria-label="Branch" disabled>
                   <option value="">All branches</option>
+                </select>
+                <select class="form-select form-select-sm w-auto d-none" id="batchSelect" aria-label="Batch year">
+                  <option value="">All batches</option>
                 </select>
               </div>
             </div>
@@ -250,6 +253,9 @@
                   </select>
                   <select class="form-select form-select-sm w-auto" id="branchSelect" aria-label="Branch" disabled>
                     <option value="">All branches</option>
+                  </select>
+                  <select class="form-select form-select-sm w-auto d-none" id="batchSelect" aria-label="Batch year">
+                    <option value="">All batches</option>
                   </select>
                 </div>
               </div>
@@ -502,7 +508,7 @@ if (!role || !ROLE_HOME[role]) {
 }
 const titles = {
   admin: ['Administrator Console', 'Institute-wide overview & approvals.'],
-  placement_officer: ['Campus Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires across campus.'],
+  placement_officer: ['Department Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.'],
   student: ['Dashboard', ''],
   staff: ['Department Hiring Overview', 'Live snapshot of companies hiring your department students, pipeline stages, and recent activity.'],
   company: [`${user.companyName || user.name} · Recruiter`, 'Active companies, department-wise applicants, and candidate list.'],
@@ -510,6 +516,13 @@ const titles = {
 };
 document.getElementById('dashTitle').textContent = titles[role][0];
 document.getElementById('dashSub').textContent = titles[role][1];
+function showDashLiveBadge(live) {
+  document.getElementById('dashLiveBadge')?.classList.toggle('d-none', !live);
+}
+const dashLive = Auth.hasRealAuth() && !Auth.isDemo();
+if (['admin', 'staff', 'placement_officer'].includes(role)) {
+  showDashLiveBadge(dashLive);
+}
 if (!titles[role][1]) {
   document.getElementById('dashSub').hidden = true;
 }
@@ -522,7 +535,7 @@ const   actions = {
   admin: '<a class="btn btn-outline-secondary" href="hiring-overview.html"><i class="bi bi-building-check me-1"></i>Hiring Overview</a><a class="btn btn-outline-secondary" href="users.html"><i class="bi bi-person-gear me-1"></i>Users</a><a class="btn btn-primary" href="placement-console.html"><i class="bi bi-sliders me-1"></i>Placement Console</a>',
   placement_officer: '',
   student: '',
-  staff: '<a class="btn btn-outline-secondary" href="staff-placements.html"><i class="bi bi-mortarboard-fill me-1"></i>Placements</a><button type="button" class="btn btn-primary" onclick="ReferralModals.openStaff()"><i class="bi bi-plus-lg me-1"></i>Recommend Company</button>',
+  staff: '',
   company: '<a class="btn btn-outline-secondary" href="company.html"><i class="bi bi-building me-1"></i>Company Portal</a><a class="btn btn-outline-secondary" href="eligibility.html"><i class="bi bi-check2-square me-1"></i>Eligibility</a><a class="btn btn-primary" href="applicants.html"><i class="bi bi-person-lines-fill me-1"></i>Applicants</a>',
   alumni: alumniIsWorking()
     ? '<a class="btn btn-outline-secondary" href="settings.html"><i class="bi bi-person-gear me-1"></i>Update Profile</a><a class="btn btn-primary" href="alumni-jobs.html"><i class="bi bi-plus-lg me-1"></i>Post a Job</a>'
@@ -534,9 +547,13 @@ document.getElementById('dashActions').innerHTML = actions[role] || '';
 if (role === 'admin') {
   (async () => {
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      await Auth.ensureSession();
       await DriveStore.fetch();
     }
     const s = await dashboardStats();
+    if (dashLive && s.totalStudents === 0 && s.totalDrives === 0) {
+      showDashLiveBadge(false);
+    }
     const setStat = (id, val) => { const el = document.getElementById(id); if (el) { el.dataset.target = val; el.dataset.animated = '0'; } };
     setStat('statStudents', s.totalStudents);
     setStat('statDrives', s.totalDrives);
@@ -634,19 +651,19 @@ if (role === 'staff') {
     };
 
     let mapped = null;
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+    if (dashLive) {
       await Auth.ensureSession();
       const dash = await StaffApi.fetchDashboard();
       mapped = StaffApi.mapDashboard(dash);
       await StaffRecs.fetch();
     }
 
-    const recRecent = mapped?.recommendations.recent?.length
+    const recRecent = mapped?.recommendations?.recent?.length
       ? mapped.recommendations.recent
-      : (Auth.hasRealAuth() ? StaffRecs.mine().slice(0, 5) : []);
-    const recTotal = mapped?.recommendations.total ?? (Auth.hasRealAuth() ? StaffRecs.mine().length : 0);
-    const recPending = mapped?.recommendations.pending ?? recRecent.filter(r => r.status === 'pending').length;
-    const recOnboarded = mapped?.recommendations.registered ?? recRecent.filter(r => r.status === 'registered').length;
+      : (dashLive ? StaffRecs.mine().slice(0, 5) : []);
+    const recTotal = mapped?.recommendations?.total ?? (dashLive ? StaffRecs.mine().length : 0);
+    const recPending = mapped?.recommendations?.pending ?? recRecent.filter(r => r.status === 'pending').length;
+    const recOnboarded = mapped?.recommendations?.registered ?? recRecent.filter(r => r.status === 'registered').length;
 
     document.getElementById('staffRecs').innerHTML = recRecent.length ? recRecent.map(r => `
       <tr><td><strong>${r.companyName}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')

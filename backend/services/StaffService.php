@@ -54,7 +54,7 @@ final class StaffService
             }
         }
 
-        $hiring = $this->hiringOverview($ctx['departmentId']);
+        $hiring = $this->hiringOverview($ctx);
 
         return [
             'recommendations' => [
@@ -81,11 +81,14 @@ final class StaffService
     }
 
     /**
+     * @param array<string, mixed> $ctx
      * @return array<string, mixed>
      */
-    public function hiringOverview(?string $departmentId): array
+    public function hiringOverview(array $ctx, ?string $batchFilter = null): array
     {
-        $studentOids = $this->studentObjectIdsForDepartment($departmentId);
+        $departmentId = $ctx['departmentId'] ?? null;
+        $batchFilter = trim((string) ($batchFilter ?? ''));
+        $studentOids = $this->studentObjectIdsInScope($ctx, $batchFilter !== '' ? $batchFilter : null);
         $appModel = new ApplicationModel();
         $companyModel = new CompanyModel();
         $userModel = new UserModel();
@@ -163,8 +166,17 @@ final class StaffService
         $candidates = [];
         if ($departmentId !== null) {
             $officerData = new OfficerDataService();
-            $students = $studentModel->findAll(['departmentId' => Security::toObjectId($departmentId)], 500);
+            $students = $studentModel->findAll(StaffContext::studentCollectionFilter($ctx), 5000);
             foreach ($students as $student) {
+                if (!StaffContext::studentMatchesScope($student, $ctx)) {
+                    continue;
+                }
+                if ($batchFilter !== '') {
+                    $studentBatch = trim((string) ($student['classBatch'] ?? ''));
+                    if ($studentBatch === '' || strcasecmp($studentBatch, $batchFilter) !== 0) {
+                        continue;
+                    }
+                }
                 $user = $userModel->findById((string) ($student['userId'] ?? ''));
                 $dept = $deptModel->findById((string) ($student['departmentId'] ?? ''));
                 $row = $officerData->enrichStudentListRow([], $student, $user);
@@ -183,12 +195,13 @@ final class StaffService
                 $deptCode = trim((string) ($row['departmentCode'] ?? $dept['code'] ?? ''));
                 $deptName = trim((string) ($row['departmentName'] ?? $dept['name'] ?? ''));
                 $candidates[] = [
-                    'name'    => $displayName !== '' ? $displayName : 'Student',
-                    'roll'    => (string) ($student['registerNumber'] ?? ''),
-                    'dept'    => $deptCode !== '' ? $deptCode : $deptName,
-                    'company' => $companyName !== '' ? $companyName : '—',
-                    'role'    => $roleTitle !== '' ? $roleTitle : '—',
-                    'status'  => $this->candidatePipelineStatus($student, $latest),
+                    'name'       => $displayName !== '' ? $displayName : 'Student',
+                    'roll'       => (string) ($student['registerNumber'] ?? ''),
+                    'dept'       => $deptCode !== '' ? $deptCode : $deptName,
+                    'classBatch' => (string) ($student['classBatch'] ?? ''),
+                    'company'    => $companyName !== '' ? $companyName : '—',
+                    'role'       => $roleTitle !== '' ? $roleTitle : '—',
+                    'status'     => $this->candidatePipelineStatus($student, $latest),
                 ];
             }
         }
@@ -208,8 +221,9 @@ final class StaffService
                 ['label' => 'Offered', 'value' => $pipeline['offered']],
                 ['label' => 'Hired', 'value' => $pipeline['hired']],
             ],
-            'companies'  => $companies,
-            'candidates' => $candidates,
+            'companies'    => $companies,
+            'candidates'   => $candidates,
+            'batchOptions' => $this->batchOptionsForScope($ctx),
         ];
     }
 
@@ -352,24 +366,60 @@ final class StaffService
     }
 
     /**
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function batchOptionsForScope(array $ctx): array
+    {
+        $assigned = StaffContext::assignedClassBatches($ctx);
+        if ($assigned !== []) {
+            sort($assigned, SORT_NATURAL | SORT_FLAG_CASE);
+
+            return $assigned;
+        }
+
+        $batches = [];
+        foreach ((new StudentModel())->findAll(StaffContext::studentCollectionFilter($ctx), 5000) as $student) {
+            if (!StaffContext::studentMatchesScope($student, $ctx)) {
+                continue;
+            }
+            $batch = trim((string) ($student['classBatch'] ?? ''));
+            if ($batch !== '') {
+                $batches[$batch] = true;
+            }
+        }
+
+        $list = array_keys($batches);
+        sort($list, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $list;
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
      * @return array<int, string>
      */
-    private function studentObjectIdsForDepartment(?string $departmentId): array
+    private function studentObjectIdsInScope(array $ctx, ?string $batchFilter): array
     {
-        if ($departmentId === null) {
-            return [];
-        }
-        $id = Security::toObjectId($departmentId);
-        if ($id === null) {
-            return [];
-        }
-        $students = (new StudentModel())->findAll(['departmentId' => $id], 5000);
+        $students = (new StudentModel())->findAll(StaffContext::studentCollectionFilter($ctx), 5000);
         $ids = [];
+        $batchFilter = trim((string) ($batchFilter ?? ''));
+
         foreach ($students as $student) {
+            if (!StaffContext::studentMatchesScope($student, $ctx)) {
+                continue;
+            }
+            if ($batchFilter !== '') {
+                $studentBatch = trim((string) ($student['classBatch'] ?? ''));
+                if ($studentBatch === '' || strcasecmp($studentBatch, $batchFilter) !== 0) {
+                    continue;
+                }
+            }
             if (!empty($student['_id'])) {
                 $ids[] = (string) $student['_id'];
             }
         }
+
         return $ids;
     }
 }

@@ -81,6 +81,7 @@ final class StaffController
         if (!empty($merged['phone'])) {
             $data['phone'] = (string) $merged['phone'];
         }
+        $departmentId = (string) ($profile['departmentId'] ?? '');
         $assigned = StaffContext::assignedClassBatches([
             'profile' => $profile,
             'departmentId' => $departmentId,
@@ -287,7 +288,8 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
-        $data = (new StaffService())->hiringOverview($ctx['departmentId']);
+        $batch = trim((string) ($_GET['batch'] ?? ''));
+        $data = (new StaffService())->hiringOverview($ctx, $batch !== '' ? $batch : null);
 
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $data['department'] = [

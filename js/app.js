@@ -493,10 +493,10 @@ function renderShell(active) {
     }[role] || '';
 
     const hideSearch = role === 'student' || activeBase === 'dashboard.html';
-    const studentName = String(user?.name || '').trim();
-    const useStudentNameInTopbar = role === 'student' && activeBase === 'dashboard.html' && studentName;
-    const topbarTitle = useStudentNameInTopbar ? studentName : pageLabel;
-    const topbarSub = useStudentNameInTopbar
+    const displayName = String(user?.name || '').trim();
+    const useNameInTopbar = (role === 'student' || role === 'staff') && activeBase === 'dashboard.html' && displayName;
+    const topbarTitle = useNameInTopbar ? displayName : pageLabel;
+    const topbarSub = useNameInTopbar
       ? ''
       : (role === 'student' ? '' : `${ROLE_LABELS[role]} workspace`);
     topbar.innerHTML = `

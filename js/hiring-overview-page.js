@@ -6,7 +6,7 @@
   'use strict';
 
   const IDS = [
-    'viewFilterCard', 'deptSelect', 'branchSelect', 'viewHint', 'liveDataBadge',
+    'viewFilterCard', 'deptSelect', 'branchSelect', 'batchSelect', 'viewHint', 'liveDataBadge',
     'pageTitleText', 'pageSub', 'companiesCard', 'companiesSection', 'activeCount',
     'companyRows', 'candidateRows', 'pipelineRows', 'statusFilter', 'trendChart',
     'statCompanies', 'statApplicants', 'statShortlisted', 'statOffers', 'statHired',
@@ -27,6 +27,7 @@
     this.viewExtraProgrammes = [];
     this.activeParentKey = '';
     this.activeDeptFilter = '';
+    this.activeBatchFilter = '';
     this._els = {};
     this._bound = false;
   }
@@ -61,14 +62,20 @@
   };
 
   HiringOverviewPage.prototype.updateLiveBadge = function () {
-    const el = this.$('liveDataBadge');
-    if (!el) return;
-    el.classList.toggle('d-none', !(this.staffLive || this.campusLive));
+    const show = this.staffLive || this.campusLive || this.adminLive;
+    const pageBadge = this.$('liveDataBadge');
+    if (pageBadge) pageBadge.classList.toggle('d-none', !show);
+    const dashBadge = document.getElementById('dashLiveBadge');
+    if (dashBadge && (this.staffLive || this.campusLive)) {
+      dashBadge.classList.toggle('d-none', !show);
+    }
   };
 
   HiringOverviewPage.prototype.liveHiringView = function (dept) {
     if (this.staffLive) return this.apiHiringData;
-    if (this.campusLive && this.campusRecruitingData) return this.recruitingViewForDept(this.campusRecruitingData, dept || '');
+    if (this.campusLive && this.campusRecruitingData) {
+      return this.recruitingViewForDept(this.campusRecruitingData, dept || '', this.selectedBatch());
+    }
     return null;
   };
 
@@ -150,11 +157,14 @@
     }).join('');
   };
 
-  HiringOverviewPage.prototype.recruitingViewForDept = function (data, deptCode) {
+  HiringOverviewPage.prototype.recruitingViewForDept = function (data, deptCode, batchCode) {
     if (!data) return null;
     let applicants = (data.applicants || []).map(RecruitingStore.mapApplicant);
     if (deptCode) {
       applicants = applicants.filter(a => this.deptMatchesFilter(a.dept, deptCode));
+    }
+    if (batchCode) {
+      applicants = applicants.filter(a => this.batchMatchesFilter(a.classBatch, batchCode));
     }
 
     const shortlisted = applicants.filter(a => a.status === 'shortlisted' || a.status === 'under_review').length;
@@ -338,6 +348,87 @@
     return null;
   };
 
+  HiringOverviewPage.prototype.selectedBatch = function () {
+    return String(this.activeBatchFilter || '').trim();
+  };
+
+  HiringOverviewPage.prototype.batchMatchesFilter = function (studentBatch, batchCode) {
+    if (!batchCode) return true;
+    const raw = String(studentBatch || '').trim();
+    if (!raw) return false;
+    return raw.toUpperCase() === String(batchCode).trim().toUpperCase();
+  };
+
+  HiringOverviewPage.prototype.batchOptions = function () {
+    if (Array.isArray(this.apiHiringData?.batchOptions) && this.apiHiringData.batchOptions.length) {
+      return this.apiHiringData.batchOptions;
+    }
+    const u = Auth.user() || {};
+    if (Array.isArray(u.assignedClassBatches) && u.assignedClassBatches.length) {
+      return u.assignedClassBatches;
+    }
+    if (this.campusRecruitingData) {
+      return this.deriveBatchOptionsFromCampus(this.selectedDept());
+    }
+    return [];
+  };
+
+  HiringOverviewPage.prototype.deriveBatchOptionsFromCampus = function (dept) {
+    if (!this.campusRecruitingData) return [];
+    const batches = new Set();
+    (this.campusRecruitingData.applicants || []).forEach((row) => {
+      const st = row.student || {};
+      const deptCode = st.department || row.department || '';
+      const batch = String(st.classBatch || row.classBatch || '').trim();
+      if (!batch) return;
+      if (dept && !this.deptMatchesFilter(deptCode, dept)) return;
+      batches.add(batch);
+    });
+    return [...batches].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  };
+
+  HiringOverviewPage.prototype.populateBatchSelect = function () {
+    const batchSelect = this.$('batchSelect');
+    if (!batchSelect) return;
+    const role = this.currentRole();
+    const show = role === 'staff' || role === 'placement_officer';
+    const batches = show ? this.batchOptions() : [];
+    batchSelect.classList.toggle('d-none', !show || !batches.length);
+    if (!show || !batches.length) return;
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    let html = '<option value="">All batches</option>';
+    batches.forEach((batch) => {
+      html += `<option value="${esc(batch)}">${esc(batch)}</option>`;
+    });
+    batchSelect.innerHTML = html;
+    if (this.activeBatchFilter && [...batchSelect.options].some(o => o.value === this.activeBatchFilter)) {
+      batchSelect.value = this.activeBatchFilter;
+    } else {
+      batchSelect.value = '';
+      this.activeBatchFilter = '';
+    }
+  };
+
+  HiringOverviewPage.prototype.reloadStaffHiringData = async function () {
+    if (!this.staffLive || typeof StaffApi === 'undefined') return;
+    const batch = this.selectedBatch();
+    const data = await StaffApi.fetchHiringOverview(batch ? { batch } : {});
+    if (data) {
+      this.apiHiringData = data;
+      if (data.hiringTrend) this.hiringTrendData = data.hiringTrend;
+    }
+  };
+
+  HiringOverviewPage.prototype.onBatchDropdownChange = async function () {
+    const batchSelect = this.$('batchSelect');
+    this.activeBatchFilter = batchSelect?.value || '';
+    if (this.staffLive) {
+      await this.reloadStaffHiringData();
+    }
+    this.renderForDept(this.selectedDept());
+  };
+
   HiringOverviewPage.prototype.selectedDept = function () {
     const role = this.currentRole();
     if (role === 'staff' || role === 'placement_officer') {
@@ -452,9 +543,11 @@
     const card = this.$('viewFilterCard');
     const deptSelect = this.$('deptSelect');
     const branchSelect = this.$('branchSelect');
+    const batchSelect = this.$('batchSelect');
     if (card) card.classList.toggle('d-none', false);
     if (deptSelect) deptSelect.classList.toggle('d-none', false);
     if (branchSelect) branchSelect.classList.toggle('d-none', false);
+    this.populateBatchSelect();
 
     if (role === 'staff' || role === 'placement_officer') {
       const meta = this.ownDepartmentMeta();
@@ -668,6 +761,7 @@
 
     deptSelect?.addEventListener('change', () => self.onDepartmentDropdownChange());
     branchSelect?.addEventListener('change', () => self.onBranchDropdownChange());
+    self.$('batchSelect')?.addEventListener('change', () => { self.onBatchDropdownChange(); });
     statusFilter?.addEventListener('change', () => self.renderForDept(self.selectedDept()));
 
     const goToCompanies = () => {
@@ -679,6 +773,7 @@
     });
 
     document.addEventListener('ph-user-updated', () => {
+      self.populateBatchSelect();
       self.setDeptUI(self.selectedDept());
       self.renderForDept(self.selectedDept());
     });
@@ -711,7 +806,10 @@
       if (this.staffLive) {
         const data = await StaffApi.fetchHiringOverview();
         if (data) this.apiHiringData = data;
-        else toast('Could not load hiring overview. Refresh or sign in again.', 'warn');
+        else {
+          toast('Could not load hiring overview. Refresh or sign in again.', 'warn');
+          document.getElementById('dashLiveBadge')?.classList.add('d-none');
+        }
       }
       if (this.campusLive) {
         const data = await RecruitingStore.fetch();
@@ -730,6 +828,7 @@
           this.populateDeptSelect(fromLive);
         } else {
           toast('Could not load live recruiting data. Refresh or sign in again.', 'warn');
+          document.getElementById('dashLiveBadge')?.classList.add('d-none');
         }
         try {
           const stats = await dashboardStats();
