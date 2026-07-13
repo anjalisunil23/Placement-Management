@@ -1912,16 +1912,12 @@ final class AesApiService
 
         $methods = ['getCourses4Placement', 'getCourse4Placement'];
         foreach ($methods as $method) {
-            try {
-                $result = $this->callAESApi($method, ['stud_deptcode' => $deptAesId]);
-                $labels = $this->normalizePlacementScalarLabels($result, [
-                    'stud_course', 'course', 'course_name', 'courseName', 'programme', 'program', 'code', 'name',
-                ]);
-                if ($labels !== []) {
-                    return $labels;
-                }
-            } catch (\Throwable) {
-                continue;
+            $result = $this->callPlacementFilterApi($method, ['stud_deptcode' => $deptAesId]);
+            $labels = $this->normalizePlacementScalarLabels($result, [
+                'stud_course', 'stud_cource_short', 'course', 'course_name', 'courseName', 'programme', 'program', 'code', 'name',
+            ]);
+            if ($labels !== []) {
+                return $labels;
             }
         }
 
@@ -1929,31 +1925,29 @@ final class AesApiService
     }
 
     /**
-     * Placement branches within a programme (e.g. Regular).
+     * Placement branches within a programme (e.g. Regular, Integrated).
      *
      * @return list<string>
      */
     public function fetchPlacementBranches(string $deptAesId, string $programmeCode): array
     {
         $deptAesId = trim($deptAesId);
-        $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode($programmeCode);
+        $programmeCode = trim($programmeCode);
         if ($deptAesId === '' || $programmeCode === '') {
             return [];
         }
 
-        $params = ['stud_deptcode' => $deptAesId, 'stud_course' => $programmeCode];
         $methods = ['getBranches4Placement', 'getBranch4Placement'];
-        foreach ($methods as $method) {
-            try {
-                $result = $this->callAESApi($method, $params);
+        foreach ($this->placementCourseParamVariants($programmeCode) as $courseParams) {
+            $params = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
+            foreach ($methods as $method) {
+                $result = $this->callPlacementFilterApi($method, $params);
                 $labels = $this->normalizePlacementScalarLabels($result, [
-                    'stud_branch', 'branch', 'branch_name', 'branchName', 'name',
+                    'stud_branch', 'branch_name', 'branchName', 'branch', 'name',
                 ]);
                 if ($labels !== []) {
                     return $labels;
                 }
-            } catch (\Throwable) {
-                continue;
             }
         }
 
@@ -1972,30 +1966,87 @@ final class AesApiService
             return [];
         }
 
-        $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode($programmeCode);
+        $programmeCode = trim($programmeCode);
         $branch = trim($branch);
-        $params = ['stud_deptcode' => $deptAesId];
-        if ($programmeCode !== '') {
-            $params['stud_course'] = $programmeCode;
-        }
-        if ($branch !== '') {
-            $params['stud_branch'] = $branch;
-        }
-
         $methods = ['getClasses4Placement', 'getClass4Placement', 'getBatches4Placement', 'getBatch4Placement'];
-        foreach ($methods as $method) {
-            try {
-                $result = $this->callAESApi($method, $params);
+
+        $courseVariants = $programmeCode !== ''
+            ? $this->placementCourseParamVariants($programmeCode)
+            : [[]];
+
+        foreach ($courseVariants as $courseParams) {
+            $params = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
+            if ($branch !== '') {
+                $params['stud_branch'] = $branch;
+            }
+
+            foreach ($methods as $method) {
+                $result = $this->callPlacementFilterApi($method, $params);
                 $labels = $this->normalizePlacementClassBatchLabels($result, $programmeCode);
                 if ($labels !== []) {
                     return $labels;
                 }
-            } catch (\Throwable) {
-                continue;
+            }
+
+            if ($branch !== '') {
+                $withoutBranch = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
+                foreach ($methods as $method) {
+                    $result = $this->callPlacementFilterApi($method, $withoutBranch);
+                    $labels = $this->normalizePlacementClassBatchLabels($result, $programmeCode);
+                    if ($labels !== []) {
+                        return $labels;
+                    }
+                }
             }
         }
 
         return [];
+    }
+
+    /**
+     * @param array<string, scalar|null> $params
+     * @return array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    private function callPlacementFilterApi(string $method, array $params): array
+    {
+        try {
+            $result = $this->callAESApi($method, $params);
+            if (($result['success'] ?? false) === true) {
+                return $result;
+            }
+        } catch (\Throwable) {
+            // Fall through to query-string transport.
+        }
+
+        return $this->callAESApiWithMethodInQuery($method, $params);
+    }
+
+    /**
+     * AES placement filters expect the course label from getCourses4Placement (e.g. M.Tech, PG Certificate).
+     *
+     * @return list<array<string, string>>
+     */
+    private function placementCourseParamVariants(string $programmeCode): array
+    {
+        $programmeCode = trim($programmeCode);
+        if ($programmeCode === '') {
+            return [[]];
+        }
+
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($programmeCode);
+        $variants = [];
+        $seen = [];
+        foreach ([$programmeCode, $resolved] as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate === '' || isset($seen[$candidate])) {
+                continue;
+            }
+            $seen[$candidate] = true;
+            $variants[] = ['stud_course' => $candidate];
+            $variants[] = ['stud_cource_short' => $candidate];
+        }
+
+        return $variants;
     }
 
     /**

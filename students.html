@@ -24,17 +24,8 @@
   </div>
 </div>
 
-<div class="card-surface p-3 mb-3" id="studentsGuide">
+<div class="card-surface p-3 mb-3" id="studentsGuide" data-roles="admin,placement_officer">
   <div class="row g-3 g-lg-2 align-items-stretch">
-    <div class="col-md-4">
-      <div class="d-flex gap-2 h-100">
-        <div class="ic flex-shrink-0" style="width:2.25rem;height:2.25rem;background:color-mix(in srgb,var(--info) 14%,transparent);color:var(--info)"><i class="bi bi-search"></i></div>
-        <div>
-          <div class="fw-semibold small">Find student</div>
-          <div class="small text-muted-2">Search one student and open their profile, academics, and application history.</div>
-        </div>
-      </div>
-    </div>
     <div class="col-md-4" data-roles="admin">
       <div class="d-flex gap-2 h-100">
         <div class="ic flex-shrink-0" style="width:2.25rem;height:2.25rem;background:color-mix(in srgb,var(--success) 14%,transparent);color:var(--success)"><i class="bi bi-person-check"></i></div>
@@ -80,11 +71,17 @@
             <input class="form-control" id="searchStudent" placeholder="Search by name, register number, or department…" autocomplete="off"/>
           </div>
           <div class="mb-3 d-none" id="staffPolicyFilterWrap">
-            <label class="form-label small fw-semibold text-muted-2 mb-1" for="policyFilterSelect">Policy status</label>
-            <select class="form-select form-select-sm" id="policyFilterSelect">
-              <option value="all">All students</option>
-              <option value="registered">Policy registered</option>
-              <option value="not_registered">Not registered</option>
+            <label class="form-label small fw-semibold text-muted-2 mb-1" for="staffFilterProgram">Program</label>
+            <select class="form-select form-select-sm mb-2" id="staffFilterProgram">
+              <option value="">All programs</option>
+            </select>
+            <label class="form-label small fw-semibold text-muted-2 mb-1" for="staffFilterBranch">Branch</label>
+            <select class="form-select form-select-sm mb-2" id="staffFilterBranch" disabled>
+              <option value="">All branches</option>
+            </select>
+            <label class="form-label small fw-semibold text-muted-2 mb-1" for="staffFilterBatch">Batch</label>
+            <select class="form-select form-select-sm mb-2" id="staffFilterBatch">
+              <option value="">All batches</option>
             </select>
           </div>
           <div class="list-group list-group-flush" id="studentList" style="max-height:520px;overflow:auto"></div>
@@ -187,13 +184,6 @@
 
   <!-- Staff: placement policy registration from department student list -->
   <div class="tab-pane fade" id="tabStaffPolicy">
-    <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
-      <i class="bi bi-info-circle text-primary mt-1"></i>
-      <div>
-        <strong>Placement policy registration</strong> — students in your department who accepted the placement policy form.
-        <div class="small text-muted-2 mt-1">This is separate from drive applications. Students must accept the policy before placement activities.</div>
-      </div>
-    </div>
     <div class="row g-3 mb-3" id="staffPolicyStats"></div>
     <div class="card-surface">
       <ul class="nav nav-tabs px-3 pt-2" role="tablist">
@@ -575,11 +565,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260713u"></script>
-<script src="js/admin-api.js?v=20260713u"></script>
-<script src="js/officer-api.js?v=20260713u"></script>
-<script src="js/api.js?v=20260713u"></script>
-<script src="js/app.js?v=20260713u"></script>
+<script src="js/staff-api.js?v=20260713v"></script>
+<script src="js/admin-api.js?v=20260713v"></script>
+<script src="js/officer-api.js?v=20260713v"></script>
+<script src="js/api.js?v=20260713v"></script>
+<script src="js/app.js?v=20260713v"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin';
@@ -672,7 +662,10 @@ let overviewSearchTimer = null;
 let overviewSearchSeq = 0;
 let profileLoadSeq = 0;
 let deptStudentsLoaded = false;
-let staffPolicyFilter = 'all';
+let staffFilterProgram = '';
+let staffFilterBranch = '';
+let staffFilterBatch = '';
+let staffScopeBatchSet = new Set();
 const autoSelectOverviewOnLoad = role === 'staff';
 
 function isPolicyRegistered(s) {
@@ -691,6 +684,96 @@ function formatPolicyAcceptedAt(value) {
   if (!value) return '—';
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString('en-IN');
+}
+
+function studentProgrammeCode(s) {
+  const dept = typeof resolveCollegeProgrammeCode === 'function'
+    ? resolveCollegeProgrammeCode(s?.department || '')
+    : String(s?.department || '').trim().toUpperCase();
+  if (dept) return dept;
+  const batch = String(s?.classBatch || '').trim();
+  if (!batch || typeof normalizeProgrammeCode !== 'function') return '';
+  const raw = normalizeProgrammeCode(batch);
+  if (!raw) return '';
+  if (typeof DEPARTMENT_PROGRAMME_GROUPS !== 'undefined') {
+    const programmes = [];
+    DEPARTMENT_PROGRAMME_GROUPS.forEach((g) => g.programmes.forEach((p) => programmes.push(p)));
+    programmes.sort((a, b) => normalizeProgrammeCode(b.code).length - normalizeProgrammeCode(a.code).length);
+    for (const p of programmes) {
+      const codes = [p.code, ...(p.aliases || [])]
+        .map((c) => normalizeProgrammeCode(c))
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+      for (const code of codes) {
+        if (raw === code || raw.startsWith(code)) {
+          return normalizeProgrammeCode(p.code);
+        }
+      }
+    }
+  }
+  return raw;
+}
+
+function fillStaffScopeSelect(id, values, allLabel, selected = '') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const current = selected || el.value;
+  el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if (current && [...el.options].some(o => o.value === current)) el.value = current;
+  else el.value = '';
+}
+
+async function loadStaffScopeFilters() {
+  if (!useStaffApi || typeof StaffApi === 'undefined') return null;
+  const data = await StaffApi.fetchPlacementFilters({
+    program: staffFilterProgram,
+    branch: staffFilterBranch,
+  });
+  if (!data) return null;
+
+  fillStaffScopeSelect('staffFilterProgram', data.programs || [], 'All programs', staffFilterProgram);
+  fillStaffScopeSelect('staffFilterBranch', data.branches || [], 'All branches', staffFilterBranch);
+  fillStaffScopeSelect('staffFilterBatch', data.batches || [], 'All batches', staffFilterBatch);
+
+  const branchEl = document.getElementById('staffFilterBranch');
+  if (branchEl) branchEl.disabled = !staffFilterProgram;
+
+  staffScopeBatchSet = new Set((data.batches || []).map(b => String(b).trim().toLowerCase()));
+  return data;
+}
+
+function studentMatchesScopeFilters(s) {
+  if (!useStaffApi) return true;
+
+  if (staffFilterBatch) {
+    return String(s.classBatch || '').trim().toLowerCase() === staffFilterBatch.toLowerCase();
+  }
+
+  if (staffFilterProgram) {
+    const rowProgram = studentProgrammeCode(s);
+    const wantResolved = typeof resolveCollegeProgrammeCode === 'function'
+      ? resolveCollegeProgrammeCode(staffFilterProgram)
+      : staffFilterProgram.toUpperCase();
+    const gotResolved = typeof resolveCollegeProgrammeCode === 'function'
+      ? resolveCollegeProgrammeCode(rowProgram)
+      : rowProgram.toUpperCase();
+    const match = (wantResolved && gotResolved && wantResolved === gotResolved)
+      || String(staffFilterProgram).trim().toLowerCase() === String(rowProgram).trim().toLowerCase()
+      || String(staffFilterProgram).trim().toLowerCase() === String(s.department || '').trim().toLowerCase();
+    if (!match) return false;
+  }
+
+  if ((staffFilterProgram || staffFilterBranch) && staffScopeBatchSet.size) {
+    const batch = String(s.classBatch || '').trim().toLowerCase();
+    if (!batch) return false;
+    return staffScopeBatchSet.has(batch);
+  }
+
+  return true;
+}
+
+function scopedStaffStudents(students) {
+  return students.filter(s => studentMatchesScopeFilters(s));
 }
 
 function studentSearchHaystack(s) {
@@ -787,10 +870,8 @@ function filteredOverviewStudents() {
   } else {
     list = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
   }
-  if (useStaffApi && staffPolicyFilter !== 'all') {
-    list = list.filter(s => (
-      staffPolicyFilter === 'registered' ? isPolicyRegistered(s) : !isPolicyRegistered(s)
-    ));
+  if (useStaffApi) {
+    list = scopedStaffStudents(list);
   }
   return [...list].sort((a, b) =>
     String(a.name || a.registerNumber || '').localeCompare(String(b.name || b.registerNumber || ''), undefined, { sensitivity: 'base' })
@@ -831,7 +912,7 @@ function studentRow(s) {
     ? name
     : (s.registerNumber ? `Student ${s.registerNumber}` : 'Student');
   const statusBadge = useStaffApi
-    ? policyStatusBadge(s)
+    ? ''
     : `<span class="badge-soft ${s.placementStatus === 'placed' ? 'success' : s.placementStatus === 'pending_placement' ? 'warning' : 'muted'}">${esc(s.placementStatus === 'pending_placement' ? 'under review' : (s.placementStatus || '—'))}</span>`;
   return `<button type="button" class="list-group-item list-group-item-action student-list-item ${active}" data-reg="${esc(s.registerNumber)}">
     <div class="d-flex justify-content-between align-items-start gap-2">
@@ -1476,10 +1557,14 @@ document.getElementById('studentList').addEventListener('click', e => {
   selectOverviewStudent(btn.dataset.reg);
 });
 document.getElementById('searchStudent').addEventListener('input', scheduleOverviewSearch);
-document.getElementById('policyFilterSelect')?.addEventListener('change', (e) => {
-  staffPolicyFilter = e.target.value || 'all';
-  syncOverviewSelectionAfterFilter();
-  renderOverviewList();
+document.getElementById('staffFilterProgram')?.addEventListener('change', () => {
+  onStaffScopeFilterChange('program').catch(() => {});
+});
+document.getElementById('staffFilterBranch')?.addEventListener('change', () => {
+  onStaffScopeFilterChange('branch').catch(() => {});
+});
+document.getElementById('staffFilterBatch')?.addEventListener('change', () => {
+  onStaffScopeFilterChange('batch').catch(() => {});
 });
 document.getElementById('tabStaffPolicy')?.addEventListener('click', (e) => {
   const row = e.target.closest('.staff-policy-row');
@@ -1490,7 +1575,9 @@ document.getElementById('tabStaffPolicy')?.addEventListener('click', (e) => {
 });
 document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
   const href = (e.target?.getAttribute('href') || '').replace('#', '');
-  if (href === 'tabStaffPolicy') renderStaffPolicyTab();
+  if (href === 'tabStaffPolicy') {
+    loadStaffScopeFilters().then(() => renderStaffPolicyTab()).catch(() => renderStaffPolicyTab());
+  }
 });
 document.getElementById('searchStudent').addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -1516,7 +1603,32 @@ async function loadDepartmentStudentsForStaff() {
 }
 
 function staffPolicyStudents() {
-  return (deptStudentsLoaded ? overviewStudentsAll : overviewStudents).slice();
+  const pool = (deptStudentsLoaded ? overviewStudentsAll : overviewStudents).slice();
+  return scopedStaffStudents(pool);
+}
+
+async function onStaffScopeFilterChange(changed) {
+  if (changed === 'program') {
+    staffFilterProgram = document.getElementById('staffFilterProgram')?.value || '';
+    staffFilterBranch = '';
+    staffFilterBatch = '';
+    const branchEl = document.getElementById('staffFilterBranch');
+    const batchEl = document.getElementById('staffFilterBatch');
+    if (branchEl) branchEl.value = '';
+    if (batchEl) batchEl.value = '';
+  } else if (changed === 'branch') {
+    staffFilterBranch = document.getElementById('staffFilterBranch')?.value || '';
+    staffFilterBatch = '';
+    const batchEl = document.getElementById('staffFilterBatch');
+    if (batchEl) batchEl.value = '';
+  } else if (changed === 'batch') {
+    staffFilterBatch = document.getElementById('staffFilterBatch')?.value || '';
+  }
+
+  await loadStaffScopeFilters();
+  syncOverviewSelectionAfterFilter();
+  renderOverviewList();
+  renderStaffPolicyTab();
 }
 
 function renderStaffPolicyTab() {
@@ -1561,6 +1673,7 @@ async function initOverview() {
       await Auth.enrichFromProfile();
       document.getElementById('staffPolicyFilterWrap')?.classList.remove('d-none');
       await loadDepartmentStudentsForStaff();
+      await loadStaffScopeFilters();
       renderStaffPolicyTab();
     } else {
       overviewStudentsAll = [];

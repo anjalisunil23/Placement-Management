@@ -397,8 +397,20 @@ final class StaffPlacementRegistryService
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
 
         return array_values(array_filter($rows, static function (array $row) use ($program, $branch, $batch, $type, $q): bool {
-            if ($program !== '' && strcasecmp((string) ($row['program'] ?? ''), $program) !== 0) {
-                return false;
+            if ($program !== '') {
+                $rowProgram = (string) ($row['program'] ?? '');
+                $match = strcasecmp($rowProgram, $program) === 0
+                    || strcasecmp(
+                        DepartmentProgrammeCatalog::resolveProgrammeCode($rowProgram),
+                        DepartmentProgrammeCatalog::resolveProgrammeCode($program)
+                    ) === 0
+                    || strcasecmp(
+                        DepartmentProgrammeCatalog::normalizeCode($rowProgram),
+                        DepartmentProgrammeCatalog::normalizeCode($program)
+                    ) === 0;
+                if (!$match) {
+                    return false;
+                }
             }
             if ($branch !== '' && strcasecmp((string) ($row['branch'] ?? ''), $branch) !== 0) {
                 return false;

@@ -140,15 +140,6 @@ const PAGE_LABELS = {
   'admin-settings.html': 'System Settings',
 };
 
-const TOPBAR_SEARCH = {
-  admin: 'Search students, companies, drives…',
-  placement_officer: 'Search students, companies, drives…',
-  student: 'Search drives, companies, roles…',
-  staff: 'Search drives, departments, companies…',
-  company: 'Search companies, departments, applicants…',
-  alumni: 'Search jobs, drives, referrals…',
-};
-
 function initials(name='') {
   return name.trim().split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase() || 'U';
 }
@@ -492,7 +483,6 @@ function renderShell(active) {
         : '<a href="drives.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Apply</a>',
     }[role] || '';
 
-    const hideSearch = role === 'student' || activeBase === 'dashboard.html';
     const displayName = String(user?.name || '').trim();
     const useNameInTopbar = (role === 'student' || role === 'staff') && activeBase === 'dashboard.html' && displayName;
     const topbarTitle = useNameInTopbar ? displayName : pageLabel;
@@ -505,10 +495,7 @@ function renderShell(active) {
         <div class="fw-semibold" style="font-size:.95rem;line-height:1.2">${escapeAttr(topbarTitle)}</div>
         ${topbarSub ? `<div class="small text-muted-2">${escapeAttr(topbarSub)}</div>` : ''}
       </div>` : ''}
-      ${hideSearch ? '<div class="flex-grow-1"></div>' : `<div class="search ms-md-3">
-        <i class="bi bi-search"></i>
-        <input placeholder="${TOPBAR_SEARCH[role] || 'Search…'}" />
-      </div>`}
+      <div class="flex-grow-1"></div>
       <div class="ms-auto topbar-actions d-flex align-items-center gap-2">
         ${quickLinks}
         ${Auth.isDemo() ? `<div class="dropdown">

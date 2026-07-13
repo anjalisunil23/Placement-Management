@@ -190,6 +190,15 @@ const StaffApi = {
     return res.success ? res.data : null;
   },
 
+  async fetchPlacementFilters(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.program) qs.set('program', params.program);
+    if (params.branch) qs.set('branch', params.branch);
+    const q = qs.toString();
+    const res = await api('/staff/placement-filters' + (q ? `?${q}` : ''));
+    return res.success && res.data ? res.data : null;
+  },
+
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
     ['program', 'branch', 'batch', 'type', 'q'].forEach(k => {

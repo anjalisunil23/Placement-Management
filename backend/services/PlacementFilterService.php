@@ -61,7 +61,7 @@ final class PlacementFilterService
      */
     public function fetchBranchOptions(array $ctx, string $program): array
     {
-        $program = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
+        $program = trim($program);
         if ($program === '') {
             return [];
         }
@@ -118,19 +118,20 @@ final class PlacementFilterService
             return [];
         }
 
-        $parts = str_contains($program, '|')
-            ? (preg_split('/\|/', $program) ?: [])
-            : [$program];
-
-        $codes = [];
-        foreach ($parts as $part) {
-            $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode((string) $part);
-            if ($resolved !== '') {
-                $codes[] = $resolved;
+        if (str_contains($program, '|')) {
+            $parts = preg_split('/\|/', $program) ?: [];
+            $codes = [];
+            foreach ($parts as $part) {
+                $label = trim((string) $part);
+                if ($label !== '') {
+                    $codes[] = $label;
+                }
             }
+
+            return array_values(array_unique($codes));
         }
 
-        return array_values(array_unique($codes));
+        return [$program];
     }
 
     /**

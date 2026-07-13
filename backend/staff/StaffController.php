@@ -14,6 +14,7 @@ use PMS\Services\OfficerDataService;
 use PMS\Services\StaffContext;
 use PMS\Services\StaffDataService;
 use PMS\Services\SelfPlacementService;
+use PMS\Services\PlacementFilterService;
 use PMS\Services\StaffPlacementRegistryService;
 use PMS\Services\StaffService;
 use PMS\Services\AesLoginService;
@@ -231,6 +232,22 @@ final class StaffController
         StaffContext::requireDepartmentScope($ctx);
         $officerCtx = StaffContext::officerCompatible($ctx);
         (new OfficerDataService())->streamStudentPhoto($studentId, $officerCtx);
+    }
+
+    /** GET /api/staff/placement-filters */
+    public function placementFilters(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $program = trim((string) ($_GET['program'] ?? ''));
+        $branch = trim((string) ($_GET['branch'] ?? ''));
+        $svc = new PlacementFilterService();
+        Response::success(DocumentHelper::jsonSafe([
+            'programs' => $svc->fetchProgramOptions($ctx),
+            'branches' => $program !== '' ? $svc->fetchBranchOptions($ctx, $program) : [],
+            'batches'  => $svc->fetchBatchOptions($ctx, $program, $branch),
+        ]));
     }
 
     /** GET /api/staff/placements-higher-education */

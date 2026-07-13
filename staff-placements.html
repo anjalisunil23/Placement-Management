@@ -425,6 +425,11 @@ async function loadRegistry() {
   fillSelect('filterProgram', filters.programs || filters.departments?.map(d => d.code), 'All programs');
   fillSelect('filterBranch', filters.branches, 'All branches');
   fillSelect('filterBatch', filters.batches, 'All batches');
+  const program = document.getElementById('filterProgram')?.value || '';
+  const branchEl = document.getElementById('filterBranch');
+  const batchEl = document.getElementById('filterBatch');
+  if (branchEl) branchEl.disabled = !program;
+  if (batchEl) batchEl.disabled = !program;
   allRows = Array.isArray(data.rows) ? data.rows : [];
   applyClientFilter();
 }
