@@ -53,12 +53,12 @@
     width:auto;
     height:auto;
     max-width:min(420px,100%);
-    border-radius:8px;
+    border-radius:0;
     overflow:visible;
-    background:#000;
-    border:1px solid #222;
+    background:transparent;
+    border:0;
     position:relative;
-    padding:6px 10px;
+    padding:0;
   }
   .policy-logo-mark img,
   .policy-header .policy-college-logo{
@@ -96,7 +96,7 @@
   @media (max-width:520px){
     .policy-shell{padding:1rem}
     .policy-header{flex-direction:column;align-items:flex-start;text-align:left}
-    .policy-logo-mark{max-width:100%;padding:5px 8px}
+    .policy-logo-mark{max-width:100%;padding:0}
     .policy-logo-mark img{height:44px !important}
   }
   .policy-body{
@@ -181,6 +181,20 @@
   .declaration-cell .form-check-input{margin-top:.4rem;flex-shrink:0}
   .declaration-cell .form-check-label{color:#111}
   .policy-sticky{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,#f4f4f5 22%,#f4f4f5);padding-top:1rem}
+  .policy-page #btnLogout{
+    color:#111;
+    border:1.5px solid #64748b;
+    background:#fff;
+    font-weight:600;
+    font-family:Arial,Helvetica,'Source Sans 3',sans-serif;
+    padding:.35rem .85rem;
+  }
+  .policy-page #btnLogout:hover,
+  .policy-page #btnLogout:focus{
+    background:#f1f5f9;
+    border-color:#334155;
+    color:#000;
+  }
 </style>
 </head>
 <body class="policy-page" data-page="placement-registration.html">

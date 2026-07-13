@@ -1426,16 +1426,19 @@ final class OfficerDataService
             $package = trim((string) ($elig['package'] ?? $row['package'] ?? ''));
             $deadline = trim((string) ($elig['deadline'] ?? $row['deadline'] ?? ''));
             $jobType = trim((string) ($elig['jobType'] ?? $row['jobType'] ?? ''));
+            $mode = trim((string) ($elig['mode'] ?? $row['mode'] ?? ''));
             if ($deadline === '' && !empty($row['date'])) {
                 $deadline = (string) $row['date'];
             }
             $row['package'] = $package;
             $row['deadline'] = $deadline;
             $row['jobType'] = $jobType;
+            $row['mode'] = $mode;
             $row['eligibility'] = array_merge($elig, [
                 'package'  => $package,
                 'deadline' => $deadline,
                 'jobType'  => $jobType,
+                'mode'     => $mode,
             ]);
 
             $rows[] = $row;

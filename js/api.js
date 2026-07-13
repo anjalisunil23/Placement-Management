@@ -2151,16 +2151,18 @@ function mapCompanyJobStatus(status) {
 }
 
 const DRIVE_CATALOG = [
-  { id:'google-sde-1', company:'Google', role:'SDE-1', package:'₹42 LPA', branches:'CSE,IT', applied:412, status:'Open', statusCls:'success', deadline:'Dec 28', profile:'SDE / Full Stack' },
-  { id:'amazon-intern', company:'Amazon', role:'SDE Intern', package:'₹18 LPA', branches:'CSE,ECE', applied:680, status:'Ongoing', statusCls:'info', deadline:'Jan 04', profile:'SDE / Full Stack' },
-  { id:'ms-swe', company:'Microsoft', role:'SWE', package:'₹52 LPA', branches:'CSE', applied:148, status:'Open', statusCls:'success', deadline:'Jan 10', profile:'SDE / Full Stack' },
-  { id:'deloitte-analyst', company:'Deloitte', role:'Analyst', package:'₹9 LPA', branches:'All', applied:1240, status:'Ongoing', statusCls:'info', deadline:'Jan 06', profile:'Product / Business' },
-  { id:'tcs-se', company:'TCS', role:'System Engineer', package:'₹4.5 LPA', branches:'All', applied:2160, status:'Open', statusCls:'warning', deadline:'Jan 15', profile:'General' },
-  { id:'goldman-quant', company:'Goldman Sachs', role:'Quant Intern', package:'₹28 LPA', branches:'CSE,Math', applied:94, status:'Open', statusCls:'success', deadline:'Jan 18', profile:'Data / ML' },
-  { id:'adobe-intern', company:'Adobe', role:'Product Intern', package:'₹22 LPA', branches:'CSE,ECE', applied:312, status:'Ongoing', statusCls:'info', deadline:'Jan 09', profile:'Product / Business' },
-  { id:'flipkart-sde', company:'Flipkart', role:'SDE', package:'₹26 LPA', branches:'CSE,IT', applied:380, status:'Open', statusCls:'success', deadline:'Jan 12', profile:'SDE / Full Stack' },
-  { id:'acme-sde', company:'Acme Cloud', role:'SDE-1', package:'₹18 LPA', branches:'CSE,IT,MCA', applied:86, status:'Ongoing', statusCls:'info', deadline:'Jan 20', profile:'SDE / Full Stack' },
-  { id:'acme-intern', company:'Acme Cloud', role:'Product Intern', package:'₹12 LPA', branches:'CSE,ECE', applied:54, status:'Open', statusCls:'success', deadline:'Jan 22', profile:'Product / Business' },
+  { id:'google-sde-1', company:'Google', role:'SDE-1', package:'₹42 LPA', jobType:'Full-time', tier:'Tier 1', mode:'On-campus', recruitmentDate:'2026-01-15', branches:'CSE,IT', applied:412, status:'Open', statusCls:'success', deadline:'2026-01-10', profile:'SDE / Full Stack' },
+  { id:'amazon-intern', company:'Amazon', role:'SDE Intern', package:'₹18 LPA', jobType:'Internship', tier:'Tier 1', mode:'Virtual', recruitmentDate:'2026-01-08', branches:'CSE,ECE', applied:680, status:'Ongoing', statusCls:'info', deadline:'2026-01-04', profile:'SDE / Full Stack' },
+  { id:'ms-swe', company:'Microsoft', role:'SWE', package:'₹52 LPA', jobType:'Full-time', tier:'Tier 1', mode:'On-campus', recruitmentDate:'2026-01-20', branches:'CSE', applied:148, status:'Open', statusCls:'success', deadline:'2026-01-10', profile:'SDE / Full Stack' },
+  { id:'ibm-tester', company:'IBM', role:'Tester', package:'₹12 LPA', jobType:'Internship + PPO', tier:'General', mode:'Hybrid', recruitmentDate:'2026-07-22', branches:'BCA, CMT, AIT, FT, HW, CHE, MT, LIB, ME, CE, BS, ECE, EEE, MA, HUM, MCA, IT, CSE', applied:86, status:'Open', statusCls:'success', deadline:'2026-07-15', profile:'General' },
+  { id:'ibm-dev', company:'IBM', role:'Software Developer', package:'₹14 LPA', jobType:'Internship + PPO', tier:'General', mode:'Hybrid', recruitmentDate:'2026-07-22', branches:'CSE, IT, MCA', applied:54, status:'Open', statusCls:'success', deadline:'2026-07-15', profile:'SDE / Full Stack' },
+  { id:'deloitte-analyst', company:'Deloitte', role:'Analyst', package:'₹9 LPA', jobType:'Full-time', tier:'Tier 2', mode:'On-campus', recruitmentDate:'2026-01-12', branches:'All', applied:1240, status:'Ongoing', statusCls:'info', deadline:'2026-01-06', profile:'Product / Business' },
+  { id:'tcs-se', company:'TCS', role:'System Engineer', package:'₹4.5 LPA', jobType:'Full-time', tier:'Tier 2', mode:'On-campus', recruitmentDate:'2026-01-25', branches:'All', applied:2160, status:'Open', statusCls:'warning', deadline:'2026-01-15', profile:'General' },
+  { id:'goldman-quant', company:'Goldman Sachs', role:'Quant Intern', package:'₹28 LPA', jobType:'Internship', tier:'Tier 1', mode:'Virtual', recruitmentDate:'2026-01-22', branches:'CSE,Math', applied:94, status:'Open', statusCls:'success', deadline:'2026-01-18', profile:'Data / ML' },
+  { id:'adobe-intern', company:'Adobe', role:'Product Intern', package:'₹22 LPA', jobType:'Internship', tier:'Tier 1', mode:'Hybrid', recruitmentDate:'2026-01-14', branches:'CSE,ECE', applied:312, status:'Ongoing', statusCls:'info', deadline:'2026-01-09', profile:'Product / Business' },
+  { id:'flipkart-sde', company:'Flipkart', role:'SDE', package:'₹26 LPA', jobType:'Full-time', tier:'Tier 1', mode:'On-campus', recruitmentDate:'2026-01-18', branches:'CSE,IT', applied:380, status:'Open', statusCls:'success', deadline:'2026-01-12', profile:'SDE / Full Stack' },
+  { id:'acme-sde', company:'Acme Cloud', role:'SDE-1', package:'₹18 LPA', jobType:'Full-time', tier:'Tier 2', mode:'On-campus', recruitmentDate:'2026-01-28', branches:'CSE,IT,MCA', applied:86, status:'Ongoing', statusCls:'info', deadline:'2026-01-20', profile:'SDE / Full Stack' },
+  { id:'acme-intern', company:'Acme Cloud', role:'Product Intern', package:'₹12 LPA', jobType:'Internship', tier:'Tier 2', mode:'Virtual', recruitmentDate:'2026-01-30', branches:'CSE,ECE', applied:54, status:'Open', statusCls:'success', deadline:'2026-01-22', profile:'Product / Business' },
 ];
 
 function activeRecruitingCompanies() {
@@ -3752,14 +3754,19 @@ const DriveStore = {
         role = parts.slice(1).join(' — ');
       }
     }
-    const branches = Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '');
     const elig = (d.eligibility && typeof d.eligibility === 'object' && d.eligibility.eligible === undefined)
       ? d.eligibility
       : {};
+    const rawBranches = d.branches || d.eligibleBranches || elig.branches || elig.eligibleBranches || '';
+    const branches = Array.isArray(rawBranches) ? rawBranches.join(', ') : String(rawBranches).trim();
     const check = d.eligibilityCheck || (d.eligibility?.eligible !== undefined ? d.eligibility : null);
     const pkg = String(d.package || elig.package || '').trim();
-    const deadline = String(d.deadline || elig.deadline || '').trim();
+    const regDeadline = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
+    const recruitmentDate = String(d.recruitmentDate || d.date || '').trim();
     const jobType = String(d.jobType || elig.jobType || '').trim();
+    const mode = String(d.mode || elig.mode || '').trim();
+    const tier = String(d.tier || '').trim();
+    const location = String(d.location || elig.location || '').trim();
     return {
       id: d._id || d.id,
       companyId: d.companyId || '',
@@ -3767,10 +3774,14 @@ const DriveStore = {
       role,
       package: pkg || '—',
       jobType: jobType || '—',
+      tier: tier || '—',
+      mode: mode || '—',
+      recruitmentDate: recruitmentDate || '—',
+      location: location || '—',
       branches,
       status,
       statusCls: driveStatusCls(status),
-      deadline: (deadline && deadline !== 'TBD') ? deadline : (d.date || '—'),
+      deadline: (regDeadline && regDeadline !== 'TBD') ? regDeadline : '—',
       profile: d.profile || 'General',
       applied: d.applied ? 1 : 0,
       applicationStatus: d.applicationStatus || null,
@@ -3896,6 +3907,7 @@ const DriveStore = {
         package: p.package || '',
         jobType: p.jobType || '',
         location: p.location || '',
+        mode: p.mode || '',
         deadline: (p.deadline && p.deadline !== 'TBD') ? p.deadline : '',
         description: p.description || '',
       },
