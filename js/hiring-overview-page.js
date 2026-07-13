@@ -777,13 +777,14 @@
   HiringOverviewPage.prototype.configurePageForRole = function (role) {
     const title = this.$('pageTitleText') || document.getElementById('dashTitle');
     const sub = this.$('pageSub') || document.getElementById('dashSub') || this.root.querySelector('.page-sub');
-    if (role === 'staff') {
-      // Staff dashboard uses topbar username only — no page title/subtitle here.
-    } else if (role === 'placement_officer') {
+    if (role === 'staff' || role === 'placement_officer') {
       const meta = this.ownDepartmentMeta();
       const label = meta.name || meta.code || 'your department';
       if (title) title.textContent = 'Department Hiring Overview';
-      if (sub) sub.textContent = `Live snapshot for ${label}: companies hiring, pipeline stages, and recent activity.`;
+      if (sub) {
+        sub.textContent = `Live snapshot for ${label}: companies hiring, pipeline stages, and recent activity.`;
+        sub.hidden = false;
+      }
     } else if (role === 'admin') {
       if (title) title.textContent = 'Campus Hiring Overview';
       if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.';

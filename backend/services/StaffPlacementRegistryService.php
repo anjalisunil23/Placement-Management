@@ -270,15 +270,6 @@ final class StaffPlacementRegistryService
             ? $filterSvc->fetchBatchOptions($staffCtx, $program, $branch)
             : [];
 
-        if ($batches === []) {
-            $fallback = [];
-            foreach ($this->loadScopedBatchOptions($staffCtx) as $batch) {
-                $fallback[$batch] = true;
-            }
-            $batches = array_keys($fallback);
-            sort($batches, SORT_NATURAL | SORT_FLAG_CASE);
-        }
-
         return [
             'programs'     => $programs,
             'branches'     => $branches,

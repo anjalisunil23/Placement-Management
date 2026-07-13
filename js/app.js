@@ -484,7 +484,7 @@ function renderShell(active) {
     }[role] || '';
 
     const displayName = String(user?.name || '').trim();
-    const useNameInTopbar = (role === 'student' || role === 'staff') && activeBase === 'dashboard.html' && displayName;
+    const useNameInTopbar = role === 'student' && activeBase === 'dashboard.html' && displayName;
     const topbarTitle = useNameInTopbar ? displayName : pageLabel;
     const topbarSub = useNameInTopbar
       ? ''

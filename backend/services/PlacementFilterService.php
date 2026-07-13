@@ -8,23 +8,12 @@ use PMS\Models\StudentModel;
 use PMS\Utils\Security;
 
 /**
- * AES placement filters: program → branch → batch for any department.
+ * AES placement filters: program → branch → batch from getStudInfo4Placement only.
  */
 final class PlacementFilterService
 {
     /** @var array<string, list<array{stud_course:string,stud_branch:string,stud_class:string}>> */
     private static array $scopedRowsCache = [];
-
-    /** AES parent-department programme labels when getCourses4Placement is unavailable. */
-    private const AES_STANDARD_PROGRAMS = [
-        'B.Tech',
-        'BBA',
-        'BCA',
-        'M.Tech',
-        'MCA',
-        'PG Certificate',
-        'PhD',
-    ];
 
     /**
      * @param array<string, mixed> $ctx
@@ -55,58 +44,19 @@ final class PlacementFilterService
     }
 
     /**
+     * Distinct stud_course values from getStudInfo4Placement for the department.
+     *
      * @param array<string, mixed> $ctx
      * @return list<string>
      */
     public function fetchProgramOptions(array $ctx): array
     {
-        $deptAesId = $this->resolveParentDeptAesId($ctx);
-        $fromAes = $deptAesId !== ''
-            ? (new AesApiService())->fetchPlacementCourses($deptAesId)
-            : [];
-
-        $programs = $fromAes !== [] ? $fromAes : self::AES_STANDARD_PROGRAMS;
-        foreach ($this->collectScopedStudInfoRows($ctx) as $row) {
-            if ($row['stud_course'] !== '') {
-                $programs[] = $row['stud_course'];
-            }
-        }
-
-        if ($fromAes === []) {
-            foreach ($this->fallbackProgrammes($ctx) as $program) {
-                $programs[] = $program;
-            }
-        }
-
-        return $this->sortLabels($programs);
+        return $this->sortLabels($this->distinctFieldFromScopedRows($ctx, 'stud_course', '', ''));
     }
 
     /**
-     * @return list<string>
-     */
-    private function resolveBranchLabels(string $deptAesId, string $program, array $ctx): array
-    {
-        $program = trim($program);
-        if ($program === '') {
-            return [];
-        }
-
-        $branches = $deptAesId !== ''
-            ? (new AesApiService())->fetchPlacementBranches($deptAesId, $program)
-            : [];
-
-        if ($branches === []) {
-            $branches = $this->distinctFieldFromScopedRows($ctx, 'stud_branch', $program, '');
-        }
-
-        if ($branches !== []) {
-            return $this->sortLabels($branches);
-        }
-
-        return $this->sortLabels($this->fallbackBranchOptions($program));
-    }
-
-    /**
+     * Distinct stud_branch values for the selected programme.
+     *
      * @param array<string, mixed> $ctx
      * @return list<string>
      */
@@ -117,28 +67,12 @@ final class PlacementFilterService
             return [];
         }
 
-        $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId === '') {
-            return [];
-        }
-
-        return $this->resolveBranchLabels($deptAesId, $program, $ctx);
+        return $this->sortLabels($this->distinctFieldFromScopedRows($ctx, 'stud_branch', $program, ''));
     }
 
     /**
-     * @return list<string>
-     */
-    private function fallbackBranchOptions(string $program): array
-    {
-        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
-        if (in_array($resolved, ['MCA', 'BCA', 'INMCA'], true)) {
-            return ['Integrated', 'Regular'];
-        }
-
-        return [];
-    }
-
-    /**
+     * Distinct stud_class values (current and previous batches) for programme + branch.
+     *
      * @param array<string, mixed> $ctx
      * @return list<string>
      */
@@ -146,30 +80,12 @@ final class PlacementFilterService
     {
         $branch = trim($branch);
         $program = trim($program);
-        $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId === '') {
-            return [];
-        }
 
-        $programs = $this->resolveProgrammeList($program);
-        if ($programs === []) {
-            $programs = $this->programmesForScope($ctx, '');
-        }
-
-        $api = new AesApiService();
         $batches = [];
-        foreach ($programs as $prog) {
-            $rows = $api->fetchPlacementClassBatches($deptAesId, $prog, $branch);
-            if ($rows === [] && $branch !== '') {
-                $rows = $api->fetchPlacementClassBatches($deptAesId, $prog, '');
-            }
-            if ($rows !== []) {
-                $batches = array_merge($batches, $rows);
-            }
-        }
-
-        if ($batches === [] && $program !== '') {
-            foreach ($programs as $prog) {
+        if ($program === '') {
+            $batches = $this->distinctFieldFromScopedRows($ctx, 'stud_class', '', $branch);
+        } else {
+            foreach ($this->resolveProgrammeList($program) as $prog) {
                 $batches = array_merge(
                     $batches,
                     $this->distinctFieldFromScopedRows($ctx, 'stud_class', $prog, $branch)
@@ -177,8 +93,8 @@ final class PlacementFilterService
             }
         }
 
-        if ($batches === [] && $program === '') {
-            $batches = $this->distinctFieldFromScopedRows($ctx, 'stud_class', '', '');
+        foreach ($this->assignedBatchLabelsForScope($ctx, $program, $branch) as $batch) {
+            $batches[] = $batch;
         }
 
         return $this->sortLabels(array_values(array_unique($batches)));
@@ -271,7 +187,7 @@ final class PlacementFilterService
 
         $api = new AesApiService();
         $aesCalls = 0;
-        $maxAesCalls = 250;
+        $maxAesCalls = 800;
 
         try {
             $filter = StaffContext::studentCollectionFilter($ctx);
@@ -286,7 +202,7 @@ final class PlacementFilterService
         }
 
         foreach ($students as $student) {
-            if (!StaffContext::studentMatchesScope($student, $ctx)) {
+            if (!$this->studentInDepartment($student, $ctx)) {
                 continue;
             }
 
@@ -311,6 +227,22 @@ final class PlacementFilterService
     }
 
     /**
+     * Filter dropdowns include every batch in the department (current and previous).
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $ctx
+     */
+    private function studentInDepartment(array $student, array $ctx): bool
+    {
+        $scopeDept = trim((string) ($ctx['departmentId'] ?? ''));
+        if ($scopeDept === '') {
+            return false;
+        }
+
+        return (string) ($student['departmentId'] ?? '') === $scopeDept;
+    }
+
+    /**
      * @param array<string, mixed> $student
      */
     private function studInfoRowFromStudent(
@@ -319,32 +251,19 @@ final class PlacementFilterService
         int &$aesCalls,
         int $maxAesCalls
     ): ?array {
-        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
-        $course = trim((string) ($personal['course'] ?? ''));
-        $branch = '';
-        $batch = trim((string) ($student['classBatch'] ?? ''));
-
         $register = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-        if ($register !== '' && $aesCalls < $maxAesCalls) {
-            $aesCalls++;
-            $aesRow = $api->fetchStudInfoPlacementRow($register);
-            if ($aesRow['stud_course'] !== '') {
-                $course = $aesRow['stud_course'];
-            }
-            if ($aesRow['stud_branch'] !== '') {
-                $branch = $aesRow['stud_branch'];
-            }
-            if ($aesRow['stud_class'] !== '') {
-                $batch = $aesRow['stud_class'];
-            }
-        }
-
-        if ($course === '' && $batch === '' && $branch === '') {
+        if ($register === '' || $aesCalls >= $maxAesCalls) {
             return null;
         }
 
-        if ($branch === '') {
-            $branch = $this->defaultBranchForProgram($course);
+        $aesCalls++;
+        $aesRow = $api->fetchStudInfoPlacementRow($register);
+        $course = trim($aesRow['stud_course']);
+        $branch = trim($aesRow['stud_branch']);
+        $batch = trim($aesRow['stud_class']);
+
+        if ($course === '' && $batch === '' && $branch === '') {
+            return null;
         }
 
         return [
@@ -388,9 +307,6 @@ final class PlacementFilterService
                 'stud_branch' => trim((string) ($node['stud_branch'] ?? $node['branch'] ?? '')),
                 'stud_class'  => trim((string) ($node['stud_class'] ?? $node['classBatch'] ?? $node['batch'] ?? '')),
             ];
-            if ($row['stud_branch'] === '' && $row['stud_course'] !== '') {
-                $row['stud_branch'] = $this->defaultBranchForProgram($row['stud_course']);
-            }
             if ($row['stud_course'] !== '' || $row['stud_class'] !== '') {
                 $key = strtolower(implode('|', $row));
                 if (!isset($seen[$key])) {
@@ -460,7 +376,7 @@ final class PlacementFilterService
 
         $rowCourse = trim($row['stud_course']);
         if ($rowCourse === '') {
-            return true;
+            return false;
         }
 
         $targets = array_values(array_unique(array_filter([
@@ -483,11 +399,115 @@ final class PlacementFilterService
         return false;
     }
 
-    private function defaultBranchForProgram(string $program): string
+    /**
+     * AES staff assigned classes include current and previous batches.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function assignedBatchLabelsForScope(array $ctx, string $program, string $branch): array
     {
-        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
-        if (in_array($resolved, ['MCA', 'BCA', 'INMCA'], true)) {
-            return 'Regular';
+        $labels = [];
+        foreach (StaffContext::assignedClassBatches($ctx) as $batchLabel) {
+            $batchLabel = trim((string) $batchLabel);
+            if ($batchLabel === '') {
+                continue;
+            }
+            if ($program !== '' && !$this->batchMatchesProgramme($batchLabel, $program)) {
+                continue;
+            }
+            if ($branch !== '' && !$this->batchMatchesBranch($ctx, $batchLabel, $program, $branch)) {
+                continue;
+            }
+            $labels[] = $batchLabel;
+        }
+
+        return $labels;
+    }
+
+    private function batchMatchesProgramme(string $batchLabel, string $program): bool
+    {
+        $batchNorm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $batchLabel) ?? '');
+        if ($batchNorm === '') {
+            return false;
+        }
+
+        $targets = array_values(array_unique(array_filter([
+            trim($program),
+            DepartmentProgrammeCatalog::resolveProgrammeCode($program),
+            DepartmentProgrammeCatalog::normalizeCode($program),
+        ], static fn (string $code) => $code !== '')));
+
+        foreach ($targets as $target) {
+            $targetNorm = DepartmentProgrammeCatalog::normalizeCode($target);
+            if ($targetNorm !== '' && str_starts_with($batchNorm, $targetNorm)) {
+                return true;
+            }
+            if (strcasecmp($batchLabel, $target) === 0) {
+                return true;
+            }
+        }
+
+        $inferred = $this->programmeCodeFromBatch($batchLabel);
+        if ($inferred === '') {
+            return false;
+        }
+
+        return $this->rowMatchesProgramme(
+            ['stud_course' => $inferred, 'stud_branch' => '', 'stud_class' => $batchLabel],
+            $program
+        );
+    }
+
+    private function batchMatchesBranch(array $ctx, string $batchLabel, string $program, string $branch): bool
+    {
+        if ($branch === '') {
+            return true;
+        }
+
+        foreach ($this->collectScopedStudInfoRows($ctx) as $row) {
+            if (strcasecmp($row['stud_class'], $batchLabel) !== 0) {
+                continue;
+            }
+            if (!$this->rowMatchesProgramme($row, $program)) {
+                continue;
+            }
+            if ($row['stud_branch'] !== '' && strcasecmp($row['stud_branch'], $branch) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function programmeCodeFromBatch(string $batchLabel): string
+    {
+        $normalized = strtoupper(preg_replace('/[^A-Z0-9]/', '', $batchLabel) ?? '');
+        if ($normalized === '') {
+            return '';
+        }
+
+        $candidates = [];
+        foreach (DepartmentProgrammeCatalog::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                $code = DepartmentProgrammeCatalog::normalizeCode($programme['code']);
+                $aliases = array_map(
+                    static fn (string $alias) => DepartmentProgrammeCatalog::normalizeCode($alias),
+                    $programme['aliases']
+                );
+                $candidates[] = ['code' => $code, 'aliases' => $aliases];
+            }
+        }
+
+        usort($candidates, static fn (array $a, array $b) => strlen($b['code']) <=> strlen($a['code']));
+        foreach ($candidates as $candidate) {
+            $codes = array_merge([$candidate['code']], $candidate['aliases']);
+            usort($codes, static fn (string $a, string $b) => strlen($b) <=> strlen($a));
+            foreach ($codes as $code) {
+                if ($code !== '' && str_starts_with($normalized, $code)) {
+                    return $code;
+                }
+            }
         }
 
         return '';

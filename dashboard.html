@@ -119,8 +119,8 @@
         </div>
       </div>
 
-      <!-- ===== PLACEMENT OFFICER: hiring overview ===== -->
-      <div data-roles="placement_officer" id="officerHiringRoot">
+      <!-- ===== PLACEMENT OFFICER / STAFF: department hiring overview ===== -->
+      <div data-roles="placement_officer,staff" id="hiringOverviewRoot">
         <div class="card-surface p-3 p-md-4 mb-3" id="viewFilterCard">
           <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
             <div class="flex-grow-1" style="min-width:min(100%,18rem)">
@@ -267,125 +267,6 @@
         </div>
       </div>
 
-      <!-- ===== STAFF ===== -->
-      <div data-roles="staff">
-        <div id="staffHiringRoot">
-          <div class="card-surface p-3 p-md-4 mb-3" id="viewFilterCard">
-            <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
-              <div class="flex-grow-1" style="min-width:min(100%,18rem)">
-                <div class="small fw-semibold text-muted-2 mb-2">View</div>
-                <div class="d-flex flex-wrap gap-2 align-items-center">
-                  <select class="form-select form-select-sm w-auto" id="deptSelect" aria-label="Department">
-                    <option value="">All departments</option>
-                  </select>
-                  <select class="form-select form-select-sm w-auto" id="branchSelect" aria-label="Branch" disabled>
-                    <option value="">All branches</option>
-                  </select>
-                  <select class="form-select form-select-sm w-auto d-none" id="batchSelect" aria-label="Batch year">
-                    <option value="">All batches</option>
-                  </select>
-                </div>
-              </div>
-              <div class="small text-muted-2" id="viewHint"></div>
-            </div>
-          </div>
-
-          <div class="row g-3 mb-3">
-            <div class="col-6 col-lg">
-              <div class="card-surface stat-card h-100" id="companiesCard" role="button" tabindex="0">
-                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-buildings"></i></div><span class="badge-soft success">Active</span></div>
-                <div class="val"><span class="counter" id="statCompanies" data-target="0">0</span></div>
-                <div class="lbl">Companies currently hiring</div>
-              </div>
-            </div>
-            <div class="col-6 col-lg">
-              <div class="card-surface stat-card h-100">
-                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-people-fill"></i></div><span class="badge-soft info">Pipeline</span></div>
-                <div class="val"><span class="counter" id="statApplicants" data-target="0">0</span></div>
-                <div class="lbl">Total applicants</div>
-              </div>
-            </div>
-            <div class="col-6 col-lg">
-              <div class="card-surface stat-card h-100">
-                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-person-check-fill"></i></div><span class="badge-soft primary">Screening</span></div>
-                <div class="val"><span class="counter" id="statShortlisted" data-target="0">0</span></div>
-                <div class="lbl">Shortlisted</div>
-              </div>
-            </div>
-            <div class="col-6 col-lg">
-              <div class="card-surface stat-card h-100">
-                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-envelope-check-fill"></i></div><span class="badge-soft warning">Offers</span></div>
-                <div class="val"><span class="counter" id="statOffers" data-target="0">0</span></div>
-                <div class="lbl">Offers released</div>
-              </div>
-            </div>
-            <div class="col-6 col-lg">
-              <div class="card-surface stat-card h-100">
-                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check-fill"></i></div><span class="badge-soft success">Joined</span></div>
-                <div class="val"><span class="counter" id="statHired" data-target="0">0</span></div>
-                <div class="lbl">Hired / placed</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="row g-3 mb-3">
-            <div class="col-lg-7">
-              <div class="card-surface p-3 p-md-4 h-100">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div>
-                    <h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6>
-                    <small class="text-muted-2">Offers rolled out across last 12 months</small>
-                  </div>
-                  <select class="form-select form-select-sm w-auto" id="trendYearSelect" aria-label="Hiring trend period">
-                    <option value="this">This year</option>
-                    <option value="last">Last year</option>
-                  </select>
-                </div>
-                <div style="height:300px"><canvas id="trendChart"></canvas></div>
-              </div>
-            </div>
-            <div class="col-lg-5">
-              <div class="card-surface p-3 p-md-4 h-100">
-                <h6 class="fw-bold mb-3">Pipeline breakdown</h6>
-                <div class="table-wrap">
-                  <table class="table-modern">
-                    <thead><tr><th>Stage</th><th>Count</th><th>Share</th></tr></thead>
-                    <tbody id="pipelineRows"></tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="card-surface p-3 p-md-4 mb-3" id="placementListCard">
-            <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-              <div>
-                <h6 class="mb-0 fw-bold" id="placementListTitle">Placement list</h6>
-                <small class="text-muted-2" id="placementListSub">Placed students for the selected year</small>
-              </div>
-              <span class="badge-soft info" id="placementListCount">0</span>
-            </div>
-            <div class="table-wrap">
-              <table class="table-modern">
-                <thead>
-                  <tr>
-                    <th>Student</th>
-                    <th>Register</th>
-                    <th>Branch / batch</th>
-                    <th>Company</th>
-                    <th>Role</th>
-                    <th>Package</th>
-                  </tr>
-                </thead>
-                <tbody id="placementListRows">
-                  <tr><td colspan="6" class="text-muted-2 p-4">No placements for this period.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- ===== COMPANY ===== -->
       <div data-roles="company">
         <div class="row g-3">
@@ -493,7 +374,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260713t"></script>
-<script src="js/app.js?v=20260713r"></script>
+<script src="js/app.js?v=20260713u"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -510,7 +391,7 @@
     scripts.push('js/officer-api.js?v=20260713p');
     scripts.push('js/staff-api.js?v=20260713p');
   }
-  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260713t');
+  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260713u');
   // Sync append so onAppReady below still sees them after parse (scripts without defer/async run immediately when inserted... actually dynamically inserted scripts are async by default)
   // Load synchronously via document.write is bad; instead gate page init on Promise.
   window.__phDashExtras = Promise.all(scripts.map((src) => new Promise((resolve, reject) => {
@@ -535,7 +416,7 @@ const titles = {
   admin: ['Administrator Console', 'Institute-wide overview & approvals.'],
   placement_officer: ['Department Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.'],
   student: ['Dashboard', ''],
-  staff: ['', ''],
+  staff: ['Department Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.'],
   company: [`${user.companyName || user.name} · Recruiter`, 'Active companies, department-wise applicants, and candidate list.'],
   alumni: [`Welcome, ${user.name?.split(' ')[0] || 'Alumnus'}`, alumniIsWorking() ? 'Post jobs and refer talent from your network.' : 'Find lateral roles and apply to open drives.'],
 };
@@ -545,14 +426,14 @@ function showDashLiveBadge(live) {
   document.getElementById('dashLiveBadge')?.classList.toggle('d-none', !live);
 }
 const dashLive = Auth.hasRealAuth() && !Auth.isDemo();
-if (['admin', 'placement_officer'].includes(role)) {
+if (['admin', 'placement_officer', 'staff'].includes(role)) {
   showDashLiveBadge(dashLive);
 }
 if (!titles[role][1]) {
   document.getElementById('dashSub').hidden = true;
 }
-// Student/staff name already appears in the topbar — hide the duplicate page heading.
-if (role === 'student' || role === 'staff') {
+// Student name already appears in the topbar — hide the duplicate page heading.
+if (role === 'student') {
   document.querySelector('.page-header')?.classList.add('d-none');
 }
 
@@ -622,8 +503,8 @@ if (role === 'admin') {
   })();
 }
 
-if (role === 'placement_officer') {
-  HiringOverviewPage.init({ root: '#officerHiringRoot' });
+if (role === 'placement_officer' || role === 'staff') {
+  HiringOverviewPage.init({ root: '#hiringOverviewRoot' });
 }
 
 /* Student content */
@@ -664,11 +545,6 @@ if (role === 'student') {
       <tr><td><strong>${a.company || '—'}</strong></td><td>${a.role || '—'}</td><td>${a.resumeLabel || '—'}</td><td>${formatDate(a.appliedAt)}</td><td>${appStatusBadge(a.status)}</td></tr>`).join('')
       : '<tr><td colspan="5" class="text-muted-2 p-4">No applications yet.</td></tr>';
   })();
-}
-
-/* Staff hiring overview */
-if (role === 'staff') {
-  HiringOverviewPage.init({ root: '#staffHiringRoot' });
 }
 
 /* Company recruitment overview */
