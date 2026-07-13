@@ -478,9 +478,7 @@ function renderShell(active) {
       student: '',
       staff: '',
       company: '<a href="company.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Portal</a><a href="applicants.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Applicants</a>',
-      alumni: alumniIsWorking()
-        ? '<button type="button" onclick="ReferralModals.openAlumni()" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Recommend Co.</button><a href="alumni-jobs.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex ms-2">Post Job</a>'
-        : '',
+      alumni: '',
     }[role] || '';
 
     const displayName = String(user?.name || '').trim();
