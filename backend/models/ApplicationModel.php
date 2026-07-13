@@ -50,6 +50,18 @@ class ApplicationModel extends BaseModel
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function findByDrive(string $driveId, int $limit = 5000): array
+    {
+        $dId = Security::toObjectId($driveId);
+        if ($dId === null) {
+            return [];
+        }
+        return $this->findAll(['driveId' => $dId], $limit);
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     public function createApplication(array $data): string

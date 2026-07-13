@@ -229,6 +229,17 @@ const OfficerApi = {
     return res.data.map(d => OfficerApi.mapDrive(d));
   },
 
+  async fetchNonApplicants(driveId, params = {}) {
+    const id = encodeURIComponent(String(driveId || '').trim());
+    if (!id) return null;
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set('limit', String(params.limit));
+    const q = qs.toString();
+    const res = await api(`/officer/drives/${id}/non-applicants` + (q ? `?${q}` : ''));
+    if (!res.success || !res.data || typeof res.data !== 'object') return null;
+    return res.data;
+  },
+
   async fetchPendingResumes() {
     const res = await api('/officer/resumes/pending');
     if (!res.success || !Array.isArray(res.data)) return null;

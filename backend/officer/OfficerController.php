@@ -272,6 +272,16 @@ final class OfficerController
 
     }
 
+    /** GET /api/officer/drives/{id}/non-applicants */
+    public function listNonApplicants(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $limit = (int) ($_GET['limit'] ?? 300);
+        Response::success(
+            (new OfficerDataService())->listNonApplicantsForDrive($id, $scope['ctx'], $limit)
+        );
+    }
+
     /** PUT /api/officer/drives/{id} */
     public function updateDrive(string $driveId): void
     {

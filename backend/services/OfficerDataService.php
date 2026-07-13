@@ -155,6 +155,138 @@ final class OfficerDataService
     }
 
     /**
+     * Eligible students for a drive who have not submitted an application yet.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array{
+     *   driveId: string,
+     *   driveTitle: string,
+     *   driveStatus: string,
+     *   company: string,
+     *   appliedCount: int,
+     *   eligibleNotAppliedCount: int,
+     *   returned: int,
+     *   limit: int,
+     *   students: array<int, array<string, mixed>>
+     * }
+     */
+    public function listNonApplicantsForDrive(string $driveId, array $ctx, int $limit = 300): array
+    {
+        $limit = max(1, min(500, $limit));
+        $drive = (new DriveModel())->findById($driveId);
+        if (!$drive) {
+            Response::notFound('Drive not found.');
+        }
+        if (!$ctx['isAdmin'] && !PlacementOfficerContext::driveMatchesDepartment($drive, $ctx)) {
+            Response::forbidden('This drive is not for your department.');
+        }
+
+        $apps = (new ApplicationModel())->findByDrive($driveId);
+        $appliedIds = [];
+        foreach ($apps as $app) {
+            $sid = (string) ($app['studentId'] ?? '');
+            if ($sid !== '') {
+                $appliedIds[$sid] = true;
+            }
+        }
+
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
+        $engine = new EligibilityEngine();
+
+        $departments = [];
+        foreach ($deptModel->findAll([], 200) as $d) {
+            $departments[(string) $d['_id']] = $d;
+        }
+
+        $companyName = '';
+        $companyId = (string) ($drive['companyId'] ?? '');
+        if ($companyId !== '') {
+            $company = (new CompanyModel())->findById($companyId);
+            $companyName = is_array($company) ? (string) ($company['companyName'] ?? '') : '';
+        }
+        if ($companyName === '') {
+            $title = (string) ($drive['title'] ?? '');
+            if (str_contains($title, '—')) {
+                $companyName = trim((string) (explode('—', $title, 2)[0] ?? ''));
+            }
+        }
+
+        $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
+        $students = $studentModel->findAll($filter, 1000);
+        $nonApplicants = [];
+        $eligibleCount = 0;
+
+        foreach ($students as $student) {
+            $sid = (string) ($student['_id'] ?? '');
+            if ($sid === '' || isset($appliedIds[$sid])) {
+                continue;
+            }
+
+            $userId = (string) ($student['userId'] ?? '');
+            $deptId = (string) ($student['departmentId'] ?? '');
+            $user = $userId !== '' ? $userModel->findById($userId) : null;
+            $dept = $departments[$deptId] ?? null;
+            $row = DocumentHelper::serialize($student) ?? [];
+            $row = $this->enrichStudentListRow($row, $student, $user);
+            $row['department'] = $dept ? [
+                'id'   => (string) $dept['_id'],
+                'name' => $dept['name'] ?? '',
+                'code' => $dept['code'] ?? '',
+            ] : null;
+            if (!$this->isPlacementStudentListCandidate($student, $user, $row)) {
+                continue;
+            }
+
+            if (!$engine->driveVisibleToStudent($student, $drive)) {
+                continue;
+            }
+
+            $check = $engine->checkStudentAgainstDrive($student, $drive, false);
+            if (!($check['eligible'] ?? false)) {
+                continue;
+            }
+
+            $eligibleCount++;
+            if (count($nonApplicants) >= $limit) {
+                continue;
+            }
+
+            $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+            $resume = is_array($student['resume'] ?? null) ? $student['resume'] : [];
+            $chances = is_array($student['placementChances'] ?? null) ? $student['placementChances'] : [];
+
+            $nonApplicants[] = [
+                'studentId'         => $sid,
+                'name'              => (string) ($row['displayName'] ?? ($user['name'] ?? '')),
+                'registerNumber'    => (string) ($student['registerNumber'] ?? ''),
+                'department'        => (string) ($dept['code'] ?? $dept['name'] ?? ''),
+                'cgpa'              => (float) ($academic['cgpa'] ?? 0),
+                'backlogs'          => (int) ($academic['backlogs'] ?? 0),
+                'hasResume'         => !empty($resume['path']) || !empty($resume['filename']),
+                'placed'            => (bool) ($student['placed'] ?? false),
+                'chancesRemaining'  => (int) ($chances['remaining'] ?? 0),
+                'phone'             => (string) ($personal['phone'] ?? $row['phone'] ?? ''),
+                'email'             => (string) ($row['collegeEmail'] ?? ($user['email'] ?? '')),
+            ];
+        }
+
+        return [
+            'driveId'                 => $driveId,
+            'driveTitle'              => (string) ($drive['title'] ?? ''),
+            'driveStatus'             => (string) ($drive['status'] ?? ''),
+            'company'                 => $companyName,
+            'appliedCount'            => count($appliedIds),
+            'eligibleNotAppliedCount' => $eligibleCount,
+            'returned'                => count($nonApplicants),
+            'limit'                   => $limit,
+            'students'                => $nonApplicants,
+        ];
+    }
+
+    /**
      * Resolve filesystem path for an application's resume (application snapshot or student profile).
      *
      * @param array<string, mixed> $app

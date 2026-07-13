@@ -48,15 +48,34 @@ final class EligibilityEngine
             return ['eligible' => false, 'reasons' => ['Student or drive not found.']];
         }
 
-        $student = $this->enrichStudentForEligibility($student);
+        return $this->checkStudentAgainstDrive($student, $drive, true, $resumeId);
+    }
 
+    /**
+     * Batch-friendly eligibility check against an already-loaded drive/student.
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $drive
+     * @return array{eligible: bool, reasons: string[]}
+     */
+    public function checkStudentAgainstDrive(
+        array $student,
+        array $drive,
+        bool $enrich = true,
+        ?string $resumeId = null
+    ): array {
         if (($drive['status'] ?? '') === 'completed') {
             return ['eligible' => false, 'reasons' => ['This drive has been completed.']];
+        }
+
+        if ($enrich) {
+            $student = $this->enrichStudentForEligibility($student);
         }
 
         $criteria = $this->toPlainArray($drive['eligibility'] ?? []);
         $branches = $this->toPlainArray($drive['branches'] ?? []);
         $tier = $drive['tier'] ?? 'Tier 2';
+
         return $this->evaluate($student, $criteria, $branches, (string) $tier, $resumeId);
     }
 

@@ -347,6 +347,7 @@ $routes = [
     ['GET',  '/officer/analytics',                 [OfficerController::class, 'analytics']],
     ['POST', '/officer/drives',                    [OfficerController::class, 'createDrive']],
     ['GET',  '/officer/drives',                    [OfficerController::class, 'listDrives']],
+    ['GET',  '/officer/drives/{id}/non-applicants', [OfficerController::class, 'listNonApplicants']],
     ['PUT',  '/officer/drives/{id}',               [OfficerController::class, 'updateDrive']],
     ['DELETE','/officer/drives/{id}',              [OfficerController::class, 'deleteDrive']],
     ['POST', '/officer/drives/{id}/attendance',    [OfficerController::class, 'markAttendance']],
