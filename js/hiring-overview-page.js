@@ -10,7 +10,8 @@
     'pageTitleText', 'pageSub', 'companiesCard', 'companiesSection', 'activeCount',
     'companyRows', 'candidateRows', 'pipelineRows', 'statusFilter', 'trendChart',
     'statCompanies', 'statApplicants', 'statShortlisted', 'statOffers', 'statHired',
-    'trendYearSelect',
+    'trendYearSelect', 'placementListCard', 'placementListTitle', 'placementListSub',
+    'placementListCount', 'placementListRows',
   ];
 
   function HiringOverviewPage() {
@@ -18,6 +19,10 @@
     this.apiHiringData = null;
     this.campusRecruitingData = null;
     this.hiringTrendData = null;
+    this.hiringTrendThisYear = null;
+    this.hiringTrendLastYear = null;
+    this.placementRows = [];
+    this.trendYearMode = 'this';
     this.trendChart = null;
     this.staffLive = false;
     this.adminLive = false;
@@ -144,6 +149,91 @@
       t.labels,
       t.series?.length ? t.series : [{ label: 'Offers', data: t.values || [] }]
     );
+    const year = t.year || (this.trendYearMode === 'last' ? new Date().getFullYear() - 1 : new Date().getFullYear());
+    const sub = canvas.closest('.card-surface')?.querySelector('small.text-muted-2');
+    if (sub) {
+      sub.textContent = this.trendYearMode === 'last'
+        ? `Offers rolled out in ${year}`
+        : `Offers rolled out in ${year}`;
+    }
+  };
+
+  HiringOverviewPage.prototype.selectedTrendYear = function () {
+    const now = new Date().getFullYear();
+    return this.trendYearMode === 'last' ? now - 1 : now;
+  };
+
+  HiringOverviewPage.prototype.applyTrendYearMode = function () {
+    const select = this.$('trendYearSelect');
+    const raw = String(select?.value || this.trendYearMode || 'this').toLowerCase();
+    this.trendYearMode = raw.includes('last') ? 'last' : 'this';
+    if (select && select.value !== this.trendYearMode) {
+      const match = [...(select.options || [])].find(o => String(o.value || o.textContent).toLowerCase().includes(this.trendYearMode === 'last' ? 'last' : 'this'));
+      if (match) select.value = match.value || match.textContent;
+    }
+    this.hiringTrendData = this.trendYearMode === 'last'
+      ? (this.hiringTrendLastYear || this.hiringTrendThisYear)
+      : (this.hiringTrendThisYear || this.hiringTrendData);
+    this.renderHiringTrend(this.hiringTrendData);
+    this.renderPlacementList();
+  };
+
+  HiringOverviewPage.prototype.placementSourceRows = function () {
+    if (Array.isArray(this.apiHiringData?.placements) && this.apiHiringData.placements.length) {
+      return this.apiHiringData.placements;
+    }
+    if (Array.isArray(this.campusRecruitingData?.placements)) {
+      return this.campusRecruitingData.placements;
+    }
+    return this.placementRows || [];
+  };
+
+  HiringOverviewPage.prototype.renderPlacementList = function () {
+    const rowsEl = this.$('placementListRows');
+    const countEl = this.$('placementListCount');
+    const titleEl = this.$('placementListTitle');
+    const subEl = this.$('placementListSub');
+    if (!rowsEl) return;
+
+    const year = this.selectedTrendYear();
+    const dept = this.selectedDept();
+    const batch = this.selectedBatch();
+    let rows = this.placementSourceRows().filter((row) => Number(row.year) === year);
+    if (dept) {
+      rows = rows.filter((row) => {
+        if (this.batchMatchesBranch(row.classBatch, dept)) return true;
+        return this.deptMatchesFilter(row.dept, dept);
+      });
+    }
+    if (batch) {
+      rows = rows.filter((row) => this.batchMatchesFilter(row.classBatch, batch));
+    }
+
+    if (titleEl) {
+      titleEl.textContent = this.trendYearMode === 'last'
+        ? `Previous year placement list (${year})`
+        : `Placement list (${year})`;
+    }
+    if (subEl) {
+      subEl.textContent = this.trendYearMode === 'last'
+        ? 'Placed students from last calendar year (AES batch + offer dates).'
+        : 'Placed students for this calendar year (AES batch + offer dates).';
+    }
+    if (countEl) countEl.textContent = String(rows.length);
+
+    rowsEl.innerHTML = rows.length
+      ? rows.map((s) => {
+        const batchLabel = [s.dept, s.classBatch].filter(Boolean).join(' · ') || '—';
+        return `<tr>
+          <td><strong>${this.escHtml(s.name)}</strong></td>
+          <td>${this.escHtml(s.roll || '—')}</td>
+          <td>${this.escHtml(batchLabel)}</td>
+          <td>${this.escHtml(s.company || '—')}</td>
+          <td>${this.escHtml(s.role || '—')}</td>
+          <td>${this.escHtml(s.package || '—')}</td>
+        </tr>`;
+      }).join('')
+      : `<tr><td colspan="6" class="text-muted-2 p-4">No placements for ${year}.</td></tr>`;
   };
 
   HiringOverviewPage.prototype.renderPipelineBreakdown = function (pipeline) {
@@ -432,24 +522,55 @@
     return opt ? opt.textContent.trim() : value;
   };
 
-  HiringOverviewPage.prototype.batchOptions = function () {
-    let batches = [];
+  HiringOverviewPage.prototype.allBatchOptions = function () {
     if (Array.isArray(this.apiHiringData?.batchOptions) && this.apiHiringData.batchOptions.length) {
-      batches = [...this.apiHiringData.batchOptions];
-    } else {
-      const u = Auth.user() || {};
-      if (Array.isArray(u.assignedClassBatches) && u.assignedClassBatches.length) {
-        batches = [...u.assignedClassBatches];
-      } else if (this.campusRecruitingData) {
-        return this.deriveBatchOptionsFromCampus(this.selectedBranchForApi() || this.selectedDept());
-      }
+      return [...this.apiHiringData.batchOptions];
     }
+    if (Array.isArray(this.campusRecruitingData?.batchOptions) && this.campusRecruitingData.batchOptions.length) {
+      return [...this.campusRecruitingData.batchOptions];
+    }
+    const u = Auth.user() || {};
+    if (Array.isArray(u.assignedClassBatches) && u.assignedClassBatches.length) {
+      return [...u.assignedClassBatches];
+    }
+    if (this.campusRecruitingData) {
+      return this.deriveBatchOptionsFromCampus('');
+    }
+    return [];
+  };
 
+  HiringOverviewPage.prototype.batchOptions = function () {
+    let batches = this.allBatchOptions();
     const branch = this.selectedBranchForApi();
     if (branch && batches.length) {
       batches = batches.filter((b) => this.batchMatchesBranch(b, branch));
     }
     return batches;
+  };
+
+  HiringOverviewPage.prototype.batchYearLabel = function (batchLabel) {
+    const raw = String(batchLabel || '');
+    const m = raw.match(/(\d{4})\s*[-–]\s*(\d{2,4})/);
+    if (m) {
+      const end = m[2].length === 2 ? m[1].slice(0, 2) + m[2] : m[2];
+      return `${m[1]}-${end}`;
+    }
+    const y = raw.match(/(20\d{2})/);
+    return y ? y[1] : '';
+  };
+
+  HiringOverviewPage.prototype.branchYearsForProgramme = function (programmeCode) {
+    const years = [];
+    const seen = new Set();
+    this.allBatchOptions().forEach((batch) => {
+      if (!this.batchMatchesBranch(batch, programmeCode)) return;
+      const year = this.batchYearLabel(batch);
+      const key = year || batch;
+      if (seen.has(key)) return;
+      seen.add(key);
+      years.push(year || batch);
+    });
+    return years;
   };
 
   HiringOverviewPage.prototype.deriveBatchOptionsFromCampus = function (dept) {
@@ -499,8 +620,11 @@
     const data = await StaffApi.fetchHiringOverview(params);
     if (data) {
       this.apiHiringData = data;
-      if (data.hiringTrend) this.hiringTrendData = data.hiringTrend;
+      if (data.hiringTrend) this.hiringTrendThisYear = data.hiringTrend;
+      if (data.hiringTrendLastYear) this.hiringTrendLastYear = data.hiringTrendLastYear;
+      if (Array.isArray(data.placements)) this.placementRows = data.placements;
       this.populateBatchSelect();
+      this.applyTrendYearMode();
     }
   };
 
@@ -631,6 +755,7 @@
     if (card) card.classList.toggle('d-none', false);
     if (deptSelect) deptSelect.classList.toggle('d-none', false);
     if (branchSelect) branchSelect.classList.toggle('d-none', false);
+    this.syncBranchSelect();
     this.populateBatchSelect();
 
     if (role === 'staff' || role === 'placement_officer') {
@@ -684,7 +809,9 @@
 
     let html = `<option value="${esc(group.allValue)}">All branches</option>`;
     group.programmes.forEach(p => {
-      html += `<option value="${esc(p.code)}">${esc(p.label)}</option>`;
+      const years = this.branchYearsForProgramme(p.code);
+      const yearSuffix = years.length ? ` (${years.join(', ')})` : '';
+      html += `<option value="${esc(p.code)}">${esc(p.label)}${esc(yearSuffix)}</option>`;
     });
     branchSelect.innerHTML = html;
     branchSelect.disabled = false;
@@ -711,6 +838,7 @@
       }
     }
     this.syncBranchSelect();
+    this.populateBatchSelect();
     this.setDeptUI(this.selectedDept());
     this.renderForDept(this.selectedDept());
   };
@@ -851,6 +979,7 @@
 
     this.renderHiringTrend(this.hiringTrendData);
     this.renderPipelineBreakdown(pipeline);
+    this.renderPlacementList();
   };
 
   HiringOverviewPage.prototype.bindEvents = function () {
@@ -865,6 +994,7 @@
     deptSelect?.addEventListener('change', () => self.onDepartmentDropdownChange());
     branchSelect?.addEventListener('change', () => self.onBranchDropdownChange());
     self.$('batchSelect')?.addEventListener('change', () => { self.onBatchDropdownChange(); });
+    self.$('trendYearSelect')?.addEventListener('change', () => { self.applyTrendYearMode(); });
     statusFilter?.addEventListener('change', () => self.renderForDept(self.selectedDept()));
 
     const goToCompanies = () => {
@@ -907,8 +1037,12 @@
         const branch = this.selectedBranchForApi();
         const params = branch ? { branch } : {};
         const data = await StaffApi.fetchHiringOverview(params);
-        if (data) this.apiHiringData = data;
-        else {
+        if (data) {
+          this.apiHiringData = data;
+          if (data.hiringTrend) this.hiringTrendThisYear = data.hiringTrend;
+          if (data.hiringTrendLastYear) this.hiringTrendLastYear = data.hiringTrendLastYear;
+          if (Array.isArray(data.placements)) this.placementRows = data.placements;
+        } else {
           toast('Could not load hiring overview. Refresh or sign in again.', 'warn');
           document.getElementById('dashLiveBadge')?.classList.add('d-none');
         }
@@ -918,6 +1052,7 @@
         const data = await RecruitingStore.fetch();
         if (data) {
           this.campusRecruitingData = data;
+          if (Array.isArray(data.placements)) this.placementRows = data.placements;
           const fromLive = [
             ...(Array.isArray(data.applicantsByDept) ? data.applicantsByDept.map(d => ({
               code: d.department || d.dept || d.code,
@@ -929,20 +1064,24 @@
             })) : []),
           ];
           this.populateDeptSelect(fromLive);
+          this.populateBatchSelect();
         } else {
           toast('Could not load live recruiting data. Refresh or sign in again.', 'warn');
           document.getElementById('dashLiveBadge')?.classList.add('d-none');
         }
         try {
           const stats = await dashboardStats();
-          this.hiringTrendData = stats?.hiringTrend || null;
+          this.hiringTrendThisYear = stats?.hiringTrend || this.hiringTrendThisYear;
+          this.hiringTrendLastYear = stats?.hiringTrendLastYear || this.hiringTrendLastYear;
         } catch (_) {
-          this.hiringTrendData = null;
+          /* keep prior trend data */
         }
       }
       if (this.staffLive && this.apiHiringData?.hiringTrend) {
-        this.hiringTrendData = this.apiHiringData.hiringTrend;
+        this.hiringTrendThisYear = this.apiHiringData.hiringTrend;
+        this.hiringTrendLastYear = this.apiHiringData.hiringTrendLastYear || this.hiringTrendLastYear;
       }
+      this.applyTrendYearMode();
       this.updateLiveBadge();
       this.configurePageForRole(role);
       this.setDeptUI(this.selectedDept());

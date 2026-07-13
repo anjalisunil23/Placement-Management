@@ -170,6 +170,7 @@ class UserModel extends BaseModel
             'branchStatistics'    => $analytics['branchStatistics'],
             'companyStatistics'   => $analytics['companyStatistics'],
             'hiringTrend'         => $extended['hiringTrend'],
+            'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
         ];
     }
 

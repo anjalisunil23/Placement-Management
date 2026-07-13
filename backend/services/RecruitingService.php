@@ -10,6 +10,7 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\StudentModel;
+use PMS\Models\UserModel;
 use PMS\Utils\Security;
 
 /**
@@ -60,6 +61,8 @@ final class RecruitingService
         $activeCompanies = $this->activeRecruitingCompanies($departmentId);
         $applicants = $this->campusApplicants($departmentId);
         $byDept = $this->applicantsByDepartment($applicants);
+        $batchOptions = $this->campusBatchOptions($departmentId);
+        $placements = $this->listCampusPlacements($departmentId);
 
         return [
             'scope'            => 'campus',
@@ -71,7 +74,19 @@ final class RecruitingService
             'activeCompanies'  => $activeCompanies,
             'applicantsByDept' => $byDept,
             'applicants'       => $applicants,
+            'batchOptions'     => $batchOptions,
+            'placements'       => $placements,
         ];
+    }
+
+    /**
+     * Placed students for year-filtered placement lists (AES classBatch + offer dates).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listCampusPlacements(?string $departmentId = null): array
+    {
+        return $this->campusPlacements($departmentId);
     }
 
     /**
@@ -87,7 +102,152 @@ final class RecruitingService
             'applicantsByDept' => [],
             'applicants'       => [],
             'statusCounts'     => [],
+            'batchOptions'     => [],
+            'placements'       => [],
         ];
+    }
+
+    /**
+     * Distinct AES class batches (stud_class → classBatch) for students in scope.
+     *
+     * @return list<string>
+     */
+    private function campusBatchOptions(?string $departmentId): array
+    {
+        $filter = [];
+        if ($departmentId !== null && $departmentId !== '') {
+            $deptOid = Security::toObjectId($departmentId);
+            if ($deptOid === null) {
+                return [];
+            }
+            $filter['departmentId'] = $deptOid;
+        }
+
+        $batches = [];
+        foreach ((new StudentModel())->findAll($filter, 8000) as $student) {
+            $batch = trim((string) ($student['classBatch'] ?? ''));
+            if ($batch !== '') {
+                $batches[$batch] = true;
+            }
+        }
+
+        $list = array_keys($batches);
+        sort($list, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $list;
+    }
+
+    /**
+     * Placed students for year-filtered placement lists (AES classBatch + offer dates).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function campusPlacements(?string $departmentId): array
+    {
+        $filter = ['placed' => true];
+        if ($departmentId !== null && $departmentId !== '') {
+            $deptOid = Security::toObjectId($departmentId);
+            if ($deptOid === null) {
+                return [];
+            }
+            $filter['departmentId'] = $deptOid;
+        }
+
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
+        $appModel = new ApplicationModel();
+        $companyModel = new CompanyModel();
+        $deptCache = [];
+        $rows = [];
+
+        foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
+            $user = $userModel->findById((string) ($student['userId'] ?? ''));
+            $deptId = (string) ($student['departmentId'] ?? '');
+            if ($deptId !== '' && !isset($deptCache[$deptId])) {
+                $dept = $deptModel->findById($deptId);
+                $deptCache[$deptId] = $dept
+                    ? (string) ($dept['code'] ?? $dept['name'] ?? '')
+                    : '';
+            }
+            $deptCode = $deptCache[$deptId] ?? '';
+            $classBatch = trim((string) ($student['classBatch'] ?? ''));
+            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+            $company = trim((string) ($placement['company'] ?? ''));
+            $role = trim((string) ($placement['role'] ?? ''));
+            $package = trim((string) ($placement['package'] ?? ''));
+            $joinDate = trim((string) ($placement['joinDate'] ?? ''));
+
+            $selectedAt = '';
+            foreach ($appModel->findByStudent((string) ($student['_id'] ?? '')) as $app) {
+                if (($app['status'] ?? '') !== 'selected') {
+                    continue;
+                }
+                $selectedAt = (string) ($app['updatedAt'] ?? $app['createdAt'] ?? '');
+                foreach (($app['timeline'] ?? []) as $entry) {
+                    if (($entry['status'] ?? '') === 'selected' && !empty($entry['at'])) {
+                        $selectedAt = (string) $entry['at'];
+                        break;
+                    }
+                }
+                if ($company === '') {
+                    $co = $companyModel->findById((string) ($app['companyId'] ?? ''));
+                    $company = is_array($co) ? trim((string) ($co['companyName'] ?? '')) : '';
+                }
+                break;
+            }
+
+            $year = $this->placementYear($selectedAt, $joinDate, $classBatch);
+            $rows[] = [
+                'name'       => (string) ($user['name'] ?? 'Student'),
+                'roll'       => (string) ($student['registerNumber'] ?? ''),
+                'dept'       => $deptCode,
+                'classBatch' => $classBatch,
+                'company'    => $company !== '' ? $company : '—',
+                'role'       => $role !== '' ? $role : '—',
+                'package'    => $package !== '' ? $package : '—',
+                'year'       => $year,
+                'placedAt'   => $selectedAt !== '' ? $selectedAt : $joinDate,
+            ];
+        }
+
+        usort($rows, static function (array $a, array $b): int {
+            $yearCmp = ((int) ($b['year'] ?? 0)) <=> ((int) ($a['year'] ?? 0));
+            if ($yearCmp !== 0) {
+                return $yearCmp;
+            }
+
+            return strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+
+        return $rows;
+    }
+
+    private function placementYear(string $selectedAt, string $joinDate, string $classBatch): int
+    {
+        foreach ([$selectedAt, $joinDate] as $date) {
+            $date = trim($date);
+            if ($date === '') {
+                continue;
+            }
+            $ts = strtotime($date);
+            if ($ts !== false) {
+                return (int) date('Y', $ts);
+            }
+        }
+
+        if (preg_match('/(\d{4})\s*[-–]\s*(\d{2,4})/', $classBatch, $m)) {
+            $end = $m[2];
+            if (strlen($end) === 2) {
+                $end = substr($m[1], 0, 2) . $end;
+            }
+
+            return (int) $end;
+        }
+        if (preg_match('/(20\d{2})/', $classBatch, $m)) {
+            return (int) $m[1];
+        }
+
+        return (int) date('Y');
     }
 
     /**

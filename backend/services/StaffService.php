@@ -211,6 +211,43 @@ final class StaffService
             }
         }
 
+        $extended = (new AnalyticsService())->getExtendedAnalytics($departmentId);
+        $placements = (new RecruitingService())->listCampusPlacements($departmentId);
+        if ($batchFilter !== '') {
+            $placements = array_values(array_filter(
+                $placements,
+                static fn (array $row): bool => strcasecmp((string) ($row['classBatch'] ?? ''), $batchFilter) === 0
+            ));
+        }
+        if ($branchFilter !== '') {
+            $placements = array_values(array_filter(
+                $placements,
+                function (array $row) use ($branchFilter): bool {
+                    $batch = (string) ($row['classBatch'] ?? '');
+                    $dept = (string) ($row['dept'] ?? '');
+                    if ($batch !== '' && $this->batchProgrammeFromLabel($batch) !== '') {
+                        $targets = $this->branchFilterTargets($branchFilter);
+                        $prog = $this->normalizeBranchTargetCode($this->batchProgrammeFromLabel($batch));
+                        foreach ($targets as $target) {
+                            if ($prog === $this->normalizeBranchTargetCode($target)) {
+                                return true;
+                            }
+                        }
+                    }
+                    $targets = $this->branchFilterTargets($branchFilter);
+                    $deptUp = strtoupper($dept);
+                    foreach ($targets as $target) {
+                        $resolved = $this->normalizeBranchTargetCode($target);
+                        if ($deptUp === strtoupper($target) || $deptUp === $resolved) {
+                            return true;
+                        }
+                    }
+
+                    return $targets === [];
+                }
+            ));
+        }
+
         return [
             'totals' => [
                 'companiesHiring' => count($companies),
@@ -229,6 +266,9 @@ final class StaffService
             'companies'    => $companies,
             'candidates'   => $candidates,
             'batchOptions' => $this->batchOptionsForScope($ctx, $branchFilter),
+            'hiringTrend'  => $extended['hiringTrend'] ?? null,
+            'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
+            'placements'   => $placements,
         ];
     }
 

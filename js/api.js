@@ -4123,6 +4123,7 @@ async function dashboardStats() {
     branchStats: [],
     companyStats: [],
     hiringTrend: null,
+    hiringTrendLastYear: null,
   };
 
   const mapLiveDashboard = (stats, activeDrives = null) => {
@@ -4161,6 +4162,7 @@ async function dashboardStats() {
       branchStats,
       companyStats,
       hiringTrend: stats.hiringTrend || null,
+      hiringTrendLastYear: stats.hiringTrendLastYear || null,
         department: stats.department || null,
       };
   };

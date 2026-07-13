@@ -428,7 +428,8 @@ final class AnalyticsService
             'branchStatistics' => $base['branchStatistics'],
             'companyStatistics'=> $base['companyStatistics'],
             'salaryAnalytics'  => $base['salaryAnalytics'],
-            'hiringTrend'      => $this->getHiringTrend($departmentId),
+            'hiringTrend'      => $this->getHiringTrend($departmentId, 'this'),
+            'hiringTrendLastYear' => $this->getHiringTrend($departmentId, 'last'),
             'branchPlacement'  => [
                 'labels' => array_map(
                     static fn (array $b): string => (string) ($b['code'] ?: $b['department']),
@@ -475,13 +476,27 @@ final class AnalyticsService
     }
 
     /**
-     * @return array{labels: array<int, string>, series: array<int, array{label: string, data: array<int, int>}>}
+     * @param 'rolling'|'this'|'last'|null $yearMode
+     * @return array{labels: array<int, string>, series: array<int, array{label: string, data: array<int, int>}> , year?: int}
      */
-    private function getHiringTrend(?string $departmentId): array
+    private function getHiringTrend(?string $departmentId, ?string $yearMode = 'rolling'): array
     {
+        $yearMode = $yearMode === null || $yearMode === '' ? 'rolling' : $yearMode;
         $months = [];
-        for ($i = 11; $i >= 0; $i--) {
-            $months[] = date('Y-m', strtotime("-{$i} months"));
+        $year = null;
+
+        if ($yearMode === 'this' || $yearMode === 'last') {
+            $year = (int) date('Y');
+            if ($yearMode === 'last') {
+                $year--;
+            }
+            for ($m = 1; $m <= 12; $m++) {
+                $months[] = sprintf('%04d-%02d', $year, $m);
+            }
+        } else {
+            for ($i = 11; $i >= 0; $i--) {
+                $months[] = date('Y-m', strtotime("-{$i} months"));
+            }
         }
 
         $counts = array_fill_keys($months, 0);
@@ -509,7 +524,7 @@ final class AnalyticsService
             }
         }
 
-        return [
+        $result = [
             'labels' => array_map(
                 static fn (string $ym): string => date('M', strtotime($ym . '-01')),
                 $months
@@ -519,6 +534,11 @@ final class AnalyticsService
                 'data'  => array_values($counts),
             ]],
         ];
+        if ($year !== null) {
+            $result['year'] = $year;
+        }
+
+        return $result;
     }
 
     /**

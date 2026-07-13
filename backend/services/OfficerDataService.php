@@ -1604,6 +1604,7 @@ final class OfficerDataService
             'branchStatistics'    => $analytics['branchStatistics'],
             'companyStatistics'   => $analytics['companyStatistics'],
             'hiringTrend'         => $extended['hiringTrend'],
+            'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
             'department'          => $ctx['department']
                 ? DocumentHelper::serialize($ctx['department'])
                 : null,

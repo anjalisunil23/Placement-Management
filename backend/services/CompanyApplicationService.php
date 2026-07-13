@@ -149,6 +149,7 @@ final class CompanyApplicationService
             'name'           => $user['name'] ?? 'Student',
             'registerNumber' => $student['registerNumber'] ?? '',
             'department'     => $dept,
+            'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
             'cgpa'           => (float) ($student['academic']['cgpa'] ?? 0),
             'backlogs'       => (int) ($student['academic']['backlogs'] ?? 0),
             'hasResume'      => !empty($student['resume']['filename']),
