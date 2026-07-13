@@ -418,6 +418,51 @@ final class AesApiService
     }
 
     /**
+     * Lightweight stud_course / stud_branch / stud_class for placement filters (no qual merge).
+     *
+     * @return array{stud_course:string,stud_branch:string,stud_class:string}
+     */
+    public function fetchStudInfoPlacementRow(string $register): array
+    {
+        $register = strtoupper(trim($register));
+        if ($register === '') {
+            return ['stud_course' => '', 'stud_branch' => '', 'stud_class' => ''];
+        }
+
+        foreach ([$register] as $cacheKey) {
+            if (isset(self::$studInfoRecordCache[$cacheKey])) {
+                return $this->pickStudInfoFilterFields(self::$studInfoRecordCache[$cacheKey]);
+            }
+        }
+
+        $record = $this->normalizePlacementStudentRecord(
+            $this->extractRecord($this->postStudInfo4Placement(['admno' => $register], $register))
+        );
+        if ($record !== []) {
+            $infoAdmno = trim((string) ($record['stud_admno'] ?? $record['admno'] ?? ''));
+            if ($infoAdmno !== '') {
+                self::$studInfoRecordCache[$infoAdmno] = $record;
+            }
+            self::$studInfoRecordCache[$register] = $record;
+        }
+
+        return $this->pickStudInfoFilterFields($record);
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @return array{stud_course:string,stud_branch:string,stud_class:string}
+     */
+    private function pickStudInfoFilterFields(array $record): array
+    {
+        return [
+            'stud_course' => trim((string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? '')),
+            'stud_branch' => trim((string) ($record['stud_branch'] ?? $record['branch'] ?? '')),
+            'stud_class'  => trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')),
+        ];
+    }
+
+    /**
      * POST getStudQual4Placement — AES expects `admno` only.
      *
      * @param array<string, scalar|null> $params
