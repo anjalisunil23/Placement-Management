@@ -1897,4 +1897,290 @@ final class AesApiService
 
         return array_keys($array) !== range(0, count($array) - 1);
     }
+
+    /**
+     * Placement courses/programmes for a parent AES department.
+     *
+     * @return list<string>
+     */
+    public function fetchPlacementCourses(string $deptAesId): array
+    {
+        $deptAesId = trim($deptAesId);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        $methods = ['getCourses4Placement', 'getCourse4Placement'];
+        foreach ($methods as $method) {
+            try {
+                $result = $this->callAESApi($method, ['stud_deptcode' => $deptAesId]);
+                $labels = $this->normalizePlacementScalarLabels($result, [
+                    'stud_course', 'course', 'course_name', 'courseName', 'programme', 'program', 'code', 'name',
+                ]);
+                if ($labels !== []) {
+                    return $labels;
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Placement branches within a programme (e.g. Regular).
+     *
+     * @return list<string>
+     */
+    public function fetchPlacementBranches(string $deptAesId, string $programmeCode): array
+    {
+        $deptAesId = trim($deptAesId);
+        $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode($programmeCode);
+        if ($deptAesId === '' || $programmeCode === '') {
+            return [];
+        }
+
+        $params = ['stud_deptcode' => $deptAesId, 'stud_course' => $programmeCode];
+        $methods = ['getBranches4Placement', 'getBranch4Placement'];
+        foreach ($methods as $method) {
+            try {
+                $result = $this->callAESApi($method, $params);
+                $labels = $this->normalizePlacementScalarLabels($result, [
+                    'stud_branch', 'branch', 'branch_name', 'branchName', 'name',
+                ]);
+                if ($labels !== []) {
+                    return $labels;
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Placement class/batch list for a department programme.
+     *
+     * @return list<string>
+     */
+    public function fetchPlacementClassBatches(string $deptAesId, string $programmeCode = '', string $branch = ''): array
+    {
+        $deptAesId = trim($deptAesId);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode($programmeCode);
+        $branch = trim($branch);
+        $params = ['stud_deptcode' => $deptAesId];
+        if ($programmeCode !== '') {
+            $params['stud_course'] = $programmeCode;
+        }
+        if ($branch !== '') {
+            $params['stud_branch'] = $branch;
+        }
+
+        $methods = ['getClasses4Placement', 'getClass4Placement', 'getBatches4Placement', 'getBatch4Placement'];
+        foreach ($methods as $method) {
+            try {
+                $result = $this->callAESApi($method, $params);
+                $labels = $this->normalizePlacementClassBatchLabels($result, $programmeCode);
+                if ($labels !== []) {
+                    return $labels;
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
+     * @param list<string> $fieldKeys
+     * @return list<string>
+     */
+    private function normalizePlacementScalarLabels(array $result, array $fieldKeys): array
+    {
+        if (($result['success'] ?? false) !== true) {
+            return [];
+        }
+
+        $payload = $result['data'] ?? null;
+        if (!is_array($payload) && isset($result['raw']) && is_string($result['raw']) && trim($result['raw']) !== '') {
+            $decoded = json_decode($result['raw'], true);
+            if (is_array($decoded)) {
+                $payload = $decoded;
+            }
+        }
+        if (!is_array($payload)) {
+            return [];
+        }
+
+        if (($payload['status'] ?? true) === false || ($payload['status'] ?? null) === 'false') {
+            return [];
+        }
+
+        $list = $payload['data'] ?? $payload['courses'] ?? $payload['branches'] ?? $payload;
+        $labels = [];
+        $this->collectPlacementScalarLabels($list, $labels, $fieldKeys);
+
+        return array_values(array_unique(array_filter($labels, static fn (string $label) => $label !== '')));
+    }
+
+    /**
+     * @param list<string> $fieldKeys
+     * @param list<string> $out
+     */
+    private function collectPlacementScalarLabels(mixed $node, array &$out, array $fieldKeys): void
+    {
+        if (is_string($node)) {
+            $label = trim($node);
+            if ($label !== '') {
+                if (str_contains($label, ',')) {
+                    foreach (preg_split('/\s*,\s*/', $label) ?: [] as $part) {
+                        $this->collectPlacementScalarLabels($part, $out, $fieldKeys);
+                    }
+
+                    return;
+                }
+                $out[] = $label;
+            }
+
+            return;
+        }
+
+        if (!is_array($node)) {
+            return;
+        }
+
+        if ($this->isAssoc($node)) {
+            foreach ($fieldKeys as $key) {
+                $value = trim((string) ($node[$key] ?? ''));
+                if ($value !== '') {
+                    $out[] = $value;
+
+                    return;
+                }
+            }
+        }
+
+        foreach ($node as $item) {
+            $this->collectPlacementScalarLabels($item, $out, $fieldKeys);
+        }
+    }
+
+    /**
+     * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
+     * @return list<string>
+     */
+    private function normalizePlacementClassBatchLabels(array $result, string $programmeCode = ''): array
+    {
+        if (($result['success'] ?? false) !== true) {
+            return [];
+        }
+
+        $payload = $result['data'] ?? null;
+        if (!is_array($payload) && isset($result['raw']) && is_string($result['raw']) && trim($result['raw']) !== '') {
+            $decoded = json_decode($result['raw'], true);
+            if (is_array($decoded)) {
+                $payload = $decoded;
+            }
+        }
+        if (!is_array($payload)) {
+            return [];
+        }
+
+        if (($payload['status'] ?? true) === false || ($payload['status'] ?? null) === 'false') {
+            return [];
+        }
+
+        $list = $payload['data'] ?? $payload['classes'] ?? $payload['batches']
+            ?? $payload['class_list'] ?? $payload['classList'] ?? $payload;
+        $labels = [];
+        $this->collectPlacementClassLabels($list, $labels, $programmeCode);
+
+        return array_values(array_unique(array_filter($labels, static fn (string $label) => $label !== '')));
+    }
+
+    /**
+     * @param list<string> $out
+     */
+    private function collectPlacementClassLabels(mixed $node, array &$out, string $programmeCode): void
+    {
+        if (is_string($node)) {
+            $label = trim($node);
+            if ($label !== '') {
+                if (str_contains($label, ',')) {
+                    foreach (preg_split('/\s*,\s*/', $label) ?: [] as $part) {
+                        $this->collectPlacementClassLabels($part, $out, $programmeCode);
+                    }
+
+                    return;
+                }
+                $out[] = $this->tagBatchLabelWithProgramme($label, $programmeCode);
+            }
+
+            return;
+        }
+
+        if (!is_array($node)) {
+            return;
+        }
+
+        if ($this->isAssoc($node)) {
+            $label = trim((string) (
+                $node['stud_class']
+                ?? $node['class_name']
+                ?? $node['className']
+                ?? $node['batch']
+                ?? $node['classBatch']
+                ?? $node['class']
+                ?? $node['name']
+                ?? ''
+            ));
+            $course = strtoupper(trim((string) (
+                $node['stud_course']
+                ?? $node['course']
+                ?? $node['programme']
+                ?? $programmeCode
+            )));
+            if ($label !== '') {
+                $out[] = $this->tagBatchLabelWithProgramme($label, $course);
+
+                return;
+            }
+        }
+
+        foreach ($node as $item) {
+            $this->collectPlacementClassLabels($item, $out, $programmeCode);
+        }
+    }
+
+    private function tagBatchLabelWithProgramme(string $label, string $programmeCode): string
+    {
+        $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode($programmeCode);
+        if ($programmeCode === '') {
+            return $label;
+        }
+
+        $upper = strtoupper($label);
+        foreach (DepartmentProgrammeCatalog::programmeCodesForGroup(
+            DepartmentProgrammeCatalog::findGroupByProgramme($programmeCode)
+            ?? ['parent' => '', 'programmes' => [['code' => $programmeCode, 'label' => $programmeCode, 'aliases' => []]]]
+        ) as $prefix) {
+            if ($prefix !== '' && str_contains($upper, $prefix)) {
+                return $label;
+            }
+        }
+
+        if (preg_match('/^\d{4}/', trim($label)) === 1 || preg_match('/\d{4}\s*[-–/]\s*\d{2,4}/', $label) === 1) {
+            return $programmeCode . preg_replace('/\s+/', '', $label);
+        }
+
+        return $label;
+    }
 }

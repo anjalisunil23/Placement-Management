@@ -50,7 +50,7 @@ final class StaffPlacementRegistryService
             return strcasecmp((string) ($a['employer'] ?? ''), (string) ($b['employer'] ?? ''));
         });
 
-        $filterOptions = $this->buildFilterOptions($staffCtx);
+        $filterOptions = $this->buildFilterOptions($staffCtx, $filters);
         $filtered = $this->applyFilters($registry, $filters);
 
         $placementCount = 0;
@@ -255,41 +255,35 @@ final class StaffPlacementRegistryService
 
     /**
      * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
      * @return array{programs: string[], branches: string[], batches: string[], departments: array<int, array{id:string,code:string,name:string}>}
      */
-    private function buildFilterOptions(array $staffCtx): array
+    private function buildFilterOptions(array $staffCtx, array $filters = []): array
     {
-        $departments = $this->loadScopedDepartments($staffCtx);
-        $programs = [];
-        $branches = [];
-        foreach ($departments as $dept) {
-            $code = trim((string) ($dept['code'] ?? ''));
-            $name = trim((string) ($dept['name'] ?? ''));
-            if ($code !== '') {
-                $programs[$code] = true;
+        $filterSvc = new PlacementFilterService();
+        $program = trim((string) ($filters['program'] ?? ''));
+        $branch = trim((string) ($filters['branch'] ?? ''));
+
+        $programs = $filterSvc->fetchProgramOptions($staffCtx);
+        $branches = $program !== '' ? $filterSvc->fetchBranchOptions($staffCtx, $program) : [];
+        $batches = $program !== ''
+            ? $filterSvc->fetchBatchOptions($staffCtx, $program, $branch)
+            : [];
+
+        if ($batches === []) {
+            $fallback = [];
+            foreach ($this->loadScopedBatchOptions($staffCtx) as $batch) {
+                $fallback[$batch] = true;
             }
-            if ($name !== '') {
-                $branches[$name] = true;
-            }
+            $batches = array_keys($fallback);
+            sort($batches, SORT_NATURAL | SORT_FLAG_CASE);
         }
-
-        $batches = [];
-        foreach ($this->loadScopedBatchOptions($staffCtx) as $batch) {
-            $batches[$batch] = true;
-        }
-
-        $sort = static function (array $keys): array {
-            $list = array_keys($keys);
-            sort($list, SORT_NATURAL | SORT_FLAG_CASE);
-
-            return $list;
-        };
 
         return [
-            'programs'     => $sort($programs),
-            'branches'     => $sort($branches),
-            'batches'      => $sort($batches),
-            'departments'  => $departments,
+            'programs'     => $programs,
+            'branches'     => $branches,
+            'batches'      => $batches,
+            'departments'  => $this->loadScopedDepartments($staffCtx),
         ];
     }
 
@@ -442,6 +436,27 @@ final class StaffPlacementRegistryService
      */
     private function resolveDepartmentFields(array $row, ?array $dept): array
     {
+        $aesProgram = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+            $row['stud_course']
+            ?? $row['stud_cource_short']
+            ?? $row['programme']
+            ?? $row['course']
+            ?? ''
+        ));
+        $aesBranch = trim((string) (
+            $row['stud_branch']
+            ?? $row['branchName']
+            ?? $row['branch_name']
+            ?? ''
+        ));
+        if ($aesProgram !== '') {
+            return [
+                'departmentId' => is_array($dept) ? (string) ($dept['id'] ?? '') : trim((string) ($row['departmentId'] ?? '')),
+                'program'      => $aesProgram,
+                'branch'       => $aesBranch !== '' ? $aesBranch : 'Regular',
+            ];
+        }
+
         $departmentId = '';
         if (is_array($dept)) {
             $departmentId = (string) ($dept['id'] ?? '');

@@ -359,7 +359,16 @@
     return raw.toUpperCase() === String(batchCode).trim().toUpperCase();
   };
 
+  HiringOverviewPage.prototype.isYearOnlyBatchLabel = function (batchLabel) {
+    return /^\s*\d{4}\s*[-–/]\s*\d{2,4}/.test(String(batchLabel || '').trim());
+  };
+
   HiringOverviewPage.prototype.batchProgrammeFromLabel = function (batchLabel) {
+    const trimmed = String(batchLabel || '').trim();
+    if (!trimmed) return '';
+    if (this.isYearOnlyBatchLabel(trimmed)) {
+      return '';
+    }
     const raw = normalizeProgrammeCode(batchLabel);
     if (!raw) return '';
     const programmes = [];
@@ -386,7 +395,6 @@
   HiringOverviewPage.prototype.batchMatchesBranch = function (batchLabel, branchCode) {
     if (!branchCode) return true;
     const batchProg = this.batchProgrammeFromLabel(batchLabel);
-    if (!batchProg) return false;
     const targets = (typeof splitDepartmentFilterValue === 'function'
       ? splitDepartmentFilterValue(branchCode)
       : [branchCode]
@@ -397,6 +405,9 @@
       return normalizeProgrammeCode(resolved || c);
     }).filter(Boolean);
     if (!targets.length) return true;
+    if (!batchProg) {
+      return this.isYearOnlyBatchLabel(batchLabel) && targets.length === 1;
+    }
     return targets.some((target) => batchProg === target);
   };
 

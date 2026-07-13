@@ -422,8 +422,8 @@ async function loadRegistry() {
     return;
   }
   const filters = data.filters || {};
-  fillDepartmentSelect('filterProgram', filters.departments, 'code', 'All programs');
-  fillDepartmentSelect('filterBranch', filters.departments, 'name', 'All branches');
+  fillSelect('filterProgram', filters.programs || filters.departments?.map(d => d.code), 'All programs');
+  fillSelect('filterBranch', filters.branches, 'All branches');
   fillSelect('filterBatch', filters.batches, 'All batches');
   allRows = Array.isArray(data.rows) ? data.rows : [];
   applyClientFilter();
@@ -447,7 +447,18 @@ async function downloadOffer(studentId) {
 }
 
 ['filterProgram', 'filterBranch', 'filterBatch', 'filterType'].forEach(id => {
-  document.getElementById(id)?.addEventListener('change', () => loadRegistry());
+  document.getElementById(id)?.addEventListener('change', () => {
+    if (id === 'filterProgram') {
+      const branchEl = document.getElementById('filterBranch');
+      const batchEl = document.getElementById('filterBatch');
+      if (branchEl) branchEl.value = '';
+      if (batchEl) batchEl.value = '';
+    } else if (id === 'filterBranch') {
+      const batchEl = document.getElementById('filterBatch');
+      if (batchEl) batchEl.value = '';
+    }
+    loadRegistry();
+  });
 });
 document.getElementById('tableSearch')?.addEventListener('input', () => {
   clearTimeout(searchDebounce);

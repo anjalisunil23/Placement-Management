@@ -82,10 +82,15 @@ final class StaffController
             $data['phone'] = (string) $merged['phone'];
         }
         $departmentId = (string) ($profile['departmentId'] ?? '');
-        $assigned = StaffContext::assignedClassBatches([
+        $staffCtx = [
             'profile' => $profile,
             'departmentId' => $departmentId,
-        ]);
+            'department' => $dept,
+        ];
+        $assigned = StaffContext::assignedClassBatches($staffCtx);
+        if ($assigned === []) {
+            $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($staffCtx);
+        }
         if ($assigned !== []) {
             $data['assignedClassBatches'] = $assigned;
         }

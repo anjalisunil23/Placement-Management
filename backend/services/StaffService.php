@@ -10,6 +10,7 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\RecommendationModel;
+use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Utils\DocumentHelper;
@@ -377,11 +378,14 @@ final class StaffService
     {
         $branchFilter = trim($branchFilter);
         $assigned = StaffContext::assignedClassBatches($ctx);
-        if ($assigned !== []) {
-            $assigned = $this->filterBatchLabelsForBranch($assigned, $branchFilter);
-            sort($assigned, SORT_NATURAL | SORT_FLAG_CASE);
+        $aesBatches = $this->fetchAesClassBatchesForScope($ctx, $branchFilter);
+        $merged = array_values(array_unique(array_merge($assigned, $aesBatches)));
 
-            return $assigned;
+        if ($merged !== []) {
+            $filtered = $this->filterBatchLabelsForBranch($merged, $branchFilter);
+            sort($filtered, SORT_NATURAL | SORT_FLAG_CASE);
+
+            return $filtered;
         }
 
         $batches = [];
@@ -443,6 +447,13 @@ final class StaffService
         return array_values(array_filter($batches, function (string $batch) use ($resolvedTargets): bool {
             $batchProg = $this->batchProgrammeFromLabel($batch);
             if ($batchProg === '') {
+                if (count($resolvedTargets) === 1 && (
+                    preg_match('/^\d{4}/', trim($batch)) === 1
+                    || preg_match('/\d{4}\s*[-–/]\s*\d{2,4}/', $batch) === 1
+                )) {
+                    return true;
+                }
+
                 return false;
             }
             foreach ($resolvedTargets as $target) {
@@ -465,45 +476,72 @@ final class StaffService
             return '';
         }
 
-        $programmes = [
-            ['INMCA', ['INTMCA', 'IMCA', 'DDMCA', 'INTMCA']],
-            ['MCA', ['MCAR', 'MCAREG']],
-            ['BCA', ['BCAH', 'BCAHONS']],
-        ];
+        $programmes = [];
+        foreach (DepartmentProgrammeCatalog::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                $programmes[] = [
+                    DepartmentProgrammeCatalog::normalizeCode($programme['code']),
+                    array_map(
+                        static fn (string $alias) => DepartmentProgrammeCatalog::normalizeCode($alias),
+                        $programme['aliases']
+                    ),
+                ];
+            }
+        }
         usort($programmes, static fn (array $a, array $b) => strlen($b[0]) <=> strlen($a[0]));
 
         foreach ($programmes as [$code, $aliases]) {
             $codes = array_merge([$code], $aliases);
             usort($codes, static fn (string $a, string $b) => strlen($b) <=> strlen($a));
             foreach ($codes as $candidate) {
-                $needle = strtoupper(preg_replace('/[^A-Z0-9]/', '', $candidate) ?? '');
-                if ($needle !== '' && ($label === $needle || str_starts_with($label, $needle))) {
+                if ($candidate !== '' && ($label === $candidate || str_starts_with($label, $candidate))) {
                     return $code;
                 }
             }
         }
 
-        return $label;
+        if (preg_match('/^\d{4}/', trim($batch)) === 1 || preg_match('/\d{4}\s*[-–/]\s*\d{2,4}/', $batch) === 1) {
+            return '';
+        }
+
+        return DepartmentProgrammeCatalog::resolveProgrammeCode($label);
     }
 
     private function normalizeBranchTargetCode(string $branch): string
     {
-        $branch = strtoupper(preg_replace('/[^A-Z0-9]/', '', $branch) ?? '');
-        if ($branch === '') {
-            return '';
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($branch);
+
+        return $resolved !== '' ? $resolved : strtoupper(preg_replace('/[^A-Z0-9]/', '', $branch) ?? '');
+    }
+
+    /**
+     * Load class batches from AES for the staff department scope.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    public function refreshAssignedClassBatchesFromAes(array $ctx): array
+    {
+        $batches = (new PlacementFilterService())->fetchBatchOptions($ctx, '', '');
+        if ($batches === []) {
+            return [];
         }
 
-        $map = [
-            'INTMCA' => 'INMCA',
-            'IMCA' => 'INMCA',
-            'DDMCA' => 'INMCA',
-            'MCAR' => 'MCA',
-            'MCAREG' => 'MCA',
-            'BCAH' => 'BCA',
-            'BCAHONS' => 'BCA',
-        ];
+        $profileId = (string) ($ctx['profile']['_id'] ?? '');
+        if ($profileId !== '') {
+            (new StaffModel())->updateProfile($profileId, ['assignedClassBatches' => $batches]);
+        }
 
-        return $map[$branch] ?? $branch;
+        return $batches;
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function fetchAesClassBatchesForScope(array $ctx, string $branchFilter): array
+    {
+        return (new PlacementFilterService())->fetchBatchOptions($ctx, $branchFilter, '');
     }
 
     /**

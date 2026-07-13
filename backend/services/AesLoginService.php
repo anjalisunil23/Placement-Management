@@ -525,6 +525,11 @@ final class AesLoginService
             }
         }
 
+        $batches = $this->resolveAssignedClassBatches($mapped, $aesProfile);
+        if ($batches !== []) {
+            $data['assignedClassBatches'] = $batches;
+        }
+
         return $data;
     }
 
@@ -1784,7 +1789,7 @@ final class AesLoginService
             $patch['departmentId'] = $deptId;
         }
 
-        $assignedClasses = $this->normalizeAssignedClassBatches($extras, $aesDetails);
+        $assignedClasses = $this->resolveAssignedClassBatches($extras, $aesDetails);
         if ($assignedClasses !== []) {
             $patch['assignedClassBatches'] = $assignedClasses;
         }
@@ -1815,28 +1820,108 @@ final class AesLoginService
      * @param array<string, mixed> $aesDetails
      * @return list<string>
      */
-    private function normalizeAssignedClassBatches(array $extras, array $aesDetails): array
+    public function resolveAssignedClassBatches(array $extras, array $aesDetails): array
     {
         $raw = $this->pick($aesDetails, [
             'assigned_classes', 'assignedClasses', 'classes', 'class_list', 'classList',
             'assigned_batches', 'assignedBatches', 'batches', 'stud_classes', 'stud_class_list',
         ]);
         if ($raw === '' || $raw === null) {
-            $raw = $extras['assignedClassBatches'] ?? $extras['classBatch'] ?? '';
+            $raw = $extras['assignedClassBatches'] ?? $extras['classBatch'] ?? $extras['classes'] ?? '';
         }
 
-        if (is_array($raw)) {
-            $items = $raw;
-        } elseif (is_string($raw) && trim($raw) !== '') {
-            $items = preg_split('/\s*,\s*/', trim($raw)) ?: [];
-        } else {
-            return [];
-        }
+        $labels = [];
+        $this->collectAssignedClassBatchLabels($raw, $labels);
 
-        return array_values(array_filter(array_map(
+        return array_values(array_unique(array_filter(array_map(
             static fn ($batch) => trim((string) $batch),
-            $items
-        ), static fn ($batch) => $batch !== ''));
+            $labels
+        ), static fn ($batch) => $batch !== '')));
+    }
+
+    /**
+     * @param list<string> $out
+     */
+    private function collectAssignedClassBatchLabels(mixed $node, array &$out): void
+    {
+        if (is_string($node)) {
+            $trimmed = trim($node);
+            if ($trimmed === '') {
+                return;
+            }
+            if (str_contains($trimmed, ',')) {
+                foreach (preg_split('/\s*,\s*/', $trimmed) ?: [] as $part) {
+                    $this->collectAssignedClassBatchLabels($part, $out);
+                }
+
+                return;
+            }
+            $out[] = $trimmed;
+
+            return;
+        }
+
+        if (!is_array($node)) {
+            return;
+        }
+
+        if ($this->isAssignedClassRow($node)) {
+            $label = $this->batchLabelFromAssignedClassRow($node);
+            if ($label !== '') {
+                $out[] = $label;
+            }
+
+            return;
+        }
+
+        foreach ($node as $item) {
+            $this->collectAssignedClassBatchLabels($item, $out);
+        }
+    }
+
+  /**
+   * @param array<string, mixed> $row
+   */
+    private function isAssignedClassRow(array $row): bool
+    {
+        foreach (['stud_class', 'class_name', 'className', 'batch', 'classBatch', 'class'] as $key) {
+            if (!empty($row[$key]) && is_scalar($row[$key])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function batchLabelFromAssignedClassRow(array $row): string
+    {
+        $label = trim((string) (
+            $row['stud_class']
+            ?? $row['class_name']
+            ?? $row['className']
+            ?? $row['batch']
+            ?? $row['classBatch']
+            ?? $row['class']
+            ?? ''
+        ));
+        $course = strtoupper(trim((string) (
+            $row['stud_course'] ?? $row['course'] ?? $row['programme'] ?? ''
+        )));
+        $courseMap = ['INTMCA' => 'INMCA', 'IMCA' => 'INMCA', 'DDMCA' => 'INMCA'];
+        $course = $courseMap[$course] ?? $course;
+        if ($label !== '' && $course !== '' && in_array($course, ['BCA', 'MCA', 'INMCA'], true)) {
+            $upper = strtoupper($label);
+            if (!preg_match('/\b(BCA|MCA|INMCA|INTMCA|IMCA)\b/', $upper)) {
+                if (preg_match('/^\d{4}/', $label) === 1 || preg_match('/\d{4}\s*[-–/]\s*\d{2,4}/', $label) === 1) {
+                    return $course . preg_replace('/\s+/', '', $label);
+                }
+            }
+        }
+
+        return $label;
     }
 
     /**

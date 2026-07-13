@@ -60,14 +60,26 @@ final class StaffContext
             if (is_string($raw) && trim($raw) !== '') {
                 $raw = preg_split('/\s*,\s*/', trim($raw)) ?: [];
             } else {
-                return [];
+                $raw = [];
             }
         }
 
-        return array_values(array_filter(array_map(
+        $fromProfile = array_values(array_filter(array_map(
             static fn ($batch) => trim((string) $batch),
             $raw
         ), static fn ($batch) => $batch !== ''));
+
+        $aesProfile = Security::getSessionAesProfile();
+        if (!is_array($aesProfile) || $aesProfile === []) {
+            return $fromProfile;
+        }
+
+        $fromSession = (new AesLoginService())->resolveAssignedClassBatches([], $aesProfile);
+        if ($fromSession === []) {
+            return $fromProfile;
+        }
+
+        return array_values(array_unique(array_merge($fromProfile, $fromSession)));
     }
 
     /**
