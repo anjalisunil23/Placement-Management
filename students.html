@@ -70,20 +70,6 @@
             <i class="bi bi-search"></i>
             <input class="form-control" id="searchStudent" placeholder="Search by name, register number, or department…" autocomplete="off"/>
           </div>
-          <div class="mb-3 d-none" id="staffPolicyFilterWrap">
-            <label class="form-label small fw-semibold text-muted-2 mb-1" for="staffFilterProgram">Program</label>
-            <select class="form-select form-select-sm mb-2" id="staffFilterProgram">
-              <option value="">All programs</option>
-            </select>
-            <label class="form-label small fw-semibold text-muted-2 mb-1" for="staffFilterBranch">Branch</label>
-            <select class="form-select form-select-sm mb-2" id="staffFilterBranch" disabled>
-              <option value="">All branches</option>
-            </select>
-            <label class="form-label small fw-semibold text-muted-2 mb-1" for="staffFilterBatch">Batch</label>
-            <select class="form-select form-select-sm mb-2" id="staffFilterBatch">
-              <option value="">All batches</option>
-            </select>
-          </div>
           <div class="list-group list-group-flush" id="studentList" style="max-height:520px;overflow:auto"></div>
         </div>
       </div>
@@ -662,10 +648,6 @@ let overviewSearchTimer = null;
 let overviewSearchSeq = 0;
 let profileLoadSeq = 0;
 let deptStudentsLoaded = false;
-let staffFilterProgram = '';
-let staffFilterBranch = '';
-let staffFilterBatch = '';
-let staffScopeBatchSet = new Set();
 
 function isOverviewSearchActive() {
   return !!document.getElementById('searchStudent')?.value.trim();
@@ -687,96 +669,6 @@ function formatPolicyAcceptedAt(value) {
   if (!value) return '—';
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString('en-IN');
-}
-
-function studentProgrammeCode(s) {
-  const dept = typeof resolveCollegeProgrammeCode === 'function'
-    ? resolveCollegeProgrammeCode(s?.department || '')
-    : String(s?.department || '').trim().toUpperCase();
-  if (dept) return dept;
-  const batch = String(s?.classBatch || '').trim();
-  if (!batch || typeof normalizeProgrammeCode !== 'function') return '';
-  const raw = normalizeProgrammeCode(batch);
-  if (!raw) return '';
-  if (typeof DEPARTMENT_PROGRAMME_GROUPS !== 'undefined') {
-    const programmes = [];
-    DEPARTMENT_PROGRAMME_GROUPS.forEach((g) => g.programmes.forEach((p) => programmes.push(p)));
-    programmes.sort((a, b) => normalizeProgrammeCode(b.code).length - normalizeProgrammeCode(a.code).length);
-    for (const p of programmes) {
-      const codes = [p.code, ...(p.aliases || [])]
-        .map((c) => normalizeProgrammeCode(c))
-        .filter(Boolean)
-        .sort((a, b) => b.length - a.length);
-      for (const code of codes) {
-        if (raw === code || raw.startsWith(code)) {
-          return normalizeProgrammeCode(p.code);
-        }
-      }
-    }
-  }
-  return raw;
-}
-
-function fillStaffScopeSelect(id, values, allLabel, selected = '') {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const current = selected || el.value;
-  el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
-  if (current && [...el.options].some(o => o.value === current)) el.value = current;
-  else el.value = '';
-}
-
-async function loadStaffScopeFilters() {
-  if (!useStaffApi || typeof StaffApi === 'undefined') return null;
-  const data = await StaffApi.fetchPlacementFilters({
-    program: staffFilterProgram,
-    branch: staffFilterBranch,
-  });
-  if (!data) return null;
-
-  fillStaffScopeSelect('staffFilterProgram', data.programs || [], 'All programs', staffFilterProgram);
-  fillStaffScopeSelect('staffFilterBranch', data.branches || [], 'All branches', staffFilterBranch);
-  fillStaffScopeSelect('staffFilterBatch', data.batches || [], 'All batches', staffFilterBatch);
-
-  const branchEl = document.getElementById('staffFilterBranch');
-  if (branchEl) branchEl.disabled = !staffFilterProgram;
-
-  staffScopeBatchSet = new Set((data.batches || []).map(b => String(b).trim().toLowerCase()));
-  return data;
-}
-
-function studentMatchesScopeFilters(s) {
-  if (!useStaffApi) return true;
-
-  if (staffFilterBatch) {
-    return String(s.classBatch || '').trim().toLowerCase() === staffFilterBatch.toLowerCase();
-  }
-
-  if (staffFilterProgram) {
-    const rowProgram = studentProgrammeCode(s);
-    const wantResolved = typeof resolveCollegeProgrammeCode === 'function'
-      ? resolveCollegeProgrammeCode(staffFilterProgram)
-      : staffFilterProgram.toUpperCase();
-    const gotResolved = typeof resolveCollegeProgrammeCode === 'function'
-      ? resolveCollegeProgrammeCode(rowProgram)
-      : rowProgram.toUpperCase();
-    const match = (wantResolved && gotResolved && wantResolved === gotResolved)
-      || String(staffFilterProgram).trim().toLowerCase() === String(rowProgram).trim().toLowerCase()
-      || String(staffFilterProgram).trim().toLowerCase() === String(s.department || '').trim().toLowerCase();
-    if (!match) return false;
-  }
-
-  if ((staffFilterProgram || staffFilterBranch) && staffScopeBatchSet.size) {
-    const batch = String(s.classBatch || '').trim().toLowerCase();
-    if (!batch) return false;
-    return staffScopeBatchSet.has(batch);
-  }
-
-  return true;
-}
-
-function scopedStaffStudents(students) {
-  return students.filter(s => studentMatchesScopeFilters(s));
 }
 
 function studentSearchHaystack(s) {
@@ -872,9 +764,6 @@ function filteredOverviewStudents() {
     list = pool.filter(s => studentMatchesQuery(s, q));
   } else {
     list = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
-  }
-  if (useStaffApi) {
-    list = scopedStaffStudents(list);
   }
   return [...list].sort((a, b) =>
     String(a.name || a.registerNumber || '').localeCompare(String(b.name || b.registerNumber || ''), undefined, { sensitivity: 'base' })
@@ -1580,15 +1469,6 @@ document.getElementById('studentList').addEventListener('click', e => {
   selectOverviewStudent(btn.dataset.reg);
 });
 document.getElementById('searchStudent').addEventListener('input', scheduleOverviewSearch);
-document.getElementById('staffFilterProgram')?.addEventListener('change', () => {
-  onStaffScopeFilterChange('program').catch(() => {});
-});
-document.getElementById('staffFilterBranch')?.addEventListener('change', () => {
-  onStaffScopeFilterChange('branch').catch(() => {});
-});
-document.getElementById('staffFilterBatch')?.addEventListener('change', () => {
-  onStaffScopeFilterChange('batch').catch(() => {});
-});
 document.getElementById('tabStaffPolicy')?.addEventListener('click', (e) => {
   const row = e.target.closest('.staff-policy-row');
   const reg = row?.dataset?.reg;
@@ -1599,7 +1479,7 @@ document.getElementById('tabStaffPolicy')?.addEventListener('click', (e) => {
 document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
   const href = (e.target?.getAttribute('href') || '').replace('#', '');
   if (href === 'tabStaffPolicy') {
-    loadStaffScopeFilters().then(() => renderStaffPolicyTab()).catch(() => renderStaffPolicyTab());
+    renderStaffPolicyTab();
   }
 });
 document.getElementById('searchStudent').addEventListener('keydown', e => {
@@ -1626,36 +1506,7 @@ async function loadDepartmentStudentsForStaff() {
 }
 
 function staffPolicyStudents() {
-  const pool = (deptStudentsLoaded ? overviewStudentsAll : overviewStudents).slice();
-  return scopedStaffStudents(pool);
-}
-
-async function onStaffScopeFilterChange(changed) {
-  if (changed === 'program') {
-    staffFilterProgram = document.getElementById('staffFilterProgram')?.value || '';
-    staffFilterBranch = '';
-    staffFilterBatch = '';
-    const branchEl = document.getElementById('staffFilterBranch');
-    const batchEl = document.getElementById('staffFilterBatch');
-    if (branchEl) branchEl.value = '';
-    if (batchEl) batchEl.value = '';
-  } else if (changed === 'branch') {
-    staffFilterBranch = document.getElementById('staffFilterBranch')?.value || '';
-    staffFilterBatch = '';
-    const batchEl = document.getElementById('staffFilterBatch');
-    if (batchEl) batchEl.value = '';
-  } else if (changed === 'batch') {
-    staffFilterBatch = document.getElementById('staffFilterBatch')?.value || '';
-  }
-
-  await loadStaffScopeFilters();
-  if (isOverviewSearchActive()) {
-    await runOverviewSearch();
-  } else {
-    syncOverviewSelectionAfterFilter();
-    renderOverviewList();
-  }
-  renderStaffPolicyTab();
+  return (deptStudentsLoaded ? overviewStudentsAll : overviewStudents).slice();
 }
 
 function renderStaffPolicyTab() {
@@ -1698,9 +1549,7 @@ async function initOverview() {
     await Auth.ensureSession();
     if (useStaffApi) {
       await Auth.enrichFromProfile();
-      document.getElementById('staffPolicyFilterWrap')?.classList.remove('d-none');
       await loadDepartmentStudentsForStaff();
-      await loadStaffScopeFilters();
       renderStaffPolicyTab();
     } else {
       overviewStudentsAll = [];
