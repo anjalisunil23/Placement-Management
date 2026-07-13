@@ -50,21 +50,23 @@
   }
   .policy-logo-mark{
     flex:0 0 auto;
-    width:96px;height:96px;
-    border-radius:50%;
-    overflow:hidden;
+    width:auto;
+    height:auto;
+    max-width:min(420px,100%);
+    border-radius:8px;
+    overflow:visible;
     background:#000;
     border:1px solid #222;
     position:relative;
+    padding:6px 10px;
   }
   .policy-logo-mark img,
   .policy-header .policy-college-logo{
-    position:absolute;
-    left:0;top:0;
-    height:96px !important;
+    position:static;
+    height:56px !important;
     width:auto !important;
-    max-width:none !important;
-    object-fit:unset !important;
+    max-width:100% !important;
+    object-fit:contain !important;
     padding:0 !important;
     border:0 !important;
     border-radius:0 !important;
@@ -93,9 +95,9 @@
   }
   @media (max-width:520px){
     .policy-shell{padding:1rem}
-    .policy-header{flex-direction:row;align-items:center;text-align:left}
-    .policy-logo-mark{width:72px;height:72px}
-    .policy-logo-mark img{height:72px !important}
+    .policy-header{flex-direction:column;align-items:flex-start;text-align:left}
+    .policy-logo-mark{max-width:100%;padding:5px 8px}
+    .policy-logo-mark img{height:44px !important}
   }
   .policy-body{
     padding:0;
