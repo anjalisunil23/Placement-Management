@@ -17,8 +17,8 @@
   }
   .policy-shell{max-width:920px;margin:0 auto;padding:1.25rem 1rem 3rem}
   .policy-card{
-    background:#fff;
-    border:1.5px solid #111;
+    background:transparent;
+    border:0;
     border-radius:0;
     box-shadow:none;
   }
@@ -27,26 +27,32 @@
     align-items:center;
     gap:1rem 1.35rem;
     text-align:left;
-    padding:1.25rem 1.35rem 1.1rem;
-    border-bottom:1.5px solid #111;
+    padding:0 0 1.15rem;
+    border-bottom:0;
+    margin-bottom:.25rem;
   }
   .policy-logo-mark{
     flex:0 0 auto;
-    width:78px;height:78px;
+    width:88px;height:88px;
     border-radius:50%;
     overflow:hidden;
-    background:#fff;
+    background:#000;
     border:1px solid #222;
-    display:grid;
-    place-items:center;
+    position:relative;
   }
   .policy-logo-mark img,
-  .policy-header .policy-college-logo,
-  .policy-header img.brand-logo{
-    width:78px;height:78px;max-width:none;
-    object-fit:cover;
-    object-position:left center;
-    padding:0;border:0;border-radius:0;background:transparent;
+  .policy-header .policy-college-logo{
+    position:absolute;
+    left:0;top:0;
+    height:88px !important;
+    width:auto !important;
+    max-width:none !important;
+    object-fit:unset !important;
+    padding:0 !important;
+    border:0 !important;
+    border-radius:0 !important;
+    background:transparent !important;
+    display:block;
   }
   .policy-header-text{min-width:0;flex:1}
   .policy-header h1{
@@ -70,14 +76,20 @@
   }
   @media (max-width:520px){
     .policy-header{flex-direction:row;align-items:center;text-align:left}
-    .policy-logo-mark{width:64px;height:64px}
-    .policy-logo-mark img{width:64px;height:64px}
+    .policy-logo-mark{width:72px;height:72px}
+    .policy-logo-mark img{height:72px !important}
   }
   .policy-body{
-    padding:1.25rem 1.35rem 1.5rem;
+    padding:0;
     font-size:1rem;
     line-height:1.55;
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
+  }
+  .policy-fields-box{
+    border:1.5px solid #111;
+    background:#fff;
+    padding:1.15rem 1.25rem 1.25rem;
+    margin-bottom:1.25rem;
   }
   .policy-body .form-label{
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
@@ -101,7 +113,7 @@
   }
   .guidelines-box{
     max-height:min(52vh,420px);overflow:auto;
-    border:1.5px solid #111;
+    border:1px solid #cbd5e1;
     border-radius:0;
     padding:1rem 1.15rem;
     background:#fff;
@@ -151,7 +163,7 @@
   <div class="policy-card">
     <div class="policy-header">
       <div class="policy-logo-mark">
-        <img id="collegeLogo" class="policy-college-logo brand-logo" alt="Amal Jyothi College of Engineering" width="76" height="76" decoding="async"/>
+        <img id="collegeLogo" class="policy-college-logo" alt="Amal Jyothi College of Engineering" decoding="async"/>
       </div>
       <div class="policy-header-text">
         <h1>Placement Cell – Registration</h1>
@@ -160,63 +172,65 @@
     </div>
 
     <div class="policy-body">
-      <div class="d-flex justify-content-end mb-2">
-        <div class="policy-yop">YoP: 2026</div>
-      </div>
-      <p class="small text-muted-2 mb-3">Please complete this registration and confirm that you have read the Placement Guidelines. You can access the portal only after confirmation.</p>
-
       <form id="registrationForm" novalidate>
-        <div class="row g-3 mb-3">
-          <div class="col-md-6">
-            <label class="form-label small fw-semibold">University Reg. No</label>
-            <input class="form-control" name="registerNumber" id="regNo" required readonly autocomplete="off"/>
-            <div class="form-text">From your college profile</div>
+        <div class="policy-fields-box">
+          <div class="d-flex justify-content-end mb-2">
+            <div class="policy-yop">YoP: 2026</div>
           </div>
-          <div class="col-md-6">
-            <label class="form-label small fw-semibold">Name</label>
-            <input class="form-control" name="name" id="regName" required readonly autocomplete="name"/>
-            <div class="form-text">From your college profile</div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label small fw-semibold">Mobile Number</label>
-            <div class="input-group" data-contact-phone="1">
-              <select class="form-select ph-phone-cc" name="phoneCountryCode" id="regCountryCode" aria-label="Country code" title="Country code">
-                <option value="91" selected>+91 India</option>
-                <option value="971">+971 UAE</option>
-                <option value="1">+1 USA / Canada</option>
-                <option value="44">+44 UK</option>
-                <option value="966">+966 Saudi Arabia</option>
-                <option value="974">+974 Qatar</option>
-                <option value="968">+968 Oman</option>
-                <option value="965">+965 Kuwait</option>
-                <option value="973">+973 Bahrain</option>
-                <option value="65">+65 Singapore</option>
-                <option value="60">+60 Malaysia</option>
-                <option value="61">+61 Australia</option>
-                <option value="49">+49 Germany</option>
-                <option value="33">+33 France</option>
-                <option value="977">+977 Nepal</option>
-                <option value="94">+94 Sri Lanka</option>
-                <option value="880">+880 Bangladesh</option>
-              </select>
-              <input class="form-control" type="tel" name="mobile" id="regMobile" required inputmode="numeric" autocomplete="tel-national" maxlength="15" placeholder="Phone number"/>
+          <p class="small text-muted-2 mb-3">Please complete this registration and confirm that you have read the Placement Guidelines. You can access the portal only after confirmation.</p>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">University Reg. No</label>
+              <input class="form-control" name="registerNumber" id="regNo" required readonly autocomplete="off"/>
+              <div class="form-text">From your college profile</div>
             </div>
-            <div class="form-text">Select country code, then enter the number.</div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label small fw-semibold">Email ID</label>
-            <input class="form-control" type="email" name="email" id="regEmail" required autocomplete="email"/>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label small fw-semibold">Year of Passing (YoP)</label>
-            <input class="form-control" name="yop" id="regYop" value="2026" required readonly/>
-            <div class="form-text">Fixed for this registration cycle</div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label small fw-semibold">Branch</label>
-            <input class="form-control" id="regBranchDisplay" readonly placeholder="Your branch"/>
-            <input type="hidden" name="branchBatch" id="regBranchBatch" required/>
-            <div class="form-text">From your college profile</div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Name</label>
+              <input class="form-control" name="name" id="regName" required readonly autocomplete="name"/>
+              <div class="form-text">From your college profile</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Mobile Number</label>
+              <div class="input-group" data-contact-phone="1">
+                <select class="form-select ph-phone-cc" name="phoneCountryCode" id="regCountryCode" aria-label="Country code" title="Country code">
+                  <option value="91" selected>+91 India</option>
+                  <option value="971">+971 UAE</option>
+                  <option value="1">+1 USA / Canada</option>
+                  <option value="44">+44 UK</option>
+                  <option value="966">+966 Saudi Arabia</option>
+                  <option value="974">+974 Qatar</option>
+                  <option value="968">+968 Oman</option>
+                  <option value="965">+965 Kuwait</option>
+                  <option value="973">+973 Bahrain</option>
+                  <option value="65">+65 Singapore</option>
+                  <option value="60">+60 Malaysia</option>
+                  <option value="61">+61 Australia</option>
+                  <option value="49">+49 Germany</option>
+                  <option value="33">+33 France</option>
+                  <option value="977">+977 Nepal</option>
+                  <option value="94">+94 Sri Lanka</option>
+                  <option value="880">+880 Bangladesh</option>
+                </select>
+                <input class="form-control" type="tel" name="mobile" id="regMobile" required inputmode="numeric" autocomplete="tel-national" maxlength="15" placeholder="Phone number"/>
+              </div>
+              <div class="form-text">Select country code, then enter the number.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Email ID</label>
+              <input class="form-control" type="email" name="email" id="regEmail" required autocomplete="email"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Year of Passing (YoP)</label>
+              <input class="form-control" name="yop" id="regYop" value="2026" required readonly/>
+              <div class="form-text">Fixed for this registration cycle</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Branch</label>
+              <input class="form-control" id="regBranchDisplay" readonly placeholder="Your branch"/>
+              <input type="hidden" name="branchBatch" id="regBranchBatch" required/>
+              <div class="form-text">From your college profile</div>
+            </div>
           </div>
         </div>
 
@@ -358,16 +372,27 @@
 (function initCollegeLogo() {
   const el = document.getElementById('collegeLogo');
   if (!el) return;
+  const candidates = [
+    (typeof BRAND !== 'undefined' && BRAND.logoSrc) ? BRAND.logoSrc : '',
+    'css/img/ajce-logo.png',
+    'css/ajce-logo.png',
+    '/css/img/ajce-logo.png',
+    '/css/ajce-logo.png',
+    'logo.php',
+    '/logo.php',
+    (typeof BRAND !== 'undefined' && BRAND.logoFallbackSrc) ? BRAND.logoFallbackSrc : '',
+    (typeof BRAND !== 'undefined' && BRAND.logoDataUri) ? BRAND.logoDataUri : '',
+  ].filter(Boolean);
+  let i = 0;
+  const tryNext = () => {
+    if (i >= candidates.length) return;
+    el.src = candidates[i++];
+  };
+  el.onerror = tryNext;
   if (typeof BRAND !== 'undefined') {
-    el.src = BRAND.logoDataUri || BRAND.logoSrc || BRAND.logoFallbackSrc || '';
     el.alt = BRAND.logoAlt || 'Amal Jyothi College of Engineering';
-    el.onerror = () => {
-      if (BRAND.logoFallbackSrc && el.src !== BRAND.logoFallbackSrc) {
-        el.onerror = null;
-        el.src = BRAND.logoFallbackSrc;
-      }
-    };
   }
+  tryNext();
 })();
 
 (function initCountryCode() {
