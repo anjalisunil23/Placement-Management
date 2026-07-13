@@ -159,7 +159,12 @@
     border-color:#94a3b8;
     border-radius:0;
   }
-  .form-control[readonly]{background:#fafafa;color:#111;cursor:default}
+  .form-control[readonly]{
+    background:#e8f4fc;
+    color:#0c4a6e;
+    border-color:#93c5e8;
+    cursor:default;
+  }
   .form-select{border-radius:0;font-family:Arial,Helvetica,sans-serif}
   .declaration-cell{
     border:1.5px solid #111;
@@ -206,12 +211,10 @@
             <div class="col-md-6">
               <label class="form-label small fw-semibold">University Reg. No</label>
               <input class="form-control" name="registerNumber" id="regNo" required readonly autocomplete="off"/>
-              <div class="form-text">From your college profile</div>
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Name</label>
               <input class="form-control" name="name" id="regName" required readonly autocomplete="name"/>
-              <div class="form-text">From your college profile</div>
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Mobile Number</label>
@@ -252,7 +255,6 @@
               <label class="form-label small fw-semibold">Branch</label>
               <input class="form-control" id="regBranchDisplay" readonly placeholder="Your branch"/>
               <input type="hidden" name="branchBatch" id="regBranchBatch" required/>
-              <div class="form-text">From your college profile</div>
             </div>
           </div>
         </div>
