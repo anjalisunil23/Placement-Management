@@ -294,7 +294,6 @@
       <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="applyCertificates"><i class="bi bi-upload me-1"></i>Add certificates</button>
       <span class="file-picker-name text-muted-2 small" data-file-picker-name="applyCertificates">No files chosen</span>
     </div>
-    <div class="small text-muted-2 mt-1" id="applyCertMeta"></div>
 
     <div class="alert alert-info small mt-3 mb-0 d-none" id="applyResumeHint">Upload a resume in <a href="settings.html#resumes">Profile &amp; Resumes</a> before applying.</div>
 
@@ -476,14 +475,12 @@ function certificateFileKey(file) {
 
 function renderApplyCertificateList() {
   const list = document.getElementById('applyCertList');
-  const meta = document.getElementById('applyCertMeta');
   const nameEl = document.querySelector('[data-file-picker-name="applyCertificates"]');
   if (!list) return;
 
   if (!applyCertificateFiles.length) {
     list.innerHTML = '';
     list.classList.add('d-none');
-    if (meta) meta.textContent = '';
     if (nameEl) {
       nameEl.textContent = 'No files chosen';
       nameEl.classList.remove('has-file');
@@ -507,12 +504,6 @@ function renderApplyCertificateList() {
     });
   });
 
-  const names = applyCertificateFiles.map(f => f.name).join(', ');
-  if (meta) {
-    meta.textContent = applyCertificateFiles.length === 1
-      ? `Selected: ${names}`
-      : `Selected ${applyCertificateFiles.length} certificates: ${names}`;
-  }
   if (nameEl) {
     nameEl.textContent = applyCertificateFiles.length === 1
       ? applyCertificateFiles[0].name
