@@ -462,7 +462,7 @@ final class StaffService
             return true;
         }
 
-        $row = (new OfficerDataService())->enrichStudentListRow([], $student, $user);
+        $row = (new OfficerDataService())->enrichStudentListRow([], $student, $user, false);
         $deptCode = strtoupper(trim((string) ($row['departmentCode'] ?? $dept['code'] ?? '')));
         $deptName = strtoupper(trim((string) ($row['departmentName'] ?? $dept['name'] ?? '')));
         $batch = strtoupper(trim((string) ($student['classBatch'] ?? $row['classBatch'] ?? '')));
