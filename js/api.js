@@ -413,7 +413,7 @@ const PAGE_PERMS = {
   'placement-console.html': ['admin'],
   'recruiting.html':        ['admin','placement_officer','company'],
   'student-overview.html':  ['admin','placement_officer','staff'],
-  'hiring-overview.html':   ['admin','staff'],
+  'hiring-overview.html':   ['admin'],
   'users.html':             ['admin'],
   'rules.html':             ['admin'],
   'applications.html':      ['admin','placement_officer'],
@@ -426,7 +426,7 @@ const PAGE_PERMS = {
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'eligibility.html', 'company.html', 'applicants.html', 'recruiting.html', 'notifications.html', 'settings.html'];
-const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-placements.html', 'drives.html', 'students.html', 'hiring-overview.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-placements.html', 'drives.html', 'students.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html'];
 
 /** Placement Cell guidelines version students must accept on first login. */
@@ -442,7 +442,7 @@ function studentNeedsPlacementRegistration() {
 const ROLE_HOME = {
   admin: 'dashboard.html',
   placement_officer: 'dashboard.html',
-  staff: 'staff-recommend.html',
+  staff: 'dashboard.html',
   student: 'drives.html',
   company: 'company.html',
   alumni: 'dashboard.html',
@@ -2209,8 +2209,7 @@ function campusRecruitmentStats() {
 }
 
 function canViewCampusHiring() {
-  const role = Auth.role();
-  return role === 'admin' || role === 'staff';
+  return Auth.role() === 'admin';
 }
 
 function companyHiringCounts(companyName) {

@@ -341,8 +341,7 @@
   HiringOverviewPage.prototype.selectedDept = function () {
     const role = this.currentRole();
     if (role === 'staff' || role === 'placement_officer') {
-      // Officers stay inside their department; branch dropdown may narrow further.
-      if (role === 'placement_officer' && this.activeDeptFilter) return this.activeDeptFilter;
+      if (this.activeDeptFilter) return this.activeDeptFilter;
       const meta = this.ownDepartmentMeta();
       return meta.code || meta.name || '';
     }
@@ -379,8 +378,8 @@
     const role = this.currentRole();
     const escLabel = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
-    // Placement officers only see their own department (no campus-wide "All departments").
-    if (role === 'placement_officer') {
+    // Placement officers and staff only see their own department (no campus-wide "All departments").
+    if (role === 'placement_officer' || role === 'staff') {
       const meta = this.ownDepartmentMeta();
       const ownGroup = this.findOwnDepartmentGroup();
       this.viewDeptGroups = ownGroup ? [ownGroup] : [];
@@ -453,16 +452,11 @@
     const card = this.$('viewFilterCard');
     const deptSelect = this.$('deptSelect');
     const branchSelect = this.$('branchSelect');
-    if (card) card.classList.toggle('d-none', role === 'staff');
-    if (deptSelect) deptSelect.classList.toggle('d-none', role === 'staff');
-    if (branchSelect) branchSelect.classList.toggle('d-none', role === 'staff');
+    if (card) card.classList.toggle('d-none', false);
+    if (deptSelect) deptSelect.classList.toggle('d-none', false);
+    if (branchSelect) branchSelect.classList.toggle('d-none', false);
 
-    if (this.staffLive) {
-      if (hintEl) hintEl.textContent = 'Showing live hiring data for your department.';
-      return;
-    }
-
-    if (role === 'placement_officer') {
+    if (role === 'staff' || role === 'placement_officer') {
       const meta = this.ownDepartmentMeta();
       const label = meta.name || meta.code || 'your department';
       if (hintEl) hintEl.textContent = `Showing hiring data for ${label} only.`;

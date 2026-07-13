@@ -239,59 +239,105 @@
 
       <!-- ===== STAFF ===== -->
       <div data-roles="staff">
-        <div class="row g-3">
-          <div class="col-md-3 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-building-add"></i></div><span class="badge-soft info">YTD</span></div>
-            <div class="val"><span class="counter" data-target="0" id="staffRecCount">0</span></div><div class="lbl">Companies Recommended</div>
-          </div></div>
-          <div class="col-md-3 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check"></i></div><span class="badge-soft success">Onboarded</span></div>
-            <div class="val"><span class="counter" data-target="0" id="staffOnboarded">0</span></div><div class="lbl">Now Onboarded</div>
-          </div></div>
-          <div class="col-md-3 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-hourglass"></i></div><span class="badge-soft warning">Awaiting</span></div>
-            <div class="val"><span class="counter" data-target="0" id="staffPending">0</span></div><div class="lbl">Pending Review</div>
-          </div></div>
-          <div class="col-md-3 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-mortarboard-fill"></i></div><span class="badge-soft info" id="staffDeptBadge">—</span></div>
-            <div class="val"><span class="counter" data-target="0" data-decimals="1" data-suffix="%" id="staffDeptPct">0</span></div><div class="lbl">Your Dept. Placement %</div>
-          </div></div>
+        <div id="staffHiringRoot">
+          <div class="card-surface p-3 p-md-4 mb-3" id="viewFilterCard">
+            <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
+              <div class="flex-grow-1" style="min-width:min(100%,18rem)">
+                <div class="small fw-semibold text-muted-2 mb-2">View</div>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                  <select class="form-select form-select-sm w-auto" id="deptSelect" aria-label="Department">
+                    <option value="">All departments</option>
+                  </select>
+                  <select class="form-select form-select-sm w-auto" id="branchSelect" aria-label="Branch" disabled>
+                    <option value="">All branches</option>
+                  </select>
+                </div>
+              </div>
+              <div class="small text-muted-2" id="viewHint"></div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-6 col-lg">
+              <div class="card-surface stat-card h-100" id="companiesCard" role="button" tabindex="0">
+                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-buildings"></i></div><span class="badge-soft success">Active</span></div>
+                <div class="val"><span class="counter" id="statCompanies" data-target="0">0</span></div>
+                <div class="lbl">Companies currently hiring</div>
+              </div>
+            </div>
+            <div class="col-6 col-lg">
+              <div class="card-surface stat-card h-100">
+                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-people-fill"></i></div><span class="badge-soft info">Pipeline</span></div>
+                <div class="val"><span class="counter" id="statApplicants" data-target="0">0</span></div>
+                <div class="lbl">Total applicants</div>
+              </div>
+            </div>
+            <div class="col-6 col-lg">
+              <div class="card-surface stat-card h-100">
+                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-person-check-fill"></i></div><span class="badge-soft primary">Screening</span></div>
+                <div class="val"><span class="counter" id="statShortlisted" data-target="0">0</span></div>
+                <div class="lbl">Shortlisted</div>
+              </div>
+            </div>
+            <div class="col-6 col-lg">
+              <div class="card-surface stat-card h-100">
+                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-envelope-check-fill"></i></div><span class="badge-soft warning">Offers</span></div>
+                <div class="val"><span class="counter" id="statOffers" data-target="0">0</span></div>
+                <div class="lbl">Offers released</div>
+              </div>
+            </div>
+            <div class="col-6 col-lg">
+              <div class="card-surface stat-card h-100">
+                <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check-fill"></i></div><span class="badge-soft success">Joined</span></div>
+                <div class="val"><span class="counter" id="statHired" data-target="0">0</span></div>
+                <div class="lbl">Hired / placed</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-lg-7">
+              <div class="card-surface p-3 p-md-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div>
+                    <h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6>
+                    <small class="text-muted-2">Offers rolled out across last 12 months</small>
+                  </div>
+                  <select class="form-select form-select-sm w-auto" id="trendYearSelect" aria-label="Hiring trend period">
+                    <option>This year</option>
+                    <option>Last year</option>
+                  </select>
+                </div>
+                <div style="height:300px"><canvas id="trendChart"></canvas></div>
+              </div>
+            </div>
+            <div class="col-lg-5">
+              <div class="card-surface p-3 p-md-4 h-100">
+                <h6 class="fw-bold mb-3">Pipeline breakdown</h6>
+                <div class="table-wrap">
+                  <table class="table-modern">
+                    <thead><tr><th>Stage</th><th>Count</th><th>Share</th></tr></thead>
+                    <tbody id="pipelineRows"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="row g-3 mt-1">
-          <div class="col-12 d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <div><h6 class="fw-bold mb-0">Campus hiring snapshot</h6><small class="text-muted-2">Companies hiring, applicants, shortlists, offers, and hires</small></div>
-            <a href="hiring-overview.html" class="btn btn-sm btn-outline-primary">Full hiring overview</a>
-          </div>
-          <div class="col-6 col-md"><div class="card-surface stat-card"><div class="lbl">Companies hiring</div><div class="val"><span class="counter" id="staffHiringCos" data-target="0">0</span></div></div></div>
-          <div class="col-6 col-md"><div class="card-surface stat-card"><div class="lbl">Applicants</div><div class="val"><span class="counter" id="staffHiringApps" data-target="0">0</span></div></div></div>
-          <div class="col-6 col-md"><div class="card-surface stat-card"><div class="lbl">Shortlisted</div><div class="val"><span class="counter" id="staffHiringShort" data-target="0">0</span></div></div></div>
-          <div class="col-6 col-md"><div class="card-surface stat-card"><div class="lbl">Offers</div><div class="val"><span class="counter" id="staffHiringOffers" data-target="0">0</span></div></div></div>
-          <div class="col-6 col-md"><div class="card-surface stat-card"><div class="lbl">Hired</div><div class="val"><span class="counter" id="staffHiringHired" data-target="0">0</span></div></div></div>
-        </div>
-
-        <div class="row g-3 mt-1" id="dept-stats">
-          <div class="col-12 col-xl-8"><div class="card-surface p-3 p-md-4">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div><h6 class="mb-0 fw-bold">Department-wise Placement Statistics</h6><small class="text-muted-2">Placed students and placement % by department</small></div>
-            </div>
-            <div style="height:300px"><canvas id="staffDeptChart"></canvas></div>
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-building-add"></i></div><span class="badge-soft info">YTD</span></div>
+            <div class="val"><span class="counter" data-target="0" id="staffRecCount">0</span></div><div class="lbl">Companies Recommended</div>
           </div></div>
-          <div class="col-12 col-xl-4"><div class="card-surface p-3 p-md-4">
-            <h6 class="fw-bold mb-1">Placement % by department</h6>
-            <small class="text-muted-2">Department-wise placement rate (bar chart)</small>
-            <div style="height:300px" class="mt-2"><canvas id="staffDeptPie"></canvas></div>
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check"></i></div><span class="badge-soft success">Onboarded</span></div>
+            <div class="val"><span class="counter" data-target="0" id="staffOnboarded">0</span></div><div class="lbl">Now Onboarded</div>
           </div></div>
-        </div>
-
-        <div class="card-surface mt-3">
-          <div class="p-3 p-md-4 pb-0"><h6 class="fw-bold mb-0">Department breakdown</h6></div>
-          <div class="table-wrap">
-            <table class="table-modern">
-              <thead><tr><th>Department</th><th>Students</th><th>Placed</th><th>Placement %</th><th>Avg. Package</th></tr></thead>
-              <tbody id="staffDeptRows"></tbody>
-            </table>
-          </div>
+          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-hourglass"></i></div><span class="badge-soft warning">Awaiting</span></div>
+            <div class="val"><span class="counter" data-target="0" id="staffPending">0</span></div><div class="lbl">Pending Review</div>
+          </div></div>
         </div>
 
         <div class="card-surface p-4 mt-3 d-flex flex-wrap gap-3 align-items-center justify-content-between">
@@ -422,7 +468,7 @@
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
   const needCharts = role === 'admin' || role === 'placement_officer' || role === 'staff' || role === 'company';
   const needManage = role === 'admin' || role === 'placement_officer' || role === 'staff';
-  const needHiring = role === 'placement_officer' || role === 'admin';
+  const needHiring = role === 'placement_officer' || role === 'admin' || role === 'staff';
   const scripts = [];
   if (needCharts) {
     scripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
@@ -458,7 +504,7 @@ const titles = {
   admin: ['Administrator Console', 'Institute-wide overview & approvals.'],
   placement_officer: ['Campus Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires across campus.'],
   student: ['Dashboard', ''],
-  staff: ['Staff Dashboard', `Track recommendations and ${user.department || 'department'} placement statistics.`],
+  staff: ['Department Hiring Overview', 'Live snapshot of companies hiring your department students, pipeline stages, and recent activity.'],
   company: [`${user.companyName || user.name} · Recruiter`, 'Active companies, department-wise applicants, and candidate list.'],
   alumni: [`Welcome, ${user.name?.split(' ')[0] || 'Alumnus'}`, alumniIsWorking() ? 'Post jobs and refer talent from your network.' : 'Find lateral roles and apply to open drives.'],
 };
@@ -476,7 +522,7 @@ const   actions = {
   admin: '<a class="btn btn-outline-secondary" href="hiring-overview.html"><i class="bi bi-building-check me-1"></i>Hiring Overview</a><a class="btn btn-outline-secondary" href="users.html"><i class="bi bi-person-gear me-1"></i>Users</a><a class="btn btn-primary" href="placement-console.html"><i class="bi bi-sliders me-1"></i>Placement Console</a>',
   placement_officer: '',
   student: '',
-  staff: '<a class="btn btn-outline-secondary" href="hiring-overview.html"><i class="bi bi-building-check me-1"></i>Hiring Overview</a><a class="btn btn-outline-secondary" href="dashboard.html#dept-stats"><i class="bi bi-bar-chart me-1"></i>Dept. Stats</a><button type="button" class="btn btn-primary" onclick="ReferralModals.openStaff()"><i class="bi bi-plus-lg me-1"></i>Recommend Company</button>',
+  staff: '<a class="btn btn-outline-secondary" href="staff-placements.html"><i class="bi bi-mortarboard-fill me-1"></i>Placements</a><button type="button" class="btn btn-primary" onclick="ReferralModals.openStaff()"><i class="bi bi-plus-lg me-1"></i>Recommend Company</button>',
   company: '<a class="btn btn-outline-secondary" href="company.html"><i class="bi bi-building me-1"></i>Company Portal</a><a class="btn btn-outline-secondary" href="eligibility.html"><i class="bi bi-check2-square me-1"></i>Eligibility</a><a class="btn btn-primary" href="applicants.html"><i class="bi bi-person-lines-fill me-1"></i>Applicants</a>',
   alumni: alumniIsWorking()
     ? '<a class="btn btn-outline-secondary" href="settings.html"><i class="bi bi-person-gear me-1"></i>Update Profile</a><a class="btn btn-primary" href="alumni-jobs.html"><i class="bi bi-plus-lg me-1"></i>Post a Job</a>'
@@ -578,13 +624,10 @@ if (role === 'student') {
   })();
 }
 
-/* Staff recommendations + department stats */
+/* Staff hiring overview + recommendations */
 if (role === 'staff') {
+  HiringOverviewPage.init({ root: '#staffHiringRoot' });
   (async () => {
-    const setHiringStat = (id, val) => {
-      const el = document.getElementById(id);
-      if (el) { el.dataset.target = val; el.dataset.animated = '0'; }
-    };
     const setCounter = (id, val) => {
       const el = document.getElementById(id);
       if (el) { el.dataset.target = val; el.dataset.animated = '0'; }
@@ -598,59 +641,21 @@ if (role === 'staff') {
       await StaffRecs.fetch();
     }
 
-    const myDept = mapped?.department?.code || (Auth.user() || user).department || '—';
-    const deptPct = mapped?.department?.placementPct ?? 0;
     const recRecent = mapped?.recommendations.recent?.length
       ? mapped.recommendations.recent
       : (Auth.hasRealAuth() ? StaffRecs.mine().slice(0, 5) : []);
     const recTotal = mapped?.recommendations.total ?? (Auth.hasRealAuth() ? StaffRecs.mine().length : 0);
     const recPending = mapped?.recommendations.pending ?? recRecent.filter(r => r.status === 'pending').length;
     const recOnboarded = mapped?.recommendations.registered ?? recRecent.filter(r => r.status === 'registered').length;
-    const hiring = mapped?.hiring || {};
-    const branchStats = mapped?.branchStats || [];
-
-    setHiringStat('staffHiringCos', hiring.companiesHiring ?? 0);
-    setHiringStat('staffHiringApps', hiring.applicants ?? 0);
-    setHiringStat('staffHiringShort', hiring.shortlisted ?? 0);
-    setHiringStat('staffHiringOffers', hiring.offers ?? 0);
-    setHiringStat('staffHiringHired', hiring.hired ?? 0);
 
     document.getElementById('staffRecs').innerHTML = recRecent.length ? recRecent.map(r => `
       <tr><td><strong>${r.companyName}</strong></td><td>${formatDate(r.submittedAt)}</td><td>${recStatusBadge(r.status)}</td></tr>`).join('')
       : '<tr><td colspan="3" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
 
-    document.getElementById('staffDeptBadge').textContent = myDept;
-    setCounter('staffDeptPct', deptPct);
     setCounter('staffRecCount', recTotal);
     setCounter('staffOnboarded', recOnboarded);
     setCounter('staffPending', recPending);
-    animateCounters(document.querySelector('[data-roles="staff"]'));
-
-    document.getElementById('staffDeptRows').innerHTML = branchStats.length ? branchStats.map(d => `
-      <tr${d.dept === myDept ? ' style="background:color-mix(in srgb,var(--primary) 6%,transparent)"' : ''}>
-        <td><strong>${d.dept}</strong>${d.dept === myDept ? ' <span class="badge-soft info">Your dept.</span>' : ''}</td>
-        <td>${d.students}</td><td>${d.placed}</td><td>${d.pct}%</td><td>—</td>
-      </tr>`).join('')
-      : '<tr><td colspan="5" class="text-muted-2 p-4">No department statistics yet.</td></tr>';
-
-    if (branchStats.length && document.getElementById('staffDeptChart')) {
-      Charts.bar(
-        document.getElementById('staffDeptChart'),
-        branchStats.map(d => d.dept),
-        branchStats.map(d => d.placed),
-        'Students placed'
-      );
-      Charts.bar(
-        document.getElementById('staffDeptPie'),
-        branchStats.map(d => d.dept),
-        branchStats.map(d => d.pct),
-        'Placement %'
-      );
-    }
-
-    if (location.hash === '#dept-stats') {
-      document.getElementById('dept-stats')?.scrollIntoView({ behavior: 'smooth' });
-    }
+    animateCounters(document.querySelector('[data-roles="staff"] .row.g-3.mt-1'));
   })();
 }
 
