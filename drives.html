@@ -548,21 +548,31 @@ function drivesFromCardIds(idsCsv) {
   return ids.map(id => allDrives.find(d => String(d.id) === String(id))).filter(Boolean);
 }
 
+function driveAlreadyApplied(d) {
+  if (!d) return false;
+  if (d.applied) return true;
+  try {
+    if (isStudent && typeof StudentApps !== 'undefined' && StudentApps.hasApplied?.(d.id)) return true;
+    if (alumniSeeking && typeof AlumniApps !== 'undefined' && AlumniApps.hasApplied?.(d.id)) return true;
+  } catch (_) { /* apps store not ready */ }
+  return false;
+}
+
 function fillDriveDetailPanel(list, selectedId) {
-  const panel = document.getElementById('driveDetailBody');
+  const panel = document.getElementById('driveDetailPanel') || document.getElementById('driveDetailBody');
   const applyBtn = document.getElementById('driveDetailApplyBtn');
-  if (!panel) return;
+  if (!panel || !list?.length) return;
   const multi = list.length > 1;
   const preferred = selectedId
     ? list.find(d => String(d.id) === String(selectedId))
-    : list.find(d => (isStudent && (StudentApps.hasApplied(d.id) || d.applied)) || (alumniSeeking && (AlumniApps.hasApplied(d.id) || d.applied)));
+    : list.find(d => driveAlreadyApplied(d));
+  // Single-role: show that drive. Multi-role: wait for selection (or use applied role).
   const active = preferred || (multi ? null : list[0]);
   detailSelectedDriveId = active ? String(active.id) : '';
-  const name = (active || list[0]).company || '—';
+  const base = active || list[0];
+  const name = base.company || '—';
   const initial = (name && name !== '—') ? name[0].toUpperCase() : '?';
-  const jobType = (active || list[0]).jobType && (active || list[0]).jobType !== '—'
-    ? (active || list[0]).jobType
-    : 'Job opening';
+  const jobType = base.jobType && base.jobType !== '—' ? base.jobType : 'Job opening';
 
   const roleBlock = multi
     ? `<div class="drive-card-role-wrap">
@@ -570,16 +580,22 @@ function fillDriveDetailPanel(list, selectedId) {
         <select class="form-select drive-card-role-select" id="driveDetailRoleSelect">
           <option value="" ${detailSelectedDriveId ? '' : 'selected'}>Select role</option>
           ${list.map(d => {
-            const applied = (isStudent && (StudentApps.hasApplied(d.id) || d.applied))
-              || (alumniSeeking && (AlumniApps.hasApplied(d.id) || d.applied));
+            const applied = driveAlreadyApplied(d);
             return `<option value="${d.id}" ${String(d.id) === detailSelectedDriveId ? 'selected' : ''}>${d.role || 'Role'}${applied ? ' · Applied' : ''}</option>`;
           }).join('')}
         </select>
       </div>`
     : `<div class="drive-detail-role">${list[0].role || '—'}${(isStudent || alumniSeeking) && list[0].profile ? `<div class="small text-muted-2 mt-1">${list[0].profile}</div>` : ''}</div>`;
 
-  const display = active || { package: '—', deadline: '—', branches: list.map(d => d.branches).filter(Boolean)[0] || '', status: list[0].status, statusCls: list[0].statusCls, profile: '' };
-  const applied = active && ((isStudent && (StudentApps.hasApplied(active.id) || active.applied)) || (alumniSeeking && (AlumniApps.hasApplied(active.id) || active.applied)));
+  const display = active || {
+    package: '—',
+    deadline: '—',
+    branches: list.map(d => d.branches).filter(Boolean)[0] || '',
+    status: list[0].status,
+    statusCls: list[0].statusCls,
+    profile: '',
+  };
+  const applied = active && driveAlreadyApplied(active);
 
   panel.innerHTML = `
     <div class="drive-detail-top">
@@ -595,11 +611,11 @@ function fillDriveDetailPanel(list, selectedId) {
     ${roleBlock}
     ${!multi && display.profile ? `<div class="small text-muted-2">${display.profile}</div>` : ''}
     <div class="drive-detail-meta">
-      <span><i class="bi bi-cash-stack"></i>${active ? (active.package || '—') : '—'}</span>
-      <span><i class="bi bi-calendar-event"></i>${active ? (active.deadline || '—') : '—'}</span>
+      <span><i class="bi bi-cash-stack"></i> ${active ? (active.package || '—') : (multi ? 'Select a role' : '—')}</span>
+      <span><i class="bi bi-calendar-event"></i> ${active ? (active.deadline || '—') : (multi ? '—' : '—')}</span>
     </div>
     <div class="drive-detail-meta">
-      <span class="drive-detail-branches"><i class="bi bi-diagram-3"></i>${(active && active.branches) || display.branches || '—'}</span>
+      <span class="drive-detail-branches"><i class="bi bi-diagram-3"></i> ${(active && active.branches) || display.branches || '—'}</span>
     </div>
     ${applied ? `<div>${applyAction(active)}</div>` : ''}`;
 

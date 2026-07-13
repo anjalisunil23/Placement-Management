@@ -12,28 +12,45 @@
   body.policy-page{
     background:#f4f4f5;
     min-height:100vh;
+    width:100%;
+    margin:0;
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
     color:#111;
   }
-  .policy-shell{max-width:920px;margin:0 auto;padding:1.25rem 1rem 3rem}
+  .policy-shell{
+    width:100%;
+    max-width:none;
+    margin:0;
+    padding:1rem 1.5rem 2rem;
+    min-height:100vh;
+    box-sizing:border-box;
+  }
+  @media (min-width:992px){
+    .policy-shell{padding:1.25rem 2.5rem 2.5rem}
+  }
+  @media (min-width:1400px){
+    .policy-shell{padding:1.5rem 3.5rem 3rem}
+  }
   .policy-card{
     background:transparent;
     border:0;
     border-radius:0;
     box-shadow:none;
+    width:100%;
   }
   .policy-header{
     display:flex;
     align-items:center;
-    gap:1rem 1.35rem;
+    gap:1rem 1.5rem;
     text-align:left;
-    padding:0 0 1.15rem;
+    padding:0 0 1.25rem;
     border-bottom:0;
-    margin-bottom:.25rem;
+    margin-bottom:.5rem;
+    width:100%;
   }
   .policy-logo-mark{
     flex:0 0 auto;
-    width:88px;height:88px;
+    width:96px;height:96px;
     border-radius:50%;
     overflow:hidden;
     background:#000;
@@ -44,7 +61,7 @@
   .policy-header .policy-college-logo{
     position:absolute;
     left:0;top:0;
-    height:88px !important;
+    height:96px !important;
     width:auto !important;
     max-width:none !important;
     object-fit:unset !important;
@@ -57,17 +74,17 @@
   .policy-header-text{min-width:0;flex:1}
   .policy-header h1{
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
-    font-size:clamp(1.15rem,2.8vw,1.55rem);
+    font-size:clamp(1.35rem,3vw,2rem);
     font-weight:700;
     letter-spacing:.01em;
     text-transform:uppercase;
-    margin:0 0 .28rem;
+    margin:0 0 .35rem;
     line-height:1.2;
     color:#000;
   }
   .policy-header .college{
     font-family:Arial,Helvetica,'Source Sans 3',sans-serif;
-    font-size:clamp(.82rem,1.9vw,1.05rem);
+    font-size:clamp(.95rem,2vw,1.25rem);
     color:#111;
     font-weight:500;
     letter-spacing:.06em;
@@ -75,21 +92,25 @@
     line-height:1.35;
   }
   @media (max-width:520px){
+    .policy-shell{padding:1rem}
     .policy-header{flex-direction:row;align-items:center;text-align:left}
     .policy-logo-mark{width:72px;height:72px}
     .policy-logo-mark img{height:72px !important}
   }
   .policy-body{
     padding:0;
-    font-size:1rem;
+    font-size:1.05rem;
     line-height:1.55;
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
+    width:100%;
   }
   .policy-fields-box{
     border:1.5px solid #111;
     background:#fff;
-    padding:1.15rem 1.25rem 1.25rem;
-    margin-bottom:1.25rem;
+    padding:1.35rem 1.5rem 1.5rem;
+    margin-bottom:1.5rem;
+    width:100%;
+    box-sizing:border-box;
   }
   .policy-body .form-label{
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
@@ -104,21 +125,23 @@
   .policy-yop{
     display:inline-block;
     border:1.5px solid #111;
-    padding:.2rem .55rem;
+    padding:.25rem .65rem;
     font-family:'Times New Roman',Times,serif;
     font-weight:700;
-    font-size:.95rem;
+    font-size:1rem;
     color:#111;
     background:#fff;
   }
   .guidelines-box{
-    max-height:min(52vh,420px);overflow:auto;
+    max-height:min(60vh,560px);overflow:auto;
     border:1px solid #cbd5e1;
     border-radius:0;
-    padding:1rem 1.15rem;
+    padding:1.15rem 1.35rem;
     background:#fff;
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
-    font-size:.95rem;line-height:1.65;
+    font-size:1rem;line-height:1.65;
+    width:100%;
+    box-sizing:border-box;
   }
   .guidelines-box h6{
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
