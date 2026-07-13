@@ -560,6 +560,9 @@ final class OfficerDataService
             'chancesUsed'     => (int) ($chances['used'] ?? 0),
             'chancesMax'      => (int) (($chances['used'] ?? 0) + ($chances['remaining'] ?? 0)),
             'qualifications'  => $qualifications !== [] ? $qualifications : null,
+            'policyAccepted'  => (bool) ($student['policyAccepted'] ?? false),
+            'policyAcceptedAt'=> (string) ($student['policyAcceptedAt'] ?? ''),
+            'policyVersion'   => (string) ($student['policyVersion'] ?? ''),
         ];
 
         return $this->mergeAesPlacementIntoOverview($student, $user, $overview);

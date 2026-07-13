@@ -4,7 +4,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260713t" rel="stylesheet"/>
+<link href="css/style.css?v=20260713u" rel="stylesheet"/>
 <style id="ph-po-modal-click-fix">
   /* Placement officer: never let closed Bootstrap modals trap the page. */
   .modal:not(.show){pointer-events:none!important}
@@ -60,6 +60,7 @@
   <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find student</a></li>
   <li class="nav-item" id="registrationsTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabRegistrations" id="linkRegistrations">Portal registration</a></li>
   <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive applications</a></li>
+  <li class="nav-item" id="staffPolicyTabItem" data-roles="staff"><a class="nav-link" data-bs-toggle="tab" href="#tabStaffPolicy" id="linkStaffPolicy">Policy registration</a></li>
   <li class="nav-item" id="blacklistTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabBlacklist" id="linkBlacklist">Blacklist</a></li>
 </ul>
 
@@ -74,9 +75,17 @@
             <h6 class="fw-bold mb-0">Students</h6>
             <span class="badge-soft muted" id="studentCount">0</span>
           </div>
-          <div class="search-with-icon mb-4 pb-1">
+          <div class="search-with-icon mb-3 pb-1">
             <i class="bi bi-search"></i>
             <input class="form-control" id="searchStudent" placeholder="Search by name, register number, or department…" autocomplete="off"/>
+          </div>
+          <div class="mb-3 d-none" id="staffPolicyFilterWrap">
+            <label class="form-label small fw-semibold text-muted-2 mb-1" for="policyFilterSelect">Policy status</label>
+            <select class="form-select form-select-sm" id="policyFilterSelect">
+              <option value="all">All students</option>
+              <option value="registered">Policy registered</option>
+              <option value="not_registered">Not registered</option>
+            </select>
           </div>
           <div class="list-group list-group-flush" id="studentList" style="max-height:520px;overflow:auto"></div>
         </div>
@@ -117,6 +126,7 @@
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="spBacklogs">—</span></div>
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="spResume">—</span></div>
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement chances</span><span class="fw-medium" id="spChances">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement policy</span><span class="fw-medium" id="spPolicy">—</span></div>
             </div>
             <div id="spQualificationsWrap" class="mt-3" style="display:none">
               <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
@@ -170,6 +180,42 @@
             </table>
           </div>
         </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Staff: placement policy registration from department student list -->
+  <div class="tab-pane fade" id="tabStaffPolicy">
+    <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
+      <i class="bi bi-info-circle text-primary mt-1"></i>
+      <div>
+        <strong>Placement policy registration</strong> — students in your department who accepted the placement policy form.
+        <div class="small text-muted-2 mt-1">This is separate from drive applications. Students must accept the policy before placement activities.</div>
+      </div>
+    </div>
+    <div class="row g-3 mb-3" id="staffPolicyStats"></div>
+    <div class="card-surface">
+      <ul class="nav nav-tabs px-3 pt-2" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#staffPolicyRegistered" id="tabStaffPolicyRegistered">Registered <span class="badge-soft success ms-1" id="staffPolicyRegisteredCount">0</span></a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#staffPolicyPending" id="tabStaffPolicyPending">Not registered <span class="badge-soft warning ms-1" id="staffPolicyPendingCount">0</span></a></li>
+      </ul>
+      <div class="tab-content">
+        <div class="tab-pane fade show active" id="staffPolicyRegistered">
+          <div class="table-wrap">
+            <table class="table-modern">
+              <thead><tr><th>Student</th><th>Reg. no.</th><th>Batch</th><th>CGPA</th><th>Registered on</th></tr></thead>
+              <tbody id="staffPolicyRegisteredRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="tab-pane fade" id="staffPolicyPending">
+          <div class="table-wrap">
+            <table class="table-modern">
+              <thead><tr><th>Student</th><th>Reg. no.</th><th>Batch</th><th>CGPA</th><th>Status</th></tr></thead>
+              <tbody id="staffPolicyPendingRows"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -529,17 +575,18 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260713v"></script>
-<script src="js/admin-api.js?v=20260713v"></script>
-<script src="js/officer-api.js?v=20260713v"></script>
-<script src="js/api.js?v=20260713v"></script>
-<script src="js/app.js?v=20260713v"></script>
+<script src="js/staff-api.js?v=20260713u"></script>
+<script src="js/admin-api.js?v=20260713u"></script>
+<script src="js/officer-api.js?v=20260713u"></script>
+<script src="js/api.js?v=20260713u"></script>
+<script src="js/app.js?v=20260713u"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin';
 const canVerifySelfPlacement = role === 'admin' || role === 'placement_officer';
 const canManageApplications = role === 'admin' || role === 'placement_officer';
 const canManageBlacklist = role === 'admin';
+const canViewStaffPolicy = role === 'staff';
 
 if (!(role === 'admin' || role === 'placement_officer' || role === 'staff')) {
   toast('You do not have access to this page.', 'warn');
@@ -548,7 +595,7 @@ if (!(role === 'admin' || role === 'placement_officer' || role === 'staff')) {
 
 if (!canManageRegistrations && !canManageApplications) {
   document.getElementById('pageSub').textContent = role === 'staff'
-    ? 'Search students in your department to view profile and placement pipeline.'
+    ? 'View your department students, policy registration status, and placement pipeline.'
     : 'Search or select a student to view profile and placement pipeline.';
 }
 if (!canManageRegistrations) {
@@ -559,6 +606,9 @@ if (!canManageApplications) {
 }
 if (!canManageBlacklist) {
   document.getElementById('blacklistTabItem')?.remove();
+}
+if (!canViewStaffPolicy) {
+  document.getElementById('staffPolicyTabItem')?.remove();
 }
 
 function esc(s) {
@@ -582,6 +632,8 @@ function activateTabFromHash() {
     }
   } else if (hash === 'registrations' && canManageRegistrations) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkRegistrations')).show();
+  } else if (hash === 'policy' && canViewStaffPolicy) {
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('linkStaffPolicy')).show();
   } else if (hash === 'overview' || !hash) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkOverview')).show();
   }
@@ -593,6 +645,7 @@ const PAGE_SUB_BY_TAB = {
   tabRegistrations: 'Approve or manage Placement Cell portal accounts — not drive applications.',
   tabApplications: 'Track applications and company shortlists. Resume checks are optional.',
   tabBlacklist: 'Students barred from placement activities.',
+  tabStaffPolicy: 'View which department students have accepted the placement policy.',
 };
 
 function syncPageSubFromActiveTab() {
@@ -618,7 +671,27 @@ let selectedReg = '';
 let overviewSearchTimer = null;
 let overviewSearchSeq = 0;
 let profileLoadSeq = 0;
+let deptStudentsLoaded = false;
+let staffPolicyFilter = 'all';
 const autoSelectOverviewOnLoad = role === 'staff';
+
+function isPolicyRegistered(s) {
+  return !!(s && s.policyAccepted);
+}
+
+function policyStatusBadge(s) {
+  if (isPolicyRegistered(s)) {
+    const when = s.policyAcceptedAt ? new Date(s.policyAcceptedAt).toLocaleDateString('en-IN') : '';
+    return `<span class="badge-soft success"${when ? ` title="Registered ${esc(when)}"` : ''}>Registered</span>`;
+  }
+  return '<span class="badge-soft warning">Not registered</span>';
+}
+
+function formatPolicyAcceptedAt(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString('en-IN');
+}
 
 function studentSearchHaystack(s) {
   return [
@@ -705,10 +778,20 @@ function clearOverviewDetail() {
 
 function filteredOverviewStudents() {
   const q = document.getElementById('searchStudent').value.trim();
-  if (!q) return [];
-  const list = useLiveOverviewApi
-    ? overviewStudents
-    : overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+  let list;
+  if (useLiveOverviewApi) {
+    const pool = (useStaffApi && deptStudentsLoaded) ? overviewStudentsAll : overviewStudents;
+    list = q || !(useStaffApi && deptStudentsLoaded)
+      ? pool.filter(s => studentMatchesQuery(s, q))
+      : pool.slice();
+  } else {
+    list = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+  }
+  if (useStaffApi && staffPolicyFilter !== 'all') {
+    list = list.filter(s => (
+      staffPolicyFilter === 'registered' ? isPolicyRegistered(s) : !isPolicyRegistered(s)
+    ));
+  }
   return [...list].sort((a, b) =>
     String(a.name || a.registerNumber || '').localeCompare(String(b.name || b.registerNumber || ''), undefined, { sensitivity: 'base' })
   );
@@ -716,7 +799,8 @@ function filteredOverviewStudents() {
 
 function syncOverviewSelectionAfterFilter() {
   const q = document.getElementById('searchStudent').value.trim();
-  if (!q) {
+  const staffDeptList = useStaffApi && deptStudentsLoaded;
+  if (!q && !staffDeptList) {
     clearOverviewDetail();
     return;
   }
@@ -746,20 +830,24 @@ function studentRow(s) {
   const title = (name && !/^\d+$/.test(name) && name.toLowerCase() !== String(s.registerNumber || '').toLowerCase())
     ? name
     : (s.registerNumber ? `Student ${s.registerNumber}` : 'Student');
+  const statusBadge = useStaffApi
+    ? policyStatusBadge(s)
+    : `<span class="badge-soft ${s.placementStatus === 'placed' ? 'success' : s.placementStatus === 'pending_placement' ? 'warning' : 'muted'}">${esc(s.placementStatus === 'pending_placement' ? 'under review' : (s.placementStatus || '—'))}</span>`;
   return `<button type="button" class="list-group-item list-group-item-action student-list-item ${active}" data-reg="${esc(s.registerNumber)}">
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div class="min-w-0">
         <div class="fw-semibold student-list-name">${esc(title)}</div>
         <div class="small text-muted-2">${esc(s.registerNumber)} · ${esc(s.department || '—')}${s.classBatch ? ` · ${esc(s.classBatch)}` : ''}</div>
       </div>
-      <span class="badge-soft ${s.placementStatus === 'placed' ? 'success' : s.placementStatus === 'pending_placement' ? 'warning' : 'muted'}">${esc(s.placementStatus === 'pending_placement' ? 'under review' : (s.placementStatus || '—'))}</span>
+      ${statusBadge}
     </div>
   </button>`;
 }
 
 function renderOverviewList() {
   const q = document.getElementById('searchStudent').value.trim();
-  if (!q) {
+  const staffDeptList = useStaffApi && deptStudentsLoaded;
+  if (!q && !staffDeptList) {
     document.getElementById('studentCount').textContent = '0';
     document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">Type a name, register number, or department to find students.</div>';
     return;
@@ -777,14 +865,14 @@ async function runOverviewSearch() {
   const q = document.getElementById('searchStudent').value.trim();
   const seq = ++overviewSearchSeq;
 
-  if (!q) {
+  if (!q && !(useStaffApi && deptStudentsLoaded)) {
     overviewStudents = [];
     clearOverviewDetail();
     renderOverviewList();
     return;
   }
 
-  if (useLiveOverviewApi) {
+  if (useLiveOverviewApi && !(useStaffApi && deptStudentsLoaded && !q)) {
     document.getElementById('studentList').innerHTML = '<div class="p-3 small text-muted-2">Searching…</div>';
     const rows = await fetchOverviewStudentsFromApi(q);
     if (seq !== overviewSearchSeq) return;
@@ -804,6 +892,9 @@ async function runOverviewSearch() {
           photo: row.photo || prev.photo || null,
           classBatch: row.classBatch || prev.classBatch || '',
           placementStatus: row.placementStatus || prev.placementStatus,
+          policyAccepted: row.policyAccepted ?? prev.policyAccepted ?? false,
+          policyAcceptedAt: row.policyAcceptedAt || prev.policyAcceptedAt || '',
+          policyVersion: row.policyVersion || prev.policyVersion || '',
         };
       });
     }
@@ -923,6 +1014,9 @@ function buildDisplayProfile(listRow, api) {
     stud_course: api.stud_course ?? listRow?.stud_course,
     stud_class: api.stud_class ?? listRow?.stud_class,
     registerno: api.registerno ?? listRow?.registerno,
+    policyAccepted: api.policyAccepted ?? listRow?.policyAccepted ?? false,
+    policyAcceptedAt: api.policyAcceptedAt || listRow?.policyAcceptedAt || '',
+    policyVersion: api.policyVersion || listRow?.policyVersion || '',
   };
 }
 
@@ -1005,6 +1099,9 @@ function renderStudentProfilePanel(s) {
   const used = s.chancesUsed ?? 0;
   const max = s.chancesMax ?? 0;
   set('spChances', max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—'));
+  set('spPolicy', isPolicyRegistered(s)
+    ? `Registered${s.policyAcceptedAt ? ' · ' + formatPolicyAcceptedAt(s.policyAcceptedAt) : ''}`
+    : 'Not registered');
   renderQualificationsTable(s.qualifications, 'spQualificationsBody', 'spQualificationsWrap');
 }
 
@@ -1379,6 +1476,22 @@ document.getElementById('studentList').addEventListener('click', e => {
   selectOverviewStudent(btn.dataset.reg);
 });
 document.getElementById('searchStudent').addEventListener('input', scheduleOverviewSearch);
+document.getElementById('policyFilterSelect')?.addEventListener('change', (e) => {
+  staffPolicyFilter = e.target.value || 'all';
+  syncOverviewSelectionAfterFilter();
+  renderOverviewList();
+});
+document.getElementById('tabStaffPolicy')?.addEventListener('click', (e) => {
+  const row = e.target.closest('.staff-policy-row');
+  const reg = row?.dataset?.reg;
+  if (!reg) return;
+  bootstrap.Tab.getOrCreateInstance(document.getElementById('linkOverview')).show();
+  selectOverviewStudent(reg);
+});
+document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
+  const href = (e.target?.getAttribute('href') || '').replace('#', '');
+  if (href === 'tabStaffPolicy') renderStaffPolicyTab();
+});
 document.getElementById('searchStudent').addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -1391,16 +1504,68 @@ document.getElementById('searchStudent').addEventListener('keydown', e => {
   loadOverviewApps(selectedReg);
 }));
 
+async function loadDepartmentStudentsForStaff() {
+  if (!useStaffApi || deptStudentsLoaded) return overviewStudentsAll;
+  const rows = await fetchOverviewStudentsFromApi('');
+  if (Array.isArray(rows)) {
+    overviewStudentsAll = rows;
+    overviewStudents = rows.slice();
+    deptStudentsLoaded = true;
+  }
+  return overviewStudentsAll;
+}
+
+function staffPolicyStudents() {
+  return (deptStudentsLoaded ? overviewStudentsAll : overviewStudents).slice();
+}
+
+function renderStaffPolicyTab() {
+  if (!canViewStaffPolicy) return;
+  const students = staffPolicyStudents();
+  const registered = students.filter(isPolicyRegistered);
+  const pending = students.filter(s => !isPolicyRegistered(s));
+  const total = students.length;
+
+  document.getElementById('staffPolicyRegisteredCount').textContent = String(registered.length);
+  document.getElementById('staffPolicyPendingCount').textContent = String(pending.length);
+  document.getElementById('staffPolicyStats').innerHTML = `
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Department students</div><div class="val">${total}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Policy registered</div><div class="val">${registered.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Not registered</div><div class="val">${pending.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registration rate</div><div class="val">${total ? Math.round((registered.length / total) * 100) : 0}%</div></div></div>`;
+
+  const rowHtml = (s, extra) => `<tr class="staff-policy-row" role="button" data-reg="${esc(s.registerNumber || '')}" style="cursor:pointer">
+    <td><strong>${esc(overviewStudentName(s) || s.name || s.registerNumber || '—')}</strong>${s.email ? `<div class="small text-muted-2">${esc(s.email)}</div>` : ''}</td>
+    <td>${esc(s.registerNumber || '—')}</td>
+    <td>${esc(s.classBatch || '—')}</td>
+    <td>${s.cgpa != null && Number(s.cgpa) > 0 ? esc(String(s.cgpa)) : '—'}</td>
+    <td>${extra}</td>
+  </tr>`;
+
+  document.getElementById('staffPolicyRegisteredRows').innerHTML = registered.length
+    ? registered.map(s => rowHtml(s, esc(formatPolicyAcceptedAt(s.policyAcceptedAt)))).join('')
+    : '<tr><td colspan="5" class="text-muted-2 p-4">No students have registered the placement policy yet.</td></tr>';
+
+  document.getElementById('staffPolicyPendingRows').innerHTML = pending.length
+    ? pending.map(s => rowHtml(s, policyStatusBadge(s))).join('')
+    : '<tr><td colspan="5" class="text-muted-2 p-4">All department students have registered the placement policy.</td></tr>';
+}
+
 async function initOverview() {
   useStaffApi = Auth.hasRealAuth() && !Auth.isDemo() && role === 'staff';
   useLiveOverviewApi = Auth.hasRealAuth() && !Auth.isDemo() && (useStaffApi || role === 'admin' || role === 'placement_officer');
 
   if (useLiveOverviewApi) {
     await Auth.ensureSession();
-    if (useStaffApi) await Auth.enrichFromProfile();
-    // Do not preload the full list — results appear only after search.
-    overviewStudentsAll = [];
-    overviewStudents = [];
+    if (useStaffApi) {
+      await Auth.enrichFromProfile();
+      document.getElementById('staffPolicyFilterWrap')?.classList.remove('d-none');
+      await loadDepartmentStudentsForStaff();
+      renderStaffPolicyTab();
+    } else {
+      overviewStudentsAll = [];
+      overviewStudents = [];
+    }
   } else if (!(role === 'staff' && Auth.hasRealAuth() && !Auth.isDemo())) {
     overviewStudentsAll = UserRegistry.byRole('student');
     if (role === 'staff') {

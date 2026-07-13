@@ -46,6 +46,9 @@ const OfficerApi = {
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
       resumeStatus: row.resume?.verified ? 'approved' : (row.resume?.path ? 'pending' : 'none'),
+      policyAccepted: !!(row.policyAccepted),
+      policyAcceptedAt: row.policyAcceptedAt || '',
+      policyVersion: row.policyVersion || '',
     };
   },
 
