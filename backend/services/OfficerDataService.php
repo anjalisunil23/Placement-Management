@@ -1098,9 +1098,20 @@ final class OfficerDataService
         if ($expectedRegister !== null && $expectedRegister !== '') {
             $expected = strtoupper(trim($expectedRegister));
             $actual = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-            if ($actual === '' || $expected !== $actual) {
+            $admno = strtoupper(trim((string) ($student['admno'] ?? '')));
+            $regNo = strtoupper(trim((string) ($student['registerno'] ?? '')));
+            $matches = $actual !== '' && $expected === $actual;
+            $matches = $matches
+                || ($admno !== '' && $expected === $admno)
+                || ($regNo !== '' && $expected === $regNo)
+                || ($actual !== '' && (str_ends_with($actual, $expected) || str_ends_with($expected, $actual)));
+            if (!$matches) {
                 Response::notFound('Student register number does not match.');
             }
+        }
+        // Stamp officer dept onto AES-only synthetics so photo/pipeline scope stays consistent.
+        if (!empty($student['aesOnly']) && empty($student['departmentId']) && !empty($ctx['departmentId'])) {
+            $student['departmentId'] = (string) $ctx['departmentId'];
         }
         if (!$this->studentInScope($student, $ctx)) {
             Response::forbidden('Student is outside your department scope.');
@@ -1323,34 +1334,34 @@ final class OfficerDataService
 
         $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
         $aesReg = strtoupper(trim((string) ($mapped['registerNumber'] ?? '')));
-        if ($aesReg !== '' && $aesReg !== $register) {
-            return $overview;
-        }
+        $skipIdentityMerge = ($aesReg !== '' && $aesReg !== $register);
 
-        $name = trim((string) ($mapped['name'] ?? ''));
-        if ($name !== '' && $this->isUsablePersonName($name, $register)) {
-            $overview['name'] = $name;
-            if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $name) {
-                (new UserModel())->updateUser((string) $user['_id'], ['name' => $name]);
-            }
-        } else {
-            $aesName = trim((new AesLoginService())->displayNameFromAesProfile($placement, $register));
-            if ($aesName !== '' && $this->isUsablePersonName($aesName, $register)) {
-                $overview['name'] = $aesName;
-                if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $aesName) {
-                    (new UserModel())->updateUser((string) $user['_id'], ['name' => $aesName]);
+        if (!$skipIdentityMerge) {
+            $name = trim((string) ($mapped['name'] ?? ''));
+            if ($name !== '' && $this->isUsablePersonName($name, $register)) {
+                $overview['name'] = $name;
+                if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $name) {
+                    (new UserModel())->updateUser((string) $user['_id'], ['name' => $name]);
+                }
+            } else {
+                $aesName = trim((new AesLoginService())->displayNameFromAesProfile($placement, $register));
+                if ($aesName !== '' && $this->isUsablePersonName($aesName, $register)) {
+                    $overview['name'] = $aesName;
+                    if (is_array($user) && !empty($user['_id']) && trim((string) ($user['name'] ?? '')) !== $aesName) {
+                        (new UserModel())->updateUser((string) $user['_id'], ['name' => $aesName]);
+                    }
                 }
             }
-        }
 
-        $phone = trim((string) ($mapped['phone'] ?? ''));
-        if ($phone !== '') {
-            $overview['phone'] = $phone;
-        }
+            $phone = trim((string) ($mapped['phone'] ?? ''));
+            if ($phone !== '') {
+                $overview['phone'] = $phone;
+            }
 
-        $gender = trim((string) ($mapped['gender'] ?? ''));
-        if ($gender !== '') {
-            $overview['gender'] = $gender;
+            $gender = trim((string) ($mapped['gender'] ?? ''));
+            if ($gender !== '') {
+                $overview['gender'] = $gender;
+            }
         }
 
         $aesApi = new AesApiService();
@@ -1655,13 +1666,18 @@ final class OfficerDataService
         if (!empty($ctx['isAdmin'])) {
             return true;
         }
-        if (!empty($ctx['staffScope'])) {
-            if (!empty($student['aesOnly'])) {
-                $scopeDept = (string) ($ctx['departmentId'] ?? '');
-                $studentDept = (string) ($student['departmentId'] ?? '');
-
-                return $studentDept === '' || $studentDept === $scopeDept;
+        // AES directory / Open-profile synthetics have no PlaceHub departmentId.
+        // Final-year lists are already scoped; allow when dept is unset or matches.
+        if (!empty($student['aesOnly'])) {
+            $scopeDept = (string) ($ctx['departmentId'] ?? '');
+            if ($scopeDept === '') {
+                return true;
             }
+            $studentDept = (string) ($student['departmentId'] ?? '');
+
+            return $studentDept === '' || $studentDept === $scopeDept;
+        }
+        if (!empty($ctx['staffScope'])) {
             return StaffContext::studentMatchesScope($student, [
                 'departmentId' => $ctx['departmentId'] ?? '',
                 'profile'      => $ctx['profile'] ?? null,

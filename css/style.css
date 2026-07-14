@@ -850,9 +850,9 @@ body.login-page{
   inset:0;
   background:linear-gradient(
     180deg,
-    rgba(15,23,42,.7) 0%,
-    rgba(15,23,42,.45) 45%,
-    rgba(15,23,42,.75) 100%
+    rgba(15,23,42,.38) 0%,
+    rgba(15,23,42,.22) 42%,
+    rgba(15,23,42,.48) 100%
   );
   z-index:0;
 }
@@ -862,7 +862,7 @@ body.login-page{
   font-weight:800;
   letter-spacing:-.02em;
   color:#fff;
-  text-shadow:0 2px 24px rgba(0,0,0,.35);
+  text-shadow:0 2px 18px rgba(0,0,0,.55),0 1px 3px rgba(0,0,0,.45);
 }
 .hero .lead{color:rgba(255,255,255,.9)!important}
 .hero .badge-soft{

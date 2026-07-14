@@ -1099,9 +1099,24 @@ function upsertOverviewStudentRow(profile) {
 
 function apiProfileMatchesStudent(selected, api) {
   if (!api) return false;
-  const selReg = normStudentReg(selected?.registerNumber || selectedReg);
-  const apiReg = normStudentReg(api.registerNumber);
-  return selReg !== '' && apiReg !== '' && selReg === apiReg;
+  const candidates = [
+    selected?.registerNumber,
+    selected?.admno,
+    selected?.registerno,
+    selectedReg,
+  ].map(normStudentReg).filter(Boolean);
+  const apiCandidates = [
+    api.registerNumber,
+    api.admno,
+    api.registerno,
+  ].map(normStudentReg).filter(Boolean);
+  if (!candidates.length || !apiCandidates.length) return false;
+  for (const sel of candidates) {
+    for (const apiReg of apiCandidates) {
+      if (sel === apiReg || sel.endsWith(apiReg) || apiReg.endsWith(sel)) return true;
+    }
+  }
+  return false;
 }
 
 function pickProfileQualifications(...$sources) {
@@ -1792,13 +1807,14 @@ async function openFinalYearStudent(reg) {
 
   const seq = ++finalYearProfileSeq;
   const listRow = finalYearStudentByReg(reg) || { registerNumber: reg, admno: reg, name: '' };
+  const profileKey = String(listRow.studentId || listRow.id || listRow.registerNumber || listRow.admno || reg).trim();
   document.getElementById('fyProfileError')?.classList.add('d-none');
   document.getElementById('fyProfileLoading')?.classList.remove('d-none');
   document.getElementById('fyProfileBody')?.classList.remove('d-none');
   fillFinalYearProfileFields(listRow);
   finalYearProfileModal.show();
 
-  const full = await fetchStudentProfileFromApi(reg, reg);
+  const full = await fetchStudentProfileFromApi(profileKey, listRow.registerNumber || listRow.admno || reg);
   if (seq !== finalYearProfileSeq) return;
 
   document.getElementById('fyProfileLoading')?.classList.add('d-none');
@@ -1807,16 +1823,11 @@ async function openFinalYearStudent(reg) {
     return;
   }
   if (full) {
-    // Still show the loaded profile when register fields differ only slightly.
-    const fullReg = normStudentReg(full.registerNumber || full.admno);
-    const listReg = normStudentReg(listRow.registerNumber || listRow.admno || reg);
-    if (fullReg && listReg && (fullReg === listReg || fullReg.endsWith(listReg) || listReg.endsWith(fullReg))) {
-      fillFinalYearProfileFields(buildDisplayProfile(listRow, full));
-      return;
-    }
-    document.getElementById('fyProfileError')?.classList.remove('d-none');
-    document.getElementById('fyProfileError').textContent = 'Could not load full profile. Showing list details.';
+    fillFinalYearProfileFields(buildDisplayProfile(listRow, full));
+    return;
   }
+  document.getElementById('fyProfileError')?.classList.remove('d-none');
+  document.getElementById('fyProfileError').textContent = 'Could not load full profile (including qualifications). Showing list details.';
 }
 
 document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {
