@@ -25,7 +25,7 @@
 </div>
 
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="mainTabs">
-  <li class="nav-item" id="overviewTabItem" data-roles="placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find Student</a></li>
+  <li class="nav-item d-none" id="overviewTabItem" data-roles=""><a class="nav-link" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find Student</a></li>
   <li class="nav-item" id="finalYearRegisteredTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link active" data-bs-toggle="tab" href="#tabFinalYearRegistered" id="linkFinalYearRegistered">Registered</a></li>
   <li class="nav-item" id="finalYearPendingTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link" data-bs-toggle="tab" href="#tabFinalYearPending" id="linkFinalYearPending">Non-Registered</a></li>
   <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive Applications</a></li>
@@ -600,7 +600,7 @@
 <script src="js/admin-api.js?v=20260714e"></script>
 <script src="js/officer-api.js?v=20260714e"></script>
 <script src="js/api.js?v=20260713v"></script>
-<script src="js/app.js?v=20260714m"></script>
+<script src="js/app.js?v=20260714o"></script>
 <script>
 const role = Auth.role();
 const isAdminRole = role === 'admin';
@@ -610,7 +610,7 @@ const canVerifySelfPlacement = role === 'admin' || role === 'placement_officer';
 const canManageApplications = role === 'admin' || role === 'placement_officer';
 const canManageBlacklist = role === 'admin';
 const canViewStaffPolicy = false; // replaced by department Registered / Non-registered tabs
-const canUseFindStudent = role === 'placement_officer';
+const canUseFindStudent = false; // Find Student removed from placement officer module
 
 if (!(role === 'admin' || role === 'placement_officer' || role === 'staff')) {
   toast('You do not have access to this page.', 'warn');
@@ -688,8 +688,10 @@ function activateTabFromHash() {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkFinalYearRegistered')).show();
   } else if (hash === 'policy' && canViewStaffPolicy) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkStaffPolicy')).show();
-  } else if ((hash === 'overview' || !hash) && canUseFindStudent) {
-    bootstrap.Tab.getOrCreateInstance(document.getElementById('linkOverview')).show();
+  } else if (hash === 'overview') {
+    if (canViewFinalYear) {
+      bootstrap.Tab.getOrCreateInstance(document.getElementById('linkFinalYearRegistered')).show();
+    }
   } else if (!hash && canViewFinalYear) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkFinalYearRegistered')).show();
   }
@@ -1565,7 +1567,7 @@ document.getElementById('searchStudent').addEventListener('input', scheduleOverv
 document.getElementById('tabStaffPolicy')?.addEventListener('click', (e) => {
   const row = e.target.closest('.staff-policy-row');
   const reg = row?.dataset?.reg;
-  if (!reg) return;
+  if (!reg || !canUseFindStudent) return;
   bootstrap.Tab.getOrCreateInstance(document.getElementById('linkOverview')).show();
   selectOverviewStudent(reg);
 });

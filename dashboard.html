@@ -135,7 +135,7 @@
                 </select>
               </div>
             </div>
-            <div class="small text-muted-2" id="viewHint"></div>
+            <div class="small text-muted-2" id="viewHint" hidden></div>
           </div>
         </div>
 
@@ -183,7 +183,7 @@
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <div>
                   <h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6>
-                  <small class="text-muted-2">Offers rolled out across last 12 months</small>
+                  <small class="text-muted-2" id="trendChartSub" hidden></small>
                 </div>
                 <select class="form-select form-select-sm w-auto" id="trendYearSelect" aria-label="Hiring trend period">
                   <option value="this">This year</option>
@@ -210,7 +210,7 @@
           <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
             <div>
               <h6 class="mb-0 fw-bold" id="placementListTitle">Placement list</h6>
-              <small class="text-muted-2" id="placementListSub">Placed students for the selected year</small>
+              <small class="text-muted-2" id="placementListSub" hidden></small>
             </div>
             <span class="badge-soft info" id="placementListCount">0</span>
           </div>
@@ -360,8 +360,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260714n"></script>
-<script src="js/app.js?v=20260714n"></script>
+<script src="js/api.js?v=20260714o"></script>
+<script src="js/app.js?v=20260714o"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -378,7 +378,7 @@
     scripts.push('js/officer-api.js?v=20260714e');
     scripts.push('js/staff-api.js?v=20260714e');
   }
-  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260714n');
+  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260714o');
   // Sync append so onAppReady below still sees them after parse (scripts without defer/async run immediately when inserted... actually dynamically inserted scripts are async by default)
   // Load synchronously via document.write is bad; instead gate page init on Promise.
   window.__phDashExtras = Promise.all(scripts.map((src) => new Promise((resolve, reject) => {
@@ -401,7 +401,7 @@ if (!role || !ROLE_HOME[role]) {
 }
 const titles = {
   admin: ['Dashboard', ''],
-  placement_officer: ['Department Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.'],
+  placement_officer: ['Dashboard', ''],
   student: ['Dashboard', ''],
   staff: ['', ''],
   company: [`${user.companyName || user.name} · Recruiter`, 'Active companies, department-wise applicants, and candidate list.'],
@@ -413,12 +413,7 @@ function showDashLiveBadge(live) {
   document.getElementById('dashLiveBadge')?.classList.toggle('d-none', !live);
 }
 const dashLive = Auth.hasRealAuth() && !Auth.isDemo();
-// Admin dashboard keeps a clean heading — no Live badge / subtitle helper copy.
-if (role === 'placement_officer') {
-  showDashLiveBadge(dashLive);
-} else {
-  showDashLiveBadge(false);
-}
+showDashLiveBadge(false);
 if (!titles[role][1]) {
   document.getElementById('dashSub').hidden = true;
 }

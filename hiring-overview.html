@@ -11,7 +11,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title"><span id="pageTitleText">Campus Hiring Overview</span> <span class="badge-soft success d-none align-middle" id="liveDataBadge" style="font-size:.55rem;vertical-align:middle">Live</span></h1>
-    <p class="page-sub" id="pageSub">Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.</p>
+    <p class="page-sub" id="pageSub" hidden></p>
   </div>
 </div>
 
@@ -78,8 +78,8 @@
     <div class="card-surface p-3 p-md-4 h-100">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <div>
-          <h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6>
-          <small class="text-muted-2">Offers rolled out across last 12 months</small>
+                  <h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6>
+                  <small class="text-muted-2" hidden></small>
         </div>
         <select class="form-select form-select-sm w-auto" id="trendYearSelect" aria-label="Hiring trend period">
           <option>This year</option>
@@ -144,7 +144,7 @@
 <script src="js/officer-api.js?v=20260713p"></script>
 <script src="js/staff-api.js?v=20260713p"></script>
 <script src="js/api.js?v=20260713p"></script><script src="js/charts.js?v=20260713p"></script>
-<script src="js/app.js?v=20260714m"></script>
+<script src="js/app.js?v=20260714o"></script>
 <script src="js/hiring-overview-page.js?v=20260713v"></script>
 <script>
 if (Auth.role() === 'placement_officer') {

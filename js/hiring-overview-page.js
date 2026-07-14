@@ -148,12 +148,10 @@
       t.labels,
       t.series?.length ? t.series : [{ label: 'Offers', data: t.values || [] }]
     );
-    const year = t.year || (this.trendYearMode === 'last' ? new Date().getFullYear() - 1 : new Date().getFullYear());
     const sub = canvas.closest('.card-surface')?.querySelector('small.text-muted-2');
     if (sub) {
-      sub.textContent = this.trendYearMode === 'last'
-        ? `Offers rolled out in ${year}`
-        : `Offers rolled out in ${year}`;
+      sub.textContent = '';
+      sub.hidden = true;
     }
   };
 
@@ -286,15 +284,8 @@
         : `Placement list (${year})`;
     }
     if (subEl) {
-      if (this.currentRole() === 'staff') {
-        subEl.textContent = '';
-        subEl.hidden = true;
-      } else {
-        subEl.hidden = false;
-        subEl.textContent = this.trendYearMode === 'last'
-          ? 'Placed students from last calendar year (AES batch + offer dates).'
-          : 'Placed students for this calendar year (AES batch + offer dates).';
-      }
+      subEl.textContent = '';
+      subEl.hidden = true;
     }
     if (countEl) countEl.textContent = String(rows.length);
 
@@ -664,9 +655,8 @@
   HiringOverviewPage.prototype.populateBatchSelect = function () {
     const batchSelect = this.$('batchSelect');
     if (!batchSelect) return;
-    const role = this.currentRole();
-    // Staff dashboard: department/branch filters only — hide AES batch selector.
-    const show = role === 'placement_officer';
+    // Officer / staff dashboards: department/branch filters only — hide AES batch selector.
+    const show = false;
     const batches = show ? this.batchOptions() : [];
     batchSelect.classList.toggle('d-none', !show || !batches.length);
     if (!show || !batches.length) {
@@ -818,23 +808,17 @@
     this.populateBatchSelect();
 
     if (role === 'staff' || role === 'placement_officer') {
-      if (role === 'staff') {
-        if (hintEl) hintEl.textContent = '';
-        return;
+      if (hintEl) {
+        hintEl.textContent = '';
+        hintEl.hidden = true;
       }
-      const meta = this.ownDepartmentMeta();
-      const label = meta.name || meta.code || 'your department';
-      const branchLabel = this.selectedBranchLabel();
-      const batchLabel = this.selectedBatch();
-      let hint = `Showing hiring data for ${label}`;
-      if (branchLabel) hint += ` · ${branchLabel}`;
-      if (batchLabel) hint += ` · ${batchLabel}`;
-      hint += ' only.';
-      if (hintEl) hintEl.textContent = hint;
       return;
     }
 
-    if (hintEl) hintEl.textContent = '';
+    if (hintEl) {
+      hintEl.textContent = '';
+      hintEl.hidden = true;
+    }
   };
 
   HiringOverviewPage.prototype.configurePageForRole = function (role) {
@@ -852,16 +836,18 @@
       return;
     }
     if (role === 'placement_officer') {
-      const meta = this.ownDepartmentMeta();
-      const label = meta.name || meta.code || 'your department';
-      if (title) title.textContent = 'Department Hiring Overview';
+      if (title) title.textContent = 'Dashboard';
       if (sub) {
-        sub.textContent = `Live snapshot for ${label}: companies hiring, pipeline stages, and recent activity.`;
-        sub.hidden = false;
+        sub.textContent = '';
+        sub.hidden = true;
       }
+      document.getElementById('dashLiveBadge')?.classList.add('d-none');
     } else if (role === 'admin') {
       if (title) title.textContent = 'Campus Hiring Overview';
-      if (sub) sub.textContent = 'Live snapshot of companies hiring, applicants in the pipeline, shortlists, offers, and hires across campus.';
+      if (sub) {
+        sub.textContent = '';
+        sub.hidden = true;
+      }
     }
   };
 
