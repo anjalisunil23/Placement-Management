@@ -354,8 +354,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260714c"></script>
-<script src="js/app.js?v=20260714b"></script>
+<script src="js/api.js?v=20260714f"></script>
+<script src="js/app.js?v=20260714f"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -369,10 +369,10 @@
   }
   if (needManage) {
     scripts.push('js/admin-api.js?v=20260713p');
-    scripts.push('js/officer-api.js?v=20260714b');
-    scripts.push('js/staff-api.js?v=20260714b');
+    scripts.push('js/officer-api.js?v=20260714e');
+    scripts.push('js/staff-api.js?v=20260714e');
   }
-  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260714b');
+  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260714f');
   // Sync append so onAppReady below still sees them after parse (scripts without defer/async run immediately when inserted... actually dynamically inserted scripts are async by default)
   // Load synchronously via document.write is bad; instead gate page init on Promise.
   window.__phDashExtras = Promise.all(scripts.map((src) => new Promise((resolve, reject) => {
@@ -397,7 +397,7 @@ const titles = {
   admin: ['Administrator Console', 'Institute-wide overview & approvals.'],
   placement_officer: ['Department Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.'],
   student: ['Dashboard', ''],
-  staff: ['Department Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.'],
+  staff: ['', ''],
   company: [`${user.companyName || user.name} · Recruiter`, 'Active companies, department-wise applicants, and candidate list.'],
   alumni: ['', ''],
 };
@@ -407,14 +407,14 @@ function showDashLiveBadge(live) {
   document.getElementById('dashLiveBadge')?.classList.toggle('d-none', !live);
 }
 const dashLive = Auth.hasRealAuth() && !Auth.isDemo();
-if (['admin', 'placement_officer', 'staff'].includes(role)) {
+if (['admin', 'placement_officer'].includes(role)) {
   showDashLiveBadge(dashLive);
 }
 if (!titles[role][1]) {
   document.getElementById('dashSub').hidden = true;
 }
-// Student/alumni name appears in the topbar — hide the duplicate page heading.
-if (role === 'student' || role === 'alumni') {
+// Student/alumni/staff name appears in the topbar — hide the duplicate page heading.
+if (role === 'student' || role === 'alumni' || role === 'staff') {
   document.querySelector('.page-header')?.classList.add('d-none');
 }
 

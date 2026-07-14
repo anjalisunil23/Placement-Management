@@ -80,7 +80,6 @@ const NAV = [
   { href: "hiring-overview.html", icon: "bi-building-check", label: "Hiring Overview", roles: ['admin'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin','placement_officer'] },
-  { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['placement_officer','staff'] },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin','placement_officer'] },
   { href: "admin-settings.html", icon: "bi-gear-wide-connected", label: "System Settings", roles: ['admin'] },
 
@@ -90,6 +89,7 @@ const NAV = [
   { href: "alumni-success-stories.html", icon: "bi-star-fill", label: "Success Stories", roles: ['alumni'], alumniEmployed: true },
 
   { section: "Staff", roles: ['staff'] },
+  { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
 
   { section: "Company", roles: ['admin','placement_officer','company'] },
@@ -482,11 +482,14 @@ function renderShell(active) {
     }[role] || '';
 
     const displayName = String(user?.name || '').trim();
-    const useNameInTopbar = ['student', 'alumni'].includes(role) && activeBase === 'dashboard.html' && displayName;
+    const useNameInTopbar = (
+      (['student', 'alumni'].includes(role) && activeBase === 'dashboard.html')
+      || (role === 'staff' && activeBase === 'dashboard.html')
+    ) && displayName;
     const topbarTitle = useNameInTopbar ? displayName : pageLabel;
     const topbarSub = useNameInTopbar
       ? ''
-      : (role === 'student' ? '' : `${ROLE_LABELS[role]} workspace`);
+      : (role === 'student' || role === 'staff' ? '' : `${ROLE_LABELS[role]} workspace`);
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
       ${showTopbarTitle ? `<div class="d-none d-md-block">

@@ -25,7 +25,7 @@
 </div>
 
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="mainTabs">
-  <li class="nav-item" id="overviewTabItem" data-roles="staff,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find student</a></li>
+  <li class="nav-item" id="overviewTabItem" data-roles="placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find student</a></li>
   <li class="nav-item" id="finalYearRegisteredTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link active" data-bs-toggle="tab" href="#tabFinalYearRegistered" id="linkFinalYearRegistered">Registered</a></li>
   <li class="nav-item" id="finalYearPendingTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link" data-bs-toggle="tab" href="#tabFinalYearPending" id="linkFinalYearPending">Non-registered</a></li>
   <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive applications</a></li>
@@ -34,7 +34,7 @@
 
 <div class="tab-content">
 
-  <!-- Overview: student search + placement pipeline (staff / placement officer) -->
+  <!-- Overview: student search + placement pipeline (placement officer) -->
   <div class="tab-pane fade" id="tabOverview">
     <div class="row g-3">
       <div class="col-lg-4">
@@ -651,7 +651,7 @@ const canVerifySelfPlacement = role === 'admin' || role === 'placement_officer';
 const canManageApplications = role === 'admin' || role === 'placement_officer';
 const canManageBlacklist = role === 'admin';
 const canViewStaffPolicy = false; // replaced by department Registered / Non-registered tabs
-const canUseFindStudent = role === 'staff' || role === 'placement_officer';
+const canUseFindStudent = role === 'placement_officer';
 
 if (!(role === 'admin' || role === 'placement_officer' || role === 'staff')) {
   toast('You do not have access to this page.', 'warn');
@@ -1170,7 +1170,7 @@ function clearProfilePanelFields(placeholder = '—') {
 async function fetchStudentProfileFromApi(studentId, registerNumber = '') {
   const reg = String(registerNumber || studentId || '').trim();
   if (!reg) return null;
-  if (useStaffApi && typeof StaffApi !== 'undefined') return StaffApi.fetchStudentProfile(reg, reg);
+  if (role === 'staff' && typeof StaffApi !== 'undefined') return StaffApi.fetchStudentProfile(reg, reg);
   if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') return OfficerApi.fetchStudentProfile(reg, reg);
   if (role === 'admin' && typeof AdminApi !== 'undefined') return AdminApi.fetchStudentProfile(reg, reg);
   return null;
@@ -1859,24 +1859,25 @@ function renderStaffPolicyTab() {
 }
 
 async function initOverview() {
-  useStaffApi = Auth.hasRealAuth() && !Auth.isDemo() && role === 'staff';
-  useLiveOverviewApi = Auth.hasRealAuth() && !Auth.isDemo() && (useStaffApi || role === 'admin' || role === 'placement_officer');
+  // Staff no longer has Find student — Registered / Non-registered tabs only.
+  if (!canUseFindStudent) {
+    useStaffApi = false;
+    useLiveOverviewApi = false;
+    overviewStudentsAll = [];
+    overviewStudents = [];
+    clearOverviewDetail();
+    return;
+  }
+
+  useStaffApi = false;
+  useLiveOverviewApi = Auth.hasRealAuth() && !Auth.isDemo() && (role === 'admin' || role === 'placement_officer');
 
   if (useLiveOverviewApi) {
     await Auth.ensureSession();
-    if (useStaffApi) {
-      await Auth.enrichFromProfile();
-      await loadDepartmentStudentsForStaff();
-      renderStaffPolicyTab();
-    } else {
-      overviewStudentsAll = [];
-      overviewStudents = [];
-    }
-  } else if (!(role === 'staff' && Auth.hasRealAuth() && !Auth.isDemo())) {
+    overviewStudentsAll = [];
+    overviewStudents = [];
+  } else {
     overviewStudentsAll = UserRegistry.byRole('student');
-    if (role === 'staff') {
-      overviewStudentsAll = overviewStudentsAll.filter(studentInStaffScope);
-    }
     overviewStudents = [];
   }
 
