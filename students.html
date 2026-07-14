@@ -515,12 +515,6 @@
             <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College email</span><span class="fw-medium" id="fySpCollegeEmail">—</span></div>
             <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal email</span><span class="fw-medium" id="fySpPersonalEmail">—</span></div>
             <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">10th marks</span><span class="fw-medium" id="fySpMarks10">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">12th marks</span><span class="fw-medium" id="fySpMarks12">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="fySpBacklogs">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="fySpResume">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement chances</span><span class="fw-medium" id="fySpChances">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement policy</span><span class="fw-medium" id="fySpPolicy">—</span></div>
           </div>
           <div id="fySpQualificationsWrap" class="mt-3" style="display:none">
             <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
@@ -1754,17 +1748,6 @@ function fillFinalYearProfileFields(s) {
   set('fySpCollegeEmail', formatProfileValue(s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
   set('fySpPersonalEmail', formatProfileValue(s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
   set('fySpPhone', formatProfileValue(s.phone));
-  set('fySpMarks10', formatMarkPct(s.marks10th));
-  set('fySpMarks12', formatMarkPct(s.marks12th ?? s.ugMarks));
-  set('fySpBacklogs', s.backlogs != null ? String(s.backlogs) : '—');
-  const resumeLabels = { approved: 'Verified', pending: 'Pending review', none: 'Not uploaded' };
-  set('fySpResume', resumeLabels[s.resumeStatus] || formatProfileValue(s.resumeStatus));
-  const used = s.chancesUsed ?? 0;
-  const max = s.chancesMax ?? 0;
-  set('fySpChances', max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—'));
-  set('fySpPolicy', isFinalYearPolicyRegistered(s)
-    ? `Registered${s.policyAcceptedAt ? ' · ' + formatPolicyAcceptedAt(s.policyAcceptedAt) : ''}`
-    : 'Not registered');
   renderQualificationsTable(s.qualifications, 'fySpQualificationsBody', 'fySpQualificationsWrap');
 }
 
