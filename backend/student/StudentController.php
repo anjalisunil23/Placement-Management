@@ -562,8 +562,9 @@ final class StudentController
 
     $registerNo = $profile['registerNumber'] ?? '';
     if (!Security::validateResumeFilename($_FILES['resume']['name'], $user['name'], $registerNo)) {
+      $exampleName = preg_replace('/[^a-zA-Z0-9]/', '', (string) ($user['name'] ?? 'Student')) ?: 'Student';
       Response::error(
-        "Resume must be named: {Name}_{RegisterNo}_Resume.pdf (e.g. Student_{$registerNo}_Resume.pdf)",
+        "Rename your file to {$exampleName}_{$registerNo}_Resume.pdf and try again.",
         400
       );
     }
@@ -641,13 +642,25 @@ final class StudentController
       Response::error($error, 400);
     }
 
+    $registerNo = (string) ($profile['registerNumber'] ?? '');
+    if ($registerNo === '' || !Security::validateResumeFilename(
+      (string) ($_FILES['file']['name'] ?? ''),
+      (string) ($user['name'] ?? ''),
+      $registerNo
+    )) {
+      $exampleName = preg_replace('/[^a-zA-Z0-9]/', '', (string) ($user['name'] ?? 'Student')) ?: 'Student';
+      Response::error(
+        "Rename your file to {$exampleName}_{$registerNo}_Resume.pdf and try again.",
+        400
+      );
+    }
+
     $dir = $config['uploads']['resume_dir'];
     if (!is_dir($dir)) {
       mkdir($dir, 0755, true);
     }
 
     $ext = strtolower(pathinfo($_FILES['file']['name'] ?? '', PATHINFO_EXTENSION));
-    $registerNo = (string) ($profile['registerNumber'] ?? 'student');
     $safeLabel = preg_replace('/[^a-zA-Z0-9_-]+/', '-', strtolower($profileType));
     $storedName = $registerNo . '_' . $safeLabel . '_' . time() . '.' . $ext;
     $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $storedName;

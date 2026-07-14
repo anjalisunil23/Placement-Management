@@ -42,7 +42,6 @@
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Gender</label><input class="form-control" id="profGender" disabled placeholder="Synced from college records"/></div>
           <div class="col-12 role-field-student" id="profQualificationsWrap" style="display:none">
             <label class="form-label small fw-semibold">Education qualifications</label>
-            <p class="small text-muted-2 mb-2">Synced from college records (read-only).</p>
             <div class="table-wrap">
               <table class="table-modern table-sm mb-0">
                 <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
@@ -78,8 +77,7 @@
       </div></div>
 
       <div class="tab-pane fade" id="resumes"><div class="card-surface p-4">
-        <h5 class="fw-bold mb-1">Resume bucket</h5>
-        <p class="small text-muted-2 mb-4" id="resumeStorageNote">Upload multiple resumes tailored to different job profiles.</p>
+        <h5 class="fw-bold mb-3">Resume bucket</h5>
         <form id="resumeUploadForm" class="row g-3 mb-4 p-3 rounded-3" style="background:var(--surface-2)">
           <div class="col-md-4"><label class="form-label small fw-semibold">Resume label</label><input class="form-control" name="label" placeholder="e.g. SDE Resume v2" required/></div>
           <div class="col-md-4"><label class="form-label small fw-semibold">Job profile</label><select class="form-select" name="profileType" id="resumeProfileType" required></select></div>
@@ -92,7 +90,6 @@
             </div>
           </div>
           <div class="col-12"><button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up me-1"></i>Upload to bucket</button></div>
-          <div class="col-12"><small class="text-muted-2">For server upload, name your file <code>Name_RegisterNo_Resume.pdf</code> (we auto-rename if needed). Any job profile can be selected — all uploaded resumes appear when you apply.</small></div>
         </form>
         <div class="table-wrap">
           <table class="table-modern"><thead><tr><th>Label</th><th>Job profile</th><th>File</th><th>Storage</th><th>Uploaded</th><th></th></tr></thead>
@@ -842,6 +839,11 @@ if (role === 'student') {
     settingsSub.textContent = '';
     settingsSub.hidden = true;
   }
+  const nameEl = document.getElementById('profName');
+  if (nameEl) {
+    nameEl.disabled = true;
+    nameEl.title = 'Name comes from college records';
+  }
   document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');
   wireFilePickers('#resumeUploadForm');
   onAppReady(async () => {
@@ -999,6 +1001,34 @@ async function uploadResumeLocal(file, profileType, label) {
   return entry;
 }
 
+function resumeSafeNamePart(name) {
+  return String(name || '').replace(/[^a-zA-Z0-9]/g, '');
+}
+
+function validateStudentResumeFilename(fileName) {
+  const name = resumeSafeNamePart(document.getElementById('profName')?.value || user.name || '');
+  const reg = String(document.getElementById('profRegNo')?.value || user.registerNumber || '').trim();
+  if (!name || !reg) {
+    return { ok: false, message: 'Name and register number are required before uploading a resume.' };
+  }
+  const base = String(fileName || '').replace(/\.[^.]+$/, '');
+  const ext = String(fileName || '').includes('.')
+    ? String(fileName).split('.').pop().toLowerCase()
+    : '';
+  if (!['pdf', 'doc', 'docx'].includes(ext)) {
+    return { ok: false, message: 'Upload a PDF or DOC resume file.' };
+  }
+  const expectedBase = `${name}_${reg}_Resume`;
+  if (base.toLowerCase() !== expectedBase.toLowerCase()) {
+    const expected = `${expectedBase}.${ext === 'pdf' ? 'pdf' : ext}`;
+    return {
+      ok: false,
+      message: `Rename your file to ${expected} and try again.`,
+    };
+  }
+  return { ok: true };
+}
+
 document.getElementById('resumeUploadForm')?.addEventListener('submit', async e => {
   e.preventDefault();
   const form = e.target;
@@ -1016,6 +1046,11 @@ document.getElementById('resumeUploadForm')?.addEventListener('submit', async e 
   }
   if (!file?.name) {
     toast('Choose a PDF or DOC resume file.', 'warn');
+    return;
+  }
+  const nameCheck = validateStudentResumeFilename(file.name);
+  if (!nameCheck.ok) {
+    toast(nameCheck.message, 'warn');
     return;
   }
   if (!(await confirmAction({ title: 'Upload resume', message: `Upload "${label || file.name}" for ${profileType || 'selected profile'}?`, confirmText: 'Upload', variant: 'primary' }))) return;
@@ -1120,7 +1155,7 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     }
     Auth.set({
       ...user,
-      name: document.getElementById('profName').value,
+      name: user.name,
       phone: phoneVal,
       personalEmail: personalEmailVal,
       registerNumber: document.getElementById('profRegNo').value,
