@@ -81,19 +81,17 @@
         <div class="row g-3 mt-1">
           <div class="col-12 col-xl-8"><div class="card-surface p-3 p-md-4">
             <div class="d-flex justify-content-between align-items-center mb-2">
-              <div><h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6><small class="text-muted-2">Offers rolled out across last 12 months</small></div>
+              <div><h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6></div>
               <select class="form-select form-select-sm w-auto"><option>This year</option><option>Last year</option></select>
             </div>
             <div style="height:300px"><canvas id="trendChart"></canvas></div>
           </div></div>
           <div class="col-12 col-xl-4"><div class="card-surface p-3 p-md-4">
-            <h6 class="fw-bold mb-1">Branch-wise Placement</h6>
-            <small class="text-muted-2">Placed students by department (bar chart)</small>
+            <h6 class="fw-bold mb-2">Branch-wise Placement</h6>
             <div style="height:300px" class="mt-2"><canvas id="branchChart"></canvas></div>
           </div></div>
           <div class="col-12"><div class="card-surface p-3 p-md-4">
-            <h6 class="fw-bold mb-1">Company-wise Recruitment</h6>
-            <small class="text-muted-2">Applicants per recruiting company</small>
+            <h6 class="fw-bold mb-2">Company-wise Recruitment</h6>
             <div style="height:260px" class="mt-2"><canvas id="companyChart"></canvas></div>
           </div></div>
         </div>
@@ -363,7 +361,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260714j"></script>
-<script src="js/app.js?v=20260714i"></script>
+<script src="js/app.js?v=20260714m"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -402,7 +400,7 @@ if (!role || !ROLE_HOME[role]) {
   return;
 }
 const titles = {
-  admin: ['Administrator Console', 'Institute-wide overview & approvals.'],
+  admin: ['Dashboard', ''],
   placement_officer: ['Department Hiring Overview', 'Live snapshot of companies hiring, applicants, shortlists, offers, and hires for your department.'],
   student: ['Dashboard', ''],
   staff: ['', ''],
@@ -415,8 +413,11 @@ function showDashLiveBadge(live) {
   document.getElementById('dashLiveBadge')?.classList.toggle('d-none', !live);
 }
 const dashLive = Auth.hasRealAuth() && !Auth.isDemo();
-if (['admin', 'placement_officer'].includes(role)) {
+// Admin dashboard keeps a clean heading — no Live badge / subtitle helper copy.
+if (role === 'placement_officer') {
   showDashLiveBadge(dashLive);
+} else {
+  showDashLiveBadge(false);
 }
 if (!titles[role][1]) {
   document.getElementById('dashSub').hidden = true;

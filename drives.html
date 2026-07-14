@@ -119,7 +119,7 @@
 
 <div class="page-header">
 
-  <div><h1 class="page-title" id="drivesTitle">Placement Drives</h1><p class="page-sub" id="drivesSub">Manage all ongoing and upcoming recruitment drives.</p></div>
+  <div><h1 class="page-title" id="drivesTitle">Placement Drives</h1><p class="page-sub" id="drivesSub" hidden></p></div>
 
   <div class="d-flex gap-2" id="drivesActions"></div>
 
@@ -454,7 +454,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260713w"></script>
-<script src="js/app.js?v=20260713w"></script>
+<script src="js/app.js?v=20260714m"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
 async function loadDriveRoleScripts() {
@@ -889,7 +889,10 @@ function setupDrivesChrome() {
     actions.innerHTML = '';
   } else {
     document.getElementById('drivesTitle').textContent = 'Placement Drives';
-    document.getElementById('drivesSub').textContent = 'Manage all ongoing and upcoming recruitment drives.';
+    if (drivesSub) {
+      drivesSub.textContent = '';
+      drivesSub.hidden = true;
+    }
     actions.innerHTML = `
       <button type="button" class="btn btn-primary" onclick="openCreateDrive()"><i class="bi bi-plus-lg me-1"></i>Create Drive</button>`;
   }

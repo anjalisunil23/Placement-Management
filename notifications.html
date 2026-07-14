@@ -9,7 +9,7 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title" id="notifTitle">Notifications Center</h1><p class="page-sub" id="notifSub">Alerts, email status and broadcast history.</p></div>
+  <div><h1 class="page-title" id="notifTitle">Notifications Center</h1><p class="page-sub" id="notifSub" hidden></p></div>
   <div class="d-flex gap-2" id="notifActions">
     <button class="btn btn-outline-secondary" id="markAllRead"><i class="bi bi-check2-all me-1"></i>Mark all read</button>
     <button class="btn btn-primary" id="btnNewBroadcast" type="button"><i class="bi bi-megaphone me-1"></i>New broadcast</button>
@@ -80,7 +80,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260713p"></script>
-<script src="js/app.js?v=20260713p"></script>
+<script src="js/app.js?v=20260714m"></script>
 <script>
 onAppReady(() => {
 const role = Auth.role();
@@ -96,7 +96,7 @@ const pageCopy = {
   student: ['Notifications', ''],
   alumni: ['Notifications', ''],
   staff: ['Notifications', ''],
-  admin: ['Notifications Center', 'Alerts, email status and broadcast history.'],
+  admin: ['Notifications Center', ''],
   placement_officer: ['Notifications Center', 'Send department broadcasts and track delivery.'],
   company: ['Notifications', 'Application updates and candidate pipeline alerts.'],
 };

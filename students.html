@@ -20,15 +20,15 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Students</h1>
-    <p class="page-sub" id="pageSub">Look up profiles, manage portal access, and track drive applications.</p>
+    <p class="page-sub" id="pageSub" hidden></p>
   </div>
 </div>
 
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="mainTabs">
-  <li class="nav-item" id="overviewTabItem" data-roles="placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find student</a></li>
+  <li class="nav-item" id="overviewTabItem" data-roles="placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find Student</a></li>
   <li class="nav-item" id="finalYearRegisteredTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link active" data-bs-toggle="tab" href="#tabFinalYearRegistered" id="linkFinalYearRegistered">Registered</a></li>
-  <li class="nav-item" id="finalYearPendingTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link" data-bs-toggle="tab" href="#tabFinalYearPending" id="linkFinalYearPending">Non-registered</a></li>
-  <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive applications</a></li>
+  <li class="nav-item" id="finalYearPendingTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link" data-bs-toggle="tab" href="#tabFinalYearPending" id="linkFinalYearPending">Non-Registered</a></li>
+  <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive Applications</a></li>
   <li class="nav-item" id="blacklistTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabBlacklist" id="linkBlacklist">Blacklist</a></li>
 </ul>
 
@@ -53,7 +53,7 @@
       <div class="col-lg-8">
         <div id="studentDetailEmpty" class="card-surface p-4 text-center text-muted-2">
           <i class="bi bi-person-bounding-box d-block mb-2" style="font-size:1.75rem;opacity:.45"></i>
-          <div class="fw-semibold text-body mb-1">No student selected</div>
+          <div class="fw-semibold text-body mb-1">No Student Selected</div>
           <div class="small">Select a student from the list to view their profile, or search by name / register number.</div>
         </div>
         <div id="studentDetailPanel" class="d-none">
@@ -63,7 +63,7 @@
             <div class="flex-grow-1">
               <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
                 <div>
-                  <h5 class="fw-bold mb-0" id="stuName">Select a student</h5>
+                  <h5 class="fw-bold mb-0" id="stuName">Select a Student</h5>
                   <div class="small text-muted-2" id="stuMeta">Search by name, register number, or department to find a student.</div>
                 </div>
                 <span class="badge-soft muted" id="stuStatus">—</span>
@@ -72,27 +72,27 @@
           </div>
           <hr style="border-color:var(--border)"/>
           <div id="stuProfilePanel" class="mb-3" style="display:none">
-            <div class="small fw-semibold text-muted-2 mb-2">Student profile</div>
+            <div class="small fw-semibold text-muted-2 mb-2">Student Profile</div>
             <div class="row g-2 g-md-3 small">
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Register no.</span><span class="fw-medium" id="spRegNo">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Register No.</span><span class="fw-medium" id="spRegNo">—</span></div>
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="spDept">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Batch / class</span><span class="fw-medium" id="spBatch">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College email</span><span class="fw-medium" id="spCollegeEmail">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal email</span><span class="fw-medium" id="spPersonalEmail">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Batch / Class</span><span class="fw-medium" id="spBatch">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College Email</span><span class="fw-medium" id="spCollegeEmail">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium" id="spPersonalEmail">—</span></div>
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="spPhone">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">10th marks</span><span class="fw-medium" id="spMarks10">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">12th marks</span><span class="fw-medium" id="spMarks12">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">10th Marks</span><span class="fw-medium" id="spMarks10">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">12th Marks</span><span class="fw-medium" id="spMarks12">—</span></div>
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">CGPA</span><span class="fw-medium" id="spCgpa">—</span></div>
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="spBacklogs">—</span></div>
               <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="spResume">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement chances</span><span class="fw-medium" id="spChances">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement policy</span><span class="fw-medium" id="spPolicy">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement Chances</span><span class="fw-medium" id="spChances">—</span></div>
+              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement Policy</span><span class="fw-medium" id="spPolicy">—</span></div>
             </div>
             <div id="spQualificationsWrap" class="mt-3" style="display:none">
-              <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
+              <div class="small fw-semibold text-muted-2 mb-2">Education Qualifications</div>
               <div class="table-wrap">
                 <table class="table-modern table-sm mb-0">
-                  <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
+                  <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. No.</th><th>Month / Year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
                   <tbody id="spQualificationsBody"></tbody>
                 </table>
               </div>
@@ -100,7 +100,7 @@
           </div>
           <div class="alert alert-warning d-none mb-3" id="verifyPlacementBanner"></div>
           <div class="d-none mb-3" id="addSelfPlacementWrap">
-            <button type="button" class="btn btn-primary" id="btnAddSelfPlacement"><i class="bi bi-briefcase me-1"></i>Add placement</button>
+            <button type="button" class="btn btn-primary" id="btnAddSelfPlacement"><i class="bi bi-briefcase me-1"></i>Add Placement</button>
           </div>
           <div class="row g-3" id="overviewStatsRow">
             <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Applied</div><div class="val" id="statApplied">0</div></div></div>
@@ -111,19 +111,19 @@
         </div>
         <div class="card-surface">
           <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
-            <div><h6 class="fw-bold mb-0">Placement details</h6><small class="text-muted-2">Companies applied, stage, and current status.</small></div>
+            <div><h6 class="fw-bold mb-0">Placement Details</h6><small class="text-muted-2">Companies applied, stage, and current status.</small></div>
             <div class="d-flex gap-2">
               <select class="form-select form-select-sm w-auto" id="stageFilter">
-                <option value="">All stages</option>
+                <option value="">All Stages</option>
                 <option value="applied">Applied</option>
-                <option value="resume_verification">Resume check (optional)</option>
+                <option value="resume_verification">Resume Check (Optional)</option>
                 <option value="approval">Approval</option>
-                <option value="company_selection">Company selection</option>
-                <option value="self_reported">Self reported</option>
+                <option value="company_selection">Company Selection</option>
+                <option value="self_reported">Self Reported</option>
                 <option value="rejected">Rejected</option>
               </select>
               <select class="form-select form-select-sm w-auto" id="statusFilter">
-                <option value="">All statuses</option>
+                <option value="">All Statuses</option>
                 <option value="pending">Pending</option>
                 <option value="applied">Applied</option>
                 <option value="placed">Placed</option>
@@ -151,13 +151,13 @@
     <div class="card-surface">
       <ul class="nav nav-tabs px-3 pt-2" role="tablist">
         <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#staffPolicyRegistered" id="tabStaffPolicyRegistered">Registered <span class="badge-soft success ms-1" id="staffPolicyRegisteredCount">0</span></a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#staffPolicyPending" id="tabStaffPolicyPending">Not registered <span class="badge-soft warning ms-1" id="staffPolicyPendingCount">0</span></a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#staffPolicyPending" id="tabStaffPolicyPending">Not Registered <span class="badge-soft warning ms-1" id="staffPolicyPendingCount">0</span></a></li>
       </ul>
       <div class="tab-content">
         <div class="tab-pane fade show active" id="staffPolicyRegistered">
           <div class="table-wrap">
             <table class="table-modern">
-              <thead><tr><th>Student</th><th>Reg. no.</th><th>Batch</th><th>CGPA</th><th>Registered on</th></tr></thead>
+              <thead><tr><th>Student</th><th>Reg. No.</th><th>Batch</th><th>CGPA</th><th>Registered On</th></tr></thead>
               <tbody id="staffPolicyRegisteredRows"></tbody>
             </table>
           </div>
@@ -165,7 +165,7 @@
         <div class="tab-pane fade" id="staffPolicyPending">
           <div class="table-wrap">
             <table class="table-modern">
-              <thead><tr><th>Student</th><th>Reg. no.</th><th>Batch</th><th>CGPA</th><th>Status</th></tr></thead>
+              <thead><tr><th>Student</th><th>Reg. No.</th><th>Batch</th><th>CGPA</th><th>Status</th></tr></thead>
               <tbody id="staffPolicyPendingRows"></tbody>
             </table>
           </div>
@@ -179,8 +179,7 @@
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
-          <h6 class="fw-bold mb-0">Registered students</h6>
-          <small class="text-muted-2 final-year-tab-sub">Final-year students who have accepted the placement policy.</small>
+          <h6 class="fw-bold mb-0">Registered Students</h6>
         </div>
         <span class="badge-soft success" id="finalYearRegisteredCount">0</span>
       </div>
@@ -193,9 +192,9 @@
           <thead>
             <tr>
               <th>Student</th>
-              <th>Adm. no.</th>
+              <th>Adm. No.</th>
               <th>Department</th>
-              <th>Batch / class</th>
+              <th>Batch / Class</th>
               <th></th>
             </tr>
           </thead>
@@ -212,8 +211,7 @@
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
-          <h6 class="fw-bold mb-0">Non Registered students</h6>
-          <small class="text-muted-2 final-year-tab-sub">Final-year students who have not registered the placement policy yet.</small>
+          <h6 class="fw-bold mb-0">Non-Registered Students</h6>
         </div>
         <span class="badge-soft warning" id="finalYearPendingCount">0</span>
       </div>
@@ -226,9 +224,9 @@
           <thead>
             <tr>
               <th>Student</th>
-              <th>Adm. no.</th>
+              <th>Adm. No.</th>
               <th>Department</th>
-              <th>Batch / class</th>
+              <th>Batch / Class</th>
               <th></th>
             </tr>
           </thead>
@@ -252,19 +250,19 @@
     <div class="row g-3 mb-3" id="stats"></div>
     <div class="card-surface">
       <ul class="nav nav-tabs px-3 pt-2" role="tablist">
-        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#pending" id="tabPending">Awaiting approval</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#approved">Active accounts</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#all">All accounts</a></li>
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#pending" id="tabPending">Awaiting Approval</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#approved">Active Accounts</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#all">All Accounts</a></li>
       </ul>
       <div class="tab-content">
         <div class="tab-pane fade show active" id="pending"><div class="table-wrap"><table class="table-modern"><thead><tr>
-          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>10th</th><th>12th</th><th>CGPA</th><th>Resume on file</th><th>Chances</th><th>Account</th><th></th>
+          <th>Student</th><th>Reg. No.</th><th>Dept</th><th>10th</th><th>12th</th><th>CGPA</th><th>Resume on File</th><th>Chances</th><th>Account</th><th></th>
         </tr></thead><tbody id="pendingRows"></tbody></table></div></div>
         <div class="tab-pane fade" id="approved"><div class="table-wrap"><table class="table-modern"><thead><tr>
-          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Resume on file</th><th>Chances</th>
+          <th>Student</th><th>Reg. No.</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Resume on File</th><th>Chances</th>
         </tr></thead><tbody id="approvedRows"></tbody></table></div></div>
         <div class="tab-pane fade" id="all"><div class="table-wrap"><table class="table-modern"><thead><tr>
-          <th>Student</th><th>Reg. no.</th><th>Dept</th><th>CGPA</th><th>Certs</th><th>Account</th><th>Actions</th>
+          <th>Student</th><th>Reg. No.</th><th>Dept</th><th>CGPA</th><th>Certs</th><th>Account</th><th>Actions</th>
         </tr></thead><tbody id="allRows"></tbody></table></div></div>
       </div>
     </div>
@@ -272,67 +270,36 @@
 
   <!-- Drive applications + resume checks + eligible not applied -->
   <div class="tab-pane fade" id="tabApplications">
-    <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
-      <i class="bi bi-info-circle text-primary mt-1"></i>
-      <div>
-        <strong>Drive applications</strong> — students who applied to a campus drive.
-        <div class="small text-muted-2 mt-1">Companies shortlist candidates. Officers can view those shortlists here. Resume checks are optional.</div>
-      </div>
-    </div>
     <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="appSubTabs">
-      <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabAppList" id="linkAppApplications">All applications</a></li>
-      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppShortlisted" id="linkAppShortlisted">Company shortlisted <span class="badge-soft success ms-1" id="shortlistedTabBadge">0</span></a></li>
-      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppResumes" id="linkAppResumes">Resume checks <span class="badge-soft muted ms-1">Optional</span></a></li>
-      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppNonApplicants" id="linkAppNonApplicants">Eligible, not applied</a></li>
+      <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabAppList" id="linkAppApplications">All Applications</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppShortlisted" id="linkAppShortlisted">Company Shortlisted <span class="badge-soft success ms-1" id="shortlistedTabBadge">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppResumes" id="linkAppResumes">Resume Checks <span class="badge-soft muted ms-1">Optional</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppNonApplicants" id="linkAppNonApplicants">Eligible, Not Applied</a></li>
     </ul>
     <div class="tab-content">
       <div class="tab-pane fade show active" id="tabAppList">
-        <div class="card-surface p-3 mb-3">
-          <div class="small fw-semibold text-muted-2 mb-2">Drive application workflow</div>
-          <div class="d-flex flex-wrap align-items-center gap-2 small">
-            <span class="badge-soft muted">Student applies</span>
-            <i class="bi bi-arrow-right text-muted-2"></i>
-            <span class="badge-soft warning">Resume check <span class="fw-normal opacity-75">(optional)</span></span>
-            <i class="bi bi-arrow-right text-muted-2"></i>
-            <span class="badge-soft info">Officer approval</span>
-            <i class="bi bi-arrow-right text-muted-2"></i>
-            <span class="badge-soft success">Company shortlists</span>
-            <i class="bi bi-arrow-right text-muted-2"></i>
-            <span class="badge-soft primary">Offer / placed</span>
-          </div>
-        </div>
         <div class="row g-3 mb-3">
-          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Drive applications</div><div class="val" id="statTotal">0</div></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Needs review</div><div class="val" id="statPending">0</div></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Company shortlisted</div><div class="val" id="statAppShortlisted">0</div></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Drive Applications</div><div class="val" id="statTotal">0</div></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Needs Review</div><div class="val" id="statPending">0</div></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Company Shortlisted</div><div class="val" id="statAppShortlisted">0</div></div></div>
           <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Rejected</div><div class="val" id="statRejected">0</div></div></div>
         </div>
         <div class="card-surface">
           <div class="p-3 pb-0">
-            <h6 class="fw-bold mb-0">Applications to campus drives</h6>
-            <small class="text-muted-2">Each row is one student applying to one company drive</small>
+            <h6 class="fw-bold mb-0">Applications to Campus Drives</h6>
           </div>
           <div class="table-wrap">
             <table class="table-modern"><thead><tr>
-              <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>Resume</th><th>Stage</th><th>Status</th><th>Applied</th><th>Actions</th>
+              <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>Resume</th><th>Stage</th><th>Status</th><th>Applied</th><th>Actions</th>
             </tr></thead><tbody id="appRows"></tbody></table>
           </div>
         </div>
       </div>
       <div class="tab-pane fade" id="tabAppShortlisted">
-        <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
-          <i class="bi bi-people text-success mt-1"></i>
-          <div>
-            <strong>Company shortlisted</strong> — students shortlisted by the company after they applied.
-            <div class="small text-muted-2 mt-1">Filter by company below. Upload the shortlist document the company sent for that drive.</div>
-          </div>
-        </div>
-
         <div class="card-surface p-3 mb-3" id="shortlistUploadCard">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
             <div>
-              <div class="fw-semibold">Add company shortlist</div>
-              <div class="small text-muted-2">Choose company and drive, then upload the list the company sent.</div>
+              <div class="fw-semibold">Add Company Shortlist</div>
             </div>
             <span class="small text-muted-2" id="shortlistUploadDriveHint"></span>
           </div>
@@ -340,22 +307,22 @@
             <div class="col-md-4">
               <label class="form-label small mb-1" for="shortlistCompanyFilter">Company</label>
               <select class="form-select form-select-sm" id="shortlistCompanyFilter" aria-label="Filter by company">
-                <option value="">All companies</option>
+                <option value="">All Companies</option>
               </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small mb-1" for="shortlistDriveSelect">Drive / role</label>
+              <label class="form-label small mb-1" for="shortlistDriveSelect">Drive / Role</label>
               <select class="form-select form-select-sm" id="shortlistDriveSelect" aria-label="Select drive for upload">
-                <option value="">Select a drive…</option>
+                <option value="">Select a Drive…</option>
               </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small mb-1" for="shortlistDocument">Shortlist document</label>
+              <label class="form-label small mb-1" for="shortlistDocument">Shortlist Document</label>
               <input type="file" class="form-control form-control-sm" id="shortlistDocument" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.csv,.txt">
             </div>
             <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
-              <button type="button" class="btn btn-sm btn-primary" id="btnUploadCompanyShortlist"><i class="bi bi-upload me-1"></i>Upload shortlist</button>
-              <a class="btn btn-sm btn-outline-secondary d-none" id="btnViewCompanyShortlistDoc" href="#" target="_blank" rel="noopener">View document</a>
+              <button type="button" class="btn btn-sm btn-primary" id="btnUploadCompanyShortlist"><i class="bi bi-upload me-1"></i>Upload Shortlist</button>
+              <a class="btn btn-sm btn-outline-secondary d-none" id="btnViewCompanyShortlistDoc" href="#" target="_blank" rel="noopener">View Document</a>
             </div>
           </div>
           <div class="small text-muted-2 mt-2 d-none" id="shortlistUploadResult"></div>
@@ -364,31 +331,23 @@
         <div class="card-surface">
           <div class="p-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
-              <h6 class="fw-bold mb-0">Shortlisted by company</h6>
-              <small class="text-muted-2" id="shortlistTableSub">Portal shortlists and lists uploaded from company documents</small>
+              <h6 class="fw-bold mb-0">Shortlisted by Company</h6>
             </div>
-            <span class="badge-soft success" id="shortlistedCountLabel">0 shortlisted</span>
+            <span class="badge-soft success" id="shortlistedCountLabel">0 Shortlisted</span>
           </div>
           <div class="table-wrap">
             <table class="table-modern"><thead><tr>
-              <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>Resume</th><th>Status</th><th>Applied</th>
+              <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>Resume</th><th>Status</th><th>Applied</th>
             </tr></thead><tbody id="shortlistedRows"></tbody></table>
           </div>
         </div>
       </div>
       <div class="tab-pane fade" id="tabAppResumes">
-        <div class="alert alert-light border card-surface mb-3 d-flex align-items-start gap-2">
-          <i class="bi bi-info-circle text-primary mt-1"></i>
-          <div>
-            <strong>Optional resume checks</strong> — review files students submitted with a drive application when needed. Skipping this step does not block officer approval.
-            <div class="small text-muted-2 mt-1"><strong>Naming rule:</strong> <code>Name_RegisterNo_Role.pdf</code> · Example: <code>John_22MCA101_Developer.pdf</code></div>
-          </div>
-        </div>
         <div class="row g-3 mb-3">
           <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending</div><div class="val" id="resumeStatPending">0</div></div></div>
           <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Approved</div><div class="val" id="resumeStatApproved">0</div></div></div>
           <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Rejected</div><div class="val" id="resumeStatRejected">0</div></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Invalid format</div><div class="val" id="resumeStatInvalid">0</div></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Invalid Format</div><div class="val" id="resumeStatInvalid">0</div></div></div>
         </div>
         <div class="card-surface">
           <ul class="nav nav-tabs px-3 pt-2" role="tablist">
@@ -400,22 +359,22 @@
           <div class="tab-content">
             <div class="tab-pane fade show active" id="resumePending">
               <div class="table-wrap"><table class="table-modern"><thead><tr>
-                <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Submitted</th><th>Actions</th>
+                <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>File Name</th><th>Format</th><th>Submitted</th><th>Actions</th>
               </tr></thead><tbody id="resumePendingRows"></tbody></table></div>
             </div>
             <div class="tab-pane fade" id="resumeApproved">
               <div class="table-wrap"><table class="table-modern"><thead><tr>
-                <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Submitted</th>
+                <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>File Name</th><th>Format</th><th>Submitted</th>
               </tr></thead><tbody id="resumeApprovedRows"></tbody></table></div>
             </div>
             <div class="tab-pane fade" id="resumeRejected">
               <div class="table-wrap"><table class="table-modern"><thead><tr>
-                <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Submitted</th>
+                <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>File Name</th><th>Format</th><th>Submitted</th>
               </tr></thead><tbody id="resumeRejectedRows"></tbody></table></div>
             </div>
             <div class="tab-pane fade" id="resumeAll">
               <div class="table-wrap"><table class="table-modern"><thead><tr>
-                <th>Student</th><th>Register No</th><th>Dept</th><th>Company</th><th>Role</th><th>File name</th><th>Format</th><th>Status</th><th>Submitted</th><th>Actions</th>
+                <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>File Name</th><th>Format</th><th>Status</th><th>Submitted</th><th>Actions</th>
               </tr></thead><tbody id="resumeAllRows"></tbody></table></div>
             </div>
           </div>
@@ -425,14 +384,14 @@
         <div class="card-surface">
           <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
             <div>
-              <h6 class="fw-bold mb-0">Eligible for a drive, not applied yet</h6>
+              <h6 class="fw-bold mb-0">Eligible for a Drive, Not Applied Yet</h6>
               <small class="text-muted-2">Students who meet that drive’s criteria but have not submitted an application</small>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
               <select class="form-select form-select-sm" id="nonApplicantDriveSelect" style="min-width:min(100%,16rem)" aria-label="Select drive">
-                <option value="">Select a drive…</option>
+                <option value="">Select a Drive…</option>
               </select>
-              <span class="badge-soft warning" id="nonApplicantCount">0 pending</span>
+              <span class="badge-soft warning" id="nonApplicantCount">0 Pending</span>
             </div>
           </div>
           <div class="px-3 px-md-4 pt-3">
@@ -443,7 +402,7 @@
               <thead>
                 <tr>
                   <th>Student</th>
-                  <th>Register No</th>
+                  <th>Register No.</th>
                   <th>Dept</th>
                   <th>CGPA</th>
                   <th>Resume</th>
@@ -451,7 +410,7 @@
                 </tr>
               </thead>
               <tbody id="nonApplicantRows">
-                <tr><td colspan="6" class="text-muted-2 p-4">Select a drive to load students.</td></tr>
+                <tr><td colspan="6" class="text-muted-2 p-4">Select a Drive to load students.</td></tr>
               </tbody>
             </table>
           </div>
@@ -465,23 +424,23 @@
     <div class="row g-3">
       <div class="col-lg-4">
         <div class="card-surface p-4">
-          <h5 class="fw-bold mb-3">Add to blacklist</h5>
+          <h5 class="fw-bold mb-3">Add to Blacklist</h5>
           <form id="blacklistForm" class="row g-3">
-            <div class="col-12"><label class="form-label small fw-semibold">Student name</label><input class="form-control" id="blName" required placeholder="Full name"/></div>
-            <div class="col-12"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="blRegNo" required placeholder="e.g. 21CSE001"/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Student Name</label><input class="form-control" id="blName" required placeholder="Full name"/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Register Number</label><input class="form-control" id="blRegNo" required placeholder="e.g. 21CSE001"/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Reason</label><textarea class="form-control" id="blReason" rows="3" required placeholder="Reason for blacklisting…"></textarea></div>
-            <div class="col-12"><button type="submit" class="btn btn-danger w-100"><i class="bi bi-slash-circle me-1"></i>Add to blacklist</button></div>
+            <div class="col-12"><button type="submit" class="btn btn-danger w-100"><i class="bi bi-slash-circle me-1"></i>Add to Blacklist</button></div>
           </form>
         </div>
       </div>
       <div class="col-lg-8">
         <div class="card-surface">
           <div class="d-flex align-items-center justify-content-between p-3 border-bottom">
-            <h5 class="fw-bold mb-0">Blacklisted students</h5>
-            <span class="badge-soft danger" id="blStatCount">0 active</span>
+            <h5 class="fw-bold mb-0">Blacklisted Students</h5>
+            <span class="badge-soft danger" id="blStatCount">0 Active</span>
           </div>
           <div class="table-wrap">
-            <table class="table-modern"><thead><tr><th>Student</th><th>Register no.</th><th>Reason</th><th>Added</th><th></th></tr></thead>
+            <table class="table-modern"><thead><tr><th>Student</th><th>Register No.</th><th>Reason</th><th>Added</th><th></th></tr></thead>
             <tbody id="blRows"></tbody></table>
           </div>
         </div>
@@ -498,7 +457,7 @@
         <div class="d-flex align-items-center gap-3 min-w-0">
           <div class="avatar" id="fyProfileAvatar" style="width:56px;height:56px;min-width:56px;line-height:0;flex:0 0 56px">—</div>
           <div class="min-w-0">
-            <h5 class="modal-title fw-bold mb-1 text-truncate" id="fyProfileName">Student profile</h5>
+            <h5 class="modal-title fw-bold mb-1 text-truncate" id="fyProfileName">Student Profile</h5>
             <p class="small text-muted-2 mb-0" id="fyProfileMeta">—</p>
           </div>
         </div>
@@ -509,18 +468,18 @@
         <div class="text-center text-danger py-4 d-none" id="fyProfileError">Could not load profile.</div>
         <div id="fyProfileBody" class="d-none">
           <div class="row g-2 g-md-3 small">
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Register no.</span><span class="fw-medium" id="fySpRegNo">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Register No.</span><span class="fw-medium" id="fySpRegNo">—</span></div>
             <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="fySpDept">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Batch / class</span><span class="fw-medium" id="fySpBatch">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College email</span><span class="fw-medium" id="fySpCollegeEmail">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal email</span><span class="fw-medium" id="fySpPersonalEmail">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Batch / Class</span><span class="fw-medium" id="fySpBatch">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College Email</span><span class="fw-medium" id="fySpCollegeEmail">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium" id="fySpPersonalEmail">—</span></div>
             <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
           </div>
           <div id="fySpQualificationsWrap" class="mt-3" style="display:none">
-            <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
+            <div class="small fw-semibold text-muted-2 mb-2">Education Qualifications</div>
             <div class="table-wrap">
               <table class="table-modern table-sm mb-0">
-                <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
+                <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. No.</th><th>Month / Year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
                 <tbody id="fySpQualificationsBody"></tbody>
               </table>
             </div>
@@ -539,7 +498,7 @@
     <div class="modal-content card-surface border-0">
       <div class="modal-header border-0 pb-0">
         <div>
-          <h5 class="modal-title fw-bold mb-1">Verify self-placement report</h5>
+          <h5 class="modal-title fw-bold mb-1">Verify Self-Placement Report</h5>
           <p class="small text-muted-2 mb-0" id="verifyPlacementSub">Review offer letter and mark student as placed.</p>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -547,28 +506,28 @@
       <div class="modal-body pt-3">
         <div class="row g-3 mb-3">
           <div class="col-md-6"><div class="small text-muted-2">Student</div><div class="fw-semibold" id="verifyStudentName">—</div></div>
-          <div class="col-md-3"><div class="small text-muted-2">Register no.</div><div id="verifyRegister">—</div></div>
+          <div class="col-md-3"><div class="small text-muted-2">Register No.</div><div id="verifyRegister">—</div></div>
           <div class="col-md-3"><div class="small text-muted-2">Department</div><div id="verifyDepartment">—</div></div>
           <div class="col-md-6"><div class="small text-muted-2">Company</div><div class="fw-semibold" id="verifyCompany">—</div></div>
           <div class="col-md-6"><div class="small text-muted-2">Role</div><div id="verifyRole">—</div></div>
-          <div class="col-12"><div class="small text-muted-2">Company address</div><div id="verifyAddress">—</div></div>
+          <div class="col-12"><div class="small text-muted-2">Company Address</div><div id="verifyAddress">—</div></div>
           <div class="col-12">
-            <div class="small text-muted-2 mb-1">Offer letter</div>
-            <a class="btn btn-sm btn-outline-primary" id="verifyOfferLink" href="#" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>View offer letter (PDF)</a>
+            <div class="small text-muted-2 mb-1">Offer Letter</div>
+            <a class="btn btn-sm btn-outline-primary" id="verifyOfferLink" href="#" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>View Offer Letter (PDF)</a>
             <span class="small text-muted-2 ms-2 d-none" id="verifyNoOffer">No offer letter on file.</span>
           </div>
           <div class="col-md-6">
             <div class="small text-muted-2 mb-1">Company ID</div>
-            <a class="btn btn-sm btn-outline-secondary" id="verifyCompanyIdLink" href="#" target="_blank" rel="noopener"><i class="bi bi-person-badge me-1"></i>View company ID</a>
+            <a class="btn btn-sm btn-outline-secondary" id="verifyCompanyIdLink" href="#" target="_blank" rel="noopener"><i class="bi bi-person-badge me-1"></i>View Company ID</a>
             <span class="small text-muted-2 d-none" id="verifyNoCompanyId">Not provided.</span>
           </div>
           <div class="col-md-6">
-            <div class="small text-muted-2 mb-1">Salary slip</div>
-            <a class="btn btn-sm btn-outline-secondary" id="verifySalarySlipLink" href="#" target="_blank" rel="noopener"><i class="bi bi-receipt me-1"></i>View salary slip</a>
+            <div class="small text-muted-2 mb-1">Salary Slip</div>
+            <a class="btn btn-sm btn-outline-secondary" id="verifySalarySlipLink" href="#" target="_blank" rel="noopener"><i class="bi bi-receipt me-1"></i>View Salary Slip</a>
             <span class="small text-muted-2 d-none" id="verifyNoSalarySlip">Not provided.</span>
           </div>
           <div class="col-12 d-none" id="verifyRejectWrap">
-            <label class="form-label small fw-semibold" for="verifyRejectReason">Rejection reason (optional)</label>
+            <label class="form-label small fw-semibold" for="verifyRejectReason">Rejection Reason (Optional)</label>
             <textarea class="form-control" id="verifyRejectReason" rows="2" placeholder="Explain what the student should correct…"></textarea>
           </div>
         </div>
@@ -577,7 +536,7 @@
       <div class="modal-footer border-0 pt-0">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
         <button type="button" class="btn btn-outline-danger" id="verifyRejectBtn"><i class="bi bi-x-lg me-1"></i>Reject</button>
-        <button type="button" class="btn btn-success" id="verifyApproveBtn"><i class="bi bi-check2-circle me-1"></i>Mark as placed</button>
+        <button type="button" class="btn btn-success" id="verifyApproveBtn"><i class="bi bi-check2-circle me-1"></i>Mark as Placed</button>
       </div>
     </div>
   </div>
@@ -589,37 +548,37 @@
       <form id="addSelfPlacementForm">
         <div class="modal-header border-0 pb-0">
           <div>
-            <h5 class="modal-title fw-bold mb-1">Add placement</h5>
+            <h5 class="modal-title fw-bold mb-1">Add Placement</h5>
             <p class="small text-muted-2 mb-0" id="addSelfPlacementSub">Record an off-campus placement and mark the student as placed.</p>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body pt-3">
           <div class="row g-3">
-            <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" id="addSpCompany" required placeholder="e.g. Infosys"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Role / designation</label><input class="form-control" name="role" id="addSpRole" required placeholder="e.g. Software Engineer"/></div>
-            <div class="col-12"><label class="form-label small fw-semibold">Company address</label><textarea class="form-control" name="companyAddress" id="addSpAddress" rows="2" required placeholder="Office address"></textarea></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Company Name</label><input class="form-control" name="companyName" id="addSpCompany" required placeholder="e.g. Infosys"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Role / Designation</label><input class="form-control" name="role" id="addSpRole" required placeholder="e.g. Software Engineer"/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Company Address</label><textarea class="form-control" name="companyAddress" id="addSpAddress" rows="2" required placeholder="Office address"></textarea></div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Offer letter (PDF)</label>
+              <label class="form-label small fw-semibold">Offer Letter (PDF)</label>
               <div class="file-picker">
                 <input type="file" name="offerLetter" id="addSpOffer" accept=".pdf" hidden/>
-                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="addSpOffer"><i class="bi bi-upload me-1"></i>Choose file</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="addSpOffer"><i class="bi bi-upload me-1"></i>Choose File</button>
                 <span class="file-picker-name text-muted-2 small" data-file-picker-name="addSpOffer">No file chosen</span>
               </div>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Company ID <span class="text-muted fw-normal">(optional)</span></label>
+              <label class="form-label small fw-semibold">Company ID <span class="text-muted fw-normal">(Optional)</span></label>
               <div class="file-picker">
                 <input type="file" name="companyIdDoc" id="addSpCompanyId" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" hidden/>
-                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="addSpCompanyId"><i class="bi bi-upload me-1"></i>Choose file</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="addSpCompanyId"><i class="bi bi-upload me-1"></i>Choose File</button>
                 <span class="file-picker-name text-muted-2 small" data-file-picker-name="addSpCompanyId">No file chosen</span>
               </div>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Salary slip <span class="text-muted fw-normal">(optional)</span></label>
+              <label class="form-label small fw-semibold">Salary Slip <span class="text-muted fw-normal">(Optional)</span></label>
               <div class="file-picker">
                 <input type="file" name="salarySlip" id="addSpSalary" accept=".pdf,.doc,.docx" hidden/>
-                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="addSpSalary"><i class="bi bi-upload me-1"></i>Choose file</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="addSpSalary"><i class="bi bi-upload me-1"></i>Choose File</button>
                 <span class="file-picker-name text-muted-2 small" data-file-picker-name="addSpSalary">No file chosen</span>
               </div>
             </div>
@@ -641,7 +600,7 @@
 <script src="js/admin-api.js?v=20260714e"></script>
 <script src="js/officer-api.js?v=20260714e"></script>
 <script src="js/api.js?v=20260713v"></script>
-<script src="js/app.js?v=20260713v"></script>
+<script src="js/app.js?v=20260714m"></script>
 <script>
 const role = Auth.role();
 const isAdminRole = role === 'admin';
@@ -659,7 +618,11 @@ if (!(role === 'admin' || role === 'placement_officer' || role === 'staff')) {
 }
 
 if (isAdminRole) {
-  document.getElementById('pageSub').textContent = 'Final-year students by placement policy registration, drive applications, and blacklist.';
+  const pageSub = document.getElementById('pageSub');
+  if (pageSub) {
+    pageSub.textContent = '';
+    pageSub.hidden = true;
+  }
   document.getElementById('overviewTabItem')?.remove();
   document.getElementById('tabRegistrations')?.remove();
 } else if (role === 'staff') {
@@ -668,9 +631,12 @@ if (isAdminRole) {
     pageSub.textContent = '';
     pageSub.hidden = true;
   }
-  document.querySelectorAll('.final-year-tab-sub').forEach(el => el.remove());
 } else if (canViewFinalYear) {
-  document.getElementById('pageSub').textContent = 'Final-year students in your department by placement policy registration.';
+  const pageSub = document.getElementById('pageSub');
+  if (pageSub) {
+    pageSub.textContent = '';
+    pageSub.hidden = true;
+  }
 }
 if (!canUseFindStudent) {
   document.getElementById('overviewTabItem')?.remove();
@@ -731,27 +697,32 @@ function activateTabFromHash() {
 }
 
 const PAGE_SUB_BY_TAB = {
-  tabOverview: 'Search one student and open their full profile and application history.',
-  tabFinalYearRegistered: 'Final-year students who have registered the placement policy.',
-  tabFinalYearPending: 'Final-year students who have not registered the placement policy.',
-  tabApplications: 'Track applications and company shortlists. Resume checks are optional.',
-  tabBlacklist: 'Students barred from placement activities.',
-  tabStaffPolicy: 'View which department students have accepted the placement policy.',
+  tabOverview: '',
+  tabFinalYearRegistered: '',
+  tabFinalYearPending: '',
+  tabApplications: '',
+  tabBlacklist: '',
+  tabStaffPolicy: '',
 };
 
 function syncPageSubFromActiveTab() {
   const sub = document.getElementById('pageSub');
-  if (!sub || role === 'staff') return;
+  if (!sub || role === 'staff' || role === 'admin' || role === 'placement_officer') return;
   const active = document.querySelector('#mainTabs .nav-link.active');
   const href = (active?.getAttribute('href') || (canViewFinalYear ? '#tabFinalYearRegistered' : '#tabOverview')).replace('#', '');
-  sub.textContent = PAGE_SUB_BY_TAB[href] || (canViewFinalYear ? PAGE_SUB_BY_TAB.tabFinalYearRegistered : PAGE_SUB_BY_TAB.tabOverview);
+  const text = PAGE_SUB_BY_TAB[href] || '';
+  sub.textContent = text;
+  sub.hidden = !text;
 }
 
 document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
-  if (role === 'staff') return;
+  if (role === 'staff' || role === 'admin' || role === 'placement_officer') return;
   const href = (e.target?.getAttribute('href') || '').replace('#', '');
   const sub = document.getElementById('pageSub');
-  if (sub && PAGE_SUB_BY_TAB[href]) sub.textContent = PAGE_SUB_BY_TAB[href];
+  if (sub && PAGE_SUB_BY_TAB[href] !== undefined) {
+    sub.textContent = PAGE_SUB_BY_TAB[href];
+    sub.hidden = !PAGE_SUB_BY_TAB[href];
+  }
 });
 
 /* —— Overview —— */
@@ -798,7 +769,7 @@ function policyStatusBadge(s) {
     const when = s.policyAcceptedAt ? new Date(s.policyAcceptedAt).toLocaleDateString('en-IN') : '';
     return `<span class="badge-soft success"${when ? ` title="Registered ${esc(when)}"` : ''}>Registered</span>`;
   }
-  return '<span class="badge-soft warning">Not registered</span>';
+  return '<span class="badge-soft warning">Not Registered</span>';
 }
 
 function formatPolicyAcceptedAt(value) {
@@ -871,7 +842,7 @@ function clearOverviewDetail() {
     avatar.classList.remove('has-photo');
   }
   const nameEl = document.getElementById('stuName');
-  if (nameEl) nameEl.textContent = 'Select a student';
+  if (nameEl) nameEl.textContent = 'Select a Student';
   const metaEl = document.getElementById('stuMeta');
   if (metaEl) metaEl.textContent = 'Search by name, register number, or department to find a student.';
   const statusEl = document.getElementById('stuStatus');
@@ -922,7 +893,7 @@ function studentRow(s) {
     : (s.registerNumber ? `Student ${s.registerNumber}` : 'Student');
   const statusBadge = useStaffApi
     ? ((s.isNew || s.aesOnly) ? '<span class="badge-soft info">New</span>' : '')
-    : `<span class="badge-soft ${s.placementStatus === 'placed' ? 'success' : s.placementStatus === 'pending_placement' ? 'warning' : 'muted'}">${esc(s.placementStatus === 'pending_placement' ? 'under review' : (s.placementStatus || '—'))}</span>`;
+    : `<span class="badge-soft ${s.placementStatus === 'placed' ? 'success' : s.placementStatus === 'pending_placement' ? 'warning' : 'muted'}">${esc(s.placementStatus === 'pending_placement' ? 'Under Review' : (s.placementStatus || '—'))}</span>`;
   return `<button type="button" class="list-group-item list-group-item-action student-list-item ${active}" data-reg="${esc(s.registerNumber)}">
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div class="min-w-0">
@@ -1209,14 +1180,14 @@ function renderStudentProfilePanel(s) {
   set('spMarks12', formatMarkPct(s.marks12th ?? s.ugMarks));
   set('spCgpa', s.cgpa != null && Number(s.cgpa) > 0 ? String(Number(s.cgpa)) : '—');
   set('spBacklogs', s.backlogs != null ? String(s.backlogs) : '—');
-  const resumeLabels = { approved: 'Verified', pending: 'Pending review', none: 'Not uploaded' };
+  const resumeLabels = { approved: 'Verified', pending: 'Pending Review', none: 'Not Uploaded' };
   set('spResume', resumeLabels[s.resumeStatus] || formatProfileValue(s.resumeStatus));
   const used = s.chancesUsed ?? 0;
   const max = s.chancesMax ?? 0;
-  set('spChances', max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—'));
+  set('spChances', max > 0 ? `${used} / ${max} Used` : (used > 0 ? `${used} Used` : '—'));
   set('spPolicy', isPolicyRegistered(s)
     ? `Registered${s.policyAcceptedAt ? ' · ' + formatPolicyAcceptedAt(s.policyAcceptedAt) : ''}`
-    : 'Not registered');
+    : 'Not Registered');
   renderQualificationsTable(s.qualifications, 'spQualificationsBody', 'spQualificationsWrap');
 }
 
@@ -1230,7 +1201,7 @@ function overviewStatusBadge(status) {
     pending: 'warning',
   };
   const cls = map[status] || 'muted';
-  const label = status === 'pending' ? 'under review' : (status || '—');
+  const label = status === 'pending' ? 'Under Review' : (status || '—');
   return `<span class="badge-soft ${cls}">${esc(label)}</span>`;
 }
 
@@ -1315,7 +1286,7 @@ async function approveVerifyPlacement() {
   const client = selfPlacementApiClient();
   if (!client || !verifyPlacementStudentId) return;
   if (!(await confirmAction({
-    title: 'Mark as placed',
+    title: 'Mark as Placed',
     message: 'Verify this self-placement report and mark the student as placed?',
     confirmText: 'Mark placed',
     variant: 'success',
@@ -1383,7 +1354,7 @@ function syncVerifyPlacementBanner(s) {
     if (pending && studentId) {
       banner.classList.remove('d-none');
       banner.innerHTML = `<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-0">
-        <span><strong>Self-placement under review.</strong> Verify the offer letter and mark as placed when confirmed.</span>
+        <span><strong>Self-Placement Under Review.</strong> Verify the offer letter and mark as placed when confirmed.</span>
         <button type="button" class="btn btn-sm btn-warning" id="btnReviewPlacement"><i class="bi bi-clipboard-check me-1"></i>Review report</button>
       </div>`;
       document.getElementById('btnReviewPlacement')?.addEventListener('click', () => openVerifyPlacementModal(studentId));
@@ -1445,7 +1416,7 @@ async function submitAddSelfPlacement(e) {
   }
 
   if (!(await confirmAction({
-    title: 'Add placement',
+    title: 'Add Placement',
     message: `Mark this student as placed at ${companyName} (${role})?`,
     confirmText: 'Save & mark placed',
     variant: 'primary',
@@ -1844,10 +1815,10 @@ function renderStaffPolicyTab() {
   document.getElementById('staffPolicyRegisteredCount').textContent = String(registered.length);
   document.getElementById('staffPolicyPendingCount').textContent = String(pending.length);
   document.getElementById('staffPolicyStats').innerHTML = `
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Department students</div><div class="val">${total}</div></div></div>
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Policy registered</div><div class="val">${registered.length}</div></div></div>
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Not registered</div><div class="val">${pending.length}</div></div></div>
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registration rate</div><div class="val">${total ? Math.round((registered.length / total) * 100) : 0}%</div></div></div>`;
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Department Students</div><div class="val">${total}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Policy Registered</div><div class="val">${registered.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Not Registered</div><div class="val">${pending.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registration Rate</div><div class="val">${total ? Math.round((registered.length / total) * 100) : 0}%</div></div></div>`;
 
   const rowHtml = (s, extra) => `<tr class="staff-policy-row" role="button" data-reg="${esc(s.registerNumber || '')}" style="cursor:pointer">
     <td><strong>${esc(overviewStudentName(s) || s.name || s.registerNumber || '—')}</strong>${s.email ? `<div class="small text-muted-2">${esc(s.email)}</div>` : ''}</td>
@@ -1909,10 +1880,10 @@ function renderRegistrations() {
   const approved = regStudents.filter(s => s.status === 'approved');
   document.getElementById('stats').innerHTML = `
     <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Portal accounts</div><div class="val">${regStudents.length}</div></div></div>
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Awaiting approval</div><div class="val">${pending.length}</div></div></div>
-    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Active accounts</div><div class="val">${approved.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Awaiting Approval</div><div class="val">${pending.length}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Active Accounts</div><div class="val">${approved.length}</div></div></div>
     <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Already placed</div><div class="val">${regStudents.filter(s=>s.placementStatus==='placed').length}</div></div></div>`;
-  document.getElementById('tabPending').innerHTML = `Awaiting approval <span class="badge-soft warning ms-1">${pending.length}</span>`;
+  document.getElementById('tabPending').innerHTML = `Awaiting Approval <span class="badge-soft warning ms-1">${pending.length}</span>`;
 
   document.getElementById('pendingRows').innerHTML = pending.length ? pending.map(s => `
     <tr><td><strong>${s.name}</strong><div class="small text-muted-2">${s.email}</div></td><td>${s.registerNumber}</td><td>${s.department}</td>
@@ -1969,7 +1940,7 @@ function appStatusBadge(status) {
     pending: ['warning', 'Pending'],
     applied: ['info', 'Applied'],
     approved: ['success', 'Approved'],
-    shortlisted: ['success', 'Company shortlisted'],
+    shortlisted: ['success', 'Company Shortlisted'],
     selected: ['success', 'Selected'],
     rejected: ['danger', 'Rejected'],
   };
@@ -2051,7 +2022,7 @@ function populateShortlistDriveSelect() {
     updateShortlistDocLink(null);
     return;
   }
-  sel.innerHTML = '<option value="">Select a drive…</option>' + drives.map((d) => {
+  sel.innerHTML = '<option value="">Select a Drive…</option>' + drives.map((d) => {
     const label = [d.company, d.role || d.title].filter(Boolean).join(' — ') || d.id;
     return `<option value="${esc(d.id)}">${esc(label)}</option>`;
   }).join('');
@@ -2078,15 +2049,9 @@ function renderShortlistedRows(list) {
   const rows = document.getElementById('shortlistedRows');
   const badge = document.getElementById('shortlistedTabBadge');
   const label = document.getElementById('shortlistedCountLabel');
-  const sub = document.getElementById('shortlistTableSub');
   const company = selectedShortlistCompany();
   if (badge) badge.textContent = String(list.length);
-  if (label) label.textContent = `${list.length} shortlisted`;
-  if (sub) {
-    sub.textContent = company
-      ? `Showing shortlists for ${company}`
-      : 'Portal shortlists and lists uploaded from company documents';
-  }
+  if (label) label.textContent = `${list.length} Shortlisted`;
   if (!rows) return;
   const emptyMsg = company
     ? `No shortlisted students for ${esc(company)} yet. Upload the company list above.`
@@ -2337,9 +2302,9 @@ async function loadNonApplicants(driveId) {
 
   if (!driveId) {
     nonApplicantCache = { driveId: '', students: [] };
-    if (countEl) countEl.textContent = '0 pending';
+    if (countEl) countEl.textContent = '0 Pending';
     if (metaEl) metaEl.textContent = 'Choose an open drive to list eligible non-applicants.';
-    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Select a drive to load students.</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Select a Drive to load students.</td></tr>';
     return;
   }
 
@@ -2358,10 +2323,10 @@ async function loadNonApplicants(driveId) {
   nonApplicantCache = { driveId, students: Array.isArray(data.students) ? data.students : [] };
   const pending = Number(data.eligibleNotAppliedCount) || nonApplicantCache.students.length;
   const applied = Number(data.appliedCount) || 0;
-  if (countEl) countEl.textContent = `${pending} pending`;
+  if (countEl) countEl.textContent = `${pending} Pending`;
   if (metaEl) {
     const label = data.company || data.driveTitle || 'Drive';
-    metaEl.textContent = `${label} · ${applied} applied · ${pending} eligible not applied`;
+    metaEl.textContent = `${label} · ${applied} Applied · ${pending} Eligible Not Applied`;
   }
   renderNonApplicantRows(nonApplicantCache.students);
 }
@@ -2390,7 +2355,7 @@ async function initNonApplicants() {
     const st = String(d.status || '').toLowerCase();
     return st !== 'completed' && st !== 'closed';
   });
-  driveSelect.innerHTML = '<option value="">Select a drive…</option>' + open.map((d) => {
+  driveSelect.innerHTML = '<option value="">Select a Drive…</option>' + open.map((d) => {
     const label = [d.company, d.role || d.title].filter(Boolean).join(' — ') || d.title || d.id;
     return `<option value="${esc(d.id)}">${esc(label)}</option>`;
   }).join('');
@@ -2450,7 +2415,7 @@ async function removeBlacklistEntry(id) {
 function renderBlacklist() {
   if (!canManageBlacklist) return;
   const list = activeBlacklist();
-  document.getElementById('blStatCount').textContent = list.length + ' active';
+  document.getElementById('blStatCount').textContent = list.length + ' Active';
   document.getElementById('blRows').innerHTML = list.length ? list.map(b => `
     <tr>
       <td><strong>${b.studentName}</strong></td>
@@ -2472,7 +2437,7 @@ document.getElementById('blacklistForm')?.addEventListener('submit', async e => 
     return;
   }
   if (!(await confirmAction({
-    title: 'Add to blacklist',
+    title: 'Add to Blacklist',
     message: `Add ${studentName} (${registerNumber}) to the blacklist?`,
     confirmText: 'Add',
     variant: 'warning',

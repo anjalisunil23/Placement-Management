@@ -9,7 +9,7 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">System Settings</h1><p class="page-sub">Configure placement season, email delivery, uploads, and public portal statistics.</p></div>
+  <div><h1 class="page-title">System Settings</h1></div>
 </div>
 
 <div class="row g-3">
@@ -31,23 +31,6 @@
         <div class="col-md-6">
           <label class="form-label small fw-semibold">Max upload size (MB)</label>
           <input type="number" class="form-control" id="maxUploadMb" min="1" max="100" required/>
-        </div>
-        <div class="col-12">
-          <div class="p-3 rounded-3" style="background:var(--surface-2)">
-            <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
-              <div>
-                <div class="fw-semibold small">Email delivery</div>
-                <div class="small text-muted-2" id="mailStatusText">Checking…</div>
-              </div>
-              <button type="button" class="btn btn-outline-primary btn-sm" id="btnTestMail"><i class="bi bi-envelope-check me-1"></i>Send test email</button>
-            </div>
-            <div class="row g-2 align-items-end">
-              <div class="col-md-8">
-                <label class="form-label small fw-semibold mb-1" for="mailTestTo">Test recipient</label>
-                <input type="email" class="form-control form-control-sm" id="mailTestTo" placeholder="you@gmail.com"/>
-              </div>
-            </div>
-          </div>
         </div>
       </form>
     </div>
@@ -100,7 +83,6 @@
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div>
       <h5 class="fw-bold mb-0">Placement news</h5>
-      <p class="small text-muted-2 mb-0">Add updates shown in the Placement news section on the public landing page.</p>
     </div>
     <button class="btn btn-primary btn-sm" id="btnAddNews"><i class="bi bi-plus-lg me-1"></i>Add news</button>
   </div>
@@ -128,7 +110,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/admin-api.js?v=20260713p"></script>
 <script src="js/api.js?v=20260713p"></script>
-<script src="js/app.js?v=20260713p"></script>
+<script src="js/app.js?v=20260714m"></script>
 <script>
 function loadSystem() {
   const s = SystemSettings.get();
@@ -279,46 +261,6 @@ document.getElementById('newsRows').addEventListener('click', e => {
   if (removeBtn) removeNews(removeBtn.dataset.removeNews);
 });
 
-async function loadMailStatus() {
-  const el = document.getElementById('mailStatusText');
-  if (!el) return;
-  if (!Auth.hasRealAuth() || Auth.isDemo()) {
-    el.textContent = 'Sign in with a live admin session to check ElasticEmail / SMTP.';
-    return;
-  }
-  const res = await api('/admin/mail/status', { noRedirectOn401: true });
-  if (!res?.success || !res.data) {
-    el.textContent = 'Could not load mail status.';
-    return;
-  }
-  const s = res.data;
-  const parts = [
-    `Driver: ${s.driver || '—'}`,
-    s.enabled ? 'enabled' : 'disabled',
-    s.hasApiKey ? 'API key set' : 'API key missing',
-    s.hasSmtp ? 'SMTP set' : 'SMTP not set',
-    s.from ? `from ${s.from}` : '',
-  ].filter(Boolean);
-  el.textContent = parts.join(' · ');
-}
-
-document.getElementById('btnTestMail')?.addEventListener('click', async () => {
-  const to = document.getElementById('mailTestTo')?.value?.trim() || '';
-  if (!to) {
-    toast('Enter a test recipient email.', 'warn');
-    return;
-  }
-  if (!(await confirmAction({ title: 'Send test email', message: `Send a test email to ${to}?`, confirmText: 'Send', variant: 'primary' }))) return;
-  const res = await api('/admin/mail/test', { method: 'POST', body: { to }, noRedirectOn401: true });
-  if (res?.success) {
-    toast(`Test email sent via ${res.data?.driver || 'mail'}.`, 'success');
-    await loadMailStatus();
-    return;
-  }
-  toast(res?.message || 'Test email failed. Check ELASTICEMAIL_API_KEY / MAIL_* in .env.', 'error');
-  await loadMailStatus();
-});
-
 async function initSettingsPage() {
   await Promise.all([
     SystemSettings.fetch(),
@@ -328,10 +270,6 @@ async function initSettingsPage() {
   loadSystem();
   loadPublic();
   renderNewsAdmin();
-  await loadMailStatus();
-  const u = Auth.user() || {};
-  const testTo = document.getElementById('mailTestTo');
-  if (testTo && !testTo.value && u.email) testTo.value = u.email;
 }
 
 onAppReady(() => initSettingsPage());
