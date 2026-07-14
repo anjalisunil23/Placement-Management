@@ -14,17 +14,28 @@ class SuccessStoryModel extends BaseModel
         return Collections::SUCCESS_STORIES;
     }
 
+    private function coerceId(mixed $value): string
+    {
+        if (is_string($value) || is_int($value) || is_float($value)) {
+            return trim((string) $value);
+        }
+        if (is_object($value) && method_exists($value, '__toString')) {
+            return trim((string) $value);
+        }
+        return '';
+    }
+
     /**
      * Normalize alumni user id for storage and lookup.
      */
-    private function normalizeAlumniUserId(string $alumniUserId): ?string
+    private function normalizeAlumniUserId(mixed $alumniUserId): ?string
     {
-        $oid = Security::toObjectId($alumniUserId);
-        if ($oid !== null) {
-            return $oid;
+        $raw = $this->coerceId($alumniUserId);
+        if ($raw === '') {
+            return null;
         }
-        $raw = strtolower(trim($alumniUserId));
-        return Security::isValidId($raw) ? $raw : null;
+        $oid = Security::toObjectId($raw);
+        return $oid ?? (Security::isValidId($raw) ? strtolower($raw) : null);
     }
 
     /**
@@ -44,19 +55,8 @@ class SuccessStoryModel extends BaseModel
         if ($oid === null) {
             return [];
         }
-        $raw = trim($alumniUserId);
-        $candidates = array_values(array_unique(array_filter([
-            $oid,
-            $raw,
-            strtolower($raw),
-        ], static fn ($v) => is_string($v) && $v !== '')));
-
-        return $this->findAll(
-            ['alumniUserId' => ['$in' => $candidates]],
-            $limit,
-            0,
-            ['createdAt' => -1]
-        );
+        // Single equality keeps SQL simple and avoids $in edge cases on older MariaDB builds.
+        return $this->findAll(['alumniUserId' => $oid], $limit, 0, ['createdAt' => -1]);
     }
 
     /**
@@ -127,12 +127,34 @@ class SuccessStoryModel extends BaseModel
     private function ownsStory(array $story, string $alumniUserId): bool
     {
         $ownerId = $this->normalizeAlumniUserId($alumniUserId);
-        $storyOwner = $this->normalizeAlumniUserId((string) ($story['alumniUserId'] ?? ''));
+        $storyOwner = $this->normalizeAlumniUserId($story['alumniUserId'] ?? '');
         if ($ownerId === null || $storyOwner === null) {
-            return strtolower(trim((string) ($story['alumniUserId'] ?? '')))
+            return strtolower($this->coerceId($story['alumniUserId'] ?? ''))
                 === strtolower(trim($alumniUserId));
         }
         return $ownerId === $storyOwner;
+    }
+
+    /**
+     * @param array<string, mixed> $story
+     * @return array{id: string, name: string, company: string, role: string, package: string, quote: string, status: string, createdAt: mixed, alumniUserId: string}
+     */
+    public static function serializeForApi(array $story): array
+    {
+        $id = (string) ($story['_id'] ?? $story['id'] ?? '');
+        return [
+            'id'           => $id,
+            '_id'          => $id,
+            'alumniUserId' => (string) ($story['alumniUserId'] ?? ''),
+            'name'         => (string) ($story['name'] ?? $story['alumniName'] ?? 'Alumni'),
+            'company'      => (string) ($story['company'] ?? ''),
+            'role'         => (string) ($story['role'] ?? ''),
+            'package'      => (string) ($story['package'] ?? ''),
+            'quote'        => (string) ($story['quote'] ?? ''),
+            'status'       => (string) ($story['status'] ?? 'published'),
+            'createdAt'    => $story['createdAt'] ?? null,
+            'updatedAt'    => $story['updatedAt'] ?? null,
+        ];
     }
 
     /**

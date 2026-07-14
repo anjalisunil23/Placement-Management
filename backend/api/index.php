@@ -414,11 +414,22 @@ try {
 } catch (\RuntimeException $e) {
     $code = $e->getCode();
     $status = is_int($code) && $code >= 400 && $code < 600 ? $code : 500;
-    Response::error($e->getMessage(), $status);
+    Response::error($e->getMessage() !== '' ? $e->getMessage() : 'An unexpected server error occurred.', $status);
 } catch (\Throwable $e) {
-    $message = 'An unexpected server error occurred.';
-    if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
-        $message = $e->getMessage();
+    $message = trim($e->getMessage());
+    if ($message === '') {
+        $message = 'An unexpected server error occurred.';
+    }
+    // Keep operators able to diagnose production 500s without enabling APP_DEBUG.
+    if (!str_contains($message, $e->getFile())) {
+        $message .= ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')';
+    }
+    try {
+        $logLine = '[PMS API] ' . get_class($e) . ': ' . $e->getMessage()
+            . ' @ ' . $e->getFile() . ':' . $e->getLine();
+        error_log($logLine);
+    } catch (\Throwable) {
+        // ignore logging failures
     }
     Response::error($message, 500);
 }

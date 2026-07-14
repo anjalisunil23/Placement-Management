@@ -14,11 +14,23 @@ final class Response
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
         header('X-Content-Type-Options: nosniff');
-        $flags = JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR;
+        $flags = JSON_UNESCAPED_UNICODE;
         if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
             $flags |= JSON_INVALID_UTF8_SUBSTITUTE;
         }
-        echo json_encode($data, $flags);
+        try {
+            $safe = class_exists(DocumentHelper::class)
+                ? DocumentHelper::jsonSafe($data)
+                : $data;
+            $flagsWithThrow = $flags | JSON_THROW_ON_ERROR;
+            echo json_encode($safe, $flagsWithThrow);
+        } catch (\Throwable) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Response encoding failed.',
+                'data'    => null,
+            ], JSON_UNESCAPED_UNICODE);
+        }
         exit;
     }
 
