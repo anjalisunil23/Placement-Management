@@ -232,11 +232,28 @@ final class PlacementOfficerContext
         if ($ctx['isAdmin'] || empty($ctx['departmentId'])) {
             return $input;
         }
-        $deptCode = $ctx['department']['code'] ?? '';
-        if ($deptCode === '') {
-            Response::forbidden('Department code not configured.');
+
+        // Visibility comes from selected branches:
+        // - one / few programme codes → only those students see the drive
+        // - empty list → open to all eligible final-year students college-wide
+        $branches = $input['branches'] ?? [];
+        if (is_string($branches)) {
+            $raw = trim($branches);
+            $branches = $raw === '' ? [] : (preg_split('/[,|]+/', $raw) ?: []);
         }
-        $input['branches'] = [$deptCode];
+        if (!is_array($branches)) {
+            $branches = [];
+        }
+        $normalized = [];
+        foreach ($branches as $branch) {
+            $code = strtoupper(trim((string) $branch));
+            if ($code === '' || $code === 'ALL' || preg_match('/^\d+$/', $code)) {
+                continue;
+            }
+            $normalized[$code] = $code;
+        }
+        $input['branches'] = array_values($normalized);
+        // Creator ownership for auditing / duplicate scope; student visibility uses branches.
         $input['departmentId'] = $ctx['departmentId'];
         return $input;
     }

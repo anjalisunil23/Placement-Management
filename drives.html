@@ -210,8 +210,7 @@
                 <input class="form-control" type="text" id="createDriveCompanyName" placeholder="e.g. Google" autocomplete="organization">
                 <div class="form-text">If the company already exists, we will use that record — no duplicate is created.</div>
               </div>
-              <div class="form-text" id="createDriveCompanyHint">Same company + role + date cannot repeat within your department.</div>
-              <div class="alert alert-light border small py-2 px-3 mt-2 mb-0 d-none" id="createDriveDeptScope"></div>
+              <div class="form-text" id="createDriveCompanyHint">Same company + role + date will not create a duplicate drive.</div>
             </div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Job role</label><input class="form-control" name="role" placeholder="e.g. SDE-1" required/></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Drive type</label><select class="form-select" name="driveType" required><option>Exclusive</option><option selected>Pooled</option><option>Company Direct</option></select></div>
@@ -223,7 +222,22 @@
           </div>
           <h6 class="fw-bold mb-3">Eligibility & schedule</h6>
           <div class="row g-3 border rounded p-3 mb-2 bg-light">
-            <div class="col-12"><label class="form-label small fw-semibold">Eligible branches</label><div id="createDriveBranches" class="d-flex flex-wrap gap-2 border rounded p-2 bg-white"></div></div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Eligible departments</label>
+              <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Department scope">
+                <input type="radio" class="btn-check" name="driveDeptScope" id="driveDeptScopeMine" value="mine" checked>
+                <label class="btn btn-outline-secondary" for="driveDeptScopeMine">My department only</label>
+                <input type="radio" class="btn-check" name="driveDeptScope" id="driveDeptScopeMulti" value="multi">
+                <label class="btn btn-outline-secondary" for="driveDeptScopeMulti">Select departments</label>
+              </div>
+              <div id="createDriveDeptMineSummary" class="small border rounded p-2 bg-white mb-0">My department</div>
+              <div id="createDriveDeptMultiWrap" class="d-none">
+                <select class="form-select" id="createDriveDepartments" multiple size="8" aria-label="Select departments"></select>
+                <div class="form-text">Hold Ctrl/Cmd to select more than one department (e.g. Computer Applications + CSE).</div>
+              </div>
+              <div class="form-text mt-1" id="createDriveBranchesHint"></div>
+              <select class="d-none" id="createDriveBranches" multiple aria-hidden="true"></select>
+            </div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" name="minCgpa" type="number" step="0.1" value="7.0"/></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" name="maxBacklogs" type="number" value="0"/></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes)</label><input class="form-control" name="minPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG</div></div>
@@ -263,7 +277,12 @@
 
         <div class="col-md-4"><label class="form-label small fw-semibold">Job type</label><select class="form-select" id="editJobType"><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
 
-        <div class="col-12"><label class="form-label small fw-semibold">Eligible branches</label><div id="editDriveBranches" class="d-flex flex-wrap gap-2 border rounded p-2"></div></div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold" for="editDriveDepartments">Eligible departments</label>
+          <select class="form-select" id="editDriveDepartments" multiple size="6" aria-label="Eligible departments"></select>
+          <div class="form-text">Select one or more departments. Hold Ctrl/Cmd to multi-select.</div>
+          <select class="d-none" id="editDriveBranches" multiple aria-hidden="true"></select>
+        </div>
 
         <div class="col-md-4"><label class="form-label small fw-semibold">Recruitment date</label><input type="date" class="form-control" id="editRecruitmentDate"/></div>
 
@@ -457,7 +476,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260714drivefix"></script>
+<script src="js/api.js?v=20260714j"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1396,26 +1415,90 @@ window.openCreateDrive = async () => {
   const pickExisting = document.getElementById('companyPickExisting');
   if (pickExisting) pickExisting.checked = true;
   toggleCreateDriveCompanyMode();
-  const user = Auth.user() || {};
-  const deptCode = String(user.department || user.departmentCode || '').trim().toUpperCase();
-  const deptScope = document.getElementById('createDriveDeptScope');
-  if (role === 'placement_officer' && deptCode) {
-    renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), {
-      checkedAll: false,
-      selected: [deptCode],
-      locked: true,
-    });
-    if (deptScope) {
-      deptScope.classList.remove('d-none');
-      deptScope.innerHTML = `<i class="bi bi-building me-1"></i>This drive is for <strong>${deptCode}</strong> only. Students in other departments will not see it. Another department may run the same company with a different role.`;
-    }
-  } else {
-    renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), { checkedAll: true });
-    deptScope?.classList.add('d-none');
+  await ensureDepartmentsLoaded().catch(() => {});
+  const mineRadio = document.getElementById('driveDeptScopeMine');
+  const multiRadio = document.getElementById('driveDeptScopeMulti');
+  const parent = officerMyDepartmentParent();
+  if (role === 'placement_officer' && parent && mineRadio) {
+    mineRadio.checked = true;
+  } else if (multiRadio) {
+    multiRadio.checked = true;
   }
+  fillEligibleDepartmentsMultiSelect(document.getElementById('createDriveDepartments'), {
+    selectedParents: parent ? [parent] : [],
+  });
+  applyCreateDriveDeptScope();
   await populateCreateDriveCompanies();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('createModal')).show();
 };
+
+function officerMyDepartmentParent() {
+  return resolveOfficerParentDepartment(Auth.user() || {});
+}
+
+function applyCreateDriveDeptScope() {
+  const scope = document.querySelector('input[name="driveDeptScope"]:checked')?.value || 'mine';
+  const mineSummary = document.getElementById('createDriveDeptMineSummary');
+  const multiWrap = document.getElementById('createDriveDeptMultiWrap');
+  const multi = document.getElementById('createDriveDepartments');
+  const parent = officerMyDepartmentParent();
+  if (scope === 'mine') {
+    mineSummary?.classList.remove('d-none');
+    multiWrap?.classList.add('d-none');
+    if (mineSummary) {
+      mineSummary.innerHTML = parent
+        ? `Open to <strong>${parent}</strong> only (all programmes in this department).`
+        : 'Your department could not be resolved. Switch to <strong>Select departments</strong> and pick one.';
+    }
+    if (multi && parent) {
+      [...multi.options].forEach(o => {
+        o.selected = o.dataset.parent === parent;
+      });
+    }
+  } else {
+    mineSummary?.classList.add('d-none');
+    multiWrap?.classList.remove('d-none');
+  }
+  updateCreateDriveBranchesHint();
+}
+
+function readCreateDriveBranchCodes() {
+  const scope = document.querySelector('input[name="driveDeptScope"]:checked')?.value || 'mine';
+  if (scope === 'mine') {
+    const parent = officerMyDepartmentParent();
+    if (!parent) return [];
+    const group = buildDepartmentProgrammeOptions().groups.find(g => g.parent === parent);
+    return group ? group.programmes.map(p => p.code) : [];
+  }
+  return programmeCodesFromDepartmentSelect(document.getElementById('createDriveDepartments'));
+}
+
+function updateCreateDriveBranchesHint() {
+  const hint = document.getElementById('createDriveBranchesHint');
+  if (!hint) return;
+  const scope = document.querySelector('input[name="driveDeptScope"]:checked')?.value || 'mine';
+  if (scope === 'mine') {
+    const parent = officerMyDepartmentParent();
+    hint.textContent = parent
+      ? `Students in ${parent} only will see this drive.`
+      : 'Select “Select departments” to choose one or more departments.';
+    return;
+  }
+  const sel = document.getElementById('createDriveDepartments');
+  const parents = [...(sel?.selectedOptions || [])].map(o => o.dataset.parent || o.textContent).filter(Boolean);
+  if (!parents.length) {
+    hint.textContent = 'Select at least one department from the list.';
+  } else if (parents.length === 1) {
+    hint.textContent = `Open to ${parents[0]} only.`;
+  } else {
+    hint.textContent = `Open to ${parents.length} departments: ${parents.join(', ')}.`;
+  }
+}
+
+document.querySelectorAll('input[name="driveDeptScope"]').forEach(el => {
+  el.addEventListener('change', applyCreateDriveDeptScope);
+});
+document.getElementById('createDriveDepartments')?.addEventListener('change', updateCreateDriveBranchesHint);
 
 function toggleCreateDriveCompanyMode() {
   const mode = document.querySelector('input[name="companyPickMode"]:checked')?.value || 'existing';
@@ -1457,7 +1540,11 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
   const fd = new FormData(e.target);
   const pkg = fd.get('package');
   const driveTypeMap = { 'Exclusive': 'exclusive', 'Pooled': 'pooled', 'Company Direct': 'direct' };
-  const branchCodes = readCheckedBranchCodes(document.getElementById('createDriveBranches'));
+  const branchCodes = readCreateDriveBranchCodes();
+  if (!branchCodes.length) {
+    toast('Select at least one department for this drive.', 'warn');
+    return;
+  }
   const companySel = document.getElementById('createDriveCompany');
   const companyPickMode = document.querySelector('input[name="companyPickMode"]:checked')?.value || 'existing';
   let companyId = String(fd.get('companyId') || '').trim();
@@ -1559,8 +1646,16 @@ window.openEditDrive = id => {
     jobTypeSel.value = [...jobTypeSel.options].some(o => o.value === jt) ? jt : 'Full-time';
   }
 
-  const branchList = String(d.branches || '').split(/,\s*/).filter(Boolean);
-  renderDepartmentBranchCheckboxes(document.getElementById('editDriveBranches'), { checkedAll: false, selected: branchList });
+  const branchList = Array.isArray(d.branches)
+    ? d.branches.map(b => String(b).trim()).filter(Boolean)
+    : String(d.branches || '').split(/[|,]/).map(s => s.trim()).filter(Boolean);
+  fillEligibleDepartmentsMultiSelect(document.getElementById('editDriveDepartments'), {
+    selectedCodes: branchList,
+  });
+  // Keep hidden branches select in sync for legacy readers.
+  fillEligibleDepartmentsMultiSelect(document.getElementById('editDriveBranches'), {
+    selectedCodes: branchList,
+  });
 
   const recruitmentDate = (d.date && d.date !== '—' && d.date !== 'TBD') ? d.date : '';
   document.getElementById('editRecruitmentDate').value = recruitmentDate;
@@ -1632,7 +1727,11 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
 
       jobType: document.getElementById('editJobType')?.value || '',
 
+<<<<<<< HEAD
       branches: readCheckedBranchCodes(document.getElementById('editDriveBranches')).join(', '),
+=======
+    branches: programmeCodesFromDepartmentSelect(document.getElementById('editDriveDepartments')).join(', '),
+>>>>>>> 161d2a0 (Let officers choose my department or multiple departments for drive eligibility.)
 
       date: document.getElementById('editRecruitmentDate').value.trim(),
 
@@ -1902,7 +2001,7 @@ onAppReady(async () => {
   // Branch checkboxes only needed when creating/editing drives.
   if (canManage) {
     await ensureDepartmentsLoaded();
-    renderDepartmentBranchCheckboxes(document.getElementById('createDriveBranches'), { checkedAll: true });
+    fillEligibleDepartmentsMultiSelect(document.getElementById('createDriveDepartments'), {});
   }
   if (Auth.hasRealAuth() && !Auth.isDemo()) {
     await Auth.ensureSession();

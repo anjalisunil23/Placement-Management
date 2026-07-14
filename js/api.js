@@ -2790,6 +2790,15 @@ function fillDepartmentCodeSelect(selectEl, { includeAll = false, selected = '' 
 
 function renderDepartmentBranchCheckboxes(container, { name = 'branches', checkedAll = true, selected = null, locked = false } = {}) {
   if (!container) return;
+  // Prefer a multi-select of AJCE programme codes (MCA, CS, IT, …) over checkbox rows.
+  if (container.tagName === 'SELECT' || container.querySelector?.('select[multiple]')) {
+    const select = container.tagName === 'SELECT' ? container : container.querySelector('select[multiple]');
+    fillEligibleBranchesMultiSelect(select, {
+      selected: selected instanceof Set ? [...selected] : (Array.isArray(selected) ? selected : null),
+      selectAll: checkedAll && !selected,
+    });
+    return;
+  }
   let depts = departmentList().filter(d => {
     const code = String(d.code || '').trim().toUpperCase();
     return code && !/^\d+$/.test(code);
@@ -2799,6 +2808,17 @@ function renderDepartmentBranchCheckboxes(container, { name = 'branches', checke
     : (Array.isArray(selected) ? new Set(selected.map(s => String(s).trim().toUpperCase())) : null);
   if (locked && selectedSet?.size) {
     depts = depts.filter(d => selectedSet.has(String(d.code || '').trim().toUpperCase()));
+  }
+  const catalog = buildDepartmentProgrammeOptions();
+  const options = catalog.groups.flatMap(g => g.programmes);
+  if (!depts.length && options.length) {
+    container.innerHTML = options.map(p => {
+      const code = p.code;
+      const checked = selectedSet ? selectedSet.has(code) : checkedAll;
+      const id = `br-${code}-${Math.random().toString(36).slice(2, 7)}`;
+      return `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="${name}" value="${code}" id="${id}"${checked ? ' checked' : ''}><label class="form-check-label small" for="${id}">${code}</label></div>`;
+    }).join('');
+    return;
   }
   container.innerHTML = depts.length
     ? depts.map(d => {
@@ -2811,6 +2831,97 @@ function renderDepartmentBranchCheckboxes(container, { name = 'branches', checke
         return `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="${name}" value="${code}" id="${id}"${checked ? ' checked' : ''}${disabled}><label class="form-check-label small" for="${id}"${title}>${label}</label></div>`;
       }).join('')
     : '<span class="small text-muted-2">No departments configured.</span>';
+}
+
+function fillEligibleDepartmentsMultiSelect(selectEl, { selectedParents = null, selectedCodes = null } = {}) {
+  if (!selectEl) return;
+  const catalog = buildDepartmentProgrammeOptions();
+  const parentSet = new Set(
+    (Array.isArray(selectedParents) ? selectedParents : [])
+      .map(p => String(p || '').trim())
+      .filter(Boolean)
+  );
+  const codeSet = new Set(
+    (Array.isArray(selectedCodes) ? selectedCodes : [])
+      .map(c => resolveCollegeProgrammeCode(c) || String(c).trim().toUpperCase())
+      .filter(Boolean)
+  );
+  let html = '';
+  catalog.groups.forEach(group => {
+    const codes = group.programmes.map(p => p.code);
+    const value = codes.join('|');
+    const parentSelected = parentSet.has(group.parent);
+    const on = parentSelected || (codeSet.size > 0 && codes.some(c => codeSet.has(c)));
+    const label = `${group.parent} (${codes.join(', ')})`;
+    html += `<option value="${value.replace(/"/g, '&quot;')}" data-parent="${String(group.parent).replace(/"/g, '&quot;')}"${on ? ' selected' : ''}>${label.replace(/</g, '&lt;')}</option>`;
+  });
+  selectEl.innerHTML = html || '<option value="" disabled>No departments available</option>';
+}
+
+function programmeCodesFromDepartmentSelect(selectEl) {
+  if (!selectEl) return [];
+  const codes = [];
+  [...selectEl.selectedOptions].forEach(o => {
+    String(o.value || '').split('|').map(s => s.trim()).filter(Boolean).forEach(c => codes.push(c));
+  });
+  return [...new Set(codes)];
+}
+
+function resolveOfficerParentDepartment(user = {}) {
+  const catalog = buildDepartmentProgrammeOptions();
+  const nameBlob = [
+    user.departmentName,
+    user.department,
+    user.deptName,
+    user.dept,
+  ].map(v => String(v || '').trim().toLowerCase()).filter(Boolean).join(' ');
+  if (nameBlob) {
+    for (const group of catalog.groups) {
+      const parent = String(group.parent || '').toLowerCase();
+      if (!parent) continue;
+      if (nameBlob.includes(parent) || parent.includes(nameBlob) || nameBlob.includes(parent.replace(/&/g, 'and'))) {
+        return group.parent;
+      }
+      // short matches e.g. "computer applications"
+      const compact = parent.replace(/[^a-z0-9]+/g, '');
+      const blobCompact = nameBlob.replace(/[^a-z0-9]+/g, '');
+      if (compact && blobCompact.includes(compact)) return group.parent;
+    }
+  }
+  const prog = resolveCollegeProgrammeCode(user.departmentCode || user.department || user.deptCode || '');
+  if (prog) {
+    for (const group of catalog.groups) {
+      if (group.programmes.some(p => p.code === prog || programmeAliasSet(p).has(prog))) {
+        return group.parent;
+      }
+    }
+  }
+  return '';
+}
+
+function fillEligibleBranchesMultiSelect(selectEl, { selected = null, selectAll = false } = {}) {
+  if (!selectEl) return;
+  fillEligibleDepartmentsMultiSelect(selectEl, {
+    selectedCodes: selectAll ? null : selected,
+    selectedParents: null,
+  });
+  if (selectAll) {
+    [...selectEl.options].forEach(o => { o.selected = true; });
+  }
+}
+
+function readEligibleBranchCodes(containerOrSelect) {
+  if (!containerOrSelect) return [];
+  if (containerOrSelect.tagName === 'SELECT') {
+    // Department multi-select stores MCA|BCA|INMCA in each option value.
+    if ([...containerOrSelect.options].some(o => String(o.value || '').includes('|'))) {
+      return programmeCodesFromDepartmentSelect(containerOrSelect);
+    }
+    return [...containerOrSelect.selectedOptions].map(o => o.value).filter(Boolean);
+  }
+  const multi = containerOrSelect.querySelector?.('select[multiple]');
+  if (multi) return readEligibleBranchCodes(multi);
+  return readCheckedBranchCodes(containerOrSelect);
 }
 
 function readCheckedBranchCodes(container) {
