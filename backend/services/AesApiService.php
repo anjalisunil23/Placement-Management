@@ -182,11 +182,37 @@ final class AesApiService
         $body = http_build_query($this->withAesAuthParams($params));
 
         $response = $this->executeAesCurl($url, $body, 'POST');
-        if ($this->extractQualificationRawRecord($response) !== [] || !$allowGetFallback) {
+        if ($this->qualificationResponseHasRows($response) || !$allowGetFallback) {
             return $response;
         }
 
         return $this->executeAesCurl($url, null, 'GET');
+    }
+
+    /**
+     * True when an AES qual response contains at least one education row or mark/CGPA field.
+     *
+     * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $response
+     */
+    private function qualificationResponseHasRows(array $response): bool
+    {
+        $raw = $this->extractQualificationRawRecord($response);
+        if ($raw === []) {
+            return false;
+        }
+
+        $edu = $raw['edu'] ?? null;
+        if (is_array($edu) && $edu !== []) {
+            return true;
+        }
+
+        foreach (['cgpa', 'marks10th', 'marks12th', 'sslc', 'hsc', 'totcgpa', 'curcgpa'] as $key) {
+            if (isset($raw[$key]) && $raw[$key] !== '' && $raw[$key] !== null) {
+                return true;
+            }
+        }
+
+        return !empty($raw['qualifications']) && is_array($raw['qualifications']);
     }
 
     /**
@@ -323,10 +349,11 @@ final class AesApiService
         }
 
         $transports = [];
+        // Body transport is the reliable AES path for getStudQual4Placement.
         if (self::$qualWinningTransport !== null) {
             $transports[] = self::$qualWinningTransport;
         }
-        foreach (['query_admno', 'query_stud_admno', 'query_register', 'body'] as $transport) {
+        foreach (['body', 'query_admno', 'query_stud_admno', 'query_register'] as $transport) {
             if (!in_array($transport, $transports, true)) {
                 $transports[] = $transport;
             }
@@ -340,7 +367,7 @@ final class AesApiService
             }
             $response = $this->callStudQual4PlacementTransport($transport, $attemptParams);
             $lastResponse = $response;
-            if ($this->extractQualificationRawRecord($response) !== []) {
+            if ($this->qualificationResponseHasRows($response)) {
                 self::$qualWinningTransport = $transport;
                 self::$qualApiResponseCache[$admno] = $response;
 
@@ -1313,6 +1340,15 @@ final class AesApiService
                 continue;
             }
 
+            // AES often returns current CGPA with blank qualification and maxmark=10.
+            if ($qualification === '' && $maxMark !== null && $maxMark <= 10.0) {
+                $qualification = 'Current CGPA';
+            } elseif ($qualification !== '' && preg_match('/^tenth$/i', $qualification) === 1) {
+                $qualification = 'SSLC / 10th';
+            } elseif ($qualification !== '' && preg_match('/^plus\s*two$/i', $qualification) === 1) {
+                $qualification = 'Plus Two / 12th';
+            }
+
             $out[] = [
                 'qualification'  => $qualification,
                 'institution'    => $institution,
@@ -1884,7 +1920,14 @@ final class AesApiService
             return $record;
         }
 
-        if (isset($payload['data']) && is_array($payload['data']) && array_is_list($payload['data'])) {
+        // Do not treat empty data:[] as a successful qualification payload
+        // (that wrongly short-circuits the body transport fallback).
+        if (
+            isset($payload['data'])
+            && is_array($payload['data'])
+            && array_is_list($payload['data'])
+            && $payload['data'] !== []
+        ) {
             return ['edu' => $payload['data']];
         }
 

@@ -1183,11 +1183,13 @@ final class OfficerDataService
         if (!empty($academic['qualifications']) && is_array($academic['qualifications'])) {
             $qualifications = $academic['qualifications'];
         }
-        $qualFromPlacement = (new AesApiService())->extractQualificationFromPlacement($placement);
+        $aesApi = new AesApiService();
+        $qualFromPlacement = $aesApi->extractQualificationFromPlacement($placement);
         if (!empty($qualFromPlacement['qualifications']) && is_array($qualFromPlacement['qualifications'])) {
             $qualifications = $qualFromPlacement['qualifications'];
-        } elseif ($qualifications === [] && $register !== '') {
-            $aesApi = new AesApiService();
+        }
+        // Always fetch getStudQual4Placement when table rows are still missing.
+        if ($qualifications === [] && $register !== '') {
             $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, $register);
             if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
                 $qualAdmno = ctype_digit($register) ? $register : '';
@@ -1202,6 +1204,15 @@ final class OfficerDataService
                     }
                     $qual = $aesApi->fetchStudentQualificationProfile($qualParams);
                     $qualifications = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
+                    if ($cgpa <= 0 && !empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
+                        $cgpa = (float) $qual['cgpa'];
+                    }
+                    if ($marks10 <= 0 && !empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
+                        $marks10 = (float) $qual['marks10th'];
+                    }
+                    if ($marks12 <= 0 && !empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
+                        $marks12 = (float) $qual['marks12th'];
+                    }
                 } catch (\Throwable) {
                     $qualifications = [];
                 }
@@ -1524,7 +1535,21 @@ final class OfficerDataService
 
         $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
         $aesReg = strtoupper(trim((string) ($mapped['registerNumber'] ?? '')));
-        if ($aesReg !== '' && $aesReg !== $register) {
+        $aesAdmno = strtoupper(trim((string) (
+            $placement['stud_admno']
+            ?? $placement['admno']
+            ?? $mapped['admno']
+            ?? ''
+        )));
+        // Allow university reg vs admission no mismatch (e.g. AJC22MCA-I003 vs 14113).
+        if (
+            $aesReg !== ''
+            && $aesReg !== $register
+            && $aesAdmno !== ''
+            && $aesAdmno !== $register
+            && !str_ends_with($aesReg, $register)
+            && !str_ends_with($register, $aesReg)
+        ) {
             return ['placement' => [], 'mapped' => [], 'register' => $register];
         }
 
