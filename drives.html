@@ -1727,11 +1727,7 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
 
       jobType: document.getElementById('editJobType')?.value || '',
 
-<<<<<<< HEAD
-      branches: readCheckedBranchCodes(document.getElementById('editDriveBranches')).join(', '),
-=======
-    branches: programmeCodesFromDepartmentSelect(document.getElementById('editDriveDepartments')).join(', '),
->>>>>>> 161d2a0 (Let officers choose my department or multiple departments for drive eligibility.)
+      branches: programmeCodesFromDepartmentSelect(document.getElementById('editDriveDepartments')).join(', '),
 
       date: document.getElementById('editRecruitmentDate').value.trim(),
 
