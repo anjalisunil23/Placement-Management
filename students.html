@@ -49,6 +49,7 @@
 
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="mainTabs">
   <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find student</a></li>
+  <li class="nav-item" id="finalYearTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabFinalYear" id="linkFinalYear">Final year students</a></li>
   <li class="nav-item" id="registrationsTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabRegistrations" id="linkRegistrations">Portal registration</a></li>
   <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive applications</a></li>
   <li class="nav-item" id="staffPolicyTabItem" data-roles="staff"><a class="nav-link" data-bs-toggle="tab" href="#tabStaffPolicy" id="linkStaffPolicy">Policy registration</a></li>
@@ -193,6 +194,40 @@
             </table>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campus-wide AES final-year studying students (admin) -->
+  <div class="tab-pane fade" id="tabFinalYear">
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+          <h6 class="fw-bold mb-0">Final year students</h6>
+          <small class="text-muted-2">All currently studying final-year students across the college (AES).</small>
+        </div>
+        <span class="badge-soft muted" id="finalYearCount">0</span>
+      </div>
+      <div class="search-with-icon mb-3 pb-1">
+        <i class="bi bi-search"></i>
+        <input class="form-control" id="searchFinalYear" placeholder="Search by name, admission no., department, or batch…" autocomplete="off"/>
+      </div>
+      <div class="table-wrap">
+        <table class="table-modern">
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Adm. no.</th>
+              <th>Department</th>
+              <th>Batch / class</th>
+              <th>CGPA</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="finalYearRows">
+            <tr><td colspan="6" class="text-muted-2 p-4 text-center">Open this tab to load final-year students.</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -552,13 +587,14 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/staff-api.js?v=20260713v"></script>
-<script src="js/admin-api.js?v=20260713v"></script>
+<script src="js/admin-api.js?v=20260714b"></script>
 <script src="js/officer-api.js?v=20260714a"></script>
 <script src="js/api.js?v=20260713v"></script>
 <script src="js/app.js?v=20260713v"></script>
 <script>
 const role = Auth.role();
 const canManageRegistrations = role === 'admin';
+const canViewFinalYear = role === 'admin';
 const canVerifySelfPlacement = role === 'admin' || role === 'placement_officer';
 const canManageApplications = role === 'admin' || role === 'placement_officer';
 const canManageBlacklist = role === 'admin';
@@ -606,6 +642,8 @@ function activateTabFromHash() {
     } else {
       bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppApplications')).show();
     }
+  } else if (hash === 'final-year' && canViewFinalYear) {
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('linkFinalYear')).show();
   } else if (hash === 'registrations' && canManageRegistrations) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkRegistrations')).show();
   } else if (hash === 'policy' && canViewStaffPolicy) {
@@ -618,6 +656,7 @@ function activateTabFromHash() {
 
 const PAGE_SUB_BY_TAB = {
   tabOverview: 'Search one student and open their full profile and application history.',
+  tabFinalYear: 'College-wide final-year students currently studying (from AES).',
   tabRegistrations: 'Approve or manage Placement Cell portal accounts — not drive applications.',
   tabApplications: 'Track applications and company shortlists. Resume checks are optional.',
   tabBlacklist: 'Students barred from placement activities.',
@@ -1487,7 +1526,105 @@ document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
   if (href === 'tabStaffPolicy') {
     renderStaffPolicyTab();
   }
+  if (href === 'tabFinalYear' && canViewFinalYear) {
+    loadFinalYearStudents().catch(() => {});
+  }
 });
+
+let finalYearStudentsAll = [];
+let finalYearLoaded = false;
+let finalYearSearchTimer = null;
+
+function finalYearMatchesQuery(s, q) {
+  const needle = String(q || '').trim().toLowerCase();
+  if (!needle) return true;
+  const hay = [
+    s.name, s.displayName, s.registerNumber, s.admno,
+    s.department, s.departmentName, s.classBatch, s.year, s.semester,
+  ].map(v => String(v || '').toLowerCase()).join(' ');
+  return hay.includes(needle);
+}
+
+function filteredFinalYearStudents() {
+  const q = document.getElementById('searchFinalYear')?.value.trim() || '';
+  return finalYearStudentsAll.filter(s => finalYearMatchesQuery(s, q));
+}
+
+function renderFinalYearTab() {
+  const tbody = document.getElementById('finalYearRows');
+  const countEl = document.getElementById('finalYearCount');
+  if (!tbody) return;
+  const list = filteredFinalYearStudents();
+  if (countEl) countEl.textContent = String(list.length);
+  if (!finalYearLoaded) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Open this tab to load final-year students.</td></tr>';
+    return;
+  }
+  if (!list.length) {
+    const q = document.getElementById('searchFinalYear')?.value.trim() || '';
+    tbody.innerHTML = `<tr><td colspan="6" class="text-muted-2 p-4 text-center">${q ? 'No final-year students match your search.' : 'No final-year students found.'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map(s => {
+    const name = esc(s.name || s.displayName || '—');
+    const admno = esc(s.registerNumber || s.admno || '—');
+    const dept = esc(s.departmentName || s.department || '—');
+    const batch = esc(s.classBatch || '—');
+    const cgpa = s.cgpa != null && s.cgpa !== '' ? esc(Number(s.cgpa).toFixed(2)) : '—';
+    const newBadge = (s.isNew || s.aesOnly) ? ' <span class="badge-soft info">New</span>' : '';
+    const regAttr = esc(s.registerNumber || s.admno || '');
+    return `<tr>
+      <td><strong>${name}</strong>${newBadge}</td>
+      <td>${admno}</td>
+      <td>${dept}</td>
+      <td>${batch}</td>
+      <td>${cgpa}</td>
+      <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadFinalYearStudents(force = false) {
+  if (!canViewFinalYear || typeof AdminApi === 'undefined') return;
+  if (finalYearLoaded && !force) {
+    renderFinalYearTab();
+    return;
+  }
+  const tbody = document.getElementById('finalYearRows');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading final-year students…</td></tr>';
+  }
+  const rows = await AdminApi.fetchFinalYearStudents();
+  if (!rows) {
+    finalYearStudentsAll = [];
+    finalYearLoaded = true;
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-danger p-4 text-center">Could not load final-year students. Try again.</td></tr>';
+    }
+    document.getElementById('finalYearCount').textContent = '0';
+    return;
+  }
+  finalYearStudentsAll = rows;
+  finalYearLoaded = true;
+  renderFinalYearTab();
+}
+
+function openFinalYearStudent(reg) {
+  if (!reg) return;
+  bootstrap.Tab.getOrCreateInstance(document.getElementById('linkOverview')).show();
+  selectOverviewStudent(reg);
+}
+
+document.getElementById('searchFinalYear')?.addEventListener('input', () => {
+  clearTimeout(finalYearSearchTimer);
+  finalYearSearchTimer = setTimeout(() => renderFinalYearTab(), 160);
+});
+document.getElementById('finalYearRows')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.final-year-open');
+  if (!btn) return;
+  openFinalYearStudent(btn.dataset.reg || '');
+});
+
 document.getElementById('searchStudent').addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     e.preventDefault();

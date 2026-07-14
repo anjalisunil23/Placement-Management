@@ -394,7 +394,26 @@ final class OfficerDataService
     }
 
     /**
-     * Staff directory from AES getAllStudInfo4Placement (final-year admno rows),
+     * Campus-wide AES final-year (studying) students for admin Students page.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listCampusFinalYearStudents(?string $query = null): array
+    {
+        $ctx = [
+            'isAdmin'      => true,
+            'campusWide'   => true,
+            'departmentId' => null,
+            'department'   => null,
+            'profile'      => null,
+        ];
+        $rows = $this->listStudentsFromAesDirectory($ctx);
+
+        return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * Staff/admin directory from AES getAllStudInfo4Placement (final-year admno rows),
      * merged with local PlaceHub student fields.
      *
      * @param array<string, mixed> $ctx
@@ -402,17 +421,11 @@ final class OfficerDataService
      */
     private function listStudentsFromAesDirectory(array $ctx): array
     {
-        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($ctx);
-        $params = [];
-        if ($deptAesId !== '') {
-            $params['stud_deptcode'] = $deptAesId;
-        }
-
-        try {
-            $records = (new AesApiService())->fetchAllStudInfo4Placement($params);
-        } catch (\Throwable) {
-            return [];
-        }
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
         if ($records === []) {
             return [];
         }
@@ -422,8 +435,13 @@ final class OfficerDataService
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
         $rows = [];
+        $seenAdmno = [];
 
         foreach ($records as $record) {
+            if (!$this->isAesStudyingStudent($record)) {
+                continue;
+            }
+
             $recordDept = strtoupper(trim((string) (
                 $record['stud_deptcode']
                 ?? $record['parentDepartmentCode']
@@ -441,6 +459,9 @@ final class OfficerDataService
             )));
             $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
             if ($admno === '') {
+                continue;
+            }
+            if (isset($seenAdmno[$admno])) {
                 continue;
             }
             if (!$this->isAesFinalYearStudent($record)) {
@@ -467,6 +488,7 @@ final class OfficerDataService
             )) {
                 continue;
             }
+            $seenAdmno[$admno] = true;
             $rows[] = $row;
         }
 
@@ -479,6 +501,127 @@ final class OfficerDataService
         );
 
         return $rows;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fetchAesDirectoryRecords(string $deptAesId, bool $campusWide): array
+    {
+        $api = new AesApiService();
+        if (!$campusWide) {
+            $params = [];
+            if ($deptAesId !== '') {
+                $params['stud_deptcode'] = $deptAesId;
+            }
+            try {
+                return $api->fetchAllStudInfo4Placement($params);
+            } catch (\Throwable) {
+                return [];
+            }
+        }
+
+        $merged = [];
+        $seen = [];
+        $append = static function (array $records) use (&$merged, &$seen): void {
+            foreach ($records as $record) {
+                if (!is_array($record)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) (
+                    $record['admno']
+                    ?? $record['stud_admno']
+                    ?? $record['registerNumber']
+                    ?? $record['registerno']
+                    ?? ''
+                )));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $merged[] = $record;
+            }
+        };
+
+        try {
+            $append($api->fetchAllStudInfo4Placement([]));
+        } catch (\Throwable) {
+            // Fall through to per-department fetch.
+        }
+
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            try {
+                $append($api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId]));
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function campusParentDeptAesIds(): array
+    {
+        $ids = [];
+        foreach ((new DepartmentModel())->findAll([], 400) as $dept) {
+            foreach ([(string) ($dept['aesId'] ?? ''), (string) ($dept['code'] ?? '')] as $candidate) {
+                $candidate = trim($candidate);
+                if ($candidate !== '' && ctype_digit($candidate)) {
+                    $ids[$candidate] = true;
+                }
+            }
+        }
+
+        try {
+            foreach ((new AesApiService())->listDepartments() as $row) {
+                foreach ([
+                    (string) ($row['aesId'] ?? ''),
+                    (string) ($row['code'] ?? ''),
+                    (string) ($row['deptCode'] ?? ''),
+                    (string) ($row['id'] ?? ''),
+                ] as $candidate) {
+                    $candidate = trim($candidate);
+                    if ($candidate !== '' && ctype_digit($candidate)) {
+                        $ids[$candidate] = true;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Keep Mongo/local department AES ids.
+        }
+
+        $out = array_keys($ids);
+        sort($out, SORT_NUMERIC);
+
+        return $out;
+    }
+
+    /**
+     * Drop alumni / left / transferred students so only currently studying rows remain.
+     *
+     * @param array<string, mixed> $record
+     */
+    private function isAesStudyingStudent(array $record): bool
+    {
+        $blob = strtolower(trim(implode(' ', array_filter([
+            (string) ($record['stud_status'] ?? ''),
+            (string) ($record['status'] ?? ''),
+            (string) ($record['student_status'] ?? ''),
+            (string) ($record['stud_type'] ?? ''),
+            (string) ($record['category'] ?? ''),
+            (string) ($record['role'] ?? ''),
+        ]))));
+        if ($blob === '') {
+            return true;
+        }
+
+        return preg_match(
+            '/\b(alumni|alumnus|passed\s*out|passout|graduated|left|dropout|discontinued|transferred|faculty|staff|employee)\b/',
+            $blob
+        ) !== 1;
     }
 
     /**
@@ -551,8 +694,9 @@ final class OfficerDataService
     {
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $indexed = [];
+        $campusWide = !empty($ctx['campusWide']) || !empty($ctx['isAdmin']);
         foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
-            if (!StaffContext::studentMatchesScope($student, [
+            if (!$campusWide && !StaffContext::studentMatchesScope($student, [
                 'departmentId' => $ctx['departmentId'] ?? '',
                 'profile'      => $ctx['profile'] ?? null,
             ])) {

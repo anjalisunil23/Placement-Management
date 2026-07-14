@@ -59,10 +59,15 @@ const AdminApi = {
       collegeEmail: row.collegeEmail || (isCollege ? email : (personal.collegeEmail || '')),
       personalEmail: row.personalEmail || personal.personalEmail || personal.email || (!isCollege ? email : ''),
       phone: row.phone || personal.phone || '',
-      registerNumber: row.registerNumber || '',
+      registerNumber: row.registerNumber || row.admno || '',
+      admno: row.admno || row.registerNumber || '',
+      aesOnly: !!row.aesOnly,
+      isNew: !!(row.isNew || row.aesOnly),
       department: row.departmentCode || dept.code || dept.name || '',
       departmentName: row.departmentName || dept.name || dept.code || '',
       classBatch: row.classBatch || '',
+      year: row.year || '',
+      semester: row.semester || '',
       cgpa: academic.cgpa ?? null,
       marks10th: academic.marks10th ?? null,
       marks12th: academic.marks12th ?? academic.ugMarks ?? null,
@@ -276,6 +281,15 @@ const AdminApi = {
     if (params.q) qs.set('q', params.q);
     const q = qs.toString();
     const res = await api('/admin/students' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(s => this.mapStudentRow(s));
+  },
+
+  async fetchFinalYearStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/admin/students/final-year' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => this.mapStudentRow(s));
   },

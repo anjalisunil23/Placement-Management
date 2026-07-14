@@ -164,6 +164,7 @@ $routes = [
     ['POST',   '/admin/students/{id}/blacklist',     [AdminController::class, 'blacklistStudent']],
     ['POST',   '/admin/students/{id}/unblacklist',   [AdminController::class, 'unblacklistStudent']],
     ['GET',    '/admin/students',                    [AdminController::class, 'listStudents']],
+    ['GET',    '/admin/students/final-year',          [AdminController::class, 'listFinalYearStudents']],
     ['GET',    '/admin/students/{id}/profile',       [AdminController::class, 'studentProfile']],
     ['GET',    '/admin/students/{id}/photo',         [AdminController::class, 'studentPhoto']],
     ['GET',    '/admin/students/{id}/pipeline',      [AdminController::class, 'studentPipeline']],

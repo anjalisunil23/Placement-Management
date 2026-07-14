@@ -952,6 +952,16 @@ final class AdminController
         Response::success((new OfficerDataService())->listStudents($scope['ctx'], $query !== '' ? $query : null));
     }
 
+    /** GET /api/admin/students/final-year — campus-wide AES final-year studying students */
+    public function listFinalYearStudents(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        Response::success(
+            (new OfficerDataService())->listCampusFinalYearStudents($query !== '' ? $query : null)
+        );
+    }
+
     /** GET /api/admin/students/{id}/profile */
     public function studentProfile(string $studentId): void
     {
