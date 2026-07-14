@@ -475,7 +475,10 @@ async function initCompaniesPage() {
     actions?.classList.add('d-none');
   }
   if (Auth.role() === 'placement_officer') {
-    if (sub) sub.textContent = 'Add companies, update details, and filter staff recommendations. Duplicate company names are blocked.';
+    if (sub) {
+      sub.textContent = '';
+      sub.hidden = true;
+    }
   } else if (!isAdmin()) {
     if (sub) sub.textContent = 'View staff and alumni recommendations and registered companies. Contact the admin to register or update records.';
   }
