@@ -97,19 +97,6 @@
         </div>
 
         <div class="card-surface mt-3">
-          <div class="d-flex justify-content-between align-items-center p-3 p-md-4">
-            <div><h6 class="fw-bold mb-0">Recent Placement Drives</h6><small class="text-muted-2">Latest activity from the last 7 days</small></div>
-            <a href="drives.html" class="btn btn-sm btn-outline-primary">View all</a>
-          </div>
-          <div class="table-wrap">
-            <table class="table-modern">
-              <thead><tr><th>Company</th><th>Role</th><th>Eligible</th><th>Applied</th><th>Package</th><th>Status</th><th>Date</th></tr></thead>
-              <tbody id="recent"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="card-surface mt-3">
           <div class="p-3 p-md-4 d-flex flex-wrap gap-3 align-items-center justify-content-between">
             <div><h6 class="fw-bold mb-0">Staff company recommendations</h6><small class="text-muted-2">Review referrals from faculty and register new recruiters.</small></div>
             <a href="admin-companies.html" class="btn btn-sm btn-primary">Open Staff Recommendations</a>
@@ -480,11 +467,6 @@ if (role === 'admin') {
     if (document.getElementById('companyChart') && cos.length) {
       Charts.bar(document.getElementById('companyChart'), cos.map(c => c.company), cos.map(c => c.applicants), 'Applicants');
     }
-    const drives = (DriveStore._apiCache || []).filter(d => d.status !== 'Closed').slice(0, 5);
-    document.getElementById("recent").innerHTML = drives.length ? drives.map(d=>`
-      <tr><td><strong>${d.company}</strong></td><td>${d.role}</td><td>${d.branches || '—'}</td><td>${d.applied || 0}</td><td>${d.package || '—'}</td>
-      <td><span class="badge-soft ${d.statusCls || 'success'}">${d.status}</span></td><td>${d.deadline || '—'}</td></tr>`).join("")
-      : '<tr><td colspan="7" class="text-muted-2 p-4">No active drives yet.</td></tr>';
   })();
 }
 

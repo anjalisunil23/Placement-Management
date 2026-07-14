@@ -132,7 +132,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/admin-api.js?v=20260713p"></script>
-<script src="js/api.js?v=20260713p"></script>
+<script src="js/api.js?v=20260714e"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
 const registerModal = () => bootstrap.Modal.getInstance(document.getElementById('registerModal')) || new bootstrap.Modal(document.getElementById('registerModal'));
@@ -140,10 +140,10 @@ const isAdmin = () => Auth.role() === 'admin';
 const canViewCompaniesPage = () => ['admin', 'placement_officer'].includes(Auth.role());
 /** Officers and admins may update existing registered company details. */
 const canUpdateCompanyDetails = () => ['admin', 'placement_officer'].includes(Auth.role());
-/** Delete / register / quick-add remain admin-only. */
-const canEditCompanies = () => isAdmin();
-const canManageRecommendations = () => isAdmin();
-const canMutateCompanies = () => isAdmin();
+/** Officers and admins may add/register companies. Delete remains admin-only. */
+const canEditCompanies = () => ['admin', 'placement_officer'].includes(Auth.role());
+const canManageRecommendations = () => ['admin', 'placement_officer'].includes(Auth.role());
+const canMutateCompanies = () => ['admin', 'placement_officer'].includes(Auth.role());
 
 function recommendationViewActions(r) {
   return `<div class="d-flex flex-wrap gap-1 align-items-center">
@@ -465,7 +465,7 @@ async function initCompaniesPage() {
   const sub = document.getElementById('companiesPageSub');
   const officerBtn = document.getElementById('btnOfficerRecommend');
   document.querySelectorAll('[data-admin-only]').forEach(el => {
-    el.classList.toggle('d-none', !isAdmin());
+    el.classList.toggle('d-none', !canMutateCompanies());
   });
   if (officerBtn) {
     officerBtn.style.display = Auth.role() === 'placement_officer' ? '' : 'none';
@@ -475,7 +475,7 @@ async function initCompaniesPage() {
     actions?.classList.add('d-none');
   }
   if (Auth.role() === 'placement_officer') {
-    if (sub) sub.textContent = 'View recommendations and registered companies. Update company details, or recommend a company for review.';
+    if (sub) sub.textContent = 'Add companies, update details, and filter staff recommendations. Duplicate company names are blocked.';
   } else if (!isAdmin()) {
     if (sub) sub.textContent = 'View staff and alumni recommendations and registered companies. Contact the admin to register or update records.';
   }

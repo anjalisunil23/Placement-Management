@@ -15,6 +15,58 @@ class DriveModel extends BaseModel
     }
 
     /**
+     * Normalize drive titles for duplicate detection.
+     */
+    public static function normalizeDriveTitle(string $title): string
+    {
+        $title = strtolower(trim($title));
+        $title = preg_replace('/\s+/', ' ', $title) ?? $title;
+
+        return trim($title);
+    }
+
+    /**
+     * Find a drive with the same company, title, and date (avoids table duplicates).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findDuplicateDrive(string $companyId, string $title, string $date, ?string $excludeId = null): ?array
+    {
+        $companyId = trim($companyId);
+        $titleNorm = self::normalizeDriveTitle($title);
+        $date = trim($date);
+        if ($companyId === '' || $titleNorm === '' || $date === '') {
+            return null;
+        }
+
+        $companyOid = Security::toObjectId($companyId);
+        if ($companyOid === null) {
+            return null;
+        }
+
+        foreach ($this->findAll([], 3000) as $drive) {
+            $id = (string) ($drive['_id'] ?? '');
+            if ($excludeId !== null && $excludeId !== '' && $id === $excludeId) {
+                continue;
+            }
+            $driveCompany = (string) ($drive['companyId'] ?? '');
+            if ($driveCompany !== $companyId && $driveCompany !== (string) $companyOid) {
+                continue;
+            }
+            if (self::normalizeDriveTitle((string) ($drive['title'] ?? '')) !== $titleNorm) {
+                continue;
+            }
+            if (trim((string) ($drive['date'] ?? '')) !== $date) {
+                continue;
+            }
+
+            return $drive;
+        }
+
+        return null;
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     public function createDrive(array $data, string $createdBy): string

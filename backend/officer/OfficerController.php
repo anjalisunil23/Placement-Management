@@ -201,7 +201,23 @@ final class OfficerController
 
         $input = PlacementOfficerContext::applyDepartmentToDriveInput($input, $ctx);
 
-
+        $companyModel = new \PMS\Models\CompanyModel();
+        $companyId = (string) ($input['companyId'] ?? '');
+        if ($companyId === '' || !$companyModel->findById($companyId)) {
+            Response::error('A valid registered company is required for this drive.', 422);
+        }
+        $dup = (new DriveModel())->findDuplicateDrive(
+            $companyId,
+            (string) ($input['title'] ?? ''),
+            (string) ($input['date'] ?? '')
+        );
+        if ($dup !== null) {
+            Response::error(
+                'A drive for this company, title, and date already exists.',
+                409,
+                ['existingId' => (string) ($dup['_id'] ?? '')]
+            );
+        }
 
         if (isset($_FILES['jd'])) {
 
@@ -770,13 +786,31 @@ final class OfficerController
         Response::success(null, 'Application rejected.');
     }
 
-    /** POST /api/officer/applications/{id}/shortlist — companies shortlist; officers view only */
+    /** POST /api/officer/applications/{id}/shortlist — mark applicant shortlisted from All applicants */
     public function shortlistApplication(string $appId): void
     {
-        Response::error(
-            'Shortlisting is done by the company. View shortlists under Students → Drive applications → Company shortlisted.',
-            403
+        $scope = (new OfficerDataService())->requireScope();
+        $app = (new OfficerDataService())->assertApplicationInScope($appId, $scope['ctx']);
+        $current = (string) ($app['status'] ?? 'applied');
+        if (in_array($current, ['shortlisted', 'selected'], true)) {
+            Response::success(null, 'Already shortlisted.');
+            return;
+        }
+        (new ApplicationWorkflowService())->transition(
+            $appId,
+            'shortlisted',
+            (string) $scope['user']['_id'],
+            'Shortlisted by campus placement staff'
         );
+        $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
+        if ($student && !empty($student['userId'])) {
+            (new NotificationService())->notifyApplicationUpdate(
+                (string) $student['userId'],
+                'Shortlisted',
+                'You have been shortlisted for a campus drive. Check your applications for details.'
+            );
+        }
+        Response::success(null, 'Student shortlisted.');
     }
 
     /** POST /api/officer/recommendations */

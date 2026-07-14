@@ -175,6 +175,40 @@ class CompanyModel extends BaseModel
     }
 
     /**
+     * Normalize company names for duplicate detection.
+     */
+    public static function normalizeCompanyName(string $name): string
+    {
+        $name = strtolower(trim($name));
+        $name = preg_replace('/\s+/', ' ', $name) ?? $name;
+        $name = preg_replace('/[^a-z0-9.&\s+-]/', '', $name) ?? $name;
+
+        return trim($name);
+    }
+
+    /**
+     * Find an existing company by case-insensitive normalized name.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findByNormalizedName(string $companyName): ?array
+    {
+        $needle = self::normalizeCompanyName($companyName);
+        if ($needle === '') {
+            return null;
+        }
+
+        foreach ($this->findAll([], 5000) as $company) {
+            $existing = self::normalizeCompanyName((string) ($company['companyName'] ?? ''));
+            if ($existing !== '' && $existing === $needle) {
+                return $company;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     public function createCompany(array $data): string

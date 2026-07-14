@@ -195,7 +195,7 @@
           <p class="small text-muted-2 mb-3">Fill in the details to publish a new opportunity.</p>
           <h6 class="fw-bold mb-3">Basic information</h6>
           <div class="row g-3 mb-4">
-            <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><select class="form-select" name="companyId" id="createDriveCompany" required><option value="">Select company…</option></select><div class="form-text">Add companies under Admin → Companies if not listed.</div></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><select class="form-select" name="companyId" id="createDriveCompany" required><option value="">Select company…</option></select><div class="form-text">Add companies under Companies &amp; Referrals if not listed. Same company + role + date will not create a duplicate drive.</div></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Job role</label><input class="form-control" name="role" placeholder="e.g. SDE-1" required/></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Drive type</label><select class="form-select" name="driveType" required><option>Exclusive</option><option selected>Pooled</option><option>Company Direct</option></select></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Job type</label><select class="form-select" name="jobType"><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
@@ -345,32 +345,19 @@
             <li class="nav-item"><button type="button" class="nav-link" data-tab="shortlisted">Company shortlisted <span class="badge bg-secondary ms-1" id="tabCountShortlisted">0</span></button></li>
             <li class="nav-item"><button type="button" class="nav-link" data-tab="placed">Placed <span class="badge bg-secondary ms-1" id="tabCountPlaced">0</span></button></li>
           </ul>
-          <p class="small text-muted-2 mb-2" id="driveShortlistHint">Companies shortlist via their portal, or send a list as a document. Upload that document here.</p>
+          <p class="small text-muted-2 mb-2" id="driveShortlistHint">Select applicants below to mark them as company shortlisted.</p>
 
-          <div class="border rounded-3 p-3 mb-3 bg-light-subtle" id="driveShortlistUploadPanel">
-            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-              <div>
-                <div class="fw-semibold">Upload company shortlist</div>
-                <div class="small text-muted-2">Upload the shortlist document the company sent (PDF, DOC, CSV, or image).</div>
-              </div>
-              <div id="driveShortlistDocStatus" class="small text-muted-2"></div>
-            </div>
-            <div class="row g-2 align-items-end">
-              <div class="col-md-8">
-                <label class="form-label small mb-1" for="driveShortlistDocument">Shortlist document</label>
-                <input type="file" class="form-control form-control-sm" id="driveShortlistDocument" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.csv,.txt">
-              </div>
-              <div class="col-md-4 d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-sm btn-primary" id="btnUploadDriveShortlist"><i class="bi bi-upload me-1"></i>Upload shortlist</button>
-                <a class="btn btn-sm btn-outline-secondary d-none" id="btnViewDriveShortlistDoc" href="#" target="_blank" rel="noopener">View uploaded document</a>
-              </div>
-            </div>
-            <div class="small text-muted-2 mt-2 d-none" id="driveShortlistUploadResult"></div>
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3" id="driveShortlistSelectBar">
+            <div class="small text-muted-2" id="driveShortlistSelectHint">On All applicants, tick students and shortlist them for this drive.</div>
+            <button type="button" class="btn btn-sm btn-primary" id="btnShortlistSelected" disabled>
+              <i class="bi bi-check2-square me-1"></i>Shortlist selected
+            </button>
           </div>
 
           <div class="table-wrap">
             <table class="table-modern">
               <thead><tr id="driveApplicantHead">
+                <th style="width:2.5rem" class="drive-shortlist-col"><input type="checkbox" class="form-check-input" id="driveApplicantSelectAll" title="Select all eligible" aria-label="Select all eligible"></th>
                 <th>Student</th><th>Register No</th><th>Dept</th><th>Resume</th><th>Status</th><th>Applied</th>
               </tr></thead>
               <tbody id="driveApplicantRows"></tbody>
@@ -453,7 +440,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260713w"></script>
+<script src="js/api.js?v=20260714e"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1054,6 +1041,36 @@ function driveApplicantResumeCell(a) {
   return `<a href="${a.resumeUrl}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf me-1"></i>${label.length > 20 ? label.slice(0, 17) + '…' : label}</a>`;
 }
 
+function canShortlistApplicant(a) {
+  const status = String(a?.status || '').toLowerCase();
+  return status && !['shortlisted', 'selected', 'rejected', 'withdrawn'].includes(status);
+}
+
+function updateDriveShortlistSelectUi() {
+  const onAll = driveApplicantsTab === 'all';
+  const bar = document.getElementById('driveShortlistSelectBar');
+  const headCol = document.querySelector('#driveApplicantHead .drive-shortlist-col');
+  const selectAll = document.getElementById('driveApplicantSelectAll');
+  const btn = document.getElementById('btnShortlistSelected');
+  if (bar) bar.classList.toggle('d-none', !onAll);
+  if (headCol) headCol.classList.toggle('d-none', !onAll);
+  const checked = onAll
+    ? [...document.querySelectorAll('#driveApplicantRows .drive-shortlist-check:checked')]
+    : [];
+  if (btn) {
+    btn.disabled = checked.length === 0;
+    btn.innerHTML = checked.length
+      ? `<i class="bi bi-check2-square me-1"></i>Shortlist selected (${checked.length})`
+      : '<i class="bi bi-check2-square me-1"></i>Shortlist selected';
+  }
+  if (selectAll) {
+    const eligible = [...document.querySelectorAll('#driveApplicantRows .drive-shortlist-check')];
+    selectAll.checked = eligible.length > 0 && eligible.every(el => el.checked);
+    selectAll.indeterminate = eligible.some(el => el.checked) && !selectAll.checked;
+    selectAll.disabled = !onAll || eligible.length === 0;
+  }
+}
+
 function updateDriveApplicantTabCounts() {
   const groups = driveApplicantGroups(driveApplicants);
   document.getElementById('tabCountAll').textContent = groups.all.length;
@@ -1062,51 +1079,46 @@ function updateDriveApplicantTabCounts() {
   const hint = document.getElementById('driveShortlistHint');
   if (hint) {
     hint.textContent = driveApplicantsTab === 'shortlisted'
-      ? 'Students shortlisted by the company (portal) or from an uploaded company shortlist document.'
-      : 'Companies shortlist via their portal, or send a list as a document. Upload that document here.';
+      ? 'Students marked shortlisted for this drive.'
+      : driveApplicantsTab === 'placed'
+        ? 'Students recorded as placed for this drive.'
+        : 'Select applicants below to mark them as company shortlisted.';
   }
-}
-
-function updateDriveShortlistDocUi(drive) {
-  const d = drive || activeDrive || {};
-  const status = document.getElementById('driveShortlistDocStatus');
-  const link = document.getElementById('btnViewDriveShortlistDoc');
-  const hasDoc = !!(d.hasShortlistDocument || d.shortlistDocumentName);
-  if (status) {
-    status.textContent = hasDoc
-      ? `On file: ${d.shortlistDocumentName || 'shortlist document'}`
-      : 'No company shortlist document uploaded yet.';
-  }
-  if (link) {
-    if (hasDoc && activeDriveId && typeof OfficerApi !== 'undefined') {
-      link.href = `${API_BASE}${OfficerApi.shortlistDocumentPath(activeDriveId)}`;
-      link.classList.remove('d-none');
-    } else {
-      link.classList.add('d-none');
-      link.removeAttribute('href');
-    }
-  }
+  updateDriveShortlistSelectUi();
 }
 
 function renderDriveApplicantRows() {
   const groups = driveApplicantGroups(driveApplicants);
   const list = groups[driveApplicantsTab] || groups.all;
   const tbody = document.getElementById('driveApplicantRows');
+  const showSelect = driveApplicantsTab === 'all';
+  const cols = showSelect ? 7 : 6;
   if (!list.length) {
     const emptyMsg = driveApplicantsTab === 'placed' ? 'No placed students yet.'
-      : driveApplicantsTab === 'shortlisted' ? 'No shortlisted students yet. Upload the company list or wait for company portal shortlists.'
+      : driveApplicantsTab === 'shortlisted' ? 'No shortlisted students yet. Select them from All applicants.'
       : 'No applicants for this drive yet.';
-    tbody.innerHTML = `<tr><td colspan="6" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${cols}" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
+    updateDriveShortlistSelectUi();
     return;
   }
-  tbody.innerHTML = list.map(a => `<tr>
+  tbody.innerHTML = list.map(a => {
+    const eligible = canShortlistApplicant(a);
+    const checkCell = showSelect
+      ? `<td class="drive-shortlist-col">${eligible
+        ? `<input type="checkbox" class="form-check-input drive-shortlist-check" value="${a.id}" aria-label="Select ${a.studentName || a.registerNumber || 'applicant'}">`
+        : '<span class="small text-muted-2">—</span>'}</td>`
+      : '';
+    return `<tr data-app-id="${a.id}">
+    ${checkCell}
     <td><strong>${a.studentName || '—'}</strong></td>
     <td>${a.registerNumber || '—'}</td>
     <td>${a.department || '—'}</td>
     <td>${driveApplicantResumeCell(a)}</td>
     <td>${driveApplicantStatusBadge(a.status)}</td>
     <td>${a.appliedAt ? new Date(a.appliedAt).toLocaleDateString() : '—'}</td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
+  updateDriveShortlistSelectUi();
 }
 
 function driveResultStatusBadge(status) {
@@ -1238,16 +1250,11 @@ window.openDriveApplicants = async driveId => {
   document.getElementById('driveApplicantsSub').textContent = `${d.package || '—'} · ${d.status || '—'} · Deadline ${d.deadline || '—'}`;
   document.getElementById('driveApplicantRows').innerHTML = '<tr><td colspan="7" class="text-muted-2 p-4 text-center">Loading applicants…</td></tr>';
   document.getElementById('driveResultRows').innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading results…</td></tr>';
-  const uploadResult = document.getElementById('driveShortlistUploadResult');
-  if (uploadResult) {
-    uploadResult.classList.add('d-none');
-    uploadResult.textContent = '';
+  const selectAll = document.getElementById('driveApplicantSelectAll');
+  if (selectAll) {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
   }
-  ['driveShortlistDocument'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  updateDriveShortlistDocUi(d);
   bootstrap.Modal.getOrCreateInstance(document.getElementById('driveApplicantsModal')).show();
   try {
     driveApplicants = await ApplicationPipeline.fetchByDrive(driveId);
@@ -1260,59 +1267,38 @@ window.openDriveApplicants = async driveId => {
   await loadDriveResults(driveId);
 };
 
-async function submitDriveShortlistUpload() {
-  if (!canManage || !activeDriveId || typeof OfficerApi === 'undefined') return;
-  const docInput = document.getElementById('driveShortlistDocument');
-  const documentFile = docInput?.files?.[0] || null;
-  if (!documentFile) {
-    toast('Choose a shortlist document to upload.', 'warn');
+async function shortlistSelectedApplicants() {
+  if (!canManage || !activeDriveId) return;
+  const ids = [...document.querySelectorAll('#driveApplicantRows .drive-shortlist-check:checked')]
+    .map(el => el.value)
+    .filter(Boolean);
+  if (!ids.length) {
+    toast('Select at least one applicant to shortlist.', 'warn');
     return;
   }
-  const btn = document.getElementById('btnUploadDriveShortlist');
+  const btn = document.getElementById('btnShortlistSelected');
   if (btn) btn.disabled = true;
   try {
-    const result = await OfficerApi.uploadDriveShortlist(activeDriveId, {
-      document: documentFile,
-    });
-    if (!result) return;
-    toast(result.message || 'Shortlist uploaded.', 'success');
-    const out = document.getElementById('driveShortlistUploadResult');
-    if (out) {
-      const errs = Array.isArray(result.errors) ? result.errors.slice(0, 8) : [];
-      out.classList.remove('d-none');
-      out.innerHTML = [
-        result.documentSaved ? 'Document saved.' : '',
-        result.updated ? `${result.updated} marked shortlisted.` : '',
-        result.alreadyShortlisted ? `${result.alreadyShortlisted} already shortlisted.` : '',
-        result.failed ? `${result.failed} could not be matched.` : '',
-        errs.length ? `<div class="mt-1">${errs.map(e => `<div>${e}</div>`).join('')}</div>` : '',
-      ].filter(Boolean).join(' ');
+    let ok = 0;
+    let fail = 0;
+    for (const id of ids) {
+      const success = await ApplicationPipeline.shortlist(id, { quiet: true });
+      if (success) ok += 1;
+      else fail += 1;
     }
-    if (result.documentSaved || result.documentName) {
-      activeDrive = {
-        ...(activeDrive || {}),
-        hasShortlistDocument: true,
-        shortlistDocumentName: result.documentName || activeDrive?.shortlistDocumentName || 'shortlist',
-      };
-      if (typeof DriveStore !== 'undefined' && DriveStore._apiCache) {
-        DriveStore._apiCache = DriveStore._apiCache.map(d =>
-          d.id === activeDriveId
-            ? { ...d, hasShortlistDocument: true, shortlistDocumentName: activeDrive.shortlistDocumentName }
-            : d
-        );
-      }
-      updateDriveShortlistDocUi(activeDrive);
-    }
+    if (ok) toast(`${ok} student${ok === 1 ? '' : 's'} shortlisted.`, 'success');
+    if (fail) toast(`${fail} could not be shortlisted.`, 'warn');
     driveApplicants = await ApplicationPipeline.fetchByDrive(activeDriveId);
-    driveApplicantsTab = 'shortlisted';
-    document.querySelectorAll('#driveApplicantTabs .nav-link').forEach(btnEl => {
-      btnEl.classList.toggle('active', btnEl.dataset.tab === 'shortlisted');
-    });
+    if (ok) {
+      driveApplicantsTab = 'shortlisted';
+      document.querySelectorAll('#driveApplicantTabs .nav-link').forEach(btnEl => {
+        btnEl.classList.toggle('active', btnEl.dataset.tab === 'shortlisted');
+      });
+    }
     updateDriveApplicantTabCounts();
     renderDriveApplicantRows();
-    if (docInput) docInput.value = '';
   } finally {
-    if (btn) btn.disabled = false;
+    updateDriveShortlistSelectUi();
   }
 }
 
@@ -1744,11 +1730,25 @@ document.getElementById('driveApplicantTabs')?.addEventListener('click', e => {
   document.querySelectorAll('#driveApplicantTabs .nav-link').forEach(el => {
     el.classList.toggle('active', el === btn);
   });
+  updateDriveApplicantTabCounts();
   renderDriveApplicantRows();
 });
 
-document.getElementById('btnUploadDriveShortlist')?.addEventListener('click', () => {
-  submitDriveShortlistUpload();
+document.getElementById('driveApplicantSelectAll')?.addEventListener('change', e => {
+  const checked = !!e.target.checked;
+  document.querySelectorAll('#driveApplicantRows .drive-shortlist-check').forEach(el => {
+    el.checked = checked;
+  });
+  updateDriveShortlistSelectUi();
+});
+
+document.getElementById('driveApplicantRows')?.addEventListener('change', e => {
+  if (!e.target.classList.contains('drive-shortlist-check')) return;
+  updateDriveShortlistSelectUi();
+});
+
+document.getElementById('btnShortlistSelected')?.addEventListener('click', () => {
+  shortlistSelectedApplicants();
 });
 
 document.getElementById('driveDetailMainTabs')?.addEventListener('click', e => {

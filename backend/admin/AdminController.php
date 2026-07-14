@@ -101,6 +101,18 @@ final class AdminController
         if ($companyId === '' || !$companyModel->findById($companyId)) {
             Response::error('A valid registered company is required for this drive.', 422);
         }
+        $dup = (new DriveModel())->findDuplicateDrive(
+            $companyId,
+            (string) ($input['title'] ?? ''),
+            (string) ($input['date'] ?? '')
+        );
+        if ($dup !== null) {
+            Response::error(
+                'A drive for this company, title, and date already exists.',
+                409,
+                ['existingId' => (string) ($dup['_id'] ?? '')]
+            );
+        }
         $id = (new DriveModel())->createDrive($input, (string) $admin['_id']);
         (new NotificationService())->announceDrive(
             (string) $input['title'],
@@ -460,20 +472,37 @@ final class AdminController
                 $this->userModel->delete($id);
                 Response::error('companyName is required when creating a company user.', 422);
             }
-            (new CompanyModel())->createCompany([
-                'userId'            => $id,
-                'companyName'       => trim((string) $input['companyName']),
-                'category'          => $input['category'] ?? 'Software',
-                'tier'              => $input['tier'] ?? 'Tier 2',
-                'website'           => $input['website'] ?? $input['companyWebsite'] ?? '',
-                'description'       => $input['description'] ?? '',
-                'contacts'          => [[
-                    'name'  => $input['name'],
-                    'email' => $input['email'],
-                    'phone' => $input['phone'] ?? $input['contactNumber'] ?? '',
-                ]],
-                'associationStatus' => $input['associationStatus'] ?? 'active',
-            ]);
+            $companyName = trim((string) $input['companyName']);
+            $companyModel = new CompanyModel();
+            $existing = $companyModel->findByNormalizedName($companyName);
+            if ($existing !== null) {
+                $existingUserId = (string) ($existing['userId'] ?? '');
+                if ($existingUserId !== '') {
+                    $this->userModel->delete($id);
+                    Response::error('A company with this name is already registered.', 409, [
+                        'existingId' => (string) ($existing['_id'] ?? ''),
+                    ]);
+                }
+                $companyModel->update((string) $existing['_id'], [
+                    'userId'            => Security::toObjectId($id),
+                    'associationStatus' => $input['associationStatus'] ?? 'active',
+                ]);
+            } else {
+                $companyModel->createCompany([
+                    'userId'            => $id,
+                    'companyName'       => $companyName,
+                    'category'          => $input['category'] ?? 'Software',
+                    'tier'              => $input['tier'] ?? 'Tier 2',
+                    'website'           => $input['website'] ?? $input['companyWebsite'] ?? '',
+                    'description'       => $input['description'] ?? '',
+                    'contacts'          => [[
+                        'name'  => $input['name'],
+                        'email' => $input['email'],
+                        'phone' => $input['phone'] ?? $input['contactNumber'] ?? '',
+                    ]],
+                    'associationStatus' => $input['associationStatus'] ?? 'active',
+                ]);
+            }
         }
 
         Response::success(['id' => $id], 'User created.', 201);
@@ -1137,16 +1166,27 @@ final class AdminController
         Response::success(DocumentHelper::serializeMany((new CompanyModel())->listEnriched(200)));
     }
 
-    /** POST /api/admin/companies */
+    /** POST /api/admin/companies — admin or placement officer */
     public function createCompany(): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $errors = Validator::validate($input, ['companyName' => 'required']);
         if (!empty($errors)) {
             Response::error('Validation failed.', 422, $errors);
         }
-        $id = (new CompanyModel())->createCompany($input);
+        $companyName = trim((string) ($input['companyName'] ?? ''));
+        $companyModel = new CompanyModel();
+        $existing = $companyModel->findByNormalizedName($companyName);
+        if ($existing !== null) {
+            Response::error(
+                'A company with this name is already registered.',
+                409,
+                ['existingId' => (string) ($existing['_id'] ?? '')]
+            );
+        }
+        $input['companyName'] = $companyName;
+        $id = $companyModel->createCompany($input);
         Response::success(['id' => $id], 'Company created.', 201);
     }
 
@@ -1223,10 +1263,10 @@ final class AdminController
         Response::success(null, 'Recommendation deleted.');
     }
 
-    /** POST /api/admin/companies/register */
+    /** POST /api/admin/companies/register — admin or placement officer */
     public function registerCompany(): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $errors = Validator::validate($input, [
             'companyName'   => 'required',
@@ -1238,8 +1278,19 @@ final class AdminController
             Response::error('Validation failed.', 422, $errors);
         }
 
-        $companyId = (new CompanyModel())->createCompany([
-            'companyName'       => $input['companyName'],
+        $companyName = trim((string) ($input['companyName'] ?? ''));
+        $companyModel = new CompanyModel();
+        $existing = $companyModel->findByNormalizedName($companyName);
+        if ($existing !== null) {
+            Response::error(
+                'A company with this name is already registered.',
+                409,
+                ['existingId' => (string) ($existing['_id'] ?? '')]
+            );
+        }
+
+        $companyId = $companyModel->createCompany([
+            'companyName'       => $companyName,
             'website'           => $input['companyWebsite'] ?? '',
             'category'          => $input['category'] ?? 'Software',
             'tier'              => $input['tier'] ?? 'Tier 2',

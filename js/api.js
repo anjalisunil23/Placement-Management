@@ -1138,7 +1138,7 @@ const RegisteredCompanies = {
       await Promise.all([this.fetch(), StaffRecs.fetch()]);
       return res.data;
     }
-    toast(res.message || 'Could not register company.', 'error');
+    toast(res.message || 'Could not register company.', res.status === 409 ? 'warn' : 'error');
     return null;
   },
   async addSimple(payload) {
@@ -1156,7 +1156,7 @@ const RegisteredCompanies = {
       await this.fetch();
       return res.data;
     }
-    toast(res.message || 'Could not add company.', 'error');
+    toast(res.message || 'Could not add company.', res.status === 409 ? 'warn' : 'error');
     return null;
   },
   async update(companyId, payload) {
@@ -3284,7 +3284,7 @@ const ApplicationPipeline = {
     if (res.success) { await this.fetch(); return true; }
     return false;
   },
-  async shortlist(id) {
+  async shortlist(id, opts = {}) {
     const path = Auth.role() === 'placement_officer'
       ? `/officer/applications/${encodeURIComponent(id)}/shortlist`
       : `/admin/applications/${encodeURIComponent(id)}/shortlist`;
@@ -3300,7 +3300,7 @@ const ApplicationPipeline = {
       this.save(this.all().map(a => a.id === id ? { ...a, status: 'shortlisted', stage: 'company_selection' } : a));
       return true;
     }
-    toast(res?.message || 'Could not shortlist applicant.', 'error');
+    if (!opts.quiet) toast(res?.message || 'Could not shortlist applicant.', 'error');
     return false;
   },
   async approve(id) {
@@ -4033,13 +4033,13 @@ const DriveStore = {
     if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
       const res = await api('/officer/drives', { method: 'POST', body: driveBody });
       if (res.success) { await this.fetch(); DriveStore._studentCache = null; return res.data; }
-      toast(formatErrors(res), 'error');
+      toast(formatErrors(res), res.status === 409 ? 'warn' : 'error');
       return null;
     }
     if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
       const res = await api('/admin/drives', { method: 'POST', body: driveBody });
       if (res.success) { await this.fetch(); DriveStore._studentCache = null; return res.data; }
-      toast(formatErrors(res), 'error');
+      toast(formatErrors(res), res.status === 409 ? 'warn' : 'error');
       return null;
     }
     return null;
