@@ -737,17 +737,8 @@ final class AesLoginService
                 }
                 $placement = $placement === [] ? $qual : array_merge($placement, $qual);
                 $mapped = $mapped === [] ? $qualMapped : array_merge($mapped, $qualMapped);
-            } else {
-                $qualAdmno = $api->resolveQualificationAdmissionNumber($placement, $register);
-                if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
-                    $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
-                    if (!empty($academic['qualifications'])) {
-                        unset($academic['qualifications']);
-                        (new StudentModel())->update((string) $profile['_id'], ['academic' => $academic]);
-                        $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
-                    }
-                }
             }
+            // Keep stored academic qualifications when AES returns none (do not wipe).
         }
 
         $id = (string) ($profile['_id'] ?? '');

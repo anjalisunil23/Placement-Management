@@ -4,7 +4,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260713u" rel="stylesheet"/>
+<link href="css/style.css?v=20260714p" rel="stylesheet"/>
 <style id="ph-po-modal-click-fix">
   /* Placement officer: never let closed Bootstrap modals trap the page. */
   .modal:not(.show){pointer-events:none!important}
@@ -12,6 +12,15 @@
     display:none!important;
     pointer-events:none!important;
   }
+  .profile-field{min-width:0}
+  .profile-email-value{
+    display:block;
+    min-width:0;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    line-height:1.35;
+  }
+  .profile-email-value .profile-email-line + .profile-email-line{margin-top:.2rem}
 </style>
 <script src="js/ph-role-guard.js?v=20260713t"></script></head>
 <body data-page="students.html"><div class="app">
@@ -74,19 +83,19 @@
           <div id="stuProfilePanel" class="mb-3" style="display:none">
             <div class="small fw-semibold text-muted-2 mb-2">Student Profile</div>
             <div class="row g-2 g-md-3 small">
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Register No.</span><span class="fw-medium" id="spRegNo">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="spDept">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Batch / Class</span><span class="fw-medium" id="spBatch">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College Email</span><span class="fw-medium" id="spCollegeEmail">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium" id="spPersonalEmail">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="spPhone">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">10th Marks</span><span class="fw-medium" id="spMarks10">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">12th Marks</span><span class="fw-medium" id="spMarks12">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">CGPA</span><span class="fw-medium" id="spCgpa">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="spBacklogs">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="spResume">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement Chances</span><span class="fw-medium" id="spChances">—</span></div>
-              <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement Policy</span><span class="fw-medium" id="spPolicy">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Register No.</span><span class="fw-medium" id="spRegNo">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="spDept">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Batch / Class</span><span class="fw-medium" id="spBatch">—</span></div>
+              <div class="col-12 col-md-6 profile-field"><span class="text-muted-2 d-block">College Email</span><span class="fw-medium profile-email-value" id="spCollegeEmail">—</span></div>
+              <div class="col-12 col-md-6 profile-field"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium profile-email-value" id="spPersonalEmail">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="spPhone">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">10th Marks</span><span class="fw-medium" id="spMarks10">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">12th Marks</span><span class="fw-medium" id="spMarks12">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">CGPA</span><span class="fw-medium" id="spCgpa">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="spBacklogs">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="spResume">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Placement Chances</span><span class="fw-medium" id="spChances">—</span></div>
+              <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Placement Policy</span><span class="fw-medium" id="spPolicy">—</span></div>
             </div>
             <div id="spQualificationsWrap" class="mt-3" style="display:none">
               <div class="small fw-semibold text-muted-2 mb-2">Education Qualifications</div>
@@ -456,12 +465,12 @@
         <div class="text-center text-danger py-4 d-none" id="fyProfileError">Could not load profile.</div>
         <div id="fyProfileBody" class="d-none">
           <div class="row g-2 g-md-3 small">
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Register No.</span><span class="fw-medium" id="fySpRegNo">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="fySpDept">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Batch / Class</span><span class="fw-medium" id="fySpBatch">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College Email</span><span class="fw-medium" id="fySpCollegeEmail">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium" id="fySpPersonalEmail">—</span></div>
-            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
+            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Register No.</span><span class="fw-medium" id="fySpRegNo">—</span></div>
+            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="fySpDept">—</span></div>
+            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Batch / Class</span><span class="fw-medium" id="fySpBatch">—</span></div>
+            <div class="col-12 profile-field"><span class="text-muted-2 d-block">College Email</span><span class="fw-medium profile-email-value" id="fySpCollegeEmail">—</span></div>
+            <div class="col-12 profile-field"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium profile-email-value" id="fySpPersonalEmail">—</span></div>
+            <div class="col-12 col-md-4 profile-field"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
           </div>
           <div id="fySpQualificationsWrap" class="mt-3" style="display:none">
             <div class="small fw-semibold text-muted-2 mb-2">Education Qualifications</div>
@@ -1013,6 +1022,46 @@ function formatProfileValue(val) {
   return s || '—';
 }
 
+/** Split joined personal/college emails and stack them so long lists don't overlap columns. */
+function splitProfileEmails(val) {
+  if (Array.isArray(val)) {
+    return splitProfileEmails(val.filter(Boolean).join(', '));
+  }
+  const raw = String(val ?? '').trim();
+  if (!raw || raw === '—') return [];
+  const parts = raw
+    .split(/[,;|/]+|\s+(?=[^\s@]+@[^\s@]+\.[^\s@]+)/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const out = [];
+  for (const part of parts) {
+    const key = part.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(part);
+  }
+  return out.length ? out : [raw];
+}
+
+function formatProfileEmailsHtml(val) {
+  const emails = splitProfileEmails(val);
+  if (!emails.length) return '—';
+  if (emails.length === 1) return esc(emails[0]);
+  return emails.map((e) => `<span class="profile-email-line d-block">${esc(e)}</span>`).join('');
+}
+
+function setProfileEmailField(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const html = formatProfileEmailsHtml(val);
+  if (html === '—') {
+    el.textContent = '—';
+    return;
+  }
+  el.innerHTML = html;
+}
+
 function normStudentReg(reg) {
   return String(reg || '').trim().toUpperCase();
 }
@@ -1055,8 +1104,21 @@ function apiProfileMatchesStudent(selected, api) {
   return selReg !== '' && apiReg !== '' && selReg === apiReg;
 }
 
+function pickProfileQualifications(...$sources) {
+  for (const src of sources) {
+    if (Array.isArray(src) && src.length) return src;
+  }
+  return [];
+}
+
 function buildDisplayProfile(listRow, api) {
   const reg = String(api.registerNumber || listRow?.registerNumber || selectedReg || '').trim();
+  const qualifications = pickProfileQualifications(
+    api?.qualifications,
+    api?.academic?.qualifications,
+    listRow?.qualifications,
+    listRow?.academic?.qualifications
+  );
   return {
     ...(listRow || {}),
     ...api,
@@ -1086,7 +1148,7 @@ function buildDisplayProfile(listRow, api) {
     placementStatus: api.placementStatus ?? listRow?.placementStatus,
     selfPlacement: api.selfPlacement ?? listRow?.selfPlacement,
     photoProxyUrl: api.photoProxyUrl || listRow?.photoProxyUrl,
-    qualifications: api.qualifications ?? listRow?.qualifications ?? [],
+    qualifications,
     stud_course: api.stud_course ?? listRow?.stud_course,
     stud_class: api.stud_class ?? listRow?.stud_class,
     registerno: api.registerno ?? listRow?.registerno,
@@ -1163,8 +1225,8 @@ function renderStudentProfilePanel(s) {
   const deptLabel = s.departmentName || s.department || '';
   set('spDept', formatProfileValue(deptLabel));
   set('spBatch', formatProfileValue(s.classBatch));
-  set('spCollegeEmail', formatProfileValue(s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
-  set('spPersonalEmail', formatProfileValue(s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
+  setProfileEmailField('spCollegeEmail', s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
+  setProfileEmailField('spPersonalEmail', s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
   set('spPhone', formatProfileValue(s.phone));
   set('spMarks10', formatMarkPct(s.marks10th));
   set('spMarks12', formatMarkPct(s.marks12th ?? s.ugMarks));
@@ -1714,8 +1776,8 @@ function fillFinalYearProfileFields(s) {
   set('fySpRegNo', formatProfileValue(s.registerNumber || s.admno));
   set('fySpDept', formatProfileValue(dept));
   set('fySpBatch', formatProfileValue(s.classBatch));
-  set('fySpCollegeEmail', formatProfileValue(s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
-  set('fySpPersonalEmail', formatProfileValue(s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
+  setProfileEmailField('fySpCollegeEmail', s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
+  setProfileEmailField('fySpPersonalEmail', s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
   set('fySpPhone', formatProfileValue(s.phone));
   renderQualificationsTable(s.qualifications, 'fySpQualificationsBody', 'fySpQualificationsWrap');
 }
@@ -1745,6 +1807,13 @@ async function openFinalYearStudent(reg) {
     return;
   }
   if (full) {
+    // Still show the loaded profile when register fields differ only slightly.
+    const fullReg = normStudentReg(full.registerNumber || full.admno);
+    const listReg = normStudentReg(listRow.registerNumber || listRow.admno || reg);
+    if (fullReg && listReg && (fullReg === listReg || fullReg.endsWith(listReg) || listReg.endsWith(fullReg))) {
+      fillFinalYearProfileFields(buildDisplayProfile(listRow, full));
+      return;
+    }
     document.getElementById('fyProfileError')?.classList.remove('d-none');
     document.getElementById('fyProfileError').textContent = 'Could not load full profile. Showing list details.';
   }
