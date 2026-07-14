@@ -54,10 +54,15 @@ foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php',
 require_once dirname(__DIR__) . '/bootstrap-services.php';
 $backendDir = dirname(__DIR__);
 pms_load_backend_services($backendDir);
+pms_load_backend_models($backendDir);
 pms_load_module_controllers($backendDir);
 if (!class_exists(\PMS\Services\AesApiService::class, false)
     && !class_exists(\PMS\Services\AesApiService::class)) {
     $emitJsonError('Server autoload error: AesApiService missing. Run composer install and redeploy from latest main.');
+}
+if (!class_exists(\PMS\Models\SuccessStoryModel::class, false)
+    && !class_exists(\PMS\Models\SuccessStoryModel::class)) {
+    $emitJsonError('Server autoload error: SuccessStoryModel missing. Redeploy backend/models/SuccessStoryModel.php from latest main.');
 }
 if (!class_exists(\PMS\Utils\Response::class, false)) {
     $emitJsonError('Server autoload error: Response utility missing. Redeploy from latest main.');

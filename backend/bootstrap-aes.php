@@ -33,6 +33,9 @@ function pms_bootstrap_aes_callback(string $root): void
 
     require_once $backend . '/bootstrap-services.php';
     pms_load_backend_services($backend);
+    if (function_exists('pms_load_backend_models')) {
+        pms_load_backend_models($backend);
+    }
 
     if (!class_exists(\PMS\Services\AesLoginService::class, false)
         && !class_exists(\PMS\Services\AesLoginService::class)) {
