@@ -394,7 +394,8 @@ final class OfficerDataService
     }
 
     /**
-     * Staff directory from AES getAllStudInfo4Placement, merged with local PlaceHub fields.
+     * Staff directory from AES getAllStudInfo4Placement (final-year admno rows),
+     * merged with local PlaceHub student fields.
      *
      * @param array<string, mixed> $ctx
      * @return array<int, array<string, mixed>>
@@ -432,14 +433,17 @@ final class OfficerDataService
                 continue;
             }
 
+            // Placement directory keys on AES student-table admno.
             $admno = strtoupper(trim((string) (
                 $record['admno']
                 ?? $record['stud_admno']
-                ?? $record['registerNumber']
                 ?? ''
             )));
-            $regNo = strtoupper(trim((string) ($record['registerno'] ?? '')));
-            if ($admno === '' && $regNo === '') {
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            if ($admno === '') {
+                continue;
+            }
+            if (!$this->isAesFinalYearStudent($record)) {
                 continue;
             }
 
@@ -456,7 +460,7 @@ final class OfficerDataService
                 continue;
             }
             if (!$this->isPlacementStudentListCandidate(
-                is_array($local) ? $local : ['registerNumber' => $admno !== '' ? $admno : $regNo],
+                is_array($local) ? $local : ['registerNumber' => $admno],
                 null,
                 $row,
                 false
@@ -475,6 +479,68 @@ final class OfficerDataService
         );
 
         return $rows;
+    }
+
+    /**
+     * Prefer clearly final-year AES rows; keep records with no year/semester so
+     * getAllStudInfo4Placement payloads that already omit juniors still appear.
+     *
+     * @param array<string, mixed> $record
+     */
+    private function isAesFinalYearStudent(array $record): bool
+    {
+        $yearRaw = strtolower(trim((string) (
+            $record['stud_year']
+            ?? $record['year']
+            ?? $record['currentYear']
+            ?? $record['stud_current_year']
+            ?? ''
+        )));
+        $semesterRaw = strtolower(trim((string) (
+            $record['stud_semester']
+            ?? $record['semester']
+            ?? $record['stud_sem']
+            ?? ''
+        )));
+        $classBatch = strtolower(trim((string) (
+            $record['stud_class']
+            ?? $record['classBatch']
+            ?? ''
+        )));
+
+        if ($yearRaw === '' && $semesterRaw === '' && $classBatch === '') {
+            return true;
+        }
+
+        if ($yearRaw !== '') {
+            if (preg_match('/\b(final|outgoing|last|pass.?out)\b/', $yearRaw) === 1) {
+                return true;
+            }
+            if (preg_match('/\b(1|2|3|i|ii|iii|1st|2nd|3rd|first|second|third)\b/', $yearRaw) === 1
+                && preg_match('/\b(4|5|iv|v|4th|5th|final|fourth|fifth)\b/', $yearRaw) !== 1) {
+                return false;
+            }
+            if (preg_match('/\b(4|5|iv|v|4th|5th|final|fourth|fifth)\b/', $yearRaw) === 1) {
+                return true;
+            }
+        }
+
+        if ($semesterRaw !== '') {
+            if (preg_match('/\b(7|8|s7|s8|sem\s*7|sem\s*8|semester\s*7|semester\s*8)\b/', $semesterRaw) === 1) {
+                return true;
+            }
+            // Common PG final semesters
+            if (preg_match('/\b(3|4|s3|s4|sem\s*3|sem\s*4|semester\s*3|semester\s*4)\b/', $semesterRaw) === 1
+                && preg_match('/\b(mca|m\.?tech|mba|pg|post)\b/', $classBatch . ' ' . $yearRaw) === 1) {
+                return true;
+            }
+            if (preg_match('/\b(1|2|3|4|5|6|s1|s2|s3|s4|s5|s6)\b/', $semesterRaw) === 1
+                && preg_match('/\b(7|8|s7|s8)\b/', $semesterRaw) !== 1) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -517,18 +583,19 @@ final class OfficerDataService
         $admno = strtoupper(trim((string) (
             $record['admno']
             ?? $record['stud_admno']
-            ?? $record['registerNumber']
             ?? ''
         )));
-        $regNo = strtoupper(trim((string) ($record['registerno'] ?? '')));
-        $register = $admno !== '' ? $admno : $regNo;
-        if ($register === '') {
+        $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+        if ($admno === '') {
             return null;
         }
+        $register = $admno;
 
         $name = trim((string) ($record['name'] ?? $record['stud_name'] ?? ''));
         $photoUrl = trim((string) ($record['photoUrl'] ?? $record['stud_photo'] ?? ''));
         $classBatch = trim((string) ($record['classBatch'] ?? $record['stud_class'] ?? ''));
+        $year = trim((string) ($record['year'] ?? $record['stud_year'] ?? ''));
+        $semester = trim((string) ($record['semester'] ?? $record['stud_semester'] ?? ''));
         $programme = trim((string) (
             $record['stud_course']
             ?? $record['stud_cource_short']
@@ -542,27 +609,40 @@ final class OfficerDataService
             : (isset($record['backlog']) ? (int) $record['backlog'] : 0);
 
         $row = is_array($local) ? (DocumentHelper::serialize($local) ?? []) : [];
-        if ($row === []) {
+        $isAesOnly = $row === [];
+        if ($isAesOnly) {
             $row = [
                 '_id'            => $register,
                 'id'             => $register,
                 'registerNumber' => $register,
                 'aesOnly'        => true,
+                'isNew'          => true,
             ];
         }
 
-        $row['registerNumber'] = (string) ($row['registerNumber'] ?? $register);
+        $row['registerNumber'] = $register;
+        $row['admno'] = $admno;
         if ($regNo !== '') {
             $row['registerno'] = $regNo;
         }
         $row['displayName'] = $name !== '' ? $name : (string) ($row['displayName'] ?? $register);
         $row['classBatch'] = $classBatch !== '' ? $classBatch : (string) ($row['classBatch'] ?? '');
+        if ($year !== '') {
+            $row['year'] = $year;
+        }
+        if ($semester !== '') {
+            $row['semester'] = $semester;
+        }
         $row['collegeEmail'] = trim((string) ($record['collegeEmail'] ?? $record['stud_ajce_mails'] ?? $row['collegeEmail'] ?? ''));
         $row['personalEmail'] = trim((string) ($record['personalEmail'] ?? $record['stud_personal_mails'] ?? $row['personalEmail'] ?? ''));
         $row['phone'] = trim((string) ($record['phone'] ?? $record['stud_mobiles'] ?? $row['phone'] ?? ''));
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
             $row['photoUrl'] = $photoUrl;
             $row['photo'] = ['url' => $photoUrl, 'source' => 'aes'];
+        }
+        if ($isAesOnly) {
+            $row['aesOnly'] = true;
+            $row['isNew'] = true;
         }
 
         $academic = is_array($row['academic'] ?? null) ? $row['academic'] : [];
