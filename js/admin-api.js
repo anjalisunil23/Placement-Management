@@ -289,7 +289,7 @@ const AdminApi = {
     const qs = new URLSearchParams();
     if (params.q) qs.set('q', params.q);
     const q = qs.toString();
-    const res = await api('/admin/students/final-year' + (q ? `?${q}` : ''));
+    const res = await api('/admin/students/allfinal-year' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => this.mapStudentRow(s));
   },

@@ -952,7 +952,7 @@ final class AdminController
         Response::success((new OfficerDataService())->listStudents($scope['ctx'], $query !== '' ? $query : null));
     }
 
-    /** GET /api/admin/students/final-year — campus-wide AES final-year studying students */
+    /** GET /api/admin/students/allfinal-year — campus-wide AES getAllStudInfo4Placement + student table */
     public function listFinalYearStudents(): void
     {
         RBACMiddleware::requireAdmin();

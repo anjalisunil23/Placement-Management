@@ -394,7 +394,9 @@ final class OfficerDataService
     }
 
     /**
-     * Campus-wide AES final-year (studying) students for admin Students page.
+     * Campus-wide final-year studying students for admin Students page.
+     * Prefer AES getAllStudInfo4Placement rows, then fill from the PlaceHub student table
+     * (AES currently often returns a single object).
      *
      * @return array<int, array<string, mixed>>
      */
@@ -407,9 +409,179 @@ final class OfficerDataService
             'department'   => null,
             'profile'      => null,
         ];
-        $rows = $this->listStudentsFromAesDirectory($ctx);
+
+        $byAdmno = [];
+        foreach ($this->listStudentsFromAesDirectory($ctx) as $row) {
+            $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+            if ($key === '') {
+                continue;
+            }
+            $byAdmno[$key] = $row;
+        }
+
+        foreach ($this->listCampusFinalYearFromStudentTable() as $row) {
+            $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+            if ($key === '') {
+                continue;
+            }
+            if (!isset($byAdmno[$key])) {
+                $byAdmno[$key] = $row;
+                continue;
+            }
+            $byAdmno[$key] = $this->mergeFinalYearListRows($byAdmno[$key], $row);
+        }
+
+        $rows = array_values($byAdmno);
+        usort(
+            $rows,
+            static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['displayName'] ?? $a['registerNumber'] ?? ''),
+                (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
+            )
+        );
 
         return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * All PlaceHub students with admno that look like currently studying final-year.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function listCampusFinalYearFromStudentTable(): array
+    {
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
+
+        $departments = [];
+        foreach ($deptModel->findAll([], 400) as $d) {
+            $departments[(string) $d['_id']] = $d;
+        }
+
+        $rows = [];
+        foreach ($studentModel->findAll([], 10000) as $student) {
+            $admno = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            if ($admno === '' || !preg_match('/^[A-Z0-9]{4,20}$/', $admno)) {
+                continue;
+            }
+            if (!$this->isLocalFinalYearStudyingStudent($student)) {
+                continue;
+            }
+
+            $userId = (string) ($student['userId'] ?? '');
+            $user = $userId !== '' ? $userModel->findById($userId) : null;
+            if (is_array($user)) {
+                $role = (string) ($user['role'] ?? '');
+                if ($role !== '' && $role !== 'student') {
+                    continue;
+                }
+                if (($user['status'] ?? '') === 'blocked') {
+                    continue;
+                }
+            }
+
+            $deptId = (string) ($student['departmentId'] ?? '');
+            $dept = $departments[$deptId] ?? null;
+            $row = DocumentHelper::serialize($student) ?? [];
+            $row = $this->enrichStudentListRow($row, $student, $user, false);
+            $row['admno'] = $admno;
+            $row['registerNumber'] = $admno;
+            $row['department'] = $dept ? [
+                'id'   => (string) $dept['_id'],
+                'name' => $dept['name'] ?? '',
+                'code' => $dept['code'] ?? '',
+            ] : ($row['department'] ?? null);
+            if (!$this->isPlacementStudentListCandidate($student, $user, $row, false)) {
+                continue;
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     */
+    private function isLocalFinalYearStudyingStudent(array $student): bool
+    {
+        $batch = strtoupper(trim((string) ($student['classBatch'] ?? '')));
+        if ($batch === '') {
+            // Placement Cell students without a batch are usually final-year/outgoing.
+            return true;
+        }
+
+        return $this->looksLikeFinalYearClassBatch($batch);
+    }
+
+    private function looksLikeFinalYearClassBatch(string $batch): bool
+    {
+        $batch = strtoupper(trim($batch));
+        if ($batch === '') {
+            return false;
+        }
+        if (preg_match('/\b(FINAL|OUTGOING|PASS.?OUT|PLACEMENT)\b/', $batch) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\bS([1-8])\b/', $batch, $m) === 1) {
+            $sem = (int) $m[1];
+            $isPg = preg_match('/\b(MCA|INMCA|MBA|M\.?TECH|MTECH|PG|MCAREG)\b/', $batch) === 1;
+            if ($isPg) {
+                return $sem >= 3;
+            }
+
+            return $sem >= 7;
+        }
+
+        if (preg_match('/\b(SEM(?:ESTER)?[\s\-]*([1-8]))\b/', $batch, $m) === 1) {
+            $sem = (int) ($m[2] ?? 0);
+            $isPg = preg_match('/\b(MCA|INMCA|MBA|M\.?TECH|MTECH|PG)\b/', $batch) === 1;
+            if ($isPg) {
+                return $sem >= 3;
+            }
+
+            return $sem >= 7;
+        }
+
+        // Year-range batches like 2023-27 without semester are treated as placement cohort.
+        if (preg_match('/20\d{2}\s*[-–]\s*\d{2,4}/', $batch) === 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $aesRow
+     * @param array<string, mixed> $localRow
+     * @return array<string, mixed>
+     */
+    private function mergeFinalYearListRows(array $aesRow, array $localRow): array
+    {
+        foreach (['displayName', 'classBatch', 'collegeEmail', 'personalEmail', 'phone', 'photoUrl', 'photo', 'academic', 'department', 'departmentCode', 'departmentName', 'year', 'semester'] as $field) {
+            $aesVal = $aesRow[$field] ?? null;
+            $localVal = $localRow[$field] ?? null;
+            $aesEmpty = $aesVal === null || $aesVal === '' || $aesVal === [];
+            if ($aesEmpty && $localVal !== null && $localVal !== '' && $localVal !== []) {
+                $aesRow[$field] = $localVal;
+            }
+        }
+        if (empty($aesRow['user']) && !empty($localRow['user'])) {
+            $aesRow['user'] = $localRow['user'];
+        }
+        if (!empty($localRow['_id']) && empty($aesRow['aesOnly'])) {
+            $aesRow['_id'] = $localRow['_id'];
+            $aesRow['id'] = $localRow['id'] ?? $localRow['_id'];
+            unset($aesRow['aesOnly'], $aesRow['isNew']);
+        }
+        if (!empty($localRow['policyAccepted'])) {
+            $aesRow['policyAccepted'] = true;
+            $aesRow['policyAcceptedAt'] = $localRow['policyAcceptedAt'] ?? ($aesRow['policyAcceptedAt'] ?? '');
+        }
+
+        return $aesRow;
     }
 
     /**
