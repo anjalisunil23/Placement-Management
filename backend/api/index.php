@@ -290,6 +290,7 @@ $routes = [
     ['GET',  '/staff/students',                   [StaffController::class, 'listStudents']],
     ['GET',  '/staff/students/final-year',        [StaffController::class, 'listFinalYearStudents']],
     ['GET',  '/staff/students/{id}/profile',      [StaffController::class, 'studentProfile']],
+    ['GET',  '/staff/students/{id}/qualifications',[StaffController::class, 'studentQualifications']],
     ['GET',  '/staff/students/{id}/photo',        [StaffController::class, 'studentPhoto']],
     ['GET',  '/staff/students/{id}/pipeline',     [StaffController::class, 'studentPipeline']],
     ['GET',  '/staff/placement-filters',           [StaffController::class, 'placementFilters']],

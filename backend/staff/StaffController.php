@@ -248,6 +248,21 @@ final class StaffController
         ));
     }
 
+    /** GET /api/staff/students/{id}/qualifications */
+    public function studentQualifications(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $officerCtx = StaffContext::officerCompatible($ctx);
+        $register = trim((string) ($_GET['registerNumber'] ?? ''));
+        Response::success((new OfficerDataService())->getEducationQualifications(
+            $studentId,
+            $officerCtx,
+            $register !== '' ? $register : null
+        ));
+    }
+
     /** GET /api/staff/students/{id}/photo */
     public function studentPhoto(string $studentId): void
     {

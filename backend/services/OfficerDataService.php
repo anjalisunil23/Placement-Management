@@ -1342,20 +1342,38 @@ final class OfficerDataService
             ?? $expectedRegister
             ?? $studentRef
         )));
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        $storedQuals = (!empty($academic['qualifications']) && is_array($academic['qualifications']))
+            ? array_values($academic['qualifications'])
+            : [];
+
         $aesApi = new AesApiService();
-        $qualAdmno = $aesApi->resolveQualificationAdmissionNumber(
-            [
-                'admno' => $register,
-                'stud_admno' => $register,
-                'registerNumber' => $register,
-            ],
-            $register
-        );
-        if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
-            $qualAdmno = ctype_digit($register) ? $register : '';
+        $qualAdmno = '';
+        foreach ([
+            (string) ($expectedRegister ?? ''),
+            (string) $studentRef,
+            (string) ($student['admno'] ?? ''),
+            (string) ($student['stud_admno'] ?? ''),
+            $register,
+        ] as $candidate) {
+            $candidate = strtoupper(trim($candidate));
+            if ($candidate !== '' && ctype_digit($candidate)) {
+                $qualAdmno = $candidate;
+                break;
+            }
+        }
+        if ($qualAdmno === '') {
+            $qualAdmno = $aesApi->resolveQualificationAdmissionNumber(
+                [
+                    'admno' => $register,
+                    'stud_admno' => $register,
+                    'registerNumber' => $register,
+                ],
+                $register
+            );
         }
         if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
-            return [];
+            return $storedQuals;
         }
 
         try {
@@ -1364,10 +1382,11 @@ final class OfficerDataService
                 'stud_admno' => $qualAdmno,
             ]);
         } catch (\Throwable) {
-            return [];
+            return $storedQuals;
         }
 
-        return is_array($rows) ? array_values($rows) : [];
+        $rows = is_array($rows) ? array_values($rows) : [];
+        return $rows !== [] ? $rows : $storedQuals;
     }
 
     /**
