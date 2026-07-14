@@ -2517,8 +2517,8 @@ const DEPARTMENT_PROGRAMME_GROUPS = [
     parent: 'Computer Applications',
     programmes: [
       { code: 'MCA', label: 'MCA', aliases: ['MCAR', 'MCAREG'] },
+      { code: 'INMCA', label: 'INMCA', aliases: ['INTMCA', 'IMCA', 'INT MCA', 'DDMCA', 'DD MCA', 'MCA INT', 'INTEGRATED MCA', 'INTEGRATEDMCA'] },
       { code: 'BCA', label: 'BCA', aliases: ['BCAH', 'BCAHONS'] },
-      { code: 'INMCA', label: 'Integrated MCA', aliases: ['INTMCA', 'IMCA', 'INT MCA', 'DDMCA', 'DD MCA', 'MCA INT'] },
     ],
   },
   {

@@ -481,7 +481,7 @@
       { re: /\b(me|mech|mechanical)\b/i, parent: 'Mechanical Engineering' },
       { re: /\b(ce|civil)\b/i, parent: 'Civil Engineering' },
       { re: /\b(it|aids|artificial\s*intelligence)\b/i, parent: 'AI & Information Technology' },
-      { re: /\b(mca|bca|computer\s*applications)\b/i, parent: 'Computer Applications' },
+      { re: /\b(mca|inmca|bca|computer\s*applications)\b/i, parent: 'Computer Applications' },
       { re: /\b(che|chem|chemical)\b/i, parent: 'Chemical Engineering' },
       { re: /\b(ft|food)\b/i, parent: 'Food Technology' },
       { re: /\b(met|mme|metallurg)/i, parent: 'Metallurgical & Materials' },
@@ -855,11 +855,10 @@
       return;
     }
 
+    // Branch codes only (MCA / INMCA / BCA are separate). Batch years live in #batchSelect.
     let html = `<option value="${esc(group.allValue)}">All branches</option>`;
     group.programmes.forEach(p => {
-      const years = this.branchYearsForProgramme(p.code);
-      const yearSuffix = years.length ? ` (${years.join(', ')})` : '';
-      html += `<option value="${esc(p.code)}">${esc(p.label)}${esc(yearSuffix)}</option>`;
+      html += `<option value="${esc(p.code)}">${esc(p.label)}</option>`;
     });
     branchSelect.innerHTML = html;
     branchSelect.disabled = false;
