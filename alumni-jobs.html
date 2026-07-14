@@ -13,12 +13,6 @@
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
 </div>
 
-<div class="row g-3 mb-3">
-  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Active posts</div><div class="val" id="statActive">0</div></div></div>
-  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Views this month</div><div class="val" id="statViews">0</div></div></div>
-  <div class="col-6 col-md-4"><div class="card-surface stat-card"><div class="lbl">Referrals received</div><div class="val" id="statReferrals">0</div></div></div>
-</div>
-
 <div class="card-surface">
   <div class="p-3 p-md-4"><h6 class="fw-bold mb-0">Your job postings <span class="badge-soft muted ms-1" id="jobCountBadge">0</span></h6></div>
   <div class="table-wrap">
@@ -95,12 +89,9 @@ function normalizeJobPost(j) {
 }
 
 function renderStats(stats) {
-  const active = stats.activePosts ?? countActiveJobPosts(jobRows);
   const total = stats.totalPosts ?? jobRows.length;
-  document.getElementById('statActive').textContent = active;
-  document.getElementById('statViews').textContent = stats.viewsThisMonth ?? 0;
-  document.getElementById('statReferrals').textContent = stats.referralsCount ?? 0;
-  document.getElementById('jobCountBadge').textContent = String(total);
+  const badge = document.getElementById('jobCountBadge');
+  if (badge) badge.textContent = String(total);
 }
 
 function renderJobs() {
