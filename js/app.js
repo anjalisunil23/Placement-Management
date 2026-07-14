@@ -489,7 +489,7 @@ function renderShell(active) {
     const topbarTitle = useNameInTopbar ? displayName : pageLabel;
     const topbarSub = useNameInTopbar
       ? ''
-      : (role === 'student' || role === 'staff' ? '' : `${ROLE_LABELS[role]} workspace`);
+      : (role === 'student' || role === 'staff' || role === 'alumni' ? '' : `${ROLE_LABELS[role]} workspace`);
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
       ${showTopbarTitle ? `<div class="d-none d-md-block">

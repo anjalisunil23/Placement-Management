@@ -65,7 +65,6 @@
           <div class="col-md-6" id="alumniTitleWrap"><label class="form-label small fw-semibold">Role / Title</label><input class="form-control" id="alumniTitle"/></div>
           <div class="col-12" id="alumniEmploymentDocsWrap" style="display:none">
             <hr class="my-2"/>
-            <p class="small text-muted-2 mb-3">Upload employment documents for placement records. Offer letter is required on first upload; company ID and salary slip are optional.</p>
             <div class="row g-3" id="alumniEmploymentDocsForm">
               <div class="col-md-6"><label class="form-label small fw-semibold">Offer letter (PDF)</label><div class="file-picker"><input type="file" id="alumniOfferLetter" accept=".pdf" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="alumniOfferLetter"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="alumniOfferLetter">No file chosen</span></div></div>
               <div class="col-md-6"><label class="form-label small fw-semibold">Company ID <span class="text-muted-2 fw-normal">(optional)</span></label><div class="file-picker"><input type="file" id="alumniCompanyIdDoc" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="alumniCompanyIdDoc"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="alumniCompanyIdDoc">No file chosen</span></div></div>
@@ -868,6 +867,11 @@ syncRoleFieldsVisibility(role);
 syncPasswordSettingsVisibility(role);
 
 if (role === 'alumni') {
+  const settingsSub = document.getElementById('settingsSub');
+  if (settingsSub) {
+    settingsSub.textContent = '';
+    settingsSub.hidden = true;
+  }
   const working = alumniIsWorking();
   document.getElementById('alumniWorking').checked = working;
   document.getElementById('alumniCompany').value = user.company || '';

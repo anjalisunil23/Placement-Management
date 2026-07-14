@@ -868,7 +868,11 @@ function setupDrivesChrome() {
     actions.innerHTML = '<a href="settings.html" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-arrow-up me-1"></i>Manage Resumes</a>';
   } else if (alumniSeeking) {
     document.getElementById('drivesTitle').textContent = 'Apply for Jobs';
-    document.getElementById('drivesSub').textContent = 'View open drives available for application.';
+    const drivesSub = document.getElementById('drivesSub');
+    if (drivesSub) {
+      drivesSub.textContent = '';
+      drivesSub.hidden = true;
+    }
     actions.innerHTML = '';
   } else if (isStaff) {
     document.getElementById('drivesTitle').textContent = 'Placement Drives';
