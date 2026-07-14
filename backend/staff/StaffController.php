@@ -199,6 +199,29 @@ final class StaffController
         }
     }
 
+    /** GET /api/staff/students/final-year — department final-year (registered / non-registered) */
+    public function listFinalYearStudents(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        try {
+            $ctx = StaffContext::resolve($user);
+            StaffContext::requireDepartmentScope($ctx);
+            $officerCtx = StaffContext::officerCompatible($ctx);
+            $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+            $rows = (new OfficerDataService())->listFinalYearStudentsForScope(
+                $officerCtx,
+                $query !== '' ? $query : null
+            );
+            Response::success(DocumentHelper::jsonSafe($rows));
+        } catch (\Throwable $e) {
+            $message = 'Could not load final-year students.';
+            if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
+                $message = $e->getMessage();
+            }
+            Response::error($message, 500);
+        }
+    }
+
     /** GET /api/staff/students/{id}/pipeline */
     public function studentPipeline(string $studentId): void
     {

@@ -26,10 +26,9 @@
 
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="mainTabs">
   <li class="nav-item" id="overviewTabItem" data-roles="staff,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabOverview" id="linkOverview">Find student</a></li>
-  <li class="nav-item" id="finalYearRegisteredTabItem" data-roles="admin"><a class="nav-link active" data-bs-toggle="tab" href="#tabFinalYearRegistered" id="linkFinalYearRegistered">Registered</a></li>
-  <li class="nav-item" id="finalYearPendingTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabFinalYearPending" id="linkFinalYearPending">Non-registered</a></li>
+  <li class="nav-item" id="finalYearRegisteredTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link active" data-bs-toggle="tab" href="#tabFinalYearRegistered" id="linkFinalYearRegistered">Registered</a></li>
+  <li class="nav-item" id="finalYearPendingTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link" data-bs-toggle="tab" href="#tabFinalYearPending" id="linkFinalYearPending">Non-registered</a></li>
   <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive applications</a></li>
-  <li class="nav-item" id="staffPolicyTabItem" data-roles="staff"><a class="nav-link" data-bs-toggle="tab" href="#tabStaffPolicy" id="linkStaffPolicy">Policy registration</a></li>
   <li class="nav-item" id="blacklistTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabBlacklist" id="linkBlacklist">Blacklist</a></li>
 </ul>
 
@@ -175,7 +174,7 @@
     </div>
   </div>
 
-  <!-- Final year · Registered (admin) -->
+  <!-- Final year · Registered -->
   <div class="tab-pane fade show active" id="tabFinalYearRegistered">
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -197,19 +196,18 @@
               <th>Adm. no.</th>
               <th>Department</th>
               <th>Batch / class</th>
-              <th>CGPA</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="finalYearRegisteredRows">
-            <tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading…</td></tr>
+            <tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>
           </tbody>
         </table>
       </div>
     </div>
   </div>
 
-  <!-- Final year · Non-registered (admin) -->
+  <!-- Final year · Non-registered -->
   <div class="tab-pane fade" id="tabFinalYearPending">
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -231,12 +229,11 @@
               <th>Adm. no.</th>
               <th>Department</th>
               <th>Batch / class</th>
-              <th>CGPA</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="finalYearPendingRows">
-            <tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading…</td></tr>
+            <tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -494,6 +491,55 @@
 
 </div>
 
+<div class="modal fade" id="finalYearProfileModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content card-surface border-0">
+      <div class="modal-header border-0 pb-0">
+        <div class="d-flex align-items-center gap-3 min-w-0">
+          <div class="avatar" id="fyProfileAvatar" style="width:56px;height:56px;min-width:56px;line-height:0;flex:0 0 56px">—</div>
+          <div class="min-w-0">
+            <h5 class="modal-title fw-bold mb-1 text-truncate" id="fyProfileName">Student profile</h5>
+            <p class="small text-muted-2 mb-0" id="fyProfileMeta">—</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div class="text-center text-muted-2 py-4 d-none" id="fyProfileLoading">Loading profile…</div>
+        <div class="text-center text-danger py-4 d-none" id="fyProfileError">Could not load profile.</div>
+        <div id="fyProfileBody" class="d-none">
+          <div class="row g-2 g-md-3 small">
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Register no.</span><span class="fw-medium" id="fySpRegNo">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="fySpDept">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Batch / class</span><span class="fw-medium" id="fySpBatch">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">College email</span><span class="fw-medium" id="fySpCollegeEmail">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Personal email</span><span class="fw-medium" id="fySpPersonalEmail">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">10th marks</span><span class="fw-medium" id="fySpMarks10">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">12th marks</span><span class="fw-medium" id="fySpMarks12">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="fySpBacklogs">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="fySpResume">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement chances</span><span class="fw-medium" id="fySpChances">—</span></div>
+            <div class="col-6 col-md-4"><span class="text-muted-2 d-block">Placement policy</span><span class="fw-medium" id="fySpPolicy">—</span></div>
+          </div>
+          <div id="fySpQualificationsWrap" class="mt-3" style="display:none">
+            <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
+            <div class="table-wrap">
+              <table class="table-modern table-sm mb-0">
+                <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
+                <tbody id="fySpQualificationsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="verifyPlacementModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content card-surface border-0">
@@ -597,20 +643,20 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260713v"></script>
-<script src="js/admin-api.js?v=20260714d"></script>
-<script src="js/officer-api.js?v=20260714a"></script>
+<script src="js/staff-api.js?v=20260714e"></script>
+<script src="js/admin-api.js?v=20260714e"></script>
+<script src="js/officer-api.js?v=20260714e"></script>
 <script src="js/api.js?v=20260713v"></script>
 <script src="js/app.js?v=20260713v"></script>
 <script>
 const role = Auth.role();
 const isAdminRole = role === 'admin';
 const canManageRegistrations = false; // portal registration tab removed; use Registered / Non-registered
-const canViewFinalYear = isAdminRole;
+const canViewFinalYear = role === 'admin' || role === 'placement_officer' || role === 'staff';
 const canVerifySelfPlacement = role === 'admin' || role === 'placement_officer';
 const canManageApplications = role === 'admin' || role === 'placement_officer';
 const canManageBlacklist = role === 'admin';
-const canViewStaffPolicy = role === 'staff';
+const canViewStaffPolicy = false; // replaced by department Registered / Non-registered tabs
 const canUseFindStudent = role === 'staff' || role === 'placement_officer';
 
 if (!(role === 'admin' || role === 'placement_officer' || role === 'staff')) {
@@ -622,10 +668,8 @@ if (isAdminRole) {
   document.getElementById('pageSub').textContent = 'Final-year students by placement policy registration, drive applications, and blacklist.';
   document.getElementById('overviewTabItem')?.remove();
   document.getElementById('tabRegistrations')?.remove();
-} else if (!canManageApplications) {
-  document.getElementById('pageSub').textContent = role === 'staff'
-    ? 'View your department students, policy registration status, and placement pipeline.'
-    : 'Search or select a student to view profile and placement pipeline.';
+} else if (canViewFinalYear) {
+  document.getElementById('pageSub').textContent = 'Final-year students in your department by placement policy registration.';
 }
 if (!canUseFindStudent) {
   document.getElementById('overviewTabItem')?.remove();
@@ -649,6 +693,7 @@ if (!canManageBlacklist) {
 }
 if (!canViewStaffPolicy) {
   document.getElementById('staffPolicyTabItem')?.remove();
+  document.getElementById('tabStaffPolicy')?.remove();
 }
 
 function esc(s) {
@@ -1594,7 +1639,6 @@ function finalYearRowHtml(s) {
   const admno = esc(s.registerNumber || s.admno || '—');
   const dept = esc(s.departmentName || s.department || '—');
   const batch = esc(s.classBatch || '—');
-  const cgpa = s.cgpa != null && s.cgpa !== '' ? esc(Number(s.cgpa).toFixed(2)) : '—';
   const newBadge = (s.isNew || s.aesOnly) ? ' <span class="badge-soft info">New</span>' : '';
   const regAttr = esc(s.registerNumber || s.admno || '');
   return `<tr>
@@ -1602,7 +1646,6 @@ function finalYearRowHtml(s) {
     <td>${admno}</td>
     <td>${dept}</td>
     <td>${batch}</td>
-    <td>${cgpa}</td>
     <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button></td>
   </tr>`;
 }
@@ -1615,7 +1658,7 @@ function renderFinalYearList(kind) {
   const list = filteredFinalYearStudents(kind);
   if (countEl) countEl.textContent = String(list.length);
   if (!finalYearLoaded) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
     return;
   }
   if (!list.length) {
@@ -1626,7 +1669,7 @@ function renderFinalYearList(kind) {
       : (isRegistered
         ? 'No final-year students have registered the placement policy yet.'
         : 'All listed final-year students have registered the placement policy.');
-    tbody.innerHTML = `<tr><td colspan="6" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
     return;
   }
   tbody.innerHTML = list.map(finalYearRowHtml).join('');
@@ -1638,22 +1681,29 @@ function renderFinalYearTab() {
 }
 
 async function loadFinalYearStudents(force = false) {
-  if (!canViewFinalYear || typeof AdminApi === 'undefined') return;
+  if (!canViewFinalYear) return;
   if (finalYearLoaded && !force) {
     renderFinalYearTab();
     return;
   }
   ['finalYearRegisteredRows', 'finalYearPendingRows'].forEach(id => {
     const tbody = document.getElementById(id);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading final-year students…</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading final-year students…</td></tr>';
   });
-  const rows = await AdminApi.fetchFinalYearStudents();
+  let rows = null;
+  if (role === 'admin' && typeof AdminApi !== 'undefined') {
+    rows = await AdminApi.fetchFinalYearStudents();
+  } else if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+    rows = await OfficerApi.fetchFinalYearStudents();
+  } else if (role === 'staff' && typeof StaffApi !== 'undefined') {
+    rows = await StaffApi.fetchFinalYearStudents();
+  }
   if (!rows) {
     finalYearStudentsAll = [];
     finalYearLoaded = true;
     ['finalYearRegisteredRows', 'finalYearPendingRows'].forEach(id => {
       const tbody = document.getElementById(id);
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-danger p-4 text-center">Could not load final-year students. Try again.</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load final-year students. Try again.</td></tr>';
     });
     document.getElementById('finalYearRegisteredCount').textContent = '0';
     document.getElementById('finalYearPendingCount').textContent = '0';
@@ -1664,57 +1714,106 @@ async function loadFinalYearStudents(force = false) {
   renderFinalYearTab();
 }
 
-function openFinalYearStudent(reg) {
-  if (!reg) return;
-  // Profile pane stays available for admin without a Find student nav tab.
-  document.querySelectorAll('#mainTabs .nav-link.active').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-content > .tab-pane.show').forEach(el => {
-    el.classList.remove('show', 'active');
-  });
-  const pane = document.getElementById('tabOverview');
-  if (pane) {
-    pane.classList.add('show', 'active');
-    pane.classList.remove('fade');
-  }
-  ensureAdminProfileBackBar();
-  selectOverviewStudent(reg);
+let finalYearProfileModal = null;
+let finalYearProfileSeq = 0;
+
+function finalYearStudentByReg(reg) {
+  const key = normStudentReg(reg);
+  if (!key) return null;
+  return finalYearStudentsAll.find(x => normStudentReg(x.registerNumber || x.admno) === key)
+    || studentByReg(reg);
 }
 
-function ensureAdminProfileBackBar() {
-  if (!isAdminRole) return;
-  const panel = document.getElementById('studentDetailPanel');
-  if (!panel || document.getElementById('adminProfileBackBtn')) return;
-  const bar = document.createElement('div');
-  bar.className = 'mb-3';
-  bar.innerHTML = `<button type="button" class="btn btn-sm btn-outline-secondary" id="adminProfileBackBtn"><i class="bi bi-arrow-left me-1"></i>Back to final-year list</button>`;
-  panel.parentElement?.insertBefore(bar, panel);
-  document.getElementById('adminProfileBackBtn')?.addEventListener('click', () => {
-    document.getElementById('tabOverview')?.classList.remove('show', 'active');
-    document.getElementById('adminProfileBackBtn')?.parentElement?.remove();
-    const link = document.getElementById('linkFinalYearRegistered');
-    if (link) bootstrap.Tab.getOrCreateInstance(link).show();
-    else {
-      document.getElementById('tabFinalYearRegistered')?.classList.add('show', 'active');
-      document.getElementById('linkFinalYearRegistered')?.classList.add('active');
-    }
-  });
+function setFinalYearProfileAvatar(s) {
+  const el = document.getElementById('fyProfileAvatar');
+  if (!el) return;
+  const photoUser = { name: s?.name || s?.displayName || '', photoUrl: s?.photoUrl, photo: s?.photo };
+  if (typeof shellPhotoCircleHtml === 'function') {
+    el.outerHTML = `<div class="avatar" id="fyProfileAvatar" style="width:56px;height:56px;min-width:56px;line-height:0;flex:0 0 56px">${shellPhotoCircleHtml(photoUser, 56, '1rem')}</div>`;
+    if (typeof bindShellAvatarFallbacks === 'function') bindShellAvatarFallbacks();
+  } else {
+    el.textContent = initials(s?.name || s?.registerNumber || 'S');
+    el.style.backgroundImage = '';
+    el.classList.remove('has-photo');
+  }
 }
+
+function fillFinalYearProfileFields(s) {
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  const name = overviewStudentName(s) || s.name || s.displayName || s.registerNumber || 'Student';
+  const dept = s.departmentName || s.department || '—';
+  document.getElementById('fyProfileName').textContent = name;
+  document.getElementById('fyProfileMeta').textContent = `${s.registerNumber || s.admno || '—'} · ${dept}${s.classBatch ? ' · ' + s.classBatch : ''}`;
+  setFinalYearProfileAvatar(s);
+  set('fySpRegNo', formatProfileValue(s.registerNumber || s.admno));
+  set('fySpDept', formatProfileValue(dept));
+  set('fySpBatch', formatProfileValue(s.classBatch));
+  set('fySpCollegeEmail', formatProfileValue(s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
+  set('fySpPersonalEmail', formatProfileValue(s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '')));
+  set('fySpPhone', formatProfileValue(s.phone));
+  set('fySpMarks10', formatMarkPct(s.marks10th));
+  set('fySpMarks12', formatMarkPct(s.marks12th ?? s.ugMarks));
+  set('fySpBacklogs', s.backlogs != null ? String(s.backlogs) : '—');
+  const resumeLabels = { approved: 'Verified', pending: 'Pending review', none: 'Not uploaded' };
+  set('fySpResume', resumeLabels[s.resumeStatus] || formatProfileValue(s.resumeStatus));
+  const used = s.chancesUsed ?? 0;
+  const max = s.chancesMax ?? 0;
+  set('fySpChances', max > 0 ? `${used} / ${max} used` : (used > 0 ? `${used} used` : '—'));
+  set('fySpPolicy', isFinalYearPolicyRegistered(s)
+    ? `Registered${s.policyAcceptedAt ? ' · ' + formatPolicyAcceptedAt(s.policyAcceptedAt) : ''}`
+    : 'Not registered');
+  renderQualificationsTable(s.qualifications, 'fySpQualificationsBody', 'fySpQualificationsWrap');
+}
+
+async function openFinalYearStudent(reg) {
+  if (!reg) return;
+  if (!finalYearProfileModal) {
+    const el = document.getElementById('finalYearProfileModal');
+    if (!el) return;
+    finalYearProfileModal = bootstrap.Modal.getOrCreateInstance(el);
+  }
+
+  const seq = ++finalYearProfileSeq;
+  const listRow = finalYearStudentByReg(reg) || { registerNumber: reg, admno: reg, name: '' };
+  document.getElementById('fyProfileError')?.classList.add('d-none');
+  document.getElementById('fyProfileLoading')?.classList.remove('d-none');
+  document.getElementById('fyProfileBody')?.classList.remove('d-none');
+  fillFinalYearProfileFields(listRow);
+  finalYearProfileModal.show();
+
+  const full = await fetchStudentProfileFromApi(reg, reg);
+  if (seq !== finalYearProfileSeq) return;
+
+  document.getElementById('fyProfileLoading')?.classList.add('d-none');
+  if (full && apiProfileMatchesStudent(listRow, full)) {
+    fillFinalYearProfileFields(buildDisplayProfile(listRow, full));
+    return;
+  }
+  if (full) {
+    document.getElementById('fyProfileError')?.classList.remove('d-none');
+    document.getElementById('fyProfileError').textContent = 'Could not load full profile. Showing list details.';
+  }
+}
+
+document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.final-year-open');
+  if (!btn) return;
+  openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
+});
+document.getElementById('finalYearPendingRows')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.final-year-open');
+  if (!btn) return;
+  openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
+});
 
 ['searchFinalYearRegistered', 'searchFinalYearPending'].forEach(id => {
   document.getElementById(id)?.addEventListener('input', () => {
     clearTimeout(finalYearSearchTimer);
     finalYearSearchTimer = setTimeout(() => renderFinalYearTab(), 160);
   });
-});
-document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('.final-year-open');
-  if (!btn) return;
-  openFinalYearStudent(btn.dataset.reg || '');
-});
-document.getElementById('finalYearPendingRows')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('.final-year-open');
-  if (!btn) return;
-  openFinalYearStudent(btn.dataset.reg || '');
 });
 
 document.getElementById('searchStudent')?.addEventListener('keydown', e => {

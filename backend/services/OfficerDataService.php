@@ -410,6 +410,25 @@ final class OfficerDataService
             'profile'      => null,
         ];
 
+        return $this->listFinalYearStudentsForScope($ctx, $query);
+    }
+
+    /**
+     * Final-year students for a scope: campus-wide (admin) or department (PO/staff).
+     * Merges AES directory rows with PlaceHub students so policyAccepted is accurate.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listFinalYearStudentsForScope(array $ctx, ?string $query = null): array
+    {
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        if (!$campusWide && empty($ctx['departmentId'])) {
+            return [];
+        }
+
         $byAdmno = [];
         foreach ($this->listStudentsFromAesDirectory($ctx) as $row) {
             $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
@@ -419,7 +438,7 @@ final class OfficerDataService
             $byAdmno[$key] = $row;
         }
 
-        foreach ($this->listCampusFinalYearFromStudentTable() as $row) {
+        foreach ($this->listFinalYearFromStudentTable($ctx) as $row) {
             $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
             if ($key === '') {
                 continue;
@@ -444,11 +463,13 @@ final class OfficerDataService
     }
 
     /**
-     * All PlaceHub students with admno that look like currently studying final-year.
+     * PlaceHub students with admno that look like currently studying final-year.
+     * When $ctx is department-scoped, only that department (and staff class batches if set).
      *
+     * @param array<string, mixed>|null $ctx
      * @return array<int, array<string, mixed>>
      */
-    private function listCampusFinalYearFromStudentTable(): array
+    private function listFinalYearFromStudentTable(?array $ctx = null): array
     {
         $studentModel = new StudentModel();
         $userModel = new UserModel();
@@ -459,8 +480,22 @@ final class OfficerDataService
             $departments[(string) $d['_id']] = $d;
         }
 
+        $campusWide = $ctx === null
+            || !empty($ctx['campusWide'])
+            || (!empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId']));
+        $filter = $campusWide
+            ? []
+            : PlacementOfficerContext::studentCollectionFilter($ctx ?? []);
+
         $rows = [];
-        foreach ($studentModel->findAll([], 10000) as $student) {
+        foreach ($studentModel->findAll($filter, 10000) as $student) {
+            if (!$campusWide && !empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($student, [
+                'departmentId' => $ctx['departmentId'] ?? '',
+                'profile'      => $ctx['profile'] ?? null,
+            ])) {
+                continue;
+            }
+
             $admno = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
             if ($admno === '' || !preg_match('/^[A-Z0-9]{4,20}$/', $admno)) {
                 continue;
@@ -916,9 +951,11 @@ final class OfficerDataService
     {
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $indexed = [];
-        $campusWide = !empty($ctx['campusWide']) || !empty($ctx['isAdmin']);
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
         foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
-            if (!$campusWide && !StaffContext::studentMatchesScope($student, [
+            if (!$campusWide && !empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($student, [
                 'departmentId' => $ctx['departmentId'] ?? '',
                 'profile'      => $ctx['profile'] ?? null,
             ])) {

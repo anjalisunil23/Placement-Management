@@ -53,6 +53,11 @@ const StaffApi = {
       status: row.status || row.user?.status || 'active',
       blacklisted: !!row.blacklisted,
       blocked: !!row.blocked,
+      aesOnly: !!row.aesOnly,
+      isNew: !!(row.isNew || row.aesOnly),
+      policyAccepted: !!row.policyAccepted,
+      policyAcceptedAt: row.policyAcceptedAt || '',
+      policyVersion: row.policyVersion || '',
     };
   },
 
@@ -156,6 +161,24 @@ const StaffApi = {
     const q = qs.toString();
     StaffApi._lastFetchError = '';
     const res = await api('/staff/students' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) {
+      StaffApi._lastFetchError = res.message || 'Request failed';
+      return null;
+    }
+    try {
+      return res.data.map(s => StaffApi.mapStudentRow(s));
+    } catch (e) {
+      StaffApi._lastFetchError = e?.message || 'Could not parse student data';
+      return null;
+    }
+  },
+
+  async fetchFinalYearStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    StaffApi._lastFetchError = '';
+    const res = await api('/staff/students/final-year' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) {
       StaffApi._lastFetchError = res.message || 'Request failed';
       return null;

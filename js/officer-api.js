@@ -169,6 +169,15 @@ const OfficerApi = {
     return res.data.map(s => OfficerApi.mapStudentRow(s));
   },
 
+  async fetchFinalYearStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/officer/students/final-year' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(s => OfficerApi.mapStudentRow(s));
+  },
+
   async fetchStudentProfile(studentId, registerNumber = '') {
     const qs = registerNumber ? `?registerNumber=${encodeURIComponent(registerNumber)}` : '';
     const res = await api(`/officer/students/${encodeURIComponent(studentId)}/profile${qs}`);
