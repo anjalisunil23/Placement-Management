@@ -20,6 +20,8 @@ const StaffApi = {
       submittedAt: row.submittedAt || row.createdAt || '',
       status: row.status || 'pending',
       category: row.category || '',
+      reason: row.reason || '',
+      adminComments: row.adminComments || '',
     };
   },
 
