@@ -277,34 +277,100 @@
     const year = this.selectedTrendYear();
     const dept = this.selectedDept();
     const batch = this.selectedBatch();
-    let rows = this.placementSourceRows().filter((row) => Number(row.year) === year);
-    rows = this.filterRowsByDeptAndBatch(rows, dept, batch);
+    let rows = this.placementSourceRows();
+
+    // Batch filter (AES stud_class) is primary — same as Placements & Higher Ed.
+    if (batch) {
+      rows = rows.filter((row) => this.batchMatchesFilter(row.classBatch || row.batch, batch));
+      rows = this.filterRowsByDeptAndBatch(rows, dept, '');
+    } else {
+      rows = rows.filter((row) => Number(row.year) === year);
+      rows = this.filterRowsByDeptAndBatch(rows, dept, '');
+    }
 
     if (titleEl) {
-      titleEl.textContent = this.trendYearMode === 'last'
-        ? `Previous year placement list (${year})`
-        : `Placement list (${year})`;
+      titleEl.textContent = batch
+        ? `Placement list · ${batch}`
+        : (this.trendYearMode === 'last'
+          ? `Previous year placement list (${year})`
+          : `Placement list (${year})`);
     }
     if (subEl) {
-      subEl.textContent = this.trendYearMode === 'last'
-        ? 'Placed students from last calendar year (AES batch + offer dates).'
-        : 'Placed students for this calendar year (AES batch + offer dates).';
+      subEl.textContent = batch
+        ? 'Placed students for the selected AES batch (stud_class). Open Placements & Higher Ed for the full registry.'
+        : (this.trendYearMode === 'last'
+          ? 'Placed students from last calendar year. Pick a batch for previous-year class lists from AES.'
+          : 'Placed students for this calendar year. Pick a batch for AES stud_class filtering.');
     }
     if (countEl) countEl.textContent = String(rows.length);
 
+    const emptyMsg = batch
+      ? `No placements for batch ${batch}.`
+      : `No placements for ${year}.`;
+
     rowsEl.innerHTML = rows.length
       ? rows.map((s) => {
-        const batchLabel = [s.dept, s.classBatch].filter(Boolean).join(' · ') || '—';
+        const batchLabel = [s.dept, s.classBatch || s.batch].filter(Boolean).join(' · ') || '—';
         return `<tr>
-          <td><strong>${this.escHtml(s.name)}</strong></td>
-          <td>${this.escHtml(s.roll || '—')}</td>
+          <td><strong>${this.escHtml(s.name || s.studentName)}</strong></td>
+          <td>${this.escHtml(s.roll || s.registerNumber || '—')}</td>
           <td>${this.escHtml(batchLabel)}</td>
-          <td>${this.escHtml(s.company || '—')}</td>
+          <td>${this.escHtml(s.company || s.employer || '—')}</td>
           <td>${this.escHtml(s.role || '—')}</td>
           <td>${this.escHtml(s.package || '—')}</td>
         </tr>`;
       }).join('')
-      : `<tr><td colspan="6" class="text-muted-2 p-4">No placements for ${year}.</td></tr>`;
+      : `<tr><td colspan="6" class="text-muted-2 p-4">${this.escHtml(emptyMsg)}</td></tr>`;
+  };
+
+  HiringOverviewPage.prototype.reloadPlacementRegistryForBatch = async function () {
+    const batch = this.selectedBatch();
+    const branch = this.selectedBranchForApi();
+    const role = this.currentRole();
+    let apiClient = null;
+    if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') apiClient = OfficerApi;
+    else if (role === 'staff' && typeof StaffApi !== 'undefined') apiClient = StaffApi;
+    if (!apiClient?.fetchPlacementsHigherEducation) return;
+
+    const params = {};
+    if (batch) params.batch = batch;
+    if (branch) params.program = String(branch).split('|')[0] || branch;
+    try {
+      const data = await apiClient.fetchPlacementsHigherEducation(params);
+      const registryRows = Array.isArray(data?.rows) ? data.rows : [];
+      if (!registryRows.length && !batch) return;
+      this.placementRows = registryRows.map((row) => ({
+        name: row.studentName || row.name || 'Student',
+        roll: row.registerNumber || row.admissionNo || '',
+        dept: row.branch || row.program || '',
+        classBatch: row.batch || '',
+        company: row.employer || '—',
+        role: row.role || '—',
+        package: row.package || '—',
+        year: this.yearFromBatchOrDate(row.batch, row.joinDate),
+        placedAt: row.joinDate || '',
+      }));
+      if (this.campusRecruitingData) {
+        this.campusRecruitingData.placements = this.placementRows;
+      }
+      if (this.apiHiringData) {
+        this.apiHiringData.placements = this.placementRows;
+      }
+    } catch (_) {
+      /* keep existing placement rows */
+    }
+  };
+
+  HiringOverviewPage.prototype.yearFromBatchOrDate = function (batchLabel, dateStr) {
+    const ts = Date.parse(String(dateStr || ''));
+    if (!Number.isNaN(ts)) return new Date(ts).getFullYear();
+    const m = String(batchLabel || '').match(/(\d{4})\s*[-–]\s*(\d{2,4})/);
+    if (m) {
+      let end = m[2];
+      if (end.length === 2) end = m[1].slice(0, 2) + end;
+      return Number(end) || new Date().getFullYear();
+    }
+    return new Date().getFullYear();
   };
 
   HiringOverviewPage.prototype.renderPipelineBreakdown = function (pipeline) {
@@ -515,9 +581,10 @@
 
   HiringOverviewPage.prototype.batchMatchesFilter = function (studentBatch, batchCode) {
     if (!batchCode) return true;
-    const raw = String(studentBatch || '').trim();
+    const norm = (s) => String(s || '').trim().toUpperCase().replace(/\s+/g, '');
+    const raw = norm(studentBatch);
     if (!raw) return false;
-    return raw.toUpperCase() === String(batchCode).trim().toUpperCase();
+    return raw === norm(batchCode);
   };
 
   HiringOverviewPage.prototype.isYearOnlyBatchLabel = function (batchLabel) {
@@ -681,6 +748,10 @@
   HiringOverviewPage.prototype.onBatchDropdownChange = async function () {
     const batchSelect = this.$('batchSelect');
     this.activeBatchFilter = batchSelect?.value || '';
+    if (this.staffLive) {
+      await this.reloadStaffHiringData();
+    }
+    await this.reloadPlacementRegistryForBatch();
     this.renderForDept(this.selectedDept());
   };
 

@@ -212,13 +212,21 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260713v"></script>
-<script src="js/api.js?v=20260713v"></script>
-<script src="js/app.js?v=20260713v"></script>
+<script src="js/staff-api.js?v=20260714b"></script>
+<script src="js/officer-api.js?v=20260714b"></script>
+<script src="js/api.js?v=20260714b"></script>
+<script src="js/app.js?v=20260714b"></script>
 <script>
-if (Auth.role() !== 'staff') {
+const PLACEMENTS_ROLES = ['staff', 'placement_officer'];
+if (!PLACEMENTS_ROLES.includes(Auth.role())) {
   toast('You do not have access to this page.', 'warn');
   setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
+}
+
+function placementsApi() {
+  return Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined'
+    ? OfficerApi
+    : StaffApi;
 }
 
 let allRows = [];
@@ -301,8 +309,10 @@ function fillSelect(id, values, allLabel, selected = '') {
 }
 
 async function loadPlacementFilters() {
-  if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
-  const data = await StaffApi.fetchPlacementFilters({
+  if (typeof placementsApi !== 'function') return;
+  const apiClient = placementsApi();
+  if (!apiClient?.fetchPlacementFilters) return;
+  const data = await apiClient.fetchPlacementFilters({
     program: filterProgram,
     branch: filterBranch,
   });
@@ -510,9 +520,9 @@ async function saveUploadPlacement(ev) {
 async function loadRegistry() {
   const tbody = document.getElementById('registryRows');
   tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
-  const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
+  const data = await placementsApi().fetchPlacementsHigherEducation(currentFilters());
   if (!data) {
-    tbody.innerHTML = '<tr><td colspan="10" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="text-danger p-4 text-center">Could not load registry. Sign in and try again.</td></tr>';
     return;
   }
   allRows = Array.isArray(data.rows) ? data.rows : [];

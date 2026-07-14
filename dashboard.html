@@ -355,7 +355,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260714a"></script>
-<script src="js/app.js?v=20260713v"></script>
+<script src="js/app.js?v=20260714b"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -369,10 +369,10 @@
   }
   if (needManage) {
     scripts.push('js/admin-api.js?v=20260713p');
-    scripts.push('js/officer-api.js?v=20260713p');
-    scripts.push('js/staff-api.js?v=20260713p');
+    scripts.push('js/officer-api.js?v=20260714b');
+    scripts.push('js/staff-api.js?v=20260714b');
   }
-  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260714a');
+  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260714b');
   // Sync append so onAppReady below still sees them after parse (scripts without defer/async run immediately when inserted... actually dynamically inserted scripts are async by default)
   // Load synchronously via document.write is bad; instead gate page init on Promise.
   window.__phDashExtras = Promise.all(scripts.map((src) => new Promise((resolve, reject) => {

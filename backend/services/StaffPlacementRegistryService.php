@@ -406,8 +406,12 @@ final class StaffPlacementRegistryService
             if ($branch !== '' && strcasecmp((string) ($row['branch'] ?? ''), $branch) !== 0) {
                 return false;
             }
-            if ($batch !== '' && strcasecmp((string) ($row['batch'] ?? ''), $batch) !== 0) {
-                return false;
+            if ($batch !== '') {
+                $rowBatch = trim((string) ($row['batch'] ?? ''));
+                $norm = static fn (string $v): string => strtoupper(preg_replace('/\s+/', '', $v) ?? '');
+                if ($rowBatch === '' || $norm($rowBatch) !== $norm($batch)) {
+                    return false;
+                }
             }
             if ($type !== '') {
                 $want = $type === 'higher_education' ? 'Higher Education' : 'Placement';

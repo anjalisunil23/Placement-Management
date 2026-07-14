@@ -362,6 +362,8 @@ $routes = [
     ['GET',  '/officer/analytics/extended',          [OfficerController::class, 'extendedAnalytics']],
     ['GET',  '/officer/placement-console',           [OfficerController::class, 'placementConsole']],
     ['GET',  '/officer/recruiting',                  [OfficerController::class, 'recruitingOverview']],
+    ['GET',  '/officer/placement-filters',            [OfficerController::class, 'placementFilters']],
+    ['GET',  '/officer/placements-higher-education',  [OfficerController::class, 'placementsHigherEducation']],
     ['GET',  '/officer/notifications',               [OfficerController::class, 'notifications']],
     ['POST', '/officer/notifications/read-all',      [OfficerController::class, 'markAllNotificationsRead']],
     ['POST', '/officer/notifications/{id}/read',     [OfficerController::class, 'markNotificationRead']],

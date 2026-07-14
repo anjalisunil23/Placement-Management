@@ -56,12 +56,12 @@ final class RecruitingService
      *
      * @return array<string, mixed>
      */
-    public function getCampusOverview(?string $departmentId = null): array
+    public function getCampusOverview(?string $departmentId = null, ?array $filterCtx = null): array
     {
         $activeCompanies = $this->activeRecruitingCompanies($departmentId);
         $applicants = $this->campusApplicants($departmentId);
         $byDept = $this->applicantsByDepartment($applicants);
-        $batchOptions = $this->campusBatchOptions($departmentId);
+        $batchOptions = $this->campusBatchOptions($departmentId, $filterCtx);
         $placements = $this->listCampusPlacements($departmentId);
 
         return [
@@ -108,25 +108,42 @@ final class RecruitingService
     }
 
     /**
-     * Distinct AES class batches from getStudInfo4Placement stud_class
-     * (stored as student.classBatch; backfilled live when missing).
+     * Distinct AES class batches (stud_class + assigned previous years) for filters.
      *
+     * @param array<string, mixed>|null $filterCtx staff/officer-compatible PlacementFilterService ctx
      * @return list<string>
      */
-    private function campusBatchOptions(?string $departmentId): array
+    private function campusBatchOptions(?string $departmentId, ?array $filterCtx = null): array
     {
+        $batches = [];
+
+        if (is_array($filterCtx) && !empty($filterCtx['departmentId'])) {
+            try {
+                foreach ((new PlacementFilterService())->fetchBatchOptions($filterCtx, '', '') as $batch) {
+                    $batch = trim((string) $batch);
+                    if ($batch !== '') {
+                        $batches[$batch] = true;
+                    }
+                }
+            } catch (\Throwable) {
+                // Fall through to Mongo / live AES stud_class backfill.
+            }
+        }
+
         $filter = [];
         if ($departmentId !== null && $departmentId !== '') {
             $deptOid = Security::toObjectId($departmentId);
             if ($deptOid === null) {
-                return [];
+                $list = array_keys($batches);
+                sort($list, SORT_NATURAL | SORT_FLAG_CASE);
+
+                return $list;
             }
             $filter['departmentId'] = $deptOid;
         }
 
         $studentModel = new StudentModel();
         $aes = new AesApiService();
-        $batches = [];
         $aesCalls = 0;
         $aesLimit = 80;
 

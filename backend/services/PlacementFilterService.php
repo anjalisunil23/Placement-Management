@@ -576,7 +576,17 @@ final class PlacementFilterService
         $labels = array_values(array_unique(array_filter(array_map(
             static fn ($label) => trim((string) $label),
             $labels
-        ), static fn (string $label) => $label !== '')));
+        ), static function (string $label): bool {
+            if ($label === '') {
+                return false;
+            }
+            // Drop year-only AES leftovers like "2011-2014" (keep MCA2024-2026 / MCA 2023-2025).
+            if (preg_match('/^\d{4}\s*[-–\/]\s*\d{2,4}$/', $label) === 1) {
+                return false;
+            }
+
+            return true;
+        })));
         sort($labels, SORT_NATURAL | SORT_FLAG_CASE);
 
         return $labels;

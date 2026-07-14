@@ -344,6 +344,25 @@ const OfficerApi = {
     return res.success ? res.data : null;
   },
 
+  async fetchPlacementFilters(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.program) qs.set('program', params.program);
+    if (params.branch) qs.set('branch', params.branch);
+    const q = qs.toString();
+    const res = await api('/officer/placement-filters' + (q ? `?${q}` : ''));
+    return res.success && res.data ? res.data : null;
+  },
+
+  async fetchPlacementsHigherEducation(params = {}) {
+    const qs = new URLSearchParams();
+    ['program', 'branch', 'batch', 'type', 'q'].forEach(k => {
+      if (params[k]) qs.set(k, params[k]);
+    });
+    const q = qs.toString();
+    const res = await api('/officer/placements-higher-education' + (q ? `?${q}` : ''));
+    return res.success ? res.data : null;
+  },
+
   async fetchExtendedAnalytics() {
     const res = await api('/analytics/extended');
     return res.success ? res.data : null;
