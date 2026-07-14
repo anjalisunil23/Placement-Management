@@ -821,7 +821,7 @@ body.login-page{
 .hero{
   position:relative;
   padding:5rem 0 4rem;
-  background:url('/css/ajce-campus-hero.png') center 60%/cover no-repeat,url('/hero-bg.php') center 60%/cover no-repeat;
+  background:url('/css/ajce-campus-hero-new.png') center 60%/cover no-repeat,url('/hero-bg.php') center 60%/cover no-repeat;
   color:#fff;
   overflow:hidden;
 }
