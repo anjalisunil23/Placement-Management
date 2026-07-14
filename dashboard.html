@@ -307,15 +307,19 @@
       <!-- ===== ALUMNI (EMPLOYED) ===== -->
       <div data-alumni-employed>
         <div class="row g-3">
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-buildings"></i></div><span class="badge-soft success">Employed</span></div>
             <div class="val" style="font-size:1.4rem" id="alumniCo">—</div><div class="lbl">Working At</div>
           </div></div>
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-currency-rupee"></i></div><span class="badge-soft info">Package</span></div>
+            <div class="val" style="font-size:1.4rem" id="alumniPackage">—</div><div class="lbl">Package</div>
+          </div></div>
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-megaphone-fill"></i></div><span class="badge-soft info" id="alumniJobPostsBadge">—</span></div>
             <div class="val" id="alumniJobPosts">0</div><div class="lbl">Job Posts</div>
           </div></div>
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+          <div class="col-md-3 col-6"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-share-fill"></i></div><span class="badge-soft success" id="alumniReferralsBadge">—</span></div>
             <div class="val" id="alumniReferrals">0</div><div class="lbl">Referrals Made</div>
           </div></div>
@@ -358,8 +362,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260714f"></script>
-<script src="js/app.js?v=20260714f"></script>
+<script src="js/api.js?v=20260714h"></script>
+<script src="js/app.js?v=20260714g"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -567,12 +571,25 @@ if (role === 'company') {
   })();
 }
 
+function formatAlumniPackageLabel(packageVal) {
+  const raw = String(packageVal || '').trim();
+  if (!raw) return '—';
+  const m = raw.match(/[\d.]+/);
+  if (m && !/lpa/i.test(raw) && !/₹/.test(raw)) return `₹${m[0]} LPA`;
+  return raw;
+}
+
 if (role === 'alumni') {
   (async () => {
     const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (live) {
+      try { await Auth.enrichFromProfile(); } catch { /* keep cached session */ }
+      if (typeof applyRoleVisibility === 'function') applyRoleVisibility();
+    }
 
     if (alumniIsWorking()) {
-      document.getElementById('alumniCo').textContent = (user.company || '').trim() || '—';
+      const current = Auth.user() || user;
+      document.getElementById('alumniCo').textContent = (current.company || '').trim() || '—';
 
       let posts = 0;
       let active = 0;
@@ -592,7 +609,13 @@ if (role === 'alumni') {
       const refBadge = document.getElementById('alumniReferralsBadge');
       if (refBadge) refBadge.textContent = referrals > 0 ? 'Sent' : '—';
 
-      await renderAlumniSuccessStoryCards(live);
+      let packageLabel = formatAlumniPackageLabel(current.package);
+      await renderAlumniSuccessStoryCards();
+      if (packageLabel === '—') {
+        const stories = typeof AlumniSuccessStories !== 'undefined' ? AlumniSuccessStories.mine() : [];
+        if (stories.length) packageLabel = formatAlumniPackageLabel(stories[0].package);
+      }
+      document.getElementById('alumniPackage').textContent = packageLabel;
     } else {
       let drives = [];
       let apps = [];
@@ -636,21 +659,11 @@ function alumniStoryInitials(name) {
   return String(name || 'A').split(/\s+/).filter(Boolean).map(n => n[0] || '').join('').slice(0, 2).toUpperCase() || 'A';
 }
 
-async function renderAlumniSuccessStoryCards(liveOnly = true) {
+async function renderAlumniSuccessStoryCards() {
   const root = document.getElementById('alumniStoryCards');
   if (!root || typeof AlumniSuccessStories === 'undefined') return;
-  let stories = [];
-  if (liveOnly) {
-    const res = await api('/alumni/success-stories', { noRedirectOn401: true });
-    if (res?.success && Array.isArray(res.data)) {
-      const email = Auth.user()?.email || '';
-      stories = res.data.map(s => AlumniSuccessStories.normalizeItem({ ...s, alumniEmail: email }));
-      AlumniSuccessStories._cache = stories;
-    }
-  } else {
-    await AlumniSuccessStories.fetch();
-    stories = AlumniSuccessStories.mine();
-  }
+  await AlumniSuccessStories.fetch();
+  const stories = AlumniSuccessStories.mine();
   if (!stories.length) {
     root.innerHTML = `<div class="col-12"><div class="card-surface p-4 text-center text-muted-2">
       No success story yet.

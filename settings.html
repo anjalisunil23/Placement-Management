@@ -63,6 +63,7 @@
           </div>
           <div class="col-md-6" id="alumniCompanyWrap"><label class="form-label small fw-semibold">Current company</label><input class="form-control" id="alumniCompany"/></div>
           <div class="col-md-6" id="alumniTitleWrap"><label class="form-label small fw-semibold">Role / Title</label><input class="form-control" id="alumniTitle"/></div>
+          <div class="col-md-6" id="alumniPackageWrap"><label class="form-label small fw-semibold">Package</label><input class="form-control" id="alumniPackage" placeholder="e.g. 12 LPA"/></div>
           <div class="col-12" id="alumniEmploymentDocsWrap" style="display:none">
             <hr class="my-2"/>
             <div class="row g-3" id="alumniEmploymentDocsForm">
@@ -876,11 +877,13 @@ if (role === 'alumni') {
   document.getElementById('alumniWorking').checked = working;
   document.getElementById('alumniCompany').value = user.company || '';
   document.getElementById('alumniTitle').value = user.title || '';
+  document.getElementById('alumniPackage').value = user.package || '';
   wireFilePickers('#alumniEmploymentDocsForm');
   function syncAlumniFields() {
     const on = document.getElementById('alumniWorking').checked;
     document.getElementById('alumniCompanyWrap').style.display = on ? '' : 'none';
     document.getElementById('alumniTitleWrap').style.display = on ? '' : 'none';
+    document.getElementById('alumniPackageWrap').style.display = on ? '' : 'none';
     document.getElementById('alumniEmploymentDocsWrap').style.display = on ? '' : 'none';
     if (on) wireFilePickers('#alumniEmploymentDocsForm');
   }
@@ -893,6 +896,7 @@ if (role === 'alumni') {
       document.getElementById('alumniWorking').checked = !!p.isWorking;
       document.getElementById('alumniCompany').value = p.company || '';
       document.getElementById('alumniTitle').value = p.title || p.role || '';
+      document.getElementById('alumniPackage').value = p.package || '';
       applyAlumniEmploymentDocsState(p.employmentDocs || null);
       const alumniPhoto = p.photoUrl || p.photo?.url || '';
       if (alumniPhoto) setAvatarPhoto(alumniPhoto);
@@ -901,6 +905,7 @@ if (role === 'alumni') {
         isWorking: !!p.isWorking,
         company: p.company || '',
         title: p.title || p.role || '',
+        package: p.package || '',
         photoUrl: alumniPhoto || user.photoUrl || '',
         photo: p.photo || user.photo || null,
       }, Auth.token());
@@ -1107,6 +1112,7 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
       isWorking: working,
       company: working ? document.getElementById('alumniCompany').value.trim() : '',
       title: working ? document.getElementById('alumniTitle').value.trim() : '',
+      package: working ? document.getElementById('alumniPackage').value.trim() : '',
     };
     if (working && !payload.company) {
       toast('Enter your current company.', 'warn');
@@ -1125,6 +1131,7 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
           isWorking: prof.isWorking ?? working,
           company: prof.company ?? payload.company,
           title: prof.title ?? payload.title,
+          package: prof.package ?? payload.package,
           experience: prof.experience ?? user.experience,
         }, Auth.token());
         toast('Profile updated.', 'success');
@@ -1133,7 +1140,7 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
       }
       toast(res?.message || 'Could not save to server — saved locally.', 'warn');
     }
-    Auth.set({ ...user, isWorking: working, company: payload.company, title: payload.title }, Auth.token());
+    Auth.set({ ...user, isWorking: working, company: payload.company, title: payload.title, package: payload.package }, Auth.token());
     toast('Profile updated.', 'success');
     setTimeout(() => window.location.href = 'dashboard.html', 700);
     return;

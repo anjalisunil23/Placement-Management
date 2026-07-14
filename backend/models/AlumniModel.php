@@ -37,6 +37,7 @@ class AlumniModel extends BaseModel
             'userId'     => Security::toObjectId($userId),
             'company'    => $company,
             'role'       => trim((string) ($data['role'] ?? $data['title'] ?? '')),
+            'package'    => trim((string) ($data['package'] ?? '')),
             'experience' => (int) ($data['experience'] ?? 0),
             'skills'     => $skills,
             'isWorking'  => $isWorking,
@@ -67,6 +68,9 @@ class AlumniModel extends BaseModel
         }
         if (array_key_exists('title', $input)) {
             $update['role'] = trim((string) $input['title']);
+        }
+        if (array_key_exists('package', $input)) {
+            $update['package'] = trim((string) $input['package']);
         }
         if (array_key_exists('experience', $input)) {
             $update['experience'] = (int) $input['experience'];
@@ -108,6 +112,7 @@ class AlumniModel extends BaseModel
         $fields = [
             'company'    => $company,
             'title'      => trim((string) ($profile['role'] ?? '')),
+            'package'    => trim((string) ($profile['package'] ?? '')),
             'experience' => (int) ($profile['experience'] ?? 0),
             'skills'     => $profile['skills'] ?? [],
             'isWorking'  => $isWorking,
@@ -128,6 +133,7 @@ class AlumniModel extends BaseModel
     {
         $fields = self::profileToUserFields($profile);
         $profile['title'] = $fields['title'];
+        $profile['package'] = $fields['package'];
         $profile['isWorking'] = $fields['isWorking'];
         $profile['employmentDocs'] = self::serializeEmploymentDocs(
             is_array($profile['employmentDocs'] ?? null) ? $profile['employmentDocs'] : null

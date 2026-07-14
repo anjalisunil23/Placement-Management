@@ -184,6 +184,7 @@ final class Collections
                 'userId'     => 'ObjectId',
                 'company'    => 'string',
                 'role'       => 'string (job title)',
+                'package'    => 'string',
                 'experience' => 'int (years)',
                 'skills'     => 'array',
                 'isWorking'  => 'bool',

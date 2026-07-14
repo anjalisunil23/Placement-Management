@@ -41,11 +41,11 @@
       </div>
       <form id="storyForm" class="modal-body pt-2">
         <div class="row g-3">
-          <div class="col-md-6"><label class="form-label small fw-semibold">Your name</label><input class="form-control" id="storyName" required placeholder="Full name"/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">Package</label><input class="form-control" id="storyPackage" placeholder="e.g. 12 LPA or ₹12 LPA"/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><input class="form-control" id="storyCompany" required placeholder="e.g. Google"/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="storyRole" required placeholder="e.g. Software Engineer"/></div>
-          <div class="col-12"><label class="form-label small fw-semibold">Your story</label><textarea class="form-control" id="storyQuote" rows="4" required placeholder="How did placement training, drives, or mentors help you succeed?"></textarea></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Your name</label><input class="form-control" id="storyName" required readonly/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Package</label><input class="form-control" id="storyPackage" readonly/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Company</label><input class="form-control" id="storyCompany" required readonly/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="storyRole" required readonly/></div>
+          <div class="col-12"><label class="form-label small fw-semibold">Your story</label><textarea class="form-control" id="storyQuote" rows="4" required placeholder="Share how placement training, drives, or mentors helped you succeed."></textarea></div>
         </div>
         <div class="d-flex justify-content-end gap-2 mt-4">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -58,33 +58,109 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260713p"></script>
-<script src="js/app.js?v=20260713p"></script>
+<script src="js/api.js?v=20260714h"></script>
+<script src="js/app.js?v=20260714g"></script>
 <script>
 let editingStoryId = null;
 let storyModal;
 let alumniProfile = {};
 
-function openStoryForm(id) {
-  editingStoryId = id || null;
+function profileName() {
+  return String(alumniProfile.name || Auth.user()?.name || '').trim();
+}
+function profileCompany() {
+  return String(alumniProfile.company || Auth.user()?.company || '').trim();
+}
+function profileRole() {
+  return String(alumniProfile.title || alumniProfile.role || Auth.user()?.title || '').trim();
+}
+function profilePackage() {
+  return String(alumniProfile.package || Auth.user()?.package || '').trim();
+}
+
+function setStoryProfileFields({ name, company, role, packageVal, quote, locked }) {
+  const nameEl = document.getElementById('storyName');
+  const companyEl = document.getElementById('storyCompany');
+  const roleEl = document.getElementById('storyRole');
+  const packageEl = document.getElementById('storyPackage');
+  const quoteEl = document.getElementById('storyQuote');
+  nameEl.value = name || '';
+  companyEl.value = company || '';
+  roleEl.value = role || '';
+  packageEl.value = packageVal || '';
+  quoteEl.value = quote || '';
+  [nameEl, companyEl, roleEl, packageEl].forEach((el) => {
+    el.readOnly = !!locked;
+  });
+}
+
+async function ensureAlumniProfile() {
   const user = Auth.user() || {};
+  alumniProfile = {
+    name: user.name || '',
+    company: user.company || '',
+    title: user.title || '',
+    role: user.title || '',
+    package: user.package || '',
+  };
+  if (!Auth.hasRealAuth() || Auth.isDemo()) return alumniProfile;
+  try { await Auth.enrichFromProfile(); } catch { /* ignore */ }
+  const refreshed = Auth.user() || user;
+  alumniProfile = {
+    name: refreshed.name || user.name || '',
+    company: refreshed.company || '',
+    title: refreshed.title || '',
+    role: refreshed.title || '',
+    package: refreshed.package || '',
+  };
+  const res = await api('/alumni/profile', { noRedirectOn401: true });
+  if (res?.success && res.data) {
+    const p = res.data;
+    alumniProfile = {
+      name: refreshed.name || user.name || '',
+      company: p.company || refreshed.company || '',
+      title: p.title || p.role || refreshed.title || '',
+      role: p.role || p.title || refreshed.title || '',
+      package: p.package || refreshed.package || '',
+    };
+  }
+  return alumniProfile;
+}
+
+async function openStoryForm(id) {
+  editingStoryId = id || null;
+  await ensureAlumniProfile();
   document.getElementById('storyModalTitle').textContent = editingStoryId ? 'Edit success story' : 'Add success story';
   document.getElementById('storySubmitBtn').textContent = editingStoryId ? 'Save changes' : 'Publish story';
   if (editingStoryId) {
     const s = AlumniSuccessStories.mine().find(x => x.id === editingStoryId);
     if (!s) return;
-    document.getElementById('storyName').value = s.name || '';
-    document.getElementById('storyCompany').value = s.company || '';
-    document.getElementById('storyRole').value = s.role || '';
-    document.getElementById('storyPackage').value = s.package || '';
-    document.getElementById('storyQuote').value = s.quote || '';
+    setStoryProfileFields({
+      name: s.name || profileName(),
+      company: s.company || profileCompany(),
+      role: s.role || profileRole(),
+      packageVal: s.package || profilePackage(),
+      quote: s.quote || '',
+      locked: false,
+    });
   } else {
     document.getElementById('storyForm').reset();
-    document.getElementById('storyName').value = user.name || '';
-    const profileCompany = alumniProfile.company || user.company || '';
-    const profileRole = alumniProfile.title || alumniProfile.role || user.title || '';
-    if (profileCompany) document.getElementById('storyCompany').value = profileCompany;
-    if (profileRole) document.getElementById('storyRole').value = profileRole;
+    const company = profileCompany();
+    const role = profileRole();
+    const packageVal = profilePackage();
+    if (!company || !role) {
+      toast('Set your company and role in Settings before publishing a success story.', 'warn');
+    }
+    setStoryProfileFields({
+      name: profileName(),
+      company,
+      role,
+      packageVal,
+      quote: '',
+      locked: true,
+    });
+    const packageEl = document.getElementById('storyPackage');
+    packageEl.readOnly = !!packageVal;
   }
   storyModal.show();
 }
@@ -133,6 +209,10 @@ document.getElementById('storyForm').addEventListener('submit', async e => {
     package: document.getElementById('storyPackage').value.trim(),
     quote: document.getElementById('storyQuote').value.trim(),
   };
+  if (!payload.name || !payload.company || !payload.role) {
+    toast('Name, company, and role must come from your alumni profile. Update them in Settings.', 'warn');
+    return;
+  }
   if (!(await confirmAction({
     title: editingStoryId ? 'Update story' : 'Publish story',
     message: `${editingStoryId ? 'Update' : 'Publish'} success story for ${payload.name}?`,
@@ -145,14 +225,16 @@ document.getElementById('storyForm').addEventListener('submit', async e => {
   if (ok) {
     storyModal.hide();
     toast(editingStoryId ? 'Story updated.' : 'Story published on the landing page.', 'success');
+    if (payload.package && Auth.user()) {
+      Auth.set({ ...Auth.user(), package: payload.package }, Auth.token());
+    }
     renderStories();
   }
 });
 
 onAppReady(async () => {
   storyModal = new bootstrap.Modal(document.getElementById('storyModal'));
-  const res = await api('/alumni/profile');
-  if (res.success && res.data) alumniProfile = res.data;
+  await ensureAlumniProfile();
   renderStories();
 });
 </script>

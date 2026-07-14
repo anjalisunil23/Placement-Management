@@ -631,6 +631,7 @@ const Auth = {
         policyVersion: merged.policyVersion || prev.policyVersion || '',
         policyAcceptedAt: merged.policyAcceptedAt || prev.policyAcceptedAt || '',
         title: merged.title ?? prev.title ?? '',
+        package: merged.package ?? prev.package ?? '',
         experience: merged.experience ?? prev.experience,
         isWorking: merged.isWorking ?? prev.isWorking,
         skills: merged.skills || prev.skills || [],
@@ -816,6 +817,14 @@ const Auth = {
         policyAcceptedAt: p.policyAcceptedAt || prev.policyAcceptedAt || '',
         photoUrl: p.photoUrl || p.photo?.url || u.photoUrl || prev.photoUrl || '',
         photo: p.photo || prev.photo || null,
+        company: p.company ?? u.company ?? prev.company ?? '',
+        title: p.title ?? p.role ?? u.title ?? prev.title ?? '',
+        package: p.package ?? u.package ?? prev.package ?? '',
+        experience: p.experience ?? u.experience ?? prev.experience,
+        isWorking: typeof p.isWorking === 'boolean'
+          ? p.isWorking
+          : (typeof u.isWorking === 'boolean' ? u.isWorking : prev.isWorking),
+        skills: Array.isArray(p.skills) ? p.skills : (u.skills || prev.skills || []),
         assignedClassBatches: Array.isArray(p.assignedClassBatches)
           ? p.assignedClassBatches
           : (Array.isArray(prev.assignedClassBatches) ? prev.assignedClassBatches : []),
@@ -948,8 +957,8 @@ function demoUserFor(role) {
     student:           { name:'Karthik Subramanian',email:'karthik.s@college.edu',  role:'student',  registerNumber:'22MCA047', department:'MCA', cgpa:8.7, backlogs:0 },
     staff:             { name:'Prof. Ravi Iyer',    email:'ravi.iyer@college.edu',  role:'staff',    department:'CSE', designation:'Associate Professor' },
     company:           { name:'Neha Sharma',        email:'neha@acme.io',           role:'company',  companyName:'Acme Cloud', category:'Product', tier:'Tier 1' },
-    alumni:            { name:'Rohan Verma',        email:'rohan.v@alumni.edu',     role:'alumni',   company:'Google', title:'SWE II', experience:3, isWorking:true },
-    'alumni-seeking':  { name:'Priya Nair',         email:'priya.v@alumni.edu',     role:'alumni',   company:'', title:'', experience:2, isWorking:false },
+    alumni:            { name:'Rohan Verma',        email:'rohan.v@alumni.edu',     role:'alumni',   company:'Google', title:'SWE II', package:'₹38 LPA', experience:3, isWorking:true },
+    'alumni-seeking':  { name:'Priya Nair',         email:'priya.v@alumni.edu',     role:'alumni',   company:'', title:'', package:'', experience:2, isWorking:false },
   };
   return map[role] || map.placement_officer;
 }
@@ -1370,9 +1379,9 @@ const AlumniSuccessStories = {
   normalizeItem(s) {
     return {
       id: s.id || s._id,
-      name: s.name || '',
+      name: s.name || s.alumniName || '',
       company: s.company || '',
-      role: s.role || '',
+      role: s.role || s.title || '',
       package: s.package || '',
       quote: s.quote || '',
       status: s.status || 'published',
@@ -1387,20 +1396,26 @@ const AlumniSuccessStories = {
   },
   save(list) { this._cache = list; localStorage.setItem(ALUMNI_STORIES_KEY, JSON.stringify(list)); },
   mine() {
-    const email = (Auth.user()?.email || '').toLowerCase();
+    // API-backed cache is already scoped to the signed-in alumni — don't re-filter by email
+    // (AES accounts may use collegeEmail vs email and drop every row).
+    if (this._cache) return this._cache.map(s => this.normalizeItem(s));
+    const email = (Auth.user()?.email || Auth.user()?.collegeEmail || '').toLowerCase();
     if (!email) return this.all().map(s => this.normalizeItem(s));
     return this.all().filter(s => (s.alumniEmail || '').toLowerCase() === email).map(s => this.normalizeItem(s));
   },
   async fetch() {
     if (Auth.role() !== 'alumni') return this.all();
-    const res = await api('/alumni/success-stories');
-    if (res.success && Array.isArray(res.data)) {
-      const email = Auth.user()?.email || '';
+    const res = await api('/alumni/success-stories', { noRedirectOn401: true });
+    if (res?.success && Array.isArray(res.data)) {
+      const email = Auth.user()?.email || Auth.user()?.collegeEmail || '';
       this._cache = res.data.map(s => this.normalizeItem({ ...s, alumniEmail: email }));
       localStorage.setItem(ALUMNI_STORIES_KEY, JSON.stringify(this._cache));
       return this._cache;
     }
-    return this.all();
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      return this._cache || [];
+    }
+    return this.mine();
   },
   async add(payload) {
     const res = await api('/alumni/success-stories', { method: 'POST', body: payload });

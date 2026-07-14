@@ -31,7 +31,13 @@ class SuccessStoryModel extends BaseModel
         if ($oid === null) {
             return [];
         }
-        return $this->findAll(['alumniUserId' => $oid], $limit, 0, ['createdAt' => -1]);
+        // Prefer exact match; also match any legacy casing of the same id.
+        return $this->findAll([
+            '$or' => [
+                ['alumniUserId' => $oid],
+                ['alumniUserId' => $alumniUserId],
+            ],
+        ], $limit, 0, ['createdAt' => -1]);
     }
 
     /**
@@ -57,7 +63,9 @@ class SuccessStoryModel extends BaseModel
     public function updateStory(string $id, string $alumniUserId, array $data): bool
     {
         $story = $this->findById($id);
-        if (!$story || (string) ($story['alumniUserId'] ?? '') !== $alumniUserId) {
+        $ownerId = Security::toObjectId($alumniUserId) ?? strtolower($alumniUserId);
+        $storyOwner = strtolower((string) ($story['alumniUserId'] ?? ''));
+        if (!$story || $storyOwner === '' || $storyOwner !== $ownerId) {
             return false;
         }
         $update = [];
@@ -75,7 +83,9 @@ class SuccessStoryModel extends BaseModel
     public function deleteStory(string $id, string $alumniUserId): bool
     {
         $story = $this->findById($id);
-        if (!$story || (string) ($story['alumniUserId'] ?? '') !== $alumniUserId) {
+        $ownerId = Security::toObjectId($alumniUserId) ?? strtolower($alumniUserId);
+        $storyOwner = strtolower((string) ($story['alumniUserId'] ?? ''));
+        if (!$story || $storyOwner === '' || $storyOwner !== $ownerId) {
             return false;
         }
         return $this->delete($id);

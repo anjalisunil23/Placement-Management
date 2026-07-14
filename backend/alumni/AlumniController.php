@@ -484,7 +484,8 @@ final class AlumniController
       Response::error('Validation failed.', 422, $errors);
     }
 
-    $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
+    $profileModel = new AlumniModel();
+    $profile = $profileModel->findByUserId((string) $user['_id']);
     $company = trim((string) ($input['company'] ?? ''));
     if ($company === '' && $profile) {
       $company = trim((string) ($profile['company'] ?? ''));
@@ -493,18 +494,31 @@ final class AlumniController
     if ($role === '' && $profile) {
       $role = trim((string) ($profile['role'] ?? ''));
     }
+    $package = trim((string) ($input['package'] ?? ''));
+    if ($package === '' && $profile) {
+      $package = trim((string) ($profile['package'] ?? ''));
+    }
+    $name = trim((string) ($input['name'] ?? $user['name'] ?? ''));
+    if ($name === '') {
+      $name = (string) ($user['name'] ?? 'Alumni');
+    }
 
     $id = (new SuccessStoryModel())->createStory(
       (string) $user['_id'],
       (string) ($user['name'] ?? 'Alumni'),
       [
-        'name'    => trim((string) ($input['name'] ?? $user['name'] ?? '')),
+        'name'    => $name,
         'company' => $company,
         'role'    => $role,
-        'package' => trim((string) ($input['package'] ?? '')),
+        'package' => $package,
         'quote'   => trim((string) ($input['quote'] ?? '')),
       ]
     );
+
+    if ($profile && $package !== '' && trim((string) ($profile['package'] ?? '')) === '') {
+      $profileModel->updateProfile((string) $profile['_id'], ['package' => $package]);
+    }
+
     Response::success(['id' => $id], 'Success story published on the public portal.', 201);
   }
 
