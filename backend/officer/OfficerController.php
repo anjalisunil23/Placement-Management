@@ -209,11 +209,13 @@ final class OfficerController
         $dup = (new DriveModel())->findDuplicateDrive(
             $companyId,
             (string) ($input['title'] ?? ''),
-            (string) ($input['date'] ?? '')
+            (string) ($input['date'] ?? ''),
+            null,
+            (string) ($input['departmentId'] ?? '')
         );
         if ($dup !== null) {
             Response::error(
-                'A drive for this company, title, and date already exists.',
+                'A drive for this company, role, and date already exists for this department.',
                 409,
                 ['existingId' => (string) ($dup['_id'] ?? '')]
             );

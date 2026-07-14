@@ -187,6 +187,7 @@ $routes = [
     ['DELETE', '/admin/results/{id}',                [AdminController::class, 'deleteResult']],
     ['GET',    '/admin/companies',                   [AdminController::class, 'listCompanies']],
     ['POST',   '/admin/companies',                   [AdminController::class, 'createCompany']],
+    ['POST',   '/admin/companies/resolve',           [AdminController::class, 'resolveCompany']],
     ['PUT',    '/admin/companies/{id}',              [AdminController::class, 'updateCompany']],
     ['DELETE', '/admin/companies/{id}',              [AdminController::class, 'deleteCompany']],
     ['POST',   '/admin/companies/register',         [AdminController::class, 'registerCompany']],

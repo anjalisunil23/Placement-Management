@@ -26,12 +26,17 @@ class DriveModel extends BaseModel
     }
 
     /**
-     * Find a drive with the same company, title, and date (avoids table duplicates).
+     * Find a drive with the same company, title, date, and department scope.
      *
      * @return array<string, mixed>|null
      */
-    public function findDuplicateDrive(string $companyId, string $title, string $date, ?string $excludeId = null): ?array
-    {
+    public function findDuplicateDrive(
+        string $companyId,
+        string $title,
+        string $date,
+        ?string $excludeId = null,
+        ?string $departmentId = null
+    ): ?array {
         $companyId = trim($companyId);
         $titleNorm = self::normalizeDriveTitle($title);
         $date = trim($date);
@@ -43,6 +48,8 @@ class DriveModel extends BaseModel
         if ($companyOid === null) {
             return null;
         }
+
+        $scopeDept = trim((string) ($departmentId ?? ''));
 
         foreach ($this->findAll([], 3000) as $drive) {
             $id = (string) ($drive['_id'] ?? '');
@@ -57,6 +64,15 @@ class DriveModel extends BaseModel
                 continue;
             }
             if (trim((string) ($drive['date'] ?? '')) !== $date) {
+                continue;
+            }
+
+            $driveDept = trim((string) ($drive['departmentId'] ?? ''));
+            if ($scopeDept !== '') {
+                if ($driveDept !== $scopeDept) {
+                    continue;
+                }
+            } elseif ($driveDept !== '') {
                 continue;
             }
 

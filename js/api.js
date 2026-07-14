@@ -1159,6 +1159,24 @@ const RegisteredCompanies = {
     toast(res.message || 'Could not add company.', res.status === 409 ? 'warn' : 'error');
     return null;
   },
+  async resolveOrAdd(payload) {
+    if (!(await requireWriteSession())) return null;
+    const res = await api('/admin/companies/resolve', {
+      method: 'POST',
+      body: {
+        companyName: String(payload.companyName || '').trim(),
+        category: payload.category || 'Software',
+        tier: payload.tier || 'Tier 2',
+        website: payload.website || payload.companyWebsite || '',
+      },
+    });
+    if (res.success) {
+      await this.fetch();
+      return { ...(res.data || {}), message: res.message, reused: !!res.data?.reused };
+    }
+    toast(res.message || 'Could not add company.', 'error');
+    return null;
+  },
   async update(companyId, payload) {
     if (!(await requireWriteSession())) return null;
     const hrName = String(payload.hrName || '').trim();
@@ -1176,7 +1194,7 @@ const RegisteredCompanies = {
       await this.fetch();
       return true;
     }
-    toast(res.message || 'Could not update company.', 'error');
+    toast(res.message || 'Could not update company.', res.status === 409 ? 'warn' : 'error');
     return null;
   },
   async remove(companyId) {
@@ -2770,15 +2788,18 @@ function fillDepartmentCodeSelect(selectEl, { includeAll = false, selected = '' 
   selectEl.innerHTML = html;
 }
 
-function renderDepartmentBranchCheckboxes(container, { name = 'branches', checkedAll = true, selected = null } = {}) {
+function renderDepartmentBranchCheckboxes(container, { name = 'branches', checkedAll = true, selected = null, locked = false } = {}) {
   if (!container) return;
-  const depts = departmentList().filter(d => {
+  let depts = departmentList().filter(d => {
     const code = String(d.code || '').trim().toUpperCase();
     return code && !/^\d+$/.test(code);
   });
   const selectedSet = selected instanceof Set
     ? selected
     : (Array.isArray(selected) ? new Set(selected.map(s => String(s).trim().toUpperCase())) : null);
+  if (locked && selectedSet?.size) {
+    depts = depts.filter(d => selectedSet.has(String(d.code || '').trim().toUpperCase()));
+  }
   container.innerHTML = depts.length
     ? depts.map(d => {
         const code = String(d.code || '').trim().toUpperCase();
@@ -2786,7 +2807,8 @@ function renderDepartmentBranchCheckboxes(container, { name = 'branches', checke
         const id = `br-${code}-${Math.random().toString(36).slice(2, 7)}`;
         const label = d.name ? `${code}` : code;
         const title = d.name ? ` title="${String(d.name).replace(/"/g, '&quot;')}"` : '';
-        return `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="${name}" value="${code}" id="${id}"${checked ? ' checked' : ''}><label class="form-check-label small" for="${id}"${title}>${label}</label></div>`;
+        const disabled = locked ? ' disabled' : '';
+        return `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="${name}" value="${code}" id="${id}"${checked ? ' checked' : ''}${disabled}><label class="form-check-label small" for="${id}"${title}>${label}</label></div>`;
       }).join('')
     : '<span class="small text-muted-2">No departments configured.</span>';
 }

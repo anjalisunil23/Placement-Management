@@ -196,12 +196,22 @@ final class AuthController
 
             case 'company':
                 if (!empty($input['companyName'])) {
-                    (new CompanyModel())->createCompany([
-                        'userId'      => $userId,
-                        'companyName' => $input['companyName'],
-                        'category'    => $input['category'] ?? 'Software',
-                        'tier'        => $input['tier'] ?? 'Tier 2',
-                    ]);
+                    $companyName = trim((string) $input['companyName']);
+                    $companyModel = new CompanyModel();
+                    $existing = $companyModel->findByNormalizedName($companyName);
+                    if ($existing === null) {
+                        $companyModel->createCompany([
+                            'userId'      => $userId,
+                            'companyName' => $companyName,
+                            'category'    => $input['category'] ?? 'Software',
+                            'tier'        => $input['tier'] ?? 'Tier 2',
+                        ]);
+                    } else {
+                        $companyModel->update((string) $existing['_id'], [
+                            'userId'            => Security::toObjectId($userId),
+                            'associationStatus' => $input['associationStatus'] ?? 'active',
+                        ]);
+                    }
                 }
                 break;
 

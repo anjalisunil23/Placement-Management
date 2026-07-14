@@ -181,7 +181,29 @@ class CompanyModel extends BaseModel
     {
         $name = strtolower(trim($name));
         $name = preg_replace('/\s+/', ' ', $name) ?? $name;
-        $name = preg_replace('/[^a-z0-9.&\s+-]/', '', $name) ?? $name;
+        $name = preg_replace('/[.,]/', ' ', $name) ?? $name;
+        $name = preg_replace('/\s+/', ' ', $name) ?? $name;
+
+        $suffixes = [
+            'private limited',
+            'pvt ltd',
+            'pvt limited',
+            'limited',
+            'ltd',
+            'incorporated',
+            'inc',
+            'corporation',
+            'corp',
+            'llc',
+            'plc',
+        ];
+        foreach ($suffixes as $suffix) {
+            $pattern = '/\b' . preg_quote($suffix, '/') . '\b\.?/i';
+            $name = preg_replace($pattern, '', $name) ?? $name;
+        }
+
+        $name = preg_replace('/[^a-z0-9\s]/', '', $name) ?? $name;
+        $name = preg_replace('/\s+/', ' ', $name) ?? $name;
 
         return trim($name);
     }
@@ -191,16 +213,33 @@ class CompanyModel extends BaseModel
      *
      * @return array<string, mixed>|null
      */
-    public function findByNormalizedName(string $companyName): ?array
+    public function findByNormalizedName(string $companyName, ?string $excludeId = null): ?array
     {
         $needle = self::normalizeCompanyName($companyName);
         if ($needle === '') {
             return null;
         }
 
+        $indexed = $this->findOne(['nameNormalized' => $needle]);
+        if ($indexed !== null) {
+            $id = (string) ($indexed['_id'] ?? '');
+            if ($excludeId === null || $id === '' || $id !== $excludeId) {
+                return $indexed;
+            }
+        }
+
         foreach ($this->findAll([], 5000) as $company) {
-            $existing = self::normalizeCompanyName((string) ($company['companyName'] ?? ''));
+            $id = (string) ($company['_id'] ?? '');
+            if ($excludeId !== null && $id !== '' && $id === $excludeId) {
+                continue;
+            }
+
+            $stored = (string) ($company['nameNormalized'] ?? '');
+            $existing = $stored !== '' ? $stored : self::normalizeCompanyName((string) ($company['companyName'] ?? ''));
             if ($existing !== '' && $existing === $needle) {
+                if ($stored === '' && $id !== '') {
+                    $this->update($id, ['nameNormalized' => $needle]);
+                }
                 return $company;
             }
         }
@@ -213,8 +252,19 @@ class CompanyModel extends BaseModel
      */
     public function createCompany(array $data): string
     {
+        $companyName = trim((string) ($data['companyName'] ?? ''));
+        if ($companyName === '') {
+            throw new \InvalidArgumentException('companyName is required.');
+        }
+
+        $normalized = self::normalizeCompanyName($companyName);
+        if ($this->findByNormalizedName($companyName) !== null) {
+            throw new \InvalidArgumentException('A company with this name is already registered.');
+        }
+
         $doc = [
-            'companyName'        => $data['companyName'],
+            'companyName'        => $companyName,
+            'nameNormalized'     => $normalized,
             'category'           => $data['category'] ?? 'Software',
             'tier'               => $data['tier'] ?? 'Tier 2',
             'contacts'           => $data['contacts'] ?? [],

@@ -168,6 +168,7 @@ final class Collections
                 '_id'           => 'ObjectId',
                 'userId'        => 'ObjectId|null',
                 'companyName'   => 'string',
+                'nameNormalized' => 'string|null (dedupe key)',
                 'category'      => 'string (enum)',
                 'tier'          => 'string (enum)',
                 'contacts'      => 'array[{name, email, phone}]',

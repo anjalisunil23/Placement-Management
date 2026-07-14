@@ -104,11 +104,13 @@ final class AdminController
         $dup = (new DriveModel())->findDuplicateDrive(
             $companyId,
             (string) ($input['title'] ?? ''),
-            (string) ($input['date'] ?? '')
+            (string) ($input['date'] ?? ''),
+            null,
+            (string) ($input['departmentId'] ?? '')
         );
         if ($dup !== null) {
             Response::error(
-                'A drive for this company, title, and date already exists.',
+                'A drive for this company, role, and date already exists for this department.',
                 409,
                 ['existingId' => (string) ($dup['_id'] ?? '')]
             );
@@ -488,20 +490,25 @@ final class AdminController
                     'associationStatus' => $input['associationStatus'] ?? 'active',
                 ]);
             } else {
-                $companyModel->createCompany([
-                    'userId'            => $id,
-                    'companyName'       => $companyName,
-                    'category'          => $input['category'] ?? 'Software',
-                    'tier'              => $input['tier'] ?? 'Tier 2',
-                    'website'           => $input['website'] ?? $input['companyWebsite'] ?? '',
-                    'description'       => $input['description'] ?? '',
-                    'contacts'          => [[
-                        'name'  => $input['name'],
-                        'email' => $input['email'],
-                        'phone' => $input['phone'] ?? $input['contactNumber'] ?? '',
-                    ]],
-                    'associationStatus' => $input['associationStatus'] ?? 'active',
-                ]);
+                try {
+                    $companyModel->createCompany([
+                        'userId'            => $id,
+                        'companyName'       => $companyName,
+                        'category'          => $input['category'] ?? 'Software',
+                        'tier'              => $input['tier'] ?? 'Tier 2',
+                        'website'           => $input['website'] ?? $input['companyWebsite'] ?? '',
+                        'description'       => $input['description'] ?? '',
+                        'contacts'          => [[
+                            'name'  => $input['name'],
+                            'email' => $input['email'],
+                            'phone' => $input['phone'] ?? $input['contactNumber'] ?? '',
+                        ]],
+                        'associationStatus' => $input['associationStatus'] ?? 'active',
+                    ]);
+                } catch (\InvalidArgumentException $e) {
+                    $this->userModel->delete($id);
+                    Response::error($e->getMessage(), 409);
+                }
             }
         }
 
@@ -1186,8 +1193,68 @@ final class AdminController
             );
         }
         $input['companyName'] = $companyName;
-        $id = $companyModel->createCompany($input);
+        try {
+            $id = $companyModel->createCompany($input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 409);
+        }
         Response::success(['id' => $id], 'Company created.', 201);
+    }
+
+    /** POST /api/admin/companies/resolve — reuse existing or create (admin / PO, drive flow) */
+    public function resolveCompany(): void
+    {
+        RBACMiddleware::requirePlacementOfficer();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $errors = Validator::validate($input, ['companyName' => 'required']);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+
+        $companyName = trim((string) ($input['companyName'] ?? ''));
+        $companyModel = new CompanyModel();
+        $existing = $companyModel->findByNormalizedName($companyName);
+        if ($existing !== null) {
+            Response::success([
+                'id'          => (string) ($existing['_id'] ?? ''),
+                'companyId'   => (string) ($existing['_id'] ?? ''),
+                'companyName' => (string) ($existing['companyName'] ?? $companyName),
+                'created'     => false,
+                'reused'      => true,
+            ], 'This company is already registered. Using the existing record.');
+            return;
+        }
+
+        try {
+            $id = $companyModel->createCompany([
+                'companyName'       => $companyName,
+                'category'          => $input['category'] ?? 'Software',
+                'tier'              => $input['tier'] ?? 'Tier 2',
+                'website'           => $input['website'] ?? $input['companyWebsite'] ?? '',
+                'associationStatus' => $input['associationStatus'] ?? 'active',
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            $again = $companyModel->findByNormalizedName($companyName);
+            if ($again !== null) {
+                Response::success([
+                    'id'          => (string) ($again['_id'] ?? ''),
+                    'companyId'   => (string) ($again['_id'] ?? ''),
+                    'companyName' => (string) ($again['companyName'] ?? $companyName),
+                    'created'     => false,
+                    'reused'      => true,
+                ], 'This company is already registered. Using the existing record.');
+                return;
+            }
+            Response::error($e->getMessage(), 409);
+        }
+
+        Response::success([
+            'id'          => $id,
+            'companyId'   => $id,
+            'companyName' => $companyName,
+            'created'     => true,
+            'reused'      => false,
+        ], 'Company added.', 201);
     }
 
     /** PUT /api/admin/companies/{id} — admin or officer may update current company details */
@@ -1199,7 +1266,23 @@ final class AdminController
             Response::notFound();
         }
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-        $allowed = ['companyName', 'category', 'tier', 'contacts', 'associationStatus', 'comments', 'website', 'description'];
+        if (isset($input['companyName'])) {
+            $companyName = trim((string) $input['companyName']);
+            if ($companyName === '') {
+                Response::error('companyName cannot be empty.', 422);
+            }
+            $existing = $model->findByNormalizedName($companyName, $id);
+            if ($existing !== null) {
+                Response::error(
+                    'A company with this name is already registered.',
+                    409,
+                    ['existingId' => (string) ($existing['_id'] ?? '')]
+                );
+            }
+            $input['companyName'] = $companyName;
+            $input['nameNormalized'] = CompanyModel::normalizeCompanyName($companyName);
+        }
+        $allowed = ['companyName', 'nameNormalized', 'category', 'tier', 'contacts', 'associationStatus', 'comments', 'website', 'description'];
         $model->update($id, array_intersect_key($input, array_flip($allowed)));
         Response::success(null, 'Company updated.');
     }
@@ -1282,6 +1365,9 @@ final class AdminController
         $companyModel = new CompanyModel();
         $existing = $companyModel->findByNormalizedName($companyName);
         if ($existing !== null) {
+            if (!empty($input['sourceRecommendationId'])) {
+                (new RecommendationModel())->updateStatus((string) $input['sourceRecommendationId'], 'registered');
+            }
             Response::error(
                 'A company with this name is already registered.',
                 409,
@@ -1289,18 +1375,22 @@ final class AdminController
             );
         }
 
-        $companyId = $companyModel->createCompany([
-            'companyName'       => $companyName,
-            'website'           => $input['companyWebsite'] ?? '',
-            'category'          => $input['category'] ?? 'Software',
-            'tier'              => $input['tier'] ?? 'Tier 2',
-            'contacts'          => [[
-                'name'  => $input['hrName'],
-                'email' => $input['hrEmail'],
-                'phone' => $input['contactNumber'],
-            ]],
-            'associationStatus' => 'active',
-        ]);
+        try {
+            $companyId = $companyModel->createCompany([
+                'companyName'       => $companyName,
+                'website'           => $input['companyWebsite'] ?? '',
+                'category'          => $input['category'] ?? 'Software',
+                'tier'              => $input['tier'] ?? 'Tier 2',
+                'contacts'          => [[
+                    'name'  => $input['hrName'],
+                    'email' => $input['hrEmail'],
+                    'phone' => $input['contactNumber'],
+                ]],
+                'associationStatus' => 'active',
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 409);
+        }
 
         if (!empty($input['sourceRecommendationId'])) {
             (new RecommendationModel())->updateStatus((string) $input['sourceRecommendationId'], 'registered');
