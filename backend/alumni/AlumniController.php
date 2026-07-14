@@ -467,7 +467,14 @@ final class AlumniController
   {
     $user = RBACMiddleware::requireAlumni();
     $rows = (new SuccessStoryModel())->findByAlumni((string) $user['_id']);
-    Response::success(DocumentHelper::serializeMany($rows));
+    $out = array_map(static function (array $row): array {
+      $serialized = DocumentHelper::serialize($row) ?? [];
+      if (!isset($serialized['id']) && isset($serialized['_id'])) {
+        $serialized['id'] = (string) $serialized['_id'];
+      }
+      return $serialized;
+    }, $rows);
+    Response::success($out);
   }
 
   /** POST /api/alumni/success-stories */
@@ -502,24 +509,37 @@ final class AlumniController
     if ($name === '') {
       $name = (string) ($user['name'] ?? 'Alumni');
     }
+    if ($company === '' || $role === '' || trim((string) ($input['quote'] ?? '')) === '') {
+      Response::error('Company, role, and story text are required.', 422);
+    }
 
-    $id = (new SuccessStoryModel())->createStory(
-      (string) $user['_id'],
-      (string) ($user['name'] ?? 'Alumni'),
-      [
-        'name'    => $name,
-        'company' => $company,
-        'role'    => $role,
-        'package' => $package,
-        'quote'   => trim((string) ($input['quote'] ?? '')),
-      ]
-    );
+    $model = new SuccessStoryModel();
+    try {
+      $id = $model->createStory(
+        (string) $user['_id'],
+        (string) ($user['name'] ?? 'Alumni'),
+        [
+          'name'    => $name,
+          'company' => $company,
+          'role'    => $role,
+          'package' => $package,
+          'quote'   => trim((string) ($input['quote'] ?? '')),
+        ]
+      );
+    } catch (\Throwable $e) {
+      Response::error('Could not save success story: ' . $e->getMessage(), 500);
+    }
 
     if ($profile && $package !== '' && trim((string) ($profile['package'] ?? '')) === '') {
       $profileModel->updateProfile((string) $profile['_id'], ['package' => $package]);
     }
 
-    Response::success(['id' => $id], 'Success story published on the public portal.', 201);
+    $created = $model->findById($id);
+    $serialized = DocumentHelper::serialize($created ?? ['_id' => $id]) ?? ['id' => $id];
+    if (!isset($serialized['id']) && isset($serialized['_id'])) {
+      $serialized['id'] = (string) $serialized['_id'];
+    }
+    Response::success($serialized, 'Success story published on the public portal.', 201);
   }
 
   /** PUT /api/alumni/success-stories/{id} */
@@ -532,7 +552,11 @@ final class AlumniController
       Response::error('Story not found or no valid fields to update.', 404);
     }
     $updated = $model->findById($id);
-    Response::success(DocumentHelper::serialize($updated ?? []), 'Success story updated.');
+    $serialized = DocumentHelper::serialize($updated ?? []) ?? [];
+    if ($serialized !== [] && !isset($serialized['id']) && isset($serialized['_id'])) {
+      $serialized['id'] = (string) $serialized['_id'];
+    }
+    Response::success($serialized, 'Success story updated.');
   }
 
   /** DELETE /api/alumni/success-stories/{id} */
@@ -542,7 +566,7 @@ final class AlumniController
     if (!(new SuccessStoryModel())->deleteStory($id, (string) $user['_id'])) {
       Response::notFound('Story not found.');
     }
-    Response::success(null, 'Success story removed.');
+    Response::success(['id' => $id], 'Success story removed.');
   }
 
   /**

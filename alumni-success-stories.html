@@ -58,8 +58,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260714h"></script>
-<script src="js/app.js?v=20260714g"></script>
+<script src="js/api.js?v=20260714j"></script>
+<script src="js/app.js?v=20260714i"></script>
 <script>
 let editingStoryId = null;
 let storyModal;
@@ -195,8 +195,9 @@ async function removeStory(id) {
     confirmText: 'Remove',
     variant: 'danger',
   }))) return;
-  const ok = await AlumniSuccessStories.remove(id);
-  toast(ok ? 'Story removed.' : 'Could not remove story.', ok ? 'success' : 'error');
+  const result = await AlumniSuccessStories.remove(id);
+  const ok = result === true || result?.ok === true;
+  toast(ok ? (result?.message || 'Story removed.') : (result?.message || 'Could not remove story.'), ok ? 'success' : 'error');
   renderStories();
 }
 
@@ -222,13 +223,16 @@ document.getElementById('storyForm').addEventListener('submit', async e => {
   const ok = editingStoryId
     ? await AlumniSuccessStories.update(editingStoryId, payload)
     : await AlumniSuccessStories.add(payload);
-  if (ok) {
+  const success = ok === true || ok?.ok === true;
+  if (success) {
     storyModal.hide();
-    toast(editingStoryId ? 'Story updated.' : 'Story published on the landing page.', 'success');
+    toast(ok?.message || (editingStoryId ? 'Story updated.' : 'Story published on the landing page.'), 'success');
     if (payload.package && Auth.user()) {
       Auth.set({ ...Auth.user(), package: payload.package }, Auth.token());
     }
     renderStories();
+  } else {
+    toast(ok?.message || 'Could not save story.', 'error');
   }
 });
 

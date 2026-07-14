@@ -15,6 +15,19 @@ class SuccessStoryModel extends BaseModel
     }
 
     /**
+     * Normalize alumni user id for storage and lookup.
+     */
+    private function normalizeAlumniUserId(string $alumniUserId): ?string
+    {
+        $oid = Security::toObjectId($alumniUserId);
+        if ($oid !== null) {
+            return $oid;
+        }
+        $raw = strtolower(trim($alumniUserId));
+        return Security::isValidId($raw) ? $raw : null;
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function published(int $limit = 12): array
@@ -27,17 +40,23 @@ class SuccessStoryModel extends BaseModel
      */
     public function findByAlumni(string $alumniUserId, int $limit = 50): array
     {
-        $oid = Security::toObjectId($alumniUserId);
+        $oid = $this->normalizeAlumniUserId($alumniUserId);
         if ($oid === null) {
             return [];
         }
-        // Prefer exact match; also match any legacy casing of the same id.
-        return $this->findAll([
-            '$or' => [
-                ['alumniUserId' => $oid],
-                ['alumniUserId' => $alumniUserId],
-            ],
-        ], $limit, 0, ['createdAt' => -1]);
+        $raw = trim($alumniUserId);
+        $candidates = array_values(array_unique(array_filter([
+            $oid,
+            $raw,
+            strtolower($raw),
+        ], static fn ($v) => is_string($v) && $v !== '')));
+
+        return $this->findAll(
+            ['alumniUserId' => ['$in' => $candidates]],
+            $limit,
+            0,
+            ['createdAt' => -1]
+        );
     }
 
     /**
@@ -45,8 +64,13 @@ class SuccessStoryModel extends BaseModel
      */
     public function createStory(string $alumniUserId, string $alumniName, array $data): string
     {
+        $oid = $this->normalizeAlumniUserId($alumniUserId);
+        if ($oid === null) {
+            throw new \InvalidArgumentException('Invalid alumni user id.');
+        }
+
         return $this->insert([
-            'alumniUserId' => Security::toObjectId($alumniUserId),
+            'alumniUserId' => $oid,
             'alumniName'   => $alumniName,
             'name'         => trim((string) ($data['name'] ?? $alumniName)),
             'company'      => trim((string) ($data['company'] ?? '')),
@@ -63,9 +87,7 @@ class SuccessStoryModel extends BaseModel
     public function updateStory(string $id, string $alumniUserId, array $data): bool
     {
         $story = $this->findById($id);
-        $ownerId = Security::toObjectId($alumniUserId) ?? strtolower($alumniUserId);
-        $storyOwner = strtolower((string) ($story['alumniUserId'] ?? ''));
-        if (!$story || $storyOwner === '' || $storyOwner !== $ownerId) {
+        if (!$story || !$this->ownsStory($story, $alumniUserId)) {
             return false;
         }
         $update = [];
@@ -74,21 +96,43 @@ class SuccessStoryModel extends BaseModel
                 $update[$field] = trim((string) $data[$field]);
             }
         }
+        if (array_key_exists('status', $data)) {
+            $status = strtolower(trim((string) $data['status']));
+            if (in_array($status, ['published', 'draft', 'hidden'], true)) {
+                $update['status'] = $status;
+            }
+        }
         if (empty($update)) {
             return false;
         }
-        return $this->update($id, $update);
+        if (!$this->update($id, $update)) {
+            // MySQL may report 0 changed rows when payload is identical; treat owned record as updated.
+            return $this->findById($id) !== null;
+        }
+        return true;
     }
 
     public function deleteStory(string $id, string $alumniUserId): bool
     {
         $story = $this->findById($id);
-        $ownerId = Security::toObjectId($alumniUserId) ?? strtolower($alumniUserId);
-        $storyOwner = strtolower((string) ($story['alumniUserId'] ?? ''));
-        if (!$story || $storyOwner === '' || $storyOwner !== $ownerId) {
+        if (!$story || !$this->ownsStory($story, $alumniUserId)) {
             return false;
         }
         return $this->delete($id);
+    }
+
+    /**
+     * @param array<string, mixed> $story
+     */
+    private function ownsStory(array $story, string $alumniUserId): bool
+    {
+        $ownerId = $this->normalizeAlumniUserId($alumniUserId);
+        $storyOwner = $this->normalizeAlumniUserId((string) ($story['alumniUserId'] ?? ''));
+        if ($ownerId === null || $storyOwner === null) {
+            return strtolower(trim((string) ($story['alumniUserId'] ?? '')))
+                === strtolower(trim($alumniUserId));
+        }
+        return $ownerId === $storyOwner;
     }
 
     /**

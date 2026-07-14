@@ -1378,7 +1378,7 @@ const AlumniSuccessStories = {
   _cache: null,
   normalizeItem(s) {
     return {
-      id: s.id || s._id,
+      id: String(s.id || s._id || ''),
       name: s.name || s.alumniName || '',
       company: s.company || '',
       role: s.role || s.title || '',
@@ -1395,6 +1395,9 @@ const AlumniSuccessStories = {
     try { return JSON.parse(localStorage.getItem(ALUMNI_STORIES_KEY) || '[]'); } catch { return []; }
   },
   save(list) { this._cache = list; localStorage.setItem(ALUMNI_STORIES_KEY, JSON.stringify(list)); },
+  isLive() {
+    return Auth.role() === 'alumni' && Auth.hasRealAuth() && !Auth.isDemo();
+  },
   mine() {
     // API-backed cache is already scoped to the signed-in alumni — don't re-filter by email
     // (AES accounts may use collegeEmail vs email and drop every row).
@@ -1412,14 +1415,21 @@ const AlumniSuccessStories = {
       localStorage.setItem(ALUMNI_STORIES_KEY, JSON.stringify(this._cache));
       return this._cache;
     }
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      return this._cache || [];
+    if (this.isLive()) {
+      this._cache = [];
+      return [];
     }
     return this.mine();
   },
   async add(payload) {
-    const res = await api('/alumni/success-stories', { method: 'POST', body: payload });
-    if (res.success) { await this.fetch(); return true; }
+    const res = await api('/alumni/success-stories', { method: 'POST', body: payload, noRedirectOn401: true });
+    if (res?.success) {
+      await this.fetch();
+      return { ok: true, message: res.message || 'Story published.' };
+    }
+    if (this.isLive()) {
+      return { ok: false, message: res?.message || 'Could not save story to the server.' };
+    }
     const u = Auth.user();
     const row = {
       id: 'as-' + Date.now(),
@@ -1428,20 +1438,39 @@ const AlumniSuccessStories = {
       createdAt: new Date().toISOString(),
       alumniEmail: u?.email || '',
     };
-    this.save([row, ...this.all()]);
-    return true;
+    this.save([this.normalizeItem(row), ...this.all()]);
+    return { ok: true, message: 'Story saved locally (preview mode).' };
   },
   async update(id, payload) {
-    const res = await api(`/alumni/success-stories/${encodeURIComponent(id)}`, { method: 'PUT', body: payload });
-    if (res.success) { await this.fetch(); return true; }
-    this.save(this.all().map(s => s.id === id ? { ...s, ...payload } : s));
-    return true;
+    const res = await api(`/alumni/success-stories/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: payload,
+      noRedirectOn401: true,
+    });
+    if (res?.success) {
+      await this.fetch();
+      return { ok: true, message: res.message || 'Story updated.' };
+    }
+    if (this.isLive()) {
+      return { ok: false, message: res?.message || 'Could not update story on the server.' };
+    }
+    this.save(this.all().map(s => s.id === id ? this.normalizeItem({ ...s, ...payload }) : s));
+    return { ok: true, message: 'Story updated locally (preview mode).' };
   },
   async remove(id) {
-    const res = await api(`/alumni/success-stories/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    if (res.success) { await this.fetch(); return true; }
+    const res = await api(`/alumni/success-stories/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      noRedirectOn401: true,
+    });
+    if (res?.success) {
+      await this.fetch();
+      return { ok: true, message: res.message || 'Story removed.' };
+    }
+    if (this.isLive()) {
+      return { ok: false, message: res?.message || 'Could not remove story on the server.' };
+    }
     this.save(this.all().filter(s => s.id !== id));
-    return true;
+    return { ok: true, message: 'Story removed locally (preview mode).' };
   },
 };
 
