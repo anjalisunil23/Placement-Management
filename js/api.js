@@ -2833,9 +2833,97 @@ function renderDepartmentBranchCheckboxes(container, { name = 'branches', checke
     : '<span class="small text-muted-2">No departments configured.</span>';
 }
 
+function departmentNamesMatch(a, b) {
+  const left = String(a || '').trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '');
+  const right = String(b || '').trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '');
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+/**
+ * Eligible department rows for drive create/edit.
+ * Prefers live API departments; expands to programme codes via the AJCE catalogue when names match.
+ */
+function apiEligibleDepartmentGroups() {
+  const catalog = buildDepartmentProgrammeOptions();
+  const apiDepts = departmentList()
+    .slice()
+    .sort((a, b) => String(a.name || a.code || '').localeCompare(String(b.name || b.code || ''), undefined, { sensitivity: 'base' }));
+
+  if (!apiDepts.length) {
+    return catalog.groups.map(g => ({
+      parent: g.parent,
+      code: g.programmes[0]?.code || '',
+      id: '',
+      programmes: g.programmes.map(p => p.code),
+    }));
+  }
+
+  const used = new Set();
+  const rows = [];
+
+  // 1) API departments that match catalogue parent departments (Computer Applications, CSE, …)
+  catalog.groups.forEach(group => {
+    const match = apiDepts.find(d =>
+      !used.has(d.id)
+      && (departmentNamesMatch(d.name, group.parent) || departmentNamesMatch(d.code, group.parent))
+    );
+    if (!match) return;
+    used.add(match.id);
+    rows.push({
+      parent: match.name || group.parent,
+      code: match.code,
+      id: match.id || '',
+      programmes: group.programmes.map(p => p.code),
+    });
+  });
+
+  // 2) Remaining API departments (programme-level or other academic units)
+  apiDepts.forEach(d => {
+    if (used.has(d.id)) return;
+    const prog = resolveCollegeProgrammeCode(d.code) || String(d.code || '').trim().toUpperCase();
+    const parentGroup = catalog.groups.find(g =>
+      g.programmes.some(p => p.code === prog || programmeAliasSet(p).has(prog))
+      || departmentNamesMatch(g.parent, d.name)
+    );
+    if (parentGroup) {
+      const existing = rows.find(r => departmentNamesMatch(r.parent, parentGroup.parent) || r.parent === parentGroup.parent);
+      if (existing) {
+        parentGroup.programmes.forEach(p => {
+          if (!existing.programmes.includes(p.code)) existing.programmes.push(p.code);
+        });
+        if (prog && !existing.programmes.includes(prog)) existing.programmes.push(prog);
+        used.add(d.id);
+        return;
+      }
+      rows.push({
+        parent: parentGroup.parent,
+        code: d.code,
+        id: d.id || '',
+        programmes: parentGroup.programmes.map(p => p.code),
+      });
+      used.add(d.id);
+      return;
+    }
+    rows.push({
+      parent: d.name || d.code,
+      code: d.code,
+      id: d.id || '',
+      programmes: prog ? [prog] : [String(d.code || '').trim().toUpperCase()].filter(Boolean),
+    });
+    used.add(d.id);
+  });
+
+  return rows;
+}
+
 function fillEligibleDepartmentsMultiSelect(selectEl, { selectedParents = null, selectedCodes = null } = {}) {
   if (!selectEl) return;
-  const catalog = buildDepartmentProgrammeOptions();
+  if (selectEl.tagName !== 'SELECT') {
+    renderEligibleDepartmentCheckboxes(selectEl, { selectedParents, selectedCodes });
+    return;
+  }
+  const groups = apiEligibleDepartmentGroups();
   const parentSet = new Set(
     (Array.isArray(selectedParents) ? selectedParents : [])
       .map(p => String(p || '').trim())
@@ -2847,19 +2935,86 @@ function fillEligibleDepartmentsMultiSelect(selectEl, { selectedParents = null, 
       .filter(Boolean)
   );
   let html = '';
-  catalog.groups.forEach(group => {
-    const codes = group.programmes.map(p => p.code);
+  groups.forEach(group => {
+    const codes = group.programmes || [];
     const value = codes.join('|');
-    const parentSelected = parentSet.has(group.parent);
+    const parentSelected = [...parentSet].some(p => departmentNamesMatch(p, group.parent));
     const on = parentSelected || (codeSet.size > 0 && codes.some(c => codeSet.has(c)));
-    const label = `${group.parent} (${codes.join(', ')})`;
+    const label = codes.length ? `${group.parent} (${codes.join(', ')})` : group.parent;
     html += `<option value="${value.replace(/"/g, '&quot;')}" data-parent="${String(group.parent).replace(/"/g, '&quot;')}"${on ? ' selected' : ''}>${label.replace(/</g, '&lt;')}</option>`;
   });
   selectEl.innerHTML = html || '<option value="" disabled>No departments available</option>';
 }
 
+function renderEligibleDepartmentCheckboxes(container, { selectedParents = null, selectedCodes = null } = {}) {
+  if (!container) return;
+  const groups = apiEligibleDepartmentGroups();
+  const parentSet = new Set(
+    (Array.isArray(selectedParents) ? selectedParents : [])
+      .map(p => String(p || '').trim())
+      .filter(Boolean)
+  );
+  const codeSet = new Set(
+    (Array.isArray(selectedCodes) ? selectedCodes : [])
+      .map(c => resolveCollegeProgrammeCode(c) || String(c).trim().toUpperCase())
+      .filter(Boolean)
+  );
+  const uid = `deptchk-${Math.random().toString(36).slice(2, 8)}`;
+  const rows = groups.map((group, idx) => {
+    const codes = group.programmes || [];
+    const checked = [...parentSet].some(p => departmentNamesMatch(p, group.parent))
+      || (codeSet.size > 0 && codes.some(c => codeSet.has(c)));
+    const id = `${uid}-${idx}`;
+    const parentAttr = String(group.parent).replace(/"/g, '&quot;');
+    const value = codes.join('|').replace(/"/g, '&quot;');
+    const label = codes.length ? `${group.parent} (${codes.join(', ')})` : group.parent;
+    return { id, parentAttr, value, label, checked };
+  });
+  const allChecked = rows.length > 0 && rows.every(g => g.checked);
+  container.innerHTML = rows.length
+    ? [
+      `<div class="form-check border-bottom pb-2 mb-2">
+        <input class="form-check-input drive-dept-select-all" type="checkbox" id="${uid}-all"${allChecked ? ' checked' : ''}>
+        <label class="form-check-label fw-semibold" for="${uid}-all">Select all</label>
+      </div>`,
+      ...rows.map(g =>
+        `<div class="form-check">
+          <input class="form-check-input drive-dept-check" type="checkbox" name="driveDepartments" value="${g.value}" data-parent="${g.parentAttr}" id="${g.id}"${g.checked ? ' checked' : ''}>
+          <label class="form-check-label small" for="${g.id}">${g.label.replace(/</g, '&lt;')}</label>
+        </div>`
+      ),
+    ].join('')
+    : '<span class="small text-muted-2">No departments returned from the server. Refresh and try again.</span>';
+
+  const selectAll = container.querySelector('.drive-dept-select-all');
+  const checks = () => [...container.querySelectorAll('.drive-dept-check')];
+  const syncSelectAll = () => {
+    if (!selectAll) return;
+    const list = checks();
+    const on = list.filter(c => c.checked);
+    selectAll.checked = list.length > 0 && on.length === list.length;
+    selectAll.indeterminate = on.length > 0 && on.length < list.length;
+  };
+  syncSelectAll();
+  selectAll?.addEventListener('change', () => {
+    const on = !!selectAll.checked;
+    checks().forEach(c => { c.checked = on; });
+    selectAll.indeterminate = false;
+    container.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  container.querySelectorAll('.drive-dept-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      syncSelectAll();
+      container.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  });
+}
+
 function programmeCodesFromDepartmentSelect(selectEl) {
   if (!selectEl) return [];
+  if (selectEl.tagName !== 'SELECT') {
+    return programmeCodesFromDepartmentCheckboxes(selectEl);
+  }
   const codes = [];
   [...selectEl.selectedOptions].forEach(o => {
     String(o.value || '').split('|').map(s => s.trim()).filter(Boolean).forEach(c => codes.push(c));
@@ -2867,8 +3022,42 @@ function programmeCodesFromDepartmentSelect(selectEl) {
   return [...new Set(codes)];
 }
 
+function programmeCodesFromDepartmentCheckboxes(container) {
+  if (!container) return [];
+  const codes = [];
+  container.querySelectorAll('.drive-dept-check:checked').forEach(cb => {
+    String(cb.value || '').split('|').map(s => s.trim()).filter(Boolean).forEach(c => codes.push(c));
+  });
+  return [...new Set(codes)];
+}
+
+function selectedDepartmentParents(container) {
+  if (!container) return [];
+  if (container.tagName === 'SELECT') {
+    return [...container.selectedOptions].map(o => o.dataset.parent || o.textContent).filter(Boolean);
+  }
+  return [...container.querySelectorAll('.drive-dept-check:checked')]
+    .map(cb => cb.dataset.parent || '')
+    .filter(Boolean);
+}
+
+function setDepartmentCheckboxParents(container, parents) {
+  if (!container) return;
+  const want = new Set((Array.isArray(parents) ? parents : []).map(p => String(p || '').trim()).filter(Boolean));
+  container.querySelectorAll('.drive-dept-check').forEach(cb => {
+    cb.checked = want.has(String(cb.dataset.parent || '').trim());
+  });
+  const selectAll = container.querySelector('.drive-dept-select-all');
+  if (selectAll) {
+    const list = [...container.querySelectorAll('.drive-dept-check')];
+    const on = list.filter(c => c.checked);
+    selectAll.checked = list.length > 0 && on.length === list.length;
+    selectAll.indeterminate = on.length > 0 && on.length < list.length;
+  }
+}
+
 function resolveOfficerParentDepartment(user = {}) {
-  const catalog = buildDepartmentProgrammeOptions();
+  const groups = apiEligibleDepartmentGroups();
   const nameBlob = [
     user.departmentName,
     user.department,
@@ -2876,24 +3065,32 @@ function resolveOfficerParentDepartment(user = {}) {
     user.dept,
   ].map(v => String(v || '').trim().toLowerCase()).filter(Boolean).join(' ');
   if (nameBlob) {
-    for (const group of catalog.groups) {
-      const parent = String(group.parent || '').toLowerCase();
-      if (!parent) continue;
-      if (nameBlob.includes(parent) || parent.includes(nameBlob) || nameBlob.includes(parent.replace(/&/g, 'and'))) {
+    for (const group of groups) {
+      if (departmentNamesMatch(group.parent, nameBlob) || departmentNamesMatch(group.code, nameBlob)) {
         return group.parent;
       }
-      // short matches e.g. "computer applications"
-      const compact = parent.replace(/[^a-z0-9]+/g, '');
-      const blobCompact = nameBlob.replace(/[^a-z0-9]+/g, '');
-      if (compact && blobCompact.includes(compact)) return group.parent;
     }
   }
   const prog = resolveCollegeProgrammeCode(user.departmentCode || user.department || user.deptCode || '');
   if (prog) {
-    for (const group of catalog.groups) {
-      if (group.programmes.some(p => p.code === prog || programmeAliasSet(p).has(prog))) {
+    for (const group of groups) {
+      if ((group.programmes || []).includes(prog) || departmentNamesMatch(group.code, prog)) {
         return group.parent;
       }
+    }
+  }
+  // Match by linked department id when present on the session user.
+  const deptId = String(user.departmentId || user.deptId || '').trim();
+  if (deptId) {
+    const hit = groups.find(g => String(g.id || '') === deptId);
+    if (hit) return hit.parent;
+    const fromStore = departmentList().find(d => String(d.id || '') === deptId);
+    if (fromStore) {
+      const mapped = groups.find(g =>
+        departmentNamesMatch(g.parent, fromStore.name) || departmentNamesMatch(g.code, fromStore.code)
+      );
+      if (mapped) return mapped.parent;
+      return fromStore.name || fromStore.code || '';
     }
   }
   return '';
@@ -2930,7 +3127,7 @@ function readCheckedBranchCodes(container) {
 }
 
 async function ensureDepartmentsLoaded() {
-  await DepartmentStore.fetch();
+  await DepartmentStore.fetch({ force: true });
   return departmentList();
 }
 
@@ -3051,34 +3248,34 @@ const DepartmentStore = {
     return Array.isArray(this._cache) ? this._cache : [];
   },
   save(l) { this._cache = l; localStorage.setItem(DEPTS_KEY, JSON.stringify(l)); },
-  async fetch({ includeAll = false } = {}) {
+  async fetch({ includeAll = false, force = false } = {}) {
+    void force;
     let list = null;
-    if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
-      list = await AdminApi.fetchDepartments();
+    // Public list syncs AES → local and returns academic departments for all roles.
+    const publicRes = await apiFetch('/public/departments', { skipAuthRedirect: true });
+    if (publicRes.success && Array.isArray(publicRes.data) && publicRes.data.length) {
+      list = publicRes.data.map(d => ({
+        id: d.id || d._id,
+        name: d.name || '',
+        code: d.code || '',
+        aesId: d.aesId || '',
+        hasOfficer: !!d.hasOfficer,
+      }));
     }
-    if (!Array.isArray(list) || !list.length) {
-      const res = await apiFetch('/public/departments', { skipAuthRedirect: true });
-      if (res.success && Array.isArray(res.data) && res.data.length) {
-        list = res.data.map(d => ({
-          id: d.id || d._id,
-          name: d.name || '',
-          code: d.code || '',
-          aesId: d.aesId || '',
-          hasOfficer: !!d.hasOfficer,
-        }));
-      }
+    if ((!Array.isArray(list) || !list.length) && Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
+      list = await AdminApi.fetchDepartments();
     }
     if (Array.isArray(list) && list.length) {
       const normalized = list
         .map(d => ({
           id: d.id || d._id,
           name: String(d.name || '').trim(),
-          code: String(d.code || '').trim(),
+          code: String(d.code || '').trim().toUpperCase(),
           aesId: String(d.aesId || '').trim(),
           hasOfficer: !!d.hasOfficer,
           placementOfficer: d.placementOfficer || null,
         }))
-        .filter(d => d.code && d.name && !/^\d+$/.test(d.code));
+        .filter(d => d.name && d.code && !/^\d+$/.test(d.code));
 
       if (includeAll) {
         this._allCache = normalized;
@@ -3095,6 +3292,13 @@ const DepartmentStore = {
     }
     if (includeAll && Array.isArray(this._allCache) && this._allCache.length) return this._allCache;
     if (Array.isArray(this._cache) && this._cache.length) return this._cache;
+    try {
+      const stored = JSON.parse(localStorage.getItem(DEPTS_KEY) || '[]');
+      if (Array.isArray(stored) && stored.length) {
+        this._cache = stored;
+        return stored;
+      }
+    } catch { /* ignore */ }
     seedDepartments();
     try {
       const stored = JSON.parse(localStorage.getItem(DEPTS_KEY) || '[]');

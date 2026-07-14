@@ -232,8 +232,8 @@
               </div>
               <div id="createDriveDeptMineSummary" class="small border rounded p-2 bg-white mb-0">My department</div>
               <div id="createDriveDeptMultiWrap" class="d-none">
-                <select class="form-select" id="createDriveDepartments" multiple size="8" aria-label="Select departments"></select>
-                <div class="form-text">Hold Ctrl/Cmd to select more than one department (e.g. Computer Applications + CSE).</div>
+                <div class="border rounded p-2 bg-white" id="createDriveDepartments" style="max-height:14rem;overflow:auto"></div>
+                <div class="form-text">Tick departments to include. Use Select all for every department.</div>
               </div>
               <div class="form-text mt-1" id="createDriveBranchesHint"></div>
               <select class="d-none" id="createDriveBranches" multiple aria-hidden="true"></select>
@@ -278,9 +278,9 @@
         <div class="col-md-4"><label class="form-label small fw-semibold">Job type</label><select class="form-select" id="editJobType"><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
 
         <div class="col-12">
-          <label class="form-label small fw-semibold" for="editDriveDepartments">Eligible departments</label>
-          <select class="form-select" id="editDriveDepartments" multiple size="6" aria-label="Eligible departments"></select>
-          <div class="form-text">Select one or more departments. Hold Ctrl/Cmd to multi-select.</div>
+          <label class="form-label small fw-semibold">Eligible departments</label>
+          <div class="border rounded p-2" id="editDriveDepartments" style="max-height:12rem;overflow:auto"></div>
+          <div class="form-text">Tick one or more departments. Use Select all for every department.</div>
           <select class="d-none" id="editDriveBranches" multiple aria-hidden="true"></select>
         </div>
 
@@ -476,7 +476,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260714j"></script>
+<script src="js/api.js?v=20260714m"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1450,11 +1450,7 @@ function applyCreateDriveDeptScope() {
         ? `Open to <strong>${parent}</strong> only (all programmes in this department).`
         : 'Your department could not be resolved. Switch to <strong>Select departments</strong> and pick one.';
     }
-    if (multi && parent) {
-      [...multi.options].forEach(o => {
-        o.selected = o.dataset.parent === parent;
-      });
-    }
+    if (multi && parent) setDepartmentCheckboxParents(multi, [parent]);
   } else {
     mineSummary?.classList.add('d-none');
     multiWrap?.classList.remove('d-none');
@@ -1467,10 +1463,12 @@ function readCreateDriveBranchCodes() {
   if (scope === 'mine') {
     const parent = officerMyDepartmentParent();
     if (!parent) return [];
-    const group = buildDepartmentProgrammeOptions().groups.find(g => g.parent === parent);
-    return group ? group.programmes.map(p => p.code) : [];
+    const group = apiEligibleDepartmentGroups().find(g =>
+      g.parent === parent || departmentNamesMatch(g.parent, parent)
+    );
+    return group ? (group.programmes || []).slice() : [];
   }
-  return programmeCodesFromDepartmentSelect(document.getElementById('createDriveDepartments'));
+  return programmeCodesFromDepartmentCheckboxes(document.getElementById('createDriveDepartments'));
 }
 
 function updateCreateDriveBranchesHint() {
@@ -1484,10 +1482,9 @@ function updateCreateDriveBranchesHint() {
       : 'Select “Select departments” to choose one or more departments.';
     return;
   }
-  const sel = document.getElementById('createDriveDepartments');
-  const parents = [...(sel?.selectedOptions || [])].map(o => o.dataset.parent || o.textContent).filter(Boolean);
+  const parents = selectedDepartmentParents(document.getElementById('createDriveDepartments'));
   if (!parents.length) {
-    hint.textContent = 'Select at least one department from the list.';
+    hint.textContent = 'Tick at least one department.';
   } else if (parents.length === 1) {
     hint.textContent = `Open to ${parents[0]} only.`;
   } else {
@@ -1650,10 +1647,6 @@ window.openEditDrive = id => {
     ? d.branches.map(b => String(b).trim()).filter(Boolean)
     : String(d.branches || '').split(/[|,]/).map(s => s.trim()).filter(Boolean);
   fillEligibleDepartmentsMultiSelect(document.getElementById('editDriveDepartments'), {
-    selectedCodes: branchList,
-  });
-  // Keep hidden branches select in sync for legacy readers.
-  fillEligibleDepartmentsMultiSelect(document.getElementById('editDriveBranches'), {
     selectedCodes: branchList,
   });
 
