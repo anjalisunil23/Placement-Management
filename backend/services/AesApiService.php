@@ -638,6 +638,25 @@ final class AesApiService
      * @param array<string, scalar|null> $params
      * @return array<string, mixed>
      */
+    /**
+     * AES class / batch label from getStudInfo4Placement → stud_class.
+     */
+    public function studClassFromPlacementInfo(string $admnoOrRegister): string
+    {
+        $admnoOrRegister = trim($admnoOrRegister);
+        if ($admnoOrRegister === '') {
+            return '';
+        }
+
+        try {
+            $profile = $this->fetchStudentPlacementProfile(['admno' => $admnoOrRegister]);
+        } catch (\Throwable) {
+            return '';
+        }
+
+        return trim((string) ($profile['stud_class'] ?? $profile['classBatch'] ?? ''));
+    }
+
     public function fetchStudentPlacementProfile(array $params): array
     {
         $request = $this->buildStudentRequestParams($params);

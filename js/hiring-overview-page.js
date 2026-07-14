@@ -665,7 +665,7 @@
     if (!show || !batches.length) return;
 
     const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    let html = '<option value="">All batches</option>';
+    let html = '<option value="">All batches (AES stud_class)</option>';
     batches.forEach((batch) => {
       html += `<option value="${esc(batch)}">${esc(batch)}</option>`;
     });

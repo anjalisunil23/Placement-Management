@@ -108,7 +108,8 @@ final class RecruitingService
     }
 
     /**
-     * Distinct AES class batches (stud_class → classBatch) for students in scope.
+     * Distinct AES class batches from getStudInfo4Placement stud_class
+     * (stored as student.classBatch; backfilled live when missing).
      *
      * @return list<string>
      */
@@ -123,9 +124,14 @@ final class RecruitingService
             $filter['departmentId'] = $deptOid;
         }
 
+        $studentModel = new StudentModel();
+        $aes = new AesApiService();
         $batches = [];
-        foreach ((new StudentModel())->findAll($filter, 8000) as $student) {
-            $batch = trim((string) ($student['classBatch'] ?? ''));
+        $aesCalls = 0;
+        $aesLimit = 80;
+
+        foreach ($studentModel->findAll($filter, 8000) as $student) {
+            $batch = $this->resolveStudentStudClass($student, $studentModel, $aes, $aesCalls, $aesLimit);
             if ($batch !== '') {
                 $batches[$batch] = true;
             }
@@ -135,6 +141,49 @@ final class RecruitingService
         sort($list, SORT_NATURAL | SORT_FLAG_CASE);
 
         return $list;
+    }
+
+    /**
+     * Prefer stored classBatch; else fetch stud_class from getStudInfo4Placement and persist.
+     *
+     * @param array<string, mixed> $student
+     */
+    private function resolveStudentStudClass(
+        array $student,
+        StudentModel $studentModel,
+        AesApiService $aes,
+        int &$aesCalls,
+        int $aesLimit
+    ): string {
+        $batch = trim((string) ($student['classBatch'] ?? ''));
+        if ($batch !== '') {
+            return $batch;
+        }
+        if ($aesCalls >= $aesLimit) {
+            return '';
+        }
+
+        $admno = trim((string) ($student['registerNumber'] ?? ''));
+        if ($admno === '') {
+            return '';
+        }
+
+        $aesCalls++;
+        $batch = $aes->studClassFromPlacementInfo($admno);
+        if ($batch === '') {
+            return '';
+        }
+
+        $id = (string) ($student['_id'] ?? '');
+        if ($id !== '') {
+            try {
+                $studentModel->update($id, ['classBatch' => $batch]);
+            } catch (\Throwable) {
+                // Still expose the live AES label even if persist fails.
+            }
+        }
+
+        return $batch;
     }
 
     /**
@@ -157,10 +206,14 @@ final class RecruitingService
         $deptModel = new DepartmentModel();
         $appModel = new ApplicationModel();
         $companyModel = new CompanyModel();
+        $studentModel = new StudentModel();
+        $aes = new AesApiService();
         $deptCache = [];
         $rows = [];
+        $aesCalls = 0;
+        $aesLimit = 80;
 
-        foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
+        foreach ($studentModel->findAll($filter, 5000) as $student) {
             $user = $userModel->findById((string) ($student['userId'] ?? ''));
             $deptId = (string) ($student['departmentId'] ?? '');
             if ($deptId !== '' && !isset($deptCache[$deptId])) {
@@ -170,7 +223,7 @@ final class RecruitingService
                     : '';
             }
             $deptCode = $deptCache[$deptId] ?? '';
-            $classBatch = trim((string) ($student['classBatch'] ?? ''));
+            $classBatch = $this->resolveStudentStudClass($student, $studentModel, $aes, $aesCalls, $aesLimit);
             $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
             $company = trim((string) ($placement['company'] ?? ''));
             $role = trim((string) ($placement['role'] ?? ''));
