@@ -83,6 +83,8 @@ const AdminApi = {
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
       resumeStatus: resume.verified ? 'approved' : (resume.path ? 'pending' : 'none'),
+      policyAccepted: !!(row.policyAccepted),
+      policyAcceptedAt: row.policyAcceptedAt || '',
     };
   },
 
