@@ -573,6 +573,18 @@ final class OfficerController
         ));
     }
 
+    /** GET /api/officer/students/{id}/qualifications */
+    public function studentQualifications(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $register = trim((string) ($_GET['registerNumber'] ?? ''));
+        Response::success((new OfficerDataService())->getEducationQualifications(
+            $studentId,
+            $scope['ctx'],
+            $register !== '' ? $register : null
+        ));
+    }
+
     /** GET /api/officer/students/{id}/photo */
     public function studentPhoto(string $studentId): void
     {

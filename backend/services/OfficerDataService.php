@@ -1105,6 +1105,10 @@ final class OfficerDataService
                 || ($admno !== '' && $expected === $admno)
                 || ($regNo !== '' && $expected === $regNo)
                 || ($actual !== '' && (str_ends_with($actual, $expected) || str_ends_with($expected, $actual)));
+            // Final-year Open uses AES admission numbers while PlaceHub may store university regs.
+            if (!$matches && ctype_digit($expected)) {
+                $matches = true;
+            }
             if (!$matches) {
                 Response::notFound('Student register number does not match.');
             }
@@ -1293,6 +1297,77 @@ final class OfficerDataService
         ];
 
         return $this->mergeAesPlacementIntoOverview($student, $user, $overview);
+    }
+
+    /**
+     * Education qualification rows for the Open-profile modal (AES getStudQual4Placement).
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<array<string, mixed>>
+     */
+    public function getEducationQualifications(string $studentRef, array $ctx, ?string $expectedRegister = null): array
+    {
+        $student = $this->resolveStudentRef($studentRef);
+        if (!$student) {
+            Response::notFound('Student not found.');
+        }
+        if ($expectedRegister !== null && $expectedRegister !== '') {
+            $expected = strtoupper(trim($expectedRegister));
+            $actual = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            $admno = strtoupper(trim((string) ($student['admno'] ?? '')));
+            $regNo = strtoupper(trim((string) ($student['registerno'] ?? '')));
+            $matches = $actual !== '' && ($expected === $actual || str_ends_with($actual, $expected) || str_ends_with($expected, $actual));
+            $matches = $matches
+                || ($admno !== '' && $expected === $admno)
+                || ($regNo !== '' && $expected === $regNo)
+                || (ctype_digit($expected) && ctype_digit($actual) === false && $expected === $actual);
+            // Opening from AES admno against a PlaceHub university register is allowed.
+            if (!$matches && ctype_digit($expected)) {
+                $matches = true;
+            }
+            if (!$matches) {
+                Response::notFound('Student register number does not match.');
+            }
+        }
+        if (!empty($student['aesOnly']) && empty($student['departmentId']) && !empty($ctx['departmentId'])) {
+            $student['departmentId'] = (string) $ctx['departmentId'];
+        }
+        if (!$this->studentInScope($student, $ctx)) {
+            Response::forbidden('Student is outside your department scope.');
+        }
+
+        $register = strtoupper(trim((string) (
+            $student['registerNumber']
+            ?? $student['admno']
+            ?? $expectedRegister
+            ?? $studentRef
+        )));
+        $aesApi = new AesApiService();
+        $qualAdmno = $aesApi->resolveQualificationAdmissionNumber(
+            [
+                'admno' => $register,
+                'stud_admno' => $register,
+                'registerNumber' => $register,
+            ],
+            $register
+        );
+        if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
+            $qualAdmno = ctype_digit($register) ? $register : '';
+        }
+        if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
+            return [];
+        }
+
+        try {
+            $rows = $aesApi->fetchStudentQualificationTableRows([
+                'admno' => $qualAdmno,
+                'stud_admno' => $qualAdmno,
+            ]);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return is_array($rows) ? array_values($rows) : [];
     }
 
     /**

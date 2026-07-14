@@ -703,10 +703,12 @@ final class AesLoginService
 
             if ($placement !== []) {
                 $mapped = $this->mapAesDetailsToUserFields($placement);
-                $patch = $this->buildPlacementExtrasPatch($profile, $placement, $mapped, $register);
-                if ($patch !== []) {
-                    (new StudentModel())->update((string) $profile['_id'], $patch);
-                    $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
+                if (empty($profile['aesOnly'])) {
+                    $patch = $this->buildPlacementExtrasPatch($profile, $placement, $mapped, $register);
+                    if ($patch !== []) {
+                        (new StudentModel())->update((string) $profile['_id'], $patch);
+                        $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
+                    }
                 }
             }
 
@@ -730,15 +732,24 @@ final class AesLoginService
             }
             if ($qual !== []) {
                 $qualMapped = $this->mapAesDetailsToUserFields($qual);
-                $qualPatch = $this->buildQualificationExtrasPatch($profile, $qual, $qualMapped);
-                if ($qualPatch !== []) {
-                    (new StudentModel())->update((string) $profile['_id'], $qualPatch);
-                    $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
+                if (empty($profile['aesOnly'])) {
+                    $qualPatch = $this->buildQualificationExtrasPatch($profile, $qual, $qualMapped);
+                    if ($qualPatch !== []) {
+                        (new StudentModel())->update((string) $profile['_id'], $qualPatch);
+                        $profile = (new StudentModel())->findById((string) $profile['_id']) ?? $profile;
+                    }
                 }
                 $placement = $placement === [] ? $qual : array_merge($placement, $qual);
                 $mapped = $mapped === [] ? $qualMapped : array_merge($mapped, $qualMapped);
             }
             // Keep stored academic qualifications when AES returns none (do not wipe).
+            if (!empty($profile['aesOnly'])) {
+                return [
+                    'student'   => $profile,
+                    'placement' => $placement,
+                    'mapped'    => $mapped,
+                ];
+            }
         }
 
         $id = (string) ($profile['_id'] ?? '');
