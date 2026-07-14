@@ -837,7 +837,11 @@ onAppReady(() => loadSettingsProfile());
 
 if (role === 'student') {
   document.getElementById('settingsTitle').textContent = 'Profile & Resumes';
-  document.getElementById('settingsSub').textContent = 'Update your profile and manage resumes in the storage bucket.';
+  const settingsSub = document.getElementById('settingsSub');
+  if (settingsSub) {
+    settingsSub.textContent = '';
+    settingsSub.hidden = true;
+  }
   document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');
   wireFilePickers('#resumeUploadForm');
   onAppReady(async () => {

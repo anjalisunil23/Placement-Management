@@ -860,7 +860,11 @@ function setupDrivesChrome() {
     StudentNotifs.seed();
     ResumeBucket.seed();
     document.getElementById('drivesTitle').textContent = 'Browse & Apply';
-    document.getElementById('drivesSub').textContent = 'View open drives and apply with a profile-matched resume.';
+    const drivesSub = document.getElementById('drivesSub');
+    if (drivesSub) {
+      drivesSub.textContent = '';
+      drivesSub.hidden = true;
+    }
     actions.innerHTML = '<a href="settings.html" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-arrow-up me-1"></i>Manage Resumes</a>';
   } else if (alumniSeeking) {
     document.getElementById('drivesTitle').textContent = 'Apply for Jobs';

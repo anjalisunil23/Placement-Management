@@ -11,7 +11,6 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Placement details</h1>
-    <p class="page-sub">View current and past placements, and report new offers.</p>
   </div>
   <div class="d-flex flex-wrap gap-2">
     <button type="button" class="btn btn-outline-primary d-none" id="newPlacementBtn"><i class="bi bi-plus-lg me-1"></i>New placement</button>
@@ -342,9 +341,8 @@ function renderPlacementList() {
     return;
   }
 
-  note.textContent = pending
-    ? 'Your report is awaiting verification.'
-    : `${rows.length} placement${rows.length === 1 ? '' : 's'} listed.`;
+  note.textContent = pending ? '' : `${rows.length} placement${rows.length === 1 ? '' : 's'} listed.`;
+  note.hidden = pending || !rows.length;
 
   listEl.innerHTML = rows.map((r, i) => {
     const updateBtn = r.canUpdateDates
