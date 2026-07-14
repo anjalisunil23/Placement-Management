@@ -77,7 +77,7 @@
         <div id="studentDetailEmpty" class="card-surface p-4 text-center text-muted-2">
           <i class="bi bi-person-bounding-box d-block mb-2" style="font-size:1.75rem;opacity:.45"></i>
           <div class="fw-semibold text-body mb-1">No student selected</div>
-          <div class="small">Search by name, register number, or department, then select a student to view their profile.</div>
+          <div class="small">Select a student from the list to view their profile, or search by name / register number.</div>
         </div>
         <div id="studentDetailPanel" class="d-none">
         <div class="card-surface p-3 p-md-4 mb-3">
@@ -653,6 +653,26 @@ function isOverviewSearchActive() {
   return !!document.getElementById('searchStudent')?.value.trim();
 }
 
+function isOverviewListVisible() {
+  return useStaffApi || isOverviewSearchActive();
+}
+
+function syncOverviewSelectionAfterFilter() {
+  if (!isOverviewListVisible()) {
+    clearOverviewDetail();
+    return;
+  }
+  const list = filteredOverviewStudents();
+  if (!list.length) {
+    clearOverviewDetail();
+    return;
+  }
+  if (!selectedReg) return;
+  if (!list.some(s => normStudentReg(s.registerNumber) === normStudentReg(selectedReg))) {
+    clearOverviewDetail();
+  }
+}
+
 function isPolicyRegistered(s) {
   return !!(s && s.policyAccepted);
 }
@@ -756,34 +776,17 @@ function clearOverviewDetail() {
 
 function filteredOverviewStudents() {
   const q = document.getElementById('searchStudent').value.trim();
-  if (!q) return [];
 
   let list;
   if (useLiveOverviewApi) {
     const pool = (useStaffApi && deptStudentsLoaded) ? overviewStudentsAll : overviewStudents;
-    list = pool.filter(s => studentMatchesQuery(s, q));
+    list = q ? pool.filter(s => studentMatchesQuery(s, q)) : (useStaffApi ? pool.slice() : []);
   } else {
-    list = overviewStudentsAll.filter(s => studentMatchesQuery(s, q));
+    list = q ? overviewStudentsAll.filter(s => studentMatchesQuery(s, q)) : [];
   }
   return [...list].sort((a, b) =>
     String(a.name || a.registerNumber || '').localeCompare(String(b.name || b.registerNumber || ''), undefined, { sensitivity: 'base' })
   );
-}
-
-function syncOverviewSelectionAfterFilter() {
-  if (!isOverviewSearchActive()) {
-    clearOverviewDetail();
-    return;
-  }
-  const list = filteredOverviewStudents();
-  if (!list.length) {
-    clearOverviewDetail();
-    return;
-  }
-  if (!selectedReg) return;
-  if (!list.some(s => normStudentReg(s.registerNumber) === normStudentReg(selectedReg))) {
-    clearOverviewDetail();
-  }
 }
 
 function overviewStudentName(s) {
@@ -820,7 +823,8 @@ function renderOverviewList() {
   const listEl = document.getElementById('studentList');
   if (!listEl) return;
 
-  if (!q) {
+  // Staff AES directory: show full student list; other roles stay search-gated.
+  if (!q && !useStaffApi) {
     document.getElementById('studentCount').textContent = '0';
     listEl.innerHTML = '';
     listEl.classList.add('d-none');
@@ -830,7 +834,7 @@ function renderOverviewList() {
   const list = filteredOverviewStudents();
   document.getElementById('studentCount').textContent = list.length;
 
-  if (list.length === 1) {
+  if (q && list.length === 1) {
     listEl.innerHTML = '';
     listEl.classList.add('d-none');
     const reg = list[0].registerNumber;
@@ -842,8 +846,10 @@ function renderOverviewList() {
 
   listEl.classList.remove('d-none');
   if (!list.length) {
-    listEl.innerHTML = '<div class="p-3 small text-muted-2">No students match your search.</div>';
-    clearOverviewDetail();
+    listEl.innerHTML = q
+      ? '<div class="p-3 small text-muted-2">No students match your search.</div>'
+      : '<div class="p-3 small text-muted-2">No students found for your department.</div>';
+    if (q) clearOverviewDetail();
     return;
   }
   listEl.innerHTML = list.map(studentRow).join('');

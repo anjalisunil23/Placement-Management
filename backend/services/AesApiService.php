@@ -237,6 +237,55 @@ final class AesApiService
     }
 
     /**
+     * POST method=getAllStudInfo4Placement — department (or campus) student directory from AES.
+     *
+     * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    public function getAllStudInfo4Placement(array $params = []): array
+    {
+        return $this->callPlacementFilterApi('getAllStudInfo4Placement', $params);
+    }
+
+    /**
+     * Normalized student rows from getAllStudInfo4Placement.
+     *
+     * @param array<string, scalar|null> $params
+     * @return list<array<string, mixed>>
+     */
+    public function fetchAllStudInfo4Placement(array $params = []): array
+    {
+        $result = $this->getAllStudInfo4Placement($params);
+        $records = $this->extractStudInfoRecords($result);
+        if ($records === []) {
+            return [];
+        }
+
+        $out = [];
+        $seen = [];
+        foreach ($records as $record) {
+            $normalized = $this->normalizePlacementStudentRecord($record);
+            if ($normalized === []) {
+                continue;
+            }
+            $key = strtoupper(trim((string) (
+                $normalized['admno']
+                ?? $normalized['stud_admno']
+                ?? $normalized['registerNumber']
+                ?? $normalized['registerno']
+                ?? ''
+            )));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $normalized;
+        }
+
+        return $out;
+    }
+
+    /**
      * POST method=getStudQual4Placement — student 10th/12th marks and CGPA from AES.
      *
      * @param array<string, scalar|null> $params
@@ -2345,6 +2394,59 @@ final class AesApiService
 
         foreach ($node as $item) {
             $this->collectStudInfoFieldLabels($item, $out, $field, $programmeCode, $branchFilter);
+        }
+    }
+
+    /**
+     * @param array{success?:bool,status?:int,data?:mixed,raw?:string,error?:string,note?:string} $result
+     * @return list<array<string, mixed>>
+     */
+    private function extractStudInfoRecords(array $result): array
+    {
+        $payload = $result['data'] ?? null;
+        if (!is_array($payload)) {
+            $raw = trim((string) ($result['raw'] ?? ''));
+            if ($raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $payload = $decoded;
+                }
+            }
+        }
+        if (!is_array($payload)) {
+            return [];
+        }
+
+        if (($payload['status'] ?? true) === false || ($payload['status'] ?? null) === 'false') {
+            return [];
+        }
+
+        $list = $this->studInfoListFromPayload($payload);
+        $rows = [];
+        $this->collectStudInfoRecords($list, $rows);
+
+        return $rows;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $out
+     */
+    private function collectStudInfoRecords(mixed $node, array &$out): void
+    {
+        if (!is_array($node)) {
+            return;
+        }
+
+        if ($this->isAssoc($node)) {
+            if ($this->isStudInfoRow($node)) {
+                $out[] = $node;
+
+                return;
+            }
+        }
+
+        foreach ($node as $item) {
+            $this->collectStudInfoRecords($item, $out);
         }
     }
 

@@ -346,6 +346,13 @@ final class OfficerDataService
      */
     public function listStudents(array $ctx, ?string $query = null): array
     {
+        if (!empty($ctx['staffScope'])) {
+            $aesRows = $this->listStudentsFromAesDirectory($ctx);
+            if ($aesRows !== []) {
+                return $this->filterStudentRows($aesRows, $query);
+            }
+        }
+
         $studentModel = new StudentModel();
         $deptModel = new DepartmentModel();
         $userModel = new UserModel();
@@ -384,6 +391,213 @@ final class OfficerDataService
         }
 
         return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * Staff directory from AES getAllStudInfo4Placement, merged with local PlaceHub fields.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    private function listStudentsFromAesDirectory(array $ctx): array
+    {
+        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $params = [];
+        if ($deptAesId !== '') {
+            $params['stud_deptcode'] = $deptAesId;
+        }
+
+        try {
+            $records = (new AesApiService())->fetchAllStudInfo4Placement($params);
+        } catch (\Throwable) {
+            return [];
+        }
+        if ($records === []) {
+            return [];
+        }
+
+        $localByKey = $this->indexLocalStudentsForAesMerge($ctx);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $rows = [];
+
+        foreach ($records as $record) {
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? $record['registerNumber']
+                ?? ''
+            )));
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? '')));
+            if ($admno === '' && $regNo === '') {
+                continue;
+            }
+
+            $local = null;
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            if (!$this->isPlacementStudentListCandidate(
+                is_array($local) ? $local : ['registerNumber' => $admno !== '' ? $admno : $regNo],
+                null,
+                $row,
+                false
+            )) {
+                continue;
+            }
+            $rows[] = $row;
+        }
+
+        usort(
+            $rows,
+            static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['displayName'] ?? $a['registerNumber'] ?? ''),
+                (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
+            )
+        );
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return array<string, array<string, mixed>>
+     */
+    private function indexLocalStudentsForAesMerge(array $ctx): array
+    {
+        $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
+        $indexed = [];
+        foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
+            if (!StaffContext::studentMatchesScope($student, [
+                'departmentId' => $ctx['departmentId'] ?? '',
+                'profile'      => $ctx['profile'] ?? null,
+            ])) {
+                continue;
+            }
+            $reg = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            if ($reg !== '') {
+                $indexed[$reg] = $student;
+            }
+        }
+
+        return $indexed;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param array<string, mixed>|null $local
+     * @param array<string, mixed>|null $dept
+     * @return array<string, mixed>|null
+     */
+    private function mapAesDirectoryRecordToListRow(
+        array $record,
+        ?array $local,
+        ?array $dept,
+        string $deptCode,
+        string $deptName
+    ): ?array {
+        $admno = strtoupper(trim((string) (
+            $record['admno']
+            ?? $record['stud_admno']
+            ?? $record['registerNumber']
+            ?? ''
+        )));
+        $regNo = strtoupper(trim((string) ($record['registerno'] ?? '')));
+        $register = $admno !== '' ? $admno : $regNo;
+        if ($register === '') {
+            return null;
+        }
+
+        $name = trim((string) ($record['name'] ?? $record['stud_name'] ?? ''));
+        $photoUrl = trim((string) ($record['photoUrl'] ?? $record['stud_photo'] ?? ''));
+        $classBatch = trim((string) ($record['classBatch'] ?? $record['stud_class'] ?? ''));
+        $programme = trim((string) (
+            $record['stud_course']
+            ?? $record['stud_cource_short']
+            ?? $record['branch']
+            ?? $record['programme']
+            ?? ''
+        ));
+        $cgpa = isset($record['cgpa']) && is_numeric($record['cgpa']) ? (float) $record['cgpa'] : null;
+        $backlogs = isset($record['backlogs'])
+            ? (int) $record['backlogs']
+            : (isset($record['backlog']) ? (int) $record['backlog'] : 0);
+
+        $row = is_array($local) ? (DocumentHelper::serialize($local) ?? []) : [];
+        if ($row === []) {
+            $row = [
+                '_id'            => $register,
+                'id'             => $register,
+                'registerNumber' => $register,
+                'aesOnly'        => true,
+            ];
+        }
+
+        $row['registerNumber'] = (string) ($row['registerNumber'] ?? $register);
+        if ($regNo !== '') {
+            $row['registerno'] = $regNo;
+        }
+        $row['displayName'] = $name !== '' ? $name : (string) ($row['displayName'] ?? $register);
+        $row['classBatch'] = $classBatch !== '' ? $classBatch : (string) ($row['classBatch'] ?? '');
+        $row['collegeEmail'] = trim((string) ($record['collegeEmail'] ?? $record['stud_ajce_mails'] ?? $row['collegeEmail'] ?? ''));
+        $row['personalEmail'] = trim((string) ($record['personalEmail'] ?? $record['stud_personal_mails'] ?? $row['personalEmail'] ?? ''));
+        $row['phone'] = trim((string) ($record['phone'] ?? $record['stud_mobiles'] ?? $row['phone'] ?? ''));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $row['photoUrl'] = $photoUrl;
+            $row['photo'] = ['url' => $photoUrl, 'source' => 'aes'];
+        }
+
+        $academic = is_array($row['academic'] ?? null) ? $row['academic'] : [];
+        if ($cgpa !== null && $cgpa > 0) {
+            $academic['cgpa'] = $cgpa;
+        }
+        $academic['backlogs'] = $backlogs;
+        $row['academic'] = $academic;
+
+        $recordDeptCode = strtoupper(trim((string) ($record['stud_deptcode'] ?? '')));
+        $displayDeptCode = $programme !== ''
+            ? strtoupper($programme)
+            : ($deptCode !== '' ? $deptCode : $recordDeptCode);
+        $displayDeptName = $programme !== ''
+            ? $programme
+            : ($deptName !== '' ? $deptName : $displayDeptCode);
+        $row['departmentCode'] = $displayDeptCode;
+        $row['departmentName'] = $displayDeptName;
+        $row['department'] = [
+            'id'    => $dept ? (string) ($dept['_id'] ?? '') : '',
+            'code'  => $displayDeptCode,
+            'name'  => $displayDeptName,
+            'aesId' => trim((string) ($record['stud_deptcode'] ?? ($dept['aesId'] ?? ''))),
+        ];
+
+        $user = null;
+        if (is_array($local) && !empty($local['userId'])) {
+            $user = (new UserModel())->findById((string) $local['userId']);
+        }
+        $row = $this->enrichStudentListRow($row, is_array($local) ? $local : $row, $user, false);
+        if (($row['displayName'] ?? '') === '' && $name !== '') {
+            $row['displayName'] = $name;
+        }
+
+        return $row;
     }
 
     /**
@@ -915,6 +1129,12 @@ final class OfficerDataService
             return true;
         }
         if (!empty($ctx['staffScope'])) {
+            if (!empty($student['aesOnly'])) {
+                $scopeDept = (string) ($ctx['departmentId'] ?? '');
+                $studentDept = (string) ($student['departmentId'] ?? '');
+
+                return $studentDept === '' || $studentDept === $scopeDept;
+            }
             return StaffContext::studentMatchesScope($student, [
                 'departmentId' => $ctx['departmentId'] ?? '',
                 'profile'      => $ctx['profile'] ?? null,
@@ -1654,11 +1874,69 @@ final class OfficerDataService
             return $student;
         }
 
-        if (preg_match('/^\d{4,8}$/', $ref) === 1) {
-            return $studentModel->findByRegisterNumber($ref);
+        $upper = strtoupper($ref);
+        $student = $studentModel->findByRegisterNumber($upper);
+        if ($student) {
+            return $student;
+        }
+
+        if (preg_match('/^\d{4,12}$/', $ref) === 1 || preg_match('/^[A-Z0-9]{5,20}$/', $upper) === 1) {
+            return $this->syntheticStudentFromAes($upper);
         }
 
         return null;
+    }
+
+    /**
+     * Build a minimal PlaceHub-shaped student when AES has the directory row but Mongo does not.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function syntheticStudentFromAes(string $register): ?array
+    {
+        try {
+            $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+        } catch (\Throwable) {
+            return null;
+        }
+        if ($placement === []) {
+            return null;
+        }
+
+        $admno = strtoupper(trim((string) (
+            $placement['admno']
+            ?? $placement['stud_admno']
+            ?? $placement['registerNumber']
+            ?? $register
+        )));
+        $name = trim((string) ($placement['name'] ?? $placement['stud_name'] ?? ''));
+        $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
+        $cgpa = isset($placement['cgpa']) && is_numeric($placement['cgpa']) ? (float) $placement['cgpa'] : 0.0;
+        $backlogs = isset($placement['backlogs'])
+            ? (int) $placement['backlogs']
+            : (isset($placement['backlog']) ? (int) $placement['backlog'] : 0);
+
+        return [
+            '_id'            => $admno,
+            'registerNumber' => $admno,
+            'classBatch'     => trim((string) ($placement['classBatch'] ?? $placement['stud_class'] ?? '')),
+            'aesOnly'        => true,
+            'personal'       => [
+                'phone'          => trim((string) ($placement['phone'] ?? $placement['stud_mobiles'] ?? '')),
+                'personalEmail'  => trim((string) ($placement['personalEmail'] ?? $placement['stud_personal_mails'] ?? '')),
+                'collegeEmail'   => trim((string) ($placement['collegeEmail'] ?? $placement['stud_ajce_mails'] ?? '')),
+                'fullName'       => $name,
+            ],
+            'academic'       => [
+                'cgpa'     => $cgpa,
+                'backlogs' => $backlogs,
+            ],
+            'photo'          => ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL))
+                ? ['url' => $photoUrl, 'source' => 'aes']
+                : null,
+            'placed'         => false,
+            'policyAccepted' => false,
+        ];
     }
 
     /**
@@ -1670,12 +1948,18 @@ final class OfficerDataService
         if (!$student) {
             Response::notFound('Student not found.');
         }
-        PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $ctx);
-        if (!empty($ctx['staffScope'])) {
-            StaffContext::assertStudentInScope($student, [
-                'departmentId' => $ctx['departmentId'] ?? '',
-                'profile'      => $ctx['profile'] ?? null,
-            ]);
+        if (!empty($student['aesOnly'])) {
+            if (!$this->studentInScope($student, $ctx)) {
+                Response::forbidden('Student is outside your department scope.');
+            }
+        } else {
+            PlacementOfficerContext::assertStudentInDepartment((string) ($student['_id'] ?? ''), $ctx);
+            if (!empty($ctx['staffScope'])) {
+                StaffContext::assertStudentInScope($student, [
+                    'departmentId' => $ctx['departmentId'] ?? '',
+                    'profile'      => $ctx['profile'] ?? null,
+                ]);
+            }
         }
 
         return $this->buildStudentPipeline($student);
