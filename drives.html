@@ -457,7 +457,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260714g"></script>
+<script src="js/api.js?v=20260714drivefix"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1611,6 +1611,7 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
   if (!canManage) return;
 
   const id = document.getElementById('editDriveId').value;
+  const editModalEl = document.getElementById('editModal');
 
   if (!(await confirmAction({
     title: 'Update drive',
@@ -1619,39 +1620,49 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
     variant: 'primary',
   }))) return;
 
-  const result = await DriveStore.update(id, {
+  let result = null;
+  try {
+    result = await DriveStore.update(id, {
 
-    company: document.getElementById('editCompany').value.trim(),
+      company: document.getElementById('editCompany').value.trim(),
 
-    role: document.getElementById('editRole').value.trim(),
+      role: document.getElementById('editRole').value.trim(),
 
-    package: document.getElementById('editPackage').value.trim(),
+      package: document.getElementById('editPackage').value.trim(),
 
-    jobType: document.getElementById('editJobType')?.value || '',
+      jobType: document.getElementById('editJobType')?.value || '',
 
-    branches: readCheckedBranchCodes(document.getElementById('editDriveBranches')).join(', '),
+      branches: readCheckedBranchCodes(document.getElementById('editDriveBranches')).join(', '),
 
-    date: document.getElementById('editRecruitmentDate').value.trim(),
+      date: document.getElementById('editRecruitmentDate').value.trim(),
 
-    recruitmentDate: document.getElementById('editRecruitmentDate').value.trim(),
+      recruitmentDate: document.getElementById('editRecruitmentDate').value.trim(),
 
-    deadline: document.getElementById('editDeadline').value.trim(),
+      deadline: document.getElementById('editDeadline').value.trim(),
 
-    status: document.getElementById('editStatus').value,
+      status: document.getElementById('editStatus').value,
 
-    minCgpa: document.getElementById('editMinCgpa').value,
-    maxBacklogs: document.getElementById('editMaxBacklogs').value,
-    minPercentAllClasses: document.getElementById('editMinPercentAllClasses').value,
-    gender: document.getElementById('editGender').value || 'any',
+      minCgpa: document.getElementById('editMinCgpa').value,
+      maxBacklogs: document.getElementById('editMaxBacklogs').value,
+      minPercentAllClasses: document.getElementById('editMinPercentAllClasses').value,
+      gender: document.getElementById('editGender').value || 'any',
 
-    description: document.getElementById('editDescription').value.trim(),
+      description: document.getElementById('editDescription').value.trim(),
 
-  }, editingDrive || DriveStore.get(id));
+    }, editingDrive || DriveStore.get(id));
+  } catch (err) {
+    toast(err?.message || 'Could not update drive.', 'error');
+    if (editModalEl) bootstrap.Modal.getOrCreateInstance(editModalEl).show();
+    return;
+  }
 
-  if (!result) return;
+  if (!result) {
+    if (editModalEl) bootstrap.Modal.getOrCreateInstance(editModalEl).show();
+    return;
+  }
 
   editingDrive = null;
-  bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+  bootstrap.Modal.getInstance(editModalEl)?.hide();
 
   toast('Drive updated.', 'success');
 

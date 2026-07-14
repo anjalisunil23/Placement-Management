@@ -3816,14 +3816,15 @@ const DriveStore = {
       : String(branches).split(',').map(s => s.trim()).filter(Boolean);
   },
   async _resolveCompanyId(companyName, existingId) {
-    if (existingId) return existingId;
     const name = String(companyName || '').trim().toLowerCase();
-    if (!name || typeof RegisteredCompanies === 'undefined') return null;
+    if (!name) return existingId || null;
+    if (typeof RegisteredCompanies === 'undefined') return existingId || null;
     const list = RegisteredCompanies._cache || await RegisteredCompanies.fetch().catch(() => RegisteredCompanies.all());
     const match = (list || []).find(c =>
       String(c.companyName || c.company || '').trim().toLowerCase() === name
     );
-    return match?.companyId || match?.id || null;
+    if (match) return match.companyId || match.id || existingId || null;
+    return existingId || null;
   },
   async _buildUpdateBody(p, existing) {
     const company = String(p.company ?? existing?.company ?? '').trim();
@@ -4085,7 +4086,7 @@ const DriveStore = {
         if (res.success) {
           this._apiCache = null;
           await this.fetch();
-          return this.get(id);
+          return true;
         }
         toast(formatErrors(res), 'error');
         return null;
@@ -4095,7 +4096,7 @@ const DriveStore = {
         if (res.success) {
           this._apiCache = null;
           await this.fetch();
-          return this.get(id);
+          return true;
         }
         toast(formatErrors(res), 'error');
         return null;
@@ -4114,8 +4115,9 @@ const DriveStore = {
         const path = Auth.role() === 'placement_officer' ? `/officer/drives/${encodeURIComponent(id)}` : `/admin/drives/${encodeURIComponent(id)}`;
         const res = await api(path, { method: 'PUT', body });
         if (res.success) {
+          this._apiCache = null;
           await this.fetch();
-          return this.get(id);
+          return true;
         }
         toast(res.message || 'Could not update drive.', 'error');
         return null;

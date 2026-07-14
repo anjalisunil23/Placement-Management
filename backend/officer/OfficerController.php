@@ -386,7 +386,15 @@ final class OfficerController
         if (isset($input['eligibility']) && is_string($input['eligibility'])) {
             $input['eligibility'] = json_decode($input['eligibility'], true) ?? [];
         }
-        $allowed = ['title','type','date','time','eligibility','tier','status','branches'];
+        if (isset($input['branches']) && is_string($input['branches'])) {
+            $decodedBranches = json_decode($input['branches'], true);
+            if (is_array($decodedBranches)) {
+                $input['branches'] = $decodedBranches;
+            } else {
+                $input['branches'] = array_values(array_filter(array_map('trim', explode(',', $input['branches']))));
+            }
+        }
+        $allowed = ['title','companyId','type','date','time','branches','eligibility','tier','jdFile','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
         if (isset($update['eligibility']) && is_array($update['eligibility'])) {
             $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);
