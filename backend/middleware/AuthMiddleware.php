@@ -144,28 +144,6 @@ final class AuthMiddleware
         $deptCode = trim((string) ($dept['code'] ?? ''));
         $deptName = trim((string) ($dept['name'] ?? ''));
         $aesDeptId = trim((string) ($dept['aesId'] ?? ''));
-        // Resolve legacy numeric AES department codes only when the DB has no readable name.
-        if ($deptCode !== '' && ctype_digit($deptCode) && ($deptName === '' || ctype_digit($deptName))) {
-          try {
-            foreach ((new \PMS\Services\AesApiService())->listDepartments() as $row) {
-              if (trim((string) ($row['aesId'] ?? '')) !== $deptCode) {
-                continue;
-              }
-              $resolvedCode = strtoupper(trim((string) ($row['code'] ?? '')));
-              $resolvedName = trim((string) ($row['name'] ?? ''));
-              if ($resolvedCode !== '' && !ctype_digit($resolvedCode)) {
-                $deptCode = $resolvedCode;
-              }
-              if ($resolvedName !== '') {
-                $deptName = $resolvedName;
-              }
-              $aesDeptId = trim((string) ($row['aesId'] ?? '')) ?: $deptCode;
-              break;
-            }
-          } catch (\Throwable) {
-            // Keep stored department fields when AES is unreachable.
-          }
-        }
         // Prefer readable code/name over numeric AES ids in the session.
         if ($deptCode !== '' && !ctype_digit($deptCode)) {
           $data['department'] = $deptCode;

@@ -431,11 +431,7 @@ final class StaffService
         $batches = [];
         $userModel = new UserModel();
         $deptModel = new DepartmentModel();
-        $studentModel = new StudentModel();
-        $aes = new AesApiService();
-        $aesCalls = 0;
-        $aesLimit = 80;
-        foreach ($studentModel->findAll(StaffContext::studentCollectionFilter($ctx), 5000) as $student) {
+        foreach ((new StudentModel())->findAll(StaffContext::studentCollectionFilter($ctx), 5000) as $student) {
             if (!StaffContext::studentMatchesScope($student, $ctx)) {
                 continue;
             }
@@ -445,22 +441,6 @@ final class StaffService
                 continue;
             }
             $batch = trim((string) ($student['classBatch'] ?? ''));
-            if ($batch === '' && $aesCalls < $aesLimit) {
-                $admno = trim((string) ($student['registerNumber'] ?? ''));
-                if ($admno !== '') {
-                    $aesCalls++;
-                    $batch = $aes->studClassFromPlacementInfo($admno);
-                    if ($batch !== '') {
-                        $id = (string) ($student['_id'] ?? '');
-                        if ($id !== '') {
-                            try {
-                                $studentModel->update($id, ['classBatch' => $batch]);
-                            } catch (\Throwable) {
-                            }
-                        }
-                    }
-                }
-            }
             if ($batch !== '') {
                 $batches[$batch] = true;
             }

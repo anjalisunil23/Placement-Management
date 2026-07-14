@@ -151,7 +151,7 @@ class UserModel extends BaseModel
         $driveModel = new DriveModel();
         $totalStudents = $studentModel->count([]);
         $placedStudents = $studentModel->count(['placed' => true]);
-        $analytics = (new AnalyticsService())->getDashboardAnalytics(null);
+        // getExtendedAnalytics already includes getDashboardAnalytics — call once.
         $extended = (new AnalyticsService())->getExtendedAnalytics(null);
 
         return [
@@ -166,9 +166,9 @@ class UserModel extends BaseModel
             'totalStaff'          => $this->count(['role' => 'staff']),
             'totalAlumni'         => $this->count(['role' => 'alumni']),
             'activeDrives'        => $driveModel->count(['status' => ['$ne' => 'closed']]),
-            'salaryAnalytics'     => $analytics['salaryAnalytics'],
-            'branchStatistics'    => $analytics['branchStatistics'],
-            'companyStatistics'   => $analytics['companyStatistics'],
+            'salaryAnalytics'     => $extended['salaryAnalytics'],
+            'branchStatistics'    => $extended['branchStatistics'],
+            'companyStatistics'   => $extended['companyStatistics'],
             'hiringTrend'         => $extended['hiringTrend'],
             'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
         ];

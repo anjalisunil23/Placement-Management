@@ -2285,7 +2285,7 @@ final class OfficerDataService
         }
 
         $deptId = $ctx['isAdmin'] ? null : ($ctx['departmentId'] ?? null);
-        $analytics = (new AnalyticsService())->getDashboardAnalytics($deptId);
+        // getExtendedAnalytics already includes getDashboardAnalytics — call once.
         $extended = (new AnalyticsService())->getExtendedAnalytics($deptId);
         $userModel = new UserModel();
 
@@ -2300,12 +2300,12 @@ final class OfficerDataService
             'pendingApplications' => $pendingApplications,
             'pendingResumes'      => $pendingResumes,
             'activeDrives'        => $activeDrives,
-            'totalCompanies'      => $analytics['totals']['companies'] ?? (new CompanyModel())->count([]),
+            'totalCompanies'      => $extended['totals']['companies'] ?? (new CompanyModel())->count([]),
             'totalStaff'          => $userModel->count(['role' => 'staff']),
             'totalAlumni'         => $userModel->count(['role' => 'alumni']),
-            'salaryAnalytics'     => $analytics['salaryAnalytics'],
-            'branchStatistics'    => $analytics['branchStatistics'],
-            'companyStatistics'   => $analytics['companyStatistics'],
+            'salaryAnalytics'     => $extended['salaryAnalytics'],
+            'branchStatistics'    => $extended['branchStatistics'],
+            'companyStatistics'   => $extended['companyStatistics'],
             'hiringTrend'         => $extended['hiringTrend'],
             'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
             'department'          => $ctx['department']

@@ -690,8 +690,25 @@ const Auth = {
       'drives.html', 'create-drive.html',
     ].includes(page);
   },
-  async bootstrap() {
+  async bootstrap(opts = {}) {
     if (this._sessionReady === true) return true;
+
+    // After AES login, aes-complete already called /auth/me. Trust that cached
+    // session for a short window so dashboard does not block on another round-trip.
+    const soft = opts.soft !== false;
+    try {
+      const bootAt = Number(sessionStorage.getItem('ph_auth_boot_at') || 0);
+      const cached = this.user();
+      if (soft && cached?.role && this.token() && bootAt > 0 && (Date.now() - bootAt) < 20000) {
+        this._sessionReady = true;
+        // Refresh quietly after first paint.
+        queueMicrotask(() => {
+          this.refreshSession().catch(() => {});
+        });
+        return true;
+      }
+    } catch (_) { /* sessionStorage may be blocked */ }
+
     const res = await apiFetch('/auth/me', { skipAuthRedirect: true, skipAuthRetry: true });
     if (!res.success || !res.data || !res.data.role) {
       this._sessionReady = false;
@@ -699,14 +716,16 @@ const Auth = {
     }
     this.applySessionUser(res.data);
     this._sessionReady = true;
+    try { sessionStorage.setItem('ph_auth_boot_at', String(Date.now())); } catch (_) {}
     return true;
   },
   async refreshSession() {
     this._sessionReady = false;
-    let ok = await this.bootstrap();
+    try { sessionStorage.removeItem('ph_auth_boot_at'); } catch (_) {}
+    let ok = await this.bootstrap({ soft: false });
     if (!ok) {
       await new Promise((r) => setTimeout(r, 300));
-      ok = await this.bootstrap();
+      ok = await this.bootstrap({ soft: false });
     }
     return ok;
   },

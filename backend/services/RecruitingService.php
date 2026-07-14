@@ -143,9 +143,10 @@ final class RecruitingService
         }
 
         $studentModel = new StudentModel();
+        // Dashboard overview must stay fast — never fan out to AES for missing classBatch.
         $aes = new AesApiService();
         $aesCalls = 0;
-        $aesLimit = 80;
+        $aesLimit = 0;
 
         foreach ($studentModel->findAll($filter, 8000) as $student) {
             $batch = $this->resolveStudentStudClass($student, $studentModel, $aes, $aesCalls, $aesLimit);
@@ -228,7 +229,8 @@ final class RecruitingService
         $deptCache = [];
         $rows = [];
         $aesCalls = 0;
-        $aesLimit = 80;
+        // Dashboard overview must stay fast — never fan out to AES for missing classBatch.
+        $aesLimit = 0;
 
         foreach ($studentModel->findAll($filter, 5000) as $student) {
             $user = $userModel->findById((string) ($student['userId'] ?? ''));

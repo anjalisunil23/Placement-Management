@@ -204,7 +204,7 @@ final class AesLoginService
         if ($emails['personalEmail'] !== '') {
             $aesDetails['personalEmail'] = $emails['personalEmail'];
         }
-        $aesName = $this->resolveAesName($aesDetails, $mapped, $register, $emails['personalEmail']);
+        $aesName = $this->resolveAesName($aesDetails, $mapped, $register, $emails['personalEmail'], false);
         if ($aesName !== '') {
             $aesDetails['name'] = $aesName;
             $profile['name'] = $aesName;
@@ -966,15 +966,23 @@ final class AesLoginService
             return trim((string) ($user['name'] ?? ''));
         }
 
-        $apiName = $this->resolveAesName($aesProfile, [], $register, '');
-        if ($apiName === '') {
-            return trim((string) ($user['name'] ?? ''));
-        }
-
         $current = trim((string) ($user['name'] ?? ''));
         $emails = array_values(array_filter([
             strtolower(trim((string) ($user['email'] ?? ''))),
         ]));
+        // Keep /auth/me fast: do not hit AES when we already have a real stored name.
+        if ($current !== ''
+            && $this->isRealPersonName($current)
+            && !$this->isPlaceholderName($current, $register)
+            && !$this->isEmailDerivedName($current, $emails)) {
+            return $current;
+        }
+
+        $apiName = $this->resolveAesName($aesProfile, [], $register, '');
+        if ($apiName === '') {
+            return $current;
+        }
+
         if ($current === ''
             || strcasecmp($current, $apiName) !== 0
             || $this->isEmailDerivedName($current, $emails)) {
@@ -3850,19 +3858,13 @@ final class AesLoginService
         ])));
     }
 
-    private function resolveAesName(array $aesProfile, array $mapped, string $register, string $personalEmail = ''): string
+    private function resolveAesName(array $aesProfile, array $mapped, string $register, string $personalEmail = '', bool $allowApiLookup = true): string
     {
         $register = $this->resolveAesAdmissionNumber($register, $aesProfile, $mapped);
 
-        if ($register !== '') {
-            $apiName = $this->fetchStudentNameFromPlacementApi($register);
-            if ($apiName !== '') {
-                return $apiName;
-            }
-        }
-
+        // Prefer identity already present on the AES callback / session (login critical path).
         $placementName = trim($this->pickInsensitive($aesProfile, [
-            'stud_name', 'student_name', 'studentName', 'studentfullname', 'student_full_name',
+            'stud_name', 'student_name', 'studentName', 'studentnam', 'student_full_name', 'name', 'fullname', 'full_name', 'fullnameName',
         ]));
         if ($placementName !== '' && $this->isRealPersonName($placementName) && !$this->isPlaceholderName($placementName, $register)) {
             return $placementName;
@@ -3883,6 +3885,14 @@ final class AesLoginService
             $inferred = $this->inferNameFromEmail($personalEmail);
             if ($this->isRealPersonName($inferred) && !$this->isPlaceholderName($inferred, $register)) {
                 return $inferred;
+            }
+        }
+
+        // Optional live AES placement lookup only when callback data had no usable name.
+        if ($allowApiLookup && $register !== '') {
+            $apiName = $this->fetchStudentNameFromPlacementApi($register);
+            if ($apiName !== '') {
+                return $apiName;
             }
         }
 

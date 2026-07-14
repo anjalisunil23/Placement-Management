@@ -1102,11 +1102,17 @@
       this.refreshLiveFlags();
       const role = this.currentRole();
 
-      await DepartmentStore.fetch();
+      const tasks = [DepartmentStore.fetch()];
+      if (this.campusLive) {
+        tasks.push(RecruitingStore.fetch());
+        tasks.push(dashboardStats().catch(() => null));
+      }
+      const results = await Promise.all(tasks);
       this.populateDeptSelect();
 
       if (this.campusLive) {
-        const data = await RecruitingStore.fetch();
+        const data = results[1];
+        const stats = results[2];
         if (data) {
           this.campusRecruitingData = data;
           if (Array.isArray(data.placements)) this.placementRows = data.placements;
@@ -1126,12 +1132,9 @@
           toast('Could not load live recruiting data. Refresh or sign in again.', 'warn');
           document.getElementById('dashLiveBadge')?.classList.add('d-none');
         }
-        try {
-          const stats = await dashboardStats();
+        if (stats) {
           this.hiringTrendThisYear = stats?.hiringTrend || this.hiringTrendThisYear;
           this.hiringTrendLastYear = stats?.hiringTrendLastYear || this.hiringTrendLastYear;
-        } catch (_) {
-          /* keep prior trend data */
         }
       }
       this.applyTrendYearMode();

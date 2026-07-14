@@ -7,7 +7,6 @@ $root = __DIR__;
 require $root . '/backend/bootstrap-aes.php';
 pms_bootstrap_aes_callback($root);
 
-use PMS\Middleware\AuthMiddleware;
 use PMS\Services\AesLoginService;
 use PMS\Utils\Security;
 
@@ -57,19 +56,34 @@ try {
     $service = new AesLoginService();
     $user = $service->loginFromAesPayload($payload);
 
-    $info = AuthMiddleware::userResponse($user);
-    $target = (string) ($info['dashboard'] ?? '/dashboard.html');
-    if (($info['role'] ?? '') === 'admin') {
-        $target = '/dashboard.html';
-    } elseif (($info['role'] ?? '') === 'placement_officer') {
+    // Fast redirect: do not run full AuthMiddleware::userResponse (profile joins + AES) here.
+    $config = require __DIR__ . '/backend/config/app.php';
+    $role = (string) ($user['role'] ?? '');
+    $email = strtolower(trim((string) ($user['email'] ?? '')));
+    if ($service->isSuperAdminEmail($email)) {
+        $role = 'admin';
+    }
+    $target = (string) ($config['role_dashboards'][$role] ?? '/dashboard.html');
+    if ($role === 'admin' || $role === 'placement_officer') {
         $target = '/dashboard.html';
     }
     if ($target === '' || $target[0] !== '/') {
         $target = '/' . ltrim($target, '/');
     }
 
-    if (($user['role'] ?? '') === 'alumni' && array_key_exists('isWorking', $info) && $info['isWorking'] === false) {
-        $target = '/drives.html';
+    if ($role === 'alumni') {
+        $isWorking = $user['isWorking'] ?? null;
+        if ($isWorking === null) {
+            try {
+                $alumni = (new \PMS\Models\AlumniModel())->findByUserId((string) ($user['_id'] ?? ''));
+                $isWorking = is_array($alumni) ? ($alumni['isWorking'] ?? true) : true;
+            } catch (Throwable) {
+                $isWorking = true;
+            }
+        }
+        if ($isWorking === false) {
+            $target = '/drives.html';
+        }
     }
 
     $next = ltrim($target, '/');
