@@ -180,7 +180,7 @@
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
           <h6 class="fw-bold mb-0">Registered final-year students</h6>
-          <small class="text-muted-2">Final-year students who have accepted the placement policy.</small>
+          <small class="text-muted-2 final-year-tab-sub">Final-year students who have accepted the placement policy.</small>
         </div>
         <span class="badge-soft success" id="finalYearRegisteredCount">0</span>
       </div>
@@ -213,7 +213,7 @@
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
           <h6 class="fw-bold mb-0">Non-registered final-year students</h6>
-          <small class="text-muted-2">Final-year students who have not registered the placement policy yet.</small>
+          <small class="text-muted-2 final-year-tab-sub">Final-year students who have not registered the placement policy yet.</small>
         </div>
         <span class="badge-soft warning" id="finalYearPendingCount">0</span>
       </div>
@@ -662,6 +662,13 @@ if (isAdminRole) {
   document.getElementById('pageSub').textContent = 'Final-year students by placement policy registration, drive applications, and blacklist.';
   document.getElementById('overviewTabItem')?.remove();
   document.getElementById('tabRegistrations')?.remove();
+} else if (role === 'staff') {
+  const pageSub = document.getElementById('pageSub');
+  if (pageSub) {
+    pageSub.textContent = '';
+    pageSub.hidden = true;
+  }
+  document.querySelectorAll('.final-year-tab-sub').forEach(el => el.remove());
 } else if (canViewFinalYear) {
   document.getElementById('pageSub').textContent = 'Final-year students in your department by placement policy registration.';
 }
@@ -734,13 +741,14 @@ const PAGE_SUB_BY_TAB = {
 
 function syncPageSubFromActiveTab() {
   const sub = document.getElementById('pageSub');
-  if (!sub) return;
+  if (!sub || role === 'staff') return;
   const active = document.querySelector('#mainTabs .nav-link.active');
   const href = (active?.getAttribute('href') || (canViewFinalYear ? '#tabFinalYearRegistered' : '#tabOverview')).replace('#', '');
   sub.textContent = PAGE_SUB_BY_TAB[href] || (canViewFinalYear ? PAGE_SUB_BY_TAB.tabFinalYearRegistered : PAGE_SUB_BY_TAB.tabOverview);
 }
 
 document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
+  if (role === 'staff') return;
   const href = (e.target?.getAttribute('href') || '').replace('#', '');
   const sub = document.getElementById('pageSub');
   if (sub && PAGE_SUB_BY_TAB[href]) sub.textContent = PAGE_SUB_BY_TAB[href];

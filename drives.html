@@ -868,7 +868,11 @@ function setupDrivesChrome() {
     actions.innerHTML = '';
   } else if (isStaff) {
     document.getElementById('drivesTitle').textContent = 'Placement Drives';
-    document.getElementById('drivesSub').textContent = 'View active drives and company details for your department.';
+    const drivesSub = document.getElementById('drivesSub');
+    if (drivesSub) {
+      drivesSub.textContent = '';
+      drivesSub.hidden = true;
+    }
     actions.innerHTML = '';
     document.getElementById('driveDetailApplyBtn')?.classList.add('d-none');
   } else if (!canManage) {

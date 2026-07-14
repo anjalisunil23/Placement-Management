@@ -95,14 +95,16 @@ const notifApiBase = NotificationInbox.apiBase(role);
 const pageCopy = {
   student: ['Notifications', 'Job posters and updates from your applied drives.'],
   alumni: ['Notifications', 'Referrals, job posts, and application updates.'],
-  staff: ['Notifications', 'Department alerts, drives, and recommendation updates.'],
+  staff: ['Notifications', ''],
   admin: ['Notifications Center', 'Alerts, email status and broadcast history.'],
   placement_officer: ['Notifications Center', 'Send department broadcasts and track delivery.'],
   company: ['Notifications', 'Application updates and candidate pipeline alerts.'],
 };
 const [pageTitle, pageSub] = pageCopy[role] || ['Notifications', 'Your inbox.'];
 document.getElementById('notifTitle').textContent = pageTitle;
-document.getElementById('notifSub').textContent = pageSub;
+const notifSubEl = document.getElementById('notifSub');
+notifSubEl.textContent = pageSub;
+if (!pageSub) notifSubEl.hidden = true;
 
 if (!isAdminLike) {
   document.querySelectorAll('[data-non-student]').forEach(el => el.style.display = 'none');

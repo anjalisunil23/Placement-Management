@@ -286,9 +286,15 @@
         : `Placement list (${year})`;
     }
     if (subEl) {
-      subEl.textContent = this.trendYearMode === 'last'
-        ? 'Placed students from last calendar year (AES batch + offer dates).'
-        : 'Placed students for this calendar year (AES batch + offer dates).';
+      if (this.currentRole() === 'staff') {
+        subEl.textContent = '';
+        subEl.hidden = true;
+      } else {
+        subEl.hidden = false;
+        subEl.textContent = this.trendYearMode === 'last'
+          ? 'Placed students from last calendar year (AES batch + offer dates).'
+          : 'Placed students for this calendar year (AES batch + offer dates).';
+      }
     }
     if (countEl) countEl.textContent = String(rows.length);
 
@@ -812,6 +818,10 @@
     this.populateBatchSelect();
 
     if (role === 'staff' || role === 'placement_officer') {
+      if (role === 'staff') {
+        if (hintEl) hintEl.textContent = '';
+        return;
+      }
       const meta = this.ownDepartmentMeta();
       const label = meta.name || meta.code || 'your department';
       const branchLabel = this.selectedBranchLabel();
