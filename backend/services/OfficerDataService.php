@@ -507,17 +507,44 @@ final class OfficerDataService
     private function isLocalFinalYearStudyingStudent(array $student): bool
     {
         $batch = strtoupper(trim((string) ($student['classBatch'] ?? '')));
+        $hint = strtoupper(trim(implode(' ', array_filter([
+            $batch,
+            (string) ($student['programme'] ?? ''),
+            (string) ($student['branch'] ?? ''),
+            (string) ($student['departmentCode'] ?? ''),
+            is_array($student['department'] ?? null)
+                ? (string) (($student['department']['code'] ?? '') . ' ' . ($student['department']['name'] ?? ''))
+                : '',
+            is_array($student['personal'] ?? null) ? (string) ($student['personal']['course'] ?? '') : '',
+        ]))));
         if ($batch === '') {
             // Placement Cell students without a batch are usually final-year/outgoing.
             return true;
         }
 
-        return $this->looksLikeFinalYearClassBatch($batch);
+        return $this->looksLikeFinalYearClassBatch($batch, $hint);
     }
 
-    private function looksLikeFinalYearClassBatch(string $batch): bool
+    /**
+     * Detect PG / MCA programmes even when labels are glued (MCA2025-27-S3, MCA Regular).
+     */
+    private function isPgPlacementProgramme(string $text): bool
+    {
+        $text = strtoupper(trim($text));
+        if ($text === '') {
+            return false;
+        }
+
+        return preg_match(
+            '/(?:^|[^A-Z])(?:IN)?MCA(?:REG)?(?=\d|[^A-Z]|$)|(?:^|[^A-Z])(?:MBA|M\.?TECH|MTECH|MCAR|PG)(?=\d|[^A-Z]|$)/',
+            $text
+        ) === 1;
+    }
+
+    private function looksLikeFinalYearClassBatch(string $batch, string $programmeHint = ''): bool
     {
         $batch = strtoupper(trim($batch));
+        $programmeHint = strtoupper(trim($programmeHint));
         if ($batch === '') {
             return false;
         }
@@ -525,9 +552,12 @@ final class OfficerDataService
             return true;
         }
 
-        if (preg_match('/\bS([1-8])\b/', $batch, $m) === 1) {
+        $isPg = $this->isPgPlacementProgramme($batch . ' ' . $programmeHint);
+
+        if (preg_match('/(?:^|[^A-Z0-9])S([1-8])(?:[^A-Z0-9]|$)/', $batch, $m) === 1
+            || preg_match('/\bS([1-8])\b/', $batch, $m) === 1) {
             $sem = (int) $m[1];
-            $isPg = preg_match('/\b(MCA|INMCA|MBA|M\.?TECH|MTECH|PG|MCAREG)\b/', $batch) === 1;
+            // MCA Regular final semesters are typically S3–S6.
             if ($isPg) {
                 return $sem >= 3;
             }
@@ -537,7 +567,6 @@ final class OfficerDataService
 
         if (preg_match('/\b(SEM(?:ESTER)?[\s\-]*([1-8]))\b/', $batch, $m) === 1) {
             $sem = (int) ($m[2] ?? 0);
-            $isPg = preg_match('/\b(MCA|INMCA|MBA|M\.?TECH|MTECH|PG)\b/', $batch) === 1;
             if ($isPg) {
                 return $sem >= 3;
             }
@@ -545,8 +574,12 @@ final class OfficerDataService
             return $sem >= 7;
         }
 
-        // Year-range batches like 2023-27 without semester are treated as placement cohort.
+        // Year-range batches like MCA2025-27 / 2023-27 without semester.
         if (preg_match('/20\d{2}\s*[-–]\s*\d{2,4}/', $batch) === 1) {
+            return true;
+        }
+
+        if ($isPg && preg_match('/REGULAR/', $batch . ' ' . $programmeHint) === 1) {
             return true;
         }
 
@@ -817,11 +850,24 @@ final class OfficerDataService
             ?? $record['stud_sem']
             ?? ''
         )));
-        $classBatch = strtolower(trim((string) (
+        $classBatch = trim((string) (
             $record['stud_class']
             ?? $record['classBatch']
             ?? ''
-        )));
+        ));
+        $courseHint = trim(implode(' ', array_filter([
+            (string) ($record['stud_course'] ?? ''),
+            (string) ($record['stud_cource_short'] ?? ''),
+            (string) ($record['stud_branch'] ?? ''),
+            (string) ($record['branch'] ?? ''),
+            (string) ($record['programme'] ?? ''),
+            $classBatch,
+        ])));
+        $isPg = $this->isPgPlacementProgramme($courseHint);
+
+        if ($classBatch !== '' && $this->looksLikeFinalYearClassBatch($classBatch, $courseHint)) {
+            return true;
+        }
 
         if ($yearRaw === '' && $semesterRaw === '' && $classBatch === '') {
             return true;
@@ -831,9 +877,14 @@ final class OfficerDataService
             if (preg_match('/\b(final|outgoing|last|pass.?out)\b/', $yearRaw) === 1) {
                 return true;
             }
-            if (preg_match('/\b(1|2|3|i|ii|iii|1st|2nd|3rd|first|second|third)\b/', $yearRaw) === 1
+            // MCA Regular often reports year=2 while in final semester (S3/S4).
+            if (!$isPg
+                && preg_match('/\b(1|2|3|i|ii|iii|1st|2nd|3rd|first|second|third)\b/', $yearRaw) === 1
                 && preg_match('/\b(4|5|iv|v|4th|5th|final|fourth|fifth)\b/', $yearRaw) !== 1) {
                 return false;
+            }
+            if ($isPg && preg_match('/\b(2|ii|2nd|second)\b/', $yearRaw) === 1) {
+                return true;
             }
             if (preg_match('/\b(4|5|iv|v|4th|5th|final|fourth|fifth)\b/', $yearRaw) === 1) {
                 return true;
@@ -844,12 +895,11 @@ final class OfficerDataService
             if (preg_match('/\b(7|8|s7|s8|sem\s*7|sem\s*8|semester\s*7|semester\s*8)\b/', $semesterRaw) === 1) {
                 return true;
             }
-            // Common PG final semesters
-            if (preg_match('/\b(3|4|s3|s4|sem\s*3|sem\s*4|semester\s*3|semester\s*4)\b/', $semesterRaw) === 1
-                && preg_match('/\b(mca|m\.?tech|mba|pg|post)\b/', $classBatch . ' ' . $yearRaw) === 1) {
+            if ($isPg && preg_match('/\b(3|4|5|6|s3|s4|s5|s6|sem\s*[3-6]|semester\s*[3-6])\b/', $semesterRaw) === 1) {
                 return true;
             }
-            if (preg_match('/\b(1|2|3|4|5|6|s1|s2|s3|s4|s5|s6)\b/', $semesterRaw) === 1
+            if (!$isPg
+                && preg_match('/\b(1|2|3|4|5|6|s1|s2|s3|s4|s5|s6)\b/', $semesterRaw) === 1
                 && preg_match('/\b(7|8|s7|s8)\b/', $semesterRaw) !== 1) {
                 return false;
             }
