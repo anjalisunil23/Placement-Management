@@ -62,25 +62,16 @@ const NAV = [
   { section: "Overview", roles: ROLES },
   { href: "dashboard.html", icon: "bi-grid-1x2-fill", label: "Dashboard", roles: ROLES },
 
-  { section: "Placement", roles: ['admin','placement_officer','student','staff','alumni'] },
-  {
-    group: 'placement-drives',
-    icon: 'bi-briefcase-fill',
-    label: 'Placement Drives',
-    href: 'drives.html',
-    roles: ['admin','placement_officer','staff'],
-    children: [
-      { href: 'placement-console.html', label: 'Console', roles: ['admin'] },
-    ],
-  },
+  { section: "Placement", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'] },
+  { href: "drives.html", icon: "bi-briefcase-fill", label: "Placement Drives", roles: ['admin', 'placement_officer', 'staff'] },
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
   { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Placement details", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
-  { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin','placement_officer','staff'] },
+  { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'] },
   { href: "hiring-overview.html", icon: "bi-building-check", label: "Hiring Overview", roles: ['admin'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
-  { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin','placement_officer'] },
-  { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin','placement_officer'] },
+  { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin', 'placement_officer'] },
+  { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin', 'placement_officer'] },
   { href: "admin-settings.html", icon: "bi-gear-wide-connected", label: "System Settings", roles: ['admin'] },
 
   { section: "Alumni", roles: ['alumni'], alumniEmployed: true },
@@ -92,7 +83,7 @@ const NAV = [
   { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
 
-  { section: "Company", roles: ['admin','placement_officer','company'] },
+  { section: "Company", roles: ['admin', 'placement_officer', 'company'] },
   { href: "company.html", icon: "bi-building", label: "Company Portal", roles: ['company'] },
   { href: "applicants.html", icon: "bi-person-lines-fill", label: "Applicants", roles: ['company'] },
   { href: "recruiting.html", icon: "bi-diagram-3-fill", label: "Recruitment", roles: ['company'] },
@@ -101,11 +92,11 @@ const NAV = [
   { section: "Insights", roles: ['staff'] },
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['staff'] },
 
-  { section: "Account", roles: ['admin','placement_officer','student','staff','alumni','company'] },
-  { href: "notifications.html", icon: "bi-bell-fill", label: "Notifications", roles: ['admin','placement_officer','student','staff','alumni','company'] },
-  { href: "settings.html", icon: "bi-gear-fill", label: "Settings", roles: ['admin','placement_officer','staff','alumni','company'] },
+  { section: "Account", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'] },
+  { href: "notifications.html", icon: "bi-bell-fill", label: "Notifications", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'] },
+  { href: "settings.html", icon: "bi-gear-fill", label: "Settings", roles: ['admin', 'placement_officer', 'staff', 'alumni', 'company'] },
   { href: "settings.html", icon: "bi-person-badge", label: "Profile & Resumes", roles: ['student'], studentOnly: true },
-  { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['admin','placement_officer','alumni'] },
+  { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['admin', 'placement_officer', 'alumni'] },
 ];
 
 const PAGE_LABELS = {
@@ -140,8 +131,8 @@ const PAGE_LABELS = {
   'admin-settings.html': 'System Settings',
 };
 
-function initials(name='') {
-  return name.trim().split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase() || 'U';
+function initials(name = '') {
+  return name.trim().split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase() || 'U';
 }
 
 function escapeAttr(value) {
@@ -264,7 +255,7 @@ function bindTopbarProfileMenu() {
   });
 
   logoutBtn?.addEventListener('click', (e) => {
-    handleTopbarLogout(e).catch(() => {});
+    handleTopbarLogout(e).catch(() => { });
   });
 
   document.addEventListener('click', (e) => {
@@ -280,7 +271,7 @@ function bindLogoutButton(btn) {
   if (!btn || btn.dataset.bound === '1') return;
   btn.dataset.bound = '1';
   btn.addEventListener('click', (e) => {
-    handleTopbarLogout(e).catch(() => {});
+    handleTopbarLogout(e).catch(() => { });
   });
 }
 
@@ -342,15 +333,15 @@ function renderNavChildren(children, active, role, depth = 1) {
         <div class="nav-sub-group ${open ? 'open' : ''}" data-nav-group="${c.group}">
           <div class="nav-sub-group-row">
             ${c.href
-              ? `<a class="nav-item nav-sub-item ${headActive ? 'active' : ''}" href="${c.href}"><span>${c.label}</span></a>`
-              : `<button type="button" class="nav-item nav-sub-group-toggle ${headActive ? 'active' : ''}" aria-expanded="${open}"><span>${c.label}</span></button>`}
+          ? `<a class="nav-item nav-sub-item ${headActive ? 'active' : ''}" href="${c.href}"><span>${c.label}</span></a>`
+          : `<button type="button" class="nav-item nav-sub-group-toggle ${headActive ? 'active' : ''}" aria-expanded="${open}"><span>${c.label}</span></button>`}
             ${subKids.length
-              ? `<button type="button" class="nav-sub-chevron-btn" aria-label="Toggle ${c.label}"><i class="bi bi-chevron-down nav-chevron"></i></button>`
-              : ''}
+          ? `<button type="button" class="nav-sub-chevron-btn" aria-label="Toggle ${c.label}"><i class="bi bi-chevron-down nav-chevron"></i></button>`
+          : ''}
           </div>
           ${subKids.length
-            ? `<div class="nav-sub-nested">${renderNavChildren(subKids, active, role, depth + 1)}</div>`
-            : ''}
+          ? `<div class="nav-sub-nested">${renderNavChildren(subKids, active, role, depth + 1)}</div>`
+          : ''}
         </div>`;
     }
     const cls = depth > 1 ? 'nav-sub-item nav-sub-item-deep' : 'nav-sub-item';
@@ -425,8 +416,8 @@ function renderNavEntry(n, active, role) {
       <div class="nav-group ${open ? 'open' : ''}" data-nav-group="${n.group}">
         <div class="nav-group-row">
           ${n.href
-            ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span></a>`
-            : `<button type="button" class="nav-item nav-group-toggle ${open ? 'active' : ''}" aria-expanded="${open}"><i class="bi ${n.icon}"></i><span>${n.label}</span></button>`}
+        ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span></a>`
+        : `<button type="button" class="nav-item nav-group-toggle ${open ? 'active' : ''}" aria-expanded="${open}"><i class="bi ${n.icon}"></i><span>${n.label}</span></button>`}
           <button type="button" class="nav-group-chevron-btn" aria-label="Toggle ${n.label}"><i class="bi bi-chevron-down nav-chevron"></i></button>
         </div>
         <div class="nav-sub">
@@ -473,7 +464,7 @@ function renderShell(active) {
 
   if (topbar) {
     const quickLinks = {
-      admin: '<a href="placement-console.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Console</a><a href="students.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Approvals</a>',
+      admin: '<a href="students.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Approvals</a>',
       placement_officer: '',
       student: '',
       staff: '',
@@ -505,7 +496,7 @@ function renderShell(active) {
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
             <li><h6 class="dropdown-header">Preview as role</h6></li>
-            ${ROLES.map(r => `<li><a class="dropdown-item ${r===role?'active':''}" href="#" data-role="${r}">${ROLE_LABELS[r]}</a></li>`).join('')}
+            ${ROLES.map(r => `<li><a class="dropdown-item ${r === role ? 'active' : ''}" href="#" data-role="${r}">${ROLE_LABELS[r]}</a></li>`).join('')}
           </ul>
         </div>` : `<span class="badge badge-soft ${ROLE_BADGES[role] || 'muted'} d-none d-sm-inline-flex align-items-center gap-1 px-2 py-1"><i class="bi bi-person-badge"></i>${ROLE_LABELS[role]}</span>`}
         ${'<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>'}
@@ -707,7 +698,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const page = document.body?.dataset?.page;
         if (page) renderShell(page);
       })
-      .catch(() => {});
+      .catch(() => { });
   }
 
   animateCounters();

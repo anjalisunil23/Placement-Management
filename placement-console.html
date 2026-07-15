@@ -13,12 +13,6 @@
     <h1 class="page-title">Placement Console</h1>
     <p class="page-sub">Department statistics, staff, referrals, job posts, recruiting companies, and applicant pipeline.</p>
   </div>
-  <div class="d-flex gap-2 align-items-center">
-    <div class="form-check form-switch mb-0" title="Resume verification">
-      <input class="form-check-input" type="checkbox" id="resumeVerifyToggle">
-      <label class="form-check-label small" for="resumeVerifyToggle">Verify resumes</label>
-    </div>
-  </div>
 </div>
 
 <div class="row g-3 mb-3">
@@ -452,10 +446,12 @@ function resumeVerificationOn() { return PlacementSettings.isResumeVerificationO
 
 function syncResumeUI() {
   const on = resumeVerificationOn();
-  document.getElementById('resumeVerifyToggle').checked = on;
-  document.getElementById('resumeHint').textContent = on
-    ? 'Resume verification is ON — you can view student resumes'
-    : 'Resume verification is OFF — resume viewing disabled';
+  const hint = document.getElementById('resumeHint');
+  if (hint) {
+    hint.textContent = on
+      ? 'Resume verification is ON — you can view student resumes'
+      : 'Resume verification is OFF — resume viewing disabled';
+  }
   document.querySelectorAll('.resume-col').forEach(el => { el.style.display = on ? '' : 'none'; });
 }
 
@@ -614,23 +610,6 @@ document.addEventListener('visibilitychange', () => {
   loadLiveConsoleData()
     .then(ok => { if (ok) refreshConsoleViews(); })
     .catch(() => {});
-});
-
-document.getElementById('resumeVerifyToggle').checked = resumeVerificationOn();
-document.getElementById('resumeVerifyToggle').addEventListener('change', async e => {
-  const enabled = e.target.checked;
-  if (!(await confirmAction({
-    title: enabled ? 'Enable resume verification' : 'Disable resume verification',
-    message: enabled ? 'Require resume verification before applications proceed?' : 'Allow applications without resume verification?',
-    confirmText: enabled ? 'Enable' : 'Disable',
-    variant: 'warning',
-  }))) {
-    e.target.checked = !enabled;
-    return;
-  }
-  PlacementSettings.set({ resumeVerificationEnabled: enabled });
-  toast(enabled ? 'Resume verification enabled.' : 'Resume verification disabled.', 'success');
-  renderApplicants();
 });
 
 document.getElementById('addStaffForm')?.addEventListener('submit', async e => {

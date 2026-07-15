@@ -10,7 +10,13 @@
 
 <div class="page-header">
   <div><h1 class="page-title">User Management</h1></div>
-  <button class="btn btn-primary" type="button" onclick="openAddUserModal()"><i class="bi bi-person-plus me-1"></i>Add user</button>
+  <div class="d-flex gap-2 align-items-center">
+    <div class="form-check form-switch mb-0" title="Resume verification">
+      <input class="form-check-input" type="checkbox" id="resumeVerifyToggle">
+      <label class="form-check-label small" for="resumeVerifyToggle">Verify resumes</label>
+    </div>
+    <button class="btn btn-primary" type="button" onclick="openAddUserModal()"><i class="bi bi-person-plus me-1"></i>Add user</button>
+  </div>
 </div>
 <div id="usersSessionBanner" class="d-none"></div>
 
@@ -758,6 +764,28 @@ document.getElementById('deptForm').addEventListener('submit', async e => {
   await loadDepartments();
 });
 
+function bindResumeVerifyToggle() {
+  const toggle = document.getElementById('resumeVerifyToggle');
+  if (!toggle) return;
+  toggle.checked = PlacementSettings.isResumeVerificationOn();
+  toggle.addEventListener('change', async e => {
+    const enabled = e.target.checked;
+    if (!(await confirmAction({
+      title: enabled ? 'Enable resume verification' : 'Disable resume verification',
+      message: enabled
+        ? 'Require resume verification before applications proceed?'
+        : 'Allow applications without resume verification?',
+      confirmText: enabled ? 'Enable' : 'Disable',
+      variant: 'warning',
+    }))) {
+      e.target.checked = !enabled;
+      return;
+    }
+    PlacementSettings.set({ resumeVerificationEnabled: enabled });
+    toast(enabled ? 'Resume verification enabled.' : 'Resume verification disabled.', 'success');
+  });
+}
+
 async function initUsersPage() {
   activateTabFromHash();
   Auth._sessionReady = false;
@@ -765,6 +793,7 @@ async function initUsersPage() {
   showLiveDataBanner(live);
   await loadDepartments();
   if (live) await UserRegistry.fetch();
+  bindResumeVerifyToggle();
   render();
 }
 onAppReady(() => initUsersPage());
