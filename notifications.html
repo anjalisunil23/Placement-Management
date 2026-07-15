@@ -21,6 +21,7 @@
     <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#unread">Unread <span class="badge-soft danger ms-1" id="unreadBadge">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#read">Read</a></li>
     <li class="nav-item" data-non-student><a class="nav-link" data-bs-toggle="tab" href="#email">Email status</a></li>
+    <li class="nav-item" data-job-feed><a class="nav-link" data-bs-toggle="tab" href="#jobposts">Job Posts</a></li>
     <li class="nav-item" data-student-only><a class="nav-link" data-bs-toggle="tab" href="#jobposters">Job Posters</a></li>
     <li class="nav-item" data-student-only><a class="nav-link" data-bs-toggle="tab" href="#appupdates">Application Updates</a></li>
   </ul>
@@ -31,6 +32,17 @@
     <div class="tab-pane fade" id="appupdates"><div id="nlistApps" class="d-flex flex-column gap-2"></div></div>
     <div class="tab-pane fade" id="email">
       <div class="table-wrap"><table class="table-modern"><thead><tr><th>Subject</th><th>Audience</th><th>Recipients</th><th>Sent</th><th>Email</th><th>Status</th></tr></thead><tbody id="broadcastRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="jobposts">
+      <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+        <h6 class="fw-bold mb-0">Available posts <span class="badge-soft muted ms-1" id="jobFeedCount">0</span></h6>
+        <select class="form-select form-select-sm w-auto" id="jobSourceFilter">
+          <option value="">All sources</option>
+          <option value="company">Company posts</option>
+          <option value="alumni">Alumni posts</option>
+        </select>
+      </div>
+      <div id="jobFeedRows"><div class="text-muted-2 text-center p-4">Loading job posts…</div></div>
     </div>
   </div>
 </div>
@@ -80,7 +92,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260715jobimages"></script>
-<script src="js/app.js?v=20260715notificationjobs"></script>
+<script src="js/app.js?v=20260715notificationtab"></script>
 <script>
 onAppReady(() => {
 const role = Auth.role();
@@ -88,6 +100,8 @@ const isStudent = role === 'student';
 const isAlumni = role === 'alumni';
 const isStaff = role === 'staff';
 const isAdminLike = role === 'admin' || role === 'placement_officer';
+const isSeekingAlumni = isAlumni && (typeof alumniIsWorking !== 'function' || !alumniIsWorking());
+const canViewJobFeed = isAdminLike || isStaff || isSeekingAlumni;
 const hasInbox = !!NotificationInbox.store(role);
 const notifStore = NotificationInbox.store(role);
 const notifApiBase = NotificationInbox.apiBase(role);
@@ -111,6 +125,9 @@ if (!isAdminLike) {
 }
 if (!isStudent) {
   document.querySelectorAll('[data-student-only]').forEach(el => el.style.display = 'none');
+}
+if (!canViewJobFeed) {
+  document.querySelectorAll('[data-job-feed]').forEach(el => el.style.display = 'none');
 }
 if (!isAdminLike) {
   document.getElementById('notifActions').innerHTML =
@@ -212,6 +229,68 @@ async function loadBroadcastHistory() {
 
 function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
+
+let jobFeedRows = [];
+
+function jobFeedEndpoint() {
+  return {
+    admin: '/admin/jobs',
+    placement_officer: '/officer/jobs',
+    staff: '/staff/jobs',
+    alumni: '/alumni/jobs',
+  }[role] || '';
+}
+
+function renderJobFeed() {
+  const source = document.getElementById('jobSourceFilter')?.value || '';
+  const rows = source ? jobFeedRows.filter(row => row.sourceType === source) : jobFeedRows;
+  document.getElementById('jobFeedCount').textContent = rows.length;
+  document.getElementById('jobFeedRows').innerHTML = rows.length ? `<div class="row g-3">${rows.map(row => {
+    const branches = Array.isArray(row.branches) && row.branches.length ? row.branches.join(', ') : 'All departments';
+    const eligibility = row.eligibility || {};
+    const eligibilityLabel = [
+      Number(eligibility.minCgpa || 0) > 0 ? `CGPA ${eligibility.minCgpa}+` : '',
+      eligibility.maxBacklogs != null ? `Backlogs ≤ ${eligibility.maxBacklogs}` : '',
+    ].filter(Boolean).join(' · ') || 'No additional academic criteria';
+    const status = String(row.status || 'open');
+    const statusCls = ['open','ongoing'].includes(status) ? 'success' : (status === 'reviewing' ? 'warning' : 'muted');
+    const posterUrl = row.posterUrl || row.imageUrl || '';
+    const posterType = row.posterType || (row.imageUrl ? 'image' : '');
+    return `<div class="col-md-6 col-xl-4"><article class="card-surface h-100 p-3">
+      ${posterType === 'image' && posterUrl ? `<img src="${escHtml(posterUrl)}" alt="${escHtml(row.title)} job poster" class="w-100 rounded-3 mb-3" style="height:180px;object-fit:cover" loading="lazy"/>` : ''}
+      <div class="d-flex justify-content-between gap-2 mb-2">
+        <span class="badge-soft ${row.sourceType === 'company' ? 'info' : 'muted'}">${escHtml(row.sourceLabel)}</span>
+        <span class="badge-soft ${statusCls}">${escHtml(status)}</span>
+      </div>
+      <h6 class="fw-bold mb-1">${escHtml(row.title)}</h6>
+      <div class="small text-muted-2 mb-3">${escHtml(row.companyName)}</div>
+      <div class="small d-grid gap-1">
+        <div><i class="bi bi-briefcase me-2"></i>${escHtml(row.jobType || '—')}</div>
+        <div><i class="bi bi-cash-coin me-2"></i>${escHtml(row.package || '—')}</div>
+        <div><i class="bi bi-geo-alt me-2"></i>${escHtml(row.location || '—')}</div>
+        <div><i class="bi bi-diagram-3 me-2"></i>${escHtml(branches)}</div>
+        <div><i class="bi bi-mortarboard me-2"></i>${escHtml(eligibilityLabel)}</div>
+      </div>
+      ${row.description ? `<p class="small text-muted-2 mt-3 mb-0">${escHtml(row.description)}</p>` : ''}
+      ${posterType === 'pdf' && posterUrl ? `<a class="btn btn-sm btn-outline-primary mt-3" href="${escHtml(posterUrl)}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>View job poster</a>` : ''}
+      <div class="small text-muted-2 mt-3">Posted ${escHtml(formatDate(row.createdAt))}</div>
+    </article></div>`;
+  }).join('')}</div>` : '<div class="text-muted-2 text-center p-4">No related job posts available.</div>';
+}
+
+async function loadJobFeed() {
+  const endpoint = jobFeedEndpoint();
+  if (!canViewJobFeed || !endpoint || !Auth.hasRealAuth()) return;
+  const res = await api(endpoint, { noRedirectOn401: true });
+  if (!res?.success) {
+    jobFeedRows = [];
+    renderJobFeed();
+    toast(res?.message || 'Could not load job posts.', 'error');
+    return;
+  }
+  jobFeedRows = Array.isArray(res.data) ? res.data : [];
+  renderJobFeed();
 }
 
 let broadcastModal;
@@ -363,6 +442,11 @@ if (hasInbox) {
     showReadTab();
     toast('All marked as read.', 'success');
   });
+}
+
+if (canViewJobFeed) {
+  document.getElementById('jobSourceFilter')?.addEventListener('change', renderJobFeed);
+  loadJobFeed();
 }
 
 if (isAdminLike) {
