@@ -473,10 +473,6 @@
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Gender</span><span class="fw-medium" id="fySpGender">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Current CGPA</span><span class="fw-medium" id="fySpCgpa">—</span></div>
-            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="fySpBacklogs">—</span></div>
-            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Resume</span><span class="fw-medium" id="fySpResume">—</span></div>
-            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Placement Chances</span><span class="fw-medium" id="fySpChances">—</span></div>
-            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Placement Policy</span><span class="fw-medium" id="fySpPolicy">—</span></div>
           </div>
           <div id="fySpQualificationsWrap" class="mt-3" style="display:none">
             <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
@@ -1848,16 +1844,6 @@ function fillFinalYearProfileFields(s) {
   set('fySpGender', formatProfileValue(s.gender));
   const cgpa = s.cgpa ?? s.academic?.cgpa;
   set('fySpCgpa', cgpa != null && Number(cgpa) > 0 ? String(Number(cgpa)) : '—');
-  const backlogs = s.backlogs ?? s.academic?.backlogs;
-  set('fySpBacklogs', backlogs != null ? String(backlogs) : '—');
-  const resumeLabels = { approved: 'Verified', pending: 'Pending Review', none: 'Not Uploaded' };
-  set('fySpResume', resumeLabels[s.resumeStatus] || formatProfileValue(s.resumeStatus));
-  const used = s.chancesUsed ?? 0;
-  const max = s.chancesMax ?? 0;
-  set('fySpChances', max > 0 ? `${used} / ${max} Used` : (used > 0 ? `${used} Used` : '—'));
-  set('fySpPolicy', isPolicyRegistered(s)
-    ? `Registered${s.policyAcceptedAt ? ' · ' + formatPolicyAcceptedAt(s.policyAcceptedAt) : ''}`
-    : 'Not Registered');
   // Same education table as the student Profile page (academic.qualifications).
   renderQualificationsTable(
     pickProfileQualifications(s.qualifications, s.academic?.qualifications),
