@@ -123,6 +123,27 @@
   </form>
 </div></div></div>
 
+<div class="modal fade" id="editCompanyModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Edit company</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="editCompanyForm">
+    <input type="hidden" id="editCompanyId"/>
+    <div class="modal-body row g-3">
+      <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" id="editCompanyName" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Website</label><input class="form-control" id="editCompanyWebsite" placeholder="https://company.com"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Contact name</label><input class="form-control" id="editCompanyContactName" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Contact email</label><input class="form-control" type="email" id="editCompanyContactEmail" required/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="editCompanyPhone"/></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Category</label><select class="form-select" id="editCompanyCategory"><option>Product</option><option>Service</option><option>Startup</option><option>Consulting</option><option>Core</option><option>Software</option></select></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Tier</label><select class="form-select" id="editCompanyTier"><option>Tier 1</option><option>Tier 2</option><option>Tier 3</option></select></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Association</label><select class="form-select" id="editCompanyAssociation"><option value="active">Active</option><option value="pending">Pending</option><option value="inactive">Inactive</option></select></div>
+      <div class="col-12"><hr class="my-1"/><h6 class="fw-bold mb-0">Company login credentials</h6></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Login email</label><input class="form-control" type="email" id="editCompanyLoginEmail" required autocomplete="username"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">New password</label><input class="form-control" type="password" id="editCompanyLoginPassword" minlength="8" autocomplete="new-password"/><div class="form-text" id="editCompanyPasswordHint">Leave blank to keep the current password.</div></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save company</button></div>
+  </form>
+</div></div></div>
+
 <div class="modal fade" id="deptModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title fw-bold" id="deptModalTitle">Add department</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
   <form id="deptForm">
@@ -154,11 +175,12 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260713p"></script>
+<script src="js/admin-api.js?v=20260715companyedit"></script>
 <script src="js/api.js?v=20260713p"></script>
 <script src="js/app.js?v=20260715jobfeed"></script>
 <script>
 let departments = [];
+let companyDirectory = [];
 let editingDeptId = null;
 
 function deptModal() {
@@ -267,6 +289,10 @@ function addUserModal() {
   return bootstrap.Modal.getOrCreateInstance(document.getElementById('addUserModal'));
 }
 
+function editCompanyModal() {
+  return bootstrap.Modal.getOrCreateInstance(document.getElementById('editCompanyModal'));
+}
+
 function changePoModal() {
   return bootstrap.Modal.getOrCreateInstance(document.getElementById('changePoModal'));
 }
@@ -369,6 +395,94 @@ function actionBtns(u) {
     ${canManageAccount ? `<button class="btn btn-sm btn-outline-${blocked ? 'info' : 'warning'}" onclick="toggleBlock('${u.id}', ${!blocked})" title="${blocked ? 'Unblock' : 'Block'}"><i class="bi bi-${blocked ? 'unlock' : 'slash-circle'}"></i></button>` : ''}
     <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${u.id}')" title="Delete"><i class="bi bi-trash"></i></button>
   </div>`;
+}
+
+function companyActionBtns(u) {
+  return `<div class="d-flex gap-1 flex-wrap">
+    <button class="btn btn-sm btn-outline-primary" onclick="openEditCompany('${u.companyId}')" title="Edit company and login"><i class="bi bi-pencil"></i></button>
+    ${u.hasLogin && u.status !== 'approved' ? `<button class="btn btn-sm btn-success" onclick="approveCompanyUser('${u.userId}')" title="Approve"><i class="bi bi-check2"></i></button>` : ''}
+    ${u.hasLogin ? `<button class="btn btn-sm btn-outline-${u.blocked ? 'info' : 'warning'}" onclick="toggleCompanyBlock('${u.userId}', ${!u.blocked})" title="${u.blocked ? 'Unblock' : 'Block'}"><i class="bi bi-${u.blocked ? 'unlock' : 'slash-circle'}"></i></button>` : ''}
+    <button class="btn btn-sm btn-outline-danger" onclick="deleteCompanyProfile('${u.companyId}')" title="Delete"><i class="bi bi-trash"></i></button>
+  </div>`;
+}
+
+function selectCompanyOption(id, value, fallback) {
+  const select = document.getElementById(id);
+  const wanted = String(value || fallback || '').trim();
+  if (wanted && ![...select.options].some(option => option.value === wanted)) {
+    select.add(new Option(wanted, wanted));
+  }
+  select.value = wanted || fallback || '';
+}
+
+window.openEditCompany = companyId => {
+  const company = companyDirectory.find(row => row.companyId === companyId);
+  if (!company) {
+    toast('Company details are not available.', 'warn');
+    return;
+  }
+  document.getElementById('editCompanyForm').reset();
+  document.getElementById('editCompanyId').value = company.companyId;
+  document.getElementById('editCompanyName').value = company.companyName || '';
+  document.getElementById('editCompanyWebsite').value = company.companyWebsite || '';
+  document.getElementById('editCompanyContactName').value = company.hrName || company.contactPerson || '';
+  document.getElementById('editCompanyContactEmail').value = company.hrEmail || company.email || '';
+  document.getElementById('editCompanyPhone').value = company.contactNumber || company.phone || '';
+  selectCompanyOption('editCompanyCategory', company.category, 'Software');
+  selectCompanyOption('editCompanyTier', company.tier, 'Tier 2');
+  selectCompanyOption('editCompanyAssociation', company.associationStatus, 'active');
+  document.getElementById('editCompanyLoginEmail').value = company.loginEmail || '';
+  const password = document.getElementById('editCompanyLoginPassword');
+  password.value = '';
+  password.required = !company.hasLogin;
+  document.getElementById('editCompanyPasswordHint').textContent = company.hasLogin
+    ? 'Leave blank to keep the current password.'
+    : 'Create a password of at least 8 characters.';
+  editCompanyModal().show();
+};
+
+async function approveCompanyUser(userId) {
+  if (!await UserRegistry.approve(userId)) return;
+  await loadCompanies();
+  toast('Company account approved.', 'success');
+  render();
+}
+
+async function toggleCompanyBlock(userId, blocked) {
+  const company = companyDirectory.find(row => row.userId === userId);
+  const confirmed = await confirmAction({
+    title: blocked ? 'Block company login' : 'Unblock company login',
+    message: blocked
+      ? `Block login access for ${company?.companyName || 'this company'}?`
+      : `Restore login access for ${company?.companyName || 'this company'}?`,
+    confirmText: blocked ? 'Block' : 'Unblock',
+    variant: blocked ? 'warning' : 'primary',
+  });
+  if (!confirmed || !await UserRegistry.block(userId, blocked)) return;
+  await loadCompanies();
+  toast(blocked ? 'Company login blocked.' : 'Company login restored.', blocked ? 'warn' : 'success');
+  render();
+}
+
+async function deleteCompanyProfile(companyId) {
+  const company = companyDirectory.find(row => row.companyId === companyId);
+  if (!company) return;
+  const confirmed = await confirmAction({
+    title: 'Delete company',
+    message: `Delete ${company.companyName}? Its login account will also be removed. This cannot be undone.`,
+    confirmText: 'Delete',
+    variant: 'danger',
+  });
+  if (!confirmed || !(await requireWriteSession())) return;
+  const res = await api(`/admin/companies/${encodeURIComponent(companyId)}`, { method: 'DELETE' });
+  if (!res.success) {
+    toast(res.message || 'Could not delete company.', 'error');
+    return;
+  }
+  await UserRegistry.fetch();
+  await loadCompanies();
+  toast('Company removed.', 'success');
+  render();
 }
 
 function staffActionBtns(u) {
@@ -507,8 +621,8 @@ function renderCompanies(list) {
       <td>${u.category || '—'}</td>
       <td><span class="badge-soft primary">${u.tier || '—'}</span></td>
       <td>${u.associationStatus || '—'}</td>
-      <td>${userStatusBadge(u.status, u.blocked)}</td>
-      <td>${actionBtns(u)}</td>
+      <td>${u.hasLogin ? userStatusBadge(u.status, u.blocked) : '<span class="badge-soft warning">No login</span>'}</td>
+      <td>${companyActionBtns(u)}</td>
     </tr>`).join('') : '<tr><td colspan="7" class="text-muted-2 p-4">No companies found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'company\')">Add company</button></td></tr>';
 }
 
@@ -533,7 +647,9 @@ function render() {
   renderStudents(UserRegistry.byRole('student'));
   renderOfficers(UserRegistry.byRole('placement_officer'));
   renderStaff(UserRegistry.byRole('staff'));
-  renderCompanies(UserRegistry.byRole('company'));
+  renderCompanies(companyDirectory.length
+    ? companyDirectory.map(company => AdminApi.mergeCompanyUser(UserRegistry.get(company.userId), company))
+    : UserRegistry.byRole('company'));
   renderAlumni(UserRegistry.byRole('alumni'));
 }
 
@@ -572,6 +688,14 @@ async function loadDepartments() {
   })).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   renderDepartments();
   return departments;
+}
+
+async function loadCompanies() {
+  const list = await AdminApi.fetchCompanies();
+  if (Array.isArray(list)) {
+    companyDirectory = list;
+  }
+  return companyDirectory;
 }
 
 function syncAddUserForm() {
@@ -696,10 +820,60 @@ document.getElementById('addUserForm').addEventListener('submit', async e => {
 
   addUserModal().hide();
   await loadDepartments();
+  if (role === 'company') await loadCompanies();
   const loginHint = role === 'placement_officer'
     ? ` Placement officer can sign in at public-stats.html with ${payload.email}.`
     : '';
   toast(`User created successfully.${loginHint}`, 'success');
+  render();
+});
+
+document.getElementById('editCompanyForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!(await requireWriteSession())) return;
+  const companyId = document.getElementById('editCompanyId').value;
+  const company = companyDirectory.find(row => row.companyId === companyId);
+  if (!company) return;
+
+  const loginEmail = document.getElementById('editCompanyLoginEmail').value.trim().toLowerCase();
+  const loginPassword = document.getElementById('editCompanyLoginPassword').value;
+  if (!company.hasLogin && loginPassword.length < 8) {
+    toast('Enter a login password of at least 8 characters.', 'warn');
+    return;
+  }
+
+  const contactName = document.getElementById('editCompanyContactName').value.trim();
+  const payload = {
+    companyName: document.getElementById('editCompanyName').value.trim(),
+    website: document.getElementById('editCompanyWebsite').value.trim(),
+    category: document.getElementById('editCompanyCategory').value,
+    tier: document.getElementById('editCompanyTier').value,
+    associationStatus: document.getElementById('editCompanyAssociation').value,
+    contacts: [{
+      name: contactName,
+      email: document.getElementById('editCompanyContactEmail').value.trim().toLowerCase(),
+      phone: document.getElementById('editCompanyPhone').value.trim(),
+    }],
+    loginEmail,
+  };
+  if (loginPassword !== '') payload.loginPassword = loginPassword;
+
+  const confirmed = await confirmAction({
+    title: company.hasLogin ? 'Update company' : 'Create company login',
+    message: company.hasLogin
+      ? `Save company details and login changes for ${payload.companyName}?`
+      : `Save ${payload.companyName} and create login access for ${loginEmail}?`,
+    confirmText: company.hasLogin ? 'Save changes' : 'Create login',
+    variant: 'primary',
+  });
+  if (!confirmed) return;
+
+  const result = await AdminApi.updateCompany(companyId, payload);
+  if (result === null) return;
+  editCompanyModal().hide();
+  await UserRegistry.fetch();
+  await loadCompanies();
+  toast(result.accountCreated ? 'Company updated and login created.' : 'Company updated.', 'success');
   render();
 });
 
@@ -793,6 +967,7 @@ async function initUsersPage() {
   showLiveDataBanner(live);
   await loadDepartments();
   if (live) await UserRegistry.fetch();
+  if (live) await loadCompanies();
   bindResumeVerifyToggle();
   render();
 }

@@ -9,7 +9,7 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div class="flex-grow-1 min-w-0"><h1 class="page-title">Job Portal</h1><p class="page-sub" id="portalSub">Create and manage job posts.</p></div>
+  <div class="flex-grow-1 min-w-0"><h1 class="page-title">Job Portal</h1></div>
   <div class="page-header-actions">
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
   </div>
@@ -78,10 +78,6 @@
 <script src="js/api.js?v=20260715jobportal"></script>
 <script src="js/app.js?v=20260715jobportal"></script><script src="js/charts.js?v=20260713p"></script>
 <script>
-const user = Auth.user() || demoUserFor('company');
-const co = user.companyName || 'Acme Cloud';
-document.getElementById('portalSub').textContent = `${co} — create and manage job posts`;
-
 let jobRows = [];
 let funnelChart = null;
 
@@ -152,8 +148,6 @@ async function loadPortal() {
     }
     if (jobsRes?.success || dashRes?.success) {
       const stats = dashRes?.success ? { ...statsFromJobs(jobRows), ...dashRes.data } : statsFromJobs(jobRows);
-      const liveCompanyName = String(dashRes?.data?.companyName || Auth.user()?.companyName || co).trim();
-      document.getElementById('portalSub').textContent = `${liveCompanyName} — create and manage job posts`;
       renderStats(stats);
       renderJobs();
       if (!jobsRes?.success || !dashRes?.success) {

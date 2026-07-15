@@ -359,6 +359,18 @@ const AdminApi = {
     return res.data.map(c => this.mapCompany(c));
   },
 
+  async updateCompany(companyId, payload) {
+    const res = await api(`/admin/companies/${encodeURIComponent(companyId)}`, {
+      method: 'PUT',
+      body: payload,
+    });
+    if (!res.success) {
+      toast(res.message || 'Could not update company.', 'error');
+      return null;
+    }
+    return res.data || {};
+  },
+
   async fetchRecommendations() {
     const res = await api('/admin/recommendations');
     if (!res.success || !Array.isArray(res.data)) return null;

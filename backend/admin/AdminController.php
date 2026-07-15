@@ -1274,7 +1274,8 @@ final class AdminController
     {
         RBACMiddleware::requirePlacementOfficer();
         $model = new CompanyModel();
-        if (!$model->findById($id)) {
+        $company = $model->findById($id);
+        if (!$company) {
             Response::notFound();
         }
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
@@ -1294,9 +1295,74 @@ final class AdminController
             $input['companyName'] = $companyName;
             $input['nameNormalized'] = CompanyModel::normalizeCompanyName($companyName);
         }
+
+        $loginEmail = strtolower(trim((string) ($input['loginEmail'] ?? '')));
+        $loginPassword = (string) ($input['loginPassword'] ?? '');
+        $manageLogin = array_key_exists('loginEmail', $input) || $loginPassword !== '';
+        $linkedUserId = (string) ($company['userId'] ?? '');
+        $linkedUser = $linkedUserId !== '' ? $this->userModel->findById($linkedUserId) : null;
+
+        if ($manageLogin) {
+            RBACMiddleware::requireAdmin();
+            $rules = ['loginEmail' => 'required|email'];
+            if (!$linkedUser || $loginPassword !== '') {
+                $rules['loginPassword'] = 'required|min:8|max:128';
+            }
+            $loginInput = ['loginEmail' => $loginEmail, 'loginPassword' => $loginPassword];
+            $errors = Validator::validate($loginInput, $rules);
+            if (!empty($errors)) {
+                Response::error('Login credential validation failed.', 422, $errors);
+            }
+            $emailOwner = $this->userModel->findByEmail($loginEmail);
+            if ($emailOwner && (string) ($emailOwner['_id'] ?? '') !== $linkedUserId) {
+                Response::error('This company login email is already in use.', 409);
+            }
+        }
+
         $allowed = ['companyName', 'nameNormalized', 'category', 'tier', 'contacts', 'associationStatus', 'comments', 'website', 'description'];
-        $model->update($id, array_intersect_key($input, array_flip($allowed)));
-        Response::success(null, 'Company updated.');
+        $companyUpdate = array_intersect_key($input, array_flip($allowed));
+        $createdUserId = '';
+        if ($manageLogin) {
+            $contacts = is_array($input['contacts'] ?? null) ? $input['contacts'] : [];
+            $contact = is_array($contacts[0] ?? null) ? $contacts[0] : [];
+            $contactName = trim((string) ($contact['name'] ?? $input['contactName'] ?? $company['companyName'] ?? 'Company Recruiter'));
+            if ($linkedUser) {
+                $userUpdate = [
+                    'name'  => $contactName !== '' ? $contactName : 'Company Recruiter',
+                    'email' => $loginEmail,
+                ];
+                if ($loginPassword !== '') {
+                    $userUpdate['password'] = $loginPassword;
+                }
+                $this->userModel->updateUser($linkedUserId, $userUpdate);
+            } else {
+                $createdUserId = $this->userModel->createUser([
+                    'name'     => $contactName !== '' ? $contactName : 'Company Recruiter',
+                    'email'    => $loginEmail,
+                    'password' => $loginPassword,
+                    'role'     => 'company',
+                    'status'   => 'active',
+                    'approved' => true,
+                ]);
+                $companyUpdate['userId'] = Security::toObjectId($createdUserId);
+            }
+        }
+
+        try {
+            if ($companyUpdate !== [] && !$model->update($id, $companyUpdate)) {
+                throw new \RuntimeException('Company details could not be updated.');
+            }
+        } catch (\Throwable $e) {
+            if ($createdUserId !== '') {
+                $this->userModel->delete($createdUserId);
+            }
+            throw $e;
+        }
+
+        Response::success([
+            'accountCreated' => $createdUserId !== '',
+            'loginEmail'     => $manageLogin ? $loginEmail : (string) ($linkedUser['email'] ?? ''),
+        ], $createdUserId !== '' ? 'Company updated and login credentials created.' : 'Company updated.');
     }
 
     /** DELETE /api/admin/companies/{id} */

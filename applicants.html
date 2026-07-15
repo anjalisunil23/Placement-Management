@@ -9,7 +9,7 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Applicant Management</h1><p class="page-sub" id="pageSub">Applicants</p></div>
+  <div><h1 class="page-title">Applicant Management</h1></div>
   <div class="d-flex gap-2">
     <button type="button" class="btn btn-outline-secondary" id="exportBtn"><i class="bi bi-download me-1"></i>Export</button>
     <button type="button" class="btn btn-primary" id="shortlistBtn"><i class="bi bi-check2-square me-1"></i>Shortlist selected</button>
@@ -114,7 +114,6 @@ function filteredRows() {
 
 function renderTable() {
   const rows = filteredRows();
-  document.getElementById('pageSub').textContent = `${co} · ${applicantRows.length} applicants across your open roles`;
   renderQuickStats(applicantRows);
   document.getElementById('ar').innerHTML = rows.length ? rows.map(r => `
     <tr>
