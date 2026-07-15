@@ -4187,7 +4187,7 @@ const DriveStore = {
     return body;
   },
   mapStudentDrive(d) {
-    const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
+    const statusMap = { scheduled: 'Open', open: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
     const rawStatus = (d.status || '').toLowerCase();
     const status = statusMap[rawStatus] || d.status || 'Open';
     const title = String(d.title || d.role || '').trim();
@@ -4212,6 +4212,7 @@ const DriveStore = {
     const mode = String(d.mode || elig.mode || '').trim();
     const tier = String(d.tier || '').trim();
     const location = String(d.location || elig.location || '').trim();
+    const description = String(d.description || elig.description || '').trim();
     const branches = formatDriveBranches(d.branches ?? elig.branches ?? '');
     return {
       id: d._id || d.id,
@@ -4224,7 +4225,10 @@ const DriveStore = {
       mode: mode || '—',
       recruitmentDate: recruitmentDate || '—',
       location: location || '—',
+      description,
       branches,
+      minCgpa: elig.minCgpa ?? '',
+      maxBacklogs: elig.maxBacklogs ?? '',
       status,
       statusCls: driveStatusCls(status),
       deadline: (regDeadline && regDeadline !== 'TBD') ? regDeadline : '—',
