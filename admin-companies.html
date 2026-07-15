@@ -11,7 +11,7 @@
 <div class="page-header">
   <div><h1 class="page-title">Companies</h1><p class="page-sub" id="companiesPageSub">Review staff and alumni recommendations, contact recruiters, and register companies.</p></div>
   <div class="d-flex gap-2 flex-wrap" id="companiesPageActions">
-    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#quickAddModal" data-admin-only><i class="bi bi-plus-lg me-1"></i>Add company</button>
+    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#registerModal" data-admin-only><i class="bi bi-plus-lg me-1"></i>Create company profile</button>
     <button class="btn btn-primary" type="button" id="btnOfficerRecommend" data-officer-only style="display:none"><i class="bi bi-building-add me-1"></i>Recommend Company</button>
   </div>
 </div>
@@ -42,7 +42,7 @@
     <div class="card-surface">
       <div class="table-wrap">
         <table class="table-modern"><thead><tr>
-          <th>Company</th><th>Website</th><th>HR Name</th><th>Email</th><th>Contact</th><th>Category</th><th>Tier</th><th>Registered</th><th id="regActionsHead" class="d-none">Actions</th>
+          <th>Company</th><th>Website</th><th>HR Name</th><th>Email</th><th>Contact</th><th>Category</th><th>Tier</th><th>Company login</th><th>Registered</th><th id="regActionsHead" class="d-none">Actions</th>
         </tr></thead><tbody id="regRows"></tbody></table>
       </div>
     </div>
@@ -61,9 +61,31 @@
       <div class="col-md-6"><label class="form-label small fw-semibold">Contact number</label><input class="form-control" name="contactNumber" id="regContact" required/></div>
       <div class="col-md-6"><label class="form-label small fw-semibold">Category</label><select class="form-select" name="category"><option>Product</option><option>Service</option><option>Startup</option><option>Consulting</option></select></div>
       <div class="col-md-6"><label class="form-label small fw-semibold">Tier</label><select class="form-select" name="tier"><option>Tier 1</option><option>Tier 2</option><option>Tier 3</option></select></div>
+      <div class="col-12 d-none" id="regLoginFields">
+        <div class="border rounded-3 p-3">
+          <div class="fw-semibold mb-1">Company module login</div>
+          <div class="small text-muted-2 mb-3">Create credentials for the company and share them securely with the recruiter.</div>
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label small fw-semibold">Username (email)</label><input class="form-control" type="email" name="loginEmail" id="regLoginEmail" autocomplete="username"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Initial password</label><input class="form-control" type="password" name="loginPassword" id="regLoginPassword" minlength="8" maxlength="128" autocomplete="new-password"/><div class="form-text">Minimum 8 characters. The company can change it in Settings.</div></div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Register company</button></div>
   </form>
+</div></div></div>
+
+<div class="modal fade" id="companyCredentialsModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Company login created</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="alert alert-success small">Share these credentials securely with the company. The password is shown only now.</div>
+    <label class="form-label small fw-semibold">Username</label>
+    <input class="form-control mb-3" id="createdLoginUsername" readonly/>
+    <label class="form-label small fw-semibold">Initial password</label>
+    <input class="form-control" id="createdLoginPassword" readonly/>
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-outline-primary" id="copyCompanyCredentials"><i class="bi bi-copy me-1"></i>Copy credentials</button><button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button></div>
 </div></div></div>
 
 <div class="modal fade" id="quickAddModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
@@ -131,7 +153,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260713p"></script>
+<script src="js/admin-api.js?v=20260715companylogin"></script>
 <script src="js/api.js?v=20260714f"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
@@ -232,6 +254,11 @@ window.openRegisterFromRec = rec => {
   document.getElementById('regHrName').value = rec.hrName;
   document.getElementById('regHrEmail').value = rec.hrEmail;
   document.getElementById('regContact').value = rec.contactNumber;
+  const loginEmail = document.getElementById('regLoginEmail');
+  if (loginEmail && isAdmin()) {
+    loginEmail.value = rec.hrEmail || '';
+    loginEmail.dataset.synced = 'true';
+  }
   registerModal().show();
 };
 
@@ -274,9 +301,10 @@ function render() {
       <td>${c.contactNumber || '<span class="text-muted-2 small">—</span>'}</td>
       <td>${c.category || '—'}</td>
       <td>${c.tier || '—'}</td>
+      <td>${c.hasLogin ? `<span class="badge-soft success">Active</span><div class="small text-muted-2 mt-1">${c.loginEmail || ''}</div>` : '<span class="badge-soft muted">Not created</span>'}</td>
       <td>${formatDate(c.registeredAt)}</td>
       ${showActions ? `<td>${companyActions(c)}</td>` : ''}
-    </tr>`).join('') : `<tr><td colspan="${showActions ? 9 : 8}" class="text-muted-2 p-4">No registered companies yet.</td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="${showActions ? 10 : 9}" class="text-muted-2 p-4">No registered companies yet.</td></tr>`;
 }
 
 window.markContacted = (id, source) => {
@@ -435,15 +463,48 @@ document.getElementById('registerForm').addEventListener('submit', async e => {
   e.preventDefault();
   if (!canMutateCompanies()) return;
   const data = Object.fromEntries(new FormData(e.target).entries());
+  if (!isAdmin()) {
+    delete data.loginEmail;
+    delete data.loginPassword;
+  }
   if (!(await confirmAction({ title: 'Register company', message: `Register ${data.companyName || 'this company'}?`, confirmText: 'Register', variant: 'primary' }))) return;
   if (!data.sourceRecommendationId) delete data.sourceRecommendationId;
-  const ok = await RegisteredCompanies.register(data);
-  if (!ok) return;
-  toast('Company registered successfully.', 'success');
+  const created = await RegisteredCompanies.register(data);
+  if (!created) return;
   registerModal().hide();
+  if (created.accountCreated) {
+    document.getElementById('createdLoginUsername').value = created.loginUsername || data.loginEmail || '';
+    document.getElementById('createdLoginPassword').value = data.loginPassword || '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('companyCredentialsModal')).show();
+    toast('Company profile and login created.', 'success');
+  } else {
+    toast('Company registered successfully.', 'success');
+  }
   e.target.reset();
   document.getElementById('sourceRecId').value = '';
   render();
+});
+
+document.getElementById('copyCompanyCredentials')?.addEventListener('click', async () => {
+  const username = document.getElementById('createdLoginUsername').value;
+  const password = document.getElementById('createdLoginPassword').value;
+  const text = `Company module login\nUsername: ${username}\nInitial password: ${password}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Credentials copied.', 'success');
+  } catch {
+    const helper = document.createElement('textarea');
+    helper.value = text;
+    document.body.appendChild(helper);
+    helper.select();
+    document.execCommand('copy');
+    helper.remove();
+    toast('Credentials copied.', 'success');
+  }
+});
+document.getElementById('companyCredentialsModal')?.addEventListener('hidden.bs.modal', () => {
+  document.getElementById('createdLoginUsername').value = '';
+  document.getElementById('createdLoginPassword').value = '';
 });
 
 document.getElementById('quickAddForm').addEventListener('submit', async e => {
@@ -464,6 +525,12 @@ async function initCompaniesPage() {
   const actions = document.getElementById('companiesPageActions');
   const sub = document.getElementById('companiesPageSub');
   const officerBtn = document.getElementById('btnOfficerRecommend');
+  const loginFields = document.getElementById('regLoginFields');
+  const loginEmail = document.getElementById('regLoginEmail');
+  const loginPassword = document.getElementById('regLoginPassword');
+  loginFields?.classList.toggle('d-none', !isAdmin());
+  if (loginEmail) loginEmail.required = isAdmin();
+  if (loginPassword) loginPassword.required = isAdmin();
   document.querySelectorAll('[data-admin-only]').forEach(el => {
     el.classList.toggle('d-none', !canMutateCompanies());
   });
@@ -490,5 +557,16 @@ document.addEventListener('ph-staff-recommend-added', async () => {
   render();
 });
 onAppReady(() => initCompaniesPage());
+
+document.getElementById('regHrEmail')?.addEventListener('input', e => {
+  const loginEmail = document.getElementById('regLoginEmail');
+  if (isAdmin() && loginEmail && (!loginEmail.value || loginEmail.dataset.synced === 'true')) {
+    loginEmail.value = e.target.value;
+    loginEmail.dataset.synced = 'true';
+  }
+});
+document.getElementById('regLoginEmail')?.addEventListener('input', e => {
+  e.target.dataset.synced = 'false';
+});
 </script>
 </body></html>

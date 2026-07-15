@@ -1363,14 +1363,29 @@ final class AdminController
     {
         RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-        $errors = Validator::validate($input, [
+        $rules = [
             'companyName'   => 'required',
             'hrName'        => 'required',
             'hrEmail'       => 'required|email',
             'contactNumber' => 'required',
-        ]);
+        ];
+        $loginEmail = strtolower(trim((string) ($input['loginEmail'] ?? '')));
+        $loginPassword = (string) ($input['loginPassword'] ?? '');
+        if ($loginEmail !== '') {
+            $input['loginEmail'] = $loginEmail;
+        }
+        $provisionLogin = $loginEmail !== '' || $loginPassword !== '';
+        if ($provisionLogin) {
+            RBACMiddleware::requireAdmin();
+            $rules['loginEmail'] = 'required|email';
+            $rules['loginPassword'] = 'required|min:8|max:128';
+        }
+        $errors = Validator::validate($input, $rules);
         if (!empty($errors)) {
             Response::error('Validation failed.', 422, $errors);
+        }
+        if ($provisionLogin && $this->userModel->findByEmail($loginEmail)) {
+            Response::error('This company login email is already in use.', 409);
         }
 
         $companyName = trim((string) ($input['companyName'] ?? ''));
@@ -1387,8 +1402,21 @@ final class AdminController
             );
         }
 
+        $companyUserId = '';
+        if ($provisionLogin) {
+            $companyUserId = $this->userModel->createUser([
+                'name'     => trim((string) $input['hrName']),
+                'email'    => $loginEmail,
+                'password' => $loginPassword,
+                'role'     => 'company',
+                'status'   => 'active',
+                'approved' => true,
+            ]);
+        }
+
         try {
             $companyId = $companyModel->createCompany([
+                'userId'            => $companyUserId,
                 'companyName'       => $companyName,
                 'website'           => $input['companyWebsite'] ?? '',
                 'category'          => $input['category'] ?? 'Software',
@@ -1401,14 +1429,26 @@ final class AdminController
                 'associationStatus' => 'active',
             ]);
         } catch (\InvalidArgumentException $e) {
+            if ($companyUserId !== '') {
+                $this->userModel->delete($companyUserId);
+            }
             Response::error($e->getMessage(), 409);
+        } catch (\Throwable $e) {
+            if ($companyUserId !== '') {
+                $this->userModel->delete($companyUserId);
+            }
+            throw $e;
         }
 
         if (!empty($input['sourceRecommendationId'])) {
             (new RecommendationModel())->updateStatus((string) $input['sourceRecommendationId'], 'registered');
         }
 
-        Response::success(['id' => $companyId], 'Company registered.', 201);
+        Response::success([
+            'id'            => $companyId,
+            'accountCreated' => $companyUserId !== '',
+            'loginUsername' => $companyUserId !== '' ? $loginEmail : '',
+        ], $companyUserId !== '' ? 'Company profile and login created.' : 'Company registered.', 201);
     }
 
     /** GET /api/admin/alumni-referrals */

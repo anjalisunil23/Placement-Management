@@ -36,6 +36,11 @@
 .hero-login:hover{background:#e84a2e;color:#fff;transform:translateY(-1px);box-shadow:0 6px 18px rgba(255,86,56,.4)}
 .hero-login:active{transform:translateY(0);box-shadow:0 2px 8px rgba(255,86,56,.3)}
 .hero-login:focus-visible{outline:2px solid #ff5638;outline-offset:3px}
+.hero-login-secondary{
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.6);
+  box-shadow:none;backdrop-filter:blur(6px);
+}
+.hero-login-secondary:hover{background:rgba(255,255,255,.24);box-shadow:none}
 @media (min-width:992px){
   .hero{
     min-height:clamp(420px,58vh,680px);
@@ -69,14 +74,33 @@
   <div class="container text-center">
     <span class="badge-soft mb-3">Placement Cell</span>
     <h1>Amal Jyothi College of Engineering</h1>
-    <div class="d-flex justify-content-center mt-4">
+    <div class="d-flex flex-wrap gap-2 justify-content-center mt-4">
       <button type="button" class="hero-login aes-dologin">
         <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
         <span>Login with AES</span>
       </button>
+      <button type="button" class="hero-login hero-login-secondary" data-bs-toggle="modal" data-bs-target="#companyLoginModal">
+        <i class="bi bi-building" aria-hidden="true"></i>
+        <span>Company login</span>
+      </button>
     </div>
   </div>
 </section>
+
+<div class="modal fade" id="companyLoginModal" tabindex="-1" aria-labelledby="companyLoginTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title fw-bold" id="companyLoginTitle">Company module login</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <form id="companyLoginForm">
+      <div class="modal-body">
+        <p class="small text-muted-2">Use the login credentials provided by the placement administrator.</p>
+        <div class="alert alert-danger small d-none" id="companyLoginError" role="alert"></div>
+        <div class="mb-3"><label class="form-label fw-semibold" for="companyLoginEmail">Username (email)</label><input class="form-control" type="email" id="companyLoginEmail" autocomplete="username" required/></div>
+        <div><label class="form-label fw-semibold" for="companyLoginPassword">Password</label><input class="form-control" type="password" id="companyLoginPassword" autocomplete="current-password" required/></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary" id="companyLoginSubmit"><span class="company-login-label">Sign in</span><span class="spinner-border spinner-border-sm ms-2 d-none" aria-hidden="true"></span></button></div>
+    </form>
+  </div></div>
+</div>
 
 <section id="stats" class="py-5">
   <div class="container">
@@ -162,6 +186,33 @@
     history.replaceState({}, '', location.pathname + (qs ? '?' + qs : ''));
   }
 })();
+
+document.getElementById('companyLoginForm')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const email = document.getElementById('companyLoginEmail').value.trim();
+  const password = document.getElementById('companyLoginPassword').value;
+  const errorBox = document.getElementById('companyLoginError');
+  const submit = document.getElementById('companyLoginSubmit');
+  errorBox.classList.add('d-none');
+  submit.disabled = true;
+  submit.querySelector('.spinner-border')?.classList.remove('d-none');
+  try {
+    const next = new URLSearchParams(location.search).get('next') || '';
+    const result = await performServerLogin(email, password, next);
+    if (!result.success) {
+      errorBox.textContent = result.message || 'Sign-in failed.';
+      errorBox.classList.remove('d-none');
+      return;
+    }
+    window.location.href = result.redirect || '/company.html';
+  } catch {
+    errorBox.textContent = 'Unable to sign in right now. Please try again.';
+    errorBox.classList.remove('d-none');
+  } finally {
+    submit.disabled = false;
+    submit.querySelector('.spinner-border')?.classList.add('d-none');
+  }
+});
 
 let pubBarChart = null;
 let pubPieChart = null;

@@ -141,6 +141,7 @@ const AdminApi = {
       userId: userId || null,
       companyId,
       hasLogin,
+      loginEmail: c.loginEmail || (hasLogin ? c.email : '') || '',
       companyName: c.companyName || '',
       companyWebsite: c.website || c.companyWebsite || '',
       hrName,

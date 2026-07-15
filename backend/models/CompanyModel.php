@@ -48,9 +48,13 @@ class CompanyModel extends BaseModel
         $primary = $contacts[0];
 
         $userId = (string) ($company['userId'] ?? '');
+        $company['hasLogin'] = false;
+        $company['loginEmail'] = '';
         if ($userId !== '') {
             $user = (new UserModel())->findById($userId);
             if ($user) {
+                $company['hasLogin'] = true;
+                $company['loginEmail'] = trim((string) ($user['email'] ?? ''));
                 if ($primary['name'] === '') {
                     $primary['name'] = trim((string) ($user['name'] ?? ''));
                 }
