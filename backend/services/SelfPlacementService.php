@@ -317,6 +317,8 @@ final class SelfPlacementService
         $self['verifiedByName'] = $reviewerName;
 
         $history = is_array($student['placementHistory'] ?? null) ? $student['placementHistory'] : [];
+        $categories = new PlacementCategoryService();
+        $placementCategory = $categories->classify($package, null);
         foreach ($history as $idx => $entry) {
             if (!is_array($entry)) {
                 continue;
@@ -327,6 +329,9 @@ final class SelfPlacementService
                 $history[$idx]['verifiedBy'] = $reviewerId;
                 if ($package !== '') {
                     $history[$idx]['package'] = $package;
+                }
+                if ($placementCategory !== null) {
+                    $history[$idx]['placementCategory'] = $placementCategory;
                 }
                 if ($joinDate !== '') {
                     $history[$idx]['joinDate'] = $joinDate;
@@ -342,6 +347,7 @@ final class SelfPlacementService
             'role'          => $role,
             'address'       => $address,
             'package'       => $package,
+            'placementCategory' => $placementCategory,
             'joinDate'      => $joinDate,
             'endDate'       => $endDate,
             'offerLetter'   => (string) ($self['offerLetter'] ?? ''),
@@ -352,10 +358,11 @@ final class SelfPlacementService
         ];
 
         $this->studentModel->update($studentId, [
-            'placed'           => true,
-            'selfPlacement'    => $self,
-            'placementHistory' => $history,
-            'placement'        => $placement,
+            'placed'              => true,
+            'placementCategory'   => $placementCategory,
+            'selfPlacement'       => $self,
+            'placementHistory'    => $history,
+            'placement'           => $placement,
         ]);
 
         $user = null;

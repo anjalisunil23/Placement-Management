@@ -77,9 +77,23 @@ final class EligibilityEngine
         $branches = $criteriaBranches !== []
             ? $criteriaBranches
             : $this->toPlainArray($drive['branches'] ?? []);
-        $tier = $drive['tier'] ?? 'Tier 2';
+        $company = null;
+        if (!empty($drive['companyId'])) {
+            $company = (new \PMS\Models\CompanyModel())->findById((string) $drive['companyId']);
+        }
+        $tier = (string) ($drive['tier'] ?? ($company['tier'] ?? 'Tier 2'));
 
-        return $this->evaluate($student, $criteria, $branches, (string) $tier, $resumeId);
+        $categoryGate = (new PlacementCategoryService())->mayAttemptDrive($student, $drive, is_array($company) ? $company : null);
+        if (!$categoryGate['allowed']) {
+            return [
+                'eligible' => false,
+                'reasons'  => [$categoryGate['reason'] !== ''
+                    ? $categoryGate['reason']
+                    : 'Not eligible for this drive under placement category rules.'],
+            ];
+        }
+
+        return $this->evaluate($student, $criteria, $branches, $tier, $resumeId);
     }
 
     /**
@@ -215,7 +229,7 @@ final class EligibilityEngine
 
     /**
      * Whether a drive should appear in a student's browse list.
-     * Only branch targeting is used for visibility; CGPA/marks gate Apply via eligibilityCheck.
+     * Branch targeting + post-placement Category A/B/C visibility.
      *
      * @param array<string, mixed> $student
      * @param array<string, mixed> $drive
@@ -231,23 +245,29 @@ final class EligibilityEngine
             static fn ($b) => strtoupper(trim((string) $b)),
             $targetBranches
         )));
-        if ($branches === []) {
-            return true;
-        }
-
-        $studentCodes = $this->studentDepartmentCodes($student);
-        if ($studentCodes === []) {
-            // Unknown branch — still show open drives so new listings are not invisible.
-            return true;
-        }
-
-        foreach ($studentCodes as $code) {
-            if ($this->branchCodesMatch($code, $branches)) {
-                return true;
+        if ($branches !== []) {
+            $studentCodes = $this->studentDepartmentCodes($student);
+            if ($studentCodes !== []) {
+                $okBranch = false;
+                foreach ($studentCodes as $code) {
+                    if ($this->branchCodesMatch((string) $code, $branches)) {
+                        $okBranch = true;
+                        break;
+                    }
+                }
+                if (!$okBranch) {
+                    return false;
+                }
             }
         }
 
-        return false;
+        $company = null;
+        if (!empty($drive['companyId'])) {
+            $company = (new \PMS\Models\CompanyModel())->findById((string) $drive['companyId']);
+        }
+        $gate = (new PlacementCategoryService())->mayAttemptDrive($student, $drive, is_array($company) ? $company : null);
+
+        return $gate['allowed'];
     }
 
     /**

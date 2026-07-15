@@ -49,6 +49,13 @@ final class PlacementChanceService
 
         $drive = (new DriveModel())->findById($driveId);
         $tier = $drive['tier'] ?? 'Tier 2';
+        $company = null;
+        if (is_array($drive) && !empty($drive['companyId'])) {
+            $company = (new \PMS\Models\CompanyModel())->findById((string) $drive['companyId']);
+            if ($tier === 'Tier 2' && !empty($company['tier'])) {
+                $tier = $company['tier'];
+            }
+        }
         $rule = (new RuleModel())->getActiveRule();
         $tierRules = $rule['tierRules'] ?? [];
         $cost = (int) ($tierRules[$tier]['chances'] ?? 1);
@@ -57,15 +64,26 @@ final class PlacementChanceService
         $used = (int) ($chances['used'] ?? 0) + $cost;
         $total = (int) ($rule['placementChances'] ?? 3);
 
+        $package = (string) ($placementRecord['package'] ?? '');
+        if ($package === '' && is_array($drive)) {
+            $elig = is_array($drive['eligibility'] ?? null) ? $drive['eligibility'] : [];
+            $package = (string) ($elig['package'] ?? $drive['package'] ?? '');
+        }
+        $categories = new PlacementCategoryService();
+        $placementCategory = $categories->classify($package, $tier);
+
         $history = $student['placementHistory'] ?? [];
         $history[] = array_merge($placementRecord, [
-            'tier'  => $tier,
-            'cost'  => $cost,
-            'date'  => DocumentHelper::now(),
+            'tier'               => $tier,
+            'package'            => $package,
+            'placementCategory'  => $placementCategory,
+            'cost'               => $cost,
+            'date'               => DocumentHelper::now(),
         ]);
 
         $studentModel->update($studentId, [
             'placed'            => true,
+            'placementCategory' => $placementCategory,
             'placementChances'  => [
                 'used'      => $used,
                 'remaining' => max(0, $total - $used),
