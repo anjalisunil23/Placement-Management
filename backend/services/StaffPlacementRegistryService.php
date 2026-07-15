@@ -35,11 +35,9 @@ final class StaffPlacementRegistryService
         $studentRows = $this->officerData->listStudents($officerCtx);
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
+        $aesClassRows = [];
         if ($program !== '' && $batch !== '') {
-            $studentRows = $this->mergeCompleteClassRoster(
-                $studentRows,
-                $this->officerData->listAesClassStudents($officerCtx, $program, $batch)
-            );
+            $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch);
         }
 
         $registry = [];
@@ -60,6 +58,22 @@ final class StaffPlacementRegistryService
 
         $filterOptions = $this->buildFilterOptions($staffCtx, $filters);
         $filtered = $this->applyFilters($registry, $filters);
+        if ($aesClassRows !== []) {
+            $aesRegistry = [];
+            foreach ($aesClassRows as $row) {
+                foreach ($this->extractRegistryRows($row, false) as $entry) {
+                    $aesRegistry[] = $entry;
+                }
+            }
+            $filtered = $this->mergeCompleteClassRoster(
+                $filtered,
+                $this->applyFilters($aesRegistry, $filters)
+            );
+            usort($filtered, static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['studentName'] ?? ''),
+                (string) ($b['studentName'] ?? '')
+            ));
+        }
 
         $placementCount = 0;
         $higherCount = 0;
@@ -120,7 +134,7 @@ final class StaffPlacementRegistryService
      * @param array<string, mixed> $row
      * @return array<int, array<string, mixed>>
      */
-    private function extractRegistryRows(array $row): array
+    private function extractRegistryRows(array $row, bool $includeRecruitmentResults = true): array
     {
         $studentId = (string) ($row['id'] ?? $row['studentId'] ?? '');
         if ($studentId === '') {
@@ -236,7 +250,7 @@ final class StaffPlacementRegistryService
             ], $seen);
         }
 
-        if ($register !== '') {
+        if ($includeRecruitmentResults && $register !== '') {
             foreach ((new RecruitmentResultModel())->list(['registerNumber' => $register, 'status' => 'selected'], 20) as $result) {
                 $company = trim((string) ($result['company'] ?? ''));
                 if ($company === '') {

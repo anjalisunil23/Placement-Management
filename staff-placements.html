@@ -85,9 +85,6 @@
                   <th class="registry-sortable" data-sort="studentName" data-label="Student Name">Student Name</th>
                   <th class="registry-sortable" data-sort="admissionNo" data-label="Admission No">Admission No</th>
                   <th class="registry-sortable" data-sort="contact" data-label="Contact">Contact</th>
-                  <th class="registry-sortable" data-sort="departmentName" data-label="Department">Department</th>
-                  <th class="registry-sortable" data-sort="program" data-label="Branch">Branch</th>
-                  <th class="registry-sortable" data-sort="batch" data-label="Class">Class</th>
                   <th class="registry-sortable" data-sort="employer" data-label="Name of the Employer">Name of the
                     Employer</th>
                   <th class="registry-sortable" data-sort="type" data-label="Type">Type</th>
@@ -100,7 +97,7 @@
               </thead>
               <tbody id="registryRows">
                 <tr>
-                  <td colspan="13" class="text-muted-2 p-4 text-center">Loading…</td>
+                  <td colspan="10" class="text-muted-2 p-4 text-center">Loading…</td>
                 </tr>
               </tbody>
             </table>
@@ -545,8 +542,8 @@
       if (!slice.length) {
         const needClass = !filterDepartmentId || !filterProgram || !filterBatch;
         tbody.innerHTML = needClass
-          ? '<tr><td colspan="13" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>'
-          : '<tr><td colspan="13" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
+          ? '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>'
+          : '<tr><td colspan="10" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
         return;
       }
 
@@ -567,9 +564,6 @@
       <td><span class="registry-student-name">${esc(String(r.studentName || '—').toUpperCase())}</span></td>
       <td>${esc(r.admissionNo || r.registerNumber || '—')}</td>
       <td class="registry-cell-contact">${esc(formatContact(r))}</td>
-      <td>${esc(r.departmentName || r.departmentCode || '—')}</td>
-      <td>${esc(r.program || '—')}</td>
-      <td>${esc(r.batch || '—')}</td>
       <td>${esc(r.employer || '')}</td>
       <td>${esc(typeLabel)}</td>
       <td class="registry-cell-employer-contact">${esc(r.employerContact || '')}</td>
@@ -725,13 +719,13 @@
         filteredRows = [];
         document.getElementById('rowCount').textContent = '';
         document.getElementById('pageInfo').textContent = '';
-        tbody.innerHTML = '<tr><td colspan="13" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>';
         return;
       }
-      tbody.innerHTML = '<tr><td colspan="13" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
-        tbody.innerHTML = '<tr><td colspan="13" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
         return;
       }
       allRows = Array.isArray(data.rows) ? data.rows : [];
