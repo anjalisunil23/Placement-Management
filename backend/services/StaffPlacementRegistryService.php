@@ -686,13 +686,12 @@ final class StaffPlacementRegistryService
      */
     public function updatePlacement(array $staffCtx, string $studentId, array $input): array
     {
-        $officerCtx = StaffContext::officerCompatible($staffCtx);
         $student = $this->officerData->resolveStudentRef($studentId);
         if (!$student) {
             Response::notFound('Student not found.');
         }
+        $this->assertRegistryStudentInDepartment($student, $staffCtx);
         $student = $this->ensureLocalStudentForStaffEdit($student, $staffCtx);
-        StaffContext::assertStudentInScope($student, $staffCtx);
 
         $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
         $role = trim((string) ($input['role'] ?? ''));
@@ -746,6 +745,62 @@ final class StaffPlacementRegistryService
             'studentId' => (string) $student['_id'],
             'placement' => DocumentHelper::serialize($placement),
         ];
+    }
+
+    /**
+     * Registry entry is department-scoped, not limited to the staff member's
+     * assigned teaching classes. This allows staff to maintain all displayed
+     * final-year BCA/MCA/INMCA rows in their parent department.
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $staffCtx
+     */
+    private function assertRegistryStudentInDepartment(array $student, array $staffCtx): void
+    {
+        StaffContext::requireDepartmentScope($staffCtx);
+        $scopeId = (string) ($staffCtx['departmentId'] ?? '');
+        $studentDeptId = (string) ($student['departmentId'] ?? '');
+        if ($scopeId !== '' && $studentDeptId === $scopeId) {
+            return;
+        }
+
+        $scopeDept = is_array($staffCtx['department'] ?? null) ? $staffCtx['department'] : [];
+        $studentDept = $studentDeptId !== ''
+            ? ((new DepartmentModel())->findById($studentDeptId) ?? [])
+            : (is_array($student['department'] ?? null) ? $student['department'] : []);
+        $scopeGroup = DepartmentProgrammeCatalog::findGroupForDepartment(
+            (string) ($scopeDept['code'] ?? ''),
+            (string) ($scopeDept['name'] ?? '')
+        );
+
+        $studentLabels = [
+            (string) ($studentDept['code'] ?? ''),
+            (string) ($studentDept['name'] ?? ''),
+            (string) ($student['stud_course'] ?? ''),
+            (string) ($student['programme'] ?? ''),
+            (string) ($student['branch'] ?? ''),
+        ];
+        if ($scopeGroup !== null) {
+            foreach ($studentLabels as $label) {
+                $studentGroup = DepartmentProgrammeCatalog::findGroupForDepartment($label, $label);
+                if ($studentGroup !== null && strcasecmp($studentGroup['parent'], $scopeGroup['parent']) === 0) {
+                    return;
+                }
+            }
+        }
+
+        $scopeAesId = (new PlacementFilterService())->resolveParentDeptAesId($staffCtx);
+        $studentAesId = trim((string) (
+            $student['stud_deptcode']
+            ?? $student['parentDepartmentCode']
+            ?? $studentDept['aesId']
+            ?? ''
+        ));
+        if ($scopeAesId !== '' && $studentAesId !== '' && strcasecmp($scopeAesId, $studentAesId) === 0) {
+            return;
+        }
+
+        Response::forbidden('This student is outside your department.');
     }
 
     /**
@@ -862,13 +917,12 @@ final class StaffPlacementRegistryService
      */
     public function uploadPlacementDocuments(array $staffCtx, string $studentId): array
     {
-        $officerCtx = StaffContext::officerCompatible($staffCtx);
         $student = $this->officerData->resolveStudentRef($studentId);
         if (!$student) {
             Response::notFound('Student not found.');
         }
+        $this->assertRegistryStudentInDepartment($student, $staffCtx);
         $student = $this->ensureLocalStudentForStaffEdit($student, $staffCtx);
-        StaffContext::assertStudentInScope($student, $staffCtx);
 
         $hasOffer = isset($_FILES['offerLetter']) && (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
         $hasJoining = isset($_FILES['joiningLetter']) && (int) ($_FILES['joiningLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
