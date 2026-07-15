@@ -409,6 +409,69 @@ final class OfficerDataService
     }
 
     /**
+     * Complete AES roster for one selected placement class, without requiring
+     * an existing local student/profile record.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAesClassStudents(array $ctx, string $programme, string $batch): array
+    {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        $batch = trim($batch);
+        if ($programme === '' || $batch === '') {
+            return [];
+        }
+
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $rows = [];
+        $seen = [];
+
+        foreach ($records as $record) {
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+            if (!$this->isAesStudyingStudent($record) || !$this->isAesFinalYearStudent($record)) {
+                continue;
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, null, $dept, $deptCode, $deptName);
+            if ($row === null || strcasecmp((string) ($row['classBatch'] ?? ''), $batch) !== 0) {
+                continue;
+            }
+            $rowProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+                $row['stud_course']
+                ?? $row['programme']
+                ?? ''
+            ));
+            if ($rowProgramme !== $programme) {
+                continue;
+            }
+
+            $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
      * Campus-wide final-year studying students for admin Students page.
      * Prefer AES getAllStudInfo4Placement rows, then fill from the PlaceHub student table
      * (AES currently often returns a single object).

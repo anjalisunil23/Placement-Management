@@ -33,6 +33,14 @@ final class StaffPlacementRegistryService
         StaffContext::requireDepartmentScope($staffCtx);
         $officerCtx = StaffContext::officerCompatible($staffCtx);
         $studentRows = $this->officerData->listStudents($officerCtx);
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+        if ($program !== '' && $batch !== '') {
+            $studentRows = $this->mergeCompleteClassRoster(
+                $studentRows,
+                $this->officerData->listAesClassStudents($officerCtx, $program, $batch)
+            );
+        }
 
         $registry = [];
         foreach ($studentRows as $row) {
@@ -72,6 +80,40 @@ final class StaffPlacementRegistryService
                 'higher_education'  => $higherCount,
             ],
         ];
+    }
+
+    /**
+     * Existing local/enriched rows win; AES-only rows fill any missing students.
+     *
+     * @param array<int, array<string, mixed>> $existing
+     * @param array<int, array<string, mixed>> $aesClass
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeCompleteClassRoster(array $existing, array $aesClass): array
+    {
+        $seen = [];
+        foreach ($existing as $row) {
+            $key = strtoupper(trim((string) (
+                $row['admno']
+                ?? $row['registerNumber']
+                ?? $row['studentId']
+                ?? $row['id']
+                ?? ''
+            )));
+            if ($key !== '') {
+                $seen[$key] = true;
+            }
+        }
+        foreach ($aesClass as $row) {
+            $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $existing[] = $row;
+        }
+
+        return $existing;
     }
 
     /**
