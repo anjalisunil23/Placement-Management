@@ -33,11 +33,11 @@
   <div class="col-lg-5">
     <div class="card-surface p-4 mb-3">
       <h6 class="fw-bold mb-3">Upload selected list</h6>
-      <div class="dropzone" id="resultsDropzone" role="button" tabindex="0" aria-label="Upload CSV of selected candidates">
-        <input type="file" id="resultsCsvInput" accept=".csv,text/csv" hidden />
+      <div class="dropzone" id="resultsDropzone" role="button" tabindex="0" aria-label="Upload selected-candidate list">
+        <input type="file" id="resultsCsvInput" accept=".csv,.pdf,.doc,.docx,.xls,.xlsx,text/csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
         <i class="bi bi-file-earmark-arrow-up display-6 d-block mb-1"></i>
-        <span id="resultsDropLabel">Drop CSV of selected candidates</span>
-        <div class="small text-muted-2 mt-2">The CSV will be emailed to the placement admin.</div>
+        <span id="resultsDropLabel">Drop selected-candidate list</span>
+        <div class="small text-muted-2 mt-2">CSV, PDF, Word, or Excel · maximum 10 MB</div>
         <div class="small fw-semibold mt-2 text-primary" id="resultsFileName" style="display:none"></div>
       </div>
       <button type="button" class="btn btn-primary w-100 mt-3" id="uploadResultsBtn" disabled>Email selected list to admin</button>
@@ -213,13 +213,13 @@ function setResultsFile(file) {
   if (selectedResultsFile) {
     resultsFileName.style.display = '';
     resultsFileName.textContent = selectedResultsFile.name;
-    resultsDropLabel.textContent = 'CSV ready to upload';
+    resultsDropLabel.textContent = 'Selected list ready to upload';
     resultsDropzone.classList.add('has-file');
     uploadResultsBtn.disabled = false;
   } else {
     resultsFileName.style.display = 'none';
     resultsFileName.textContent = '';
-    resultsDropLabel.textContent = 'Drop CSV of selected candidates';
+    resultsDropLabel.textContent = 'Drop selected-candidate list';
     resultsDropzone.classList.remove('has-file');
     uploadResultsBtn.disabled = true;
   }
@@ -229,7 +229,19 @@ resultsDropzone?.addEventListener('click', () => resultsCsvInput?.click());
 resultsDropzone?.addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resultsCsvInput?.click(); }
 });
-resultsCsvInput?.addEventListener('change', () => setResultsFile(resultsCsvInput.files?.[0] || null));
+function isAllowedResultsFile(file) {
+  return !!file?.name && /\.(csv|pdf|doc|docx|xls|xlsx)$/i.test(file.name) && Number(file.size || 0) <= 10 * 1024 * 1024;
+}
+resultsCsvInput?.addEventListener('change', () => {
+  const file = resultsCsvInput.files?.[0] || null;
+  if (file && !isAllowedResultsFile(file)) {
+    toast('Choose a CSV, PDF, Word, or Excel file up to 10 MB.', 'warn');
+    resultsCsvInput.value = '';
+    setResultsFile(null);
+    return;
+  }
+  setResultsFile(file);
+});
 
 resultsDropzone?.addEventListener('dragover', e => { e.preventDefault(); resultsDropzone.classList.add('dragover'); });
 resultsDropzone?.addEventListener('dragleave', () => resultsDropzone.classList.remove('dragover'));
@@ -238,8 +250,8 @@ resultsDropzone?.addEventListener('drop', e => {
   resultsDropzone.classList.remove('dragover');
   const file = e.dataTransfer?.files?.[0];
   if (!file) return;
-  if (!/\.csv$/i.test(file.name) && file.type !== 'text/csv') {
-    toast('Please choose a CSV file.', 'warn');
+  if (!isAllowedResultsFile(file)) {
+    toast('Choose a CSV, PDF, Word, or Excel file up to 10 MB.', 'warn');
     return;
   }
   setResultsFile(file);
@@ -247,7 +259,7 @@ resultsDropzone?.addEventListener('drop', e => {
 
 async function uploadResultsCsv() {
   if (!selectedResultsFile) {
-    toast('Choose a CSV file first.', 'warn');
+    toast('Choose a selected-list file first.', 'warn');
     return;
   }
   if (!(await requireWriteSession())) return;

@@ -30,6 +30,11 @@
           <h5 class="settings-profile-title">Profile</h5>
           <div class="settings-profile-row">
             <div class="settings-profile-avatar" id="profAvatar" aria-hidden="true">U</div>
+            <div data-roles="company">
+              <input type="file" id="companyProfilePhoto" accept=".jpg,.jpeg,.png,.webp" hidden/>
+              <button type="button" class="btn btn-sm btn-outline-primary settings-profile-edit" id="uploadCompanyPhoto"><i class="bi bi-camera me-1"></i>Upload Profile Photo</button>
+              <div class="small text-muted-2 mt-2" id="companyPhotoStatus"></div>
+            </div>
           </div>
         </div>
         <div class="row g-3">
@@ -75,14 +80,6 @@
           </div>
         </div>
         <div class="row g-3 mt-2" data-roles="company">
-          <div class="col-12"><hr class="my-1"/></div>
-          <div class="col-12">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-              <input type="file" id="companyProfilePhoto" accept=".jpg,.jpeg,.png,.webp" hidden/>
-              <button type="button" class="btn btn-sm btn-outline-primary" id="uploadCompanyPhoto"><i class="bi bi-camera me-1"></i>Upload Profile Photo</button>
-            </div>
-            <div class="small text-muted-2" id="companyPhotoStatus"></div>
-          </div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Name</label><input class="form-control" id="companyContactName"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="companyRecruiterRole" value="Company Recruiter" disabled/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Designation</label><input class="form-control" id="companyContactDesignation" placeholder="e.g. Senior Talent Acquisition Specialist"/></div>

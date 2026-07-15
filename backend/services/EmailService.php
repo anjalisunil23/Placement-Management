@@ -142,12 +142,28 @@ final class EmailService
                 ];
             }
 
-            // Attachments go via SMTP when available; otherwise ElasticEmail body-only.
+            // Prefer SMTP for attachments when configured. Otherwise use ElasticEmail v4,
+            // which supports base64 file attachments in transactional messages.
             if ($attachmentPath !== null && $attachmentPath !== '' && is_file($attachmentPath)) {
                 if (trim((string) ($this->config['username'] ?? '')) !== '') {
                     $ok = $this->sendViaSmtp($to, $subject, $body, true, $attachmentPath, $from, $fromName);
                     return ['ok' => $ok, 'response' => null, 'error' => $ok ? null : 'SMTP send failed', 'driver' => 'smtp'];
                 }
+                $endpoint = trim((string) ($this->config['endpoint'] ?? ''));
+                if (!str_contains(strtolower($endpoint), '/v4/')) {
+                    $endpoint = 'https://api.elasticemail.com/v4/emails/transactional';
+                }
+                $result = $this->sendViaElasticEmailV4(
+                    $to,
+                    $subject,
+                    $body,
+                    $from,
+                    $fromName,
+                    $endpoint,
+                    $attachmentPath
+                );
+
+                return $result + ['driver' => 'elasticemail'];
             }
 
             $result = $this->sendViaElasticEmail($to, $subject, $body, $from, $fromName);
@@ -348,13 +364,14 @@ final class EmailService
         string $bodyHtml,
         string $from,
         string $fromName,
-        string $endpoint
+        string $endpoint,
+        ?string $attachmentPath = null
     ): array {
         try {
             $fromHeader = trim(($fromName !== '' ? $fromName . ' ' : '') . '<' . ($from !== '' ? $from : 'info@aessas.org') . '>');
             $payload = [
                 'Recipients' => [
-                    ['Email' => $to],
+                    'To' => [$to],
                 ],
                 'Content' => [
                     'From' => $fromHeader,
@@ -375,6 +392,24 @@ final class EmailService
                     'TrackClicks' => false,
                 ],
             ];
+            if ($attachmentPath !== null && $attachmentPath !== '') {
+                if (!is_file($attachmentPath) || !is_readable($attachmentPath)) {
+                    return ['ok' => false, 'response' => null, 'error' => 'Email attachment is not readable'];
+                }
+                $binary = file_get_contents($attachmentPath);
+                if ($binary === false) {
+                    return ['ok' => false, 'response' => null, 'error' => 'Email attachment could not be read'];
+                }
+                $mime = function_exists('mime_content_type')
+                    ? (string) (mime_content_type($attachmentPath) ?: 'application/octet-stream')
+                    : 'application/octet-stream';
+                $payload['Content']['Attachments'] = [[
+                    'BinaryContent' => base64_encode($binary),
+                    'Name'          => basename($attachmentPath),
+                    'ContentType'   => $mime,
+                    'Size'          => strlen($binary),
+                ]];
+            }
 
             $result = $this->curlPost($endpoint, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}', [
                 'Content-Type: application/json',

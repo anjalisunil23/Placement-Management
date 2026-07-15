@@ -467,7 +467,7 @@ function renderShell(active) {
       placement_officer: '',
       student: '',
       staff: '',
-      company: '<a href="company.html" class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex">Portal</a><a href="applicants.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Applicants</a>',
+      company: '',
       alumni: '',
     }[role] || '';
 

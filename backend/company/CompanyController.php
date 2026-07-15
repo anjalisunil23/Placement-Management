@@ -406,7 +406,7 @@ final class CompanyController
         $company = $this->getCompany($user);
 
         if (empty($_FILES['file']) || !is_array($_FILES['file'])) {
-            Response::error('CSV file is required.', 400);
+            Response::error('Selected-list file is required.', 400);
         }
 
         $file = $_FILES['file'];
@@ -416,18 +416,18 @@ final class CompanyController
 
         $name = (string) ($file['name'] ?? '');
         $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-        if ($ext !== 'csv') {
-            Response::error('Only CSV files are allowed.', 400);
+        $allowedExtensions = ['csv', 'pdf', 'doc', 'docx', 'xls', 'xlsx'];
+        if (!in_array($ext, $allowedExtensions, true)) {
+            Response::error('Only CSV, PDF, Word, and Excel files are allowed.', 400);
         }
 
         $tmpPath = (string) ($file['tmp_name'] ?? '');
-        if ((int) ($file['size'] ?? 0) > 1024 * 1024) {
-            Response::error('CSV file must be 1 MB or smaller.', 400);
+        $fileSize = (int) ($file['size'] ?? 0);
+        if ($fileSize <= 0 || !is_uploaded_file($tmpPath)) {
+            Response::error('Uploaded file is empty or invalid.', 400);
         }
-
-        $content = file_get_contents($tmpPath);
-        if ($content === false || trim($content) === '') {
-            Response::error('CSV file is empty.', 400);
+        if ($fileSize > 10 * 1024 * 1024) {
+            Response::error('Selected-list file must be 10 MB or smaller.', 400);
         }
 
         $config = require dirname(__DIR__) . '/config/app.php';
@@ -448,15 +448,17 @@ final class CompanyController
         $companyName = trim((string) ($company['companyName'] ?? $user['companyName'] ?? 'Company'));
         $safeCompanyName = htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8');
         $safeFileName = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
-        $safeCsv = htmlspecialchars($content, ENT_QUOTES, 'UTF-8');
         $body = "<p><strong>{$safeCompanyName}</strong> submitted a selected-candidate list.</p>"
             . "<p>File: {$safeFileName}</p>"
-            . "<pre style=\"white-space:pre-wrap;font-family:monospace\">{$safeCsv}</pre>";
+            . '<p>The selected-list file is attached to this email.</p>';
 
         $attachmentBase = preg_replace('/[^A-Za-z0-9_-]+/', '-', $companyName) ?: 'company';
         $attachmentPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR
-            . trim($attachmentBase, '-') . '-selected-list-' . date('Ymd-His') . '.csv';
+            . trim($attachmentBase, '-') . '-selected-list-' . date('Ymd-His') . '.' . $ext;
         $hasAttachment = @copy($tmpPath, $attachmentPath);
+        if (!$hasAttachment) {
+            Response::error('Selected-list attachment could not be prepared.', 500);
+        }
 
         $mail = new EmailService();
         $sent = 0;
@@ -466,14 +468,12 @@ final class CompanyController
                 "{$companyName} — Selected Candidate List",
                 $body,
                 true,
-                $hasAttachment ? $attachmentPath : null
+                $attachmentPath
             )) {
                 $sent++;
             }
         }
-        if ($hasAttachment) {
-            @unlink($attachmentPath);
-        }
+        @unlink($attachmentPath);
         if ($sent === 0) {
             Response::error('The selected list could not be emailed to the admin.', 502);
         }
