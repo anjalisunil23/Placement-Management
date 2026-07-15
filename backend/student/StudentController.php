@@ -174,7 +174,7 @@ final class StudentController
         $this->studentModel->update((string) $profile['_id'], ['registerNumber' => $reg]);
         $profile['registerNumber'] = $reg;
       }
-      $apiName = $aes->syncStudentNameFromPlacement($user, $reg);
+      $apiName = $aes->syncStudentNameFromPlacement($user, $reg, true);
       if ($apiName !== '') {
         $user['name'] = $apiName;
       }

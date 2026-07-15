@@ -953,7 +953,11 @@ final class AesLoginService
      *
      * @param array<string, mixed> $user
      */
-    public function syncStudentNameFromPlacement(array $user, string $registerNumber = ''): string
+    public function syncStudentNameFromPlacement(
+        array $user,
+        string $registerNumber = '',
+        bool $forceApiLookup = false
+    ): string
     {
         if (($user['role'] ?? '') !== 'student') {
             return trim((string) ($user['name'] ?? ''));
@@ -972,15 +976,18 @@ final class AesLoginService
         $emails = array_values(array_filter([
             strtolower(trim((string) ($user['email'] ?? ''))),
         ]));
-        // Keep /auth/me fast: do not hit AES when we already have a real stored name.
-        if ($current !== ''
+        // Keep /auth/me fast, but full profile loads must refresh the authoritative AES name.
+        if (!$forceApiLookup
+            && $current !== ''
             && $this->isRealPersonName($current)
             && !$this->isPlaceholderName($current, $register)
             && !$this->isEmailDerivedName($current, $emails)) {
             return $current;
         }
 
-        $apiName = $this->resolveAesName($aesProfile, [], $register, '');
+        $apiName = $forceApiLookup
+            ? $this->fetchStudentNameFromPlacementApi($register)
+            : $this->resolveAesName($aesProfile, [], $register, '');
         if ($apiName === '') {
             return $current;
         }
