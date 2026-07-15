@@ -159,12 +159,54 @@
                         admitted to (applicable for students who progressed to higher education)</label>
                       <input class="form-control" id="editPackage" placeholder="Pay package at appointment" />
                     </div>
-                    <div class="col-12">
-                      <label class="form-label small fw-semibold" for="editEvidenceFile">Evidence File (Offer
-                        Letter/Appointment Order/ID Card/Salary Slip, Admission Letter/Institution ID Card)</label>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editAcademicDuration">Total academic year /
+                        Duration of the course (in years)</label>
+                      <input type="number" class="form-control" id="editAcademicDuration" min="0" step="0.5"
+                        placeholder="Duration in years" />
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editInternshipDetails">Internship details</label>
+                      <textarea class="form-control" id="editInternshipDetails" rows="2"
+                        placeholder="Enter internship details"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editNatureOfJob">Nature of job</label>
+                      <input class="form-control" id="editNatureOfJob" placeholder="Enter nature of job" />
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editMonthlySalary">Pay scale / Salary (per
+                        month)</label>
+                      <input type="number" class="form-control" id="editMonthlySalary" min="0" step="1"
+                        placeholder="Salary per month" />
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editPlacementStatus">Placement status</label>
+                      <select class="form-select" id="editPlacementStatus">
+                        <option value="">Select status</option>
+                        <option value="Offered">Offered</option>
+                        <option value="Joined">Joined</option>
+                        <option value="Not Joined">Not Joined</option>
+                        <option value="Higher Education">Higher Education</option>
+                      </select>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editOfferLetterVerified">Is offer letter
+                        verified?</label>
+                      <select class="form-select" id="editOfferLetterVerified">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                      </select>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editVerificationDate">Date of
+                        verification</label>
+                      <input type="date" class="form-control" id="editVerificationDate" />
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editEvidenceFile">Offer letter (PDF only)</label>
                       <div class="file-picker">
-                        <input type="file" id="editEvidenceFile" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
-                          hidden />
+                        <input type="file" id="editEvidenceFile" accept=".pdf,application/pdf" hidden />
                         <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn"
                           data-file-picker="editEvidenceFile"><i class="bi bi-upload me-1"></i>Choose file</button>
                         <span class="file-picker-name text-muted-2 small" data-file-picker-name="editEvidenceFile">No
@@ -606,6 +648,13 @@
       document.getElementById('editAddress').value = row.address || '';
       document.getElementById('editJoinDate').value = row.joinDate || '';
       document.getElementById('editEndDate').value = row.endDate || '';
+      document.getElementById('editAcademicDuration').value = row.academicDuration || '';
+      document.getElementById('editInternshipDetails').value = row.internshipDetails || '';
+      document.getElementById('editNatureOfJob').value = row.natureOfJob || '';
+      document.getElementById('editMonthlySalary').value = row.monthlySalary || '';
+      document.getElementById('editPlacementStatus').value = row.placementStatus || '';
+      document.getElementById('editOfferLetterVerified').value = row.offerLetterVerified ? 'true' : 'false';
+      document.getElementById('editVerificationDate').value = row.verificationDate || '';
       if (typeof resetFilePickers === 'function') {
         resetFilePickers(['editEvidenceFile']);
       } else {
@@ -646,6 +695,13 @@
         address: document.getElementById('editAddress').value.trim(),
         joinDate: document.getElementById('editJoinDate').value,
         endDate: document.getElementById('editEndDate').value,
+        academicDuration: document.getElementById('editAcademicDuration').value.trim(),
+        internshipDetails: document.getElementById('editInternshipDetails').value.trim(),
+        natureOfJob: document.getElementById('editNatureOfJob').value.trim(),
+        monthlySalary: document.getElementById('editMonthlySalary').value.trim(),
+        placementStatus: document.getElementById('editPlacementStatus').value,
+        offerLetterVerified: document.getElementById('editOfferLetterVerified').value === 'true',
+        verificationDate: document.getElementById('editVerificationDate').value,
       };
       if (!payload.employer) {
         toast('Employer / institution name is required.', 'warn');

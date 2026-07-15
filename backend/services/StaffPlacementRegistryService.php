@@ -46,6 +46,7 @@ final class StaffPlacementRegistryService
                 $registry[] = $entry;
             }
         }
+        $registry = $this->deduplicateStudentRows($registry);
 
         usort($registry, static function (array $a, array $b): int {
             $name = strcasecmp((string) ($a['studentName'] ?? ''), (string) ($b['studentName'] ?? ''));
@@ -69,6 +70,7 @@ final class StaffPlacementRegistryService
                 $filtered,
                 $this->applyFilters($aesRegistry, $filters)
             );
+            $filtered = $this->deduplicateStudentRows($filtered);
             usort($filtered, static fn (array $a, array $b): int => strcasecmp(
                 (string) ($a['studentName'] ?? ''),
                 (string) ($b['studentName'] ?? '')
@@ -107,19 +109,13 @@ final class StaffPlacementRegistryService
     {
         $seen = [];
         foreach ($existing as $row) {
-            $key = strtoupper(trim((string) (
-                $row['admno']
-                ?? $row['registerNumber']
-                ?? $row['studentId']
-                ?? $row['id']
-                ?? ''
-            )));
+            $key = $this->studentRowKey($row);
             if ($key !== '') {
                 $seen[$key] = true;
             }
         }
         foreach ($aesClass as $row) {
-            $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+            $key = $this->studentRowKey($row);
             if ($key === '' || isset($seen[$key])) {
                 continue;
             }
@@ -128,6 +124,46 @@ final class StaffPlacementRegistryService
         }
 
         return $existing;
+    }
+
+    /**
+     * The class registry is one editable row per student. Keep the first,
+     * authoritative placement row and discard duplicate history/AES rows.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function deduplicateStudentRows(array $rows): array
+    {
+        $unique = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            $key = $this->studentRowKey($row);
+            if ($key !== '' && isset($seen[$key])) {
+                continue;
+            }
+            if ($key !== '') {
+                $seen[$key] = true;
+            }
+            $unique[] = $row;
+        }
+
+        return $unique;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function studentRowKey(array $row): string
+    {
+        foreach (['admissionNo', 'admno', 'registerNumber', 'studentId', 'id'] as $field) {
+            $value = strtoupper(trim((string) ($row[$field] ?? '')));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -185,6 +221,13 @@ final class StaffPlacementRegistryService
                 'employerContact'  => (string) ($placement['employerContact'] ?? $placement['contact'] ?? ''),
                 'joinDate'         => (string) ($placement['joinDate'] ?? ''),
                 'endDate'          => (string) ($placement['endDate'] ?? ''),
+                'academicDuration' => (string) ($placement['academicDuration'] ?? ''),
+                'internshipDetails'=> (string) ($placement['internshipDetails'] ?? ''),
+                'natureOfJob'      => (string) ($placement['natureOfJob'] ?? ''),
+                'monthlySalary'    => (string) ($placement['monthlySalary'] ?? ''),
+                'placementStatus'  => (string) ($placement['placementStatus'] ?? ''),
+                'offerLetterVerified' => (bool) ($placement['offerLetterVerified'] ?? false),
+                'verificationDate' => (string) ($placement['verificationDate'] ?? ''),
                 'type'             => $this->resolveRecordType($placement),
                 'source'           => (string) ($placement['source'] ?? 'placement'),
                 'hasOfferLetter'   => (string) ($placement['offerLetter'] ?? '') !== ''
@@ -210,6 +253,13 @@ final class StaffPlacementRegistryService
                     'employerContact'  => '',
                     'joinDate'         => (string) ($self['joinDate'] ?? ''),
                     'endDate'          => (string) ($self['endDate'] ?? ''),
+                    'academicDuration' => (string) ($self['academicDuration'] ?? ''),
+                    'internshipDetails'=> (string) ($self['internshipDetails'] ?? ''),
+                    'natureOfJob'      => (string) ($self['natureOfJob'] ?? ''),
+                    'monthlySalary'    => (string) ($self['monthlySalary'] ?? ''),
+                    'placementStatus'  => (string) ($self['placementStatus'] ?? ''),
+                    'offerLetterVerified' => (bool) ($self['offerLetterVerified'] ?? false),
+                    'verificationDate' => (string) ($self['verificationDate'] ?? ''),
                     'type'             => $this->resolveRecordType($self, 'Placement'),
                     'source'           => 'self_placement',
                     'hasOfferLetter'   => (string) ($self['offerLetter'] ?? '') !== '',
@@ -270,6 +320,7 @@ final class StaffPlacementRegistryService
                 ], $seen);
             }
         }
+        $entries = array_values(array_filter($entries, 'is_array'));
 
         if ($entries === [] && $placed) {
             $fallbackEmployer = trim((string) ($placement['company'] ?? ($self['companyName'] ?? '')));
@@ -300,6 +351,13 @@ final class StaffPlacementRegistryService
                 'employerContact'  => '',
                 'joinDate'         => '',
                 'endDate'          => '',
+                'academicDuration' => '',
+                'internshipDetails'=> '',
+                'natureOfJob'      => '',
+                'monthlySalary'    => '',
+                'placementStatus'  => '',
+                'offerLetterVerified' => false,
+                'verificationDate' => '',
                 'type'             => 'Placement',
                 'source'           => 'class_roster',
                 'hasOfferLetter'   => false,
@@ -312,7 +370,7 @@ final class StaffPlacementRegistryService
             }
         }
 
-        return $entries;
+        return array_values(array_filter($entries, 'is_array'));
     }
 
     /**
@@ -700,6 +758,16 @@ final class StaffPlacementRegistryService
         $employerContact = trim((string) ($input['employerContact'] ?? ''));
         $joinDate = trim((string) ($input['joinDate'] ?? ''));
         $endDate = trim((string) ($input['endDate'] ?? ''));
+        $academicDuration = trim((string) ($input['academicDuration'] ?? ''));
+        $internshipDetails = trim((string) ($input['internshipDetails'] ?? ''));
+        $natureOfJob = trim((string) ($input['natureOfJob'] ?? ''));
+        $monthlySalary = trim((string) ($input['monthlySalary'] ?? ''));
+        $placementStatus = trim((string) ($input['placementStatus'] ?? ''));
+        $offerLetterVerified = filter_var(
+            $input['offerLetterVerified'] ?? false,
+            FILTER_VALIDATE_BOOL
+        );
+        $verificationDate = trim((string) ($input['verificationDate'] ?? ''));
         $typeRaw = trim((string) ($input['type'] ?? 'Placement'));
         $recordType = stripos($typeRaw, 'higher') !== false ? 'Higher Education' : 'Placement';
 
@@ -716,6 +784,13 @@ final class StaffPlacementRegistryService
             'employerContact' => $employerContact,
             'joinDate'        => $joinDate,
             'endDate'         => $endDate,
+            'academicDuration'=> $academicDuration,
+            'internshipDetails' => $internshipDetails,
+            'natureOfJob'     => $natureOfJob,
+            'monthlySalary'   => $monthlySalary,
+            'placementStatus' => $placementStatus,
+            'offerLetterVerified' => $offerLetterVerified,
+            'verificationDate'=> $verificationDate,
             'recordType'      => $recordType,
             'updatedAt'       => DocumentHelper::now(),
         ]);
@@ -728,6 +803,13 @@ final class StaffPlacementRegistryService
             $self['companyAddress'] = $address;
             $self['joinDate'] = $joinDate;
             $self['endDate'] = $endDate;
+            $self['academicDuration'] = $academicDuration;
+            $self['internshipDetails'] = $internshipDetails;
+            $self['natureOfJob'] = $natureOfJob;
+            $self['monthlySalary'] = $monthlySalary;
+            $self['placementStatus'] = $placementStatus;
+            $self['offerLetterVerified'] = $offerLetterVerified;
+            $self['verificationDate'] = $verificationDate;
             $self['recordType'] = $recordType;
         }
 
@@ -798,6 +880,40 @@ final class StaffPlacementRegistryService
         ));
         if ($scopeAesId !== '' && $studentAesId !== '' && strcasecmp($scopeAesId, $studentAesId) === 0) {
             return;
+        }
+
+        // Older local profiles may have a missing/programme-level departmentId.
+        // Re-check the authoritative AES placement row before denying an entry
+        // that was displayed in this department's class roster.
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? '')));
+        if ($register !== '') {
+            try {
+                $aesRow = (new AesApiService())->fetchStudInfoPlacementRow($register);
+            } catch (\Throwable) {
+                $aesRow = [];
+            }
+            if ($aesRow !== []) {
+                $aesDeptId = trim((string) ($aesRow['stud_deptcode'] ?? $aesRow['parentDepartmentCode'] ?? ''));
+                if ($scopeAesId !== '' && $aesDeptId !== '' && strcasecmp($scopeAesId, $aesDeptId) === 0) {
+                    return;
+                }
+
+                if ($scopeGroup !== null) {
+                    $aesLabels = [
+                        (string) ($aesRow['stud_course'] ?? ''),
+                        (string) ($aesRow['stud_cource_short'] ?? ''),
+                        (string) ($aesRow['stud_branch'] ?? ''),
+                        (string) ($aesRow['programme'] ?? ''),
+                        (string) ($aesRow['stud_class'] ?? ''),
+                    ];
+                    foreach ($aesLabels as $label) {
+                        $aesGroup = DepartmentProgrammeCatalog::findGroupForDepartment($label, $label);
+                        if ($aesGroup !== null && strcasecmp($aesGroup['parent'], $scopeGroup['parent']) === 0) {
+                            return;
+                        }
+                    }
+                }
+            }
         }
 
         Response::forbidden('This student is outside your department.');
