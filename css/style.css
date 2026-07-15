@@ -850,9 +850,9 @@ body.login-page{
   inset:0;
   background:linear-gradient(
     180deg,
-    rgba(15,23,42,.38) 0%,
-    rgba(15,23,42,.22) 42%,
-    rgba(15,23,42,.48) 100%
+    rgba(15,23,42,.2) 0%,
+    rgba(15,23,42,.08) 42%,
+    rgba(15,23,42,.28) 100%
   );
   z-index:0;
 }
