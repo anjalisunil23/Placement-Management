@@ -170,7 +170,8 @@ final class StudentController
     $apiName = '';
     $liteProfile = $this->isLiteProfileRequest();
     $forceRefresh = $this->isForcedAesRefreshRequest();
-    if (!$liteProfile || $forceRefresh) {
+    $forceNameRefresh = $this->isForcedAesNameRefreshRequest();
+    if (!$liteProfile || $forceRefresh || $forceNameRefresh) {
       if ($reg !== '' && (string) ($profile['registerNumber'] ?? '') === '') {
         $this->studentModel->update((string) $profile['_id'], ['registerNumber' => $reg]);
         $profile['registerNumber'] = $reg;
@@ -351,6 +352,12 @@ final class StudentController
   private function isForcedAesRefreshRequest(): bool
   {
     $refresh = $_GET['refresh'] ?? '';
+    return $refresh === '1' || $refresh === 'true';
+  }
+
+  private function isForcedAesNameRefreshRequest(): bool
+  {
+    $refresh = $_GET['nameRefresh'] ?? '';
     return $refresh === '1' || $refresh === 'true';
   }
 

@@ -776,7 +776,9 @@ const Auth = {
     try {
       // lite=1 avoids AES refresh on every page. Use { refresh: true } only when
       // CGPA/placement data must be re-synced (registration / settings).
-      const qs = opts.refresh ? 'refresh=1' : 'lite=1';
+      const qs = opts.refresh
+        ? 'refresh=1'
+        : (role === 'student' ? 'lite=1&nameRefresh=1' : 'lite=1');
       const res = await apiFetch(path + (path.includes('?') ? '&' : '?') + qs, { skipAuthRedirect: true, skipAuthRetry: true });
       if (!res?.success || !res.data) return false;
       const p = res.data;
