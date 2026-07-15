@@ -713,22 +713,24 @@ final class AesLoginService
             }
 
             $api = new AesApiService();
-            $qual = $api->extractQualificationFromPlacement($placement);
-            if ($qual === []) {
-                $qualAdmno = $api->resolveQualificationAdmissionNumber($placement, $register);
-                if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
-                    try {
-                        $qualParams = ['admno' => $qualAdmno, 'stud_admno' => $qualAdmno];
-                        $regNo = trim((string) ($placement['registerno'] ?? $placement['registerNumber'] ?? ''));
-                        if ($regNo !== '' && $regNo !== $qualAdmno) {
-                            $qualParams['registerno'] = $regNo;
-                            $qualParams['registerNumber'] = $regNo;
-                        }
-                        $qual = $api->fetchStudentQualificationProfile($qualParams);
-                    } catch (\Throwable) {
-                        $qual = [];
+            // Always prefer live getStudQual4Placement for marks / CGPA / edu rows.
+            $qual = [];
+            $qualAdmno = $api->resolveQualificationAdmissionNumber($placement, $register);
+            if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
+                try {
+                    $qualParams = ['admno' => $qualAdmno, 'stud_admno' => $qualAdmno];
+                    $regNo = trim((string) ($placement['registerno'] ?? $placement['registerNumber'] ?? ''));
+                    if ($regNo !== '' && $regNo !== $qualAdmno) {
+                        $qualParams['registerno'] = $regNo;
+                        $qualParams['registerNumber'] = $regNo;
                     }
+                    $qual = $api->fetchStudentQualificationProfile($qualParams);
+                } catch (\Throwable) {
+                    $qual = [];
                 }
+            }
+            if ($qual === []) {
+                $qual = $api->extractQualificationFromPlacement($placement);
             }
             if ($qual !== []) {
                 $qualMapped = $this->mapAesDetailsToUserFields($qual);

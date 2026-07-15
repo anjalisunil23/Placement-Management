@@ -1235,18 +1235,31 @@ async function fetchStudentProfileFromApi(studentId, registerNumber = '') {
 async function fetchStudentEducationQualifications(studentId, registerNumber = '') {
   const id = String(studentId || registerNumber || '').trim();
   const reg = String(registerNumber || studentId || '').trim();
-  if (!id && !reg) return [];
+  if (!id && !reg) return { qualifications: [] };
   const qs = reg ? `?registerNumber=${encodeURIComponent(reg)}` : '';
   let path = '';
   if (role === 'placement_officer') path = `/officer/students/${encodeURIComponent(id || reg)}/qualifications${qs}`;
   else if (role === 'admin') path = `/admin/students/${encodeURIComponent(id || reg)}/qualifications${qs}`;
   else if (role === 'staff') path = `/staff/students/${encodeURIComponent(id || reg)}/qualifications${qs}`;
-  else return [];
+  else return { qualifications: [] };
   try {
     const res = await api(path, { skipAuthRedirect: true, noRedirectOn401: true });
-    return (res?.success && Array.isArray(res.data)) ? res.data : [];
+    if (!res?.success || res.data == null) return { qualifications: [] };
+    // New shape: { cgpa, marks10th, marks12th, qualifications } from getStudQual4Placement
+    if (Array.isArray(res.data)) return { qualifications: res.data };
+    if (typeof res.data === 'object') {
+      return {
+        cgpa: res.data.cgpa ?? null,
+        marks10th: res.data.marks10th ?? null,
+        marks12th: res.data.marks12th ?? null,
+        ugMarks: res.data.ugMarks ?? res.data.marks12th ?? null,
+        backlogs: res.data.backlogs ?? null,
+        qualifications: Array.isArray(res.data.qualifications) ? res.data.qualifications : [],
+      };
+    }
+    return { qualifications: [] };
   } catch {
-    return [];
+    return { qualifications: [] };
   }
 }
 
@@ -1865,28 +1878,33 @@ async function openFinalYearStudent(reg) {
   if (seq !== finalYearProfileSeq) return;
 
   document.getElementById('fyProfileLoading')?.classList.add('d-none');
+  const qualPayload = quals && typeof quals === 'object' && !Array.isArray(quals) ? quals : { qualifications: quals };
   const mergedQuals = pickProfileQualifications(
-    quals,
+    qualPayload.qualifications,
     full?.qualifications,
     full?.academic?.qualifications,
     listRow?.qualifications,
     listRow?.academic?.qualifications
   );
+  const markOverlay = {
+    cgpa: qualPayload.cgpa ?? full?.cgpa ?? null,
+    marks10th: qualPayload.marks10th ?? full?.marks10th ?? null,
+    marks12th: qualPayload.marks12th ?? full?.marks12th ?? null,
+    ugMarks: qualPayload.ugMarks ?? qualPayload.marks12th ?? full?.ugMarks ?? full?.marks12th ?? null,
+    backlogs: qualPayload.backlogs ?? full?.backlogs ?? null,
+  };
 
-  if (full) {
+  if (full || mergedQuals.length || markOverlay.cgpa || markOverlay.marks10th || markOverlay.marks12th) {
     fillFinalYearProfileFields(buildDisplayProfile(listRow, {
-      ...full,
+      ...(full || {}),
+      ...markOverlay,
+      registerNumber: (full && full.registerNumber) || registerKey,
       qualifications: mergedQuals,
-      academic: { ...(full.academic || {}), ...(mergedQuals.length ? { qualifications: mergedQuals } : {}) },
-    }));
-    return;
-  }
-  if (mergedQuals.length) {
-    fillFinalYearProfileFields(buildDisplayProfile(listRow, {
-      registerNumber: registerKey,
-      admno: registerKey,
-      qualifications: mergedQuals,
-      academic: { qualifications: mergedQuals },
+      academic: {
+        ...((full && full.academic) || {}),
+        ...markOverlay,
+        ...(mergedQuals.length ? { qualifications: mergedQuals } : {}),
+      },
     }));
     return;
   }

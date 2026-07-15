@@ -1192,44 +1192,32 @@ final class OfficerDataService
             ? (int) $academic['backlogs']
             : (isset($mapped['backlogs']) ? (int) $mapped['backlogs'] : 0);
 
-        // Prefer stored academic qualifications; overlay AES when available.
         $qualifications = [];
         if (!empty($academic['qualifications']) && is_array($academic['qualifications'])) {
             $qualifications = $academic['qualifications'];
         }
+
+        // Academic marks/CGPA/edu rows always come from getStudQual4Placement.
         $aesApi = new AesApiService();
-        $qualFromPlacement = $aesApi->extractQualificationFromPlacement($placement);
-        if (!empty($qualFromPlacement['qualifications']) && is_array($qualFromPlacement['qualifications'])) {
-            $qualifications = $qualFromPlacement['qualifications'];
+        $qual = $this->fetchStudQual4PlacementProfile($aesApi, $placement, $register);
+        if ($qual === []) {
+            $qual = $aesApi->extractQualificationFromPlacement($placement);
         }
-        // Always fetch getStudQual4Placement when table rows are still missing.
-        if ($qualifications === [] && $register !== '') {
-            $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, $register);
-            if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
-                $qualAdmno = ctype_digit($register) ? $register : '';
+        if ($qual !== []) {
+            if (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
+                $cgpa = (float) $qual['cgpa'];
             }
-            if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
-                try {
-                    $qualParams = ['admno' => $qualAdmno, 'stud_admno' => $qualAdmno];
-                    $regNo = trim((string) ($placement['registerno'] ?? $placement['registerNumber'] ?? $register));
-                    if ($regNo !== '' && $regNo !== $qualAdmno) {
-                        $qualParams['registerno'] = $regNo;
-                        $qualParams['registerNumber'] = $regNo;
-                    }
-                    $qual = $aesApi->fetchStudentQualificationProfile($qualParams);
-                    $qualifications = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
-                    if ($cgpa <= 0 && !empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
-                        $cgpa = (float) $qual['cgpa'];
-                    }
-                    if ($marks10 <= 0 && !empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
-                        $marks10 = (float) $qual['marks10th'];
-                    }
-                    if ($marks12 <= 0 && !empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
-                        $marks12 = (float) $qual['marks12th'];
-                    }
-                } catch (\Throwable) {
-                    $qualifications = [];
-                }
+            if (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
+                $marks10 = (float) $qual['marks10th'];
+            }
+            if (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
+                $marks12 = (float) $qual['marks12th'];
+            }
+            if (isset($qual['backlogs'])) {
+                $backlogs = (int) $qual['backlogs'];
+            }
+            if (!empty($qual['qualifications']) && is_array($qual['qualifications'])) {
+                $qualifications = $qual['qualifications'];
             }
         }
 
@@ -1310,10 +1298,87 @@ final class OfficerDataService
     }
 
     /**
-     * Education qualification rows for the Open-profile modal (AES getStudQual4Placement).
+     * Always call AES getStudQual4Placement for marks / CGPA / education rows.
+     *
+     * @param array<string, mixed> $placement
+     * @return array<string, mixed>
+     */
+    private function fetchStudQual4PlacementProfile(AesApiService $aesApi, array $placement, string $register): array
+    {
+        $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, $register);
+        if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
+            $qualAdmno = ctype_digit($register) ? $register : '';
+        }
+        if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
+            return [];
+        }
+
+        try {
+            $qualParams = ['admno' => $qualAdmno, 'stud_admno' => $qualAdmno];
+            $regNo = trim((string) ($placement['registerno'] ?? $placement['registerNumber'] ?? $register));
+            if ($regNo !== '' && $regNo !== $qualAdmno) {
+                $qualParams['registerno'] = $regNo;
+                $qualParams['registerNumber'] = $regNo;
+            }
+
+            $qual = $aesApi->fetchStudentQualificationProfile($qualParams);
+
+            return is_array($qual) ? $qual : [];
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $overview
+     * @param array<string, mixed> $qual
+     * @return array<string, mixed>
+     */
+    private function applyQualProfileToOverview(array $overview, array $qual): array
+    {
+        if ($qual === []) {
+            return $overview;
+        }
+
+        if (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
+            $overview['cgpa'] = (float) $qual['cgpa'];
+        }
+        if (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
+            $overview['marks10th'] = (float) $qual['marks10th'];
+        }
+        if (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
+            $overview['marks12th'] = (float) $qual['marks12th'];
+            $overview['ugMarks'] = (float) $qual['marks12th'];
+        }
+        if (isset($qual['backlogs'])) {
+            $overview['backlogs'] = (int) $qual['backlogs'];
+        }
+        $quals = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
+        if ($quals !== []) {
+            $overview['qualifications'] = $quals;
+            $academic = is_array($overview['academic'] ?? null) ? $overview['academic'] : [];
+            $academic['qualifications'] = $quals;
+            if (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
+                $academic['cgpa'] = (float) $qual['cgpa'];
+            }
+            if (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
+                $academic['marks10th'] = (float) $qual['marks10th'];
+            }
+            if (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
+                $academic['marks12th'] = (float) $qual['marks12th'];
+                $academic['ugMarks'] = (float) $qual['marks12th'];
+            }
+            $overview['academic'] = $academic;
+        }
+
+        return $overview;
+    }
+
+    /**
+     * Education qualification profile for Open-profile modal (AES getStudQual4Placement).
      *
      * @param array<string, mixed> $ctx
-     * @return list<array<string, mixed>>
+     * @return array{cgpa:?float,marks10th:?float,marks12th:?float,ugMarks:?float,backlogs:?int,qualifications:list<array<string,mixed>>}
      */
     public function getEducationQualifications(string $studentRef, array $ctx, ?string $expectedRegister = null): array
     {
@@ -1357,8 +1422,35 @@ final class OfficerDataService
             ? array_values($academic['qualifications'])
             : [];
 
+        $empty = [
+            'cgpa' => null,
+            'marks10th' => null,
+            'marks12th' => null,
+            'ugMarks' => null,
+            'backlogs' => null,
+            'qualifications' => $storedQuals,
+        ];
+        if ((float) ($academic['cgpa'] ?? 0) > 0) {
+            $empty['cgpa'] = (float) $academic['cgpa'];
+        }
+        if ((float) ($academic['marks10th'] ?? 0) > 0) {
+            $empty['marks10th'] = (float) $academic['marks10th'];
+        }
+        if ((float) ($academic['marks12th'] ?? $academic['ugMarks'] ?? 0) > 0) {
+            $empty['marks12th'] = (float) ($academic['marks12th'] ?? $academic['ugMarks']);
+            $empty['ugMarks'] = $empty['marks12th'];
+        }
+        if (isset($academic['backlogs'])) {
+            $empty['backlogs'] = (int) $academic['backlogs'];
+        }
+
         $aesApi = new AesApiService();
-        $qualAdmno = '';
+        $placementHint = [
+            'admno' => $register,
+            'stud_admno' => (string) ($student['admno'] ?? $student['stud_admno'] ?? $register),
+            'registerNumber' => $register,
+            'registerno' => (string) ($student['registerno'] ?? ''),
+        ];
         foreach ([
             (string) ($expectedRegister ?? ''),
             (string) $studentRef,
@@ -1368,35 +1460,29 @@ final class OfficerDataService
         ] as $candidate) {
             $candidate = strtoupper(trim($candidate));
             if ($candidate !== '' && ctype_digit($candidate)) {
-                $qualAdmno = $candidate;
+                $placementHint['admno'] = $candidate;
+                $placementHint['stud_admno'] = $candidate;
                 break;
             }
         }
-        if ($qualAdmno === '') {
-            $qualAdmno = $aesApi->resolveQualificationAdmissionNumber(
-                [
-                    'admno' => $register,
-                    'stud_admno' => $register,
-                    'registerNumber' => $register,
-                ],
-                $register
-            );
-        }
-        if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
-            return $storedQuals;
+
+        $qual = $this->fetchStudQual4PlacementProfile($aesApi, $placementHint, $register);
+        if ($qual === []) {
+            return $empty;
         }
 
-        try {
-            $rows = $aesApi->fetchStudentQualificationTableRows([
-                'admno' => $qualAdmno,
-                'stud_admno' => $qualAdmno,
-            ]);
-        } catch (\Throwable) {
-            return $storedQuals;
-        }
+        $rows = is_array($qual['qualifications'] ?? null) ? array_values($qual['qualifications']) : [];
 
-        $rows = is_array($rows) ? array_values($rows) : [];
-        return $rows !== [] ? $rows : $storedQuals;
+        return [
+            'cgpa' => (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) ? (float) $qual['cgpa'] : $empty['cgpa'],
+            'marks10th' => (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) ? (float) $qual['marks10th'] : $empty['marks10th'],
+            'marks12th' => (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) ? (float) $qual['marks12th'] : $empty['marks12th'],
+            'ugMarks' => (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0)
+                ? (float) $qual['marks12th']
+                : $empty['ugMarks'],
+            'backlogs' => isset($qual['backlogs']) ? (int) $qual['backlogs'] : $empty['backlogs'],
+            'qualifications' => $rows !== [] ? $rows : $storedQuals,
+        ];
     }
 
     /**
@@ -1413,36 +1499,14 @@ final class OfficerDataService
         }
 
         $placement = $this->placementProfileForRegister($register);
+        $aesApi = new AesApiService();
+
         if ($placement === []) {
-            // Still try AES qualifications by admission number when info placement is empty.
-            $aesApi = new AesApiService();
-            if (ctype_digit($register)) {
-                try {
-                    $qual = $aesApi->fetchStudentQualificationProfile([
-                        'admno' => $register,
-                        'stud_admno' => $register,
-                    ]);
-                    $quals = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
-                    if ($quals !== []) {
-                        $overview['qualifications'] = $quals;
-                        $academic = is_array($overview['academic'] ?? null) ? $overview['academic'] : [];
-                        $academic['qualifications'] = $quals;
-                        $overview['academic'] = $academic;
-                    }
-                    if (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
-                        $overview['cgpa'] = (float) $qual['cgpa'];
-                    }
-                    if (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
-                        $overview['marks10th'] = (float) $qual['marks10th'];
-                    }
-                    if (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
-                        $overview['marks12th'] = (float) $qual['marks12th'];
-                        $overview['ugMarks'] = (float) $qual['marks12th'];
-                    }
-                } catch (\Throwable) {
-                    // Keep overview without AES quals.
-                }
-            }
+            // Still fetch getStudQual4Placement by admission number when info placement is empty.
+            $overview = $this->applyQualProfileToOverview(
+                $overview,
+                $this->fetchStudQual4PlacementProfile($aesApi, ['admno' => $register, 'stud_admno' => $register], $register)
+            );
 
             return $overview;
         }
@@ -1478,47 +1542,13 @@ final class OfficerDataService
             }
         }
 
-        $aesApi = new AesApiService();
-        $qual = $aesApi->extractQualificationFromPlacement($placement);
-        if ($qual === [] && $register !== '') {
-            $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($placement, $register);
-            if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
-                $qualAdmno = ctype_digit($register) ? $register : '';
-            }
-            if ($qualAdmno !== '' && ctype_digit($qualAdmno)) {
-                try {
-                    $qualParams = ['admno' => $qualAdmno, 'stud_admno' => $qualAdmno];
-                    $regNo = trim((string) ($placement['registerno'] ?? $placement['registerNumber'] ?? $register));
-                    if ($regNo !== '' && $regNo !== $qualAdmno) {
-                        $qualParams['registerno'] = $regNo;
-                        $qualParams['registerNumber'] = $regNo;
-                    }
-                    $qual = $aesApi->fetchStudentQualificationProfile($qualParams);
-                } catch (\Throwable) {
-                    $qual = [];
-                }
-            }
+        // Prefer live getStudQual4Placement over any marks cached on the placement record.
+        $qual = $this->fetchStudQual4PlacementProfile($aesApi, $placement, $register);
+        if ($qual === []) {
+            $qual = $aesApi->extractQualificationFromPlacement($placement);
         }
-        if ($qual !== []) {
-            $qualMapped = (new AesLoginService())->mapAesDetailsToUserFields($qual);
-            if (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0) {
-                $overview['cgpa'] = (float) $qualMapped['cgpa'];
-            }
-            if (!empty($qualMapped['marks10th']) && (float) $qualMapped['marks10th'] > 0) {
-                $overview['marks10th'] = (float) $qualMapped['marks10th'];
-            }
-            if (!empty($qualMapped['marks12th']) && (float) $qualMapped['marks12th'] > 0) {
-                $overview['marks12th'] = (float) $qualMapped['marks12th'];
-                $overview['ugMarks'] = (float) $qualMapped['marks12th'];
-            }
-            $quals = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
-            if ($quals !== []) {
-                $overview['qualifications'] = $quals;
-                $academic = is_array($overview['academic'] ?? null) ? $overview['academic'] : [];
-                $academic['qualifications'] = $quals;
-                $overview['academic'] = $academic;
-            }
-        }
+        $overview = $this->applyQualProfileToOverview($overview, $qual);
+
         if (isset($mapped['backlogs'])) {
             $overview['backlogs'] = (int) $mapped['backlogs'];
         }
