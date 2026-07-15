@@ -877,7 +877,7 @@ function filteredOverviewStudents() {
 
 function overviewStudentName(s) {
   const reg = String(s?.registerNumber || '').trim();
-  const name = String(s?.name || s?.displayName || '').trim();
+  const name = String(s?.displayName || s?.name || '').trim();
   if (!name) return '';
   if (reg && name.toLowerCase() === reg.toLowerCase()) return '';
   if (/^\d+$/.test(name)) return '';
@@ -1694,7 +1694,7 @@ function filteredFinalYearStudents(kind) {
 }
 
 function finalYearRowHtml(s) {
-  const name = esc(s.name || s.displayName || '—');
+  const name = esc(s.displayName || s.name || '—');
   const admno = esc(s.registerNumber || s.admno || '—');
   const dept = esc(s.departmentName || s.department || '—');
   const batch = esc(s.classBatch || '—');

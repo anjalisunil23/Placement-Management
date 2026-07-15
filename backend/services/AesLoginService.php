@@ -1388,8 +1388,8 @@ final class AesLoginService
     {
         $mapped = [
             'name'           => trim($this->pickInsensitive($aesDetails, [
-                    'name', 'full_name', 'fullName', 'fullname', 'student_name', 'studentName', 'stu_name', 'sname',
-                    'stud_name', 'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name', 'display_name',
+                    'stud_name', 'student_name', 'studentName', 'student_full_name', 'full_name', 'fullName', 'fullname',
+                    'stu_name', 'sname', 'name', 'staff_name', 'staffName', 'emp_name', 'employee_name', 'faculty_name', 'display_name',
                     'studname', 'StudentName', 'nm', 'stu_nm', 'stuNm', 'uname', 'stuname',
                 ]))
                 ?: trim($this->pickInsensitive($aesDetails, ['fname', 'first_name', 'firstName', 'firstname', 'stu_fname']) . ' ' . $this->pickInsensitive($aesDetails, ['lname', 'last_name', 'lastName', 'lastname', 'stu_lname'])),

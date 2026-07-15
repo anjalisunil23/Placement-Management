@@ -994,7 +994,8 @@ final class OfficerDataService
         }
         $register = $admno;
 
-        $name = trim((string) ($record['name'] ?? $record['stud_name'] ?? ''));
+        // getStudInfo4Placement is authoritative for the student's full name.
+        $name = trim((string) ($record['stud_name'] ?? $record['name'] ?? ''));
         $photoUrl = trim((string) ($record['photoUrl'] ?? $record['stud_photo'] ?? ''));
         $classBatch = trim((string) ($record['classBatch'] ?? $record['stud_class'] ?? ''));
         $year = trim((string) ($record['year'] ?? $record['stud_year'] ?? ''));
@@ -1076,8 +1077,11 @@ final class OfficerDataService
             $user = (new UserModel())->findById((string) $local['userId']);
         }
         $row = $this->enrichStudentListRow($row, is_array($local) ? $local : $row, $user, false);
-        if (($row['displayName'] ?? '') === '' && $name !== '') {
+        if ($this->isUsablePersonName($name, $register)) {
             $row['displayName'] = $name;
+            $userOut = is_array($row['user'] ?? null) ? $row['user'] : [];
+            $userOut['name'] = $name;
+            $row['user'] = $userOut;
         }
 
         return $row;
@@ -1152,6 +1156,12 @@ final class OfficerDataService
         if ($placement === [] && $aesCtx['placement'] !== []) {
             $placement = $aesCtx['placement'];
             $mapped = $aesCtx['mapped'];
+        }
+        if ($placement !== [] && $this->aesPlacementMatchesRegister($placement, $mapped, $register)) {
+            $aesFullName = trim((string) ($placement['stud_name'] ?? $placement['name'] ?? ''));
+            if ($this->isUsablePersonName($aesFullName, $register)) {
+                $displayName = $aesFullName;
+            }
         }
 
         $contact = $this->contactFieldsFromSources($user, $personal, $placement, $mapped);
@@ -1438,8 +1448,7 @@ final class OfficerDataService
         }
 
         $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
-        $aesReg = strtoupper(trim((string) ($mapped['registerNumber'] ?? '')));
-        $skipIdentityMerge = ($aesReg !== '' && $aesReg !== $register);
+        $skipIdentityMerge = !$this->aesPlacementMatchesRegister($placement, $mapped, $register);
 
         if (!$skipIdentityMerge) {
             $name = trim((string) ($mapped['name'] ?? ''));
@@ -1628,26 +1637,48 @@ final class OfficerDataService
         }
 
         $mapped = (new AesLoginService())->mapAesDetailsToUserFields($placement);
-        $aesReg = strtoupper(trim((string) ($mapped['registerNumber'] ?? '')));
-        $aesAdmno = strtoupper(trim((string) (
-            $placement['stud_admno']
-            ?? $placement['admno']
-            ?? $mapped['admno']
-            ?? ''
-        )));
-        // Allow university reg vs admission no mismatch (e.g. AJC22MCA-I003 vs 14113).
-        if (
-            $aesReg !== ''
-            && $aesReg !== $register
-            && $aesAdmno !== ''
-            && $aesAdmno !== $register
-            && !str_ends_with($aesReg, $register)
-            && !str_ends_with($register, $aesReg)
-        ) {
+        if (!$this->aesPlacementMatchesRegister($placement, $mapped, $register)) {
             return ['placement' => [], 'mapped' => [], 'register' => $register];
         }
 
         return ['placement' => $placement, 'mapped' => $mapped, 'register' => $register];
+    }
+
+    /**
+     * Match either the AES admission number or university register number.
+     *
+     * @param array<string, mixed> $placement
+     * @param array<string, mixed> $mapped
+     */
+    private function aesPlacementMatchesRegister(array $placement, array $mapped, string $register): bool
+    {
+        $register = strtoupper(trim($register));
+        if ($register === '') {
+            return false;
+        }
+
+        foreach ([
+            $placement['stud_admno'] ?? '',
+            $placement['admno'] ?? '',
+            $placement['registerno'] ?? '',
+            $placement['registerNumber'] ?? '',
+            $mapped['registerNumber'] ?? '',
+            $mapped['admno'] ?? '',
+        ] as $candidate) {
+            $candidate = strtoupper(trim((string) $candidate));
+            if (
+                $candidate !== ''
+                && (
+                    $candidate === $register
+                    || str_ends_with($candidate, $register)
+                    || str_ends_with($register, $candidate)
+                )
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2571,7 +2602,7 @@ final class OfficerDataService
             ?? $placement['registerNumber']
             ?? $register
         )));
-        $name = trim((string) ($placement['name'] ?? $placement['stud_name'] ?? ''));
+        $name = trim((string) ($placement['stud_name'] ?? $placement['name'] ?? ''));
         $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
         $cgpa = isset($placement['cgpa']) && is_numeric($placement['cgpa']) ? (float) $placement['cgpa'] : 0.0;
         $backlogs = isset($placement['backlogs'])
