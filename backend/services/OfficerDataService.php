@@ -1122,6 +1122,12 @@ final class OfficerDataService
             ?? $record['programme']
             ?? ''
         ));
+        $classCode = DepartmentProgrammeCatalog::normalizeCode($classBatch);
+        if (str_contains($classCode, 'MCAINT') || str_contains($classCode, 'INMCA')) {
+            $programme = 'INMCA';
+        } else {
+            $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        }
         $cgpa = isset($record['cgpa']) && is_numeric($record['cgpa']) ? (float) $record['cgpa'] : null;
         $backlogs = isset($record['backlogs'])
             ? (int) $record['backlogs']

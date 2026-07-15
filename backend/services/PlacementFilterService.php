@@ -260,6 +260,38 @@ final class PlacementFilterService
         $this->appendStudInfoRowsFromAesProfile(Security::getSessionAesProfile(), $rows, $seen);
 
         $api = new AesApiService();
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+        if ($deptAesId !== '') {
+            try {
+                foreach ($api->fetchAllStudInfo4Placement(['stud_deptcode' => $deptAesId]) as $record) {
+                    $recordDept = trim((string) ($record['stud_deptcode'] ?? ''));
+                    if ($recordDept !== '' && strcasecmp($recordDept, $deptAesId) !== 0) {
+                        continue;
+                    }
+                    $batch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+                    $course = $this->normalizeProgrammeForClass(
+                        (string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? ''),
+                        $batch
+                    );
+                    $branch = trim((string) ($record['stud_branch'] ?? ''));
+                    if ($course === '' && $batch === '') {
+                        continue;
+                    }
+                    $row = [
+                        'stud_course' => $course,
+                        'stud_branch' => $branch !== '' ? $branch : 'Regular',
+                        'stud_class' => $batch,
+                    ];
+                    $key = strtolower(implode('|', $row));
+                    if (!isset($seen[$key])) {
+                        $seen[$key] = true;
+                        $rows[] = $row;
+                    }
+                }
+            } catch (\Throwable) {
+                // Continue with session/local rows when the directory is unavailable.
+            }
+        }
         $aesCalls = 0;
         $maxAesCalls = 800;
 
@@ -332,7 +364,10 @@ final class PlacementFilterService
 
         $aesCalls++;
         $aesRow = $api->fetchStudInfoPlacementRow($register);
-        $course = trim($aesRow['stud_course']);
+        $course = $this->normalizeProgrammeForClass(
+            (string) $aesRow['stud_course'],
+            (string) $aesRow['stud_class']
+        );
         $branch = trim($aesRow['stud_branch']);
         $batch = trim($aesRow['stud_class']);
 
@@ -342,9 +377,19 @@ final class PlacementFilterService
 
         return [
             'stud_course' => $course,
-            'stud_branch' => $branch,
+            'stud_branch' => $branch !== '' ? $branch : 'Regular',
             'stud_class'  => $batch,
         ];
+    }
+
+    private function normalizeProgrammeForClass(string $course, string $batch): string
+    {
+        $classCode = DepartmentProgrammeCatalog::normalizeCode($batch);
+        if (str_contains($classCode, 'MCAINT') || str_contains($classCode, 'INMCA')) {
+            return 'INMCA';
+        }
+
+        return DepartmentProgrammeCatalog::resolveProgrammeCode($course);
     }
 
     /**
@@ -376,10 +421,14 @@ final class PlacementFilterService
         }
 
         if ($this->isStudInfoFilterRow($node)) {
+            $batch = trim((string) ($node['stud_class'] ?? $node['classBatch'] ?? $node['batch'] ?? ''));
             $row = [
-                'stud_course' => trim((string) ($node['stud_course'] ?? $node['stud_cource_short'] ?? $node['course'] ?? '')),
-                'stud_branch' => trim((string) ($node['stud_branch'] ?? $node['branch'] ?? '')),
-                'stud_class'  => trim((string) ($node['stud_class'] ?? $node['classBatch'] ?? $node['batch'] ?? '')),
+                'stud_course' => $this->normalizeProgrammeForClass(
+                    (string) ($node['stud_course'] ?? $node['stud_cource_short'] ?? $node['course'] ?? ''),
+                    $batch
+                ),
+                'stud_branch' => trim((string) ($node['stud_branch'] ?? $node['branch'] ?? '')) ?: 'Regular',
+                'stud_class'  => $batch,
             ];
             if ($row['stud_course'] !== '' || $row['stud_class'] !== '') {
                 $key = strtolower(implode('|', $row));

@@ -27,14 +27,14 @@
         <div class="card-surface p-3 p-md-4 mb-3">
           <div class="row g-2 align-items-end">
             <div class="col-6 col-md-3">
-              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterProgram">Program</label>
-              <select class="form-select form-select-sm" id="filterProgram">
-                <option value="">All programs</option>
+              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterDepartment">Department</label>
+              <select class="form-select form-select-sm" id="filterDepartment">
+                <option value="">Select department</option>
               </select>
             </div>
             <div class="col-6 col-md-3">
-              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterBranch">Branch</label>
-              <select class="form-select form-select-sm" id="filterBranch">
+              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterProgram">Branch</label>
+              <select class="form-select form-select-sm" id="filterProgram">
                 <option value="">All branches</option>
               </select>
             </div>
@@ -86,7 +86,7 @@
                   <th class="registry-sortable" data-sort="admissionNo" data-label="Admission No">Admission No</th>
                   <th class="registry-sortable" data-sort="contact" data-label="Contact">Contact</th>
                   <th class="registry-sortable" data-sort="departmentName" data-label="Department">Department</th>
-                  <th class="registry-sortable" data-sort="program" data-label="Programme">Programme</th>
+                  <th class="registry-sortable" data-sort="program" data-label="Branch">Branch</th>
                   <th class="registry-sortable" data-sort="batch" data-label="Class">Class</th>
                   <th class="registry-sortable" data-sort="employer" data-label="Name of the Employer">Name of the
                     Employer</th>
@@ -398,8 +398,8 @@
     let page = 1;
     let pageSize = 25;
     let searchDebounce = null;
+    let filterDepartmentId = '';
     let filterProgram = '';
-    let filterBranch = '';
     let filterBatch = '';
     let sortKey = '';
     let sortDir = 'asc';
@@ -455,8 +455,8 @@
 
     function currentFilters() {
       return {
+        departmentId: filterDepartmentId,
         program: filterProgram,
-        branch: filterBranch,
         batch: filterBatch,
         type: document.getElementById('filterType')?.value || '',
         q: document.getElementById('tableSearch')?.value?.trim() || '',
@@ -475,40 +475,39 @@
     async function loadPlacementFilters() {
       if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
       const data = await StaffApi.fetchPlacementFilters({
+        departmentId: filterDepartmentId,
         program: filterProgram,
-        branch: filterBranch,
       });
       if (!data) return;
 
-      fillSelect('filterProgram', data.programs || [], 'All programs', filterProgram);
-      fillSelect('filterBranch', data.branches || [], 'All branches', filterBranch);
+      fillDepartmentSelect('filterDepartment', data.departments || [], 'Select department');
+      fillSelect('filterProgram', data.programs || [], 'All branches', filterProgram);
       fillSelect('filterBatch', data.batches || [], 'All batches', filterBatch);
 
+      filterDepartmentId = document.getElementById('filterDepartment')?.value || '';
       filterProgram = document.getElementById('filterProgram')?.value || '';
-      filterBranch = document.getElementById('filterBranch')?.value || '';
       filterBatch = document.getElementById('filterBatch')?.value || '';
 
-      const branchEl = document.getElementById('filterBranch');
+      const branchEl = document.getElementById('filterProgram');
       const batchEl = document.getElementById('filterBatch');
-      if (branchEl) branchEl.disabled = !filterProgram;
+      if (branchEl) branchEl.disabled = !filterDepartmentId;
       if (batchEl) batchEl.disabled = !filterProgram;
     }
 
-    function fillDepartmentSelect(id, departments, field, allLabel) {
+    function fillDepartmentSelect(id, departments, allLabel) {
       const el = document.getElementById(id);
       if (!el) return;
-      const current = el.value;
+      const current = filterDepartmentId || el.value;
       const options = (departments || []).map(d => {
-        if (field === 'code') {
-          const code = String(d.code || '').trim();
-          const name = String(d.name || '').trim();
-          return code ? { value: code, label: name ? `${code} (${name})` : code } : null;
-        }
+        const id = String(d.id || '').trim();
+        const code = String(d.code || '').trim();
         const name = String(d.name || '').trim();
-        return name ? { value: name, label: name } : null;
+        return id ? { value: id, label: name || code || id } : null;
       }).filter(Boolean);
       el.innerHTML = `<option value="">${allLabel}</option>` + options.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
       if (current && [...el.options].some(o => o.value === current)) el.value = current;
+      else if (options.length === 1) el.value = options[0].value;
+      else el.value = '';
     }
 
     function applyClientFilter() {
@@ -544,9 +543,9 @@
         : 'No entries to show';
 
       if (!slice.length) {
-        const needClass = !filterProgram || !filterBranch || !filterBatch;
+        const needClass = !filterDepartmentId || !filterProgram || !filterBatch;
         tbody.innerHTML = needClass
-          ? '<tr><td colspan="13" class="text-muted-2 p-4 text-center">Select program, branch, and batch to list all students in the class.</td></tr>'
+          ? '<tr><td colspan="13" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>'
           : '<tr><td colspan="13" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
         return;
       }
@@ -721,12 +720,12 @@
 
     async function loadRegistry() {
       const tbody = document.getElementById('registryRows');
-      if (!filterProgram || !filterBranch || !filterBatch) {
+      if (!filterDepartmentId || !filterProgram || !filterBatch) {
         allRows = [];
         filteredRows = [];
         document.getElementById('rowCount').textContent = '';
         document.getElementById('pageInfo').textContent = '';
-        tbody.innerHTML = '<tr><td colspan="13" class="text-muted-2 p-4 text-center">Select program, branch, and batch to list all students in the class.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>';
         return;
       }
       tbody.innerHTML = '<tr><td colspan="13" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
@@ -740,16 +739,16 @@
     }
 
     async function onScopeFilterChange(changed) {
-      if (changed === 'filterProgram') {
-        filterProgram = document.getElementById('filterProgram')?.value || '';
-        filterBranch = '';
+      if (changed === 'filterDepartment') {
+        filterDepartmentId = document.getElementById('filterDepartment')?.value || '';
+        filterProgram = '';
         filterBatch = '';
-        const branchEl = document.getElementById('filterBranch');
+        const programEl = document.getElementById('filterProgram');
         const batchEl = document.getElementById('filterBatch');
-        if (branchEl) branchEl.value = '';
+        if (programEl) programEl.value = '';
         if (batchEl) batchEl.value = '';
-      } else if (changed === 'filterBranch') {
-        filterBranch = document.getElementById('filterBranch')?.value || '';
+      } else if (changed === 'filterProgram') {
+        filterProgram = document.getElementById('filterProgram')?.value || '';
         filterBatch = '';
         const batchEl = document.getElementById('filterBatch');
         if (batchEl) batchEl.value = '';
@@ -778,7 +777,7 @@
       }
     }
 
-    ['filterProgram', 'filterBranch', 'filterBatch'].forEach(id => {
+    ['filterDepartment', 'filterProgram', 'filterBatch'].forEach(id => {
       document.getElementById(id)?.addEventListener('change', () => {
         onScopeFilterChange(id).catch(() => loadRegistry());
       });
