@@ -9,6 +9,7 @@ use PMS\Models\AlumniModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\JobModel;
+use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Utils\DocumentHelper;
 
@@ -31,6 +32,17 @@ final class JobFeedService
             return $this->listForAdmin();
         }
         return $this->listPosts($this->departmentCodes($ctx['department']), null, false, null);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function listForStaff(array $user): array
+    {
+        $staff = (new StaffModel())->findByUserId((string) $user['_id']);
+        if (!$staff || empty($staff['departmentId'])) {
+            return [];
+        }
+        $department = (new DepartmentModel())->findById((string) $staff['departmentId']);
+        return $this->listPosts($this->departmentCodes($department), null, false, null);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -117,6 +129,9 @@ final class JobFeedService
             'companyName' => $companyName,
             'title'       => trim((string) ($job['title'] ?? 'Job')),
             'description' => trim((string) ($job['description'] ?? '')),
+            'imageUrl'    => trim((string) ($job['imageUrl'] ?? '')),
+            'posterUrl'   => trim((string) ($job['posterUrl'] ?? $job['imageUrl'] ?? '')),
+            'posterType'  => trim((string) ($job['posterType'] ?? (($job['imageUrl'] ?? '') !== '' ? 'image' : ''))),
             'jobType'     => trim((string) ($job['jobType'] ?? 'Full-time')),
             'package'     => trim((string) ($job['package'] ?? '')),
             'location'    => trim((string) ($job['location'] ?? '')),
@@ -141,6 +156,9 @@ final class JobFeedService
             'companyName' => trim((string) ($post['company'] ?? 'Company')),
             'title'       => trim((string) ($post['title'] ?? 'Job')),
             'description' => trim((string) ($post['description'] ?? '')),
+            'imageUrl'    => trim((string) ($post['imageUrl'] ?? '')),
+            'posterUrl'   => trim((string) ($post['posterUrl'] ?? $post['imageUrl'] ?? '')),
+            'posterType'  => trim((string) ($post['posterType'] ?? (($post['imageUrl'] ?? '') !== '' ? 'image' : ''))),
             'jobType'     => trim((string) ($post['jobType'] ?? 'Full-time')),
             'package'     => trim((string) ($post['package'] ?? '')),
             'location'    => trim((string) ($post['location'] ?? '')),

@@ -287,6 +287,7 @@ $routes = [
     ['GET',  '/staff/profile',                    [StaffController::class, 'profile']],
     ['PUT',  '/staff/profile',                    [StaffController::class, 'updateProfile']],
     ['GET',  '/staff/dashboard',                  [StaffController::class, 'dashboard']],
+    ['GET',  '/staff/jobs',                       [JobFeedController::class, 'staff']],
     ['GET',  '/staff/recommendations',            [StaffController::class, 'listRecommendations']],
     ['POST', '/staff/recommendations',            [StaffController::class, 'createRecommendation']],
     ['GET',  '/staff/drives',                     [StaffController::class, 'listDrives']],

@@ -67,7 +67,7 @@ const NAV = [
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
   { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Placement details", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
-  { href: "job-posts.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['admin', 'placement_officer', 'student', 'alumni'], alumniSeeking: true },
+  { href: "job-posts.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['student'], studentOnly: true },
   { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin', 'placement_officer'] },
@@ -91,7 +91,16 @@ const NAV = [
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['staff'] },
 
   { section: "Account", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'] },
-  { href: "notifications.html", icon: "bi-bell-fill", label: "Notifications", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'] },
+  {
+    group: "notifications",
+    href: "notifications.html",
+    icon: "bi-bell-fill",
+    label: "Notifications",
+    roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'],
+    children: [
+      { href: "job-posts.html", label: "Job Posts", roles: ['admin', 'placement_officer', 'staff', 'alumni'], alumniSeeking: true },
+    ],
+  },
   { href: "settings.html", icon: "bi-gear-fill", label: "Settings", roles: ['admin', 'placement_officer', 'staff', 'alumni', 'company'] },
   { href: "settings.html", icon: "bi-person-badge", label: "Profile & Resumes", roles: ['student'], studentOnly: true },
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['admin', 'placement_officer', 'alumni'] },
@@ -415,7 +424,7 @@ function renderNavEntry(n, active, role) {
       <div class="nav-group ${open ? 'open' : ''}" data-nav-group="${n.group}">
         <div class="nav-group-row">
           ${n.href
-        ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span></a>`
+        ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span>${n.href === 'notifications.html' ? '<span class="badge-soft danger nav-badge ms-auto" style="display:none;font-size:.65rem;padding:.15rem .45rem">0</span>' : ''}</a>`
         : `<button type="button" class="nav-item nav-group-toggle ${open ? 'active' : ''}" aria-expanded="${open}"><i class="bi ${n.icon}"></i><span>${n.label}</span></button>`}
           <button type="button" class="nav-group-chevron-btn" aria-label="Toggle ${n.label}"><i class="bi bi-chevron-down nav-chevron"></i></button>
         </div>

@@ -285,6 +285,18 @@ final class CompanyController
         }
         $input['eligibility'] = $eligibility;
 
+        $savedPosterPath = '';
+        $posterFile = $_FILES['poster'] ?? $_FILES['image'] ?? null;
+        if (is_array($posterFile) && ($posterFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $savedPoster = $this->storeJobPoster($posterFile, 'company_' . (string) $company['_id']);
+            $input['posterUrl'] = $savedPoster['url'];
+            $input['posterType'] = $savedPoster['type'];
+            if ($savedPoster['type'] === 'image') {
+                $input['imageUrl'] = $savedPoster['url'];
+            }
+            $savedPosterPath = $savedPoster['path'];
+        }
+
         if (isset($_FILES['jd'])) {
             $config = require dirname(__DIR__) . '/config/app.php';
             $err = Security::validateUploadedFile(
@@ -304,8 +316,48 @@ final class CompanyController
             $input['jdFile'] = $jdPath;
         }
 
-        $id = (new JobModel())->createJob($input);
+        try {
+            $id = (new JobModel())->createJob($input);
+        } catch (\Throwable $e) {
+            if ($savedPosterPath !== '' && is_file($savedPosterPath)) {
+                @unlink($savedPosterPath);
+            }
+            throw $e;
+        }
         Response::success(['id' => $id], 'Job posted.', 201);
+    }
+
+    /**
+     * @param array<string, mixed> $file
+     * @return array{url:string,path:string,type:string}
+     */
+    private function storeJobPoster(array $file, string $prefix): array
+    {
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $error = Security::validateUploadedFile(
+            $file,
+            (int) ($config['uploads']['max_job_poster'] ?? 10 * 1024 * 1024),
+            ['jpg', 'jpeg', 'png', 'webp', 'pdf']
+        );
+        if ($error) {
+            Response::error($error, 400);
+        }
+        $dir = (string) ($config['uploads']['job_poster_dir'] ?? (dirname(__DIR__, 2) . '/uploads/job-posters'));
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            Response::error('Could not create the job poster directory.', 500);
+        }
+        $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $filename = preg_replace('/[^a-zA-Z0-9_-]/', '_', $prefix)
+            . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        if (!move_uploaded_file((string) $file['tmp_name'], $path)) {
+            Response::error('Failed to save the job poster.', 500);
+        }
+        return [
+            'url' => '/uploads/job-posters/' . $filename,
+            'path' => $path,
+            'type' => $ext === 'pdf' ? 'pdf' : 'image',
+        ];
     }
 
     /** GET /api/company/jobs */

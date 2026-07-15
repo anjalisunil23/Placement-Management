@@ -23,6 +23,12 @@ final class JobFeedController
         Response::success((new JobFeedService())->listForOfficer($user));
     }
 
+    public function staff(): void
+    {
+        $user = RBACMiddleware::requireRoles(['staff']);
+        Response::success((new JobFeedService())->listForStaff($user));
+    }
+
     public function student(): void
     {
         $user = RBACMiddleware::requireStudent();

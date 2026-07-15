@@ -65,6 +65,8 @@ return [
         'self_placement_dir' => $rootPath . '/uploads/self_placement',
         'alumni_employment_dir' => $rootPath . '/uploads/alumni_employment',
         'photo_dir'  => $rootPath . '/uploads/photos',
+        'job_poster_dir' => $rootPath . '/uploads/job-posters',
+        'max_job_poster' => (int) ($_ENV['MAX_JOB_POSTER_SIZE'] ?? 10485760),
     ],
     'cors' => [
         'allowed_origins' => array_filter(array_map(

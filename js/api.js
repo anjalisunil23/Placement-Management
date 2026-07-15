@@ -392,7 +392,7 @@ const PAGE_PERMS = {
   'dashboard.html':     ROLES,
   'analytics.html':     ['admin','placement_officer'],
   'drives.html':        ['admin','placement_officer','student','alumni','staff'],
-  'job-posts.html':     ['admin','placement_officer','student','alumni'],
+  'job-posts.html':     ['admin','placement_officer','student','staff','alumni'],
   'create-drive.html':  ['admin','placement_officer'],
   'tracking.html':      ['admin','placement_officer'],
   'students.html':      ['admin','placement_officer','staff'],
@@ -427,7 +427,7 @@ const PAGE_PERMS = {
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
-const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-placements.html', 'drives.html', 'students.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html'];
 
 /** Placement Cell guidelines version students must accept on first login. */
