@@ -1217,7 +1217,11 @@ final class OfficerDataService
                 $backlogs = (int) $qual['backlogs'];
             }
             if (!empty($qual['qualifications']) && is_array($qual['qualifications'])) {
-                $qualifications = $qual['qualifications'];
+                $qualifications = $this->realEducationQualificationRows($qual['qualifications']);
+            }
+            // Keep the profile education table when AES returns marks only (no edu rows).
+            if ($qualifications === [] && !empty($academic['qualifications']) && is_array($academic['qualifications'])) {
+                $qualifications = $this->realEducationQualificationRows($academic['qualifications']);
             }
         }
 
@@ -1298,6 +1302,40 @@ final class OfficerDataService
     }
 
     /**
+     * Drop fabricated SSLC/HSC/CGPA rows (built from top-level marks) — keep real profile edu rows.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    private function realEducationQualificationRows(array $rows): array
+    {
+        $out = [];
+        foreach ($rows as $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            $label = strtoupper(trim((string) ($q['qualification'] ?? '')));
+            $institution = trim((string) ($q['institution'] ?? $q['instname'] ?? ''));
+            $monthYear = trim((string) ($q['monthYear'] ?? $q['monthyear'] ?? ''));
+            $isSynthetic = $institution === ''
+                && $monthYear === ''
+                && (
+                    $label === 'SSLC / 10TH'
+                    || $label === 'HSC / 12TH'
+                    || $label === 'CGPA'
+                    || preg_match('/^SSLC\s*\/\s*10TH$/', $label) === 1
+                    || preg_match('/^HSC\s*\/\s*12TH$/', $label) === 1
+                );
+            if ($isSynthetic) {
+                continue;
+            }
+            $out[] = $q;
+        }
+
+        return $out;
+    }
+
+    /**
      * Always call AES getStudQual4Placement for marks / CGPA / education rows.
      *
      * @param array<string, mixed> $placement
@@ -1322,8 +1360,14 @@ final class OfficerDataService
             }
 
             $qual = $aesApi->fetchStudentQualificationProfile($qualParams);
+            if (!is_array($qual) || $qual === []) {
+                return [];
+            }
+            if (!empty($qual['qualifications']) && is_array($qual['qualifications'])) {
+                $qual['qualifications'] = $this->realEducationQualificationRows($qual['qualifications']);
+            }
 
-            return is_array($qual) ? $qual : [];
+            return $qual;
         } catch (\Throwable) {
             return [];
         }
@@ -1418,9 +1462,11 @@ final class OfficerDataService
             ?? $studentRef
         )));
         $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
-        $storedQuals = (!empty($academic['qualifications']) && is_array($academic['qualifications']))
-            ? array_values($academic['qualifications'])
-            : [];
+        $storedQuals = $this->realEducationQualificationRows(
+            (!empty($academic['qualifications']) && is_array($academic['qualifications']))
+                ? array_values($academic['qualifications'])
+                : []
+        );
 
         $empty = [
             'cgpa' => null,
@@ -1468,10 +1514,15 @@ final class OfficerDataService
 
         $qual = $this->fetchStudQual4PlacementProfile($aesApi, $placementHint, $register);
         if ($qual === []) {
+            // Fall back to the same education table stored on the student profile.
             return $empty;
         }
 
-        $rows = is_array($qual['qualifications'] ?? null) ? array_values($qual['qualifications']) : [];
+        $rows = $this->realEducationQualificationRows(
+            is_array($qual['qualifications'] ?? null) ? array_values($qual['qualifications']) : []
+        );
+        // Prefer the live AES edu table when present; otherwise keep profile table rows.
+        $tableRows = $rows !== [] ? $rows : $storedQuals;
 
         return [
             'cgpa' => (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) ? (float) $qual['cgpa'] : $empty['cgpa'],
@@ -1481,7 +1532,7 @@ final class OfficerDataService
                 ? (float) $qual['marks12th']
                 : $empty['ugMarks'],
             'backlogs' => isset($qual['backlogs']) ? (int) $qual['backlogs'] : $empty['backlogs'],
-            'qualifications' => $rows !== [] ? $rows : $storedQuals,
+            'qualifications' => $tableRows,
         ];
     }
 

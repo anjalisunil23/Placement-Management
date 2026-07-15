@@ -76,7 +76,8 @@ if ($qualRaw === []) {
     pass('getStudQual4Placement returned qualification payload');
     $qualNorm = $api->normalizeQualificationRecord($qualRaw);
     if (empty($qualNorm['qualifications'])) {
-        fail($failures, 'normalizeQualificationRecord missing table rows from qual payload');
+        // Marks-only AES payloads no longer invent SSLC/HSC/CGPA table rows.
+        pass('normalizeQualificationRecord has no edu table rows (marks-only OK)');
     } else {
         pass('qual table rows count=' . count($qualNorm['qualifications']));
     }
@@ -97,6 +98,8 @@ if ($qualRaw === [] && $qualProfile === []) {
     pass('fetchStudentQualificationProfile empty when AES qual API empty');
 } elseif (!empty($qualProfile['qualifications'])) {
     pass('fetchStudentQualificationProfile qualifications count=' . count($qualProfile['qualifications']));
+} elseif (!empty($qualProfile['cgpa']) || !empty($qualProfile['marks10th']) || !empty($qualProfile['marks12th'])) {
+    pass('fetchStudentQualificationProfile marks/CGPA without inventing edu table rows');
 } else {
     fail($failures, 'qual profile missing qualifications when raw payload was non-empty');
 }

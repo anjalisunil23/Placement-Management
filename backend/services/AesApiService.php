@@ -923,12 +923,11 @@ final class AesApiService
         }
 
         $normalized = $this->normalizePlacementStudentRecord($record);
+        // Use only real AES edu / qualification rows — never synthesize SSLC/HSC/CGPA
+        // tiles from top-level marks (those belong as scalar fields, not table rows).
         $qualifications = !empty($normalized['qualifications']) && is_array($normalized['qualifications'])
             ? $normalized['qualifications']
             : $this->parseEducationQualifications($normalized);
-        if ($qualifications === []) {
-            $qualifications = $this->buildQualificationTableRowsFromMarks($normalized);
-        }
         if ($qualifications !== []) {
             $normalized = $this->applySchoolMarksFromQualificationRows($normalized, $qualifications);
             $normalized['qualifications'] = $qualifications;
