@@ -118,7 +118,10 @@ class AlumniReferralModel extends BaseModel
             return true;
         }
 
-        return $this->update($id, $patch);
+        if ($this->update($id, $patch)) {
+            return true;
+        }
+        return $this->findById($id) !== null;
     }
 
     public function deleteReferral(string $id): bool

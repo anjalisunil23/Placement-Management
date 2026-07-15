@@ -114,7 +114,11 @@ class RecommendationModel extends BaseModel
             return true;
         }
 
-        return $this->update($id, $patch);
+        // MySQL may report 0 changed rows when the JSON payload is unchanged.
+        if ($this->update($id, $patch)) {
+            return true;
+        }
+        return $this->findById($id) !== null;
     }
 
     public function deleteRecommendation(string $id): bool

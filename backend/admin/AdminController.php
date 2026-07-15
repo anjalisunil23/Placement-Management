@@ -1328,7 +1328,7 @@ final class AdminController
     /** PUT /api/admin/recommendations/{id}/status */
     public function updateRecommendationStatus(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $status = (string) ($input['status'] ?? '');
         if (!(new RecommendationModel())->updateStatus($id, $status)) {
@@ -1340,7 +1340,7 @@ final class AdminController
     /** PUT /api/admin/recommendations/{id} */
     public function updateRecommendation(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         if (!(new RecommendationModel())->updateRecommendation($id, $input)) {
             Response::error('Recommendation not found or invalid data.', 422);
@@ -1351,7 +1351,7 @@ final class AdminController
     /** DELETE /api/admin/recommendations/{id} */
     public function deleteRecommendation(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         if (!(new RecommendationModel())->deleteRecommendation($id)) {
             Response::notFound('Recommendation not found.');
         }
@@ -1421,7 +1421,7 @@ final class AdminController
     /** PUT /api/admin/alumni-referrals/{id}/status */
     public function updateAlumniReferralStatus(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         $status = (string) ($input['status'] ?? '');
         if (!(new AlumniReferralModel())->updateStatus($id, $status)) {
@@ -1433,7 +1433,7 @@ final class AdminController
     /** PUT /api/admin/alumni-referrals/{id} */
     public function updateAlumniReferral(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
         if (!(new AlumniReferralModel())->updateReferral($id, $input)) {
             Response::error('Alumni recommendation not found or invalid data.', 422);
@@ -1444,7 +1444,7 @@ final class AdminController
     /** DELETE /api/admin/alumni-referrals/{id} */
     public function deleteAlumniReferral(string $id): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementOfficer();
         if (!(new AlumniReferralModel())->deleteReferral($id)) {
             Response::notFound('Alumni recommendation not found.');
         }
