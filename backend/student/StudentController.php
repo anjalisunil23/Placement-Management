@@ -167,6 +167,7 @@ final class StudentController
         (string) ($profile['registerNumber'] ?? ''),
         $sessionAes
     );
+    $apiName = '';
     $liteProfile = $this->isLiteProfileRequest();
     $forceRefresh = $this->isForcedAesRefreshRequest();
     if (!$liteProfile || $forceRefresh) {
@@ -232,6 +233,10 @@ final class StudentController
         'email' => (string) ($user['email'] ?? ''),
       ]
     ));
+    // The live getStudInfo4Placement name must win over email-derived session fallbacks.
+    if ($apiName !== '') {
+      $merged['name'] = $apiName;
+    }
 
     $reg = (string) ($out['registerNumber'] ?? $merged['registerNumber'] ?? '');
     $collegeEmail = $aes->excludeSyntheticCollegeEmail((string) ($merged['collegeEmail'] ?? ''), $reg);

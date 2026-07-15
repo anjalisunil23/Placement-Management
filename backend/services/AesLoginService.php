@@ -985,9 +985,13 @@ final class AesLoginService
             return $current;
         }
 
-        $apiName = $forceApiLookup
-            ? $this->fetchStudentNameFromPlacementApi($register)
-            : $this->resolveAesName($aesProfile, [], $register, '');
+        if ($forceApiLookup) {
+            // Prefer numeric AES stud_admno over a university register number.
+            $apiRegister = (new AesApiService())->resolveQualificationAdmissionNumber($aesProfile, $register);
+            $apiName = $this->fetchStudentNameFromPlacementApi($apiRegister);
+        } else {
+            $apiName = $this->resolveAesName($aesProfile, [], $register, '');
+        }
         if ($apiName === '') {
             return $current;
         }
