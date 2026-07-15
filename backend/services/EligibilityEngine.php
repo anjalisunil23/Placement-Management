@@ -198,13 +198,22 @@ final class EligibilityEngine
         $rule = $this->ruleModel->getActiveRule();
         $tierRules = $rule['tierRules'] ?? [];
         $tierCost = (int) ($tierRules[$driveTier]['chances'] ?? 1);
-        $chances = $student['placementChances'] ?? ['remaining' => 0];
-        if (($chances['remaining'] ?? 0) < $tierCost) {
+        $ruleChances = max(0, (int) ($rule['placementChances'] ?? 3));
+        $chances = is_array($student['placementChances'] ?? null) ? $student['placementChances'] : null;
+        if ($chances === null || !array_key_exists('remaining', $chances)) {
+            $chances = [
+                'total' => $ruleChances,
+                'used' => (int) ($chances['used'] ?? 0),
+                'remaining' => $ruleChances,
+            ];
+        }
+        $remaining = (int) ($chances['remaining'] ?? $ruleChances);
+        if ($remaining < $tierCost) {
             $reasons[] = "Insufficient placement chances for {$driveTier} (requires {$tierCost}).";
         }
 
         // Already placed with no chances
-        if (($student['placed'] ?? false) && ($chances['remaining'] ?? 0) <= 0) {
+        if (($student['placed'] ?? false) && $remaining <= 0) {
             $reasons[] = 'Student already placed with no remaining chances.';
         }
 

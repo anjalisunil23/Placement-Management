@@ -4242,8 +4242,8 @@ const DriveStore = {
     };
   },
   filterApplicantDrives(list) {
-    if (!Array.isArray(list)) return [];
-    return list.filter(d => d.eligible !== false || d.applied || d.applicationStatus);
+    // Soft ineligibility must not hide drives; Apply uses eligible / eligibilityReasons.
+    return Array.isArray(list) ? list.filter(Boolean) : [];
   },
   async fetchStudentDrives() {
     if (Auth.role() !== 'student' || Auth.isDemo()) return null;

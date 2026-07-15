@@ -734,9 +734,9 @@ function driveAlreadyApplied(d) {
 }
 
 function driveVisibleToApplicant(d) {
+  // Soft ineligibility (resume/CGPA/chances) must not hide the drive — only Apply is blocked.
   if (!isStudent && !alumniSeeking) return true;
-  if (driveAlreadyApplied(d)) return true;
-  return d.eligible !== false;
+  return true;
 }
 
 function driveDetailValue(v) {
@@ -830,10 +830,16 @@ function fillDriveDetailPanel(list, selectedId) {
   if (applyBtn) {
     if (isStaff || applied || !canApplyToDrives()) {
       applyBtn.classList.add('d-none');
+    } else if (active && active.eligible === false) {
+      applyBtn.classList.remove('d-none');
+      applyBtn.disabled = true;
+      applyBtn.textContent = 'Not eligible';
+      applyBtn.title = (Array.isArray(active.eligibilityReasons) ? active.eligibilityReasons : []).join(' ') || 'Not eligible for this drive';
     } else {
       applyBtn.classList.remove('d-none');
       applyBtn.disabled = multi && !detailSelectedDriveId;
       applyBtn.textContent = 'Apply';
+      applyBtn.title = '';
     }
   }
 
@@ -982,7 +988,10 @@ function filteredDrives() {
 
     if (q && !hay.includes(q)) return false;
 
-    if (openOnly && String(d.status || '').toLowerCase() !== 'open') return false;
+    if (openOnly) {
+      const st = String(d.status || '').toLowerCase();
+      if (st !== 'open' && st !== 'ongoing') return false;
+    }
     else if (status && d.status !== status) return false;
 
     if (jobType && (d.jobType || '') !== jobType) return false;
@@ -1019,6 +1028,11 @@ function applyAction(d) {
   }
 
   if (d.status === 'Closed') return '<span class="badge-soft muted">Closed</span>';
+
+  if ((isStudent || alumniSeeking) && d.eligible === false) {
+    const why = (Array.isArray(d.eligibilityReasons) ? d.eligibilityReasons : []).join(' ') || 'Not eligible for this drive';
+    return `<span class="badge-soft muted" title="${String(why).replace(/"/g, '&quot;')}">Not eligible</span>`;
+  }
 
   if (isStudent) return `<button class="btn btn-sm btn-primary" onclick="openApply('${d.id}')">Apply</button>`;
 
@@ -1797,6 +1811,13 @@ window.openApply = async driveId => {
 
   if (!pendingDrive) {
     toast('Could not load this drive. Refresh and try again.', 'warn');
+    return;
+  }
+
+  if (pendingDrive.eligible === false) {
+    const why = (Array.isArray(pendingDrive.eligibilityReasons) ? pendingDrive.eligibilityReasons : []).join(' ')
+      || 'You are not eligible for this drive.';
+    toast(why, 'warn');
     return;
   }
 

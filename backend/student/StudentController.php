@@ -903,16 +903,8 @@ final class StudentController
       return $row;
     }, $enriched);
 
-    $result = array_values(array_filter(
-        $result,
-        static function (array $row): bool {
-            if (!empty($row['applied'])) {
-                return true;
-            }
-
-            return ($row['eligibilityCheck']['eligible'] ?? false) === true;
-        }
-    ));
+    // Keep soft-ineligible drives visible (resume/CGPA/chances). Apply is gated by eligibilityCheck.
+    // Hard visibility (branch / post-placement Category A–C) is already applied above.
 
     $register = (string) ($profile['registerNumber'] ?? '');
     if ($register !== '') {
@@ -978,13 +970,6 @@ final class StudentController
       ];
     }
 
-    $rows = array_values(array_filter(
-        $rows,
-        static function (array $row): bool {
-            return ($row['eligible'] ?? false) === true;
-        }
-    ));
-
     Response::success($rows);
   }
 
@@ -1003,10 +988,8 @@ final class StudentController
     $appModel = new ApplicationModel();
     $engine = new EligibilityEngine();
     $eligibility = $engine->checkForDrive($studentId, $driveId);
-    if (
-        !$appModel->findByStudentAndDrive($studentId, $driveId)
-        && !($eligibility['eligible'] ?? false)
-    ) {
+    $alreadyApplied = (bool) $appModel->findByStudentAndDrive($studentId, $driveId);
+    if (!$alreadyApplied && !$engine->driveVisibleToStudent($profile, $drive)) {
         Response::notFound('Drive not found.');
     }
 
@@ -1015,6 +998,7 @@ final class StudentController
     $out = $enriched[0] ?? DocumentHelper::serialize($drive);
     $out['company'] = $company ? DocumentHelper::serialize($company) : null;
     $out['eligibilityCheck'] = $eligibility;
+    $out['applied'] = $alreadyApplied;
     Response::success($out);
   }
 
