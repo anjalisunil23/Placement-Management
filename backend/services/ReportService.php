@@ -46,6 +46,7 @@ final class ReportService
             'monthly'    => $this->generateMonthlyReport($ctx),
             'annual'     => $this->generateAnnualReport($ctx),
             'selection'  => $this->generateSelectionReport($ctx),
+            'applicants' => $this->generateApplicantsReport($ctx),
             default      => throw new \InvalidArgumentException('Invalid report type.'),
         };
     }
@@ -239,6 +240,101 @@ final class ReportService
         }
 
         return $this->saveReport('selection', $title, $headers, $rows, $ctx);
+    }
+
+    /**
+     * All drive applicants grouped by company — Excel-ready roster with resume links.
+     *
+     * @return array{filename: string, format: string, title: string, downloadUrl: string}
+     */
+    private function generateApplicantsReport(ReportContext $ctx): array
+    {
+        // Prefer CSV so Excel opens the roster cleanly; PDF still supported.
+        if ($ctx->format !== 'csv' && $ctx->format !== 'pdf') {
+            $ctx->format = 'csv';
+        }
+
+        $filter = [];
+        $studentIds = $this->scopedStudentObjectIds($ctx);
+        if ($studentIds !== null) {
+            $filter['studentId'] = $studentIds === [] ? ['$in' => []] : ['$in' => $studentIds];
+        }
+
+        $apps = $this->applicationModel->findAll($filter, 5000);
+        $enriched = (new OfficerDataService())->enrichApplications($apps);
+
+        usort($enriched, static function (array $a, array $b): int {
+            $cmp = strcasecmp((string) ($a['company'] ?? ''), (string) ($b['company'] ?? ''));
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            $cmp = strcasecmp((string) ($a['role'] ?? ''), (string) ($b['role'] ?? ''));
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return strcasecmp((string) ($a['studentName'] ?? ''), (string) ($b['studentName'] ?? ''));
+        });
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $appBase = rtrim((string) ($config['url'] ?? ''), '/');
+        if ($appBase === '') {
+            $appBase = 'http://localhost';
+        }
+
+        $headers = [
+            'Company',
+            'Drive / Role',
+            'Student Name',
+            'Register No',
+            'Department',
+            'Email',
+            'Phone',
+            'CGPA',
+            'Status',
+            'Applied On',
+            'Resume',
+            'Resume Link',
+        ];
+        $rows = [];
+        foreach ($enriched as $app) {
+            $appId = (string) ($app['id'] ?? $app['_id'] ?? '');
+            $hasResume = !empty($app['hasResume']);
+            $resumeName = (string) ($app['resumeFileName'] ?? $app['resumeLabel'] ?? '');
+            if ($resumeName === '' && $hasResume) {
+                $resumeName = 'Resume';
+            }
+            $resumeLink = '';
+            if ($hasResume && $appId !== '') {
+                $resumeLink = $appBase . '/backend/api/admin/applications/' . rawurlencode($appId) . '/resume';
+            }
+
+            $rows[] = [
+                (string) ($app['company'] ?? ''),
+                (string) ($app['role'] ?? ''),
+                (string) ($app['studentName'] ?? ''),
+                (string) ($app['registerNumber'] ?? ''),
+                (string) ($app['department'] ?? ''),
+                (string) ($app['email'] ?? $app['collegeEmail'] ?? ''),
+                (string) ($app['phone'] ?? ''),
+                isset($app['cgpa']) && (float) $app['cgpa'] > 0 ? (string) $app['cgpa'] : '',
+                (string) ($app['status'] ?? ''),
+                self::formatDate($app['appliedAt'] ?? $app['createdAt'] ?? null),
+                $hasResume ? ($resumeName !== '' ? $resumeName : 'Available') : 'Not uploaded',
+                $resumeLink,
+            ];
+        }
+
+        if ($rows === []) {
+            $rows[] = ['—', '—', '—', '—', '—', '—', '—', '—', 'No applicants', '—', '—', '—'];
+        }
+
+        $title = 'Company Applicants Report';
+        if ($ctx->departmentId) {
+            $dept = $this->departmentModel->findById($ctx->departmentId);
+            $title .= ' — ' . ($dept['code'] ?? $dept['name'] ?? '');
+        }
+
+        return $this->saveReport('applicants', $title, $headers, $rows, $ctx);
     }
 
     /**
@@ -436,6 +532,8 @@ final class ReportService
         if ($fh === false) {
             throw new \RuntimeException('Unable to create CSV file.');
         }
+        // UTF-8 BOM so Excel opens special characters correctly.
+        fwrite($fh, "\xEF\xBB\xBF");
         fputcsv($fh, $headers);
         foreach ($rows as $row) {
             fputcsv($fh, $row);

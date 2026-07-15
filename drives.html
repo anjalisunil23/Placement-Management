@@ -394,7 +394,7 @@
             <table class="table-modern">
               <thead><tr id="driveApplicantHead">
                 <th style="width:2.5rem" class="drive-shortlist-col"><input type="checkbox" class="form-check-input" id="driveApplicantSelectAll" title="Select all eligible" aria-label="Select all eligible"></th>
-                <th>Student</th><th>Register No</th><th>Dept</th><th>Resume</th><th>Status</th><th>Applied</th>
+                <th>Student</th><th>Register No</th><th>Dept</th><th>Email</th><th>Phone</th><th>Resume</th><th>Status</th><th>Applied</th>
               </tr></thead>
               <tbody id="driveApplicantRows"></tbody>
             </table>
@@ -1105,8 +1105,7 @@ function driveApplicantGroups(apps) {
 
 function driveApplicantResumeCell(a) {
   if (!a.hasResume && !a.resumeUrl) return '<span class="small text-muted-2">—</span>';
-  const label = a.resumeFileName || a.resumeLabel || 'View resume';
-  return `<a href="${a.resumeUrl}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf me-1"></i>${label.length > 20 ? label.slice(0, 17) + '…' : label}</a>`;
+  return `<a href="${a.resumeUrl}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf me-1"></i>View resume</a>`;
 }
 
 function canShortlistApplicant(a) {
@@ -1160,7 +1159,7 @@ function renderDriveApplicantRows() {
   const list = groups[driveApplicantsTab] || groups.all;
   const tbody = document.getElementById('driveApplicantRows');
   const showSelect = driveApplicantsTab === 'all';
-  const cols = showSelect ? 7 : 6;
+  const cols = showSelect ? 9 : 8;
   if (!list.length) {
     const emptyMsg = driveApplicantsTab === 'placed' ? 'No placed students yet.'
       : driveApplicantsTab === 'shortlisted' ? 'No shortlisted students yet. Select them from All applicants.'
@@ -1181,6 +1180,8 @@ function renderDriveApplicantRows() {
     <td><strong>${a.studentName || '—'}</strong></td>
     <td>${a.registerNumber || '—'}</td>
     <td>${a.department || '—'}</td>
+    <td class="small">${a.email || '—'}</td>
+    <td class="small">${a.phone || '—'}</td>
     <td>${driveApplicantResumeCell(a)}</td>
     <td>${driveApplicantStatusBadge(a.status)}</td>
     <td>${a.appliedAt ? new Date(a.appliedAt).toLocaleDateString() : '—'}</td>

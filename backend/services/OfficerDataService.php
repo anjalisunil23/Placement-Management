@@ -111,12 +111,27 @@ final class OfficerDataService
                 }
             }
 
+            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+            $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+            $userEmail = is_array($user) ? trim((string) ($user['email'] ?? '')) : '';
+            $userPhone = is_array($user) ? trim((string) ($user['phone'] ?? '')) : '';
+            $collegeEmail = trim((string) ($personal['collegeEmail'] ?? $userEmail));
+            $personalEmail = trim((string) ($personal['personalEmail'] ?? ''));
+            $email = $collegeEmail !== '' ? $collegeEmail : $personalEmail;
+            $phone = trim((string) ($personal['phone'] ?? $userPhone));
+            $cgpa = (float) ($academic['cgpa'] ?? 0);
+
             $row = DocumentHelper::serialize($app) ?? [];
             $row['driveId'] = (string) ($app['driveId'] ?? '');
             $row['studentId'] = (string) ($app['studentId'] ?? '');
             $row['studentName'] = is_array($user) ? (string) ($user['name'] ?? '') : '';
             $row['registerNumber'] = is_array($student) ? (string) ($student['registerNumber'] ?? '') : '';
             $row['department'] = is_array($dept) ? (string) ($dept['code'] ?? $dept['name'] ?? '') : '';
+            $row['email'] = $email;
+            $row['collegeEmail'] = $collegeEmail;
+            $row['personalEmail'] = $personalEmail;
+            $row['phone'] = $phone;
+            $row['cgpa'] = $cgpa > 0 ? $cgpa : null;
             $row['company'] = $companyName;
             $row['role'] = $drive['title'] ?? '';
             $row['stage'] = $stage;

@@ -135,9 +135,13 @@ const OfficerApi = {
     return {
       id,
       driveId: a.driveId || '',
+      studentId: a.studentId || '',
       studentName: a.studentName || '',
       registerNumber: a.registerNumber || '',
       department: a.department || '',
+      email: a.email || a.collegeEmail || '',
+      phone: a.phone || '',
+      cgpa: a.cgpa ?? null,
       company: a.company || '',
       role: a.role || '',
       stage: a.stage || a.status || '',
