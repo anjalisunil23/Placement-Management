@@ -4,7 +4,22 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260713p" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260713p" rel="stylesheet"/>
+<style>
+.report-folder-card{cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease}
+.report-folder-card:hover{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));box-shadow:0 8px 24px rgba(15,23,42,.06)}
+.report-folder-card .folder-icon{
+  width:48px;height:48px;border-radius:12px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--warning) 16%,transparent);color:#b45309;font-size:1.35rem
+}
+.company-report-card{cursor:pointer;transition:border-color .15s ease,transform .12s ease}
+.company-report-card:hover{border-color:color-mix(in srgb,var(--primary) 40%,var(--border));transform:translateY(-1px)}
+.company-report-card .company-ic{
+  width:40px;height:40px;border-radius:10px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--primary)
+}
+</style>
+</head>
 <body data-page="reports.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -21,7 +36,27 @@
   </div>
 </div>
 
-<div class="row g-3" id="repCards"></div>
+<div id="reportsHome">
+  <div class="row g-3" id="repCards"></div>
+</div>
+
+<div id="companyApplicantsFolder" class="d-none">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+      <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="btnBackReports">
+        <i class="bi bi-arrow-left me-1"></i>Back to reports
+      </button>
+      <h2 class="h5 fw-bold mb-1"><i class="bi bi-folder2-open me-2 text-warning"></i>Company Applicants</h2>
+      <p class="small text-muted-2 mb-0">Open a company to download an Excel sheet of all applicants (profile, shortlisted, selected, resume link).</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      <input type="search" class="form-control form-control-sm" id="companyReportSearch" placeholder="Search companies…" style="min-width:12rem"/>
+    </div>
+  </div>
+  <div id="companyFolderLoading" class="text-muted-2 small py-4 d-none">Loading companies…</div>
+  <div id="companyFolderEmpty" class="text-muted-2 small py-4 d-none">No companies found.</div>
+  <div class="row g-3" id="companyFolderCards"></div>
+</div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -34,11 +69,13 @@ const REPORT_DEFS = [
   { type: 'student', title: 'Student Placement Status Report', desc: 'Individual placement records per student', icon: 'bi-person-vcard', badge: 'info' },
   { type: 'department', title: 'Department Placement Report', desc: 'Branch-wise placement statistics', icon: 'bi-diagram-3', badge: 'primary' },
   { type: 'company', title: 'Company Recruitment Report', desc: 'Company-wise hiring & selection count', icon: 'bi-building', badge: 'success' },
-  { type: 'applicants', title: 'Company Applicants Report', desc: 'All applicants per company in Excel — student details and resume links', icon: 'bi-people', badge: 'info', excelFirst: true },
   { type: 'monthly', title: 'Monthly Placement Report', desc: 'Month-wise offers and activity', icon: 'bi-calendar-month', badge: 'warning' },
   { type: 'annual', title: 'Annual Placement Report', desc: 'FY summary for management', icon: 'bi-file-earmark-bar-graph', badge: 'primary' },
   { type: 'selection', title: 'Selection Count Report', desc: 'Shortlisted vs selected breakdown', icon: 'bi-check2-square', badge: 'success' },
 ];
+
+let reportCompanies = [];
+let companyFolderOpen = false;
 
 function reportFilters() {
   const monthInput = document.getElementById('filterMonth').value;
@@ -54,22 +91,27 @@ function reportFilters() {
   return { month, year, dateFrom };
 }
 
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function renderCards() {
-  document.getElementById('repCards').innerHTML = REPORT_DEFS.map(r => {
-    const excelBtn = r.excelFirst
-      ? `<button class="btn btn-sm btn-primary" onclick="generateReport('${r.type}','csv')">
-            <i class="bi bi-file-earmark-excel me-1"></i>Excel
-          </button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','pdf')">
-            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-          </button>`
-      : `<button class="btn btn-sm btn-primary" onclick="generateReport('${r.type}','pdf')">
-            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-          </button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','csv')">
-            <i class="bi bi-filetype-csv me-1"></i>CSV
-          </button>`;
-    return `
+  const folderCard = `
+    <div class="col-md-6 col-xl-4">
+      <div class="card-surface p-4 h-100 report-folder-card" id="openCompanyApplicantsFolder" role="button" tabindex="0">
+        <div class="d-flex justify-content-between mb-3">
+          <div class="folder-icon"><i class="bi bi-folder2-fill"></i></div>
+          <span class="badge-soft warning">Folder</span>
+        </div>
+        <h6 class="fw-bold mb-1">Company Applicants</h6>
+        <p class="text-muted-2 small mb-3">Open this folder, pick a company, and download applicant Excel with profile details, shortlisted / selected, and resume links.</p>
+        <div class="d-flex gap-2 flex-wrap">
+          <span class="btn btn-sm btn-primary"><i class="bi bi-folder2-open me-1"></i>Open folder</span>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('repCards').innerHTML = folderCard + REPORT_DEFS.map(r => `
     <div class="col-md-6 col-xl-4">
       <div class="card-surface p-4 h-100">
         <div class="d-flex justify-content-between mb-3">
@@ -81,14 +123,152 @@ function renderCards() {
         <h6 class="fw-bold mb-1">${r.title}</h6>
         <p class="text-muted-2 small mb-3">${r.desc}</p>
         <div class="d-flex gap-2 flex-wrap">
-          ${excelBtn}
-          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','${r.excelFirst ? 'csv' : 'pdf'}',true)">
+          <button class="btn btn-sm btn-primary" onclick="generateReport('${r.type}','pdf')">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','csv')">
+            <i class="bi bi-filetype-csv me-1"></i>CSV
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','pdf',true)">
             <i class="bi bi-envelope me-1"></i>Email
           </button>
         </div>
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
+
+  const folder = document.getElementById('openCompanyApplicantsFolder');
+  folder?.addEventListener('click', () => openCompanyApplicantsFolder());
+  folder?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openCompanyApplicantsFolder();
+    }
+  });
+}
+
+function showReportsHome() {
+  companyFolderOpen = false;
+  document.getElementById('reportsHome')?.classList.remove('d-none');
+  document.getElementById('companyApplicantsFolder')?.classList.add('d-none');
+}
+
+async function openCompanyApplicantsFolder() {
+  if (!(await Auth.ensureSession())) {
+    toast(Auth.isDemo()
+      ? 'Preview mode cannot open company reports. Sign in with your account first.'
+      : 'Please sign in to open company reports.', 'warn');
+    return;
+  }
+  companyFolderOpen = true;
+  document.getElementById('reportsHome')?.classList.add('d-none');
+  document.getElementById('companyApplicantsFolder')?.classList.remove('d-none');
+  document.getElementById('companyReportSearch').value = '';
+  await loadCompanyFolder();
+}
+
+async function loadCompanyFolder() {
+  const loading = document.getElementById('companyFolderLoading');
+  const empty = document.getElementById('companyFolderEmpty');
+  const cards = document.getElementById('companyFolderCards');
+  loading?.classList.remove('d-none');
+  empty?.classList.add('d-none');
+  if (cards) cards.innerHTML = '';
+
+  const list = await AdminApi.fetchCompanies();
+  loading?.classList.add('d-none');
+  reportCompanies = (Array.isArray(list) ? list : [])
+    .map(c => ({
+      companyId: c.companyId || c.id || '',
+      companyName: c.companyName || c.name || 'Company',
+      category: c.category || '',
+      tier: c.tier || '',
+    }))
+    .filter(c => c.companyId)
+    .sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+  renderCompanyFolderCards();
+}
+
+function filteredReportCompanies() {
+  const q = (document.getElementById('companyReportSearch')?.value || '').trim().toLowerCase();
+  if (!q) return reportCompanies;
+  return reportCompanies.filter(c =>
+    c.companyName.toLowerCase().includes(q)
+    || String(c.category || '').toLowerCase().includes(q)
+    || String(c.tier || '').toLowerCase().includes(q)
+  );
+}
+
+function renderCompanyFolderCards() {
+  const empty = document.getElementById('companyFolderEmpty');
+  const cards = document.getElementById('companyFolderCards');
+  const list = filteredReportCompanies();
+  if (!cards) return;
+  if (!list.length) {
+    empty?.classList.remove('d-none');
+    cards.innerHTML = '';
+    return;
+  }
+  empty?.classList.add('d-none');
+  cards.innerHTML = list.map(c => `
+    <div class="col-md-6 col-xl-4">
+      <div class="card-surface p-4 h-100 company-report-card" role="button" tabindex="0"
+        data-company-id="${esc(c.companyId)}" data-company-name="${esc(c.companyName)}">
+        <div class="d-flex align-items-start gap-3">
+          <div class="company-ic"><i class="bi bi-building"></i></div>
+          <div class="min-w-0 flex-grow-1">
+            <h6 class="fw-bold mb-1 text-truncate">${esc(c.companyName)}</h6>
+            <p class="small text-muted-2 mb-2">${esc([c.category, c.tier].filter(Boolean).join(' · ') || 'Click to download applicants Excel')}</p>
+            <span class="btn btn-sm btn-primary"><i class="bi bi-file-earmark-excel me-1"></i>Excel report</span>
+          </div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  cards.querySelectorAll('.company-report-card').forEach(el => {
+    const run = () => generateCompanyApplicantsReport(el.dataset.companyId, el.dataset.companyName, el);
+    el.addEventListener('click', run);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        run();
+      }
+    });
+  });
+}
+
+async function generateCompanyApplicantsReport(companyId, companyName, cardEl) {
+  if (!companyId) return;
+  if (!(await Auth.ensureSession())) {
+    toast('Please sign in to generate reports.', 'warn');
+    return;
+  }
+  const btn = cardEl?.querySelector('.btn');
+  if (btn) {
+    btn.classList.add('disabled');
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating…';
+  }
+  const filters = reportFilters();
+  const res = await ReportCenter.generate('applicants', {
+    ...filters,
+    format: 'csv',
+    companyId,
+    email: false,
+  });
+  if (btn) {
+    btn.classList.remove('disabled');
+    btn.innerHTML = '<i class="bi bi-file-earmark-excel me-1"></i>Excel report';
+  }
+  if (res.success) {
+    toast(`Excel ready for ${companyName || 'company'}.`, 'success');
+    if (res.data?.downloadUrl) {
+      window.open(ReportCenter.downloadHref(res.data.downloadUrl), '_blank');
+    }
+  } else if (res.status === 401) {
+    toast(res.message || 'Please sign in again.', 'warn');
+  } else {
+    toast(res.message || 'Could not generate company applicants report.', 'error');
+  }
 }
 
 async function generateReport(type, format, email = false) {
@@ -130,10 +310,17 @@ async function initReportsPage() {
 
   renderCards();
   document.getElementById('applyBtn').addEventListener('click', applyFilters);
-  document.getElementById('refreshBtn').addEventListener('click', () => {
+  document.getElementById('refreshBtn').addEventListener('click', async () => {
+    if (companyFolderOpen) {
+      await loadCompanyFolder();
+      toast('Company folder refreshed.', 'success');
+      return;
+    }
     renderCards();
     toast('Report cards refreshed.', 'success');
   });
+  document.getElementById('btnBackReports')?.addEventListener('click', showReportsHome);
+  document.getElementById('companyReportSearch')?.addEventListener('input', () => renderCompanyFolderCards());
 
   const sessionOk = await Auth.ensureSession();
   if (!sessionOk) {

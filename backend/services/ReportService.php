@@ -243,7 +243,7 @@ final class ReportService
     }
 
     /**
-     * All drive applicants grouped by company — Excel-ready roster with resume links.
+     * Applicants for one company (or all) — Excel roster with profile details and resume links.
      *
      * @return array{filename: string, format: string, title: string, downloadUrl: string}
      */
@@ -254,25 +254,45 @@ final class ReportService
             $ctx->format = 'csv';
         }
 
+        $company = null;
+        $companyName = '';
+        if ($ctx->companyId) {
+            $company = $this->companyModel->findById($ctx->companyId);
+            if (!$company) {
+                throw new \InvalidArgumentException('Company not found.');
+            }
+            $companyName = trim((string) ($company['companyName'] ?? 'Company'));
+        }
+
         $filter = [];
         $studentIds = $this->scopedStudentObjectIds($ctx);
         if ($studentIds !== null) {
             $filter['studentId'] = $studentIds === [] ? ['$in' => []] : ['$in' => $studentIds];
         }
 
-        $apps = $this->applicationModel->findAll($filter, 5000);
+        if ($ctx->companyId) {
+            $apps = $this->applicationModel->findByCompany($ctx->companyId);
+            if ($studentIds !== null) {
+                $allow = array_flip($studentIds);
+                $apps = array_values(array_filter($apps, static function (array $app) use ($allow): bool {
+                    return isset($allow[(string) ($app['studentId'] ?? '')]);
+                }));
+            }
+        } else {
+            $apps = $this->applicationModel->findAll($filter, 5000);
+        }
         $enriched = (new OfficerDataService())->enrichApplications($apps);
 
         usort($enriched, static function (array $a, array $b): int {
-            $cmp = strcasecmp((string) ($a['company'] ?? ''), (string) ($b['company'] ?? ''));
-            if ($cmp !== 0) {
-                return $cmp;
-            }
             $cmp = strcasecmp((string) ($a['role'] ?? ''), (string) ($b['role'] ?? ''));
             if ($cmp !== 0) {
                 return $cmp;
             }
-            return strcasecmp((string) ($a['studentName'] ?? ''), (string) ($b['studentName'] ?? ''));
+            $cmp = strcasecmp((string) ($a['studentName'] ?? ''), (string) ($b['studentName'] ?? ''));
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return strcasecmp((string) ($a['status'] ?? ''), (string) ($b['status'] ?? ''));
         });
 
         $config = require dirname(__DIR__) . '/config/app.php';
@@ -291,6 +311,8 @@ final class ReportService
             'Phone',
             'CGPA',
             'Status',
+            'Shortlisted',
+            'Selected',
             'Applied On',
             'Resume',
             'Resume Link',
@@ -298,6 +320,9 @@ final class ReportService
         $rows = [];
         foreach ($enriched as $app) {
             $appId = (string) ($app['id'] ?? $app['_id'] ?? '');
+            $status = strtolower(trim((string) ($app['status'] ?? '')));
+            $isShortlisted = in_array($status, ['shortlisted', 'officer_approved', 'company_review', 'selected'], true);
+            $isSelected = in_array($status, ['selected', 'placed'], true);
             $hasResume = !empty($app['hasResume']);
             $resumeName = (string) ($app['resumeFileName'] ?? $app['resumeLabel'] ?? '');
             if ($resumeName === '' && $hasResume) {
@@ -309,7 +334,7 @@ final class ReportService
             }
 
             $rows[] = [
-                (string) ($app['company'] ?? ''),
+                (string) ($app['company'] ?? $companyName),
                 (string) ($app['role'] ?? ''),
                 (string) ($app['studentName'] ?? ''),
                 (string) ($app['registerNumber'] ?? ''),
@@ -317,7 +342,9 @@ final class ReportService
                 (string) ($app['email'] ?? $app['collegeEmail'] ?? ''),
                 (string) ($app['phone'] ?? ''),
                 isset($app['cgpa']) && (float) $app['cgpa'] > 0 ? (string) $app['cgpa'] : '',
-                (string) ($app['status'] ?? ''),
+                $this->formatApplicantStatus($status),
+                $isShortlisted ? 'Yes' : 'No',
+                $isSelected ? 'Yes' : 'No',
                 self::formatDate($app['appliedAt'] ?? $app['createdAt'] ?? null),
                 $hasResume ? ($resumeName !== '' ? $resumeName : 'Available') : 'Not uploaded',
                 $resumeLink,
@@ -325,16 +352,36 @@ final class ReportService
         }
 
         if ($rows === []) {
-            $rows[] = ['—', '—', '—', '—', '—', '—', '—', '—', 'No applicants', '—', '—', '—'];
+            $rows[] = [
+                $companyName !== '' ? $companyName : '—',
+                '—', '—', '—', '—', '—', '—', '—', 'No applicants', '—', '—', '—', '—', '—',
+            ];
         }
 
-        $title = 'Company Applicants Report';
+        $title = $companyName !== ''
+            ? "Applicants — {$companyName}"
+            : 'Company Applicants Report';
         if ($ctx->departmentId) {
             $dept = $this->departmentModel->findById($ctx->departmentId);
             $title .= ' — ' . ($dept['code'] ?? $dept['name'] ?? '');
         }
 
         return $this->saveReport('applicants', $title, $headers, $rows, $ctx);
+    }
+
+    private function formatApplicantStatus(string $status): string
+    {
+        return match ($status) {
+            'shortlisted' => 'Shortlisted',
+            'selected' => 'Selected',
+            'placed' => 'Placed',
+            'officer_approved' => 'Officer approved',
+            'company_review' => 'Company review',
+            'rejected' => 'Rejected',
+            'resume_pending', 'resume_verified', 'applied' => 'Applied',
+            '' => '—',
+            default => ucfirst(str_replace('_', ' ', $status)),
+        };
     }
 
     /**
@@ -511,6 +558,7 @@ final class ReportService
                 'dateTo'   => $ctx->dateTo,
                 'month'    => $ctx->month,
                 'year'     => $ctx->year,
+                'companyId'=> $ctx->companyId,
             ],
         ]);
 

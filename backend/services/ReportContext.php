@@ -17,6 +17,7 @@ final class ReportContext
         public ?string $generatedBy = null,
         public int $month = 0,
         public int $year = 0,
+        public ?string $companyId = null,
     ) {
         if ($this->month <= 0) {
             $this->month = (int) date('n');
@@ -31,6 +32,7 @@ final class ReportContext
      */
     public static function fromInput(array $input, ?string $forcedDepartmentId = null, ?string $userId = null): self
     {
+        $companyId = isset($input['companyId']) ? trim((string) $input['companyId']) : '';
         return new self(
             departmentId: $forcedDepartmentId ?: (isset($input['departmentId']) ? (string) $input['departmentId'] : null),
             dateFrom: isset($input['dateFrom']) ? (string) $input['dateFrom'] : null,
@@ -39,6 +41,7 @@ final class ReportContext
             generatedBy: $userId,
             month: (int) ($input['month'] ?? date('n')),
             year: (int) ($input['year'] ?? date('Y')),
+            companyId: $companyId !== '' ? $companyId : null,
         );
     }
 }
