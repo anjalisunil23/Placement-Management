@@ -591,20 +591,22 @@ final class OfficerDataService
         ) === 1;
     }
 
-    /**
-     * Detect the three-year BCA programme, whose final year is year 3 / S5-S6.
-     */
-    private function isBcaPlacementProgramme(string $text): bool
+    private function placementProgrammeCode(string $text): string
     {
-        $text = strtoupper(trim($text));
-        if ($text === '') {
-            return false;
+        $normalized = DepartmentProgrammeCatalog::normalizeCode($text);
+        foreach (['INMCA', 'INTMCA', 'IMCA', 'DDMCA'] as $code) {
+            if (str_contains($normalized, $code)) {
+                return 'INMCA';
+            }
+        }
+        if (str_contains($normalized, 'BCA')) {
+            return 'BCA';
+        }
+        if (str_contains($normalized, 'MCA')) {
+            return 'MCA';
         }
 
-        return preg_match(
-            '/(?:^|[^A-Z])B\.?\s*C\.?\s*A\.?(?=\d|[^A-Z]|$)|BACHELOR\s+OF\s+COMPUTER\s+APPLICATIONS?/',
-            $text
-        ) === 1;
+        return '';
     }
 
     private function looksLikeFinalYearClassBatch(string $batch, string $programmeHint = ''): bool
@@ -618,33 +620,24 @@ final class OfficerDataService
             return true;
         }
 
+        $programmeCode = $this->placementProgrammeCode($batch . ' ' . $programmeHint);
         $isPg = $this->isPgPlacementProgramme($batch . ' ' . $programmeHint);
-        $isBca = $this->isBcaPlacementProgramme($batch . ' ' . $programmeHint);
+        $finalSemesterStart = match ($programmeCode) {
+            'BCA' => 5,
+            'MCA' => 3,
+            'INMCA' => 9,
+            default => $isPg ? 3 : 7,
+        };
 
-        if (preg_match('/(?:^|[^A-Z0-9])S([1-8])(?:[^A-Z0-9]|$)/', $batch, $m) === 1
-            || preg_match('/\bS([1-8])\b/', $batch, $m) === 1) {
+        if (preg_match('/(?:^|[^A-Z0-9])S(10|[1-9])(?:[^A-Z0-9]|$)/', $batch, $m) === 1
+            || preg_match('/\bS(10|[1-9])\b/', $batch, $m) === 1) {
             $sem = (int) $m[1];
-            // MCA Regular final semesters are typically S3–S6.
-            if ($isPg) {
-                return $sem >= 3;
-            }
-            if ($isBca) {
-                return $sem >= 5;
-            }
-
-            return $sem >= 7;
+            return $sem >= $finalSemesterStart;
         }
 
-        if (preg_match('/\b(SEM(?:ESTER)?[\s\-]*([1-8]))\b/', $batch, $m) === 1) {
+        if (preg_match('/\b(SEM(?:ESTER)?[\s\-]*(10|[1-9]))\b/', $batch, $m) === 1) {
             $sem = (int) ($m[2] ?? 0);
-            if ($isPg) {
-                return $sem >= 3;
-            }
-            if ($isBca) {
-                return $sem >= 5;
-            }
-
-            return $sem >= 7;
+            return $sem >= $finalSemesterStart;
         }
 
         // Year-range batches like MCA2025-27 / 2023-27 without semester.
@@ -875,10 +868,7 @@ final class OfficerDataService
                 (string) ($record['programme'] ?? ''),
                 (string) ($record['stud_class'] ?? ''),
             ])));
-            if (
-                $this->isBcaPlacementProgramme($hint)
-                || preg_match('/(?:^|[^A-Z])(?:IN)?MCA(?:REG)?(?=\d|[^A-Z]|$)/i', $hint) === 1
-            ) {
+            if (in_array($this->placementProgrammeCode($hint), ['BCA', 'MCA', 'INMCA'], true)) {
                 return true;
             }
         }
@@ -1011,8 +1001,8 @@ final class OfficerDataService
             (string) ($record['programme'] ?? ''),
             $classBatch,
         ])));
+        $programmeCode = $this->placementProgrammeCode($courseHint);
         $isPg = $this->isPgPlacementProgramme($courseHint);
-        $isBca = $this->isBcaPlacementProgramme($courseHint);
 
         if ($classBatch !== '' && $this->looksLikeFinalYearClassBatch($classBatch, $courseHint)) {
             return true;
@@ -1026,43 +1016,42 @@ final class OfficerDataService
             if (preg_match('/\b(final|outgoing|last|pass.?out)\b/', $yearRaw) === 1) {
                 return true;
             }
-            if ($isBca && preg_match('/\b(3|iii|3rd|third)\b/', $yearRaw) === 1) {
-                return true;
+            $yearNumber = 0;
+            $yearWords = [
+                1 => '/\b(1|i|1st|first)\b/',
+                2 => '/\b(2|ii|2nd|second)\b/',
+                3 => '/\b(3|iii|3rd|third)\b/',
+                4 => '/\b(4|iv|4th|fourth)\b/',
+                5 => '/\b(5|v|5th|fifth)\b/',
+            ];
+            foreach ($yearWords as $number => $pattern) {
+                if (preg_match($pattern, $yearRaw) === 1) {
+                    $yearNumber = $number;
+                    break;
+                }
             }
-            // MCA Regular often reports year=2 while in final semester (S3/S4).
-            if (!$isPg && !$isBca
-                && preg_match('/\b(1|2|3|i|ii|iii|1st|2nd|3rd|first|second|third)\b/', $yearRaw) === 1
-                && preg_match('/\b(4|5|iv|v|4th|5th|final|fourth|fifth)\b/', $yearRaw) !== 1) {
-                return false;
-            }
-            if ($isBca && preg_match('/\b(1|2|i|ii|1st|2nd|first|second)\b/', $yearRaw) === 1) {
-                return false;
-            }
-            if ($isPg && preg_match('/\b(2|ii|2nd|second)\b/', $yearRaw) === 1) {
-                return true;
-            }
-            if (preg_match('/\b(4|5|iv|v|4th|5th|final|fourth|fifth)\b/', $yearRaw) === 1) {
-                return true;
+            $finalYear = match ($programmeCode) {
+                'BCA' => 3,
+                'MCA' => 2,
+                'INMCA' => 5,
+                default => $isPg ? 2 : 4,
+            };
+            if ($yearNumber > 0) {
+                return $yearNumber >= $finalYear;
             }
         }
 
         if ($semesterRaw !== '') {
-            if (preg_match('/\b(7|8|s7|s8|sem\s*7|sem\s*8|semester\s*7|semester\s*8)\b/', $semesterRaw) === 1) {
-                return true;
-            }
-            if ($isPg && preg_match('/\b(3|4|5|6|s3|s4|s5|s6|sem\s*[3-6]|semester\s*[3-6])\b/', $semesterRaw) === 1) {
-                return true;
-            }
-            if ($isBca && preg_match('/\b(5|6|s5|s6|sem\s*[56]|semester\s*[56])\b/', $semesterRaw) === 1) {
-                return true;
-            }
-            if (!$isPg && !$isBca
-                && preg_match('/\b(1|2|3|4|5|6|s1|s2|s3|s4|s5|s6)\b/', $semesterRaw) === 1
-                && preg_match('/\b(7|8|s7|s8)\b/', $semesterRaw) !== 1) {
-                return false;
-            }
-            if ($isBca && preg_match('/\b(1|2|3|4|s1|s2|s3|s4|sem\s*[1-4]|semester\s*[1-4])\b/', $semesterRaw) === 1) {
-                return false;
+            if (preg_match('/(?:^|[^0-9])(10|[1-9])(?:[^0-9]|$)/', $semesterRaw, $m) === 1) {
+                $semester = (int) $m[1];
+                $finalSemesterStart = match ($programmeCode) {
+                    'BCA' => 5,
+                    'MCA' => 3,
+                    'INMCA' => 9,
+                    default => $isPg ? 3 : 7,
+                };
+
+                return $semester >= $finalSemesterStart;
             }
         }
 

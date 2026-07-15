@@ -283,6 +283,7 @@ final class StaffController
         $branch = trim((string) ($_GET['branch'] ?? ''));
         $svc = new PlacementFilterService();
         Response::success(DocumentHelper::jsonSafe([
+            'departments' => $svc->fetchDepartmentOptions($ctx),
             'programs' => $svc->fetchProgramOptions($ctx),
             'branches' => $program !== '' ? $svc->fetchBranchOptions($ctx, $program) : [],
             'batches'  => $svc->fetchBatchOptions($ctx, $program, $branch),

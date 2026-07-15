@@ -222,6 +222,7 @@ const StaffApi = {
 
   async fetchPlacementFilters(params = {}) {
     const qs = new URLSearchParams();
+    if (params.departmentId) qs.set('departmentId', params.departmentId);
     if (params.program) qs.set('program', params.program);
     if (params.branch) qs.set('branch', params.branch);
     const q = qs.toString();
@@ -231,7 +232,7 @@ const StaffApi = {
 
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
-    ['program', 'branch', 'batch', 'type', 'q'].forEach(k => {
+    ['departmentId', 'program', 'branch', 'batch', 'type', 'q'].forEach(k => {
       if (params[k]) qs.set(k, params[k]);
     });
     const q = qs.toString();

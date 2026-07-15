@@ -18,7 +18,7 @@ final class DepartmentProgrammeCatalog
             [
                 'parent' => 'Computer Applications',
                 'programmes' => [
-                    ['code' => 'MCA', 'label' => 'MCA', 'aliases' => ['MCAR', 'MCAREG']],
+                    ['code' => 'MCA', 'label' => 'MCA', 'aliases' => ['MCAR', 'MCAREG', 'MCAREGULAR']],
                     ['code' => 'BCA', 'label' => 'BCA', 'aliases' => ['BCAH', 'BCAHONS']],
                     ['code' => 'INMCA', 'label' => 'Integrated MCA', 'aliases' => ['INTMCA', 'IMCA', 'DDMCA']],
                 ],
@@ -132,7 +132,20 @@ final class DepartmentProgrammeCatalog
             return '';
         }
 
-        return self::aliasMap()[$needle] ?? $needle;
+        $mapped = self::aliasMap()[$needle] ?? null;
+        if ($mapped !== null) {
+            return $mapped;
+        }
+
+        foreach (self::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                if (self::normalizeCode($programme['label']) === $needle) {
+                    return self::normalizeCode($programme['code']);
+                }
+            }
+        }
+
+        return $needle;
     }
 
     /**

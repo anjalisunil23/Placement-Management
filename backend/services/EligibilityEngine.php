@@ -176,11 +176,17 @@ final class EligibilityEngine
 
         // Department check
         if (!empty($allowedBranches)) {
-            $deptId = (string) ($student['departmentId'] ?? '');
-            $dept = $this->departmentModel->findById($deptId);
-            $deptCode = is_array($dept) ? (string) ($dept['code'] ?? '') : '';
-            if ($deptCode && !$this->branchCodesMatch($deptCode, $allowedBranches)) {
-                $reasons[] = "Department {$deptCode} is not eligible for this drive.";
+            $studentCodes = $this->studentDepartmentCodes($student);
+            $matches = false;
+            foreach ($studentCodes as $studentCode) {
+                if ($this->branchCodesMatch((string) $studentCode, $allowedBranches)) {
+                    $matches = true;
+                    break;
+                }
+            }
+            if (!$matches) {
+                $label = $studentCodes !== [] ? implode(', ', $studentCodes) : 'not recorded';
+                $reasons[] = "Department / programme {$label} is not eligible for this drive.";
             }
         }
 
@@ -284,24 +290,39 @@ final class EligibilityEngine
      */
     private function branchCodesMatch(string $studentCode, array $allowedBranches): bool
     {
-        $studentCode = strtoupper(trim($studentCode));
-        if ($studentCode === '') {
+        $studentCodes = $this->expandDepartmentOrProgramme($studentCode);
+        if ($studentCodes === []) {
             return false;
         }
         foreach ($allowedBranches as $allowed) {
-            $allowed = strtoupper(trim((string) $allowed));
-            if ($allowed === '') {
-                continue;
-            }
-            if ($studentCode === $allowed) {
-                return true;
-            }
-            if (str_contains($allowed, $studentCode) || str_contains($studentCode, $allowed)) {
+            $allowedCodes = $this->expandDepartmentOrProgramme((string) $allowed);
+            if (array_intersect($studentCodes, $allowedCodes) !== []) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Parent departments expand to all programmes; programme aliases remain specific.
+     *
+     * @return list<string>
+     */
+    private function expandDepartmentOrProgramme(string $value): array
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return [];
+        }
+
+        $parentGroup = DepartmentProgrammeCatalog::findGroupByParentName($value);
+        if ($parentGroup !== null) {
+            return DepartmentProgrammeCatalog::programmeCodesForGroup($parentGroup);
+        }
+
+        $code = DepartmentProgrammeCatalog::resolveProgrammeCode($value);
+        return $code !== '' ? [$code] : [];
     }
 
     /**

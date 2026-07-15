@@ -108,6 +108,8 @@ final class StaffPlacementRegistryService
             'email'           => $email,
             'contact'         => $contact,
             'departmentId'    => $deptFields['departmentId'],
+            'departmentCode'  => $deptFields['departmentCode'],
+            'departmentName'  => $deptFields['departmentName'],
             'program'         => $program,
             'branch'          => $branch,
             'batch'           => $batch,
@@ -476,7 +478,7 @@ final class StaffPlacementRegistryService
     /**
      * @param array<string, mixed> $row
      * @param array<string, mixed>|null $dept
-     * @return array{departmentId:string,program:string,branch:string}
+     * @return array{departmentId:string,departmentCode:string,departmentName:string,program:string,branch:string}
      */
     private function resolveDepartmentFields(array $row, ?array $dept): array
     {
@@ -496,6 +498,8 @@ final class StaffPlacementRegistryService
         if ($aesProgram !== '') {
             return [
                 'departmentId' => is_array($dept) ? (string) ($dept['id'] ?? '') : trim((string) ($row['departmentId'] ?? '')),
+                'departmentCode' => is_array($dept) ? (string) ($dept['code'] ?? '') : trim((string) ($row['departmentCode'] ?? '')),
+                'departmentName' => is_array($dept) ? (string) ($dept['name'] ?? '') : trim((string) ($row['departmentName'] ?? '')),
                 'program'      => $aesProgram,
                 'branch'       => $aesBranch !== '' ? $aesBranch : 'Regular',
             ];
@@ -509,6 +513,8 @@ final class StaffPlacementRegistryService
             if ($code !== '' || $name !== '') {
                 return [
                     'departmentId' => $departmentId,
+                    'departmentCode' => $code,
+                    'departmentName' => $name,
                     'program'      => $code,
                     'branch'       => $name,
                 ];
@@ -521,6 +527,8 @@ final class StaffPlacementRegistryService
         if ($code !== '' || $name !== '') {
             return [
                 'departmentId' => $departmentId,
+                'departmentCode' => $code,
+                'departmentName' => $name,
                 'program'      => $code,
                 'branch'       => $name !== '' ? $name : $code,
             ];
@@ -531,6 +539,8 @@ final class StaffPlacementRegistryService
             if (is_array($deptDoc)) {
                 return [
                     'departmentId' => $departmentId,
+                    'departmentCode' => strtoupper(trim((string) ($deptDoc['code'] ?? ''))),
+                    'departmentName' => trim((string) ($deptDoc['name'] ?? '')),
                     'program'      => strtoupper(trim((string) ($deptDoc['code'] ?? ''))),
                     'branch'       => trim((string) ($deptDoc['name'] ?? '')),
                 ];
@@ -539,6 +549,8 @@ final class StaffPlacementRegistryService
 
         return [
             'departmentId' => $departmentId,
+            'departmentCode' => '',
+            'departmentName' => '',
             'program'      => '',
             'branch'       => '',
         ];
@@ -694,14 +706,14 @@ final class StaffPlacementRegistryService
         if ($register !== '') {
             $existing = $model->findByRegisterNumber($register);
             if ($existing) {
-                return $existing;
+                return $this->backfillStudentClassFields($model, $existing, $student);
             }
         }
 
         if (empty($student['aesOnly']) && !empty($student['_id']) && Security::isValidId((string) $student['_id'])) {
             $byId = $model->findById((string) $student['_id']);
             if ($byId) {
-                return $byId;
+                return $this->backfillStudentClassFields($model, $byId, $student);
             }
         }
 
@@ -722,6 +734,12 @@ final class StaffPlacementRegistryService
             'admno'          => $register,
             'departmentId'   => $deptId !== '' ? Security::toObjectId($deptId) : null,
             'classBatch'     => trim((string) ($student['classBatch'] ?? $student['stud_class'] ?? '')),
+            'programme'      => DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+                $student['stud_course']
+                ?? $student['programme']
+                ?? ''
+            )),
+            'branch'         => trim((string) ($student['stud_branch'] ?? $student['branch'] ?? 'Regular')),
             'personal'       => [
                 'fullName'       => $name,
                 'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
@@ -744,6 +762,40 @@ final class StaffPlacementRegistryService
         }
 
         return $created;
+    }
+
+    /**
+     * Preserve AES programme/class identity on existing profiles for drive eligibility.
+     *
+     * @param array<string, mixed> $existing
+     * @param array<string, mixed> $aesStudent
+     * @return array<string, mixed>
+     */
+    private function backfillStudentClassFields(StudentModel $model, array $existing, array $aesStudent): array
+    {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+            $aesStudent['stud_course']
+            ?? $aesStudent['programme']
+            ?? ''
+        ));
+        $branch = trim((string) ($aesStudent['stud_branch'] ?? $aesStudent['branch'] ?? ''));
+        $batch = trim((string) ($aesStudent['classBatch'] ?? $aesStudent['stud_class'] ?? ''));
+        $patch = [];
+        if ($programme !== '' && trim((string) ($existing['programme'] ?? '')) === '') {
+            $patch['programme'] = $programme;
+        }
+        if ($branch !== '' && trim((string) ($existing['branch'] ?? '')) === '') {
+            $patch['branch'] = $branch;
+        }
+        if ($batch !== '' && trim((string) ($existing['classBatch'] ?? '')) === '') {
+            $patch['classBatch'] = $batch;
+        }
+        if ($patch !== []) {
+            $model->update((string) $existing['_id'], $patch);
+            $existing = array_merge($existing, $patch);
+        }
+
+        return $existing;
     }
 
     /**

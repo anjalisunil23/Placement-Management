@@ -44,6 +44,29 @@ final class PlacementFilterService
     }
 
     /**
+     * Department visible to the signed-in staff member.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<array{id:string,code:string,name:string}>
+     */
+    public function fetchDepartmentOptions(array $ctx): array
+    {
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+        $id = (string) ($dept['_id'] ?? $ctx['departmentId'] ?? '');
+        $code = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $name = trim((string) ($dept['name'] ?? ''));
+        if ($id === '' && $code === '' && $name === '') {
+            return [];
+        }
+
+        return [[
+            'id' => $id,
+            'code' => $code,
+            'name' => $name,
+        ]];
+    }
+
+    /**
      * Distinct stud_course values from getStudInfo4Placement for the department.
      *
      * @param array<string, mixed> $ctx
@@ -51,7 +74,40 @@ final class PlacementFilterService
      */
     public function fetchProgramOptions(array $ctx): array
     {
-        return $this->sortLabels($this->distinctFieldFromScopedRows($ctx, 'stud_course', '', ''));
+        $programmes = $this->distinctFieldFromScopedRows($ctx, 'stud_course', '', '');
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+        if ($deptAesId !== '') {
+            try {
+                $programmes = array_merge(
+                    $programmes,
+                    (new AesApiService())->fetchPlacementCourses($deptAesId)
+                );
+            } catch (\Throwable) {
+                // Keep session/local/catalog options when AES is temporarily unavailable.
+            }
+        }
+
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
+            (string) ($dept['code'] ?? ''),
+            (string) ($dept['name'] ?? '')
+        );
+        if ($group !== null) {
+            $programmes = array_merge(
+                $programmes,
+                DepartmentProgrammeCatalog::programmeCodesForGroup($group)
+            );
+        }
+
+        $canonical = [];
+        foreach ($programmes as $programme) {
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode((string) $programme);
+            if ($code !== '') {
+                $canonical[] = $code;
+            }
+        }
+
+        return $this->sortLabels(array_values(array_unique($canonical)));
     }
 
     /**
@@ -67,7 +123,25 @@ final class PlacementFilterService
             return [];
         }
 
-        return $this->sortLabels($this->distinctFieldFromScopedRows($ctx, 'stud_branch', $program, ''));
+        $branches = $this->distinctFieldFromScopedRows($ctx, 'stud_branch', $program, '');
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+        if ($deptAesId !== '') {
+            try {
+                $branches = array_merge(
+                    $branches,
+                    (new AesApiService())->fetchPlacementBranches($deptAesId, $program)
+                );
+            } catch (\Throwable) {
+                // Keep discovered values when AES is temporarily unavailable.
+            }
+        }
+
+        $branches = array_values(array_filter(array_map('trim', $branches), static fn (string $v): bool => $v !== ''));
+        if ($branches === []) {
+            $branches[] = 'Regular';
+        }
+
+        return $this->sortLabels(array_values(array_unique($branches)));
     }
 
     /**
