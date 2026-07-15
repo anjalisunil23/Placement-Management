@@ -150,6 +150,7 @@ final class CompanyController
             'totalApplicants' => $counts['total'],
             'shortlisted'     => $counts['shortlisted'],
             'offered'         => $counts['offered'],
+            'selected'        => $counts['offered'],
             'funnel'          => [
                 'applied'      => $counts['applied'] + $counts['under_review'],
                 'shortlisted'  => $counts['shortlisted'],
@@ -253,9 +254,34 @@ final class CompanyController
         }
 
         $input['companyId'] = (string) $company['_id'];
+        $input['ownerUserId'] = (string) $user['_id'];
+        $input['companyName'] = (string) ($company['companyName'] ?? '');
         if (isset($input['eligibility']) && is_string($input['eligibility'])) {
             $input['eligibility'] = json_decode($input['eligibility'], true) ?? [];
         }
+        $eligibility = is_array($input['eligibility'] ?? null) ? $input['eligibility'] : [];
+        if (array_key_exists('branches', $input)) {
+            $branches = is_array($input['branches'])
+                ? $input['branches']
+                : (preg_split('/[,;]+/', (string) $input['branches']) ?: []);
+            $eligibility['branches'] = array_values(array_unique(array_filter(array_map(
+                static fn (mixed $branch): string => strtoupper(trim((string) $branch)),
+                $branches
+            ))));
+        }
+        foreach (['minCgpa', 'min10th', 'min12th'] as $field) {
+            if (array_key_exists($field, $input)) {
+                $eligibility[$field] = (float) $input[$field];
+            }
+        }
+        if (array_key_exists('maxBacklogs', $input)) {
+            $eligibility['maxBacklogs'] = (int) $input['maxBacklogs'];
+        }
+        if (array_key_exists('gender', $input)) {
+            $gender = strtolower(trim((string) $input['gender']));
+            $eligibility['gender'] = in_array($gender, ['male', 'female'], true) ? $gender : 'any';
+        }
+        $input['eligibility'] = $eligibility;
 
         if (isset($_FILES['jd'])) {
             $config = require dirname(__DIR__) . '/config/app.php';

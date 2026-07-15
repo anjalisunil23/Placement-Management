@@ -21,6 +21,8 @@ class AlumniJobPostModel extends BaseModel
     {
         return $this->insert([
             'alumniUserId' => Security::toObjectId($alumniUserId),
+            'ownerUserId'  => Security::toObjectId($alumniUserId),
+            'sourceType'   => 'alumni',
             'title'        => trim((string) ($data['title'] ?? '')),
             'company'      => trim((string) ($data['company'] ?? '')),
             'jobType'      => trim((string) ($data['type'] ?? $data['jobType'] ?? 'Full-time')),
@@ -28,6 +30,8 @@ class AlumniJobPostModel extends BaseModel
             'location'     => trim((string) ($data['location'] ?? '')),
             'description'  => trim((string) ($data['description'] ?? '')),
             'status'       => self::normalizeStatus($data['status'] ?? 'open'),
+            'audience'     => self::normalizeAudience($data['audience'] ?? 'both'),
+            'eligibility'  => is_array($data['eligibility'] ?? null) ? $data['eligibility'] : [],
             'views'        => 0,
         ]);
     }
@@ -36,6 +40,12 @@ class AlumniJobPostModel extends BaseModel
     {
         $value = strtolower(trim((string) $status));
         return in_array($value, ['open', 'reviewing', 'closed'], true) ? $value : 'open';
+    }
+
+    private static function normalizeAudience(mixed $audience): string
+    {
+        $value = strtolower(trim((string) $audience));
+        return in_array($value, ['student', 'alumni', 'both'], true) ? $value : 'both';
     }
 
     /**

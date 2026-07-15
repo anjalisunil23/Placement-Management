@@ -10,7 +10,6 @@ use PMS\Models\AlumniModel;
 use PMS\Models\AlumniReferralModel;
 use PMS\Models\ApplicationModel;
 use PMS\Models\DriveModel;
-use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\ResumeModel;
@@ -19,6 +18,7 @@ use PMS\Models\SuccessStoryModel;
 use PMS\Services\AesLoginService;
 use PMS\Services\ApplicationUploadService;
 use PMS\Services\EligibilityEngine;
+use PMS\Services\JobFeedService;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\NotificationService;
@@ -211,6 +211,10 @@ final class AlumniController
   public function createJobPost(): void
   {
     $user = RBACMiddleware::requireAlumni();
+    $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
+    if (!$profile || ($profile['isWorking'] ?? false) !== true) {
+      Response::forbidden('Only employed alumni can post jobs.');
+    }
     $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
     $errors = Validator::validate($input, [
       'title'   => 'required',
@@ -219,6 +223,15 @@ final class AlumniController
     if (!empty($errors)) {
       Response::error('Validation failed.', 422, $errors);
     }
+    $branches = is_array($input['branches'] ?? null)
+      ? $input['branches']
+      : (preg_split('/[,;]+/', (string) ($input['branches'] ?? '')) ?: []);
+    $input['eligibility'] = [
+      'branches' => array_values(array_unique(array_filter(array_map(
+        static fn (mixed $branch): string => strtoupper(trim((string) $branch)),
+        $branches
+      )))),
+    ];
     $id = (new AlumniJobPostModel())->createPost((string) $user['_id'], $input);
     Response::success(['id' => $id], 'Job posted successfully.', 201);
   }
@@ -226,8 +239,12 @@ final class AlumniController
   /** GET /api/alumni/jobs */
   public function listJobs(): void
   {
-    RBACMiddleware::requireAlumni();
-    Response::success(DocumentHelper::serializeMany((new JobModel())->findAll([], 100)));
+    $user = RBACMiddleware::requireAlumni();
+    $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
+    if (!$profile || ($profile['isWorking'] ?? false) === true) {
+      Response::forbidden('This feed is available to job-seeking alumni.');
+    }
+    Response::success((new JobFeedService())->listForSeekingAlumni($user));
   }
 
   /** GET /api/alumni/referrals */

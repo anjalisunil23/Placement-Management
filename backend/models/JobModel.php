@@ -21,6 +21,9 @@ class JobModel extends BaseModel
     {
         $doc = [
             'companyId'   => Security::toObjectId($data['companyId']),
+            'ownerUserId' => isset($data['ownerUserId']) ? Security::toObjectId($data['ownerUserId']) : null,
+            'sourceType'  => 'company',
+            'companyName' => trim((string) ($data['companyName'] ?? '')),
             'driveId'     => isset($data['driveId']) ? Security::toObjectId($data['driveId']) : null,
             'title'       => $data['title'],
             'description' => $data['description'] ?? '',
@@ -30,6 +33,7 @@ class JobModel extends BaseModel
             'location'    => $data['location'] ?? '',
             'jobType'     => $data['jobType'] ?? $data['type'] ?? 'Full-time',
             'status'      => $data['status'] ?? 'open',
+            'audience'    => self::normalizeAudience($data['audience'] ?? 'both'),
             'openings'    => (int) ($data['openings'] ?? 0),
         ];
         return $this->insert($doc);
@@ -37,12 +41,18 @@ class JobModel extends BaseModel
 
     public function updateJob(string $id, array $data): bool
     {
-        $allowed = ['title', 'description', 'package', 'location', 'eligibility', 'status', 'jobType', 'openings'];
+        $allowed = ['title', 'description', 'package', 'location', 'eligibility', 'status', 'jobType', 'openings', 'audience'];
         $update = array_intersect_key($data, array_flip($allowed));
         if (empty($update)) {
             return false;
         }
         return $this->update($id, $update);
+    }
+
+    private static function normalizeAudience(mixed $audience): string
+    {
+        $value = strtolower(trim((string) $audience));
+        return in_array($value, ['student', 'alumni', 'both'], true) ? $value : 'both';
     }
 
     public function countApplicantsByJob(string $companyId): array

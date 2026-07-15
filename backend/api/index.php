@@ -104,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 use PMS\Admin\AdminController;
 use PMS\Alumni\AlumniController;
+use PMS\Api\JobFeedController;
 use PMS\Api\PublicController;
 use PMS\Auth\AuthController;
 use PMS\Company\CompanyController;
@@ -135,6 +136,7 @@ $routes = [
 
     // Admin
     ['GET',    '/admin/dashboard',              [AdminController::class, 'dashboard']],
+    ['GET',    '/admin/jobs',                   [JobFeedController::class, 'admin']],
     ['GET',    '/admin/users',                  [AdminController::class, 'listUsers']],
     ['POST',   '/admin/users',                  [AdminController::class, 'createUser']],
     ['PUT',    '/admin/users/{id}',             [AdminController::class, 'updateUser']],
@@ -242,7 +244,7 @@ $routes = [
     ['GET',  '/student/resumes/{id}/view',[StudentController::class, 'viewResume']],
     ['POST', '/student/resumes/{id}/delete',[StudentController::class, 'deleteResumeFromLibrary']],
     ['POST', '/student/resumes/{id}/default',[StudentController::class, 'setDefaultResume']],
-    ['GET',  '/student/jobs',              [StudentController::class, 'listJobs']],
+    ['GET',  '/student/jobs',              [JobFeedController::class, 'student']],
     ['GET',  '/student/drives',            [StudentController::class, 'listDrives']],
     ['GET',  '/student/open-drives',       [StudentController::class, 'openDrives']],
     ['GET',  '/student/drives/{id}',       [StudentController::class, 'driveDetails']],
@@ -316,7 +318,7 @@ $routes = [
     ['GET',  '/alumni/dashboard',   [AlumniController::class, 'dashboard']],
     ['GET',  '/alumni/job-posts',   [AlumniController::class, 'listJobPosts']],
     ['POST', '/alumni/job-posts',   [AlumniController::class, 'createJobPost']],
-    ['GET',  '/alumni/jobs',        [AlumniController::class, 'listJobs']],
+    ['GET',  '/alumni/jobs',        [JobFeedController::class, 'alumni']],
     ['GET',  '/alumni/referrals',   [AlumniController::class, 'listReferrals']],
     ['POST', '/alumni/jobs/refer',  [AlumniController::class, 'referJob']],
     ['GET',  '/alumni/drives',      [AlumniController::class, 'listDrives']],
@@ -334,6 +336,7 @@ $routes = [
     // Placement Officer
     ['GET',  '/officer/profile',                   [OfficerController::class, 'profile']],
     ['GET',  '/officer/dashboard',                 [OfficerController::class, 'dashboard']],
+    ['GET',  '/officer/jobs',                      [JobFeedController::class, 'officer']],
     ['GET',  '/officer/students',                  [OfficerController::class, 'listStudents']],
     ['GET',  '/officer/students/final-year',       [OfficerController::class, 'listFinalYearStudents']],
     ['GET',  '/officer/students/{id}/pipeline',    [OfficerController::class, 'studentPipeline']],

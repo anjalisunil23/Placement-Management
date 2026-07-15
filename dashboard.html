@@ -248,38 +248,26 @@
       <!-- ===== COMPANY ===== -->
       <div data-roles="company">
         <div class="row g-3">
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-people-fill"></i></div><span class="badge-soft info">Your drives</span></div>
+          <div class="col-6 col-lg"><div class="card-surface stat-card h-100">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-people-fill"></i></div><span class="badge-soft info">Applications</span></div>
             <div class="val"><span class="counter" id="coApplicants" data-target="0">0</span></div><div class="lbl">Your applicants</div>
           </div></div>
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
-            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-diagram-3-fill"></i></div><span class="badge-soft muted" id="coDeptBadge">—</span></div>
-            <div class="val"><span class="counter" id="coDepts" data-target="0">0</span></div><div class="lbl">Departments represented</div>
+          <div class="col-6 col-lg"><div class="card-surface stat-card h-100">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-megaphone-fill"></i></div><span class="badge-soft muted">Posts</span></div>
+            <div class="val"><span class="counter" id="coJobPosts" data-target="0">0</span></div><div class="lbl">Job post count</div>
           </div></div>
-        </div>
-        <div class="row g-3 mt-1">
-          <div class="col-lg-7"><div class="card-surface p-3 p-md-4">
-            <h6 class="fw-bold mb-3">Applicants by department</h6>
-            <div class="table-wrap">
-              <table class="table-modern">
-                <thead><tr><th>Department</th><th>Applicants</th></tr></thead>
-                <tbody id="companyDeptRows"></tbody>
-              </table>
-            </div>
-            <a href="applicants.html" class="btn btn-sm btn-outline-primary mt-2">View applicants</a>
+          <div class="col-6 col-lg"><div class="card-surface stat-card h-100">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-person-check-fill"></i></div><span class="badge-soft warning">Pipeline</span></div>
+            <div class="val"><span class="counter" id="coShortlisted" data-target="0">0</span></div><div class="lbl">Shortlisted</div>
           </div></div>
-        </div>
-        <div class="card-surface mt-3">
-          <div class="p-3 p-md-4 pb-0 d-flex justify-content-between align-items-center">
-            <h6 class="fw-bold mb-0">Applicant list</h6>
-            <a href="applicants.html" class="btn btn-sm btn-outline-primary">View all</a>
-          </div>
-          <div class="table-wrap">
-            <table class="table-modern">
-              <thead><tr><th>Candidate</th><th>Department</th><th>CGPA</th><th>Role</th><th>Status</th></tr></thead>
-              <tbody id="companyApplicants"></tbody>
-            </table>
-          </div>
+          <div class="col-6 col-lg"><div class="card-surface stat-card h-100">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-patch-check-fill"></i></div><span class="badge-soft success">Selected</span></div>
+            <div class="val"><span class="counter" id="coSelected" data-target="0">0</span></div><div class="lbl">Selected</div>
+          </div></div>
+          <div class="col-6 col-lg"><div class="card-surface stat-card h-100">
+            <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-briefcase-fill"></i></div><span class="badge-soft info">Active</span></div>
+            <div class="val"><span class="counter" id="coRoles" data-target="0">0</span></div><div class="lbl">Active role count</div>
+          </div></div>
         </div>
       </div>
 
@@ -341,8 +329,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260715name"></script>
-<script src="js/app.js?v=20260715adminnav"></script>
+<script src="js/api.js?v=20260715jobportal"></script>
+<script src="js/app.js?v=20260715jobportal"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -385,7 +373,7 @@ const titles = {
   placement_officer: ['Dashboard', ''],
   student: ['Dashboard', ''],
   staff: ['', ''],
-  company: [`${user.companyName || user.name} · Recruiter`, 'Active companies, department-wise applicants, and candidate list.'],
+  company: [`${user.companyName || user.name}`, ''],
   alumni: ['', ''],
 };
 document.getElementById('dashTitle').textContent = titles[role][0];
@@ -408,7 +396,7 @@ const   actions = {
   placement_officer: '',
   student: '',
   staff: '',
-  company: '<a class="btn btn-outline-secondary" href="company.html"><i class="bi bi-building me-1"></i>Company Portal</a><a class="btn btn-outline-secondary" href="eligibility.html"><i class="bi bi-check2-square me-1"></i>Eligibility</a><a class="btn btn-primary" href="applicants.html"><i class="bi bi-person-lines-fill me-1"></i>Applicants</a>',
+  company: '',
   alumni: '',
 };
 document.getElementById('dashActions').innerHTML = actions[role] || '';
@@ -508,43 +496,45 @@ if (role === 'student') {
   })();
 }
 
-/* Company recruitment overview */
+/* Company summary */
 if (role === 'company') {
   (async () => {
-    let apps = [];
-    let byDept = [];
     const live = Auth.hasRealAuth() && !Auth.isDemo();
+    let stats = { totalApplicants: 0, totalJobs: 0, shortlisted: 0, selected: 0, activeJobs: 0 };
     if (live) {
-      const data = await RecruitingStore.fetch();
-      if (data) {
-        apps = (data.applicants || []).map(RecruitingStore.mapApplicant);
-        byDept = (data.applicantsByDept || []).map(RecruitingStore.mapDeptRow);
+      const res = await api('/company/dashboard', { noRedirectOn401: true });
+      if (res?.success && res.data) {
+        stats = res.data;
       } else {
         toast('Could not load live company dashboard data.', 'error');
       }
-    }
-    if (!live) {
+    } else {
       const coName = user.companyName || 'Acme Cloud';
-      apps = companyApplicants(coName);
-      byDept = applicantsByDepartment(coName);
+      const apps = companyApplicants(coName);
+      stats = {
+        totalApplicants: apps.length,
+        totalJobs: 0,
+        shortlisted: apps.filter(a => String(a.status).toLowerCase() === 'shortlisted').length,
+        selected: apps.filter(a => ['selected', 'offered'].includes(String(a.status).toLowerCase())).length,
+        activeJobs: 0,
+      };
     }
 
-    document.getElementById('coApplicants').dataset.target = apps.length;
-    document.getElementById('coDepts').dataset.target = byDept.length;
-    document.getElementById('coDeptBadge').textContent = byDept.length + ' depts';
-    ['coApplicants','coDepts'].forEach(id => {
+    const values = {
+      coApplicants: stats.totalApplicants || 0,
+      coJobPosts: stats.totalJobs || 0,
+      coShortlisted: stats.shortlisted || 0,
+      coSelected: stats.selected ?? stats.offered ?? 0,
+      coRoles: stats.activeJobs || 0,
+    };
+    Object.entries(values).forEach(([id, value]) => {
       const el = document.getElementById(id);
-      if (el) el.dataset.animated = '0';
+      if (el) {
+        el.dataset.target = value;
+        el.dataset.animated = '0';
+      }
     });
     animateCounters(document.querySelector('[data-roles="company"]'));
-
-    document.getElementById('companyDeptRows').innerHTML = byDept.length ? byDept.map(d =>
-      `<tr><td><strong>${d.dept}</strong></td><td>${d.count}</td></tr>`).join('')
-      : '<tr><td colspan="2" class="text-muted-2 p-3">No applicants yet.</td></tr>';
-
-    document.getElementById('companyApplicants').innerHTML = apps.length ? apps.slice(0, 8).map(a => `
-      <tr><td><strong>${a.name}</strong></td><td>${a.dept}</td><td>${a.cgpa.toFixed(2)}</td><td>${a.role}</td><td>${appStatusBadge(a.status)}</td></tr>`).join('')
-      : '<tr><td colspan="5" class="text-muted-2 p-4">No applicants yet.</td></tr>';
   })();
 }
 

@@ -67,6 +67,7 @@ const NAV = [
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
   { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Placement details", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
+  { href: "job-posts.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['admin', 'placement_officer', 'student', 'alumni'], alumniSeeking: true },
   { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin', 'placement_officer'] },
@@ -82,11 +83,9 @@ const NAV = [
   { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
 
-  { section: "Company", roles: ['admin', 'placement_officer', 'company'] },
-  { href: "company.html", icon: "bi-building", label: "Company Portal", roles: ['company'] },
+  { section: "Company", roles: ['company'] },
+  { href: "company.html", icon: "bi-building", label: "Job Portal", roles: ['company'] },
   { href: "applicants.html", icon: "bi-person-lines-fill", label: "Applicants", roles: ['company'] },
-  { href: "recruiting.html", icon: "bi-diagram-3-fill", label: "Recruitment", roles: ['company'] },
-  { href: "eligibility.html", icon: "bi-check2-square", label: "Eligibility Criteria", roles: ['company'] },
 
   { section: "Insights", roles: ['staff'] },
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['staff'] },
@@ -102,13 +101,14 @@ const PAGE_LABELS = {
   'dashboard.html': 'Dashboard',
   'analytics.html': 'Analytics',
   'drives.html': 'Placement Drives',
+  'job-posts.html': 'Job Posts',
   'create-drive.html': 'Create Drive',
   'placement-console.html': 'Placement Drives · Console',
   'students.html': 'Students',
   'hiring-overview.html': 'Hiring Overview',
   'tracking.html': 'Placement Tracking',
   'eligibility.html': 'Eligibility Criteria',
-  'company.html': 'Company Portal',
+  'company.html': 'Job Portal',
   'admin-companies.html': 'Staff Recommendations',
   'applicants.html': 'Applicants',
   'reports.html': 'Reports',
@@ -479,7 +479,9 @@ function renderShell(active) {
     const topbarTitle = useNameInTopbar ? displayName : pageLabel;
     const topbarSub = useNameInTopbar
       ? ''
-      : (role === 'student' || role === 'staff' || role === 'alumni' || role === 'admin' || role === 'placement_officer' ? '' : `${ROLE_LABELS[role]} workspace`);
+      : (role === 'company'
+        ? (user.companyName || user.name || '')
+        : (role === 'student' || role === 'staff' || role === 'alumni' || role === 'admin' || role === 'placement_officer' ? '' : `${ROLE_LABELS[role]} workspace`));
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
       ${showTopbarTitle ? `<div class="d-none d-md-block">
