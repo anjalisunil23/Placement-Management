@@ -231,6 +231,29 @@ final class StaffPlacementRegistryService
             }
         }
 
+        // Class roster row so staff can add 5.2.1 details for every student in the batch.
+        if ($entries === []) {
+            $blank = $this->buildRosterEntry($meta, [
+                'id'               => $studentId . ':roster',
+                'employer'         => '',
+                'role'             => '',
+                'address'          => '',
+                'package'          => '',
+                'employerContact'  => '',
+                'joinDate'         => '',
+                'endDate'          => '',
+                'type'             => 'Placement',
+                'source'           => 'class_roster',
+                'hasOfferLetter'   => false,
+                'hasJoiningLetter' => false,
+                'hasCompanyIdDoc'  => false,
+                'canVerify'        => false,
+            ]);
+            if ($blank !== null) {
+                $entries[] = $blank;
+            }
+        }
+
         return $entries;
     }
 
@@ -249,6 +272,22 @@ final class StaffPlacementRegistryService
             return null;
         }
         $seen[$key] = true;
+
+        return array_merge($meta, $data);
+    }
+
+    /**
+     * Empty placement / higher-education shell for a student in the selected class.
+     *
+     * @param array<string, mixed> $meta
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>|null
+     */
+    private function buildRosterEntry(array $meta, array $data): ?array
+    {
+        if (trim((string) ($meta['studentId'] ?? '')) === '') {
+            return null;
+        }
 
         return array_merge($meta, $data);
     }
@@ -411,7 +450,9 @@ final class StaffPlacementRegistryService
             }
             if ($type !== '') {
                 $want = $type === 'higher_education' ? 'Higher Education' : 'Placement';
-                if ((string) ($row['type'] ?? '') !== $want) {
+                $employer = trim((string) ($row['employer'] ?? ''));
+                // Keep unfilled class-roster rows visible so staff can add details.
+                if ($employer !== '' && (string) ($row['type'] ?? '') !== $want) {
                     return false;
                 }
             }
@@ -582,6 +623,7 @@ final class StaffPlacementRegistryService
         if (!$student) {
             Response::notFound('Student not found.');
         }
+        $student = $this->ensureLocalStudentForStaffEdit($student, $staffCtx);
         StaffContext::assertStudentInScope($student, $staffCtx);
 
         $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
@@ -639,6 +681,72 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * Materialize an AES-directory-only student into PlaceHub so staff can save 5.2.1 details.
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    private function ensureLocalStudentForStaffEdit(array $student, array $staffCtx): array
+    {
+        $model = new StudentModel();
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? '')));
+        if ($register !== '') {
+            $existing = $model->findByRegisterNumber($register);
+            if ($existing) {
+                return $existing;
+            }
+        }
+
+        if (empty($student['aesOnly']) && !empty($student['_id']) && Security::isValidId((string) $student['_id'])) {
+            $byId = $model->findById((string) $student['_id']);
+            if ($byId) {
+                return $byId;
+            }
+        }
+
+        if ($register === '') {
+            Response::error('Student admission number is missing; cannot save placement details.', 422);
+        }
+
+        $deptId = (string) ($staffCtx['departmentId'] ?? '');
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $name = trim((string) (
+            $personal['fullName']
+            ?? $student['displayName']
+            ?? $student['stud_name']
+            ?? ''
+        ));
+        $id = $model->insert([
+            'registerNumber' => $register,
+            'admno'          => $register,
+            'departmentId'   => $deptId !== '' ? Security::toObjectId($deptId) : null,
+            'classBatch'     => trim((string) ($student['classBatch'] ?? $student['stud_class'] ?? '')),
+            'personal'       => [
+                'fullName'       => $name,
+                'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
+                'personalEmail'  => trim((string) ($personal['personalEmail'] ?? $student['personalEmail'] ?? '')),
+                'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+            ],
+            'academic'       => is_array($student['academic'] ?? null) ? $student['academic'] : [
+                'cgpa' => 0.0,
+                'backlogs' => 0,
+            ],
+            'placementChances' => ['used' => 0, 'remaining' => 3, 'total' => 3],
+            'placed'           => false,
+            'placementHistory' => [],
+            'source'           => 'staff_registry',
+        ]);
+
+        $created = $model->findById($id);
+        if (!$created) {
+            Response::serverError('Could not create local student profile for this admission number.');
+        }
+
+        return $created;
+    }
+
+    /**
      * Staff upload of placement documents for a student.
      *
      * @param array<string, mixed> $staffCtx
@@ -651,6 +759,7 @@ final class StaffPlacementRegistryService
         if (!$student) {
             Response::notFound('Student not found.');
         }
+        $student = $this->ensureLocalStudentForStaffEdit($student, $staffCtx);
         StaffContext::assertStudentInScope($student, $staffCtx);
 
         $hasOffer = isset($_FILES['offerLetter']) && (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;

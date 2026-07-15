@@ -1046,6 +1046,9 @@ final class OfficerDataService
         }
         $row['displayName'] = $name !== '' ? $name : (string) ($row['displayName'] ?? $register);
         $row['classBatch'] = $classBatch !== '' ? $classBatch : (string) ($row['classBatch'] ?? '');
+        $row['stud_class'] = $classBatch !== '' ? $classBatch : (string) ($row['stud_class'] ?? '');
+        $row['stud_course'] = $programme !== '' ? $programme : (string) ($row['stud_course'] ?? '');
+        $row['stud_branch'] = trim((string) ($record['stud_branch'] ?? $row['stud_branch'] ?? ''));
         if ($year !== '') {
             $row['year'] = $year;
         }

@@ -120,7 +120,7 @@
               <input class="form-control" id="editEmployer" placeholder="Name of the Employer" required/>
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-semibold" for="editEmployerContact">Contact Number of Employer</label>
+              <label class="form-label small fw-semibold" for="editEmployerContact">Contact Number of Employer/Higher Education Institution</label>
               <input class="form-control" id="editEmployerContact" placeholder="Contact Number of Employer"/>
             </div>
             <div class="col-md-6">
@@ -226,6 +226,7 @@
 .registry-action-btn:disabled{opacity:.45;cursor:not-allowed}
 .registry-action-btn.dl{background:#1e3a8a}
 .registry-action-btn.up{background:#0ea5e9}
+.registry-action-btn.add{background:#22c55e}
 .registry-action-btn.ed{background:#f59e0b}
 .registry-action-btn:hover:not(:disabled){filter:brightness(1.08);color:#fff}
 .registry-student-name{font-weight:600;text-transform:uppercase;letter-spacing:.01em}
@@ -396,7 +397,10 @@ function renderTable() {
     : 'No entries to show';
 
   if (!slice.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">No placement or higher-education records match your filters.</td></tr>';
+    const needClass = !filterProgram || !filterBranch || !filterBatch;
+    tbody.innerHTML = needClass
+      ? '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Select program, branch, and batch to list all students in the class.</td></tr>'
+      : '<tr><td colspan="10" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
     return;
   }
 
@@ -404,22 +408,26 @@ function renderTable() {
     const sl = `${start + i + 1}.`;
     const sid = esc(r.studentId || '');
     const hasDoc = !!(r.hasOfferLetter || r.hasJoiningLetter || r.hasCompanyIdDoc);
+    const hasEmployer = String(r.employer || '').trim() !== '';
     const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
-    const uploadBtn = `<button type="button" class="registry-action-btn up" title="Upload documents" onclick="openUploadPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`;
-    const editBtn = `<button type="button" class="registry-action-btn ed" title="Edit placement" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`;
-    const typeLabel = r.type === 'Higher Education' ? 'Higher Education' : 'Placement';
+    const detailsBtn = hasEmployer
+      ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
+      : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`;
+    const typeLabel = hasEmployer
+      ? (r.type === 'Higher Education' ? 'Higher Education' : 'Placement')
+      : '';
     return `<tr>
       <td>${sl}</td>
       <td><span class="registry-student-name">${esc(String(r.studentName || '—').toUpperCase())}</span></td>
       <td>${esc(r.admissionNo || r.registerNumber || '—')}</td>
       <td class="registry-cell-contact">${esc(formatContact(r))}</td>
-      <td>${esc(r.employer || '—')}</td>
+      <td>${esc(r.employer || '')}</td>
       <td>${esc(typeLabel)}</td>
       <td class="registry-cell-employer-contact">${esc(r.employerContact || '')}</td>
       <td class="registry-cell-address">${esc(r.address || '')}</td>
       <td>${esc(r.package || '')}</td>
       <td>
-        <div class="registry-actions">${downloadBtn}${uploadBtn}${editBtn}</div>
+        <div class="registry-actions">${downloadBtn}${detailsBtn}</div>
       </td>
     </tr>`;
   }).join('');
@@ -563,7 +571,15 @@ async function saveUploadPlacement(ev) {
 
 async function loadRegistry() {
   const tbody = document.getElementById('registryRows');
-  tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
+  if (!filterProgram || !filterBranch || !filterBatch) {
+    allRows = [];
+    filteredRows = [];
+    document.getElementById('rowCount').textContent = '';
+    document.getElementById('pageInfo').textContent = '';
+    tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Select program, branch, and batch to list all students in the class.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
   const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
   if (!data) {
     tbody.innerHTML = '<tr><td colspan="10" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
