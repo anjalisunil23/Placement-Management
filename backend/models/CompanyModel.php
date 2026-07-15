@@ -97,7 +97,7 @@ class CompanyModel extends BaseModel
     }
 
     /**
-     * @return array<int, array{name:string,email:string,phone:string}>
+     * @return array<int, array{name:string,email:string,phone:string,designation:string}>
      */
     private function normalizeContacts(mixed $contacts): array
     {
@@ -106,11 +106,12 @@ class CompanyModel extends BaseModel
                 'name'  => trim((string) ($contacts['name'] ?? '')),
                 'email' => trim((string) ($contacts['email'] ?? '')),
                 'phone' => trim((string) ($contacts['phone'] ?? '')),
+                'designation' => trim((string) ($contacts['designation'] ?? '')),
             ]];
         }
 
         if (!is_array($contacts) || $contacts === []) {
-            return [['name' => '', 'email' => '', 'phone' => '']];
+            return [['name' => '', 'email' => '', 'phone' => '', 'designation' => '']];
         }
 
         $first = is_array($contacts[0] ?? null) ? $contacts[0] : [];
@@ -119,6 +120,7 @@ class CompanyModel extends BaseModel
             'name'  => trim((string) ($first['name'] ?? '')),
             'email' => trim((string) ($first['email'] ?? '')),
             'phone' => trim((string) ($first['phone'] ?? '')),
+            'designation' => trim((string) ($first['designation'] ?? '')),
         ]];
     }
 

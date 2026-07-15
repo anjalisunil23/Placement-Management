@@ -262,6 +262,7 @@ $routes = [
     // Company
     ['GET',  '/company/profile',                  [CompanyController::class, 'profile']],
     ['PUT',  '/company/profile',                  [CompanyController::class, 'updateProfile']],
+    ['POST', '/company/profile/photo',            [CompanyController::class, 'uploadProfilePhoto']],
     ['GET',  '/company/dashboard',                [CompanyController::class, 'dashboard']],
     ['GET',  '/company/drives',                   [CompanyController::class, 'listDrives']],
     ['PUT',  '/company/drives/{id}/eligibility',  [CompanyController::class, 'updateDriveEligibility']],

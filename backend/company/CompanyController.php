@@ -46,7 +46,24 @@ final class CompanyController
     public function profile(): void
     {
         $user = RBACMiddleware::requireCompany();
-        Response::success(DocumentHelper::serialize($this->getCompany($user)));
+        $company = $this->getCompany($user);
+        $contacts = is_array($company['contacts'] ?? null) ? $company['contacts'] : [];
+        $contact = is_array($contacts[0] ?? null) ? $contacts[0] : [];
+        $photo = is_array($company['recruiterPhoto'] ?? null) ? $company['recruiterPhoto'] : [];
+        $contactName = trim((string) ($contact['name'] ?? ''));
+        $contactEmail = trim((string) ($contact['email'] ?? ''));
+        $contactPhone = trim((string) ($contact['phone'] ?? ''));
+        $result = DocumentHelper::serialize($company);
+        $result['recruiter'] = [
+            'name'          => $contactName !== '' ? $contactName : trim((string) ($user['name'] ?? '')),
+            'role'          => 'Company Recruiter',
+            'designation'   => trim((string) ($contact['designation'] ?? '')),
+            'officialEmail' => $contactEmail !== '' ? $contactEmail : trim((string) ($user['email'] ?? '')),
+            'mobile'        => $contactPhone !== '' ? $contactPhone : trim((string) ($user['phone'] ?? '')),
+            'location'      => trim((string) ($company['location'] ?? '')),
+            'photoUrl'      => trim((string) ($photo['url'] ?? '')),
+        ];
+        Response::success($result);
     }
 
     /** PUT /api/company/profile */
@@ -55,11 +72,60 @@ final class CompanyController
         $user = RBACMiddleware::requireCompany();
         $company = $this->getCompany($user);
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-        $allowed = ['companyName', 'category', 'tier', 'contacts', 'website', 'description', 'comments'];
+        $allowed = ['companyName', 'category', 'tier', 'contacts', 'website', 'description', 'comments', 'location'];
         $update = array_intersect_key($input, array_flip($allowed));
         $this->companyModel->update((string) $company['_id'], $update);
         $updated = $this->companyModel->findById((string) $company['_id']);
         Response::success(DocumentHelper::serialize($updated ?? $company), 'Company profile updated.');
+    }
+
+    /** POST /api/company/profile/photo */
+    public function uploadProfilePhoto(): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $company = $this->getCompany($user);
+        if (!isset($_FILES['photo'])) {
+            Response::error('Profile photo is required.', 400);
+        }
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $error = Security::validateUploadedFile(
+            $_FILES['photo'],
+            2 * 1024 * 1024,
+            Security::allowedPhotoExtensions()
+        );
+        if ($error) {
+            Response::error($error, 400);
+        }
+
+        $dir = $config['uploads']['photo_dir'] ?? (dirname(__DIR__, 2) . '/uploads/photos');
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        $ext = strtolower(pathinfo((string) $_FILES['photo']['name'], PATHINFO_EXTENSION));
+        $filename = 'company_' . (string) $company['_id'] . '_' . time() . '.' . $ext;
+        $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        if (!move_uploaded_file($_FILES['photo']['tmp_name'], $path)) {
+            Response::error('Failed to save profile photo.', 500);
+        }
+
+        $oldPhoto = is_array($company['recruiterPhoto'] ?? null) ? $company['recruiterPhoto'] : [];
+        if (!empty($oldPhoto['file'])) {
+            $oldPath = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . basename((string) $oldPhoto['file']);
+            if ($oldPath !== $path && is_file($oldPath)) {
+                @unlink($oldPath);
+            }
+        }
+
+        $relative = '/uploads/photos/' . $filename;
+        $this->companyModel->update((string) $company['_id'], [
+            'recruiterPhoto' => [
+                'file'       => $filename,
+                'url'        => $relative,
+                'uploadedAt' => DocumentHelper::now(),
+            ],
+        ]);
+        Response::success(['url' => $relative], 'Profile photo updated.');
     }
 
     /** GET /api/company/dashboard */

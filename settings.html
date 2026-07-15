@@ -76,14 +76,26 @@
         </div>
         <div class="row g-3 mt-2" data-roles="company">
           <div class="col-12"><hr class="my-1"/></div>
+          <div class="col-12">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <input type="file" id="companyProfilePhoto" accept=".jpg,.jpeg,.png,.webp" hidden/>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="uploadCompanyPhoto"><i class="bi bi-camera me-1"></i>Upload Profile Photo</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-company-tab="#sec"><i class="bi bi-shield-lock me-1"></i>Change Password</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-company-tab="#notif"><i class="bi bi-bell me-1"></i>Notification Settings</button>
+            </div>
+            <div class="small text-muted-2" id="companyPhotoStatus"></div>
+          </div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Name</label><input class="form-control" id="companyContactName"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="companyRecruiterRole" value="Company Recruiter" disabled/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Designation</label><input class="form-control" id="companyContactDesignation" placeholder="e.g. Senior Talent Acquisition Specialist"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" id="companyProfileName" disabled/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Official email</label><input type="email" class="form-control" id="companyContactEmail"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Mobile</label><input class="form-control" id="companyContactPhone"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Location</label><input class="form-control" id="companyProfileLocation" placeholder="e.g. Bengaluru"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Website</label><input class="form-control" id="companyProfileWebsite" placeholder="https://company.com"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Category</label><input class="form-control" id="companyProfileCategory"/></div>
           <div class="col-md-6"><label class="form-label small fw-semibold">Tier</label><select class="form-select" id="companyProfileTier"><option>Tier 1</option><option>Tier 2</option><option>Tier 3</option></select></div>
           <div class="col-12"><label class="form-label small fw-semibold">Company description</label><textarea class="form-control" id="companyProfileDescription" rows="3"></textarea></div>
-          <div class="col-md-4"><label class="form-label small fw-semibold">Contact name</label><input class="form-control" id="companyContactName"/></div>
-          <div class="col-md-4"><label class="form-label small fw-semibold">Contact email</label><input type="email" class="form-control" id="companyContactEmail"/></div>
-          <div class="col-md-4"><label class="form-label small fw-semibold">Contact phone</label><input class="form-control" id="companyContactPhone"/></div>
         </div>
       </div></div>
 
@@ -129,7 +141,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260715companylive"></script>
-<script src="js/app.js?v=20260714o"></script>
+<script src="js/app.js?v=20260715adminnav"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -849,24 +861,33 @@ async function loadSettingsProfile() {
       const p = res.data;
       const contacts = Array.isArray(p.contacts) ? p.contacts : [];
       const contact = contacts[0] || {};
+      const recruiter = p.recruiter || {};
       const companyName = p.companyName || user.companyName || '';
       document.getElementById('companyProfileName').value = companyName;
       document.getElementById('companyProfileWebsite').value = p.website || '';
       document.getElementById('companyProfileCategory').value = p.category || '';
       document.getElementById('companyProfileTier').value = p.tier || 'Tier 2';
       document.getElementById('companyProfileDescription').value = p.description || '';
-      document.getElementById('companyContactName').value = contact.name || user.name || '';
-      document.getElementById('companyContactEmail').value = contact.email || user.email || '';
-      document.getElementById('companyContactPhone').value = contact.phone || '';
-      document.getElementById('profName').value = companyName;
-      setAvatarInitials();
+      document.getElementById('companyProfileLocation').value = recruiter.location || p.location || '';
+      document.getElementById('companyContactName').value = recruiter.name || contact.name || user.name || '';
+      document.getElementById('companyContactDesignation').value = recruiter.designation || contact.designation || '';
+      document.getElementById('companyContactEmail').value = recruiter.officialEmail || contact.email || user.email || '';
+      document.getElementById('companyContactPhone').value = recruiter.mobile || contact.phone || '';
+      document.getElementById('profName').value = recruiter.name || companyName;
+      if (recruiter.photoUrl) setAvatarPhoto(recruiter.photoUrl);
+      else setAvatarInitials();
       user = {
         ...user,
+        name: recruiter.name || user.name,
         companyId: p.id || p._id || user.companyId,
         companyName: p.companyName || user.companyName,
         category: p.category || '',
         tier: p.tier || '',
         website: p.website || '',
+        designation: recruiter.designation || '',
+        phone: recruiter.mobile || '',
+        location: recruiter.location || '',
+        photoUrl: recruiter.photoUrl || user.photoUrl || '',
       };
       Auth.set(user, Auth.token());
     } else {
@@ -1205,8 +1226,10 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
       category: document.getElementById('companyProfileCategory').value.trim(),
       tier: document.getElementById('companyProfileTier').value,
       description: document.getElementById('companyProfileDescription').value.trim(),
+      location: document.getElementById('companyProfileLocation').value.trim(),
       contacts: [{
         name: document.getElementById('companyContactName').value.trim(),
+        designation: document.getElementById('companyContactDesignation').value.trim(),
         email: contactEmail,
         phone: document.getElementById('companyContactPhone').value.trim(),
       }],
@@ -1223,10 +1246,14 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     const p = res.data || {};
     user = {
       ...user,
+      name: payload.contacts[0].name || user.name,
       companyName: p.companyName || user.companyName,
       category: p.category ?? payload.category,
       tier: p.tier ?? payload.tier,
       website: p.website ?? payload.website,
+      designation: payload.contacts[0].designation,
+      phone: payload.contacts[0].phone,
+      location: p.location ?? payload.location,
     };
     Auth.set(user, Auth.token());
     document.dispatchEvent(new CustomEvent('ph-user-updated'));
@@ -1275,6 +1302,57 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     personalEmail: personalEmailVal,
   }, Auth.token());
   toast('Settings saved.', 'success');
+});
+
+document.querySelectorAll('[data-company-tab]').forEach(button => {
+  button.addEventListener('click', () => {
+    const target = button.dataset.companyTab;
+    document.querySelector(`#settingsNav [href="${target}"]`)?.click();
+  });
+});
+
+document.getElementById('uploadCompanyPhoto')?.addEventListener('click', () => {
+  document.getElementById('companyProfilePhoto')?.click();
+});
+
+document.getElementById('companyProfilePhoto')?.addEventListener('change', async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    toast('Profile photo must be 2 MB or smaller.', 'warn');
+    event.target.value = '';
+    return;
+  }
+  if (!Auth.hasRealAuth()) {
+    toast('Sign in with a company account to upload a photo.', 'warn');
+    event.target.value = '';
+    return;
+  }
+
+  const status = document.getElementById('companyPhotoStatus');
+  status.textContent = 'Uploading profile photo…';
+  const form = new FormData();
+  form.append('photo', file, file.name);
+  const res = await api('/company/profile/photo', {
+    method: 'POST',
+    body: form,
+    noRedirectOn401: true,
+  });
+  if (!res?.success || !res.data?.url) {
+    status.textContent = '';
+    toast(res?.message || 'Could not upload profile photo.', 'error');
+    event.target.value = '';
+    return;
+  }
+
+  const photoUrl = res.data.url;
+  setAvatarPhoto(photoUrl);
+  user = { ...user, photoUrl, photo: { url: photoUrl, source: 'upload' } };
+  Auth.set(user, Auth.token());
+  refreshAppShell();
+  status.textContent = 'Profile photo updated.';
+  toast('Profile photo updated.', 'success');
+  event.target.value = '';
 });
 
 document.getElementById('changePasswordBtn')?.addEventListener('click', async () => {

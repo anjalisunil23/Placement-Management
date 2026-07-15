@@ -68,7 +68,6 @@ const NAV = [
   { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Placement details", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
   { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'] },
-  { href: "hiring-overview.html", icon: "bi-building-check", label: "Hiring Overview", roles: ['admin'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin', 'placement_officer'] },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin', 'placement_officer'] },
@@ -464,7 +463,7 @@ function renderShell(active) {
 
   if (topbar) {
     const quickLinks = {
-      admin: '<a href="students.html" class="btn btn-sm btn-outline-primary d-none d-lg-inline-flex">Approvals</a>',
+      admin: '',
       placement_officer: '',
       student: '',
       staff: '',
