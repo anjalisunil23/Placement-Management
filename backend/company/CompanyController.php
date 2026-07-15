@@ -10,8 +10,10 @@ use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\StudentModel;
+use PMS\Models\UserModel;
 use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\CompanyApplicationService;
+use PMS\Services\EmailService;
 use PMS\Services\NotificationService;
 use PMS\Services\PlacementChanceService;
 use PMS\Services\RecruitingService;
@@ -418,22 +420,75 @@ final class CompanyController
             Response::error('Only CSV files are allowed.', 400);
         }
 
-        $content = file_get_contents((string) ($file['tmp_name'] ?? ''));
+        $tmpPath = (string) ($file['tmp_name'] ?? '');
+        if ((int) ($file['size'] ?? 0) > 1024 * 1024) {
+            Response::error('CSV file must be 1 MB or smaller.', 400);
+        }
+
+        $content = file_get_contents($tmpPath);
         if ($content === false || trim($content) === '') {
             Response::error('CSV file is empty.', 400);
         }
 
-        $result = (new CompanyApplicationService())->uploadResultsCsv(
-            (string) $company['_id'],
-            (string) $user['_id'],
-            $content
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $recipients = is_array($config['super_admin_emails'] ?? null)
+            ? $config['super_admin_emails']
+            : [];
+        foreach ((new UserModel())->findByRole('admin', 100) as $admin) {
+            $recipients[] = (string) ($admin['email'] ?? '');
+        }
+        $recipients = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $email): string => strtolower(trim((string) $email)),
+            $recipients
+        ), static fn (string $email): bool => filter_var($email, FILTER_VALIDATE_EMAIL) !== false)));
+        if ($recipients === []) {
+            Response::error('No admin email address is configured.', 503);
+        }
+
+        $companyName = trim((string) ($company['companyName'] ?? $user['companyName'] ?? 'Company'));
+        $safeCompanyName = htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8');
+        $safeFileName = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
+        $safeCsv = htmlspecialchars($content, ENT_QUOTES, 'UTF-8');
+        $body = "<p><strong>{$safeCompanyName}</strong> submitted a selected-candidate list.</p>"
+            . "<p>File: {$safeFileName}</p>"
+            . "<pre style=\"white-space:pre-wrap;font-family:monospace\">{$safeCsv}</pre>";
+
+        $attachmentBase = preg_replace('/[^A-Za-z0-9_-]+/', '-', $companyName) ?: 'company';
+        $attachmentPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR
+            . trim($attachmentBase, '-') . '-selected-list-' . date('Ymd-His') . '.csv';
+        $hasAttachment = @copy($tmpPath, $attachmentPath);
+
+        $mail = new EmailService();
+        $sent = 0;
+        foreach ($recipients as $recipient) {
+            if ($mail->send(
+                $recipient,
+                "{$companyName} — Selected Candidate List",
+                $body,
+                true,
+                $hasAttachment ? $attachmentPath : null
+            )) {
+                $sent++;
+            }
+        }
+        if ($hasAttachment) {
+            @unlink($attachmentPath);
+        }
+        if ($sent === 0) {
+            Response::error('The selected list could not be emailed to the admin.', 502);
+        }
+
+        (new NotificationService())->notifyAdmins(
+            'selected_list_submitted',
+            'Selected list submitted',
+            "{$companyName} emailed a selected-candidate list to the placement admin.",
+            ['companyId' => (string) ($company['_id'] ?? ''), 'fileName' => $name]
         );
 
-        $message = $result['updated'] > 0
-            ? "Updated {$result['updated']} candidate(s)."
-            : 'No candidates were updated.';
-
-        Response::success($result, $message);
+        Response::success(
+            ['sentTo' => $sent],
+            "Selected list emailed to {$sent} admin address(es)."
+        );
     }
 
     /** POST /api/company/applications/{id}/result */

@@ -32,15 +32,15 @@
   </div>
   <div class="col-lg-5">
     <div class="card-surface p-4 mb-3">
-      <h6 class="fw-bold mb-3">Upload offer results</h6>
+      <h6 class="fw-bold mb-3">Upload selected list</h6>
       <div class="dropzone" id="resultsDropzone" role="button" tabindex="0" aria-label="Upload CSV of selected candidates">
         <input type="file" id="resultsCsvInput" accept=".csv,text/csv" hidden />
         <i class="bi bi-file-earmark-arrow-up display-6 d-block mb-1"></i>
         <span id="resultsDropLabel">Drop CSV of selected candidates</span>
-        <div class="small text-muted-2 mt-2">Columns: register_number, status, remarks</div>
+        <div class="small text-muted-2 mt-2">The CSV will be emailed to the placement admin.</div>
         <div class="small fw-semibold mt-2 text-primary" id="resultsFileName" style="display:none"></div>
       </div>
-      <button type="button" class="btn btn-primary w-100 mt-3" id="uploadResultsBtn" disabled>Upload results</button>
+      <button type="button" class="btn btn-primary w-100 mt-3" id="uploadResultsBtn" disabled>Email selected list to admin</button>
     </div>
     <div class="card-surface p-4">
       <h6 class="fw-bold mb-3">Recruitment funnel</h6>
@@ -264,30 +264,22 @@ async function uploadResultsCsv() {
       noRedirectOn401: true,
     });
     uploadResultsBtn.disabled = false;
-    uploadResultsBtn.textContent = 'Upload results';
+    uploadResultsBtn.textContent = 'Email selected list to admin';
 
     if (!res?.success) {
-      toast(res?.message || 'Upload failed.', 'error');
+      toast(res?.message || 'Selected list could not be emailed.', 'error');
       return;
     }
 
-    const data = res.data || {};
-    const failed = Number(data.failed || 0);
-    const errors = Array.isArray(data.errors) ? data.errors : [];
-    if (failed > 0 && errors.length) {
-      toast(`${res.message || 'Upload complete.'} ${errors.slice(0, 2).join(' ')}`, failed === data.updated ? 'warn' : 'success');
-    } else {
-      toast(res.message || 'Results uploaded.', 'success');
-    }
+    toast(res.message || 'Selected list emailed to the admin.', 'success');
     setResultsFile(null);
     if (resultsCsvInput) resultsCsvInput.value = '';
-    await loadPortal();
     return;
   }
 
   uploadResultsBtn.disabled = false;
-  uploadResultsBtn.textContent = 'Upload results';
-  toast('Sign in with your company account to upload results.', 'warn');
+  uploadResultsBtn.textContent = 'Email selected list to admin';
+  toast('Sign in with your company account to email the selected list.', 'warn');
 }
 </script>
 </body></html>

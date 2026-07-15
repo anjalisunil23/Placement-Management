@@ -591,6 +591,22 @@ final class OfficerDataService
         ) === 1;
     }
 
+    /**
+     * Detect the three-year BCA programme, whose final year is year 3 / S5-S6.
+     */
+    private function isBcaPlacementProgramme(string $text): bool
+    {
+        $text = strtoupper(trim($text));
+        if ($text === '') {
+            return false;
+        }
+
+        return preg_match(
+            '/(?:^|[^A-Z])B\.?\s*C\.?\s*A\.?(?=\d|[^A-Z]|$)|BACHELOR\s+OF\s+COMPUTER\s+APPLICATIONS?/',
+            $text
+        ) === 1;
+    }
+
     private function looksLikeFinalYearClassBatch(string $batch, string $programmeHint = ''): bool
     {
         $batch = strtoupper(trim($batch));
@@ -603,6 +619,7 @@ final class OfficerDataService
         }
 
         $isPg = $this->isPgPlacementProgramme($batch . ' ' . $programmeHint);
+        $isBca = $this->isBcaPlacementProgramme($batch . ' ' . $programmeHint);
 
         if (preg_match('/(?:^|[^A-Z0-9])S([1-8])(?:[^A-Z0-9]|$)/', $batch, $m) === 1
             || preg_match('/\bS([1-8])\b/', $batch, $m) === 1) {
@@ -610,6 +627,9 @@ final class OfficerDataService
             // MCA Regular final semesters are typically S3–S6.
             if ($isPg) {
                 return $sem >= 3;
+            }
+            if ($isBca) {
+                return $sem >= 5;
             }
 
             return $sem >= 7;
@@ -619,6 +639,9 @@ final class OfficerDataService
             $sem = (int) ($m[2] ?? 0);
             if ($isPg) {
                 return $sem >= 3;
+            }
+            if ($isBca) {
+                return $sem >= 5;
             }
 
             return $sem >= 7;
@@ -770,7 +793,19 @@ final class OfficerDataService
                 $params['stud_deptcode'] = $deptAesId;
             }
             try {
-                return $api->fetchAllStudInfo4Placement($params);
+                $records = $api->fetchAllStudInfo4Placement($params);
+                if ($this->isComputerApplicationsDirectory($deptAesId, $records)) {
+                    try {
+                        $records = $this->mergeAesDirectoryRecords(
+                            $records,
+                            $api->fetchAllStudInfo4Placement($params + ['stud_course' => 'BCA'])
+                        );
+                    } catch (\Throwable) {
+                        // Keep the unfiltered department rows if the BCA-specific call fails.
+                    }
+                }
+
+                return $records;
             } catch (\Throwable) {
                 return [];
             }
@@ -806,10 +841,73 @@ final class OfficerDataService
 
         foreach ($this->campusParentDeptAesIds() as $aesId) {
             try {
-                $append($api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId]));
+                $departmentRecords = $api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId]);
+                $append($departmentRecords);
+                if ($this->isComputerApplicationsDirectory($aesId, $departmentRecords)) {
+                    $append($api->fetchAllStudInfo4Placement([
+                        'stud_deptcode' => $aesId,
+                        'stud_course'   => 'BCA',
+                    ]));
+                }
             } catch (\Throwable) {
                 continue;
             }
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     */
+    private function isComputerApplicationsDirectory(string $deptAesId, array $records): bool
+    {
+        // AES department 30 is Computer Applications. Record inspection keeps this
+        // working if the numeric department mapping changes in another environment.
+        if ($deptAesId === '30') {
+            return true;
+        }
+        foreach ($records as $record) {
+            $hint = trim(implode(' ', array_filter([
+                (string) ($record['stud_course'] ?? ''),
+                (string) ($record['stud_cource_short'] ?? ''),
+                (string) ($record['stud_branch'] ?? ''),
+                (string) ($record['programme'] ?? ''),
+                (string) ($record['stud_class'] ?? ''),
+            ])));
+            if (
+                $this->isBcaPlacementProgramme($hint)
+                || preg_match('/(?:^|[^A-Z])(?:IN)?MCA(?:REG)?(?=\d|[^A-Z]|$)/i', $hint) === 1
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $first
+     * @param list<array<string, mixed>> $second
+     * @return list<array<string, mixed>>
+     */
+    private function mergeAesDirectoryRecords(array $first, array $second): array
+    {
+        $merged = [];
+        $seen = [];
+        foreach (array_merge($first, $second) as $record) {
+            $key = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? $record['registerNumber']
+                ?? $record['registerno']
+                ?? ''
+            )));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $merged[] = $record;
         }
 
         return $merged;
@@ -914,6 +1012,7 @@ final class OfficerDataService
             $classBatch,
         ])));
         $isPg = $this->isPgPlacementProgramme($courseHint);
+        $isBca = $this->isBcaPlacementProgramme($courseHint);
 
         if ($classBatch !== '' && $this->looksLikeFinalYearClassBatch($classBatch, $courseHint)) {
             return true;
@@ -927,10 +1026,16 @@ final class OfficerDataService
             if (preg_match('/\b(final|outgoing|last|pass.?out)\b/', $yearRaw) === 1) {
                 return true;
             }
+            if ($isBca && preg_match('/\b(3|iii|3rd|third)\b/', $yearRaw) === 1) {
+                return true;
+            }
             // MCA Regular often reports year=2 while in final semester (S3/S4).
-            if (!$isPg
+            if (!$isPg && !$isBca
                 && preg_match('/\b(1|2|3|i|ii|iii|1st|2nd|3rd|first|second|third)\b/', $yearRaw) === 1
                 && preg_match('/\b(4|5|iv|v|4th|5th|final|fourth|fifth)\b/', $yearRaw) !== 1) {
+                return false;
+            }
+            if ($isBca && preg_match('/\b(1|2|i|ii|1st|2nd|first|second)\b/', $yearRaw) === 1) {
                 return false;
             }
             if ($isPg && preg_match('/\b(2|ii|2nd|second)\b/', $yearRaw) === 1) {
@@ -948,9 +1053,15 @@ final class OfficerDataService
             if ($isPg && preg_match('/\b(3|4|5|6|s3|s4|s5|s6|sem\s*[3-6]|semester\s*[3-6])\b/', $semesterRaw) === 1) {
                 return true;
             }
-            if (!$isPg
+            if ($isBca && preg_match('/\b(5|6|s5|s6|sem\s*[56]|semester\s*[56])\b/', $semesterRaw) === 1) {
+                return true;
+            }
+            if (!$isPg && !$isBca
                 && preg_match('/\b(1|2|3|4|5|6|s1|s2|s3|s4|s5|s6)\b/', $semesterRaw) === 1
                 && preg_match('/\b(7|8|s7|s8)\b/', $semesterRaw) !== 1) {
+                return false;
+            }
+            if ($isBca && preg_match('/\b(1|2|3|4|s1|s2|s3|s4|sem\s*[1-4]|semester\s*[1-4])\b/', $semesterRaw) === 1) {
                 return false;
             }
         }
