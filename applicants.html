@@ -28,9 +28,9 @@
         <select class="form-select form-select-sm" id="statusFilter">
           <option value="">All</option>
           <option value="applied">Applied</option>
-          <option value="officer_approved">Under review</option>
+          <option value="under_review">Under review</option>
           <option value="shortlisted">Shortlisted</option>
-          <option value="selected">Offered</option>
+          <option value="offered">Offered</option>
           <option value="rejected">Rejected</option>
         </select>
       </div>
@@ -53,7 +53,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260713p"></script>
+<script src="js/api.js?v=20260715companylive"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
 const user = Auth.user() || demoUserFor('company');
@@ -61,11 +61,16 @@ const co = user.companyName || 'Acme Cloud';
 let applicantRows = [];
 let useApi = false;
 
-['CSE','IT','ECE','ME','EE','CE','MCA'].forEach(b => {
-  const o = document.createElement('option');
-  o.value = b; o.textContent = b;
-  document.getElementById('branchFilter').appendChild(o);
-});
+function populateBranchFilter(rows) {
+  const select = document.getElementById('branchFilter');
+  const selected = select.value;
+  const branches = [...new Set(rows.map(r => String(r.dept || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  select.innerHTML = '<option value="">All branches</option>' + branches
+    .map(branch => `<option value="${branch}">${branch}</option>`)
+    .join('');
+  if (branches.includes(selected)) select.value = selected;
+}
 
 function normalizeApplicant(a) {
   if (a.student) {
@@ -140,10 +145,15 @@ async function loadApplicants() {
     const res = await api(`/company/applications?${qs}`, { noRedirectOn401: true });
     if (res?.success) {
       applicantRows = (res.data || []).map(normalizeApplicant);
+      populateBranchFilter(applicantRows);
       renderTable();
       return;
     }
-    useApi = false;
+    applicantRows = [];
+    populateBranchFilter(applicantRows);
+    renderTable();
+    toast(res?.message || 'Could not load live applicants. Please refresh and try again.', 'error');
+    return;
   }
   applicantRows = companyApplicants(co).map(normalizeApplicant);
   const min = parseFloat(minCgpa);
@@ -193,5 +203,5 @@ document.getElementById('selectAll').addEventListener('change', e => {
   document.querySelectorAll('.app-check').forEach(cb => { cb.checked = e.target.checked; });
 });
 
-loadApplicants();
+onAppReady(() => loadApplicants());
 </script></body></html>

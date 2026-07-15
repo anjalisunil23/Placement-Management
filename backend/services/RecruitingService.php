@@ -364,21 +364,32 @@ final class RecruitingService
                     'companyId'    => $companyId,
                     'company'      => (string) ($company['companyName'] ?? 'Company'),
                     'openRoles'    => 0,
-                    'package'      => (string) ($drive['tier'] ?? ''),
+                    'package'      => (string) ($drive['eligibility']['package'] ?? $drive['tier'] ?? ''),
                     'applicants'   => 0,
                     'status'       => (string) ($drive['status'] ?? 'open'),
                 ];
             }
             $byCompany[$companyId]['openRoles']++;
-            if ($byCompany[$companyId]['package'] === '' && !empty($drive['tier'])) {
-                $byCompany[$companyId]['package'] = (string) $drive['tier'];
+            if ($byCompany[$companyId]['package'] === '' && !empty($drive['eligibility']['package'])) {
+                $byCompany[$companyId]['package'] = (string) $drive['eligibility']['package'];
             }
         }
 
         foreach ($jobModel->findAll(['status' => ['$in' => ['open', 'ongoing', 'reviewing']]], 500) as $job) {
             $companyId = (string) ($job['companyId'] ?? '');
-            if ($companyId === '' || !isset($byCompany[$companyId])) {
+            if ($companyId === '') {
                 continue;
+            }
+            if (!isset($byCompany[$companyId])) {
+                $company = $companyModel->findById($companyId);
+                $byCompany[$companyId] = [
+                    'companyId'  => $companyId,
+                    'company'    => (string) ($company['companyName'] ?? 'Company'),
+                    'openRoles'  => 0,
+                    'package'    => (string) ($job['package'] ?? ''),
+                    'applicants' => 0,
+                    'status'     => (string) ($job['status'] ?? 'open'),
+                ];
             }
             $byCompany[$companyId]['openRoles']++;
             if ($byCompany[$companyId]['package'] === '' && !empty($job['package'])) {

@@ -67,7 +67,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/api.js?v=20260713p"></script>
+<script src="js/api.js?v=20260715companylive"></script>
 <script src="js/app.js?v=20260714o"></script><script src="js/charts.js?v=20260713p"></script>
 <script>
 const user = Auth.user() || demoUserFor('company');
@@ -145,10 +145,20 @@ async function loadPortal() {
     }
     if (jobsRes?.success || dashRes?.success) {
       const stats = dashRes?.success ? { ...statsFromJobs(jobRows), ...dashRes.data } : statsFromJobs(jobRows);
+      const liveCompanyName = String(dashRes?.data?.companyName || Auth.user()?.companyName || co).trim();
+      document.getElementById('portalSub').textContent = `${liveCompanyName} — manage your job postings and recruitment pipeline`;
       renderStats(stats);
       renderJobs();
+      if (!jobsRes?.success || !dashRes?.success) {
+        toast('Some company data could not be loaded.', 'warn');
+      }
       return;
     }
+    jobRows = [];
+    renderStats(statsFromJobs(jobRows));
+    renderJobs();
+    toast('Could not load live company data. Please refresh and try again.', 'error');
+    return;
   }
   jobRows = [
     { title:'SDE-1', jobType:'Full-time', applicantCount:412, location:'Bengaluru', status:'open', statusLabel:'Open', statusCls:'success', createdAt: new Date().toISOString() },
@@ -164,7 +174,7 @@ onAppReady(() => { loadPortal(); });
 document.getElementById('postJobForm').addEventListener('submit', async e => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
-  if (!(await confirmAction({ title: 'Post job', message: `Post job opening for ${data.role || 'this role'}?`, confirmText: 'Post job', variant: 'primary' }))) return;
+  if (!(await confirmAction({ title: 'Post job', message: `Post job opening for ${data.title || 'this role'}?`, confirmText: 'Post job', variant: 'primary' }))) return;
   if (Auth.hasRealAuth()) {
     const res = await api('/company/jobs', { method: 'POST', body: data, noRedirectOn401: true });
     if (res?.success) {

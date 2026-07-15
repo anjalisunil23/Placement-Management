@@ -73,7 +73,10 @@ final class EligibilityEngine
         }
 
         $criteria = $this->toPlainArray($drive['eligibility'] ?? []);
-        $branches = $this->toPlainArray($drive['branches'] ?? []);
+        $criteriaBranches = $this->toPlainArray($criteria['branches'] ?? []);
+        $branches = $criteriaBranches !== []
+            ? $criteriaBranches
+            : $this->toPlainArray($drive['branches'] ?? []);
         $tier = $drive['tier'] ?? 'Tier 2';
 
         return $this->evaluate($student, $criteria, $branches, (string) $tier, $resumeId);
@@ -95,8 +98,8 @@ final class EligibilityEngine
         $student = $this->enrichStudentForEligibility($student);
 
         $criteria = $this->toPlainArray($job['eligibility'] ?? []);
-        $branches = [];
-        if (!empty($criteria['departments'])) {
+        $branches = $this->toPlainArray($criteria['branches'] ?? []);
+        if ($branches === [] && !empty($criteria['departments'])) {
             foreach ($criteria['departments'] as $deptId) {
                 $dept = $this->departmentModel->findById((string) $deptId);
                 if ($dept) {
@@ -106,6 +109,24 @@ final class EligibilityEngine
         }
 
         return $this->evaluate($student, $criteria, $branches, 'Tier 2');
+    }
+
+    /**
+     * Evaluate an already-loaded student for a company eligibility preview.
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $criteria
+     * @param string[] $branches
+     * @return array{eligible: bool, reasons: string[]}
+     */
+    public function checkStudentAgainstCriteria(array $student, array $criteria, array $branches = []): array
+    {
+        return $this->evaluate(
+            $this->enrichStudentForEligibility($student),
+            $criteria,
+            $branches,
+            'Tier 2'
+        );
     }
 
     /**
@@ -144,7 +165,7 @@ final class EligibilityEngine
             $deptId = (string) ($student['departmentId'] ?? '');
             $dept = $this->departmentModel->findById($deptId);
             $deptCode = is_array($dept) ? (string) ($dept['code'] ?? '') : '';
-            if ($deptCode && !in_array($deptCode, $allowedBranches, true)) {
+            if ($deptCode && !$this->branchCodesMatch($deptCode, $allowedBranches)) {
                 $reasons[] = "Department {$deptCode} is not eligible for this drive.";
             }
         }
@@ -201,9 +222,14 @@ final class EligibilityEngine
      */
     public function driveVisibleToStudent(array $student, array $drive): bool
     {
+        $criteria = $this->toPlainArray($drive['eligibility'] ?? []);
+        $targetBranches = $this->toPlainArray($criteria['branches'] ?? []);
+        if ($targetBranches === []) {
+            $targetBranches = $this->toPlainArray($drive['branches'] ?? []);
+        }
         $branches = array_values(array_filter(array_map(
             static fn ($b) => strtoupper(trim((string) $b)),
-            $this->toPlainArray($drive['branches'] ?? [])
+            $targetBranches
         )));
         if ($branches === []) {
             return true;

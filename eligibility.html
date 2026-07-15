@@ -83,21 +83,33 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260713p"></script>
+<script src="js/api.js?v=20260715companylive"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
 const user = Auth.user() || demoUserFor('company');
 const companyName = user.companyName || 'Acme Cloud';
 document.getElementById('eligSub').textContent = `${companyName} — define eligibility per role. Other companies set their own criteria independently.`;
 
-CompanyEligibility.seed();
+if (!Auth.hasRealAuth()) CompanyEligibility.seed();
 let selectedDriveId = null;
 let useEligApi = false;
 let apiDrives = [];
 let apiJobs = [];
 
 function eligibilityToRule(driveId, e, updatedAt) {
-  if (!e || ((e.minCgpa == null || e.minCgpa <= 0) && !e.branches?.length)) return null;
+  const hasCriteria = e && (
+    Number(e.minCgpa || 0) > 0
+    || Number(e.maxBacklogs ?? 99) < 99
+    || Number(e.min10th || 0) > 0
+    || Number(e.min12th || 0) > 0
+    || Number(e.minUg || 0) > 0
+    || Number(e.minPg || 0) > 0
+    || Number(e.minPercentAllClasses || 0) > 0
+    || (e.gender && e.gender !== 'any')
+    || e.branches?.length
+    || String(e.notes || '').trim()
+  );
+  if (!hasCriteria) return null;
   return {
     driveId,
     minCgpa: e.minCgpa ?? 0,
@@ -193,10 +205,11 @@ function isStudentEligible(s, rule) {
 function updateStats() {
   const drives = driveList();
   const rules = allRules();
-  const totalEligible = rules.reduce((n, r) => n + estimateEligibleCount(r), 0);
   document.getElementById('statRoles').textContent = drives.length;
   document.getElementById('statRules').textContent = rules.length;
-  document.getElementById('statEligible').textContent = totalEligible.toLocaleString('en-IN');
+  document.getElementById('statEligible').textContent = useEligApi
+    ? '—'
+    : rules.reduce((n, r) => n + estimateEligibleCount(r), 0).toLocaleString('en-IN');
 }
 
 function renderRoleList() {
@@ -219,20 +232,33 @@ async function renderPreview(rule) {
   const preview = document.getElementById('previewPanel');
   if (!rule) { preview.style.display = 'none'; return; }
   preview.style.display = '';
-  let rows = PREVIEW_STUDENTS.map(s => ({ ...s, eligible: isStudentEligible(s, rule) }));
+  let rows = useEligApi
+    ? []
+    : PREVIEW_STUDENTS.map(s => ({ ...s, eligible: isStudentEligible(s, rule) }));
   if (useEligApi) {
     const qs = new URLSearchParams({
       minCgpa: rule.minCgpa,
       maxBacklogs: rule.maxBacklogs,
+      min10th: rule.min10th || 0,
+      min12th: rule.min12th || 0,
       branches: (rule.branches || []).join(','),
       gender: rule.gender || 'any',
     });
     const res = await api(`/company/eligibility/preview?${qs}`, { noRedirectOn401: true });
-    if (res?.success && Array.isArray(res.data)) rows = res.data;
+    if (!res?.success || !Array.isArray(res.data)) {
+      document.getElementById('previewRows').innerHTML = '<tr><td colspan="6" class="text-muted-2 p-3">Could not load live eligibility preview.</td></tr>';
+      const count = document.getElementById('ruleEligibleCount');
+      if (count) count.textContent = '—';
+      return;
+    }
+    rows = res.data;
   }
-  document.getElementById('previewRows').innerHTML = rows.map(s => `
+  document.getElementById('previewRows').innerHTML = rows.length ? rows.map(s => `
     <tr><td><strong>${s.name}</strong></td><td>${s.roll}</td><td>${s.dept}</td><td>${s.cgpa}</td><td>${s.backlogs ?? 0}</td>
-      <td><span class="badge-soft ${s.eligible ? 'success' : 'danger'}">${s.eligible ? 'Eligible' : 'Not eligible'}</span></td></tr>`).join('');
+      <td><span class="badge-soft ${s.eligible ? 'success' : 'danger'}">${s.eligible ? 'Eligible' : 'Not eligible'}</span></td></tr>`).join('')
+    : '<tr><td colspan="6" class="text-muted-2 p-3">No student profiles available for preview.</td></tr>';
+  const count = document.getElementById('ruleEligibleCount');
+  if (count) count.textContent = rows.filter(s => s.eligible).length.toLocaleString('en-IN');
 }
 
 async function renderRuleDetail(driveId) {
@@ -266,7 +292,7 @@ async function renderRuleDetail(driveId) {
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Gender</div><div class="val" style="font-size:1rem">${({ any:'Any', male:'Male only', female:'Female only' })[rule.gender] || 'Any'}</div></div></div>
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Min 10th %</div><div class="val" style="font-size:1.2rem">${rule.min10th}</div></div></div>
       <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Min 12th %</div><div class="val" style="font-size:1.2rem">${rule.min12th}</div></div></div>
-      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">Est. eligible</div><div class="val" style="font-size:1.2rem">~${estimateEligibleCount(rule)}</div></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface stat-card p-2"><div class="lbl">${useEligApi ? 'Eligible preview' : 'Est. eligible'}</div><div class="val" id="ruleEligibleCount" style="font-size:1.2rem">${useEligApi ? '…' : `~${estimateEligibleCount(rule)}`}</div></div></div>
     </div>
     ${rule.notes ? `<p class="small text-muted-2 mt-3 mb-0"><i class="bi bi-sticky me-1"></i>${rule.notes}</p>` : ''}`;
 
@@ -423,6 +449,9 @@ async function loadEligibility() {
     if (drivesRes?.success || jobsRes?.success) {
       apiDrives = drivesRes?.success ? (drivesRes.data || []) : [];
       apiJobs = jobsRes?.success ? (jobsRes.data || []) : [];
+      if (!drivesRes?.success || !jobsRes?.success) {
+        toast('Some live eligibility data could not be loaded.', 'warn');
+      }
       updateStats();
       renderRoleList();
       const drives = driveList();
@@ -434,7 +463,13 @@ async function loadEligibility() {
       }
       return;
     }
-    useEligApi = false;
+    apiDrives = [];
+    apiJobs = [];
+    updateStats();
+    renderRoleList();
+    document.getElementById('ruleDetail').innerHTML = '<div class="text-muted-2 p-4 text-center">Live eligibility data could not be loaded. Refresh the page to try again.</div>';
+    toast('Could not load live eligibility data.', 'error');
+    return;
   }
   updateStats();
   renderRoleList();

@@ -78,6 +78,7 @@ final class CompanyController
         ));
 
         Response::success([
+            'companyName'     => (string) ($company['companyName'] ?? ''),
             'totalJobs'       => count($jobs),
             'activeJobs'      => $activeJobs,
             'totalApplicants' => $counts['total'],
@@ -132,31 +133,29 @@ final class CompanyController
     public function eligibilityPreview(): void
     {
         RBACMiddleware::requireCompany();
-        $minCgpa = isset($_GET['minCgpa']) ? (float) $_GET['minCgpa'] : 0;
-        $maxBacklogs = isset($_GET['maxBacklogs']) ? (int) $_GET['maxBacklogs'] : 99;
-        $branches = isset($_GET['branches']) ? explode(',', (string) $_GET['branches']) : [];
-        $gender = strtolower(trim((string) ($_GET['gender'] ?? '')));
-
-        $students = (new StudentModel())->filterStudents([
-            'minCgpa'     => $minCgpa > 0 ? $minCgpa : null,
-            'maxBacklogs' => $maxBacklogs,
-        ], 200);
-
+        $criteria = [
+            'minCgpa'     => (float) ($_GET['minCgpa'] ?? 0),
+            'maxBacklogs' => (int) ($_GET['maxBacklogs'] ?? 99),
+            'minPercentAllClasses' => (float) ($_GET['minPercentAllClasses'] ?? 0),
+            'min10th'     => (float) ($_GET['min10th'] ?? 0),
+            'min12th'     => (float) ($_GET['min12th'] ?? 0),
+            'minUg'       => (float) ($_GET['minUg'] ?? 0),
+            'minPg'       => (float) ($_GET['minPg'] ?? 0),
+            'gender'      => strtolower(trim((string) ($_GET['gender'] ?? 'any'))),
+        ];
+        $branches = array_values(array_filter(array_map(
+            static fn (string $branch): string => strtoupper(trim($branch)),
+            explode(',', (string) ($_GET['branches'] ?? ''))
+        )));
+        $students = (new StudentModel())->findAll([], 200);
         $deptModel = new \PMS\Models\DepartmentModel();
         $engine = new \PMS\Services\EligibilityEngine();
-        $genderCriteria = $gender !== '' && $gender !== 'any' ? ['gender' => $gender] : [];
         $preview = [];
         foreach ($students as $student) {
             $deptId = (string) ($student['departmentId'] ?? '');
             $dept = $deptId ? $deptModel->findById($deptId) : null;
             $code = $dept ? (string) ($dept['code'] ?? '') : '';
-            $eligible = true;
-            if ($branches !== [] && $branches[0] !== '' && !in_array($code, $branches, true)) {
-                $eligible = false;
-            }
-            if ($eligible && $genderCriteria !== [] && !$engine->studentMatchesGenderRule($student, $genderCriteria)) {
-                $eligible = false;
-            }
+            $check = $engine->checkStudentAgainstCriteria($student, $criteria, $branches);
             $user = (new \PMS\Models\UserModel())->findById((string) $student['userId']);
             $preview[] = [
                 'name'      => $user['name'] ?? 'Student',
@@ -164,7 +163,8 @@ final class CompanyController
                 'dept'      => $code,
                 'cgpa'      => (float) ($student['academic']['cgpa'] ?? 0),
                 'backlogs'  => (int) ($student['academic']['backlogs'] ?? 0),
-                'eligible'  => $eligible,
+                'eligible'  => $check['eligible'],
+                'reasons'   => $check['reasons'],
             ];
         }
         Response::success($preview);

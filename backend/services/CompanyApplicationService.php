@@ -23,9 +23,11 @@ final class CompanyApplicationService
     {
         $apps = (new ApplicationModel())->findByCompany($companyId);
         if (isset($filters['status']) && $filters['status'] !== '' && $filters['status'] !== 'all') {
+            $wantedStatus = (string) $filters['status'];
             $apps = array_values(array_filter(
                 $apps,
-                static fn (array $a) => ($a['status'] ?? '') === $filters['status']
+                fn (array $a): bool => (string) ($a['status'] ?? '') === $wantedStatus
+                    || $this->uiStatus((string) ($a['status'] ?? 'applied')) === $wantedStatus
             ));
         }
         if (!empty($filters['driveId'])) {

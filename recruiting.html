@@ -98,7 +98,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260713p"></script>
+<script src="js/api.js?v=20260715companylive"></script>
 <script src="js/charts.js?v=20260713p"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
@@ -224,13 +224,30 @@ onAppReady(async () => {
       totalApps = stats.applicants ?? apps.length;
       paintRecruiting();
     } else {
-      showPageAlert('recruitingAlert', 'hide');
-      renderDemoRecruiting();
-      if (Auth.hasRealAuth()) toast('Using demo data — recruiting API unavailable.', 'warn');
+      if (Auth.hasRealAuth()) {
+        active = [];
+        apps = [];
+        byDept = [];
+        totalApps = 0;
+        paintRecruiting();
+        showPageAlert('recruitingAlert', 'danger', 'Could not load live recruitment data. Refresh the page to try again.');
+      } else {
+        showPageAlert('recruitingAlert', 'hide');
+        renderDemoRecruiting();
+      }
     }
   } catch (e) {
-    showPageAlert('recruitingAlert', 'danger', 'Failed to load recruitment data. Showing demo snapshot.');
-    renderDemoRecruiting();
+    if (Auth.hasRealAuth()) {
+      active = [];
+      apps = [];
+      byDept = [];
+      totalApps = 0;
+      paintRecruiting();
+      showPageAlert('recruitingAlert', 'danger', 'Failed to load live recruitment data.');
+    } else {
+      showPageAlert('recruitingAlert', 'danger', 'Failed to load recruitment data. Showing demo snapshot.');
+      renderDemoRecruiting();
+    }
   }
 });
 </script></body></html>

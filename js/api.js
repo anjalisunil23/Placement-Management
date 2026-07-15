@@ -2206,6 +2206,7 @@ const NotificationInbox = {
     if (Auth.hasRealAuth() && base) {
       const res = await api(base, { skipAuthRedirect: true });
       if (res?.success) return (res.data || []).filter(n => !n.read).length;
+      return 0;
     }
     const store = this.store(role);
     store?.seed?.();

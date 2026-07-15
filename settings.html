@@ -33,11 +33,11 @@
           </div>
         </div>
         <div class="row g-3">
-          <div class="col-md-6"><label class="form-label small fw-semibold">Full name</label><input class="form-control" id="profName" disabled title="Name comes from college records"/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">College email</label><input class="form-control" id="profCollegeEmail" disabled placeholder="Not provided by college login"/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">Personal email</label><input type="email" class="form-control" id="profPersonalEmail" placeholder="e.g. name@gmail.com" autocomplete="email"/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
-          <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
+          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Full name</label><input class="form-control" id="profName" disabled title="Name comes from college records"/></div>
+          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">College email</label><input class="form-control" id="profCollegeEmail" disabled placeholder="Not provided by college login"/></div>
+          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Personal email</label><input type="email" class="form-control" id="profPersonalEmail" placeholder="e.g. name@gmail.com" autocomplete="email"/></div>
+          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
+          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Gender</label><input class="form-control" id="profGender" disabled placeholder="Synced from college records"/></div>
           <div class="col-12 role-field-student" id="profQualificationsWrap" style="display:none">
@@ -73,6 +73,17 @@
             </div>
             <div id="alumniEmploymentDocsStatus" class="small mt-2"></div>
           </div>
+        </div>
+        <div class="row g-3 mt-2" data-roles="company">
+          <div class="col-12"><hr class="my-1"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" id="companyProfileName" disabled/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Website</label><input class="form-control" id="companyProfileWebsite" placeholder="https://company.com"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Category</label><input class="form-control" id="companyProfileCategory"/></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Tier</label><select class="form-select" id="companyProfileTier"><option>Tier 1</option><option>Tier 2</option><option>Tier 3</option></select></div>
+          <div class="col-12"><label class="form-label small fw-semibold">Company description</label><textarea class="form-control" id="companyProfileDescription" rows="3"></textarea></div>
+          <div class="col-md-4"><label class="form-label small fw-semibold">Contact name</label><input class="form-control" id="companyContactName"/></div>
+          <div class="col-md-4"><label class="form-label small fw-semibold">Contact email</label><input type="email" class="form-control" id="companyContactEmail"/></div>
+          <div class="col-md-4"><label class="form-label small fw-semibold">Contact phone</label><input class="form-control" id="companyContactPhone"/></div>
         </div>
       </div></div>
 
@@ -117,7 +128,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260715name"></script>
+<script src="js/api.js?v=20260715companylive"></script>
 <script src="js/app.js?v=20260714o"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
@@ -590,6 +601,9 @@ async function uploadAlumniEmploymentDocsIfNeeded() {
 }
 
 function syncRoleFieldsVisibility(activeRole) {
+  document.querySelectorAll('.role-field-person').forEach((el) => {
+    el.style.display = activeRole === 'company' ? 'none' : '';
+  });
   document.querySelectorAll('.role-field-student').forEach((el) => {
     el.style.display = activeRole === 'student' ? '' : 'none';
   });
@@ -707,6 +721,9 @@ async function loadSettingsProfile() {
     user = Auth.user() || user;
   }
   role = user.role || Auth.role() || role;
+  if (role === 'company') {
+    document.getElementById('settingsTitle').textContent = 'Company Profile';
+  }
   syncRoleFieldsVisibility(role);
   syncPasswordSettingsVisibility(role);
   applyProfileFromUser(user, role);
@@ -825,6 +842,35 @@ async function loadSettingsProfile() {
       Auth.set(user, Auth.token());
       setAvatarPhoto(pickPhotoUrl(profileCtx) || p.photoUrl || u.photoUrl || user.photoUrl || '');
       if (!profAvatarEl?.classList.contains('has-photo')) setAvatarInitials();
+    }
+  } else if (role === 'company' && Auth.hasRealAuth()) {
+    const res = await api('/company/profile', { skipAuthRedirect: true });
+    if (res?.success && res.data) {
+      const p = res.data;
+      const contacts = Array.isArray(p.contacts) ? p.contacts : [];
+      const contact = contacts[0] || {};
+      const companyName = p.companyName || user.companyName || '';
+      document.getElementById('companyProfileName').value = companyName;
+      document.getElementById('companyProfileWebsite').value = p.website || '';
+      document.getElementById('companyProfileCategory').value = p.category || '';
+      document.getElementById('companyProfileTier').value = p.tier || 'Tier 2';
+      document.getElementById('companyProfileDescription').value = p.description || '';
+      document.getElementById('companyContactName').value = contact.name || user.name || '';
+      document.getElementById('companyContactEmail').value = contact.email || user.email || '';
+      document.getElementById('companyContactPhone').value = contact.phone || '';
+      document.getElementById('profName').value = companyName;
+      setAvatarInitials();
+      user = {
+        ...user,
+        companyId: p.id || p._id || user.companyId,
+        companyName: p.companyName || user.companyName,
+        category: p.category || '',
+        tier: p.tier || '',
+        website: p.website || '',
+      };
+      Auth.set(user, Auth.token());
+    } else {
+      toast(res?.message || 'Could not load live company profile.', 'error');
     }
   }
   refreshAppShell();
@@ -1146,6 +1192,45 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     Auth.set({ ...user, isWorking: working, company: payload.company, title: payload.title, package: payload.package }, Auth.token());
     toast('Profile updated.', 'success');
     setTimeout(() => window.location.href = 'dashboard.html', 700);
+    return;
+  }
+  if (role === 'company') {
+    const contactEmail = document.getElementById('companyContactEmail').value.trim().toLowerCase();
+    if (contactEmail && !contactEmail.includes('@')) {
+      toast('Enter a valid company contact email.', 'warn');
+      return;
+    }
+    const payload = {
+      website: document.getElementById('companyProfileWebsite').value.trim(),
+      category: document.getElementById('companyProfileCategory').value.trim(),
+      tier: document.getElementById('companyProfileTier').value,
+      description: document.getElementById('companyProfileDescription').value.trim(),
+      contacts: [{
+        name: document.getElementById('companyContactName').value.trim(),
+        email: contactEmail,
+        phone: document.getElementById('companyContactPhone').value.trim(),
+      }],
+    };
+    if (!Auth.hasRealAuth()) {
+      toast('Sign in with a company account to update this profile.', 'warn');
+      return;
+    }
+    const res = await api('/company/profile', { method: 'PUT', body: payload, noRedirectOn401: true });
+    if (!res?.success) {
+      toast(res?.message || 'Could not update the live company profile.', 'error');
+      return;
+    }
+    const p = res.data || {};
+    user = {
+      ...user,
+      companyName: p.companyName || user.companyName,
+      category: p.category ?? payload.category,
+      tier: p.tier ?? payload.tier,
+      website: p.website ?? payload.website,
+    };
+    Auth.set(user, Auth.token());
+    document.dispatchEvent(new CustomEvent('ph-user-updated'));
+    toast('Company profile updated.', 'success');
     return;
   }
   if (role === 'student') {

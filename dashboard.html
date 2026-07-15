@@ -519,14 +519,17 @@ if (role === 'company') {
   (async () => {
     let apps = [];
     let byDept = [];
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (live) {
       const data = await RecruitingStore.fetch();
       if (data) {
         apps = (data.applicants || []).map(RecruitingStore.mapApplicant);
         byDept = (data.applicantsByDept || []).map(RecruitingStore.mapDeptRow);
+      } else {
+        toast('Could not load live company dashboard data.', 'error');
       }
     }
-    if (!apps.length) {
+    if (!live) {
       const coName = user.companyName || 'Acme Cloud';
       apps = companyApplicants(coName);
       byDept = applicantsByDepartment(coName);
