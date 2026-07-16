@@ -189,7 +189,7 @@ final class StaffPlacementRegistryService
      */
     private function extractRegistryRows(array $row, bool $includeRecruitmentResults = true): array
     {
-        $studentId = (string) ($row['id'] ?? $row['studentId'] ?? '');
+        $studentId = (string) ($row['id'] ?? $row['studentId'] ?? $row['_id'] ?? '');
         if ($studentId === '') {
             return [];
         }
@@ -930,6 +930,10 @@ final class StaffPlacementRegistryService
             'placed'    => true,
             'placement' => $placement,
         ];
+        $scopeDeptId = trim((string) ($staffCtx['departmentId'] ?? ''));
+        if ($scopeDeptId !== '' && Security::isValidId($scopeDeptId)) {
+            $patch['departmentId'] = Security::toObjectId($scopeDeptId);
+        }
         if (is_array($self)) {
             $patch['selfPlacement'] = $self;
         }

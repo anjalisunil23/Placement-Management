@@ -461,6 +461,16 @@ final class OfficerDataService
                     break;
                 }
             }
+            if ($local === null) {
+                $local = $this->findLocalStudentByAesKeys($admno, $regNo);
+                if (is_array($local)) {
+                    foreach ([$admno, $regNo] as $key) {
+                        if ($key !== '') {
+                            $localByKey[$key] = $local;
+                        }
+                    }
+                }
+            }
 
             $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
             if ($row === null || strcasecmp((string) ($row['classBatch'] ?? ''), $batch) !== 0) {
@@ -1335,17 +1345,54 @@ final class OfficerDataService
      */
     private function indexLocalStudentsForClassRoster(array $ctx): array
     {
-        $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
+        $model = new StudentModel();
         $indexed = [];
         $scopeDeptId = trim((string) ($ctx['departmentId'] ?? ''));
-        foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
+        $seenIds = [];
+
+        $candidates = [];
+        if ($scopeDeptId !== '') {
+            $candidates = array_merge(
+                $candidates,
+                $model->findAll(PlacementOfficerContext::studentCollectionFilter($ctx), 5000)
+            );
+        }
+        // Staff-saved placements may lack / mismatch departmentId; still overlay AES shells.
+        foreach ([
+            ['placed' => true],
+            ['source' => 'staff_registry'],
+        ] as $extraFilter) {
+            foreach ($model->findAll($extraFilter, 2000) as $student) {
+                $candidates[] = $student;
+            }
+        }
+
+        foreach ($candidates as $student) {
+            $id = (string) ($student['_id'] ?? '');
+            if ($id !== '' && isset($seenIds[$id])) {
+                continue;
+            }
+            if ($id !== '') {
+                $seenIds[$id] = true;
+            }
+
             if ($scopeDeptId !== '') {
                 $studentDeptId = trim((string) ($student['departmentId'] ?? ''));
-                // Keep unmatched/empty departmentId rows (AES materializations).
-                if ($studentDeptId !== '' && $studentDeptId !== $scopeDeptId) {
+                $hasPlacement = is_array($student['placement'] ?? null)
+                    && trim((string) ($student['placement']['company'] ?? '')) !== '';
+                $isStaffMaterialized = (string) ($student['source'] ?? '') === 'staff_registry'
+                    || !empty($student['placed'])
+                    || $hasPlacement;
+                // Keep unmatched/empty departmentId rows and any staff-saved placements.
+                if (
+                    $studentDeptId !== ''
+                    && $studentDeptId !== $scopeDeptId
+                    && !$isStaffMaterialized
+                ) {
                     continue;
                 }
             }
+
             foreach (['registerNumber', 'admno'] as $field) {
                 $key = strtoupper(trim((string) ($student[$field] ?? '')));
                 if ($key !== '') {
@@ -1355,6 +1402,32 @@ final class OfficerDataService
         }
 
         return $indexed;
+    }
+
+    /**
+     * Direct lookup when the department-scoped index missed a staff-saved student.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function findLocalStudentByAesKeys(string $admno, string $regNo): ?array
+    {
+        $model = new StudentModel();
+        foreach ([$admno, $regNo] as $key) {
+            $key = strtoupper(trim($key));
+            if ($key === '') {
+                continue;
+            }
+            $found = $model->findByRegisterNumber($key);
+            if ($found) {
+                return $found;
+            }
+            $byAdmno = $model->findOne(['admno' => $key]);
+            if ($byAdmno) {
+                return $byAdmno;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1454,6 +1527,14 @@ final class OfficerDataService
                 'aesOnly'        => true,
                 'isNew'          => true,
             ];
+        } else {
+            // extractRegistryRows / UI keys on `id`; MariaDB docs only expose `_id`.
+            $localId = (string) ($row['id'] ?? $row['_id'] ?? '');
+            if ($localId !== '') {
+                $row['id'] = $localId;
+                $row['_id'] = $localId;
+            }
+            unset($row['aesOnly'], $row['isNew']);
         }
 
         $row['registerNumber'] = $register;
