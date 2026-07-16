@@ -1478,7 +1478,7 @@ final class OfficerDataService
             $record['parentDepartmentShort']
             ?? ''
         )));
-        // Prefer AES getAllStudInfo4Placement stud_branch / parent dept name over course shorts like BT.
+        // Prefer AES parent department name (getDepartments via stud_deptcode), not stud_branch.
         $aesApi = new AesApiService();
         $programmeIsCourseLevel = $programme !== '' && $aesApi->isCourseLevelShort($programme);
         $displayDeptCode = $parentDeptShort !== ''
@@ -1489,10 +1489,10 @@ final class OfficerDataService
         $programmeLabel = ($displayDeptCode !== '' && !$aesApi->isCourseLevelShort($displayDeptCode))
             ? DepartmentProgrammeCatalog::programmeLabel($displayDeptCode)
             : '';
-        $displayDeptName = $aesBranchName !== ''
-            ? $aesBranchName
-            : ($parentDeptName !== ''
-                ? $parentDeptName
+        $displayDeptName = $parentDeptName !== ''
+            ? $parentDeptName
+            : ($aesBranchName !== ''
+                ? $aesBranchName
                 : ($programmeLabel !== ''
                     ? $programmeLabel
                     : ($deptName !== '' && strcasecmp($deptName, $displayDeptCode) !== 0
@@ -1500,6 +1500,10 @@ final class OfficerDataService
                         : ($deptName !== '' ? $deptName : $displayDeptCode))));
         $row['departmentCode'] = $displayDeptCode;
         $row['departmentName'] = $displayDeptName;
+        $row['branchName'] = $aesBranchName;
+        if ($parentDeptName !== '') {
+            $row['parentDepartmentName'] = $parentDeptName;
+        }
         $row['department'] = [
             'id'    => $dept ? (string) ($dept['_id'] ?? '') : '',
             'code'  => $displayDeptCode,

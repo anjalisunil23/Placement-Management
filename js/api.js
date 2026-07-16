@@ -2721,8 +2721,13 @@ function resolveCollegeProgrammeLabel(code) {
 function studentDepartmentLabel(s) {
   if (!s || typeof s !== 'object') return '—';
   const code = String(s.departmentCode || (typeof s.department === 'string' ? s.department : '') || '').trim();
-  const name = String(s.departmentName || '').trim();
-  // AES getAllStudInfo4Placement stud_branch values are full names with spaces.
+  // Prefer parent department name (not branch / stud_branch).
+  const name = String(
+    s.parentDepartmentName
+    || (s.department && typeof s.department === 'object' ? s.department.name : '')
+    || s.departmentName
+    || ''
+  ).trim();
   if (name && !/^\d+$/.test(name) && (/\s/.test(name) || name.length > 4)) {
     return name;
   }

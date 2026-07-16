@@ -94,12 +94,14 @@
                     Contact</th>
                   <th class="registry-sortable" data-sort="address" data-label="Address">Address</th>
                   <th class="registry-sortable" data-sort="package" data-label="Package">Package</th>
+                  <th class="registry-sortable" data-sort="fordvv" data-label="fordvv">fordvv</th>
+                  <th class="registry-sortable" data-sort="includedvv" data-label="includedvv">includedvv</th>
                   <th class="registry-actions-col"></th>
                 </tr>
               </thead>
               <tbody id="registryRows">
                 <tr>
-                  <td colspan="12" class="text-muted-2 p-4 text-center">Loading…</td>
+                  <td colspan="14" class="text-muted-2 p-4 text-center">Loading…</td>
                 </tr>
               </tbody>
             </table>
@@ -204,6 +206,20 @@
                       <label class="form-label small fw-semibold" for="editVerificationDate">Date of
                         verification</label>
                       <input type="date" class="form-control" id="editVerificationDate" />
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editFordvv">fordvv</label>
+                      <select class="form-select" id="editFordvv">
+                        <option value="1" selected>1</option>
+                        <option value="0">0</option>
+                      </select>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editIncludedvv">includedvv</label>
+                      <select class="form-select" id="editIncludedvv">
+                        <option value="1" selected>1</option>
+                        <option value="0">0</option>
+                      </select>
                     </div>
                     <div class="col-md-6">
                       <label class="form-label small fw-semibold" for="editEvidenceFile">Offer letter (PDF only)</label>
@@ -591,6 +607,7 @@
           r.courseId, r.branchId,
           r.departmentName, r.departmentCode, r.program, r.branch, r.batch,
           r.contact, r.address, r.package, r.type, r.phone, r.email,
+          r.fordvv, r.includedvv,
         ].join(' ').toLowerCase();
         return hay.includes(q);
       });
@@ -619,8 +636,8 @@
       if (!slice.length) {
         const needClass = !filterDepartmentId || !filterProgram || !filterBatch;
         tbody.innerHTML = needClass
-          ? '<tr><td colspan="12" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>'
-          : '<tr><td colspan="12" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
+          ? '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>'
+          : '<tr><td colspan="14" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
         return;
       }
 
@@ -636,6 +653,8 @@
         const typeLabel = hasEmployer
           ? (r.type === 'Higher Education' ? 'Higher Education' : 'Placement')
           : '';
+        const fordvv = r.fordvv === 0 || r.fordvv === '0' ? 0 : 1;
+        const includedvv = r.includedvv === 0 || r.includedvv === '0' ? 0 : 1;
         return `<tr>
       <td>${sl}</td>
       <td><span class="registry-student-name">${esc(String(r.studentName || '—').toUpperCase())}</span></td>
@@ -648,6 +667,8 @@
       <td class="registry-cell-employer-contact">${esc(r.employerContact || '')}</td>
       <td class="registry-cell-address">${esc(r.address || '')}</td>
       <td>${esc(r.package || '')}</td>
+      <td>${fordvv}</td>
+      <td>${includedvv}</td>
       <td>
         <div class="registry-actions">${downloadBtn}${detailsBtn}</div>
       </td>
@@ -692,6 +713,8 @@
       document.getElementById('editPlacementStatus').value = row.placementStatus || '';
       document.getElementById('editOfferLetterVerified').value = row.offerLetterVerified ? 'true' : 'false';
       document.getElementById('editVerificationDate').value = row.verificationDate || '';
+      document.getElementById('editFordvv').value = (row.fordvv === 0 || row.fordvv === '0') ? '0' : '1';
+      document.getElementById('editIncludedvv').value = (row.includedvv === 0 || row.includedvv === '0') ? '0' : '1';
       if (typeof resetFilePickers === 'function') {
         resetFilePickers(['editEvidenceFile']);
       } else {
@@ -739,6 +762,8 @@
         placementStatus: document.getElementById('editPlacementStatus').value,
         offerLetterVerified: document.getElementById('editOfferLetterVerified').value === 'true',
         verificationDate: document.getElementById('editVerificationDate').value,
+        fordvv: Number(document.getElementById('editFordvv').value) === 0 ? 0 : 1,
+        includedvv: Number(document.getElementById('editIncludedvv').value) === 0 ? 0 : 1,
       };
       if (!payload.employer) {
         toast('Employer / institution name is required.', 'warn');
@@ -803,6 +828,8 @@
           placementStatus: payload.placementStatus || '',
           offerLetterVerified: !!payload.offerLetterVerified,
           verificationDate: payload.verificationDate || '',
+          fordvv: payload.fordvv === 0 ? 0 : 1,
+          includedvv: payload.includedvv === 0 ? 0 : 1,
           hasOfferLetter: hasOfferLetter || !!row.hasOfferLetter,
           source: row.source === 'class_roster' ? 'placement' : (row.source || 'placement'),
         };
