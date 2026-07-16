@@ -153,39 +153,71 @@ class ApplicationModel extends BaseModel
 
         $patch = ['roundOutcomes' => array_values($outcomes)];
         $appStatus = (string) ($app['status'] ?? 'shortlisted');
-        if ($roundStatus === 'rejected' && in_array($appStatus, ['shortlisted', 'selected'], true)) {
-            $patch['status'] = 'rejected';
-            $timeline = is_array($app['timeline'] ?? null) ? $app['timeline'] : [];
-            $timeline[] = [
-                'status' => 'rejected',
-                'at' => DocumentHelper::now(),
-                'by' => $by,
-                'remarks' => 'Rejected at Round ' . $order,
-            ];
-            $patch['timeline'] = $timeline;
-            $appStatus = 'rejected';
-        } elseif (in_array($roundStatus, ['waiting', 'selected'], true) && $appStatus === 'rejected') {
-            $stillRejected = false;
-            foreach ($outcomes as $o) {
-                if (strtolower((string) ($o['status'] ?? '')) === 'rejected') {
-                    $stillRejected = true;
-                    break;
+        $hasRejected = false;
+        $selectedOnLastRound = false;
+        $lastRoundOrder = 0;
+
+        $driveId = (string) ($app['driveId'] ?? '');
+        if ($driveId !== '') {
+            $driveDoc = (new DriveModel())->findById($driveId);
+            if (is_array($driveDoc)) {
+                $normalizedRounds = DriveModel::normalizeSelectionRounds($driveDoc['selectionRounds'] ?? []);
+                if ($normalizedRounds !== []) {
+                    $lastRoundOrder = (int) ($normalizedRounds[count($normalizedRounds) - 1]['order'] ?? count($normalizedRounds));
                 }
             }
-            if (!$stillRejected) {
+        }
+
+        foreach ($outcomes as $o) {
+            $oStatus = strtolower((string) ($o['status'] ?? ''));
+            $oOrder = (int) ($o['order'] ?? 0);
+            if ($oStatus === 'rejected') {
+                $hasRejected = true;
+            }
+            if ($oStatus === 'selected' && $lastRoundOrder > 0 && $oOrder === $lastRoundOrder) {
+                $selectedOnLastRound = true;
+            }
+        }
+
+        if ($hasRejected) {
+            if ($appStatus !== 'rejected') {
+                $patch['status'] = 'rejected';
+                $timeline = is_array($app['timeline'] ?? null) ? $app['timeline'] : [];
+                $timeline[] = [
+                    'status' => 'rejected',
+                    'at' => DocumentHelper::now(),
+                    'by' => $by,
+                    'remarks' => 'Rejected at Round ' . $order,
+                ];
+                $patch['timeline'] = $timeline;
+            }
+            $appStatus = 'rejected';
+        } elseif ($selectedOnLastRound) {
+            if ($appStatus !== 'selected') {
+                $patch['status'] = 'selected';
+                $timeline = is_array($app['timeline'] ?? null) ? $app['timeline'] : [];
+                $timeline[] = [
+                    'status' => 'selected',
+                    'at' => DocumentHelper::now(),
+                    'by' => $by,
+                    'remarks' => 'Selected through all company rounds',
+                ];
+                $patch['timeline'] = $timeline;
+            }
+            $appStatus = 'selected';
+        } elseif (in_array($appStatus, ['rejected', 'selected', 'shortlisted'], true)) {
+            // Waiting / intermediate Select stays in shortlisted pool.
+            if ($appStatus !== 'shortlisted') {
                 $patch['status'] = 'shortlisted';
                 $timeline = is_array($app['timeline'] ?? null) ? $app['timeline'] : [];
                 $timeline[] = [
                     'status' => 'shortlisted',
                     'at' => DocumentHelper::now(),
                     'by' => $by,
-                    'remarks' => 'Restored after Round ' . $order . ' outcome change',
+                    'remarks' => 'Updated after Round ' . $order . ' outcome',
                 ];
                 $patch['timeline'] = $timeline;
-                $appStatus = 'shortlisted';
             }
-        } elseif ($roundStatus === 'selected' && $appStatus === 'shortlisted') {
-            // Keep shortlisted until final package/joining result is recorded.
             $appStatus = 'shortlisted';
         }
 

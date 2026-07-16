@@ -1371,15 +1371,118 @@ function driveApplicantStatusBadge(status) {
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }
 
+function activeDriveForApplicants() {
+  return activeDrive
+    || allDrives.find(d => String(d.id) === String(activeDriveId))
+    || (typeof DriveStore !== 'undefined' ? DriveStore.get?.(activeDriveId) : null)
+    || null;
+}
+
+function roundLabelForOrder(drive, order) {
+  const rounds = driveConfiguredRounds(drive);
+  const round = rounds.find(r => Number(r.order) === Number(order));
+  if (!round) return `Round ${order}`;
+  return `Round ${round.order}: ${round.label}`;
+}
+
+/**
+ * Derive applicant tab + badge from application status and per-round outcomes.
+ * Round results drive Shortlisted / Pending / Rejected display.
+ */
+function deriveApplicantResult(app, drive = activeDriveForApplicants()) {
+  const status = String(app?.status || '').toLowerCase();
+  const workflowPending = new Set(['resume_pending', 'resume_verified', 'officer_approved', 'company_review']);
+  const outcomes = Array.isArray(app?.roundOutcomes) ? [...app.roundOutcomes] : [];
+  outcomes.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+  const rounds = driveConfiguredRounds(drive);
+  const lastRoundOrder = rounds.length ? Number(rounds[rounds.length - 1].order) : 0;
+
+  if (status === 'applied') {
+    return { bucket: 'applied', cls: 'info', label: 'Applied' };
+  }
+  if (workflowPending.has(status)) {
+    return { bucket: 'pending', cls: 'warning', label: driveApplicantStatusBadgeLabel(status) };
+  }
+  if (status === 'withdrawn') {
+    return { bucket: 'rejected', cls: 'muted', label: 'Withdrawn' };
+  }
+
+  const rejectedOutcome = [...outcomes].reverse().find(o => String(o.status || '').toLowerCase() === 'rejected');
+  if (rejectedOutcome || status === 'rejected') {
+    const order = Number(rejectedOutcome?.order || 0);
+    const label = order > 0
+      ? `Rejected · ${roundLabelForOrder(drive, order)}`
+      : 'Rejected';
+    return { bucket: 'rejected', cls: 'danger', label };
+  }
+
+  const latest = outcomes.length ? outcomes[outcomes.length - 1] : null;
+  const latestStatus = String(latest?.status || '').toLowerCase();
+  const latestOrder = Number(latest?.order || 0);
+
+  if (latestStatus === 'waiting') {
+    return {
+      bucket: 'pending',
+      cls: 'warning',
+      label: `Waiting · ${roundLabelForOrder(drive, latestOrder)}`,
+    };
+  }
+
+  if (latestStatus === 'selected') {
+    const roundText = roundLabelForOrder(drive, latestOrder);
+    if (lastRoundOrder > 0 && latestOrder >= lastRoundOrder) {
+      return { bucket: 'shortlisted', cls: 'success', label: `Selected · ${roundText}` };
+    }
+    return {
+      bucket: 'shortlisted',
+      cls: 'success',
+      label: `Selected · ${roundText} → next`,
+    };
+  }
+
+  if (status === 'selected') {
+    return { bucket: 'shortlisted', cls: 'success', label: 'Selected' };
+  }
+  if (status === 'shortlisted') {
+    return { bucket: 'shortlisted', cls: 'success', label: 'Shortlisted' };
+  }
+
+  return {
+    bucket: 'pending',
+    cls: 'muted',
+    label: driveApplicantStatusBadgeLabel(status) || status || '—',
+  };
+}
+
+function driveApplicantStatusBadgeLabel(status) {
+  const map = {
+    applied: 'Applied',
+    resume_pending: 'Resume pending',
+    resume_verified: 'Resume verified',
+    officer_approved: 'Officer approved',
+    company_review: 'Company review',
+    shortlisted: 'Shortlisted',
+    selected: 'Selected',
+    rejected: 'Rejected',
+    withdrawn: 'Withdrawn',
+  };
+  return map[status] || status || '—';
+}
+
+function driveApplicantResultBadge(app) {
+  const result = deriveApplicantResult(app);
+  return `<span class="badge-soft ${result.cls}">${result.label}</span>`;
+}
+
 function driveApplicantGroups(apps) {
   const list = Array.isArray(apps) ? apps : [];
-  const pendingStatuses = new Set(['resume_pending', 'resume_verified', 'officer_approved', 'company_review']);
-  return {
-    applied: list.filter(a => String(a.status || '').toLowerCase() === 'applied'),
-    shortlisted: list.filter(a => String(a.status || '').toLowerCase() === 'shortlisted'),
-    pending: list.filter(a => pendingStatuses.has(String(a.status || '').toLowerCase())),
-    rejected: list.filter(a => String(a.status || '').toLowerCase() === 'rejected'),
-  };
+  const drive = activeDriveForApplicants();
+  const groups = { applied: [], shortlisted: [], pending: [], rejected: [] };
+  list.forEach(a => {
+    const bucket = deriveApplicantResult(a, drive).bucket;
+    (groups[bucket] || groups.pending).push(a);
+  });
+  return groups;
 }
 
 function driveApplicantResumeCell(a) {
@@ -1431,9 +1534,9 @@ function updateDriveApplicantTabCounts() {
   if (hint) {
     hint.textContent = ({
       applied: 'Only students who applied to this company drive.',
-      shortlisted: 'Shortlisted candidates. Configure company selection rounds below.',
-      pending: 'Applicants awaiting resume / officer / company review.',
-      rejected: 'Rejected candidates for this company drive.',
+      shortlisted: 'Shortlisted / selected through rounds. Configure company selection rounds below.',
+      pending: 'Waiting on a round, or awaiting resume / officer / company review.',
+      rejected: 'Rejected at a company round or overall for this drive.',
     })[driveApplicantsTab] || '';
   }
   const roundsPanel = document.getElementById('driveShortlistRoundsPanel');
@@ -1459,8 +1562,8 @@ function renderDriveApplicantRows() {
   if (!list.length) {
     const emptyMsg = ({
       applied: 'No applied applicants for this company drive yet.',
-      shortlisted: 'No shortlisted candidates yet. Shortlist them from Applicants.',
-      pending: 'No pending candidates.',
+      shortlisted: 'No shortlisted / selected candidates yet.',
+      pending: 'No pending / waiting candidates.',
       rejected: 'No rejected candidates.',
     })[driveApplicantsTab] || 'No applicants.';
     tbody.innerHTML = `<tr><td colspan="${cols}" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
@@ -1482,7 +1585,7 @@ function renderDriveApplicantRows() {
     <td class="small">${a.email || '—'}</td>
     <td class="small">${a.phone || '—'}</td>
     <td>${driveApplicantResumeCell(a)}</td>
-    <td>${driveApplicantStatusBadge(a.status)}</td>
+    <td>${driveApplicantResultBadge(a)}</td>
     <td>${a.appliedAt ? new Date(a.appliedAt).toLocaleDateString() : '—'}</td>
   </tr>`;
   }).join('');
@@ -1640,7 +1743,7 @@ function renderDriveRoundsResults() {
       <td class="fw-semibold small">${a.studentName || '—'}</td>
       <td>${a.registerNumber || '—'}</td>
       <td>${a.department || '—'}</td>
-      <td>${driveApplicantStatusBadge(a.status)}</td>
+      <td>${driveApplicantResultBadge(a)}</td>
       <td>
         <div class="btn-group drive-round-outcome-btns" role="group" aria-label="Round ${activeRound.order} outcome">
           ${btn('selected', 'Select', 'success')}
@@ -1678,7 +1781,7 @@ window.setDriveRoundOutcome = async (appId, order, type, status) => {
   }
   toast(`Round ${order}: ${status === 'selected' ? 'Select' : status === 'rejected' ? 'Reject' : 'Waiting'} saved.`, 'success');
   updateDriveApplicantTabCounts();
-  if (driveDetailMainTab === 'applicants') renderDriveApplicantRows();
+  renderDriveApplicantRows();
   renderDriveRoundsResults();
 };
 
