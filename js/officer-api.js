@@ -68,6 +68,11 @@ const OfficerApi = {
     const pkg = String(elig.package || d.package || '').trim();
     const deadline = String(elig.deadline || d.deadline || '').trim();
     const jobType = String(elig.jobType || d.jobType || '').trim();
+    const recruitmentDate = String(d.recruitmentDate || d.date || '').trim();
+    const mode = String(d.mode || elig.mode || '').trim();
+    const location = String(d.location || elig.location || '').trim();
+    const minCgpa = elig.minCgpa ?? d.minCgpa ?? '';
+    const maxBacklogs = elig.maxBacklogs ?? d.maxBacklogs ?? '';
     return {
       id: OfficerApi.id(d),
       company: meta.company || d.companyName || d.company || '',
@@ -81,16 +86,21 @@ const OfficerApi = {
       title: d.title || '',
       type: d.type || 'pooled',
       jobType: jobType || '—',
-      date: d.date || '',
+      date: recruitmentDate,
+      recruitmentDate: recruitmentDate || '—',
       time: d.time || '10:00',
       package: pkg || '—',
       deadline: (deadline && deadline !== 'TBD') ? deadline : '—',
+      mode: mode || '—',
+      location: location || '—',
+      minCgpa,
+      maxBacklogs,
       description: String(elig.description || d.description || '').trim(),
       branches: typeof formatDriveBranches === 'function'
         ? formatDriveBranches(d.branches ?? elig.branches ?? '')
         : (Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '')),
       tier: d.tier || 'Tier 2',
-      eligibility: { ...elig, package: pkg, deadline, jobType },
+      eligibility: { ...elig, package: pkg, deadline, jobType, mode, location, minCgpa, maxBacklogs },
       status,
       statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
       applied: d.applied ?? 0,

@@ -73,6 +73,10 @@ const StaffApi = {
     const pkg = String(elig.package || d.package || '').trim();
     const deadline = String(elig.deadline || d.deadline || '').trim();
     const jobType = String(elig.jobType || d.jobType || '').trim();
+    const recruitmentDate = String(d.recruitmentDate || d.date || '').trim();
+    const mode = String(d.mode || elig.mode || '').trim();
+    const minCgpa = elig.minCgpa ?? d.minCgpa ?? '';
+    const maxBacklogs = elig.maxBacklogs ?? d.maxBacklogs ?? '';
     const title = String(d.title || '').trim();
     let role = String(d.role || '').trim();
     if (!role && title) {
@@ -86,12 +90,16 @@ const StaffApi = {
       role,
       type: d.type || 'pooled',
       jobType: jobType || '—',
-      date: d.date || '',
+      date: recruitmentDate,
+      recruitmentDate: recruitmentDate || '—',
       package: pkg || '—',
       deadline: (deadline && deadline !== 'TBD') ? deadline : '—',
+      mode: mode || '—',
+      minCgpa,
+      maxBacklogs,
       branches: Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || ''),
       tier: d.tier || 'Tier 2',
-      eligibility: { ...elig, package: pkg, deadline, jobType },
+      eligibility: { ...elig, package: pkg, deadline, jobType, mode, minCgpa, maxBacklogs },
       status,
       statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
       _fromApi: true,

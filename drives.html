@@ -487,7 +487,7 @@ async function loadDriveRoleScripts() {
   if (typeof OfficerApi !== 'undefined' && typeof AdminApi !== 'undefined' && typeof StaffApi !== 'undefined') return;
   const tags = [
     'js/admin-api.js?v=20260713w',
-    'js/officer-api.js?v=20260713w',
+    'js/officer-api.js?v=20260716drivefields',
     'js/staff-api.js?v=20260713w',
   ];
   await Promise.all(tags.map((src) => new Promise((resolve) => {
@@ -761,7 +761,14 @@ function fillDriveDetailPanel(list, selectedId) {
   const base = active || list[0];
   const name = base.company || '—';
   const initial = (name && name !== '—') ? name[0].toUpperCase() : '?';
-  const display = active || {
+  const elig = active?.eligibility && typeof active.eligibility === 'object' ? active.eligibility : {};
+  const display = active ? {
+    ...active,
+    recruitmentDate: active.recruitmentDate || active.date || '—',
+    mode: active.mode || elig.mode || '—',
+    minCgpa: active.minCgpa ?? elig.minCgpa ?? '',
+    maxBacklogs: active.maxBacklogs ?? elig.maxBacklogs ?? '',
+  } : {
     package: '—',
     jobType: '—',
     tier: '—',
@@ -820,8 +827,8 @@ function fillDriveDetailPanel(list, selectedId) {
       ${field('Mode', pending ? '—' : driveDetailValue(display.mode))}
       ${display.location && display.location !== '—' ? field('Location', driveDetailValue(display.location)) : ''}
       ${!pending && display.branches && display.branches !== '—' ? field('Eligible branches', driveDetailValue(display.branches)) : ''}
-      ${!pending && display.minCgpa !== '' ? field('Minimum CGPA', driveDetailValue(display.minCgpa)) : ''}
-      ${!pending && display.maxBacklogs !== '' ? field('Maximum backlogs', driveDetailValue(display.maxBacklogs)) : ''}
+      ${!pending && display.minCgpa !== '' && display.minCgpa != null ? field('Minimum CGPA', driveDetailValue(display.minCgpa)) : ''}
+      ${!pending && display.maxBacklogs !== '' && display.maxBacklogs != null ? field('Maximum backlogs', driveDetailValue(display.maxBacklogs)) : ''}
       ${!pending && display.description ? field('Job description', driveDetailValue(display.description)) : ''}
     </dl>
     ${!multi && display.profile && canApplyToDrives() ? `<div class="small text-muted-2">${display.profile}</div>` : ''}
