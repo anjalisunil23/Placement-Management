@@ -86,13 +86,7 @@ function inferNameFromEmail(email) {
   if (local.length < 3 || !/[a-zA-Z]/.test(local)) return '';
   return local.replace(/\b\w/g, (c) => c.toUpperCase());
 }
-
-/** Email-local / handle style — not a real student profile name. */
-function isLikelyEmailLocalName(name) {
-  const n = String(name || '').trim();
-  if (!n || /\s/.test(n)) return false;
-  return /^[A-Za-z][A-Za-z0-9._+-]{8,}$/.test(n);
-}
+const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 function sanitizeDisplayName(name, registerNumber) {
   const n = String(name || '').trim();
@@ -100,24 +94,19 @@ function sanitizeDisplayName(name, registerNumber) {
   const reg = String(registerNumber || '').trim();
   if (reg && n.toUpperCase() === reg.toUpperCase()) return '';
   if (/^\d+$/.test(n)) return '';
-  if (isLikelyEmailLocalName(n)) return '';
   return n;
 }
 
 function isEmailDerivedName(name, email) {
   const n = String(name || '').trim();
-  const e = String(email || '').trim();
-  if (!n || !e) return false;
+  const e = String(email || '').trim().toLowerCase();
+  if (!n || !e || !e.includes('@')) return false;
   const inferred = inferNameFromEmail(e);
   if (inferred && n.toLowerCase() === inferred.toLowerCase()) return true;
-  const local = e.split('@')[0] || '';
-  if (local && n.toLowerCase().replace(/[\s._+-]/g, '') === local.toLowerCase().replace(/[\s._+-]/g, '')) {
-    return true;
-  }
-  return false;
+  let local = (e.split('@')[0] || '').replace(/\d+$/, '').replace(/[._+-]+/g, '');
+  const compact = n.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return !!(local && compact && local === compact);
 }
-
-const ROLES = ['admin','placement_officer','student','staff','company','alumni'];
 
 function pickPlacementApiName(merged, registerNumber) {
   const reg = String(registerNumber || '').trim();
@@ -133,20 +122,17 @@ function pickPlacementApiName(merged, registerNumber) {
 function resolveSessionName(merged, registerNumber) {
   const reg = registerNumber || merged.registerNumber || '';
   const placementName = pickPlacementApiName(merged, reg);
-  if (placementName) return placementName;
+  if (placementName && !isNameEmailDerived(placementName, merged)) return placementName;
   const sources = [merged, merged.aesProfile || {}];
   const candidates = [];
   for (const src of sources) {
     candidates.push(...collectAesNameCandidates(src));
   }
   const best = pickBestAesName(candidates, reg);
-  if (best && !isNameEmailDerived(best, merged) && !isLikelyEmailLocalName(best)) return best;
-  const emails = [merged.collegeEmail, merged.email, merged.personalEmail].filter(Boolean);
+  if (best && !isNameEmailDerived(best, merged)) return best;
   const current = sanitizeDisplayName(merged.name || '', reg);
-  if (current && !isLikelyEmailLocalName(current) && !emails.some((e) => isEmailDerivedName(current, e))) {
-    return current;
-  }
-  // Never show an email-local username as the student profile name.
+  if (current && !isNameEmailDerived(current, merged)) return current;
+  // Never invent sidebar/navbar names from email local-parts (e.g. Amalskumarofficialz).
   return '';
 }
 
@@ -711,10 +697,9 @@ const Auth = {
       // Trust a recently verified session across tabs so navigation does not
       // re-block on /auth/me (or silently re-fetch AES-heavy userResponse).
       if (soft && cached?.role && this.token() && bootAt > 0 && (Date.now() - bootAt) < 120000) {
-        const cachedName = String(cached.name || '').trim();
-        const nameLooksBad = !cachedName
-          || (typeof isLikelyEmailLocalName === 'function' && isLikelyEmailLocalName(cachedName));
-        if (!nameLooksBad) {
+        const badStudentName = cached.role === 'student' && typeof isNameEmailDerived === 'function'
+          && isNameEmailDerived(cached.name, cached);
+        if (!badStudentName) {
           this._sessionReady = true;
           return true;
         }
@@ -786,13 +771,17 @@ const Auth = {
     const path = endpoints[role];
     if (!path) return false;
     try {
-      // lite=1 avoids full AES refresh. Students still request nameRefresh so
-      // AES stud_name replaces email-local usernames in the shell.
-      const params = new URLSearchParams();
-      if (opts.refresh) params.set('refresh', '1');
-      else params.set('lite', '1');
-      if (role === 'student' || opts.nameRefresh) params.set('nameRefresh', '1');
-      const qs = params.toString();
+      // lite=1 avoids AES refresh on every page. Use { refresh: true } only when
+      // CGPA/placement data must be re-synced (registration / settings).
+      // nameRefresh=1 when the cached name is an email local-part (e.g. Amalskumarofficialz).
+      const prevCheck = this.user() || {};
+      const needsNameRefresh = role === 'student' && (
+        !String(prevCheck.name || '').trim()
+        || (typeof isNameEmailDerived === 'function' && isNameEmailDerived(prevCheck.name, prevCheck))
+      );
+      let qs = 'lite=1';
+      if (opts.refresh) qs = 'refresh=1';
+      else if (needsNameRefresh || opts.nameRefresh) qs = 'lite=1&nameRefresh=1';
       const res = await apiFetch(path + (path.includes('?') ? '&' : '?') + qs, { skipAuthRedirect: true, skipAuthRetry: true });
       if (!res?.success || !res.data) return false;
       const p = res.data;
@@ -2070,12 +2059,6 @@ const StudentNotifs = {
   },
   markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
   markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
-  remove(id) { const sid = String(id); this.save(this.all().filter(n => String(n.id) !== sid)); },
-  removeMany(ids) {
-    const set = new Set((ids || []).map(String));
-    this.save(this.all().filter(n => !set.has(String(n.id))));
-  },
-  removeRead() { this.save(this.all().filter(n => !n.read)); },
   unreadCount() { return this.all().filter(n => !n.read).length; },
 };
 
@@ -2099,12 +2082,6 @@ const AlumniNotifs = {
   },
   markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
   markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
-  remove(id) { const sid = String(id); this.save(this.all().filter(n => String(n.id) !== sid)); },
-  removeMany(ids) {
-    const set = new Set((ids || []).map(String));
-    this.save(this.all().filter(n => !set.has(String(n.id))));
-  },
-  removeRead() { this.save(this.all().filter(n => !n.read)); },
 };
 
 const StaffNotifs = {
@@ -2122,12 +2099,6 @@ const StaffNotifs = {
   },
   markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
   markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
-  remove(id) { const sid = String(id); this.save(this.all().filter(n => String(n.id) !== sid)); },
-  removeMany(ids) {
-    const set = new Set((ids || []).map(String));
-    this.save(this.all().filter(n => !set.has(String(n.id))));
-  },
-  removeRead() { this.save(this.all().filter(n => !n.read)); },
 };
 
 const AdminNotifs = {
@@ -2146,12 +2117,6 @@ const AdminNotifs = {
   },
   markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
   markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
-  remove(id) { const sid = String(id); this.save(this.all().filter(n => String(n.id) !== sid)); },
-  removeMany(ids) {
-    const set = new Set((ids || []).map(String));
-    this.save(this.all().filter(n => !set.has(String(n.id))));
-  },
-  removeRead() { this.save(this.all().filter(n => !n.read)); },
 };
 
 const CompanyNotifs = {
@@ -2168,12 +2133,6 @@ const CompanyNotifs = {
   },
   markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
   markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
-  remove(id) { const sid = String(id); this.save(this.all().filter(n => String(n.id) !== sid)); },
-  removeMany(ids) {
-    const set = new Set((ids || []).map(String));
-    this.save(this.all().filter(n => !set.has(String(n.id))));
-  },
-  removeRead() { this.save(this.all().filter(n => !n.read)); },
 };
 
 const BroadcastStore = {

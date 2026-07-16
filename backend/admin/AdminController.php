@@ -1611,7 +1611,7 @@ final class AdminController
     {
         (new OfficerDataService())->requireScope();
         $filename = basename($filename);
-        if (!preg_match('/^[a-z0-9_\-]+\.(pdf|csv)$/i', $filename)) {
+        if (!preg_match('/^[a-z0-9_\-]+\.(pdf|csv|xlsx|xls)$/i', $filename)) {
             Response::error('Invalid filename.', 400);
         }
         $config = require dirname(__DIR__) . '/config/app.php';
@@ -1619,9 +1619,13 @@ final class AdminController
         if (!is_file($path)) {
             Response::notFound('Report file not found.');
         }
-        $mime = str_ends_with(strtolower($filename), '.csv')
-            ? 'text/csv'
-            : 'application/pdf';
+        $lower = strtolower($filename);
+        $mime = match (true) {
+            str_ends_with($lower, '.csv') => 'text/csv',
+            str_ends_with($lower, '.xlsx') => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            str_ends_with($lower, '.xls') => 'application/vnd.ms-excel',
+            default => 'application/pdf',
+        };
         header('Content-Type: ' . $mime);
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         readfile($path);

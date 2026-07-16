@@ -1,4 +1,4 @@
-/* PlaceHub shell v2026.07.16name — student name on all pages */
+/* PlaceHub shell v2026.07.16jobnav — Job Posts under Notifications */
 const APP_SHELL_VERSION = '2026.07.11o';
 
 (function applyShellThemeFallback() {
@@ -67,7 +67,6 @@ const NAV = [
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
   { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Placement details", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
-  { href: "job-posts.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['student'], studentOnly: true },
   { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'] },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin', 'placement_officer'] },
@@ -91,7 +90,21 @@ const NAV = [
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['staff'] },
 
   { section: "Account", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'] },
-  { href: "notifications.html", icon: "bi-bell-fill", label: "Notifications", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'] },
+  {
+    group: 'notifications',
+    href: 'notifications.html',
+    icon: 'bi-bell-fill',
+    label: 'Notifications',
+    roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'],
+    children: [
+      {
+        href: 'notifications.html#jobposts',
+        label: 'Job Posts',
+        roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'],
+        alumniSeeking: true,
+      },
+    ],
+  },
   { href: "settings.html", icon: "bi-gear-fill", label: "Settings", roles: ['admin', 'placement_officer', 'staff', 'alumni', 'company'] },
   { href: "settings.html", icon: "bi-person-badge", label: "Profile & Resumes", roles: ['student'], studentOnly: true },
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['admin', 'placement_officer', 'alumni'] },
@@ -154,7 +167,7 @@ function shellDisplayName(user) {
   for (const raw of candidates) {
     const n = String(raw || '').trim();
     if (!n) continue;
-    if (typeof isLikelyEmailLocalName === 'function' && isLikelyEmailLocalName(n)) continue;
+    if (typeof isNameEmailDerived === 'function' && isNameEmailDerived(n, user)) continue;
     if (typeof sanitizeDisplayName === 'function') {
       const clean = sanitizeDisplayName(n, user.registerNumber || '');
       if (clean) return clean;
@@ -412,9 +425,18 @@ function filteredNav() {
 
 function isNavActive(n, active) {
   if (!n.href) return false;
-  const base = n.href.split('#')[0];
-  const activeBase = (active || '').split('#')[0];
-  return base === activeBase;
+  const [nBase, nHash = ''] = String(n.href).split('#');
+  const [aBase, aHash = ''] = String(active || '').split('#');
+  if (nBase !== aBase) return false;
+  if (nHash) return nHash === aHash;
+  // Parent page link stays active for any hash on that page.
+  return true;
+}
+
+function shellActivePage() {
+  const page = document.body?.dataset?.page || '';
+  const hash = String(window.location.hash || '').replace(/^#/, '');
+  return hash ? `${page}#${hash}` : page;
 }
 
 function renderNavEntry(n, active, role) {
@@ -448,7 +470,7 @@ function renderNavEntry(n, active, role) {
       <div class="nav-group ${open ? 'open' : ''}" data-nav-group="${n.group}">
         <div class="nav-group-row">
           ${n.href
-        ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span></a>`
+        ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span>${n.href === 'notifications.html' ? '<span class="badge-soft danger nav-badge ms-auto" style="display:none;font-size:.65rem;padding:.15rem .45rem">0</span>' : ''}</a>`
         : `<button type="button" class="nav-item nav-group-toggle ${open ? 'active' : ''}" aria-expanded="${open}"><i class="bi ${n.icon}"></i><span>${n.label}</span></button>`}
           <button type="button" class="nav-group-chevron-btn" aria-label="Toggle ${n.label}"><i class="bi bi-chevron-down nav-chevron"></i></button>
         </div>
@@ -645,7 +667,7 @@ function enforcePageRole(active) {
 }
 
 document.addEventListener('ph-user-updated', () => {
-  const active = document.body.dataset.page;
+  const active = shellActivePage();
   if (active && document.getElementById('sidebar')) {
     renderShell(active);
     hydrateShellAvatars();
@@ -672,13 +694,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.head.appendChild(link);
   }
 
-  const active = document.body.dataset.page;
-  const isPublic = !active || active === 'public-stats.html' || active === 'index.html' || active === 'aes-complete.html' || active === 'login.html';
+  const active = shellActivePage();
+  const pageBase = (document.body?.dataset?.page || '').split('#')[0];
+  const isPublic = !pageBase || pageBase === 'public-stats.html' || pageBase === 'index.html' || pageBase === 'aes-complete.html' || pageBase === 'login.html';
 
   if (isPublic) {
     document.documentElement.setAttribute('data-theme', UserPrefs.theme());
     document.documentElement.setAttribute('data-density', UserPrefs.density());
-    if (active !== 'public-stats.html') {
+    if ((document.body?.dataset?.page || '') !== 'public-stats.html') {
       animateCounters();
     }
     document.dispatchEvent(new CustomEvent('ph-ready'));
@@ -686,7 +709,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   const paintShell = () => {
-    renderShell(active);
+    renderShell(shellActivePage());
     applyRoleVisibility();
   };
 
@@ -700,8 +723,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (!hasSession && (Auth.role() || Auth.user())) {
     hasSession = await Auth.bootstrap();
   }
-  if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(active)) {
-    window.location.replace(`public-stats.html?next=${encodeURIComponent(active)}`);
+  if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(pageBase)) {
+    window.location.replace(`public-stats.html?next=${encodeURIComponent(pageBase)}`);
     return;
   }
   if (!hasSession) {
@@ -710,30 +733,29 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       const roleHint = Auth.role() || Auth.user()?.role || '';
       Auth.clear();
-      window.location.href = authReentryUrl(active, roleHint);
+      window.location.href = authReentryUrl(pageBase, roleHint);
       return;
     }
   }
 
   // First-time students must complete Placement Cell registration before any other page.
   if (typeof studentNeedsPlacementRegistration === 'function' && studentNeedsPlacementRegistration()) {
-    if (active !== 'placement-registration.html') {
+    if (pageBase !== 'placement-registration.html') {
       window.location.replace('placement-registration.html');
       return;
     }
-  } else if (active === 'placement-registration.html' && Auth.role() === 'student') {
+  } else if (pageBase === 'placement-registration.html' && Auth.role() === 'student') {
     window.location.replace(Auth.homePage() || 'drives.html');
     return;
   }
 
-  if (!enforcePageRole(active)) return;
+  if (!enforcePageRole(pageBase)) return;
   paintShell();
 
-  if (Auth.hasRealAuth() && active !== 'settings.html') {
+  if (Auth.hasRealAuth() && pageBase !== 'settings.html') {
     Auth.enrichFromProfile()
       .then(() => {
-        const page = document.body?.dataset?.page;
-        if (page) renderShell(page);
+        if (document.body?.dataset?.page) renderShell(shellActivePage());
       })
       .catch(() => { });
   }

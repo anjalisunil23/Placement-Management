@@ -15,7 +15,7 @@ use PMS\Utils\Security;
 use TCPDF;
 
 /**
- * PDF/CSV report generation — campus-wide or department-scoped.
+ * PDF / CSV / Excel report generation — campus-wide or department-scoped.
  */
 final class ReportService
 {
@@ -249,9 +249,9 @@ final class ReportService
      */
     private function generateApplicantsReport(ReportContext $ctx): array
     {
-        // Prefer CSV so Excel opens the roster cleanly; PDF still supported.
-        if ($ctx->format !== 'csv' && $ctx->format !== 'pdf') {
-            $ctx->format = 'csv';
+        // Prefer Excel/CSV so Excel opens the roster cleanly; PDF still supported.
+        if (!in_array($ctx->format, ['csv', 'pdf', 'xlsx'], true)) {
+            $ctx->format = 'xlsx';
         }
 
         $company = null;
@@ -534,12 +534,24 @@ final class ReportService
             mkdir($dir, 0755, true);
         }
 
-        $ext = $ctx->format === 'csv' ? 'csv' : 'pdf';
+        $ext = match ($ctx->format) {
+            'csv' => 'csv',
+            'xlsx', 'excel' => 'xlsx',
+            default => 'pdf',
+        };
+        if ($ext === 'xlsx' && !class_exists(\ZipArchive::class)) {
+            // Servers without ext-zip still get an Excel-compatible workbook.
+            $ext = 'xls';
+        }
         $filename = $type . '_report_' . date('Ymd_His') . '.' . $ext;
         $path = $dir . '/' . $filename;
 
         if ($ext === 'csv') {
             $this->writeCsv($path, $headers, $rows);
+        } elseif ($ext === 'xlsx') {
+            $this->writeXlsx($path, $title, $headers, $rows);
+        } elseif ($ext === 'xls') {
+            $this->writeExcelXml($path, $title, $headers, $rows);
         } else {
             $html = $this->buildTableHtml($title, $headers, $rows, $ctx);
             $this->writePdf($path, $html, $title);
@@ -587,6 +599,212 @@ final class ReportService
             fputcsv($fh, $row);
         }
         fclose($fh);
+    }
+
+    /**
+     * Minimal Office Open XML (.xlsx) workbook — opens natively in Microsoft Excel.
+     *
+     * @param string[] $headers
+     * @param array<int, string[]> $rows
+     */
+    private function writeXlsx(string $path, string $title, array $headers, array $rows): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            throw new \RuntimeException('Excel export requires the PHP zip extension.');
+        }
+
+        $sheetName = $this->sanitizeSheetName($title !== '' ? $title : 'Report');
+        $sheetXml = $this->buildXlsxSheetXml($headers, $rows);
+
+        $contentTypes = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>
+XML;
+
+        $rels = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+XML;
+
+        $workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+            . ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            . '<sheets><sheet name="' . htmlspecialchars($sheetName, ENT_XML1 | ENT_QUOTES, 'UTF-8')
+            . '" sheetId="1" r:id="rId1"/></sheets></workbook>';
+
+        $workbookRels = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+XML;
+
+        $styles = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2">
+    <font><sz val="11"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <borders count="1"><border/></borders>
+  <cellStyleXfs count="1"><xf/></cellStyleXfs>
+  <cellXfs count="2">
+    <xf fontId="0" fillId="0" borderId="0"/>
+    <xf fontId="1" fillId="0" borderId="0" applyFont="1"/>
+  </cellXfs>
+</styleSheet>
+XML;
+
+        $zip = new \ZipArchive();
+        if ($zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new \RuntimeException('Unable to create Excel file.');
+        }
+        $zip->addFromString('[Content_Types].xml', $contentTypes);
+        $zip->addFromString('_rels/.rels', $rels);
+        $zip->addFromString('xl/workbook.xml', $workbook);
+        $zip->addFromString('xl/_rels/workbook.xml.rels', $workbookRels);
+        $zip->addFromString('xl/styles.xml', $styles);
+        $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+        $zip->close();
+    }
+
+    /**
+     * Excel 2003 SpreadsheetML (.xls) — works without the zip extension.
+     *
+     * @param string[] $headers
+     * @param array<int, string[]> $rows
+     */
+    private function writeExcelXml(string $path, string $title, array $headers, array $rows): void
+    {
+        $sheetName = htmlspecialchars($this->sanitizeSheetName($title !== '' ? $title : 'Report'), ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $esc = static function (string $value): string {
+            return htmlspecialchars(
+                str_replace(["\r\n", "\r"], "\n", $value),
+                ENT_XML1 | ENT_QUOTES,
+                'UTF-8'
+            );
+        };
+
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<?mso-application progid="Excel.Sheet"?>'
+            . '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"'
+            . ' xmlns:o="urn:schemas-microsoft-com:office:office"'
+            . ' xmlns:x="urn:schemas-microsoft-com:office:excel"'
+            . ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
+            . '<Styles>'
+            . '<Style ss:ID="Header"><Font ss:Bold="1"/></Style>'
+            . '</Styles>'
+            . '<Worksheet ss:Name="' . $sheetName . '"><Table>';
+
+        $xml .= '<Row>';
+        foreach ($headers as $header) {
+            $xml .= '<Cell ss:StyleID="Header"><Data ss:Type="String">' . $esc((string) $header) . '</Data></Cell>';
+        }
+        $xml .= '</Row>';
+
+        foreach ($rows as $row) {
+            $xml .= '<Row>';
+            foreach ($headers as $i => $_h) {
+                $cell = (string) ($row[$i] ?? '');
+                $type = is_numeric($cell) && !preg_match('/^0\d+/', $cell) ? 'Number' : 'String';
+                $xml .= '<Cell><Data ss:Type="' . $type . '">' . $esc($cell) . '</Data></Cell>';
+            }
+            $xml .= '</Row>';
+        }
+
+        $xml .= '</Table></Worksheet></Workbook>';
+
+        if (file_put_contents($path, $xml) === false) {
+            throw new \RuntimeException('Unable to create Excel file.');
+        }
+    }
+
+    private function sanitizeSheetName(string $title): string
+    {
+        $name = preg_replace('/[\\\\\/\?\*\[\]:]+/', ' ', $title) ?? 'Report';
+        $name = trim(preg_replace('/\s+/', ' ', $name) ?? 'Report');
+        if ($name === '') {
+            $name = 'Report';
+        }
+        if (strlen($name) > 31) {
+            $name = substr($name, 0, 31);
+        }
+
+        return $name;
+    }
+
+    /**
+     * @param string[] $headers
+     * @param array<int, string[]> $rows
+     */
+    private function buildXlsxSheetXml(array $headers, array $rows): string
+    {
+        $xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            . '<sheetData>';
+
+        $xml .= $this->xlsxRowXml(1, $headers, true);
+        $rowNum = 2;
+        foreach ($rows as $row) {
+            $cells = [];
+            foreach ($headers as $i => $_h) {
+                $cells[] = (string) ($row[$i] ?? '');
+            }
+            $xml .= $this->xlsxRowXml($rowNum, $cells, false);
+            $rowNum++;
+        }
+
+        $xml .= '</sheetData></worksheet>';
+
+        return $xml;
+    }
+
+    /**
+     * @param list<string> $values
+     */
+    private function xlsxRowXml(int $rowNum, array $values, bool $header): string
+    {
+        $xml = '<row r="' . $rowNum . '">';
+        foreach ($values as $i => $value) {
+            $col = $this->xlsxColumnLetter($i + 1);
+            $ref = $col . $rowNum;
+            $text = htmlspecialchars(
+                str_replace(["\r\n", "\r"], "\n", (string) $value),
+                ENT_XML1 | ENT_QUOTES,
+                'UTF-8'
+            );
+            $style = $header ? ' s="1"' : '';
+            $xml .= '<c r="' . $ref . '" t="inlineStr"' . $style . '><is><t xml:space="preserve">'
+                . $text . '</t></is></c>';
+        }
+        $xml .= '</row>';
+
+        return $xml;
+    }
+
+    private function xlsxColumnLetter(int $index): string
+    {
+        $letter = '';
+        while ($index > 0) {
+            $index--;
+            $letter = chr(65 + ($index % 26)) . $letter;
+            $index = intdiv($index, 26);
+        }
+
+        return $letter !== '' ? $letter : 'A';
     }
 
     private function writePdf(string $path, string $html, string $title): void

@@ -37,7 +37,9 @@ final class ReportContext
             departmentId: $forcedDepartmentId ?: (isset($input['departmentId']) ? (string) $input['departmentId'] : null),
             dateFrom: isset($input['dateFrom']) ? (string) $input['dateFrom'] : null,
             dateTo: isset($input['dateTo']) ? (string) $input['dateTo'] : null,
-            format: in_array($input['format'] ?? 'pdf', ['pdf', 'csv'], true) ? (string) $input['format'] : 'pdf',
+            format: in_array($input['format'] ?? 'pdf', ['pdf', 'csv', 'xlsx', 'excel'], true)
+                ? (string) (($input['format'] === 'excel') ? 'xlsx' : $input['format'])
+                : 'pdf',
             generatedBy: $userId,
             month: (int) ($input['month'] ?? date('n')),
             year: (int) ($input['year'] ?? date('Y')),

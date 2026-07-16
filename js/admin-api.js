@@ -547,7 +547,9 @@ const ReportCenter = {
   },
 
   formatLabel(fmt) {
-    return (fmt || 'pdf').toUpperCase();
+    const f = String(fmt || 'pdf').toLowerCase();
+    if (f === 'xlsx' || f === 'excel') return 'Excel';
+    return f.toUpperCase();
   },
 
   typeLabel(type) {

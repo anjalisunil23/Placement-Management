@@ -117,7 +117,7 @@ const isAlumni = role === 'alumni';
 const isStaff = role === 'staff';
 const isAdminLike = role === 'admin' || role === 'placement_officer';
 const isSeekingAlumni = isAlumni && (typeof alumniIsWorking !== 'function' || !alumniIsWorking());
-const canViewJobFeed = isAdminLike || isStaff || isSeekingAlumni;
+const canViewJobFeed = isAdminLike || isStaff || isStudent || isSeekingAlumni;
 const hasInbox = !!NotificationInbox.store(role);
 const notifStore = NotificationInbox.store(role);
 const notifApiBase = NotificationInbox.apiBase(role);
@@ -258,6 +258,7 @@ function jobFeedEndpoint() {
     admin: '/admin/jobs',
     placement_officer: '/officer/jobs',
     staff: '/staff/jobs',
+    student: '/student/jobs',
     alumni: '/alumni/jobs',
   }[role] || '';
 }
@@ -588,6 +589,24 @@ if (canViewJobFeed) {
   document.getElementById('jobSourceFilter')?.addEventListener('change', renderJobFeed);
   loadJobFeed();
 }
+
+function activateNotifTabFromHash() {
+  const hash = String(window.location.hash || '').replace(/^#/, '');
+  if (!hash) return;
+  const tab = document.querySelector(`#notifTabs a[href="#${CSS.escape(hash)}"]`);
+  if (!tab || tab.closest('li')?.style.display === 'none') return;
+  if (typeof bootstrap !== 'undefined') {
+    bootstrap.Tab.getOrCreateInstance(tab).show();
+  } else {
+    tab.click();
+  }
+  if (typeof renderShell === 'function' && typeof shellActivePage === 'function') {
+    renderShell(shellActivePage());
+  }
+}
+
+activateNotifTabFromHash();
+window.addEventListener('hashchange', activateNotifTabFromHash);
 
 if (isAdminLike) {
   broadcastModal = new bootstrap.Modal(document.getElementById('broadcastModal'));
