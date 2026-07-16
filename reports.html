@@ -10,7 +10,7 @@
 .report-folder-card:hover{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));box-shadow:0 8px 24px rgba(15,23,42,.06)}
 .report-folder-card .folder-icon{
   width:48px;height:48px;border-radius:12px;display:grid;place-items:center;
-  background:color-mix(in srgb,var(--warning) 16%,transparent);color:#b45309;font-size:1.35rem
+  background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--primary);font-size:1.35rem
 }
 .company-report-card{cursor:pointer;transition:border-color .15s ease,transform .12s ease}
 .company-report-card:hover{border-color:color-mix(in srgb,var(--primary) 40%,var(--border));transform:translateY(-1px)}
@@ -100,7 +100,7 @@ function renderCards() {
     <div class="col-md-6 col-xl-4">
       <div class="card-surface p-4 h-100 report-folder-card" id="openCompanyApplicantsFolder" role="button" tabindex="0">
         <div class="d-flex justify-content-between mb-3">
-          <div class="folder-icon"><i class="bi bi-folder2-fill"></i></div>
+          <div class="folder-icon" aria-hidden="true"><i class="bi bi-folder-fill"></i></div>
           <span class="badge-soft warning">Folder</span>
         </div>
         <h6 class="fw-bold mb-1">Company Applicants</h6>
