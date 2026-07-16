@@ -1444,6 +1444,63 @@ final class OfficerDataService
     }
 
     /**
+     * Add fallback rows for summary-only academic values when AES omits the
+     * detailed qualification entries needed by the modal table.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    private function backfillAcademicQualificationRows(array $rows, ?float $cgpa, ?float $marks10th, ?float $marks12th): array
+    {
+        $has10th = false;
+        $has12th = false;
+        $hasCgpa = false;
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $label = strtoupper(trim((string) ($row['qualification'] ?? '')));
+            if ($label === '') {
+                continue;
+            }
+            if (preg_match('/\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|SECONDARY)\b/', $label) === 1) {
+                $has10th = true;
+            }
+            if (preg_match('/\b(HSC|PLUS\s*TWO|PLUS2|12TH|CLASS\s*XII|HIGHER\s*SECONDARY)\b/', $label) === 1) {
+                $has12th = true;
+            }
+            if (str_contains($label, 'CGPA') || preg_match('/\bGPA\b/', $label) === 1) {
+                $hasCgpa = true;
+            }
+        }
+
+        if ($marks10th !== null && $marks10th > 0 && !$has10th) {
+            $rows[] = [
+                'qualification' => 'SSLC / 10th',
+                'mark' => $marks10th,
+                'percentage' => $marks10th,
+            ];
+        }
+        if ($marks12th !== null && $marks12th > 0 && !$has12th) {
+            $rows[] = [
+                'qualification' => 'Plus Two / 12th',
+                'mark' => $marks12th,
+                'percentage' => $marks12th,
+            ];
+        }
+        if ($cgpa !== null && $cgpa > 0 && !$hasCgpa) {
+            $rows[] = [
+                'qualification' => 'Current CGPA',
+                'mark' => $cgpa,
+                'maxMark' => 10,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
      * Drop alumni / left / transferred students so only currently studying rows remain.
      *
      * @param array<string, mixed> $record
@@ -2057,6 +2114,12 @@ final class OfficerDataService
                 $qualifications = $this->realEducationQualificationRows($academic['qualifications']);
             }
         }
+        $qualifications = $this->backfillAcademicQualificationRows(
+            $qualifications,
+            $cgpa > 0 ? $cgpa : null,
+            $marks10 > 0 ? $marks10 : null,
+            $marks12 > 0 ? $marks12 : null
+        );
 
         $aesDeptName = trim((string) (
             $mapped['departmentName']
@@ -2356,13 +2419,17 @@ final class OfficerDataService
         );
         // Prefer the live AES edu table when present; otherwise keep profile table rows.
         $tableRows = $rows !== [] ? $rows : $storedQuals;
+        $cgpa = (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) ? (float) $qual['cgpa'] : $empty['cgpa'];
+        $marks10th = (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) ? (float) $qual['marks10th'] : $empty['marks10th'];
+        $marks12th = (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) ? (float) $qual['marks12th'] : $empty['marks12th'];
+        $tableRows = $this->backfillAcademicQualificationRows($tableRows, $cgpa, $marks10th, $marks12th);
 
         return [
-            'cgpa' => (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) ? (float) $qual['cgpa'] : $empty['cgpa'],
-            'marks10th' => (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) ? (float) $qual['marks10th'] : $empty['marks10th'],
-            'marks12th' => (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) ? (float) $qual['marks12th'] : $empty['marks12th'],
-            'ugMarks' => (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0)
-                ? (float) $qual['marks12th']
+            'cgpa' => $cgpa,
+            'marks10th' => $marks10th,
+            'marks12th' => $marks12th,
+            'ugMarks' => ($marks12th !== null && $marks12th > 0)
+                ? $marks12th
                 : $empty['ugMarks'],
             'backlogs' => isset($qual['backlogs']) ? (int) $qual['backlogs'] : $empty['backlogs'],
             'qualifications' => $tableRows,
