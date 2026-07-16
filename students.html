@@ -808,7 +808,27 @@ function studentInStaffScope(s) {
   const dept = staffDepartmentCode();
   if (!dept) return false;
   const studentDept = String(s.department || s.departmentName || '').trim().toUpperCase();
-  return studentDept === dept;
+  // Soft dept check — AES labels may be programme names (MCA / Integrated MCA).
+  const deptOk = !studentDept
+    || studentDept === dept
+    || studentDept.includes(dept)
+    || dept.includes(studentDept)
+    || ['MCA', 'BCA', 'INMCA', 'INTEGRATED MCA', 'COMPUTER APPLICATIONS'].includes(studentDept);
+  if (!deptOk) return false;
+
+  const u = Auth.user() || {};
+  const assigned = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+  if (!assigned.length) return false;
+  const batch = String(s.classBatch || s.batch || '').trim().toUpperCase();
+  if (!batch) return false;
+  const cohort = batch.replace(/-S\d+$/i, '');
+  return assigned.some((a) => {
+    const A = String(a || '').trim().toUpperCase();
+    if (!A) return false;
+    if (A === batch) return true;
+    const aCohort = A.replace(/-S\d+$/i, '');
+    return aCohort === cohort;
+  });
 }
 
 async function fetchOverviewStudentsFromApi(query = '') {
@@ -1715,6 +1735,7 @@ function filteredFinalYearStudents(kind) {
   const inputId = kind === 'registered' ? 'searchFinalYearRegistered' : 'searchFinalYearPending';
   const q = document.getElementById(inputId)?.value.trim() || '';
   return finalYearStudentsAll.filter(s => {
+    if (role === 'staff' && !studentInStaffScope(s)) return false;
     const registered = isFinalYearPolicyRegistered(s);
     if (kind === 'registered' ? !registered : registered) return false;
     return finalYearMatchesQuery(s, q);

@@ -88,6 +88,7 @@ final class StaffController
             'profile' => $profile,
             'departmentId' => $departmentId,
             'department' => $dept,
+            'user' => $user,
         ];
         $assigned = StaffContext::assignedClassBatches($staffCtx);
         if ($assigned === []) {

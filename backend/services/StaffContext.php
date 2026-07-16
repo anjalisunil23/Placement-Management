@@ -172,36 +172,6 @@ final class StaffContext
      * @param array<string, mixed> $student
      * @param array<string, mixed> $ctx
      */
-    public static function studentMatchesScope(array $student, array $ctx): bool
-    {
-        $scopeDept = (string) ($ctx['departmentId'] ?? '');
-        if ($scopeDept === '' || (string) ($student['departmentId'] ?? '') !== $scopeDept) {
-            return false;
-        }
-
-        $batches = self::assignedClassBatches($ctx);
-        if ($batches === []) {
-            return true;
-        }
-
-        $studentBatch = strtoupper(trim((string) ($student['classBatch'] ?? '')));
-        if ($studentBatch === '') {
-            return false;
-        }
-
-        foreach ($batches as $batch) {
-            if (strcasecmp($studentBatch, trim((string) $batch)) === 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @param array<string, mixed> $student
-     * @param array<string, mixed> $ctx
-     */
     public static function assertStudentInScope(array $student, array $ctx): void
     {
         self::requireDepartmentScope($ctx);
@@ -286,8 +256,78 @@ final class StaffContext
             'departmentId' => $staffCtx['departmentId'] ?? '',
             'department'   => $staffCtx['department'],
             'profile'      => $staffCtx['profile'],
+            'user'         => $staffCtx['user'] ?? null,
             'staffScope'   => true,
         ];
+    }
+
+    /**
+     * Whether a student classBatch / stud_class belongs to the staff member's
+     * assigned CT/CoCT classes (exact or cohort match, e.g. MCAINT2023-28-S7).
+     *
+     * @param list<string> $assignedBatches
+     */
+    public static function classBatchMatchesAssigned(string $studentBatch, array $assignedBatches): bool
+    {
+        $studentBatch = trim($studentBatch);
+        if ($studentBatch === '' || $assignedBatches === []) {
+            return false;
+        }
+        $wantCohort = ClassInchargeRegistry::cohortKey($studentBatch);
+        foreach ($assignedBatches as $assigned) {
+            $assigned = trim((string) $assigned);
+            if ($assigned === '') {
+                continue;
+            }
+            if (strcasecmp($assigned, $studentBatch) === 0) {
+                return true;
+            }
+            if (strcasecmp(ClassInchargeRegistry::cohortKey($assigned), $wantCohort) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Resolve the display/AES class label from a student or list row.
+     *
+     * @param array<string, mixed> $student
+     */
+    public static function studentClassBatch(array $student): string
+    {
+        return trim((string) (
+            $student['classBatch']
+            ?? $student['stud_class']
+            ?? $student['batch']
+            ?? ''
+        ));
+    }
+
+    /**
+     * Staff: department + assigned class batches (CT/CoCT). Empty assignments ⇒ no students.
+     * Placement officer paths do not use this (no staffScope).
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $ctx
+     */
+    public static function studentMatchesScope(array $student, array $ctx): bool
+    {
+        $scopeDept = (string) ($ctx['departmentId'] ?? '');
+        $studentDept = trim((string) ($student['departmentId'] ?? ''));
+        // AES-only rows may omit departmentId; allow when unset, otherwise require match.
+        if ($scopeDept !== '' && $studentDept !== '' && $studentDept !== $scopeDept) {
+            return false;
+        }
+
+        $batches = self::assignedClassBatches($ctx);
+        // Class teachers / co-class teachers only see their own classes.
+        if ($batches === []) {
+            return false;
+        }
+
+        return self::classBatchMatchesAssigned(self::studentClassBatch($student), $batches);
     }
 
     /**
@@ -309,6 +349,7 @@ final class StaffContext
     public static function studentIdsInDepartment(array $ctx): array
     {
         $students = (new StudentModel())->findAll(self::studentCollectionFilter($ctx), 5000);
-        return array_map(fn ($s) => (string) $s['_id'], $students);
+
+        return array_map(static fn ($s) => (string) $s['_id'], $students);
     }
 }

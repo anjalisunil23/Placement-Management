@@ -380,10 +380,7 @@ final class OfficerDataService
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $rows = [];
         foreach ($studentModel->findAll($filter, 500) as $s) {
-            if (!empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($s, [
-                'departmentId' => $ctx['departmentId'] ?? '',
-                'profile'      => $ctx['profile'] ?? null,
-            ])) {
+            if (!empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($s, $ctx)) {
                 continue;
             }
             $userId = (string) ($s['userId'] ?? '');
@@ -718,6 +715,20 @@ final class OfficerDataService
         }
 
         $rows = array_values($byAdmno);
+        if (!empty($ctx['staffScope'])) {
+            $staffBatches = StaffContext::assignedClassBatches($ctx);
+            if ($staffBatches === []) {
+                $rows = [];
+            } else {
+                $rows = array_values(array_filter(
+                    $rows,
+                    static fn (array $row): bool => StaffContext::classBatchMatchesAssigned(
+                        StaffContext::studentClassBatch($row),
+                        $staffBatches
+                    )
+                ));
+            }
+        }
         usort(
             $rows,
             static fn (array $a, array $b): int => strcasecmp(
@@ -756,10 +767,7 @@ final class OfficerDataService
 
         $rows = [];
         foreach ($studentModel->findAll($filter, 10000) as $student) {
-            if (!$campusWide && !empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($student, [
-                'departmentId' => $ctx['departmentId'] ?? '',
-                'profile'      => $ctx['profile'] ?? null,
-            ])) {
+            if (!$campusWide && !empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($student, $ctx)) {
                 continue;
             }
 
@@ -968,6 +976,11 @@ final class OfficerDataService
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
+        $staffBatches = !empty($ctx['staffScope']) ? StaffContext::assignedClassBatches($ctx) : [];
+        // Class teachers / co-class teachers with no assignment see no AES directory students.
+        if (!empty($ctx['staffScope']) && $staffBatches === []) {
+            return [];
+        }
         $rows = [];
         $seenAdmno = [];
 
@@ -1012,6 +1025,12 @@ final class OfficerDataService
 
             $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
             if ($row === null) {
+                continue;
+            }
+            if ($staffBatches !== [] && !StaffContext::classBatchMatchesAssigned(
+                StaffContext::studentClassBatch($row),
+                $staffBatches
+            )) {
                 continue;
             }
             if (!$this->isPlacementStudentListCandidate(
@@ -2503,6 +2522,9 @@ final class OfficerDataService
         // AES directory / Open-profile synthetics have no PlaceHub departmentId.
         // Final-year lists are already scoped; allow when dept is unset or matches.
         if (!empty($student['aesOnly'])) {
+            if (!empty($ctx['staffScope'])) {
+                return StaffContext::studentMatchesScope($student, $ctx);
+            }
             $scopeDept = (string) ($ctx['departmentId'] ?? '');
             if ($scopeDept === '') {
                 return true;
@@ -2512,10 +2534,7 @@ final class OfficerDataService
             return $studentDept === '' || $studentDept === $scopeDept;
         }
         if (!empty($ctx['staffScope'])) {
-            return StaffContext::studentMatchesScope($student, [
-                'departmentId' => $ctx['departmentId'] ?? '',
-                'profile'      => $ctx['profile'] ?? null,
-            ]);
+            return StaffContext::studentMatchesScope($student, $ctx);
         }
         $scopeDept = (string) ($ctx['departmentId'] ?? '');
         if ($scopeDept === '') {
