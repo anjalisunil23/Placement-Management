@@ -2126,6 +2126,41 @@ function isCompanyShortlisted(a) {
 }
 
 let shortlistToolsWired = false;
+const SHORTLIST_SEEN_KEY = 'students.shortlisted.seen.ids';
+
+function shortlistedSeenIds() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SHORTLIST_SEEN_KEY) || '[]');
+    return Array.isArray(raw) ? raw.map(v => String(v || '')) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveShortlistedSeenIds(ids) {
+  const unique = [...new Set((Array.isArray(ids) ? ids : []).map(v => String(v || '')).filter(Boolean))];
+  localStorage.setItem(SHORTLIST_SEEN_KEY, JSON.stringify(unique));
+}
+
+function shortlistedApplicationIds(list) {
+  return (Array.isArray(list) ? list : [])
+    .map(a => String(a?.id || ''))
+    .filter(Boolean);
+}
+
+function isShortlistedTabActive() {
+  return !!document.getElementById('linkAppShortlisted')?.classList.contains('active');
+}
+
+function unseenShortlistedCount(allShortlisted) {
+  const seen = new Set(shortlistedSeenIds());
+  return shortlistedApplicationIds(allShortlisted).filter(id => !seen.has(id)).length;
+}
+
+function markShortlistedSeen(list = null) {
+  const shortlisted = Array.isArray(list) ? list : ApplicationPipeline.all().filter(isCompanyShortlisted);
+  saveShortlistedSeenIds(shortlistedApplicationIds(shortlisted));
+}
 
 function normCompanyKey(name) {
   return String(name || '').trim().toLowerCase();
@@ -2168,7 +2203,13 @@ function renderShortlistedRows(list) {
   const label = document.getElementById('shortlistedCountLabel');
   const sub = document.getElementById('shortlistTableSub');
   const company = selectedShortlistCompany();
-  if (badge) badge.textContent = String(list.length);
+  const allShortlisted = ApplicationPipeline.all().filter(isCompanyShortlisted);
+  if (isShortlistedTabActive()) markShortlistedSeen(allShortlisted);
+  const unreadCount = isShortlistedTabActive() ? 0 : unseenShortlistedCount(allShortlisted);
+  if (badge) {
+    badge.textContent = String(unreadCount);
+    badge.style.display = unreadCount > 0 ? '' : 'none';
+  }
   if (label) label.textContent = `${list.length} Shortlisted`;
   if (sub) {
     sub.textContent = company
@@ -2204,6 +2245,11 @@ async function initShortlistTools() {
   if (!shortlistToolsWired) {
     document.getElementById('shortlistCompanyFilter')?.addEventListener('change', () => {
       const all = ApplicationPipeline.all().filter(isCompanyShortlisted);
+      renderShortlistedRows(filteredShortlistedApps(all));
+    });
+    document.getElementById('linkAppShortlisted')?.addEventListener('shown.bs.tab', () => {
+      const all = ApplicationPipeline.all().filter(isCompanyShortlisted);
+      markShortlistedSeen(all);
       renderShortlistedRows(filteredShortlistedApps(all));
     });
     shortlistToolsWired = true;
