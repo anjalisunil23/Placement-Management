@@ -107,23 +107,34 @@ final class StaffPlacementRegistryService
      */
     private function mergeCompleteClassRoster(array $existing, array $aesClass): array
     {
-        $seen = [];
+        $byKey = [];
+        $unkeyed = [];
         foreach ($existing as $row) {
             $key = $this->studentRowKey($row);
-            if ($key !== '') {
-                $seen[$key] = true;
+            if ($key === '') {
+                $unkeyed[] = $row;
+                continue;
             }
+            $byKey[$key] = $row;
         }
         foreach ($aesClass as $row) {
             $key = $this->studentRowKey($row);
-            if ($key === '' || isset($seen[$key])) {
+            if ($key === '') {
                 continue;
             }
-            $seen[$key] = true;
-            $existing[] = $row;
+            if (!isset($byKey[$key])) {
+                $byKey[$key] = $row;
+                continue;
+            }
+            // Prefer the row that already has placement / HE details filled in.
+            $existingEmployer = trim((string) ($byKey[$key]['employer'] ?? ''));
+            $newEmployer = trim((string) ($row['employer'] ?? ''));
+            if ($existingEmployer === '' && $newEmployer !== '') {
+                $byKey[$key] = $row;
+            }
         }
 
-        return $existing;
+        return array_merge(array_values($byKey), $unkeyed);
     }
 
     /**
@@ -220,7 +231,7 @@ final class StaffPlacementRegistryService
         $seen = [];
 
         $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-        if ($placed && (string) ($placement['company'] ?? '') !== '') {
+        if ((string) ($placement['company'] ?? '') !== '') {
             $entries[] = $this->buildEntry($meta, [
                 'id'               => $studentId . ':placement',
                 'employer'         => (string) $placement['company'],
@@ -1035,14 +1046,16 @@ final class StaffPlacementRegistryService
         if ($register !== '') {
             $existing = $model->findByRegisterNumber($register);
             if ($existing) {
-                return $this->backfillStudentClassFields($model, $existing, $student);
+                $existing = $this->backfillStudentClassFields($model, $existing, $student);
+                return $this->alignStudentDepartment($model, $existing, $staffCtx);
             }
         }
 
         if (empty($student['aesOnly']) && !empty($student['_id']) && Security::isValidId((string) $student['_id'])) {
             $byId = $model->findById((string) $student['_id']);
             if ($byId) {
-                return $this->backfillStudentClassFields($model, $byId, $student);
+                $byId = $this->backfillStudentClassFields($model, $byId, $student);
+                return $this->alignStudentDepartment($model, $byId, $staffCtx);
             }
         }
 
@@ -1120,7 +1133,7 @@ final class StaffPlacementRegistryService
         if ($branch !== '' && trim((string) ($existing['branch'] ?? '')) === '') {
             $patch['branch'] = $branch;
         }
-        if ($batch !== '' && trim((string) ($existing['classBatch'] ?? '')) === '') {
+        if ($batch !== '') {
             $patch['classBatch'] = $batch;
         }
         if ($courseId !== '' && trim((string) ($existing['courseId'] ?? '')) === '') {
@@ -1129,12 +1142,42 @@ final class StaffPlacementRegistryService
         if ($branchId !== '' && trim((string) ($existing['branchId'] ?? '')) === '') {
             $patch['branchId'] = $branchId;
         }
+        // Align department to the AES/staff row when missing so reload merge indexes the student.
+        $aesDeptId = trim((string) (
+            $aesStudent['departmentId']
+            ?? (is_array($aesStudent['department'] ?? null) ? ($aesStudent['department']['id'] ?? '') : '')
+        ));
+        if ($aesDeptId !== '' && Security::isValidId($aesDeptId) && trim((string) ($existing['departmentId'] ?? '')) === '') {
+            $patch['departmentId'] = Security::toObjectId($aesDeptId);
+        }
         if ($patch !== []) {
             $model->update((string) $existing['_id'], $patch);
             $existing = array_merge($existing, $patch);
         }
 
         return $existing;
+    }
+
+    /**
+     * Keep materialized students under the staff department so reload merge indexes them.
+     *
+     * @param array<string, mixed> $existing
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    private function alignStudentDepartment(StudentModel $model, array $existing, array $staffCtx): array
+    {
+        $scopeId = trim((string) ($staffCtx['departmentId'] ?? ''));
+        if ($scopeId === '' || !Security::isValidId($scopeId)) {
+            return $existing;
+        }
+        $current = trim((string) ($existing['departmentId'] ?? ''));
+        if ($current !== '') {
+            return $existing;
+        }
+        $patch = ['departmentId' => Security::toObjectId($scopeId)];
+        $model->update((string) $existing['_id'], $patch);
+        return array_merge($existing, $patch);
     }
 
     /**

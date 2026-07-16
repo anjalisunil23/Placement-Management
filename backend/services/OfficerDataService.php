@@ -431,6 +431,7 @@ final class OfficerDataService
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
+        $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
         $rows = [];
         $seen = [];
 
@@ -447,7 +448,21 @@ final class OfficerDataService
                 continue;
             }
 
-            $row = $this->mapAesDirectoryRecordToListRow($record, null, $dept, $deptCode, $deptName);
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? ''
+            )));
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            $local = null;
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
             if ($row === null || strcasecmp((string) ($row['classBatch'] ?? ''), $batch) !== 0) {
                 continue;
             }
@@ -479,7 +494,16 @@ final class OfficerDataService
             $rows[] = $row;
         }
 
-        return $this->supplementAesClassRosterGaps($rows, $seen, $programme, $batch, $dept, $deptCode, $deptName);
+        return $this->supplementAesClassRosterGaps(
+            $rows,
+            $seen,
+            $programme,
+            $batch,
+            $dept,
+            $deptCode,
+            $deptName,
+            $localByKey
+        );
     }
 
     /**
@@ -499,7 +523,8 @@ final class OfficerDataService
         string $batch,
         ?array $dept,
         string $deptCode,
-        string $deptName
+        string $deptName,
+        array $localByKey = []
     ): array {
         $cohort = $this->cohortPrefixFromBatch($batch);
         if ($cohort === '' || $rows === []) {
@@ -586,7 +611,13 @@ final class OfficerDataService
                 $record['stud_admno'] = $admno;
             }
 
-            $row = $this->mapAesDirectoryRecordToListRow($record, null, $dept, $deptCode, $deptName);
+            $local = $localByKey[$key] ?? null;
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            if ($local === null && $regNo !== '' && isset($localByKey[$regNo])) {
+                $local = $localByKey[$regNo];
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
             if ($row === null) {
                 continue;
             }
@@ -1295,26 +1326,70 @@ final class OfficerDataService
     }
 
     /**
+     * Local PlaceHub students for class-roster merge (admno / register keys).
+     * Department-scoped only — do not require assigned teaching classes, so staff
+     * placement edits still overlay AES blank shells after reload.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<string, array<string, mixed>>
+     */
+    private function indexLocalStudentsForClassRoster(array $ctx): array
+    {
+        $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
+        $indexed = [];
+        $scopeDeptId = trim((string) ($ctx['departmentId'] ?? ''));
+        foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
+            if ($scopeDeptId !== '') {
+                $studentDeptId = trim((string) ($student['departmentId'] ?? ''));
+                // Keep unmatched/empty departmentId rows (AES materializations).
+                if ($studentDeptId !== '' && $studentDeptId !== $scopeDeptId) {
+                    continue;
+                }
+            }
+            foreach (['registerNumber', 'admno'] as $field) {
+                $key = strtoupper(trim((string) ($student[$field] ?? '')));
+                if ($key !== '') {
+                    $indexed[$key] = $student;
+                }
+            }
+        }
+
+        return $indexed;
+    }
+
+    /**
+     * Local PlaceHub students for AES directory merge (admno / register keys).
+     * For staffScope registry views, index the full department — not only assigned
+     * teaching classes — so saved placement fields survive reload overlays.
+     *
      * @param array<string, mixed> $ctx
      * @return array<string, array<string, mixed>>
      */
     private function indexLocalStudentsForAesMerge(array $ctx): array
     {
+        // Staff placement registry is department-wide; reuse the same index rules.
+        if (!empty($ctx['staffScope'])) {
+            return $this->indexLocalStudentsForClassRoster($ctx);
+        }
+
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $indexed = [];
         $campusWide = !empty($ctx['campusWide']) || (
-            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+            !empty($ctx['isAdmin']) && empty($ctx['departmentId'])
         );
         foreach ((new StudentModel())->findAll($filter, 5000) as $student) {
-            if (!$campusWide && !empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($student, [
-                'departmentId' => $ctx['departmentId'] ?? '',
-                'profile'      => $ctx['profile'] ?? null,
-            ])) {
-                continue;
+            if (!$campusWide && !empty($ctx['departmentId'])) {
+                $studentDeptId = trim((string) ($student['departmentId'] ?? ''));
+                $scopeDeptId = trim((string) ($ctx['departmentId'] ?? ''));
+                if ($studentDeptId !== '' && $scopeDeptId !== '' && $studentDeptId !== $scopeDeptId) {
+                    continue;
+                }
             }
-            $reg = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-            if ($reg !== '') {
-                $indexed[$reg] = $student;
+            foreach (['registerNumber', 'admno'] as $field) {
+                $key = strtoupper(trim((string) ($student[$field] ?? '')));
+                if ($key !== '') {
+                    $indexed[$key] = $student;
+                }
             }
         }
 

@@ -552,29 +552,98 @@
       };
     }
 
-    function fillSelect(id, values, allLabel, selected = '') {
+    function fillSelect(id, values, allLabel, selected = '', autoPickSingle = false) {
       const el = document.getElementById(id);
       if (!el) return;
       const current = selected || el.value;
       el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
       if (current && [...el.options].some(o => o.value === current)) el.value = current;
+      else if (autoPickSingle && (values || []).length === 1) el.value = values[0];
       else el.value = '';
+    }
+
+    function assignedBatches() {
+      const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+      const fromUser = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+      const profile = u.profile && typeof u.profile === 'object' ? u.profile : {};
+      const fromProfile = Array.isArray(profile.assignedClassBatches) ? profile.assignedClassBatches : [];
+      return [...new Set([...fromUser, ...fromProfile].map(v => String(v || '').trim()).filter(Boolean))];
+    }
+
+    function batchLooksLikeProgramme(batch, program) {
+      const b = String(batch || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const p = String(program || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!b || !p) return false;
+      if (p === 'INMCA') return b.includes('MCAINT') || b.includes('INMCA') || b.includes('INTMCA');
+      if (p === 'MCA') return b.startsWith('MCA') && !b.includes('MCAINT') && !b.includes('INMCA');
+      if (p === 'BCA') return b.includes('BCA');
+      return b.includes(p) || b.startsWith(p);
+    }
+
+    function pickPreferredBatch(batches, program) {
+      const list = (batches || []).map(v => String(v || '').trim()).filter(Boolean);
+      if (!list.length) return '';
+      const assigned = assignedBatches().filter(b => list.some(x => x.toLowerCase() === b.toLowerCase()));
+      const assignedForProgram = program
+        ? assigned.filter(b => batchLooksLikeProgramme(b, program))
+        : assigned;
+      if (assignedForProgram.length) return assignedForProgram[0];
+      if (assigned.length) return assigned[0];
+      if (list.length === 1) return list[0];
+      return '';
+    }
+
+    function pickPreferredProgram(programs) {
+      const list = (programs || []).map(v => String(v || '').trim()).filter(Boolean);
+      if (!list.length) return '';
+      const assigned = assignedBatches();
+      for (const batch of assigned) {
+        for (const program of list) {
+          if (batchLooksLikeProgramme(batch, program)) return program;
+        }
+      }
+      if (list.length === 1) return list[0];
+      return '';
     }
 
     async function loadPlacementFilters() {
       if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
-      const data = await StaffApi.fetchPlacementFilters({
+
+      const loadOnce = async () => StaffApi.fetchPlacementFilters({
         departmentId: filterDepartmentId,
         program: filterProgram,
       });
+
+      let data = await loadOnce();
       if (!data) return;
 
       fillDepartmentSelect('filterDepartment', data.departments || [], 'Select department');
-      fillSelect('filterProgram', data.programs || [], 'All branches', filterProgram);
-      fillSelect('filterBatch', data.batches || [], 'All batches', filterBatch);
+      const selectedDept = document.getElementById('filterDepartment')?.value || '';
+      if (selectedDept && selectedDept !== filterDepartmentId) {
+        filterDepartmentId = selectedDept;
+        data = await loadOnce() || data;
+      } else {
+        filterDepartmentId = selectedDept;
+      }
 
-      filterDepartmentId = document.getElementById('filterDepartment')?.value || '';
+      const programs = data.programs || [];
+      if (!filterProgram) {
+        filterProgram = pickPreferredProgram(programs);
+      }
+      fillSelect('filterProgram', programs, 'All branches', filterProgram, true);
       filterProgram = document.getElementById('filterProgram')?.value || '';
+
+      // Always reload batches after programme is known — dept-only fetch returns every class.
+      let batches = data.batches || [];
+      if (filterProgram) {
+        const again = await loadOnce();
+        batches = again?.batches || [];
+      }
+
+      if (!filterBatch) {
+        filterBatch = pickPreferredBatch(batches, filterProgram);
+      }
+      fillSelect('filterBatch', batches, 'All batches', filterBatch, true);
       filterBatch = document.getElementById('filterBatch')?.value || '';
 
       const branchEl = document.getElementById('filterProgram');
