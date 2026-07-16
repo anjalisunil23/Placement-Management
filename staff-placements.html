@@ -167,27 +167,6 @@
                       <input class="form-control" id="editPackage" placeholder="Pay package at appointment" />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editAcademicDuration">Total academic year /
-                        Duration of the course (in years)</label>
-                      <input type="number" class="form-control" id="editAcademicDuration" min="0" step="0.5"
-                        placeholder="Duration in years" />
-                    </div>
-                    <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editInternshipDetails">Internship details</label>
-                      <textarea class="form-control" id="editInternshipDetails" rows="2"
-                        placeholder="Enter internship details"></textarea>
-                    </div>
-                    <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editNatureOfJob">Nature of job</label>
-                      <input class="form-control" id="editNatureOfJob" placeholder="Enter nature of job" />
-                    </div>
-                    <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editMonthlySalary">Pay scale / Salary (per
-                        month)</label>
-                      <input type="number" class="form-control" id="editMonthlySalary" min="0" step="1"
-                        placeholder="Salary per month" />
-                    </div>
-                    <div class="col-md-6">
                       <label class="form-label small fw-semibold" for="editPlacementStatus">Placement status</label>
                       <select class="form-select" id="editPlacementStatus">
                         <option value="">Select status</option>
@@ -477,8 +456,8 @@
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="js/staff-api.js?v=20260716prog"></script>
-  <script src="js/api.js?v=20260716realname"></script>
-  <script src="js/app.js?v=20260716jobnav"></script>
+  <script src="js/api.js?v=20260716profilename"></script>
+  <script src="js/app.js?v=20260716notifflat"></script>
   <script>
     if (Auth.role() !== 'staff') {
       toast('You do not have access to this page.', 'warn');
@@ -843,10 +822,6 @@
       document.getElementById('editAddress').value = row.address || '';
       document.getElementById('editJoinDate').value = row.joinDate || '';
       document.getElementById('editEndDate').value = row.endDate || '';
-      document.getElementById('editAcademicDuration').value = row.academicDuration || '';
-      document.getElementById('editInternshipDetails').value = row.internshipDetails || '';
-      document.getElementById('editNatureOfJob').value = row.natureOfJob || '';
-      document.getElementById('editMonthlySalary').value = row.monthlySalary || '';
       document.getElementById('editPlacementStatus').value = row.placementStatus || '';
       document.getElementById('editOfferLetterVerified').value = row.offerLetterVerified ? 'true' : 'false';
       document.getElementById('editVerificationDate').value = row.verificationDate || '';
@@ -896,10 +871,6 @@
         address: document.getElementById('editAddress').value.trim(),
         joinDate: document.getElementById('editJoinDate').value,
         endDate: document.getElementById('editEndDate').value,
-        academicDuration: document.getElementById('editAcademicDuration').value.trim(),
-        internshipDetails: document.getElementById('editInternshipDetails').value.trim(),
-        natureOfJob: document.getElementById('editNatureOfJob').value.trim(),
-        monthlySalary: document.getElementById('editMonthlySalary').value.trim(),
         placementStatus: document.getElementById('editPlacementStatus').value,
         offerLetterVerified: document.getElementById('editOfferLetterVerified').value === 'true',
         verificationDate: document.getElementById('editVerificationDate').value,
@@ -962,10 +933,6 @@
           address: payload.address || '',
           joinDate: payload.joinDate || '',
           endDate: payload.endDate || '',
-          academicDuration: payload.academicDuration || '',
-          internshipDetails: payload.internshipDetails || '',
-          natureOfJob: payload.natureOfJob || '',
-          monthlySalary: payload.monthlySalary || '',
           placementStatus: payload.placementStatus || '',
           offerLetterVerified: !!payload.offerLetterVerified,
           verificationDate: payload.verificationDate || '',

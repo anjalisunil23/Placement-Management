@@ -983,17 +983,18 @@ final class AesLoginService
             strtolower(trim((string) ($aesProfile['email'] ?? $aesProfile['stud_ajce_mails'] ?? ''))),
         ]));
         $emailDerived = $current !== '' && $this->isEmailDerivedName($current, $emails);
-        // Keep /auth/me fast, but always replace email-local names (e.g. Amalskumarofficialz).
+        $placeholder = $this->isPlaceholderName($current, $register);
+        // Keep /auth/me fast, but always replace email-local / role-label placeholders.
         if (!$forceApiLookup
             && !$emailDerived
+            && !$placeholder
             && $current !== ''
             && $this->isRealPersonName($current)
-            && !$this->isPlaceholderName($current, $register)
         ) {
             return $current;
         }
 
-        $needApi = $forceApiLookup || $emailDerived || $current === '';
+        $needApi = $forceApiLookup || $emailDerived || $placeholder || $current === '';
         if ($needApi) {
             // Prefer numeric AES stud_admno over a university register number.
             $apiRegister = (new AesApiService())->resolveQualificationAdmissionNumber($aesProfile, $register);
@@ -1002,16 +1003,17 @@ final class AesLoginService
             $apiName = $this->resolveAesName($aesProfile, [], $register, '');
         }
         if ($apiName === '') {
-            return $emailDerived ? '' : $current;
+            return ($emailDerived || $placeholder) ? '' : $current;
         }
         // Never keep an email-inferred label when AES returned a real person name.
-        if ($this->isEmailDerivedName($apiName, $emails)) {
-            return $emailDerived ? '' : $current;
+        if ($this->isEmailDerivedName($apiName, $emails) || $this->isPlaceholderName($apiName, $register)) {
+            return ($emailDerived || $placeholder) ? '' : $current;
         }
 
         if ($current === ''
             || strcasecmp($current, $apiName) !== 0
-            || $emailDerived) {
+            || $emailDerived
+            || $placeholder) {
             (new UserModel())->updateUser((string) $user['_id'], ['name' => $apiName]);
 
             return $apiName;
@@ -4205,8 +4207,16 @@ final class AesLoginService
         if ($registerNumber !== '' && strcasecmp($name, $registerNumber) === 0) {
             return true;
         }
+        if (preg_match('/^\d+$/', $name)) {
+            return true;
+        }
+        $normalized = strtolower(preg_replace('/[^a-z]/', '', $name) ?? '');
+        $placeholders = [
+            'student', 'account', 'user', 'admin', 'staff', 'alumni', 'company',
+            'placementofficer', 'guest', 'unknown', 'na', 'n a',
+        ];
 
-        return (bool) preg_match('/^\d+$/', $name);
+        return in_array($normalized, $placeholders, true);
     }
 
     private function isRealPersonName(string $name): bool

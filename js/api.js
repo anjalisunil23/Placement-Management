@@ -119,20 +119,38 @@ function pickPlacementApiName(merged, registerNumber) {
   return '';
 }
 
+function isPlaceholderDisplayName(name) {
+  const n = String(name || '').trim();
+  if (!n) return true;
+  if (/^\d+$/.test(n)) return true;
+  const normalized = n.toLowerCase().replace(/[^a-z]/g, '');
+  return [
+    'student', 'account', 'user', 'admin', 'staff', 'alumni', 'company',
+    'placementofficer', 'guest', 'unknown', 'na',
+  ].includes(normalized);
+}
+
+function isUsableDisplayName(name, merged = {}) {
+  const n = String(name || '').trim();
+  if (!n || isPlaceholderDisplayName(n)) return false;
+  if (typeof isNameEmailDerived === 'function' && isNameEmailDerived(n, merged || {})) return false;
+  return true;
+}
+
 function resolveSessionName(merged, registerNumber) {
   const reg = registerNumber || merged.registerNumber || '';
   const placementName = pickPlacementApiName(merged, reg);
-  if (placementName && !isNameEmailDerived(placementName, merged)) return placementName;
+  if (placementName && isUsableDisplayName(placementName, merged)) return placementName;
   const sources = [merged, merged.aesProfile || {}];
   const candidates = [];
   for (const src of sources) {
     candidates.push(...collectAesNameCandidates(src));
   }
   const best = pickBestAesName(candidates, reg);
-  if (best && !isNameEmailDerived(best, merged)) return best;
+  if (best && isUsableDisplayName(best, merged)) return best;
   const current = sanitizeDisplayName(merged.name || '', reg);
-  if (current && !isNameEmailDerived(current, merged)) return current;
-  // Never invent sidebar/navbar names from email local-parts (e.g. Amalskumarofficialz).
+  if (current && isUsableDisplayName(current, merged)) return current;
+  // Never invent sidebar/navbar names from email local-parts or role labels.
   return '';
 }
 
@@ -697,8 +715,9 @@ const Auth = {
       // Trust a recently verified session across tabs so navigation does not
       // re-block on /auth/me (or silently re-fetch AES-heavy userResponse).
       if (soft && cached?.role && this.token() && bootAt > 0 && (Date.now() - bootAt) < 120000) {
-        const badStudentName = cached.role === 'student' && typeof isNameEmailDerived === 'function'
-          && isNameEmailDerived(cached.name, cached);
+        const badStudentName = cached.role === 'student' && (
+          !isUsableDisplayName(cached.name, cached)
+        );
         if (!badStudentName) {
           this._sessionReady = true;
           return true;
@@ -775,10 +794,7 @@ const Auth = {
       // CGPA/placement data must be re-synced (registration / settings).
       // nameRefresh=1 when the cached name is an email local-part (e.g. Amalskumarofficialz).
       const prevCheck = this.user() || {};
-      const needsNameRefresh = role === 'student' && (
-        !String(prevCheck.name || '').trim()
-        || (typeof isNameEmailDerived === 'function' && isNameEmailDerived(prevCheck.name, prevCheck))
-      );
+      const needsNameRefresh = role === 'student' && !isUsableDisplayName(prevCheck.name, prevCheck);
       let qs = 'lite=1';
       if (opts.refresh) qs = 'refresh=1';
       else if (needsNameRefresh || opts.nameRefresh) qs = 'lite=1&nameRefresh=1';
@@ -788,6 +804,10 @@ const Auth = {
       const u = p.user || {};
       const prev = this.user() || {};
       const reg = p.registerNumber || prev.registerNumber || '';
+      const apiPersonName = sanitizeDisplayName(
+        u.stud_name || u.name || p.stud_name || p.displayName || '',
+        reg
+      );
       const deptRaw = p.department ?? u.department ?? prev.department;
       const deptCode = (deptRaw && typeof deptRaw === 'object')
         ? String(deptRaw.code || deptRaw.name || '').trim()
@@ -826,7 +846,10 @@ const Auth = {
         ...prev,
         ...u,
         registerNumber: reg,
-        stud_name: u.stud_name || u.name || p.stud_name || prev.stud_name || '',
+        name: (apiPersonName && isUsableDisplayName(apiPersonName, { ...prev, ...u }))
+          ? apiPersonName
+          : (prev.name || ''),
+        stud_name: u.stud_name || u.name || p.stud_name || apiPersonName || prev.stud_name || '',
         academic: p.academic || prev.academic,
         cgpa: resolvedCgpa ?? prev.cgpa,
         department: readableDept || prev.department || '',
@@ -853,9 +876,13 @@ const Auth = {
           ? p.assignedClassBatches
           : (Array.isArray(prev.assignedClassBatches) ? prev.assignedClassBatches : []),
       };
+      const resolvedName = resolveSessionName(merged, reg)
+        || (isUsableDisplayName(apiPersonName, merged) ? apiPersonName : '')
+        || (isUsableDisplayName(merged.name, merged) ? merged.name : '');
       this.applySessionUser({
         ...merged,
-        name: resolveSessionName(merged, reg) || merged.name || prev.name || '',
+        name: resolvedName,
+        stud_name: merged.stud_name || resolvedName,
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || '',
         phone: resolveSessionPhone(merged) || merged.phone || prev.phone || '',
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,

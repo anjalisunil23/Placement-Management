@@ -1,4 +1,4 @@
-/* PlaceHub shell v2026.07.16jobnav — Job Posts under Notifications */
+/* PlaceHub shell v2026.07.16notifflat — Notifications is a single link; Job Posts is an in-page tab */
 const APP_SHELL_VERSION = '2026.07.11o';
 
 (function applyShellThemeFallback() {
@@ -90,21 +90,7 @@ const NAV = [
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['staff'] },
 
   { section: "Account", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'] },
-  {
-    group: 'notifications',
-    href: 'notifications.html',
-    icon: 'bi-bell-fill',
-    label: 'Notifications',
-    roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'],
-    children: [
-      {
-        href: 'notifications.html#jobposts',
-        label: 'Job Posts',
-        roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'],
-        alumniSeeking: true,
-      },
-    ],
-  },
+  { href: "notifications.html", icon: "bi-bell-fill", label: "Notifications", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni', 'company'] },
   { href: "settings.html", icon: "bi-gear-fill", label: "Settings", roles: ['admin', 'placement_officer', 'staff', 'alumni', 'company'] },
   { href: "settings.html", icon: "bi-person-badge", label: "Profile & Resumes", roles: ['student'], studentOnly: true },
   { href: "public-stats.html", icon: "bi-globe2", label: "Public Portal", roles: ['admin', 'placement_officer', 'alumni'] },
@@ -152,7 +138,7 @@ function shellDisplayName(user) {
   if (!user || typeof user !== 'object') return '';
   if (typeof resolveSessionName === 'function') {
     const resolved = String(resolveSessionName(user, user.registerNumber || '') || '').trim();
-    if (resolved) return resolved;
+    if (resolved && (!isPlaceholderDisplayName || !isPlaceholderDisplayName(resolved))) return resolved;
   }
   const candidates = [
     user.stud_name,
@@ -167,7 +153,13 @@ function shellDisplayName(user) {
   for (const raw of candidates) {
     const n = String(raw || '').trim();
     if (!n) continue;
-    if (typeof isNameEmailDerived === 'function' && isNameEmailDerived(n, user)) continue;
+    if (typeof isUsableDisplayName === 'function') {
+      if (!isUsableDisplayName(n, user)) continue;
+    } else if (typeof isPlaceholderDisplayName === 'function' && isPlaceholderDisplayName(n)) {
+      continue;
+    } else if (typeof isNameEmailDerived === 'function' && isNameEmailDerived(n, user)) {
+      continue;
+    }
     if (typeof sanitizeDisplayName === 'function') {
       const clean = sanitizeDisplayName(n, user.registerNumber || '');
       if (clean) return clean;
@@ -498,7 +490,9 @@ function renderShell(active) {
 
   if (sidebar) {
     const navItems = filteredNav();
-    const sidebarName = displayName || (role === 'student' ? 'Student' : (user?.name || 'Account'));
+    const sidebarName = displayName
+      || String(user?.registerNumber || user?.admno || '').trim()
+      || 'Profile';
     sidebar.innerHTML = `
       <div class="brand">
         ${brandBlockHtml({ href: Auth.homePage(), logoHeight: 36 })}
@@ -534,11 +528,15 @@ function renderShell(active) {
       role === 'student'
       || (['alumni', 'staff'].includes(role) && activeBase === 'dashboard.html')
     );
-    const topbarTitle = useNameInTopbar ? displayName : pageLabel;
+    const topbarTitle = useNameInTopbar
+      ? displayName
+      : (role === 'student' && !displayName
+        ? (String(user?.registerNumber || '').trim() || pageLabel)
+        : pageLabel);
     const topbarSub = useNameInTopbar
       ? (role === 'student' && activeBase !== 'dashboard.html' ? pageLabel : '')
       : (role === 'company'
-        ? (user.companyName || displayName || user.name || '')
+        ? (user.companyName || displayName || '')
         : (role === 'student' || role === 'staff' || role === 'alumni' || role === 'admin' || role === 'placement_officer' ? '' : `${ROLE_LABELS[role]} workspace`));
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
@@ -753,7 +751,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   paintShell();
 
   if (Auth.hasRealAuth() && pageBase !== 'settings.html') {
-    Auth.enrichFromProfile()
+    const enrichOpts = {};
+    if (Auth.role() === 'student' && typeof isUsableDisplayName === 'function'
+      && !isUsableDisplayName(Auth.user()?.name, Auth.user() || {})) {
+      enrichOpts.nameRefresh = true;
+    }
+    Auth.enrichFromProfile(enrichOpts)
       .then(() => {
         if (document.body?.dataset?.page) renderShell(shellActivePage());
       })

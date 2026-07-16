@@ -20,10 +20,9 @@
   <ul class="nav nav-tabs px-3 pt-2" id="notifTabs">
     <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#unread">Unread <span class="badge-soft danger ms-1" id="unreadBadge">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#read">Read</a></li>
-    <li class="nav-item" data-non-student><a class="nav-link" data-bs-toggle="tab" href="#email">News broadcast inbox</a></li>
     <li class="nav-item" data-job-feed><a class="nav-link" data-bs-toggle="tab" href="#jobposts">Job Posts</a></li>
-    <li class="nav-item" data-student-only><a class="nav-link" data-bs-toggle="tab" href="#jobposters">Job Posters</a></li>
     <li class="nav-item" data-student-only><a class="nav-link" data-bs-toggle="tab" href="#appupdates">Application Updates</a></li>
+    <li class="nav-item" data-non-student><a class="nav-link" data-bs-toggle="tab" href="#email">News broadcast inbox</a></li>
   </ul>
   <div class="tab-content p-3 p-md-4">
     <div class="tab-pane fade show active" id="unread"><div id="nlistUnread" class="d-flex flex-column gap-2"></div></div>
@@ -44,7 +43,6 @@
       </div>
       <div id="nlistRead" class="d-flex flex-column gap-2"></div>
     </div>
-    <div class="tab-pane fade" id="jobposters"><div id="nlistJobs" class="d-flex flex-column gap-2"></div></div>
     <div class="tab-pane fade" id="appupdates"><div id="nlistApps" class="d-flex flex-column gap-2"></div></div>
     <div class="tab-pane fade" id="email">
       <div class="table-wrap"><table class="table-modern"><thead><tr><th>Subject</th><th>Audience</th><th>Recipients</th><th>Sent</th><th>Email</th><th>Status</th></tr></thead><tbody id="broadcastRows"></tbody></table></div>
@@ -107,8 +105,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260716notifdel"></script>
-<script src="js/app.js?v=20260716notifdel"></script>
+<script src="js/api.js?v=20260716profilename"></script>
+<script src="js/app.js?v=20260716notifflat"></script>
 <script>
 onAppReady(() => {
 const role = Auth.role();
@@ -372,7 +370,6 @@ function renderInbox() {
   if (selectAll) selectAll.checked = false;
   syncReadSelection();
   if (isStudent) {
-    document.getElementById('nlistJobs').innerHTML = all.filter(n => n.type === 'job_poster').map(n => notifCard(n)).join('') || '<p class="text-muted-2">No job posters yet.</p>';
     document.getElementById('nlistApps').innerHTML = all.filter(n => n.type === 'application_update').map(n => notifCard(n)).join('') || '<p class="text-muted-2">No application updates yet.</p>';
   }
 }
@@ -497,7 +494,7 @@ async function openNotification(id) {
 }
 
 function bindNotificationClicks() {
-  const listIds = isStudent ? ['nlistUnread', 'nlistRead', 'nlistJobs', 'nlistApps'] : ['nlistUnread', 'nlistRead'];
+  const listIds = isStudent ? ['nlistUnread', 'nlistRead', 'nlistApps'] : ['nlistUnread', 'nlistRead'];
   listIds.forEach(listId => {
     const el = document.getElementById(listId);
     if (!el || el.dataset.bound === '1') return;
