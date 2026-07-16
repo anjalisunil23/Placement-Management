@@ -1,4 +1,4 @@
-/* PlaceHub shell v2026.07.11o — navy sidebar/topbar theme */
+/* PlaceHub shell v2026.07.16name — student name on all pages */
 const APP_SHELL_VERSION = '2026.07.11o';
 
 (function applyShellThemeFallback() {
@@ -134,6 +134,36 @@ function initials(name = '') {
   return name.trim().split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase() || 'U';
 }
 
+/** Best available display name for sidebar / topbar (students especially). */
+function shellDisplayName(user) {
+  if (!user || typeof user !== 'object') return '';
+  if (typeof resolveSessionName === 'function') {
+    const resolved = String(resolveSessionName(user, user.registerNumber || '') || '').trim();
+    if (resolved) return resolved;
+  }
+  const candidates = [
+    user.name,
+    user.displayName,
+    user.stud_name,
+    user.studentName,
+    user.fullName,
+    user.fullname,
+    user.aesProfile?.stud_name,
+    user.aesProfile?.name,
+  ];
+  for (const raw of candidates) {
+    const n = String(raw || '').trim();
+    if (!n) continue;
+    if (typeof sanitizeDisplayName === 'function') {
+      const clean = sanitizeDisplayName(n, user.registerNumber || '');
+      if (clean) return clean;
+    } else if (!/^\d+$/.test(n)) {
+      return n;
+    }
+  }
+  return '';
+}
+
 function escapeAttr(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -176,7 +206,8 @@ const SHELL_SIDEBAR_WRAP_STYLE = [
 
 function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
   const url = userPhotoUrl(user);
-  const ini = initials(user?.name);
+  const label = shellDisplayName(user) || 'User';
+  const ini = initials(label);
   const circle = [
     `display:block`, `width:${size}px`, `height:${size}px`,
     `min-width:${size}px`, `min-height:${size}px`,
@@ -185,20 +216,21 @@ function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
   ].join(';');
   if (url) {
     const safe = encodeURI(url).replace(/'/g, '%27');
-    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background:url('${safe}') center/cover no-repeat" role="img" aria-label="${escapeAttr(user?.name || 'User')}" title="${escapeAttr(user?.name || '')}"></span>`;
+    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background:url('${safe}') center/cover no-repeat" role="img" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"></span>`;
   }
   return `<span style="${circle};background:linear-gradient(135deg,#2563EB,#3B82F6);color:#fff;display:grid;place-items:center;font-weight:700;font-size:${fontSize}">${ini}</span>`;
 }
 
 function topbarProfileMenuHtml(user, role) {
   const profileLabel = shellProfileLabel(role);
+  const name = shellDisplayName(user) || 'Account';
   return `
     <div class="topbar-profile-menu" id="topbarProfileMenu">
-      <button type="button" class="topbar-avatar-btn" id="topbarProfileBtn" style="${SHELL_TOPBAR_BTN_STYLE}" aria-expanded="false" aria-haspopup="true" aria-controls="topbarProfileDropdown" aria-label="Account menu" title="${escapeAttr(user?.name || 'Account')}">
+      <button type="button" class="topbar-avatar-btn" id="topbarProfileBtn" style="${SHELL_TOPBAR_BTN_STYLE}" aria-expanded="false" aria-haspopup="true" aria-controls="topbarProfileDropdown" aria-label="Account menu" title="${escapeAttr(name)}">
         ${shellPhotoCircleHtml(user, 38, '.8rem')}
       </button>
       <div class="topbar-profile-dropdown" id="topbarProfileDropdown" hidden>
-        <div class="topbar-profile-dropdown-name">${escapeAttr(user?.name || 'Account')}</div>
+        <div class="topbar-profile-dropdown-name">${escapeAttr(name)}</div>
         <a class="topbar-profile-dropdown-item" id="topbarProfileLink" href="${shellProfileHref(role)}"><i class="bi bi-person"></i><span>${profileLabel}</span></a>
         <button type="button" class="topbar-profile-dropdown-item is-danger" id="topbarLogoutBtn"><i class="bi bi-box-arrow-right"></i><span>Logout</span></button>
       </div>
@@ -432,6 +464,7 @@ function renderNavEntry(n, active, role) {
 function renderShell(active) {
   const user = Auth.user() || demoUserFor(Auth.role());
   const role = Auth.role();
+  const displayName = shellDisplayName(user);
   const sidebar = document.getElementById("sidebar");
   const topbar = document.getElementById("topbar");
   const activeBase = (active || 'dashboard.html').split('#')[0];
@@ -442,6 +475,7 @@ function renderShell(active) {
 
   if (sidebar) {
     const navItems = filteredNav();
+    const sidebarName = displayName || (role === 'student' ? 'Student' : (user?.name || 'Account'));
     sidebar.innerHTML = `
       <div class="brand">
         ${brandBlockHtml({ href: Auth.homePage(), logoHeight: 36 })}
@@ -453,7 +487,7 @@ function renderShell(active) {
         <div class="d-flex align-items-center gap-2">
           <span class="sidebar-avatar-wrap" style="${SHELL_SIDEBAR_WRAP_STYLE}">${shellPhotoCircleHtml(user, 36, '.85rem')}</span>
           <div style="min-width:0;flex:1">
-            <div style="font-size:.85rem;font-weight:600" class="text-truncate">${user.name}</div>
+            <div style="font-size:.85rem;font-weight:600" class="text-truncate" title="${escapeAttr(sidebarName)}">${escapeAttr(sidebarName)}</div>
             <div style="font-size:.72rem;color:var(--muted)">${ROLE_LABELS[role]}</div>
           </div>
           <button class="icon-btn" id="logoutBtn" title="Log out" style="width:32px;height:32px"><i class="bi bi-box-arrow-right"></i></button>
@@ -471,16 +505,17 @@ function renderShell(active) {
       alumni: '',
     }[role] || '';
 
-    const displayName = String(user?.name || '').trim();
-    const useNameInTopbar = (
-      (['student', 'alumni'].includes(role) && activeBase === 'dashboard.html')
-      || (role === 'staff' && activeBase === 'dashboard.html')
-    ) && displayName;
+    // Students: show profile name on every page (sidebar + navbar).
+    // Alumni/staff: keep name on dashboard; others keep page title.
+    const useNameInTopbar = !!displayName && (
+      role === 'student'
+      || (['alumni', 'staff'].includes(role) && activeBase === 'dashboard.html')
+    );
     const topbarTitle = useNameInTopbar ? displayName : pageLabel;
     const topbarSub = useNameInTopbar
-      ? ''
+      ? (role === 'student' && activeBase !== 'dashboard.html' ? pageLabel : '')
       : (role === 'company'
-        ? (user.companyName || user.name || '')
+        ? (user.companyName || displayName || user.name || '')
         : (role === 'student' || role === 'staff' || role === 'alumni' || role === 'admin' || role === 'placement_officer' ? '' : `${ROLE_LABELS[role]} workspace`));
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
