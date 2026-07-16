@@ -105,4 +105,95 @@ class ApplicationModel extends BaseModel
             'timeline'=> $timeline,
         ]);
     }
+
+    /**
+     * Upsert a company selection-round outcome for an application.
+     *
+     * @return array{ok:bool,roundOutcomes:list<array<string,mixed>>,status:string}
+     */
+    public function upsertRoundOutcome(string $id, int $order, string $type, string $roundStatus, string $by): array
+    {
+        $app = $this->findById($id);
+        if (!$app) {
+            return ['ok' => false, 'roundOutcomes' => [], 'status' => ''];
+        }
+
+        $roundStatus = strtolower(trim($roundStatus));
+        if (!in_array($roundStatus, ['waiting', 'selected', 'rejected'], true)) {
+            return ['ok' => false, 'roundOutcomes' => [], 'status' => (string) ($app['status'] ?? '')];
+        }
+
+        $type = strtolower(trim($type));
+        $outcomes = is_array($app['roundOutcomes'] ?? null) ? $app['roundOutcomes'] : [];
+        $found = false;
+        foreach ($outcomes as &$row) {
+            if ((int) ($row['order'] ?? 0) === $order) {
+                $row['order'] = $order;
+                $row['type'] = $type !== '' ? $type : (string) ($row['type'] ?? '');
+                $row['status'] = $roundStatus;
+                $row['updatedAt'] = DocumentHelper::now();
+                $row['updatedBy'] = $by;
+                $found = true;
+                break;
+            }
+        }
+        unset($row);
+
+        if (!$found) {
+            $outcomes[] = [
+                'order' => $order,
+                'type' => $type,
+                'status' => $roundStatus,
+                'updatedAt' => DocumentHelper::now(),
+                'updatedBy' => $by,
+            ];
+        }
+
+        usort($outcomes, static fn ($a, $b) => ((int) ($a['order'] ?? 0)) <=> ((int) ($b['order'] ?? 0)));
+
+        $patch = ['roundOutcomes' => array_values($outcomes)];
+        $appStatus = (string) ($app['status'] ?? 'shortlisted');
+        if ($roundStatus === 'rejected' && in_array($appStatus, ['shortlisted', 'selected'], true)) {
+            $patch['status'] = 'rejected';
+            $timeline = is_array($app['timeline'] ?? null) ? $app['timeline'] : [];
+            $timeline[] = [
+                'status' => 'rejected',
+                'at' => DocumentHelper::now(),
+                'by' => $by,
+                'remarks' => 'Rejected at Round ' . $order,
+            ];
+            $patch['timeline'] = $timeline;
+            $appStatus = 'rejected';
+        } elseif (in_array($roundStatus, ['waiting', 'selected'], true) && $appStatus === 'rejected') {
+            $stillRejected = false;
+            foreach ($outcomes as $o) {
+                if (strtolower((string) ($o['status'] ?? '')) === 'rejected') {
+                    $stillRejected = true;
+                    break;
+                }
+            }
+            if (!$stillRejected) {
+                $patch['status'] = 'shortlisted';
+                $timeline = is_array($app['timeline'] ?? null) ? $app['timeline'] : [];
+                $timeline[] = [
+                    'status' => 'shortlisted',
+                    'at' => DocumentHelper::now(),
+                    'by' => $by,
+                    'remarks' => 'Restored after Round ' . $order . ' outcome change',
+                ];
+                $patch['timeline'] = $timeline;
+                $appStatus = 'shortlisted';
+            }
+        } elseif ($roundStatus === 'selected' && $appStatus === 'shortlisted') {
+            // Keep shortlisted until final package/joining result is recorded.
+            $appStatus = 'shortlisted';
+        }
+
+        $ok = $this->update($id, $patch);
+        return [
+            'ok' => $ok,
+            'roundOutcomes' => array_values($outcomes),
+            'status' => $appStatus,
+        ];
+    }
 }

@@ -3754,6 +3754,25 @@ const ApplicationPipeline = {
     if (!opts.quiet) toast(res?.message || 'Could not shortlist applicant.', 'error');
     return false;
   },
+  async setRoundOutcome(id, { order, type = '', status }) {
+    const path = Auth.role() === 'placement_officer'
+      ? `/officer/applications/${encodeURIComponent(id)}/round-outcome`
+      : `/admin/applications/${encodeURIComponent(id)}/round-outcome`;
+    const res = await api(path, { method: 'POST', body: { order, type, status } });
+    if (res?.success) {
+      const outcomes = res.data?.roundOutcomes || [];
+      const nextStatus = res.data?.status;
+      if (this._cache) {
+        this._cache = this._cache.map(a => a.id === id
+          ? { ...a, roundOutcomes: outcomes, status: nextStatus || a.status }
+          : a);
+        localStorage.setItem(APPS_KEY, JSON.stringify(this._cache));
+      }
+      return { ok: true, roundOutcomes: outcomes, status: nextStatus };
+    }
+    toast(res?.message || 'Could not update round outcome.', 'error');
+    return { ok: false };
+  },
   async approve(id) {
     if (Auth.role() === 'placement_officer') {
       const res = await api(`/officer/applications/${encodeURIComponent(id)}/approve`, { method: 'POST' });

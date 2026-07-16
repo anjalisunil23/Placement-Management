@@ -299,6 +299,34 @@ final class AdminController
         Response::success(null, 'Student shortlisted.');
     }
 
+    /** POST /api/admin/applications/{id}/round-outcome */
+    public function setApplicationRoundOutcome(string $appId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->assertApplicationInScope($appId, $scope['ctx']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $order = (int) ($input['order'] ?? 0);
+        $status = strtolower(trim((string) ($input['status'] ?? '')));
+        $type = strtolower(trim((string) ($input['type'] ?? '')));
+        if ($order < 1 || !in_array($status, ['waiting', 'selected', 'rejected'], true)) {
+            Response::error('Round order and status (waiting|selected|rejected) are required.', 422);
+        }
+        $result = (new ApplicationModel())->upsertRoundOutcome(
+            $appId,
+            $order,
+            $type,
+            $status,
+            (string) $scope['user']['_id']
+        );
+        if (!$result['ok']) {
+            Response::error('Could not update round outcome.', 400);
+        }
+        Response::success([
+            'roundOutcomes' => $result['roundOutcomes'],
+            'status' => $result['status'],
+        ], 'Round outcome saved.');
+    }
+
     /** GET /api/admin/applications/{id}/resume */
     public function downloadApplicationResume(string $appId): void
     {

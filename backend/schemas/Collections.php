@@ -279,6 +279,7 @@ final class Collections
                 'status'    => 'string (workflow enum)',
                 'remarks'   => 'string',
                 'timeline'  => 'array[{status, at, by}]',
+                'roundOutcomes' => 'array[{order:int,type:string,status:string,updatedAt,updatedBy}]',
                 'createdAt' => 'UTCDateTime',
                 'updatedAt' => 'UTCDateTime',
             ],

@@ -108,6 +108,21 @@
     font-size:.85rem;line-height:1.3;
   }
   .apply-cert-item span{min-width:0;word-break:break-word}
+  .drive-rounds-flow{
+    display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .55rem;
+    padding:.75rem .9rem;border:1px dashed #cbd5e1;border-radius:10px;background:#fff;
+  }
+  .drive-rounds-flow .flow-label{font-size:.75rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.03em;width:100%;margin-bottom:.15rem}
+  .drive-rounds-flow .flow-step{
+    display:inline-flex;align-items:center;gap:.35rem;
+    padding:.35rem .65rem;border-radius:999px;font-size:.82rem;font-weight:600;
+    background:color-mix(in srgb,var(--primary,#2563EB) 12%,transparent);color:var(--primary,#2563EB);
+  }
+  .drive-rounds-flow .flow-step.is-empty{background:#f1f5f9;color:#94a3b8;font-weight:500}
+  .drive-rounds-flow .flow-arrow{color:#94a3b8;font-size:.9rem}
+  .drive-round-result-card{border:1px solid #e2e8f0;border-radius:.5rem;padding:1rem;background:#fff}
+  .drive-round-result-card h6{margin:0 0 .75rem;font-weight:700}
+  .drive-round-outcome-btns .btn.active{pointer-events:none}
 </style>
 </head>
 
@@ -234,9 +249,13 @@
           </div>
           <div class="mt-4" id="createDriveRoundsSection">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
+              <div>
+                <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
+                <div class="small text-muted-2">Define how this company runs placement after shortlist (Round 1 → Round 2 → Round 3…).</div>
+              </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddCreateDriveRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
             </div>
+            <div id="createDriveRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
             <div id="createDriveRounds" class="d-flex flex-column gap-2"></div>
           </div>
         </div>
@@ -292,9 +311,13 @@
 
         <div class="col-12" id="editDriveRoundsSection">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-            <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
+            <div>
+              <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
+              <div class="small text-muted-2">Shows this company’s placement rounds for shortlisted students.</div>
+            </div>
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddEditDriveRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
           </div>
+          <div id="editDriveRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
           <div id="editDriveRounds" class="d-flex flex-column gap-2"></div>
         </div>
 
@@ -377,28 +400,30 @@
 
         <div id="driveApplicantsPanel">
           <ul class="nav nav-pills gap-2 mb-3" id="driveApplicantTabs">
-            <li class="nav-item"><button type="button" class="nav-link active" data-tab="all">All applicants <span class="badge bg-secondary ms-1" id="tabCountAll">0</span></button></li>
-            <li class="nav-item"><button type="button" class="nav-link" data-tab="shortlisted">Company shortlisted <span class="badge bg-secondary ms-1" id="tabCountShortlisted">0</span></button></li>
-            <li class="nav-item"><button type="button" class="nav-link" data-tab="placed">Placed <span class="badge bg-secondary ms-1" id="tabCountPlaced">0</span></button></li>
+            <li class="nav-item"><button type="button" class="nav-link active" data-tab="applied">Applicants <span class="badge bg-secondary ms-1" id="tabCountApplied">0</span></button></li>
+            <li class="nav-item"><button type="button" class="nav-link" data-tab="shortlisted">Shortlisted <span class="badge bg-secondary ms-1" id="tabCountShortlisted">0</span></button></li>
+            <li class="nav-item"><button type="button" class="nav-link" data-tab="pending">Pending <span class="badge bg-secondary ms-1" id="tabCountPending">0</span></button></li>
+            <li class="nav-item"><button type="button" class="nav-link" data-tab="rejected">Rejected <span class="badge bg-secondary ms-1" id="tabCountRejected">0</span></button></li>
           </ul>
-          <p class="small text-muted-2 mb-2" id="driveShortlistHint">Select applicants below to mark them as company shortlisted.</p>
+          <p class="small text-muted-2 mb-2" id="driveShortlistHint">Applied applicants for this company drive.</p>
 
           <div class="border rounded p-3 mb-3 bg-light d-none" id="driveShortlistRoundsPanel">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
               <div>
                 <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
-                <div class="small text-muted-2">Set Round 1 / 2 / 3 types for this company drive (Interview, GD, Coding, …).</div>
+                <div class="small text-muted-2">Company placement process for shortlisted students (Interview, GD, Coding, …).</div>
               </div>
               <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddDriveShortlistRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
                 <button type="button" class="btn btn-sm btn-primary" id="btnSaveDriveShortlistRounds"><i class="bi bi-check2 me-1"></i>Save rounds</button>
               </div>
             </div>
+            <div id="driveShortlistRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
             <div id="driveShortlistRounds" class="d-flex flex-column gap-2"></div>
           </div>
 
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3" id="driveShortlistSelectBar">
-            <div class="small text-muted-2" id="driveShortlistSelectHint">On All applicants, tick students and shortlist them for this drive.</div>
+            <div class="small text-muted-2" id="driveShortlistSelectHint">Tick applied students and shortlist them for this company drive.</div>
             <button type="button" class="btn btn-sm btn-primary" id="btnShortlistSelected" disabled>
               <i class="bi bi-check2-square me-1"></i>Shortlist selected
             </button>
@@ -417,10 +442,14 @@
 
         <div id="driveResultsPanel" class="d-none">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <p class="small text-muted-2 mb-0">Record selected or rejected outcomes for this drive.</p>
-            <button type="button" class="btn btn-sm btn-primary" id="btnAddDriveResult"><i class="bi bi-plus-lg me-1"></i>Add result</button>
+            <div>
+              <p class="small text-muted-2 mb-0" id="driveResultsHint">Company placement rounds for shortlisted candidates. Mark each round as Select, Reject, or Waiting.</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddDriveResult"><i class="bi bi-plus-lg me-1"></i>Add package result</button>
           </div>
-          <div class="table-wrap">
+          <div id="driveRoundsResults" class="d-flex flex-column gap-3"></div>
+          <div class="table-wrap mt-4 d-none" id="driveFinalResultsWrap">
+            <h6 class="fw-bold mb-2">Final package / joining records</h6>
             <table class="table-modern">
               <thead><tr>
                 <th>Student</th><th>Register No</th><th>Package</th><th>Status</th><th>Joining</th><th id="driveResultActionsHead">Actions</th>
@@ -567,6 +596,40 @@ function roundTypeOptionsHtml(selected = '') {
   ).join('');
 }
 
+function roundsFlowPreviewId(containerId) {
+  if (containerId === 'createDriveRounds') return 'createDriveRoundsFlow';
+  if (containerId === 'editDriveRounds') return 'editDriveRoundsFlow';
+  if (containerId === 'driveShortlistRounds') return 'driveShortlistRoundsFlow';
+  return '';
+}
+
+function updateDriveRoundsFlowPreview(containerId) {
+  const flowId = roundsFlowPreviewId(containerId);
+  const flowEl = flowId ? document.getElementById(flowId) : null;
+  if (!flowEl) return;
+  const rows = [...document.querySelectorAll(`#${containerId} .drive-round-row`)];
+  const steps = rows.map((row, idx) => {
+    const type = String(row.querySelector('.drive-round-type')?.value || '').trim().toLowerCase();
+    const known = DRIVE_ROUND_TYPES.find(t => t.value === type);
+    return {
+      n: idx + 1,
+      label: known ? known.label : 'Not set',
+      empty: !known,
+    };
+  });
+  if (!steps.length) {
+    flowEl.innerHTML = `<div class="flow-label">Company placement rounds</div><span class="small text-muted-2">Add rounds to show this company’s selection process.</span>`;
+    return;
+  }
+  flowEl.innerHTML = `
+    <div class="flow-label">Company placement rounds</div>
+    ${steps.map((s, i) => `
+      ${i ? '<span class="flow-arrow" aria-hidden="true"><i class="bi bi-arrow-right"></i></span>' : ''}
+      <span class="flow-step ${s.empty ? 'is-empty' : ''}">R${s.n}: ${s.label}</span>
+    `).join('')}
+  `;
+}
+
 function renderDriveRoundsEditor(containerId, rows, { removable = true } = {}) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -586,6 +649,7 @@ function renderDriveRoundsEditor(containerId, rows, { removable = true } = {}) {
         : ''}
     </div>
   `).join('');
+  updateDriveRoundsFlowPreview(containerId);
 }
 
 function readDriveRoundsFromEditor(containerId) {
@@ -1221,7 +1285,7 @@ function renderRows() {
 }
 
 let driveApplicants = [];
-let driveApplicantsTab = 'all';
+let driveApplicantsTab = 'applied';
 let driveResults = [];
 let driveDetailMainTab = 'applicants';
 let activeDriveId = null;
@@ -1235,8 +1299,8 @@ function driveApplicantStatusBadge(status) {
     resume_verified: ['warning', 'Resume verified'],
     officer_approved: ['info', 'Officer approved'],
     company_review: ['primary', 'Company review'],
-    shortlisted: ['success', 'Company shortlisted'],
-    selected: ['success', 'Placed'],
+    shortlisted: ['success', 'Shortlisted'],
+    selected: ['success', 'Selected'],
     rejected: ['danger', 'Rejected'],
     withdrawn: ['muted', 'Withdrawn'],
   };
@@ -1245,11 +1309,13 @@ function driveApplicantStatusBadge(status) {
 }
 
 function driveApplicantGroups(apps) {
-  const active = apps.filter(a => a.status !== 'rejected' && a.status !== 'withdrawn');
+  const list = Array.isArray(apps) ? apps : [];
+  const pendingStatuses = new Set(['resume_pending', 'resume_verified', 'officer_approved', 'company_review']);
   return {
-    all: active,
-    shortlisted: active.filter(a => a.status === 'shortlisted'),
-    placed: active.filter(a => a.status === 'selected'),
+    applied: list.filter(a => String(a.status || '').toLowerCase() === 'applied'),
+    shortlisted: list.filter(a => String(a.status || '').toLowerCase() === 'shortlisted'),
+    pending: list.filter(a => pendingStatuses.has(String(a.status || '').toLowerCase())),
+    rejected: list.filter(a => String(a.status || '').toLowerCase() === 'rejected'),
   };
 }
 
@@ -1260,18 +1326,18 @@ function driveApplicantResumeCell(a) {
 
 function canShortlistApplicant(a) {
   const status = String(a?.status || '').toLowerCase();
-  return status && !['shortlisted', 'selected', 'rejected', 'withdrawn'].includes(status);
+  return status === 'applied';
 }
 
 function updateDriveShortlistSelectUi() {
-  const onAll = driveApplicantsTab === 'all';
+  const onApplied = driveApplicantsTab === 'applied';
   const bar = document.getElementById('driveShortlistSelectBar');
   const headCol = document.querySelector('#driveApplicantHead .drive-shortlist-col');
   const selectAll = document.getElementById('driveApplicantSelectAll');
   const btn = document.getElementById('btnShortlistSelected');
-  if (bar) bar.classList.toggle('d-none', !onAll);
-  if (headCol) headCol.classList.toggle('d-none', !onAll);
-  const checked = onAll
+  if (bar) bar.classList.toggle('d-none', !onApplied);
+  if (headCol) headCol.classList.toggle('d-none', !onApplied);
+  const checked = onApplied
     ? [...document.querySelectorAll('#driveApplicantRows .drive-shortlist-check:checked')]
     : [];
   if (btn) {
@@ -1284,22 +1350,28 @@ function updateDriveShortlistSelectUi() {
     const eligible = [...document.querySelectorAll('#driveApplicantRows .drive-shortlist-check')];
     selectAll.checked = eligible.length > 0 && eligible.every(el => el.checked);
     selectAll.indeterminate = eligible.some(el => el.checked) && !selectAll.checked;
-    selectAll.disabled = !onAll || eligible.length === 0;
+    selectAll.disabled = !onApplied || eligible.length === 0;
   }
 }
 
 function updateDriveApplicantTabCounts() {
   const groups = driveApplicantGroups(driveApplicants);
-  document.getElementById('tabCountAll').textContent = groups.all.length;
-  document.getElementById('tabCountShortlisted').textContent = groups.shortlisted.length;
-  document.getElementById('tabCountPlaced').textContent = groups.placed.length;
+  const setCount = (id, n) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = n;
+  };
+  setCount('tabCountApplied', groups.applied.length);
+  setCount('tabCountShortlisted', groups.shortlisted.length);
+  setCount('tabCountPending', groups.pending.length);
+  setCount('tabCountRejected', groups.rejected.length);
   const hint = document.getElementById('driveShortlistHint');
   if (hint) {
-    hint.textContent = driveApplicantsTab === 'shortlisted'
-      ? 'Students marked shortlisted for this drive. Configure company selection rounds below.'
-      : driveApplicantsTab === 'placed'
-        ? 'Students recorded as placed for this drive.'
-        : 'Select applicants below to mark them as company shortlisted.';
+    hint.textContent = ({
+      applied: 'Only students who applied to this company drive.',
+      shortlisted: 'Shortlisted candidates. Configure company selection rounds below.',
+      pending: 'Applicants awaiting resume / officer / company review.',
+      rejected: 'Rejected candidates for this company drive.',
+    })[driveApplicantsTab] || '';
   }
   const roundsPanel = document.getElementById('driveShortlistRoundsPanel');
   if (roundsPanel) {
@@ -1319,14 +1391,17 @@ function updateDriveApplicantTabCounts() {
 
 function renderDriveApplicantRows() {
   const groups = driveApplicantGroups(driveApplicants);
-  const list = groups[driveApplicantsTab] || groups.all;
+  const list = groups[driveApplicantsTab] || [];
   const tbody = document.getElementById('driveApplicantRows');
-  const showSelect = driveApplicantsTab === 'all';
+  const showSelect = driveApplicantsTab === 'applied';
   const cols = showSelect ? 9 : 8;
   if (!list.length) {
-    const emptyMsg = driveApplicantsTab === 'placed' ? 'No placed students yet.'
-      : driveApplicantsTab === 'shortlisted' ? 'No shortlisted students yet. Select them from All applicants.'
-      : 'No applicants for this drive yet.';
+    const emptyMsg = ({
+      applied: 'No applied applicants for this company drive yet.',
+      shortlisted: 'No shortlisted candidates yet. Shortlist them from Applicants.',
+      pending: 'No pending candidates.',
+      rejected: 'No rejected candidates.',
+    })[driveApplicantsTab] || 'No applicants.';
     tbody.innerHTML = `<tr><td colspan="${cols}" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
     updateDriveShortlistSelectUi();
     return;
@@ -1366,7 +1441,113 @@ function showDriveDetailPanel(panel) {
   });
   document.getElementById('driveApplicantsPanel').classList.toggle('d-none', panel !== 'applicants');
   document.getElementById('driveResultsPanel').classList.toggle('d-none', panel !== 'results');
+  if (panel === 'results') {
+    renderDriveRoundsResults();
+    renderDriveResultRows();
+    document.getElementById('driveFinalResultsWrap')?.classList.remove('d-none');
+  }
 }
+
+function driveConfiguredRounds(drive) {
+  const list = Array.isArray(drive?.selectionRounds) ? drive.selectionRounds : [];
+  return list.map((r, i) => {
+    const type = String(r?.type || '').trim().toLowerCase();
+    const known = DRIVE_ROUND_TYPES.find(t => t.value === type);
+    if (!type || !known) return null;
+    return {
+      order: Number(r.order) > 0 ? Number(r.order) : i + 1,
+      type,
+      label: String(r.label || known.label).trim() || known.label,
+    };
+  }).filter(Boolean);
+}
+
+function applicantRoundOutcome(app, order) {
+  const outcomes = Array.isArray(app?.roundOutcomes) ? app.roundOutcomes : [];
+  const row = outcomes.find(o => Number(o.order) === Number(order));
+  return String(row?.status || 'waiting').toLowerCase();
+}
+
+function renderDriveRoundsResults() {
+  const host = document.getElementById('driveRoundsResults');
+  if (!host) return;
+  const drive = activeDrive
+    || allDrives.find(d => String(d.id) === String(activeDriveId))
+    || (typeof DriveStore !== 'undefined' ? DriveStore.get?.(activeDriveId) : null)
+    || null;
+  const rounds = driveConfiguredRounds(drive);
+  const candidates = driveApplicants.filter(a => {
+    const s = String(a.status || '').toLowerCase();
+    return s === 'shortlisted' || s === 'selected' || s === 'rejected';
+  });
+
+  if (!rounds.length) {
+    host.innerHTML = `<div class="text-muted-2 p-3 border rounded text-center">
+      No company rounds configured yet. Open the <strong>Shortlisted</strong> tab and save Interview / GD / Coding rounds first.
+    </div>`;
+    return;
+  }
+  if (!candidates.length) {
+    host.innerHTML = `<div class="text-muted-2 p-3 border rounded text-center">
+      No shortlisted candidates yet. Shortlist applicants first, then mark round outcomes here.
+    </div>`;
+    return;
+  }
+
+  host.innerHTML = rounds.map(round => {
+    const rows = candidates.map(a => {
+      const current = applicantRoundOutcome(a, round.order);
+      const btn = (status, label, cls) => {
+        const active = current === status;
+        return `<button type="button" class="btn btn-sm ${active ? `btn-${cls} active` : `btn-outline-${cls}`} drive-round-outcome-btn"
+          data-app-id="${a.id}" data-order="${round.order}" data-type="${round.type}" data-status="${status}"
+          ${active ? 'disabled aria-pressed="true"' : 'aria-pressed="false"'}">${label}</button>`;
+      };
+      return `<tr>
+        <td class="fw-semibold small">${a.studentName || '—'}</td>
+        <td>${a.registerNumber || '—'}</td>
+        <td>${a.department || '—'}</td>
+        <td>${driveApplicantStatusBadge(a.status)}</td>
+        <td>
+          <div class="btn-group drive-round-outcome-btns" role="group" aria-label="Round ${round.order} outcome">
+            ${btn('selected', 'Select', 'success')}
+            ${btn('rejected', 'Reject', 'danger')}
+            ${btn('waiting', 'Waiting', 'secondary')}
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+    return `<div class="drive-round-result-card">
+      <h6>Round ${round.order}: ${round.label}</h6>
+      <div class="table-wrap mb-0">
+        <table class="table-modern mb-0">
+          <thead><tr>
+            <th>Student</th><th>Register No</th><th>Dept</th><th>Status</th><th>Outcome</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.setDriveRoundOutcome = async (appId, order, type, status) => {
+  if (!canManage || !appId) return;
+  const result = await ApplicationPipeline.setRoundOutcome(appId, { order: Number(order), type, status });
+  if (!result?.ok) return;
+  const idx = driveApplicants.findIndex(a => String(a.id) === String(appId));
+  if (idx >= 0) {
+    driveApplicants[idx] = {
+      ...driveApplicants[idx],
+      roundOutcomes: result.roundOutcomes || driveApplicants[idx].roundOutcomes || [],
+      status: result.status || driveApplicants[idx].status,
+    };
+  }
+  toast(`Round ${order}: ${status === 'selected' ? 'Select' : status === 'rejected' ? 'Reject' : 'Waiting'} saved.`, 'success');
+  updateDriveApplicantTabCounts();
+  if (driveDetailMainTab === 'applicants') renderDriveApplicantRows();
+  renderDriveRoundsResults();
+};
 
 function renderDriveResultRows() {
   const tbody = document.getElementById('driveResultRows');
@@ -1391,8 +1572,18 @@ function renderDriveResultRows() {
 
 function fillDriveResultApplicantPick() {
   const sel = document.getElementById('driveResultApplicantPick');
-  const applicants = driveApplicantGroups(driveApplicants).all;
-  sel.innerHTML = '<option value="">— Enter manually —</option>' + applicants.map(a =>
+  const applicants = [
+    ...driveApplicantGroups(driveApplicants).shortlisted,
+    ...driveApplicantGroups(driveApplicants).applied,
+  ];
+  const seen = new Set();
+  const unique = applicants.filter(a => {
+    const key = String(a.registerNumber || a.id || '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  sel.innerHTML = '<option value="">— Enter manually —</option>' + unique.map(a =>
     `<option value="${a.registerNumber}">${a.studentName || a.registerNumber} (${a.registerNumber})</option>`
   ).join('');
 }
@@ -1472,11 +1663,11 @@ window.openDriveApplicants = async driveId => {
   }
   activeDriveId = d.id;
   activeDrive = d;
-  driveApplicantsTab = 'all';
+  driveApplicantsTab = 'applied';
   driveDetailMainTab = 'applicants';
   showDriveDetailPanel('applicants');
   document.querySelectorAll('#driveApplicantTabs .nav-link').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === 'all');
+    btn.classList.toggle('active', btn.dataset.tab === 'applied');
   });
   document.getElementById('driveApplicantsTitle').textContent = `${d.company} · ${d.role}`;
   document.getElementById('driveApplicantsSub').textContent = `${d.package || '—'} · ${d.status || '—'} · Deadline ${d.deadline || '—'}`;
@@ -2113,15 +2304,27 @@ document.getElementById('createDriveRounds')?.addEventListener('click', e => {
   if (!btn) return;
   removeDriveRoundRow('create', Number(btn.dataset.roundIndex || -1));
 });
+document.getElementById('createDriveRounds')?.addEventListener('change', e => {
+  if (!e.target.classList.contains('drive-round-type')) return;
+  updateDriveRoundsFlowPreview('createDriveRounds');
+});
 document.getElementById('editDriveRounds')?.addEventListener('click', e => {
   const btn = e.target.closest('.drive-round-remove');
   if (!btn) return;
   removeDriveRoundRow('edit', Number(btn.dataset.roundIndex || -1));
 });
+document.getElementById('editDriveRounds')?.addEventListener('change', e => {
+  if (!e.target.classList.contains('drive-round-type')) return;
+  updateDriveRoundsFlowPreview('editDriveRounds');
+});
 document.getElementById('driveShortlistRounds')?.addEventListener('click', e => {
   const btn = e.target.closest('.drive-round-remove');
   if (!btn) return;
   removeDriveRoundRow('shortlist', Number(btn.dataset.roundIndex || -1));
+});
+document.getElementById('driveShortlistRounds')?.addEventListener('change', e => {
+  if (!e.target.classList.contains('drive-round-type')) return;
+  updateDriveRoundsFlowPreview('driveShortlistRounds');
 });
 
 document.getElementById('btnSaveDriveShortlistRounds')?.addEventListener('click', async () => {
@@ -2143,12 +2346,22 @@ document.getElementById('btnSaveDriveShortlistRounds')?.addEventListener('click'
   renderDriveRoundsEditor('driveShortlistRounds', shortlistDriveRoundRows);
   toast('Company shortlist rounds saved.', 'success');
   await loadDrives();
+  const refreshed = allDrives.find(d => String(d.id) === String(activeDriveId));
+  if (refreshed) activeDrive = { ...refreshed, selectionRounds };
+  else if (activeDrive) activeDrive.selectionRounds = selectionRounds;
+  if (driveDetailMainTab === 'results') renderDriveRoundsResults();
 });
 
 document.getElementById('driveDetailMainTabs')?.addEventListener('click', e => {
   const btn = e.target.closest('[data-panel]');
   if (!btn) return;
   showDriveDetailPanel(btn.dataset.panel);
+});
+
+document.getElementById('driveRoundsResults')?.addEventListener('click', e => {
+  const btn = e.target.closest('.drive-round-outcome-btn');
+  if (!btn || btn.disabled) return;
+  setDriveRoundOutcome(btn.dataset.appId, btn.dataset.order, btn.dataset.type, btn.dataset.status);
 });
 
 document.getElementById('btnAddDriveResult')?.addEventListener('click', openAddDriveResult);

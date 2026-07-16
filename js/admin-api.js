@@ -252,6 +252,7 @@ const AdminApi = {
       resumeFileName: a.resumeFileName || '',
       hasResume,
       resumeUrl: hasResume ? `${API_BASE}${resumeBase}${encodeURIComponent(id)}/resume` : '',
+      roundOutcomes: Array.isArray(a.roundOutcomes) ? a.roundOutcomes : [],
     };
   },
 

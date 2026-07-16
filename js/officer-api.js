@@ -165,6 +165,7 @@ const OfficerApi = {
       resumeFileName: a.resumeFileName || '',
       hasResume,
       resumeUrl: hasResume ? `${API_BASE}/officer/applications/${encodeURIComponent(id)}/resume` : '',
+      roundOutcomes: Array.isArray(a.roundOutcomes) ? a.roundOutcomes : [],
     };
   },
 
