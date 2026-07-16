@@ -732,13 +732,18 @@ final class StudentController
 
     $config = require dirname(__DIR__) . '/config/app.php';
     $dir = $config['uploads']['resume_dir'];
+    $legacyDir = dirname(__DIR__, 2) . '/uploads/resumes';
     $stored = basename((string) ($resume['storedName'] ?? ''));
     if ($stored === '') {
       Response::notFound('Resume not found.');
     }
     $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $stored;
     if (!is_file($path)) {
+      $legacyPath = rtrim($legacyDir, '/\\') . DIRECTORY_SEPARATOR . $stored;
+      if (!is_file($legacyPath)) {
       Response::notFound('Resume file missing.');
+      }
+      $path = $legacyPath;
     }
 
     $ext = strtolower(pathinfo((string) ($resume['fileName'] ?? ''), PATHINFO_EXTENSION));
@@ -768,11 +773,16 @@ final class StudentController
 
     $config = require dirname(__DIR__) . '/config/app.php';
     $dir = $config['uploads']['resume_dir'];
+    $legacyDir = dirname(__DIR__, 2) . '/uploads/resumes';
     $stored = basename((string) ($resume['storedName'] ?? ''));
     if ($stored !== '') {
-      $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $stored;
-      if (is_file($path)) {
-        @unlink($path);
+      foreach ([
+        rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $stored,
+        rtrim($legacyDir, '/\\') . DIRECTORY_SEPARATOR . $stored,
+      ] as $path) {
+        if (is_file($path)) {
+          @unlink($path);
+        }
       }
     }
 

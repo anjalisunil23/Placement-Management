@@ -472,7 +472,7 @@ const ADMIN_ONLY_PAGES = [
 ];
 
 const RESUME_PROFILES = ['General', 'SDE / Full Stack', 'Data / ML', 'Product / Business', 'Core Engineering'];
-const RESUME_BUCKET = 'placehub-resumes';
+const RESUME_BUCKET = 'ajce-placements';
 
 const DEPARTMENT_PLACEMENT = [
   { dept: 'CSE', students: 520, applicants: 1840, shortlisted: 520, selected: 186, placed: 412, pct: 79.2, avgPkg: 10.2 },

@@ -1614,10 +1614,17 @@ final class AdminController
         if (!preg_match('/^[a-z0-9_\-]+\.(pdf|csv|xlsx|xls)$/i', $filename)) {
             Response::error('Invalid filename.', 400);
         }
-        $config = require dirname(__DIR__) . '/config/app.php';
-        $path = $config['uploads']['reports_dir'] . '/' . $filename;
-        if (!is_file($path)) {
+    $config = require dirname(__DIR__) . '/config/app.php';
+    $dir = $config['uploads']['reports_dir'];
+    $legacyDir = dirname(__DIR__, 2) . '/uploads/reports';
+    $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
+    if (!is_file($path)) {
+        $legacyPath = rtrim($legacyDir, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        if (is_file($legacyPath)) {
+            $path = $legacyPath;
+        } else {
             Response::notFound('Report file not found.');
+        }
         }
         $lower = strtolower($filename);
         $mime = match (true) {
