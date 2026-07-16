@@ -579,14 +579,18 @@ foreach ($seedNotifs as $group) {
     echo "Notifications seeded for {$group['email']}\n";
 }
 
-// Create upload directories
+// Local upload dirs are legacy-only (new files go to S3 via ObjectStorageService).
+// Keep creating them so old files remain readable until migrate-uploads-to-s3.php runs.
 $config = require dirname(__DIR__) . '/config/app.php';
 foreach (['resume_dir', 'reports_dir', 'jd_dir', 'shortlist_dir'] as $key) {
     $dir = $config['uploads'][$key];
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
-        echo "Created directory: {$dir}\n";
+        echo "Created legacy directory (read fallback): {$dir}\n";
     }
 }
+echo "Note: new uploads go to S3. Migrate old files with:\n";
+echo "  php backend/scripts/migrate-uploads-to-s3.php\n";
+echo "  php backend/scripts/migrate-uploads-to-s3.php --delete-local\n";
 
 echo "Setup complete.\n";

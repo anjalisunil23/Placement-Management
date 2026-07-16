@@ -1057,28 +1057,6 @@ window.deleteResume = async id => {
   await refreshResumes();
 };
 
-function readFileDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-async function uploadResumeLocal(file, profileType, label) {
-  const entry = ResumeBucket.upload(file, profileType, label);
-  if (file.size <= 3 * 1024 * 1024) {
-    try {
-      const dataUrl = await readFileDataUrl(file);
-      const map = getResumeDataMap();
-      map[entry.id] = dataUrl;
-      saveResumeDataMap(map);
-    } catch { /* preview optional */ }
-  }
-  return entry;
-}
-
 function validateStudentResumeFilename(fileName) {
   const ext = String(fileName || '').includes('.')
     ? String(fileName).split('.').pop().toLowerCase()
