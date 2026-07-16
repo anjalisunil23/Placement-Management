@@ -359,6 +359,18 @@ final class AesApiService
         return in_array($needle, ['BT', 'MT', 'BTECH', 'MTECH'], true);
     }
 
+    /** Human label for course-level shorts (BT → B.Tech). */
+    public function courseLevelLabel(string $code): string
+    {
+        $needle = strtoupper(preg_replace('/[^A-Z0-9]/', '', trim($code)) ?? '');
+
+        return match ($needle) {
+            'BT', 'BTECH' => 'B.Tech',
+            'MT', 'MTECH' => 'M.Tech',
+            default => '',
+        };
+    }
+
     /**
      * POST method=getStudQual4Placement — student 10th/12th marks and CGPA from AES.
      *

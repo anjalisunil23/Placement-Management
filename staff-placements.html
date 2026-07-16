@@ -473,9 +473,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20260713v"></script>
-  <script src="js/api.js?v=20260716fast"></script>
-  <script src="js/app.js?v=20260716fast"></script>
+  <script src="js/staff-api.js?v=20260716prog"></script>
+  <script src="js/api.js?v=20260716prog"></script>
+  <script src="js/app.js?v=20260716prog"></script>
   <script>
     if (Auth.role() !== 'staff') {
       toast('You do not have access to this page.', 'warn');
@@ -556,7 +556,23 @@
       const el = document.getElementById(id);
       if (!el) return;
       const current = selected || el.value;
-      el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+      const labelFor = (v) => {
+        const raw = String(v || '').trim();
+        if (!raw) return raw;
+        if (typeof courseLevelProgrammeLabel === 'function') {
+          const course = courseLevelProgrammeLabel(raw);
+          if (course) return course;
+        }
+        if (typeof resolveCollegeProgrammeLabel === 'function') {
+          const catalog = resolveCollegeProgrammeLabel(raw);
+          if (catalog) return catalog;
+        }
+        return raw;
+      };
+      el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => {
+        const value = String(v || '').trim();
+        return `<option value="${esc(value)}">${esc(labelFor(value))}</option>`;
+      }).join('');
       if (current && [...el.options].some(o => o.value === current)) el.value = current;
       else if (autoPickSingle && (values || []).length === 1) el.value = values[0];
       else el.value = '';

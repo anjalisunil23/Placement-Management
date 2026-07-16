@@ -100,14 +100,32 @@ final class PlacementFilterService
         }
 
         $canonical = [];
+        $aesApi = new AesApiService();
         foreach ($programmes as $programme) {
-            $code = DepartmentProgrammeCatalog::resolveProgrammeCode((string) $programme);
+            $raw = trim((string) $programme);
+            if ($raw === '') {
+                continue;
+            }
+            // Keep AES course-level shorts (BT / MT) as branch options alongside MCA / CS / …
+            if ($aesApi->isCourseLevelShort($raw)) {
+                $short = strtoupper(preg_replace('/[^A-Z0-9]/', '', $raw) ?? '');
+                if ($short === 'BTECH') {
+                    $short = 'BT';
+                } elseif ($short === 'MTECH') {
+                    $short = 'MT';
+                }
+                if ($short !== '') {
+                    $canonical[] = $short;
+                }
+                continue;
+            }
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode($raw);
             if ($code !== '') {
                 $canonical[] = $code;
             }
         }
 
-        return $this->sortLabels(array_values(array_unique($canonical)));
+        return $this->sortLabels(array_values(array_unique(array_filter($canonical))));
     }
 
     /**

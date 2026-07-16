@@ -2717,33 +2717,51 @@ function resolveCollegeProgrammeLabel(code) {
   return '';
 }
 
-/** Prefer AES / API full department names over short course codes like "BT". */
+/** Human label for AES course-level shorts (BT → B.Tech). */
+function courseLevelProgrammeLabel(code) {
+  const n = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (n === 'BT' || n === 'BTECH') return 'B.Tech';
+  if (n === 'MT' || n === 'MTECH') return 'M.Tech';
+  return '';
+}
+
+/** Prefer programme / branch codes (MCA, INMCA, B.Tech, CS, …) over parent dept or stud_branch. */
 function studentDepartmentLabel(s) {
   if (!s || typeof s !== 'object') return '—';
-  const code = String(s.departmentCode || (typeof s.department === 'string' ? s.department : '') || '').trim();
-  // Prefer parent department name (not branch / stud_branch).
-  const name = String(
-    s.parentDepartmentName
-    || (s.department && typeof s.department === 'object' ? s.department.name : '')
-    || s.departmentName
+  const programme = String(
+    s.programme
+    || s.stud_course
+    || s.departmentCode
+    || (typeof s.department === 'string' ? s.department : '')
     || ''
   ).trim();
-  if (name && !/^\d+$/.test(name) && (/\s/.test(name) || name.length > 4)) {
+  const courseLabel = courseLevelProgrammeLabel(programme);
+  if (courseLabel) return courseLabel;
+  const fromCatalog = resolveCollegeProgrammeLabel(programme);
+  if (fromCatalog) return fromCatalog;
+
+  const name = String(
+    s.departmentName
+    || (s.department && typeof s.department === 'object' ? s.department.name : '')
+    || ''
+  ).trim();
+  const nameCourse = courseLevelProgrammeLabel(name);
+  if (nameCourse) return nameCourse;
+  const nameCatalog = resolveCollegeProgrammeLabel(name);
+  if (nameCatalog) return nameCatalog;
+  if (name && !/^\d+$/.test(name) && name.toUpperCase() !== programme.toUpperCase()) {
     return name;
   }
-  const fromCatalog = resolveCollegeProgrammeLabel(code) || resolveCollegeProgrammeLabel(name);
-  if (fromCatalog) return fromCatalog;
-  if (name && name.toUpperCase() !== code.toUpperCase()) return name;
   if (typeof resolveDepartmentRecord === 'function') {
-    const rec = resolveDepartmentRecord(code || name);
+    const rec = resolveDepartmentRecord(programme || name);
     const rn = String(rec?.name || '').trim();
-    const rc = String(rec?.code || code || '').trim();
+    const rc = String(rec?.code || programme || '').trim();
     if (rn && rn.toUpperCase() !== rc.toUpperCase()) {
       return rc ? `${rn} (${rc})` : rn;
     }
     if (rn) return rn;
   }
-  return name || code || '—';
+  return name || programme || '—';
 }
 
 /** Normalize drive branch codes (array, CSV, or pipe-list) for student/officer UI. */

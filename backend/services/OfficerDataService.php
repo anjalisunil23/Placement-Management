@@ -1630,32 +1630,40 @@ final class OfficerDataService
             ?? $record['department_name']
             ?? ''
         ));
+        // Prefer programme / course (MCA, INMCA, B.Tech, CS, …) like Branch under Department.
+        $aesApi = new AesApiService();
+        $programmeIsCourseLevel = $programme !== '' && $aesApi->isCourseLevelShort($programme);
+        $courseLevelLabel = $programme !== '' ? $aesApi->courseLevelLabel($programme) : '';
+        $catalogueProgrammeLabel = ($programme !== '' && !$programmeIsCourseLevel)
+            ? DepartmentProgrammeCatalog::programmeLabel($programme)
+            : '';
+        $programmeDisplay = $courseLevelLabel !== ''
+            ? $courseLevelLabel
+            : ($catalogueProgrammeLabel !== ''
+                ? $catalogueProgrammeLabel
+                : (($programme !== '' && !ctype_digit($programme)) ? strtoupper($programme) : ''));
+
         $parentDeptShort = strtoupper(trim((string) (
             $record['parentDepartmentShort']
             ?? ''
         )));
-        // Prefer AES parent department name (getDepartments via stud_deptcode), not stud_branch.
-        $aesApi = new AesApiService();
-        $programmeIsCourseLevel = $programme !== '' && $aesApi->isCourseLevelShort($programme);
-        $displayDeptCode = $parentDeptShort !== ''
-            ? $parentDeptShort
-            : (($programme !== '' && !$programmeIsCourseLevel)
-                ? strtoupper($programme)
+        $displayDeptCode = $programme !== ''
+            ? strtoupper($programme)
+            : ($parentDeptShort !== ''
+                ? $parentDeptShort
                 : ($deptCode !== '' ? $deptCode : $recordDeptCode));
-        $programmeLabel = ($displayDeptCode !== '' && !$aesApi->isCourseLevelShort($displayDeptCode))
-            ? DepartmentProgrammeCatalog::programmeLabel($displayDeptCode)
-            : '';
-        $displayDeptName = $parentDeptName !== ''
-            ? $parentDeptName
-            : ($aesBranchName !== ''
-                ? $aesBranchName
-                : ($programmeLabel !== ''
-                    ? $programmeLabel
+        $displayDeptName = $programmeDisplay !== ''
+            ? $programmeDisplay
+            : ($parentDeptName !== ''
+                ? $parentDeptName
+                : ($aesBranchName !== ''
+                    ? $aesBranchName
                     : ($deptName !== '' && strcasecmp($deptName, $displayDeptCode) !== 0
                         ? $deptName
                         : ($deptName !== '' ? $deptName : $displayDeptCode))));
         $row['departmentCode'] = $displayDeptCode;
         $row['departmentName'] = $displayDeptName;
+        $row['programme'] = $programme;
         $row['branchName'] = $aesBranchName;
         if ($parentDeptName !== '') {
             $row['parentDepartmentName'] = $parentDeptName;
