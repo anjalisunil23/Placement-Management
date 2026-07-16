@@ -7,10 +7,14 @@ namespace PMS\Services;
 /**
  * Object storage via the campus S3 Lambda (presigned URL API).
  *
- * Upload:  GET ?method=getPreSignedUrl&ext=&path=Docs/ajce-placements/{folder}
+ * Physical layout:
+ *   bucket: ajce-placements
+ *   key:    {folder}/{file}   e.g. resumes/abc.pdf
+ *
+ * Upload:  GET ?method=getPreSignedUrl&ext=&path={folder}
  *          then PUT body to uploadURL (with x-amz-acl: private)
- * Download: GET ?method=s3Download&object=ajce-placements/{folder}/{file}
- * Delete:   GET ?method=s3Delete&object=ajce-placements/{folder}/{file}
+ * Download: GET ?method=s3Download&object={folder}/{file}
+ * Delete:   GET ?method=s3Delete&object={folder}/{file}
  *
  * MariaDB paths use: s3://ajce-placements/{folder}/{filename}
  * Legacy local files under uploads/ remain readable as a fallback.
@@ -48,8 +52,8 @@ final class ObjectStorageService
 
     public function bucket(): string
     {
-        // Logical app bucket / prefix shown in URIs (ajce-placements).
-        return trim((string) ($this->s3['prefix'] ?? $this->s3['bucket'] ?? 'ajce-placements'), '/');
+        // AWS bucket name (ajce-placements).
+        return trim((string) ($this->s3['bucket'] ?? $this->s3['physical_bucket'] ?? 'ajce-placements'), '/');
     }
 
     public function apiEndpoint(): string
@@ -59,43 +63,38 @@ final class ObjectStorageService
 
     public function docsRoot(): string
     {
-        return trim((string) ($this->s3['docs_root'] ?? 'Docs'), '/');
+        // Optional legacy prefix (old campus Lambda used "Docs/"). Default: none.
+        return trim((string) ($this->s3['docs_root'] ?? ''), '/');
     }
 
     public function uri(string $folder, string $filename): string
     {
-        // objectKey already includes the logical prefix (ajce-placements/...).
-        return 's3://' . $this->objectKey($folder, $filename);
+        return 's3://' . $this->bucket() . '/' . $this->objectKey($folder, $filename);
     }
 
     /**
-     * Logical object key used with Lambda s3Download / s3Delete
-     * (Lambda itself prefixes Docs/).
+     * Object key inside the ajce-placements bucket: {folder}/{filename}
      */
     public function objectKey(string $folder, string $filename): string
     {
         $folder = trim(str_replace('\\', '/', $folder), '/');
         $filename = basename(str_replace('\\', '/', $filename));
-        $prefix = $this->bucket();
 
-        if ($folder === '') {
-            return $prefix . '/' . $filename;
-        }
-
-        return $prefix . '/' . $folder . '/' . $filename;
+        return $folder === '' ? $filename : $folder . '/' . $filename;
     }
 
     /**
-     * Path argument for getPreSignedUrl (includes Docs/ root).
+     * Path argument for getPreSignedUrl (folder only, e.g. "resumes").
      */
     public function uploadPath(string $folder): string
     {
         $folder = trim(str_replace('\\', '/', $folder), '/');
         $docs = $this->docsRoot();
-        $prefix = $this->bucket();
-        $base = $docs !== '' ? $docs . '/' . $prefix : $prefix;
+        if ($docs !== '') {
+            return $folder === '' ? $docs : $docs . '/' . $folder;
+        }
 
-        return $folder === '' ? $base : $base . '/' . $folder;
+        return $folder;
     }
 
     public function mediaUrl(string $folder, string $filename): string
@@ -187,11 +186,19 @@ final class ObjectStorageService
             }
             try {
                 $object = $this->lambdaObjectFromResolved($resolved);
-                if ($object !== '') {
-                    $this->lambdaJson([
-                        'method' => 's3Delete',
-                        'object' => $object,
-                    ]);
+                $candidates = array_values(array_unique(array_filter([
+                    $object,
+                    $object !== '' ? 'ajce-placements/' . $object : '',
+                ])));
+                foreach ($candidates as $candidate) {
+                    try {
+                        $this->lambdaJson([
+                            'method' => 's3Delete',
+                            'object' => $candidate,
+                        ]);
+                    } catch (\Throwable) {
+                        // try next
+                    }
                 }
             } catch (\Throwable) {
                 // Best-effort delete.
@@ -221,16 +228,33 @@ final class ObjectStorageService
         if ($resolved['scheme'] === 's3') {
             $this->assertConfigured();
             $object = $this->lambdaObjectFromResolved($resolved);
-            $meta = $this->lambdaJson([
-                'method' => 's3Download',
-                'object' => $object,
-            ]);
-            $url = (string) ($meta['url'] ?? '');
-            if ($url === '') {
-                throw new \RuntimeException('S3 Lambda did not return a download URL.');
-            }
+            $candidates = array_values(array_unique(array_filter([
+                $object,
+                // Legacy campus layout: Docs/{folder}/{file} or Docs/ajce-placements/{folder}/{file}
+                $object !== '' ? 'ajce-placements/' . $object : '',
+                $object !== '' ? 'Docs/' . $object : '',
+                $object !== '' ? 'Docs/ajce-placements/' . $object : '',
+            ])));
 
-            return $this->httpGetBody($url);
+            $lastError = null;
+            foreach ($candidates as $candidate) {
+                try {
+                    $meta = $this->lambdaJson([
+                        'method' => 's3Download',
+                        'object' => $candidate,
+                    ]);
+                    $url = (string) ($meta['url'] ?? '');
+                    if ($url === '') {
+                        continue;
+                    }
+                    return $this->httpGetBody($url);
+                } catch (\Throwable $e) {
+                    $lastError = $e;
+                }
+            }
+            throw $lastError instanceof \Throwable
+                ? $lastError
+                : new \RuntimeException('S3 Lambda did not return a download URL.');
         }
         if ($resolved['local'] === null || !is_file($resolved['local'])) {
             throw new \RuntimeException('File not found.');
@@ -304,8 +328,18 @@ final class ObjectStorageService
         }
 
         if (str_starts_with($raw, 's3://')) {
-            // s3://ajce-placements/resumes/file.pdf → key ajce-placements/resumes/file.pdf
-            $key = $this->normalizeLogicalKey(substr($raw, 5));
+            // s3://ajce-placements/resumes/file.pdf → key resumes/file.pdf
+            $without = substr($raw, 5);
+            $slash = strpos($without, '/');
+            $bucketPart = $slash === false ? $without : substr($without, 0, $slash);
+            $keyPart = $slash === false ? '' : substr($without, $slash + 1);
+            $bucket = $this->bucket();
+            if ($bucketPart === $bucket || $bucketPart === 'iqac-docs') {
+                $key = $this->normalizeLogicalKey($keyPart);
+            } else {
+                // Older URIs may have been s3://ajce-placements/ajce-placements/resumes/...
+                $key = $this->normalizeLogicalKey($without);
+            }
             $filename = basename($key);
             $folder = $this->folderFromLogicalKey($key);
 
@@ -498,19 +532,25 @@ final class ObjectStorageService
     private function normalizeLogicalKey(string $key): string
     {
         $key = ltrim(str_replace('\\', '/', $key), '/');
+        // Strip legacy Docs/ prefix from older campus uploads.
+        if (str_starts_with($key, 'Docs/')) {
+            $key = substr($key, 5);
+        }
         $docs = $this->docsRoot();
         if ($docs !== '' && str_starts_with($key, $docs . '/')) {
             $key = substr($key, strlen($docs) + 1);
         }
-        // Drop physical bucket name if present (iqac-docs/...)
-        $physical = trim((string) ($this->s3['physical_bucket'] ?? 'iqac-docs'), '/');
-        if ($physical !== '' && str_starts_with($key, $physical . '/')) {
-            $key = substr($key, strlen($physical) + 1);
-        }
-        $prefix = $this->bucket();
-        if ($prefix !== '' && !str_starts_with($key, $prefix . '/') && !str_contains($key, '/')) {
-            // bare filename — leave as-is; caller should pass folder hint
-            return $key;
+        // Drop physical bucket name if it was embedded in the key.
+        foreach (['ajce-placements', 'iqac-docs'] as $embedded) {
+            if (str_starts_with($key, $embedded . '/')) {
+                $rest = substr($key, strlen($embedded) + 1);
+                // Only strip when the next segment looks like a folder (resumes, photos, ...)
+                $next = explode('/', $rest, 2)[0] ?? '';
+                if ($next !== '' && !str_contains($next, '.')) {
+                    $key = $rest;
+                }
+                break;
+            }
         }
 
         return $key;
@@ -519,13 +559,6 @@ final class ObjectStorageService
     private function folderFromLogicalKey(string $key): string
     {
         $key = $this->normalizeLogicalKey($key);
-        $prefix = $this->bucket();
-        if ($prefix !== '' && str_starts_with($key, $prefix . '/')) {
-            $rest = substr($key, strlen($prefix) + 1);
-            $dir = trim(dirname($rest), '.');
-
-            return $dir === '.' ? '' : $dir;
-        }
         $dir = trim(dirname($key), '.');
 
         return $dir === '.' ? '' : $dir;

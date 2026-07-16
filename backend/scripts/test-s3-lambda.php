@@ -9,9 +9,10 @@ use PMS\Services\ObjectStorageService;
 $cfg = [
     's3' => [
         'api_endpoint' => 'https://hep6ztvxpjewibbu6z57hmfijm0czbnu.lambda-url.ap-south-1.on.aws',
-        'prefix' => 'ajce-placements',
-        'docs_root' => 'Docs',
-        'physical_bucket' => 'iqac-docs',
+        'bucket' => 'ajce-placements',
+        'physical_bucket' => 'ajce-placements',
+        'docs_root' => '',
+        'prefix' => '',
         'timeout' => 60,
     ],
     'uploads' => [],

@@ -59,13 +59,12 @@ return [
                 ? rtrim($fromEnv, '/')
                 : 'https://hep6ztvxpjewibbu6z57hmfijm0czbnu.lambda-url.ap-south-1.on.aws';
         })(),
-        // Logical folder root shown in s3:// URIs and Lambda object keys.
-        'prefix' => (trim((string) ($_ENV['AWS_S3_PREFIX'] ?? '')) ?: 'ajce-placements'),
-        // Physical AWS bucket name (informational / URI normalization).
-        'physical_bucket' => (trim((string) ($_ENV['AWS_S3_PHYSICAL_BUCKET'] ?? '')) ?: 'iqac-docs'),
+        // AWS bucket: ajce-placements/{folder}/{file}
         'bucket' => (trim((string) ($_ENV['AWS_S3_BUCKET'] ?? '')) ?: 'ajce-placements'),
-        // Lambda download/delete always prefixes this root.
-        'docs_root' => (trim((string) ($_ENV['AWS_S3_DOCS_ROOT'] ?? '')) ?: 'Docs'),
+        'physical_bucket' => (trim((string) ($_ENV['AWS_S3_PHYSICAL_BUCKET'] ?? $_ENV['AWS_S3_BUCKET'] ?? '')) ?: 'ajce-placements'),
+        // Optional legacy key prefix (old Lambda used "Docs"). Leave empty for ajce-placements/{folder}/{file}.
+        'docs_root' => trim((string) ($_ENV['AWS_S3_DOCS_ROOT'] ?? '')),
+        'prefix' => trim((string) ($_ENV['AWS_S3_PREFIX'] ?? '')),
         'region' => $_ENV['AWS_REGION'] ?? $_ENV['AWS_DEFAULT_REGION'] ?? 'ap-south-1',
         'public_base_url' => rtrim((string) ($_ENV['AWS_S3_PUBLIC_BASE_URL'] ?? ''), '/'),
         'timeout' => (int) ($_ENV['AWS_S3_TIMEOUT'] ?? 60),
