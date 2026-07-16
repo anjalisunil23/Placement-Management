@@ -197,20 +197,8 @@
           <div class="row g-3 mb-4">
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Company</label>
-              <div class="btn-group btn-group-sm w-100 mb-2" role="group" aria-label="Company source" id="createDriveCompanyMode">
-                <input type="radio" class="btn-check" name="companyPickMode" id="companyPickExisting" value="existing" checked>
-                <label class="btn btn-outline-secondary" for="companyPickExisting">Select existing</label>
-                <input type="radio" class="btn-check" name="companyPickMode" id="companyPickNew" value="new">
-                <label class="btn btn-outline-secondary" for="companyPickNew">Add company</label>
-              </div>
-              <div id="createDriveCompanyExisting">
-                <select class="form-select" name="companyId" id="createDriveCompany"><option value="">Select company…</option></select>
-              </div>
-              <div id="createDriveCompanyNew" class="d-none">
-                <input class="form-control" type="text" id="createDriveCompanyName" placeholder="e.g. Google" autocomplete="organization">
-                <div class="form-text">If the company already exists, we will use that record — no duplicate is created.</div>
-              </div>
-              <div class="form-text" id="createDriveCompanyHint">Same company + role + date will not create a duplicate drive.</div>
+              <select class="form-select" name="companyId" id="createDriveCompany" required><option value="">Select company…</option></select>
+              <div class="form-text" id="createDriveCompanyHint">Choose a company from Admin → Companies &amp; Referrals. Same company + role + date will not create a duplicate drive.</div>
             </div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Job role</label><input class="form-control" name="role" placeholder="e.g. SDE-1" required/></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Drive type</label><select class="form-select" name="driveType" required><option>Exclusive</option><option selected>Pooled</option><option>Company Direct</option></select></div>
@@ -1466,9 +1454,6 @@ window.openCreateDrive = async () => {
   document.getElementById('createDriveForm')?.reset();
   const genderSel = document.getElementById('createDriveGender');
   if (genderSel) genderSel.value = 'any';
-  const pickExisting = document.getElementById('companyPickExisting');
-  if (pickExisting) pickExisting.checked = true;
-  toggleCreateDriveCompanyMode();
   await ensureDepartmentsLoaded().catch(() => {});
   const mineRadio = document.getElementById('driveDeptScopeMine');
   const multiRadio = document.getElementById('driveDeptScopeMulti');
@@ -1551,22 +1536,6 @@ document.querySelectorAll('input[name="driveDeptScope"]').forEach(el => {
 });
 document.getElementById('createDriveDepartments')?.addEventListener('change', updateCreateDriveBranchesHint);
 
-function toggleCreateDriveCompanyMode() {
-  const mode = document.querySelector('input[name="companyPickMode"]:checked')?.value || 'existing';
-  const existing = document.getElementById('createDriveCompanyExisting');
-  const fresh = document.getElementById('createDriveCompanyNew');
-  const sel = document.getElementById('createDriveCompany');
-  if (existing) existing.classList.toggle('d-none', mode !== 'existing');
-  if (fresh) fresh.classList.toggle('d-none', mode !== 'new');
-  if (sel) sel.required = mode === 'existing';
-  const nameInput = document.getElementById('createDriveCompanyName');
-  if (nameInput) nameInput.required = mode === 'new';
-}
-
-document.querySelectorAll('input[name="companyPickMode"]').forEach(el => {
-  el.addEventListener('change', toggleCreateDriveCompanyMode);
-});
-
 async function populateCreateDriveCompanies() {
   const sel = document.getElementById('createDriveCompany');
   if (!sel) return;
@@ -1597,36 +1566,13 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     return;
   }
   const companySel = document.getElementById('createDriveCompany');
-  const companyPickMode = document.querySelector('input[name="companyPickMode"]:checked')?.value || 'existing';
-  let companyId = String(fd.get('companyId') || '').trim();
-  let companyName = companySel?.selectedOptions?.[0]?.text?.trim() || '';
+  const companyId = String(fd.get('companyId') || '').trim();
+  const companyName = companySel?.selectedOptions?.[0]?.text?.trim() || '';
   const role = String(fd.get('role') || '').trim();
   const recruitmentDate = String(fd.get('recruitmentDate') || '').trim();
   const deadline = String(fd.get('deadline') || '').trim();
 
-  if (companyPickMode === 'new') {
-    const newName = String(document.getElementById('createDriveCompanyName')?.value || '').trim();
-    if (!newName) {
-      toast('Enter a company name or switch to Select existing.', 'warn');
-      return;
-    }
-    if (typeof RegisteredCompanies === 'undefined' || !RegisteredCompanies.resolveOrAdd) {
-      toast('Could not add company. Refresh and try again.', 'error');
-      return;
-    }
-    const resolved = await RegisteredCompanies.resolveOrAdd({ companyName: newName });
-    if (!resolved) return;
-    companyId = String(resolved.companyId || resolved.id || '').trim();
-    companyName = String(resolved.companyName || newName).trim();
-    toast(
-      resolved.reused
-        ? (resolved.message || 'Company already registered. Using existing record.')
-        : 'Company added.',
-      resolved.reused ? 'info' : 'success'
-    );
-    await populateCreateDriveCompanies();
-    if (companySel && companyId) companySel.value = companyId;
-  } else if (!companyId) {
+  if (!companyId) {
     toast('Select a registered company for this drive.', 'warn');
     return;
   }
