@@ -2603,7 +2603,7 @@ const DEPARTMENT_PROGRAMME_GROUPS = [
     programmes: [
       { code: 'MCA', label: 'MCA', aliases: ['MCAR', 'MCAREG'] },
       { code: 'BCA', label: 'BCA', aliases: ['BCAH', 'BCAHONS'] },
-      { code: 'INMCA', label: 'Integrated MCA', aliases: ['INTMCA', 'IMCA', 'INT MCA', 'DDMCA', 'DD MCA', 'MCA INT'] },
+      { code: 'INMCA', label: 'Integrated MCA', aliases: ['INTMCA', 'IMCA', 'INT MCA', 'DDMCA', 'DD MCA', 'MCA INT', 'MCAINT'] },
     ],
   },
   {

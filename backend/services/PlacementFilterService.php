@@ -550,36 +550,39 @@ final class PlacementFilterService
 
     private function batchMatchesProgramme(string $batchLabel, string $program): bool
     {
-        $batchNorm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $batchLabel) ?? '');
-        if ($batchNorm === '') {
-            return false;
+        $program = trim($program);
+        if ($program === '') {
+            return true;
         }
 
+        // Infer programme from the batch label with longest-prefix matching so
+        // MCAINT… maps to INMCA instead of the MCA prefix.
+        $inferred = $this->programmeCodeFromBatch($batchLabel);
+        if ($inferred !== '') {
+            return $this->rowMatchesProgramme(
+                ['stud_course' => $inferred, 'stud_branch' => '', 'stud_class' => $batchLabel],
+                $program
+            );
+        }
+
+        $batchNorm = DepartmentProgrammeCatalog::normalizeCode($batchLabel);
         $targets = array_values(array_unique(array_filter([
-            trim($program),
+            $program,
             DepartmentProgrammeCatalog::resolveProgrammeCode($program),
             DepartmentProgrammeCatalog::normalizeCode($program),
         ], static fn (string $code) => $code !== '')));
 
         foreach ($targets as $target) {
-            $targetNorm = DepartmentProgrammeCatalog::normalizeCode($target);
-            if ($targetNorm !== '' && str_starts_with($batchNorm, $targetNorm)) {
-                return true;
-            }
             if (strcasecmp($batchLabel, $target) === 0) {
                 return true;
             }
+            $targetNorm = DepartmentProgrammeCatalog::normalizeCode($target);
+            if ($targetNorm !== '' && $batchNorm === $targetNorm) {
+                return true;
+            }
         }
 
-        $inferred = $this->programmeCodeFromBatch($batchLabel);
-        if ($inferred === '') {
-            return false;
-        }
-
-        return $this->rowMatchesProgramme(
-            ['stud_course' => $inferred, 'stud_branch' => '', 'stud_class' => $batchLabel],
-            $program
-        );
+        return false;
     }
 
     private function batchMatchesBranch(array $ctx, string $batchLabel, string $program, string $branch): bool
@@ -605,31 +608,33 @@ final class PlacementFilterService
 
     private function programmeCodeFromBatch(string $batchLabel): string
     {
-        $normalized = strtoupper(preg_replace('/[^A-Z0-9]/', '', $batchLabel) ?? '');
+        $normalized = DepartmentProgrammeCatalog::normalizeCode($batchLabel);
         if ($normalized === '') {
             return '';
         }
 
-        $candidates = [];
+        $tokens = [];
         foreach (DepartmentProgrammeCatalog::groups() as $group) {
             foreach ($group['programmes'] as $programme) {
-                $code = DepartmentProgrammeCatalog::normalizeCode($programme['code']);
-                $aliases = array_map(
-                    static fn (string $alias) => DepartmentProgrammeCatalog::normalizeCode($alias),
-                    $programme['aliases']
-                );
-                $candidates[] = ['code' => $code, 'aliases' => $aliases];
+                $canonical = DepartmentProgrammeCatalog::normalizeCode($programme['code']);
+                if ($canonical === '') {
+                    continue;
+                }
+                $tokens[$canonical] = $canonical;
+                foreach ($programme['aliases'] as $alias) {
+                    $aliasNorm = DepartmentProgrammeCatalog::normalizeCode($alias);
+                    if ($aliasNorm !== '') {
+                        $tokens[$aliasNorm] = $canonical;
+                    }
+                }
             }
         }
 
-        usort($candidates, static fn (array $a, array $b) => strlen($b['code']) <=> strlen($a['code']));
-        foreach ($candidates as $candidate) {
-            $codes = array_merge([$candidate['code']], $candidate['aliases']);
-            usort($codes, static fn (string $a, string $b) => strlen($b) <=> strlen($a));
-            foreach ($codes as $code) {
-                if ($code !== '' && str_starts_with($normalized, $code)) {
-                    return $code;
-                }
+        $keys = array_keys($tokens);
+        usort($keys, static fn (string $a, string $b) => strlen($b) <=> strlen($a));
+        foreach ($keys as $token) {
+            if ($token !== '' && str_starts_with($normalized, $token)) {
+                return DepartmentProgrammeCatalog::resolveProgrammeCode($tokens[$token]);
             }
         }
 

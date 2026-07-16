@@ -20,7 +20,7 @@ final class DepartmentProgrammeCatalog
                 'programmes' => [
                     ['code' => 'MCA', 'label' => 'MCA', 'aliases' => ['MCAR', 'MCAREG', 'MCAREGULAR']],
                     ['code' => 'BCA', 'label' => 'BCA', 'aliases' => ['BCAH', 'BCAHONS']],
-                    ['code' => 'INMCA', 'label' => 'Integrated MCA', 'aliases' => ['INTMCA', 'IMCA', 'DDMCA']],
+                    ['code' => 'INMCA', 'label' => 'Integrated MCA', 'aliases' => ['INTMCA', 'IMCA', 'DDMCA', 'MCAINT', 'MCA INT', 'INT MCA', 'DD MCA']],
                 ],
             ],
             [

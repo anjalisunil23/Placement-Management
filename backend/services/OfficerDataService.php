@@ -456,7 +456,18 @@ final class OfficerDataService
                 ?? $row['programme']
                 ?? ''
             ));
-            if ($rowProgramme !== $programme) {
+            $classProgramme = $this->placementProgrammeCode(trim(implode(' ', array_filter([
+                (string) ($row['classBatch'] ?? ''),
+                (string) ($row['stud_class'] ?? ''),
+                (string) ($row['stud_course'] ?? ''),
+                (string) ($row['programme'] ?? ''),
+            ]))));
+            $effectiveProgramme = $classProgramme !== '' ? $classProgramme : $rowProgramme;
+            $wantProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+            if ($wantProgramme === '' || (
+                strcasecmp($effectiveProgramme, $wantProgramme) !== 0
+                && strcasecmp($rowProgramme, $wantProgramme) !== 0
+            )) {
                 continue;
             }
 
@@ -468,7 +479,144 @@ final class OfficerDataService
             $rows[] = $row;
         }
 
+        return $this->supplementAesClassRosterGaps($rows, $seen, $programme, $batch, $dept, $deptCode, $deptName);
+    }
+
+    /**
+     * AES getAllStudInfo4Placement often omits a few classmates still marked on an
+     * earlier semester (e.g. INMCA strength 57 = 55×S9 + 2×S8). Fill small admno
+     * gaps with individual getStudInfo4Placement lookups for the same cohort.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, true> $seen
+     * @param array<string, mixed>|null $dept
+     * @return array<int, array<string, mixed>>
+     */
+    private function supplementAesClassRosterGaps(
+        array $rows,
+        array &$seen,
+        string $programme,
+        string $batch,
+        ?array $dept,
+        string $deptCode,
+        string $deptName
+    ): array {
+        $cohort = $this->cohortPrefixFromBatch($batch);
+        if ($cohort === '' || $rows === []) {
+            return $rows;
+        }
+
+        $admnos = [];
+        foreach ($rows as $row) {
+            $admno = (int) preg_replace('/\D+/', '', (string) ($row['admno'] ?? $row['registerNumber'] ?? '')) ;
+            if ($admno > 0) {
+                $admnos[$admno] = true;
+            }
+        }
+        if (count($admnos) < 2) {
+            return $rows;
+        }
+
+        $sorted = array_keys($admnos);
+        sort($sorted, SORT_NUMERIC);
+        $gapAdmnos = [];
+        for ($i = 0, $n = count($sorted); $i < $n - 1; $i++) {
+            $a = $sorted[$i];
+            $b = $sorted[$i + 1];
+            $gap = $b - $a;
+            // Skip large jumps (lateral/odd admnos like 14170 → 14998).
+            if ($gap <= 1 || $gap > 5) {
+                continue;
+            }
+            for ($candidate = $a + 1; $candidate < $b; $candidate++) {
+                $gapAdmnos[] = (string) $candidate;
+            }
+        }
+        if ($gapAdmnos === []) {
+            return $rows;
+        }
+
+        $wantProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        $api = new AesApiService();
+        foreach ($gapAdmnos as $admno) {
+            $key = strtoupper($admno);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            try {
+                // Full profile — fetchStudInfoPlacementRow() only returns course/branch/class.
+                $record = $api->fetchStudentPlacementProfile(['admno' => $admno]);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($record === [] || !$this->isAesStudyingStudent($record)) {
+                continue;
+            }
+
+            $class = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+            $classNorm = DepartmentProgrammeCatalog::normalizeCode($class);
+            $cohortNorm = DepartmentProgrammeCatalog::normalizeCode($cohort);
+            if ($cohortNorm === '' || !str_starts_with($classNorm, $cohortNorm)) {
+                continue;
+            }
+
+            $hint = trim(implode(' ', array_filter([
+                (string) ($record['stud_course'] ?? ''),
+                (string) ($record['stud_cource_short'] ?? ''),
+                (string) ($record['stud_branch'] ?? ''),
+                $class,
+            ])));
+            $detected = $this->placementProgrammeCode($hint);
+            $resolvedCourse = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+                $record['stud_course'] ?? $record['stud_cource_short'] ?? ''
+            ));
+            if ($wantProgramme !== ''
+                && strcasecmp($detected, $wantProgramme) !== 0
+                && strcasecmp($resolvedCourse, $wantProgramme) !== 0
+                && !($wantProgramme === 'INMCA' && strcasecmp((string) ($record['stud_branch'] ?? ''), 'Integrated') === 0)
+            ) {
+                continue;
+            }
+
+            // Attach to the selected class so department filters keep the classmate.
+            $record['stud_class'] = $batch;
+            $record['classBatch'] = $batch;
+            if (trim((string) ($record['admno'] ?? $record['stud_admno'] ?? '')) === '') {
+                $record['admno'] = $admno;
+                $record['stud_admno'] = $admno;
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, null, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            $row['classBatch'] = $batch;
+            $row['stud_class'] = $batch;
+            $seen[$key] = true;
+            $rows[] = $row;
+        }
+
         return $rows;
+    }
+
+    /**
+     * Cohort prefix shared by semester variants, e.g. MCAINT2022-27-S9 → MCAINT2022-27.
+     */
+    private function cohortPrefixFromBatch(string $batch): string
+    {
+        $batch = strtoupper(trim($batch));
+        if ($batch === '') {
+            return '';
+        }
+        if (preg_match(
+            '/^((?:MCAINT|INMCA|MCA|BCA|[A-Z]{2,10})\d{4}\s*[-–]\s*\d{2,4})/',
+            $batch,
+            $m
+        ) === 1) {
+            return strtoupper(preg_replace('/\s+/', '', $m[1]) ?? $m[1]);
+        }
+
+        return '';
     }
 
     /**
@@ -657,7 +805,18 @@ final class OfficerDataService
     private function placementProgrammeCode(string $text): string
     {
         $normalized = DepartmentProgrammeCatalog::normalizeCode($text);
-        foreach (['INMCA', 'INTMCA', 'IMCA', 'DDMCA'] as $code) {
+        if ($normalized === '') {
+            return '';
+        }
+
+        // Prefer catalog resolve for exact programme/alias tokens.
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($normalized);
+        if (in_array($resolved, ['BCA', 'MCA', 'INMCA'], true)) {
+            return $resolved;
+        }
+
+        // Longer Integrated-MCA markers before bare MCA (MCAINT contains MCA).
+        foreach (['MCAINT', 'INMCA', 'INTMCA', 'IMCA', 'DDMCA'] as $code) {
             if (str_contains($normalized, $code)) {
                 return 'INMCA';
             }
@@ -851,13 +1010,15 @@ final class OfficerDataService
             try {
                 $records = $api->fetchAllStudInfo4Placement($params);
                 if ($this->isComputerApplicationsDirectory($deptAesId, $records)) {
-                    try {
-                        $records = $this->mergeAesDirectoryRecords(
-                            $records,
-                            $api->fetchAllStudInfo4Placement($params + ['stud_course' => 'BCA'])
-                        );
-                    } catch (\Throwable) {
-                        // Keep the unfiltered department rows if the BCA-specific call fails.
+                    foreach (['BCA', 'INMCA', 'MCAINT', 'MCA'] as $course) {
+                        try {
+                            $records = $this->mergeAesDirectoryRecords(
+                                $records,
+                                $api->fetchAllStudInfo4Placement($params + ['stud_course' => $course])
+                            );
+                        } catch (\Throwable) {
+                            // Keep already-fetched rows if a course-specific call fails.
+                        }
                     }
                 }
 
@@ -900,10 +1061,16 @@ final class OfficerDataService
                 $departmentRecords = $api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId]);
                 $append($departmentRecords);
                 if ($this->isComputerApplicationsDirectory($aesId, $departmentRecords)) {
-                    $append($api->fetchAllStudInfo4Placement([
-                        'stud_deptcode' => $aesId,
-                        'stud_course'   => 'BCA',
-                    ]));
+                    foreach (['BCA', 'INMCA', 'MCAINT', 'MCA'] as $course) {
+                        try {
+                            $append($api->fetchAllStudInfo4Placement([
+                                'stud_deptcode' => $aesId,
+                                'stud_course'   => $course,
+                            ]));
+                        } catch (\Throwable) {
+                            continue;
+                        }
+                    }
                 }
             } catch (\Throwable) {
                 continue;
@@ -1116,6 +1283,12 @@ final class OfficerDataService
 
                 return $semester >= $finalSemesterStart;
             }
+        }
+
+        // Named class/batch that is clearly not final-year must not be kept
+        // just because year/semester fields were empty or unparsed.
+        if ($classBatch !== '') {
+            return false;
         }
 
         return true;
