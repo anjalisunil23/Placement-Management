@@ -685,6 +685,75 @@ final class OfficerDataService
     }
 
     /**
+     * Local PlaceHub rows for the staff member's assigned cohorts, without the
+     * final-year-only restriction. This keeps the Students page aligned with the
+     * real class roster even when a few classmates still carry an older semester
+     * label like S8 inside the same 2022-27 cohort.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    private function listLocalStaffClassRosterRows(array $ctx): array
+    {
+        $staffBatches = StaffContext::assignedClassBatches($ctx);
+        if ($staffBatches === []) {
+            return [];
+        }
+
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
+
+        $departments = [];
+        foreach ($deptModel->findAll([], 400) as $d) {
+            $departments[(string) ($d['_id'] ?? '')] = $d;
+        }
+
+        $rows = [];
+        foreach ($studentModel->findAll(PlacementOfficerContext::studentCollectionFilter($ctx), 10000) as $student) {
+            if (!StaffContext::classBatchMatchesAssigned(
+                StaffContext::studentClassBatch($student),
+                $staffBatches
+            )) {
+                continue;
+            }
+
+            $userId = (string) ($student['userId'] ?? '');
+            $user = $userId !== '' ? $userModel->findById($userId) : null;
+            if (is_array($user)) {
+                $role = (string) ($user['role'] ?? '');
+                if ($role !== '' && $role !== 'student') {
+                    continue;
+                }
+                if (($user['status'] ?? '') === 'blocked') {
+                    continue;
+                }
+            }
+
+            $deptId = (string) ($student['departmentId'] ?? '');
+            $dept = $departments[$deptId] ?? null;
+            $row = DocumentHelper::serialize($student) ?? [];
+            $row = $this->enrichStudentListRow($row, $student, $user, false);
+            $admno = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? $student['registerNumber'] ?? '')));
+            if ($admno !== '') {
+                $row['admno'] = $admno;
+                $row['registerNumber'] = $admno;
+            }
+            $row['department'] = $dept ? [
+                'id'   => (string) $dept['_id'],
+                'name' => $dept['name'] ?? '',
+                'code' => $dept['code'] ?? '',
+            ] : ($row['department'] ?? null);
+            if (!$this->isPlacementStudentListCandidate($student, $user, $row, false)) {
+                continue;
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
      * Pick the dominant semester batch for a cohort (highest S, tie-break by headcount).
      *
      * @param array<string, mixed> $ctx
@@ -822,7 +891,10 @@ final class OfficerDataService
             $byAdmno[$key] = $row;
         }
 
-        foreach ($this->listFinalYearFromStudentTable($ctx) as $row) {
+        $localRows = !empty($ctx['staffScope'])
+            ? $this->listLocalStaffClassRosterRows($ctx)
+            : $this->listFinalYearFromStudentTable($ctx);
+        foreach ($localRows as $row) {
             $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
             if ($key === '') {
                 continue;
