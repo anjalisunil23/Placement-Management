@@ -197,9 +197,55 @@ final class PlacementFilterService
         $hint = trim($program . ' ' . $branch);
         $classifier = new OfficerDataService();
 
-        return array_values(array_filter(
+        $batches = array_values(array_filter(
             $batches,
             static fn (string $batch): bool => $classifier->isFinalYearClassBatch($batch, $hint)
+        ));
+
+        return $this->preferSpecificFinalYearBatches($batches);
+    }
+
+    /**
+     * When both a plain year-range batch and a semester-specific final-year batch exist,
+     * keep only the more specific semester-labelled option in the filter.
+     *
+     * @param list<string> $batches
+     * @return list<string>
+     */
+    private function preferSpecificFinalYearBatches(array $batches): array
+    {
+        $normalizedBases = [];
+        foreach ($batches as $batch) {
+            $raw = trim((string) $batch);
+            if ($raw === '') {
+                continue;
+            }
+            if (preg_match('/(?:^|[^A-Z0-9])S(?:10|[1-9])(?:[^A-Z0-9]|$)/i', $raw) === 1) {
+                $base = preg_replace('/(?:^|[^A-Z0-9])S(?:10|[1-9])(?:[^A-Z0-9]|$)/i', '', $raw) ?? $raw;
+                $base = strtoupper(preg_replace('/[^A-Z0-9]/', '', $base) ?? '');
+                if ($base !== '') {
+                    $normalizedBases[$base] = true;
+                }
+            }
+        }
+
+        if ($normalizedBases === []) {
+            return $batches;
+        }
+
+        return array_values(array_filter(
+            $batches,
+            static function (string $batch) use ($normalizedBases): bool {
+                $raw = trim($batch);
+                if ($raw === '') {
+                    return false;
+                }
+                if (preg_match('/(?:^|[^A-Z0-9])S(?:10|[1-9])(?:[^A-Z0-9]|$)/i', $raw) === 1) {
+                    return true;
+                }
+                $normalized = strtoupper(preg_replace('/[^A-Z0-9]/', '', $raw) ?? '');
+                return !isset($normalizedBases[$normalized]);
+            }
         ));
     }
 
