@@ -765,8 +765,12 @@ final class AesApiService
             $record['programme'] = $branchInfo['branch'];
             $record['department'] = $branchInfo['branch'];
             $record['department_code'] = $branchInfo['branch'];
-            $record['departmentName'] = $branchInfo['branch'];
-            $record['deptName'] = $branchInfo['branch'];
+            $branchLabel = DepartmentProgrammeCatalog::programmeLabel($branchInfo['branch']);
+            $readableName = $branchLabel !== ''
+                ? $branchLabel
+                : ($branchInfo['parentName'] !== '' ? $branchInfo['parentName'] : $branchInfo['branch']);
+            $record['departmentName'] = $readableName;
+            $record['deptName'] = $readableName;
             $record['deptCode'] = $branchInfo['branch'];
         } elseif ($branchInfo['parentCode'] !== '' && $branchInfo['parentName'] !== '') {
             $record['department'] = $branchInfo['parentCode'];
@@ -1099,8 +1103,19 @@ final class AesApiService
             $record['programme'] = $branch;
             $record['deptCode'] = $branch;
             $record['department'] = $branch;
-            $record['departmentName'] = $branch;
-            $record['deptName'] = $branch;
+            $branchLabel = DepartmentProgrammeCatalog::programmeLabel($branch);
+            $legacyName = trim((string) (
+                $record['parentDepartmentName']
+                ?? $record['dept_name']
+                ?? $record['department_name']
+                ?? $record['branch_name']
+                ?? ''
+            ));
+            $readableName = $branchLabel !== ''
+                ? $branchLabel
+                : ($legacyName !== '' && strcasecmp($legacyName, $branch) !== 0 ? $legacyName : $branch);
+            $record['departmentName'] = $readableName;
+            $record['deptName'] = $readableName;
         } elseif ($parentCode !== '') {
             $record['deptCode'] = $parentCode;
             $record['department'] = $parentCode;

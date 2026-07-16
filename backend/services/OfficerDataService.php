@@ -1247,9 +1247,24 @@ final class OfficerDataService
         $displayDeptCode = $programme !== ''
             ? strtoupper($programme)
             : ($deptCode !== '' ? $deptCode : $recordDeptCode);
-        $displayDeptName = $programme !== ''
-            ? $programme
-            : ($deptName !== '' ? $deptName : $displayDeptCode);
+        $recordDeptName = trim((string) (
+            $record['parentDepartmentName']
+            ?? $record['dept_name']
+            ?? $record['department_name']
+            ?? $record['branch_name']
+            ?? ''
+        ));
+        // Prefer readable catalogue label over bare programme codes like "BT".
+        $programmeLabel = $displayDeptCode !== ''
+            ? DepartmentProgrammeCatalog::programmeLabel($displayDeptCode)
+            : '';
+        $displayDeptName = $programmeLabel !== ''
+            ? $programmeLabel
+            : ($deptName !== '' && strcasecmp($deptName, $displayDeptCode) !== 0
+                ? $deptName
+                : ($recordDeptName !== '' && strcasecmp($recordDeptName, $displayDeptCode) !== 0
+                    ? $recordDeptName
+                    : ($deptName !== '' ? $deptName : $displayDeptCode)));
         $row['departmentCode'] = $displayDeptCode;
         $row['departmentName'] = $displayDeptName;
         $row['department'] = [

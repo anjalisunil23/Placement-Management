@@ -598,7 +598,7 @@
 <script src="js/staff-api.js?v=20260714e"></script>
 <script src="js/admin-api.js?v=20260714e"></script>
 <script src="js/officer-api.js?v=20260714e"></script>
-<script src="js/api.js?v=20260714e"></script>
+<script src="js/api.js?v=20260716dept"></script>
 <script src="js/app.js?v=20260715jobfeed"></script>
 <script>
 const role = Auth.role();
@@ -899,7 +899,7 @@ function studentRow(s) {
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div class="min-w-0">
         <div class="fw-semibold student-list-name">${esc(title)}</div>
-        <div class="small text-muted-2">${esc(s.registerNumber || s.admno)} · ${esc(s.department || '—')}${s.classBatch ? ` · ${esc(s.classBatch)}` : ''}</div>
+        <div class="small text-muted-2">${esc(s.registerNumber || s.admno)} · ${esc(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—'))}${s.classBatch ? ` · ${esc(s.classBatch)}` : ''}</div>
       </div>
       ${statusBadge}
     </div>
@@ -1284,7 +1284,7 @@ function renderStudentProfilePanel(s) {
     if (el) el.textContent = val;
   };
   set('spRegNo', formatProfileValue(s.registerNumber));
-  const deptLabel = s.departmentName || s.department || '';
+  const deptLabel = typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '');
   set('spDept', formatProfileValue(deptLabel));
   set('spBatch', formatProfileValue(s.classBatch));
   setProfileEmailField('spCollegeEmail', s.collegeEmail || (/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
@@ -1579,7 +1579,7 @@ function updateOverviewHeader(s) {
   setOverviewAvatar(s);
   const nameEl = document.getElementById('stuName');
   if (nameEl) nameEl.textContent = overviewStudentName(s) || s.name || s.registerNumber || 'Student';
-  const dept = s.departmentName || s.department || '—';
+  const dept = typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—');
   const metaEl = document.getElementById('stuMeta');
   if (metaEl) metaEl.textContent = `${s.registerNumber || '—'} · ${dept}${s.classBatch ? ' · ' + s.classBatch : ''} · CGPA ${s.cgpa ?? '—'}${s.email ? ' · ' + s.email : ''}`;
   const statusEl = document.getElementById('stuStatus');
@@ -1724,7 +1724,7 @@ function filteredFinalYearStudents(kind) {
 function finalYearRowHtml(s) {
   const name = esc(s.displayName || s.name || '—');
   const admno = esc(s.registerNumber || s.admno || '—');
-  const dept = esc(s.departmentName || s.department || '—');
+  const dept = esc(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—'));
   const batch = esc(s.classBatch || '—');
   const newBadge = (s.isNew || s.aesOnly) ? ' <span class="badge-soft info">New</span>' : '';
   const regAttr = esc(s.registerNumber || s.admno || '');
@@ -1831,7 +1831,7 @@ function fillFinalYearProfileFields(s) {
     if (el) el.textContent = val;
   };
   const name = overviewStudentName(s) || s.name || s.displayName || s.registerNumber || 'Student';
-  const dept = s.departmentName || s.department || '—';
+  const dept = typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—');
   document.getElementById('fyProfileName').textContent = name;
   document.getElementById('fyProfileMeta').textContent = `${s.registerNumber || s.admno || '—'} · ${dept}${s.classBatch ? ' · ' + s.classBatch : ''}`;
   setFinalYearProfileAvatar(s);
@@ -2038,19 +2038,19 @@ function renderRegistrations() {
   document.getElementById('tabPending').innerHTML = `Awaiting Approval <span class="badge-soft warning ms-1">${pending.length}</span>`;
 
   document.getElementById('pendingRows').innerHTML = pending.length ? pending.map(s => `
-    <tr><td><strong>${s.name}</strong><div class="small text-muted-2">${s.email}</div></td><td>${s.registerNumber}</td><td>${s.department}</td>
+    <tr><td><strong>${s.name}</strong><div class="small text-muted-2">${s.email}</div></td><td>${s.registerNumber}</td><td>${typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department)}</td>
     <td>${s.marks10th ?? '—'}${s.marks10th ? '%' : ''}</td><td>${s.marks12th ?? s.ugMarks ?? '—'}${(s.marks12th ?? s.ugMarks) ? '%' : ''}</td><td>${s.cgpa}</td>
     <td><span class="badge-soft ${s.resumeStatus==='approved'?'success':'warning'}">${s.resumeStatus}</span></td>
     <td>${s.chancesUsed}/${s.chancesMax}</td><td>${userStatusBadge(s.status, s.blocked)}</td><td>${rowActions(s)}</td></tr>`).join('')
     : '<tr><td colspan="10" class="text-muted-2 p-4">No students waiting for portal access approval.</td></tr>';
 
   document.getElementById('approvedRows').innerHTML = approved.length ? approved.map(s => `
-    <tr><td><strong>${s.name}</strong></td><td>${s.registerNumber}</td><td>${s.department}</td><td>${s.cgpa}</td>
+    <tr><td><strong>${s.name}</strong></td><td>${s.registerNumber}</td><td>${typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department)}</td><td>${s.cgpa}</td>
     <td>${s.placementStatus || '—'}</td><td>${s.resumeStatus}</td><td>${s.chancesUsed}/${s.chancesMax}</td></tr>`).join('')
     : '<tr><td colspan="7" class="text-muted-2 p-4">No active portal accounts yet.</td></tr>';
 
   document.getElementById('allRows').innerHTML = regStudents.length ? regStudents.map(s => `
-    <tr><td><strong>${s.name}</strong></td><td>${s.registerNumber}</td><td>${s.department}</td><td>${s.cgpa}</td>
+    <tr><td><strong>${s.name}</strong></td><td>${s.registerNumber}</td><td>${typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department)}</td><td>${s.cgpa}</td>
     <td class="small">${s.certifications || '—'}</td><td>${userStatusBadge(s.status, s.blacklisted?'blocked':s.blocked)}</td><td>${rowActions(s)}</td></tr>`).join('')
     : '<tr><td colspan="7" class="text-muted-2 p-4">No portal registrations found.</td></tr>';
 }
@@ -2321,7 +2321,7 @@ function renderNonApplicantRows(list) {
     return `<tr>
       <td><strong>${esc(s.name || '—')}</strong>${s.placed ? ' <span class="badge-soft info">Placed</span>' : ''}</td>
       <td>${esc(s.registerNumber || '—')}</td>
-      <td>${esc(s.department || '—')}</td>
+      <td>${esc(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—'))}</td>
       <td>${cgpaLabel}</td>
       <td>${resume}</td>
       <td>${Number(s.chancesRemaining) || 0}</td>

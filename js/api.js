@@ -2665,6 +2665,12 @@ const DEPARTMENT_PROGRAMME_GROUPS = [
     ],
   },
   {
+    parent: 'Biotechnology',
+    programmes: [
+      { code: 'BT', label: 'BT — Biotechnology', aliases: ['BIOTECH', 'BIOTECHNOLOGY'] },
+    ],
+  },
+  {
     parent: 'Metallurgical & Materials',
     programmes: [
       { code: 'MG', label: 'MG — Metallurgical & Materials Engineering', aliases: ['MT', 'MET', 'MME'] },
@@ -2701,6 +2707,40 @@ function resolveCollegeProgrammeCode(code) {
     }
   }
   return needle;
+}
+
+/** Human-readable programme label (e.g. "BT — Biotechnology"). */
+function resolveCollegeProgrammeLabel(code) {
+  const needle = normalizeProgrammeCode(resolveCollegeProgrammeCode(code) || code);
+  if (!needle) return '';
+  for (const group of DEPARTMENT_PROGRAMME_GROUPS) {
+    for (const programme of group.programmes) {
+      if (programmeAliasSet(programme).has(needle)) {
+        return String(programme.label || programme.code || '').trim();
+      }
+    }
+  }
+  return '';
+}
+
+/** Prefer full department / programme name over short codes like "BT". */
+function studentDepartmentLabel(s) {
+  if (!s || typeof s !== 'object') return '—';
+  const code = String(s.departmentCode || s.department || '').trim();
+  const name = String(s.departmentName || '').trim();
+  const fromCatalog = resolveCollegeProgrammeLabel(code) || resolveCollegeProgrammeLabel(name);
+  if (fromCatalog) return fromCatalog;
+  if (name && !/^\d+$/.test(name) && name.toUpperCase() !== code.toUpperCase()) return name;
+  if (typeof resolveDepartmentRecord === 'function') {
+    const rec = resolveDepartmentRecord(code || name);
+    const rn = String(rec?.name || '').trim();
+    const rc = String(rec?.code || code || '').trim();
+    if (rn && rn.toUpperCase() !== rc.toUpperCase()) {
+      return rc ? `${rn} (${rc})` : rn;
+    }
+    if (rn) return rn;
+  }
+  return name || code || '—';
 }
 
 /** Normalize drive branch codes (array, CSV, or pipe-list) for student/officer UI. */

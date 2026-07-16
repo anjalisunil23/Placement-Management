@@ -82,6 +82,12 @@ final class DepartmentProgrammeCatalog
                 ],
             ],
             [
+                'parent' => 'Biotechnology',
+                'programmes' => [
+                    ['code' => 'BT', 'label' => 'BT — Biotechnology', 'aliases' => ['BIOTECH', 'BIOTECHNOLOGY']],
+                ],
+            ],
+            [
                 'parent' => 'Metallurgical & Materials',
                 'programmes' => [
                     ['code' => 'MG', 'label' => 'MG — Metallurgical & Materials Engineering', 'aliases' => ['MT', 'MET', 'MME']],
@@ -146,6 +152,27 @@ final class DepartmentProgrammeCatalog
         }
 
         return $needle;
+    }
+
+    /** Human-readable programme label (e.g. "BT — Biotechnology"). */
+    public static function programmeLabel(string $codeOrAlias): string
+    {
+        $needle = self::resolveProgrammeCode($codeOrAlias);
+        if ($needle === '') {
+            return '';
+        }
+
+        foreach (self::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                if (self::normalizeCode($programme['code']) === $needle) {
+                    $label = trim((string) ($programme['label'] ?? ''));
+
+                    return $label !== '' ? $label : (string) $programme['code'];
+                }
+            }
+        }
+
+        return '';
     }
 
     /**
