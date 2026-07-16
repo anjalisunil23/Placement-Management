@@ -192,13 +192,11 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body" style="max-height:min(70vh,640px);overflow-y:auto">
-          <p class="small text-muted-2 mb-3">Fill in the details to publish a new opportunity.</p>
           <h6 class="fw-bold mb-3">Basic information</h6>
           <div class="row g-3 mb-4">
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Company</label>
               <select class="form-select" name="companyId" id="createDriveCompany" required><option value="">Select company…</option></select>
-              <div class="form-text" id="createDriveCompanyHint">Choose a company from Admin → Companies &amp; Referrals. Same company + role + date will not create a duplicate drive.</div>
             </div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Job role</label><input class="form-control" name="role" placeholder="e.g. SDE-1" required/></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Drive type</label><select class="form-select" name="driveType" required><option>Exclusive</option><option selected>Pooled</option><option>Company Direct</option></select></div>
@@ -212,7 +210,7 @@
           <div class="row g-3 border rounded p-3 mb-2 bg-light">
             <div class="col-12">
               <label class="form-label small fw-semibold">Eligible departments</label>
-              <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Department scope">
+              <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Department scope" id="createDriveDeptScopeGroup">
                 <input type="radio" class="btn-check" name="driveDeptScope" id="driveDeptScopeMine" value="mine" checked>
                 <label class="btn btn-outline-secondary" for="driveDeptScopeMine">My department only</label>
                 <input type="radio" class="btn-check" name="driveDeptScope" id="driveDeptScopeMulti" value="multi">
@@ -221,7 +219,6 @@
               <div id="createDriveDeptMineSummary" class="small border rounded p-2 bg-white mb-0">My department</div>
               <div id="createDriveDeptMultiWrap" class="d-none">
                 <div class="border rounded p-2 bg-white" id="createDriveDepartments" style="max-height:14rem;overflow:auto"></div>
-                <div class="form-text">Tick departments to include. Use Select all for every department.</div>
               </div>
               <div class="form-text mt-1" id="createDriveBranchesHint"></div>
               <select class="d-none" id="createDriveBranches" multiple aria-hidden="true"></select>
@@ -1457,15 +1454,31 @@ window.openCreateDrive = async () => {
   await ensureDepartmentsLoaded().catch(() => {});
   const mineRadio = document.getElementById('driveDeptScopeMine');
   const multiRadio = document.getElementById('driveDeptScopeMulti');
+  const scopeGroup = document.getElementById('createDriveDeptScopeGroup');
   const parent = officerMyDepartmentParent();
-  if (role === 'placement_officer' && parent && mineRadio) {
-    mineRadio.checked = true;
-  } else if (multiRadio) {
-    multiRadio.checked = true;
+  const isAdmin = role === 'admin';
+  const allParents = (typeof apiEligibleDepartmentGroups === 'function'
+    ? apiEligibleDepartmentGroups()
+    : []
+  ).map(g => g.parent).filter(Boolean);
+
+  if (isAdmin) {
+    scopeGroup?.classList.add('d-none');
+    if (multiRadio) multiRadio.checked = true;
+    fillEligibleDepartmentsMultiSelect(document.getElementById('createDriveDepartments'), {
+      selectedParents: allParents,
+    });
+  } else {
+    scopeGroup?.classList.remove('d-none');
+    if (role === 'placement_officer' && parent && mineRadio) {
+      mineRadio.checked = true;
+    } else if (multiRadio) {
+      multiRadio.checked = true;
+    }
+    fillEligibleDepartmentsMultiSelect(document.getElementById('createDriveDepartments'), {
+      selectedParents: parent ? [parent] : [],
+    });
   }
-  fillEligibleDepartmentsMultiSelect(document.getElementById('createDriveDepartments'), {
-    selectedParents: parent ? [parent] : [],
-  });
   applyCreateDriveDeptScope();
   await populateCreateDriveCompanies();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('createModal')).show();
