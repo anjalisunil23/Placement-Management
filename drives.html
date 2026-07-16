@@ -446,40 +446,6 @@
           </ul>
           <p class="small text-muted-2 mb-2" id="driveShortlistHint">Applied applicants for this company drive.</p>
 
-          <div class="border rounded p-3 mb-3 bg-light d-none" id="driveShortlistRoundsPanel">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <div>
-                <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
-                <div class="small text-muted-2">Company placement process for shortlisted students (Interview, GD, Coding, …).</div>
-              </div>
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddDriveShortlistRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
-                <button type="button" class="btn btn-sm btn-primary" id="btnSaveDriveShortlistRounds"><i class="bi bi-check2 me-1"></i>Save rounds</button>
-              </div>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small fw-semibold">Round result flow</label>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <input type="radio" class="btn-check" name="shortlistRoundProgression" id="shortlistRoundProgSeq" value="sequential">
-                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="shortlistRoundProgSeq">
-                    <div class="fw-semibold">Type 1 · Sequential</div>
-                    <div class="small text-muted-2 mt-1">Only Select advances to the next round.</div>
-                  </label>
-                </div>
-                <div class="col-md-6">
-                  <input type="radio" class="btn-check" name="shortlistRoundProgression" id="shortlistRoundProgPar" value="parallel">
-                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="shortlistRoundProgPar">
-                    <div class="fw-semibold">Type 2 · All rounds</div>
-                    <div class="small text-muted-2 mt-1">Mark outcomes on every round independently.</div>
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div id="driveShortlistRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
-            <div id="driveShortlistRounds" class="d-flex flex-column gap-2"></div>
-          </div>
-
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3" id="driveShortlistSelectBar">
             <div class="small text-muted-2" id="driveShortlistSelectHint">Tick applied students and shortlist them for this company drive.</div>
             <button type="button" class="btn btn-sm btn-primary" id="btnShortlistSelected" disabled>
@@ -499,75 +465,10 @@
         </div>
 
         <div id="driveResultsPanel" class="d-none">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <div>
-              <p class="small text-muted-2 mb-0" id="driveResultsHint">Company placement rounds for shortlisted candidates. Mark each round as Select, Reject, or Waiting.</p>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddDriveResult"><i class="bi bi-plus-lg me-1"></i>Add package result</button>
-          </div>
+          <p class="small text-muted-2 mb-3" id="driveResultsHint">Company placement rounds for shortlisted candidates. Mark each round as Select, Reject, or Waiting.</p>
           <div id="driveRoundsResults"></div>
-          <div class="table-wrap mt-4 d-none" id="driveFinalResultsWrap">
-            <h6 class="fw-bold mb-2">Final package / joining records</h6>
-            <table class="table-modern">
-              <thead><tr>
-                <th>Student</th><th>Register No</th><th>Package</th><th>Status</th><th>Joining</th><th id="driveResultActionsHead">Actions</th>
-              </tr></thead>
-              <tbody id="driveResultRows"></tbody>
-            </table>
-          </div>
         </div>
       </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="addDriveResultModal" tabindex="-1" aria-labelledby="addDriveResultTitle" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <form id="driveResultForm">
-        <div class="modal-header">
-          <h5 class="modal-title fw-bold" id="addDriveResultTitle">Add recruitment result</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <p class="small text-muted-2 mb-3" id="addDriveResultSub"></p>
-          <input type="hidden" id="driveResultId"/>
-          <input type="hidden" id="driveResultDriveId"/>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Pick from applicants</label>
-            <select class="form-select" id="driveResultApplicantPick">
-              <option value="">— Enter manually —</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Student name</label>
-            <input class="form-control" id="driveResultStudentName" required placeholder="e.g. Rahul Verma"/>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Register number</label>
-            <input class="form-control" id="driveResultRegisterNumber" required placeholder="e.g. 21IT012"/>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Package</label>
-            <input class="form-control" id="driveResultPackage" placeholder="e.g. ₹12 LPA"/>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Status</label>
-            <select class="form-select" id="driveResultStatus" required>
-              <option value="selected">Selected / Placed</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-          <div class="mb-0">
-            <label class="form-label small fw-semibold">Joining date</label>
-            <input class="form-control" type="date" id="driveResultJoiningDate"/>
-          </div>
-        </div>
-        <div class="modal-footer border-top">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="driveResultSaveBtn">Save result</button>
-        </div>
-      </form>
     </div>
   </div>
 </div>
@@ -617,7 +518,6 @@ let allDrives = [];
 let editingDrive = null;
 let createDriveRoundRows = [];
 let editDriveRoundRows = [];
-let shortlistDriveRoundRows = [];
 
 const DRIVE_ROUND_TYPES = [
   { value: 'interview', label: 'Interview' },
@@ -657,7 +557,6 @@ function roundTypeOptionsHtml(selected = '') {
 function roundsFlowPreviewId(containerId) {
   if (containerId === 'createDriveRounds') return 'createDriveRoundsFlow';
   if (containerId === 'editDriveRounds') return 'editDriveRoundsFlow';
-  if (containerId === 'driveShortlistRounds') return 'driveShortlistRoundsFlow';
   return '';
 }
 
@@ -730,14 +629,12 @@ function syncDriveRoundsState(containerId, stateRefName) {
   }));
   if (stateRefName === 'create') createDriveRoundRows = rows;
   if (stateRefName === 'edit') editDriveRoundRows = rows;
-  if (stateRefName === 'shortlist') shortlistDriveRoundRows = rows;
 }
 
 function addDriveRoundRow(stateRefName) {
   const map = {
     create: { rows: () => createDriveRoundRows, set: (v) => { createDriveRoundRows = v; }, id: 'createDriveRounds' },
     edit: { rows: () => editDriveRoundRows, set: (v) => { editDriveRoundRows = v; }, id: 'editDriveRounds' },
-    shortlist: { rows: () => shortlistDriveRoundRows, set: (v) => { shortlistDriveRoundRows = v; }, id: 'driveShortlistRounds' },
   };
   const cfg = map[stateRefName];
   if (!cfg) return;
@@ -756,7 +653,6 @@ function removeDriveRoundRow(stateRefName, index) {
   const map = {
     create: { rows: () => createDriveRoundRows, set: (v) => { createDriveRoundRows = v; }, id: 'createDriveRounds' },
     edit: { rows: () => editDriveRoundRows, set: (v) => { editDriveRoundRows = v; }, id: 'editDriveRounds' },
-    shortlist: { rows: () => shortlistDriveRoundRows, set: (v) => { shortlistDriveRoundRows = v; }, id: 'driveShortlistRounds' },
   };
   const cfg = map[stateRefName];
   if (!cfg) return;
@@ -1348,12 +1244,10 @@ function renderRows() {
 
 let driveApplicants = [];
 let driveApplicantsTab = 'applied';
-let driveResults = [];
 let driveDetailMainTab = 'applicants';
 let driveResultsRoundTab = null;
 let activeDriveId = null;
 let activeDrive = null;
-let editingDriveResultId = null;
 
 function driveApplicantStatusBadge(status) {
   const map = {
@@ -1534,23 +1428,13 @@ function updateDriveApplicantTabCounts() {
   if (hint) {
     hint.textContent = ({
       applied: 'Only students who applied to this company drive.',
-      shortlisted: 'Shortlisted / selected through rounds. Configure company selection rounds below.',
+      shortlisted: 'Students shortlisted for this company drive.',
       pending: 'Waiting on a round, or awaiting resume / officer / company review.',
       rejected: 'Rejected at a company round or overall for this drive.',
     })[driveApplicantsTab] || '';
   }
-  const roundsPanel = document.getElementById('driveShortlistRoundsPanel');
-  if (roundsPanel) {
-    const showRounds = canManage && driveApplicantsTab === 'shortlisted';
-    roundsPanel.classList.toggle('d-none', !showRounds);
-    if (showRounds) {
-      const drive = allDrives.find(d => String(d.id) === String(activeDriveId)) || DriveStore.get?.(activeDriveId) || null;
-      shortlistDriveRoundRows = normalizeDriveRounds(drive?.selectionRounds);
-      setRoundProgression('shortlistRoundProgression', drive?.roundProgression || 'parallel');
-      renderDriveRoundsEditor('driveShortlistRounds', shortlistDriveRoundRows);
-    }
-  }
   updateDriveShortlistSelectUi();
+  updateRecruitmentResultsTabCount();
 }
 
 function renderDriveApplicantRows() {
@@ -1592,12 +1476,6 @@ function renderDriveApplicantRows() {
   updateDriveShortlistSelectUi();
 }
 
-function driveResultStatusBadge(status) {
-  const map = { selected: ['success', 'Selected'], rejected: ['danger', 'Rejected'] };
-  const [cls, label] = map[status] || ['muted', status || '—'];
-  return `<span class="badge-soft ${cls}">${label}</span>`;
-}
-
 function showDriveDetailPanel(panel) {
   driveDetailMainTab = panel;
   document.querySelectorAll('#driveDetailMainTabs .nav-link').forEach(btn => {
@@ -1607,8 +1485,7 @@ function showDriveDetailPanel(panel) {
   document.getElementById('driveResultsPanel').classList.toggle('d-none', panel !== 'results');
   if (panel === 'results') {
     renderDriveRoundsResults();
-    renderDriveResultRows();
-    document.getElementById('driveFinalResultsWrap')?.classList.remove('d-none');
+    updateRecruitmentResultsTabCount();
   }
 }
 
@@ -1783,110 +1660,17 @@ window.setDriveRoundOutcome = async (appId, order, type, status) => {
   updateDriveApplicantTabCounts();
   renderDriveApplicantRows();
   renderDriveRoundsResults();
+  updateRecruitmentResultsTabCount();
 };
 
-function renderDriveResultRows() {
-  const tbody = document.getElementById('driveResultRows');
-  const isAdmin = role === 'admin';
-  document.getElementById('driveResultActionsHead').classList.toggle('d-none', !isAdmin);
-  if (!driveResults.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">No recruitment results recorded for this drive yet.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = driveResults.map(r => `<tr>
-    <td class="fw-semibold small">${r.studentName || '—'}</td>
-    <td>${r.registerNumber || '—'}</td>
-    <td>${r.package || '—'}</td>
-    <td>${driveResultStatusBadge(r.status)}</td>
-    <td>${r.joiningDate ? new Date(r.joiningDate).toLocaleDateString() : '—'}</td>
-    <td${isAdmin ? '' : ' class="d-none"'}><div class="d-flex gap-1">
-      <button type="button" class="btn btn-sm btn-outline-primary btn-icon" title="Edit" onclick="editDriveResult('${r.id}')"><i class="bi bi-pencil"></i></button>
-      <button type="button" class="btn btn-sm btn-outline-danger btn-icon" title="Delete" onclick="deleteDriveResult('${r.id}')"><i class="bi bi-trash"></i></button>
-    </div></td>
-  </tr>`).join('');
-}
-
-function fillDriveResultApplicantPick() {
-  const sel = document.getElementById('driveResultApplicantPick');
-  const applicants = [
-    ...driveApplicantGroups(driveApplicants).shortlisted,
-    ...driveApplicantGroups(driveApplicants).applied,
-  ];
-  const seen = new Set();
-  const unique = applicants.filter(a => {
-    const key = String(a.registerNumber || a.id || '');
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
+function updateRecruitmentResultsTabCount() {
+  const el = document.getElementById('tabCountResults');
+  if (!el) return;
+  const pool = driveApplicants.filter(a => {
+    const s = String(a.status || '').toLowerCase();
+    return s === 'shortlisted' || s === 'selected' || s === 'rejected';
   });
-  sel.innerHTML = '<option value="">— Enter manually —</option>' + unique.map(a =>
-    `<option value="${a.registerNumber}">${a.studentName || a.registerNumber} (${a.registerNumber})</option>`
-  ).join('');
-}
-
-function resetDriveResultForm() {
-  editingDriveResultId = null;
-  document.getElementById('driveResultId').value = '';
-  document.getElementById('driveResultForm').reset();
-  document.getElementById('addDriveResultTitle').textContent = 'Add recruitment result';
-  document.getElementById('driveResultSaveBtn').textContent = 'Save result';
-  if (activeDrive) {
-    document.getElementById('driveResultPackage').value = activeDrive.package || '';
-    document.getElementById('addDriveResultSub').textContent = `${activeDrive.company} · ${activeDrive.role}`;
-  }
-}
-
-window.openAddDriveResult = () => {
-  if (!canManage || !activeDrive) return;
-  resetDriveResultForm();
-  document.getElementById('driveResultDriveId').value = activeDriveId;
-  fillDriveResultApplicantPick();
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('addDriveResultModal')).show();
-};
-
-window.editDriveResult = id => {
-  const r = driveResults.find(x => x.id === id);
-  if (!r) return;
-  editingDriveResultId = id;
-  fillDriveResultApplicantPick();
-  document.getElementById('driveResultId').value = id;
-  document.getElementById('driveResultDriveId').value = activeDriveId;
-  document.getElementById('driveResultStudentName').value = r.studentName || '';
-  document.getElementById('driveResultRegisterNumber').value = r.registerNumber || '';
-  document.getElementById('driveResultPackage').value = r.package || '';
-  document.getElementById('driveResultStatus').value = r.status || 'selected';
-  document.getElementById('driveResultJoiningDate').value = r.joiningDate || '';
-  document.getElementById('addDriveResultTitle').textContent = 'Update recruitment result';
-  document.getElementById('driveResultSaveBtn').textContent = 'Update result';
-  document.getElementById('addDriveResultSub').textContent = `${activeDrive?.company || ''} · ${activeDrive?.role || ''}`;
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('addDriveResultModal')).show();
-};
-
-window.deleteDriveResult = async id => {
-  const r = driveResults.find(x => x.id === id);
-  if (!r) return;
-  if (!(await confirmAction({
-    title: 'Delete result',
-    message: `Delete result for ${r.studentName}?`,
-    confirmText: 'Delete',
-    variant: 'danger',
-  }))) return;
-  RecruitmentResults.remove(id).then(ok => {
-    if (!ok) { toast('Could not delete result.', 'warn'); return; }
-    toast('Result removed.', 'success');
-    loadDriveResults(activeDriveId);
-  });
-};
-
-async function loadDriveResults(driveId) {
-  const meta = driveResultMeta(activeDrive);
-  try {
-    driveResults = await RecruitmentResults.fetchByDrive(driveId, meta);
-  } catch {
-    driveResults = [];
-  }
-  document.getElementById('tabCountResults').textContent = driveResults.length;
-  renderDriveResultRows();
+  el.textContent = pool.length;
 }
 
 window.openDriveApplicants = async driveId => {
@@ -1909,7 +1693,6 @@ window.openDriveApplicants = async driveId => {
   document.getElementById('driveApplicantsTitle').textContent = `${d.company} · ${d.role}`;
   document.getElementById('driveApplicantsSub').textContent = `${d.package || '—'} · ${d.status || '—'} · Deadline ${d.deadline || '—'}`;
   document.getElementById('driveApplicantRows').innerHTML = '<tr><td colspan="7" class="text-muted-2 p-4 text-center">Loading applicants…</td></tr>';
-  document.getElementById('driveResultRows').innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading results…</td></tr>';
   const selectAll = document.getElementById('driveApplicantSelectAll');
   if (selectAll) {
     selectAll.checked = false;
@@ -1924,7 +1707,7 @@ window.openDriveApplicants = async driveId => {
   }
   updateDriveApplicantTabCounts();
   renderDriveApplicantRows();
-  await loadDriveResults(driveId);
+  updateRecruitmentResultsTabCount();
 };
 
 async function shortlistSelectedApplicants() {
@@ -2535,7 +2318,6 @@ document.getElementById('btnShortlistSelected')?.addEventListener('click', () =>
 
 document.getElementById('btnAddCreateDriveRound')?.addEventListener('click', () => addDriveRoundRow('create'));
 document.getElementById('btnAddEditDriveRound')?.addEventListener('click', () => addDriveRoundRow('edit'));
-document.getElementById('btnAddDriveShortlistRound')?.addEventListener('click', () => addDriveRoundRow('shortlist'));
 
 document.getElementById('createDriveRounds')?.addEventListener('click', e => {
   const btn = e.target.closest('.drive-round-remove');
@@ -2555,47 +2337,6 @@ document.getElementById('editDriveRounds')?.addEventListener('change', e => {
   if (!e.target.classList.contains('drive-round-type')) return;
   updateDriveRoundsFlowPreview('editDriveRounds');
 });
-document.getElementById('driveShortlistRounds')?.addEventListener('click', e => {
-  const btn = e.target.closest('.drive-round-remove');
-  if (!btn) return;
-  removeDriveRoundRow('shortlist', Number(btn.dataset.roundIndex || -1));
-});
-document.getElementById('driveShortlistRounds')?.addEventListener('change', e => {
-  if (!e.target.classList.contains('drive-round-type')) return;
-  updateDriveRoundsFlowPreview('driveShortlistRounds');
-});
-
-document.getElementById('btnSaveDriveShortlistRounds')?.addEventListener('click', async () => {
-  if (!canManage || !activeDriveId) return;
-  const selectionRounds = readDriveRoundsFromEditor('driveShortlistRounds');
-  if (!selectionRounds.length) {
-    toast('Select at least one round type (Interview, GD, Coding, …).', 'warn');
-    return;
-  }
-  const roundProgression = readRoundProgression('shortlistRoundProgression');
-  const existing = allDrives.find(d => String(d.id) === String(activeDriveId)) || DriveStore.get(activeDriveId) || activeDrive;
-  const result = await DriveStore.update(activeDriveId, { selectionRounds, roundProgression }, existing);
-  if (!result) return;
-  if (existing) {
-    existing.selectionRounds = selectionRounds;
-    existing.roundProgression = roundProgression;
-  }
-  if (activeDrive) {
-    activeDrive.selectionRounds = selectionRounds;
-    activeDrive.roundProgression = roundProgression;
-  }
-  shortlistDriveRoundRows = normalizeDriveRounds(selectionRounds);
-  renderDriveRoundsEditor('driveShortlistRounds', shortlistDriveRoundRows);
-  toast('Company shortlist rounds saved.', 'success');
-  await loadDrives();
-  const refreshed = allDrives.find(d => String(d.id) === String(activeDriveId));
-  if (refreshed) activeDrive = { ...refreshed, selectionRounds, roundProgression };
-  else if (activeDrive) {
-    activeDrive.selectionRounds = selectionRounds;
-    activeDrive.roundProgression = roundProgression;
-  }
-  if (driveDetailMainTab === 'results') renderDriveRoundsResults();
-});
 
 document.getElementById('driveDetailMainTabs')?.addEventListener('click', e => {
   const btn = e.target.closest('[data-panel]');
@@ -2613,67 +2354,6 @@ document.getElementById('driveRoundsResults')?.addEventListener('click', e => {
   const btn = e.target.closest('.drive-round-outcome-btn');
   if (!btn || btn.disabled) return;
   setDriveRoundOutcome(btn.dataset.appId, btn.dataset.order, btn.dataset.type, btn.dataset.status);
-});
-
-document.getElementById('btnAddDriveResult')?.addEventListener('click', openAddDriveResult);
-
-document.getElementById('driveResultApplicantPick')?.addEventListener('change', e => {
-  const reg = e.target.value;
-  if (!reg) return;
-  const app = driveApplicants.find(a => a.registerNumber === reg);
-  if (!app) return;
-  document.getElementById('driveResultStudentName').value = app.studentName || '';
-  document.getElementById('driveResultRegisterNumber').value = app.registerNumber || '';
-});
-
-document.getElementById('driveResultForm')?.addEventListener('submit', async e => {
-  e.preventDefault();
-  if (!canManage || !activeDrive) return;
-  const meta = driveResultMeta(activeDrive);
-  const payload = {
-    id: editingDriveResultId || undefined,
-    driveId: activeDriveId,
-    studentName: document.getElementById('driveResultStudentName').value.trim(),
-    registerNumber: document.getElementById('driveResultRegisterNumber').value.trim(),
-    company: meta.company,
-    role: meta.role,
-    package: document.getElementById('driveResultPackage').value.trim(),
-    status: document.getElementById('driveResultStatus').value,
-    joiningDate: document.getElementById('driveResultJoiningDate').value,
-  };
-  if (!payload.company || !payload.role) {
-    toast('Drive is missing company or role. Edit the drive and try again.', 'warn');
-    return;
-  }
-  if (!(await confirmAction({
-    title: editingDriveResultId ? 'Update result' : 'Add result',
-    message: `${editingDriveResultId ? 'Update' : 'Add'} recruitment result for ${payload.studentName}?`,
-    confirmText: editingDriveResultId ? 'Update' : 'Add',
-    variant: 'primary',
-  }))) return;
-  const res = await RecruitmentResults.upsert(payload);
-  if (!res) { toast('Could not save result.', 'warn'); return; }
-  bootstrap.Modal.getInstance(document.getElementById('addDriveResultModal'))?.hide();
-  toast(editingDriveResultId ? 'Result updated.' : 'Result added.', 'success');
-  editingDriveResultId = null;
-  const saved = {
-    id: res.id || payload.id || `res-${Date.now()}`,
-    driveId: activeDriveId,
-    studentName: payload.studentName,
-    registerNumber: payload.registerNumber,
-    company: payload.company,
-    role: payload.role,
-    package: payload.package,
-    status: payload.status,
-    joiningDate: payload.joiningDate,
-  };
-  const idx = driveResults.findIndex(r => r.id === saved.id);
-  if (idx >= 0) driveResults[idx] = { ...driveResults[idx], ...saved };
-  else driveResults.unshift(saved);
-  document.getElementById('tabCountResults').textContent = driveResults.length;
-  renderDriveResultRows();
-  showDriveDetailPanel('results');
-  await loadDriveResults(activeDriveId);
 });
 
 onAppReady(async () => {
