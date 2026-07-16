@@ -638,6 +638,123 @@ final class OfficerDataService
     }
 
     /**
+     * Full class roster for staff CT/CoCT assignments — uses listAesClassStudents
+     * (with admno-gap supplementation) so classmates still on an earlier semester
+     * appear alongside the current batch (e.g. INMCA 57 = 55×S9 + 2×S8).
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    private function listStaffClassRosterRows(array $ctx): array
+    {
+        $staffBatches = StaffContext::assignedClassBatches($ctx);
+        if ($staffBatches === []) {
+            return [];
+        }
+
+        $byAdmno = [];
+        foreach ($staffBatches as $cohort) {
+            $cohort = trim((string) $cohort);
+            if ($cohort === '') {
+                continue;
+            }
+
+            $programme = $this->placementProgrammeCode($cohort);
+            if ($programme === '') {
+                $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($cohort);
+            }
+            if ($programme === '') {
+                continue;
+            }
+
+            $semesterBatch = $this->resolvePrimaryClassBatchForCohort($ctx, $cohort);
+            if ($semesterBatch === '') {
+                continue;
+            }
+
+            foreach ($this->listAesClassStudents($ctx, $programme, $semesterBatch) as $row) {
+                $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+                if ($key === '') {
+                    continue;
+                }
+                $byAdmno[$key] = $row;
+            }
+        }
+
+        return array_values($byAdmno);
+    }
+
+    /**
+     * Pick the dominant semester batch for a cohort (highest S, tie-break by headcount).
+     *
+     * @param array<string, mixed> $ctx
+     */
+    private function resolvePrimaryClassBatchForCohort(array $ctx, string $cohort): string
+    {
+        $cohort = strtoupper(trim($cohort));
+        if ($cohort === '') {
+            return '';
+        }
+        if (preg_match('/-S\d+$/i', $cohort) === 1) {
+            return $cohort;
+        }
+
+        $cohortNorm = DepartmentProgrammeCatalog::normalizeCode($cohort);
+        if ($cohortNorm === '') {
+            return '';
+        }
+
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+
+        $batchCounts = [];
+        foreach ($records as $record) {
+            if (!$this->isAesStudyingStudent($record)) {
+                continue;
+            }
+            $class = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+            if ($class === '') {
+                continue;
+            }
+            $classNorm = DepartmentProgrammeCatalog::normalizeCode($class);
+            if (!str_starts_with($classNorm, $cohortNorm)) {
+                continue;
+            }
+            $batchCounts[$class] = ($batchCounts[$class] ?? 0) + 1;
+        }
+
+        if ($batchCounts === []) {
+            return '';
+        }
+
+        uksort(
+            $batchCounts,
+            static function (string $a, string $b) use ($batchCounts): int {
+                $countCmp = ($batchCounts[$b] ?? 0) <=> ($batchCounts[$a] ?? 0);
+                if ($countCmp !== 0) {
+                    return $countCmp;
+                }
+
+                return self::semesterFromBatchLabel($b) <=> self::semesterFromBatchLabel($a);
+            }
+        );
+
+        return (string) array_key_first($batchCounts);
+    }
+
+    private static function semesterFromBatchLabel(string $batch): int
+    {
+        if (preg_match('/-S(\d+)$/i', $batch, $m) === 1) {
+            return (int) $m[1];
+        }
+
+        return 0;
+    }
+
+    /**
      * Cohort prefix shared by semester variants, e.g. MCAINT2022-27-S9 → MCAINT2022-27.
      */
     private function cohortPrefixFromBatch(string $batch): string
@@ -694,7 +811,10 @@ final class OfficerDataService
         }
 
         $byAdmno = [];
-        foreach ($this->listStudentsFromAesDirectory($ctx) as $row) {
+        $aesRows = !empty($ctx['staffScope'])
+            ? $this->listStaffClassRosterRows($ctx)
+            : $this->listStudentsFromAesDirectory($ctx);
+        foreach ($aesRows as $row) {
             $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
             if ($key === '') {
                 continue;
