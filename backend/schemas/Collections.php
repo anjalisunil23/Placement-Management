@@ -256,6 +256,7 @@ final class Collections
                     'skills'       => 'array',
                 ],
                 'selectionRounds' => 'array[{order:int,type:string,label:string}]',
+                'roundProgression' => 'string (sequential|parallel)',
                 'tier'        => 'string',
                 'jdFile'      => 'string|null',
                 'shortlistDocument' => 'string|null (server path; stripped from API)',

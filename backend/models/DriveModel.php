@@ -96,6 +96,7 @@ class DriveModel extends BaseModel
             'branches'    => $data['branches'] ?? [],
             'eligibility' => $data['eligibility'] ?? [],
             'selectionRounds' => self::normalizeSelectionRounds($data['selectionRounds'] ?? []),
+            'roundProgression' => self::normalizeRoundProgression($data['roundProgression'] ?? null),
             'tier'        => $data['tier'] ?? 'Tier 2',
             'jdFile'      => $data['jdFile'] ?? null,
             'attendance'  => [],
@@ -158,6 +159,24 @@ class DriveModel extends BaseModel
         }
 
         return $out;
+    }
+
+    /**
+     * How company round outcomes advance candidates.
+     * - sequential: only Select on round N unlocks round N+1
+     * - parallel: every round can be marked independently
+     */
+    public static function normalizeRoundProgression(mixed $raw): string
+    {
+        $value = strtolower(trim((string) ($raw ?? '')));
+        if (in_array($value, ['sequential', 'gated', 'type1', 'type_1'], true)) {
+            return 'sequential';
+        }
+        if (in_array($value, ['parallel', 'independent', 'type2', 'type_2'], true)) {
+            return 'parallel';
+        }
+        // Existing drives without a value keep independent behaviour.
+        return 'parallel';
     }
 
     public function markAttendance(string $driveId, string $studentId, bool $present): bool

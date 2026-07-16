@@ -123,6 +123,7 @@
   .drive-round-result-card{border:1px solid #e2e8f0;border-radius:.5rem;padding:1rem;background:#fff}
   .drive-round-result-card h6{margin:0 0 .75rem;font-weight:700}
   .drive-round-outcome-btns .btn.active{pointer-events:none}
+  #driveRoundResultTabs .nav-link{font-size:.875rem}
 </style>
 </head>
 
@@ -255,6 +256,25 @@
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddCreateDriveRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
             </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Round result flow</label>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <input type="radio" class="btn-check" name="roundProgression" id="createRoundProgSeq" value="sequential" checked>
+                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="createRoundProgSeq">
+                    <div class="fw-semibold">Type 1 · Sequential</div>
+                    <div class="small text-muted-2 mt-1">Only <strong>Select</strong> in a round moves the candidate to the next. Waiting / Reject stay out.</div>
+                  </label>
+                </div>
+                <div class="col-md-6">
+                  <input type="radio" class="btn-check" name="roundProgression" id="createRoundProgPar" value="parallel">
+                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="createRoundProgPar">
+                    <div class="fw-semibold">Type 2 · All rounds</div>
+                    <div class="small text-muted-2 mt-1">Enter Select / Reject / Waiting on every round independently.</div>
+                  </label>
+                </div>
+              </div>
+            </div>
             <div id="createDriveRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
             <div id="createDriveRounds" class="d-flex flex-column gap-2"></div>
           </div>
@@ -316,6 +336,25 @@
               <div class="small text-muted-2">Shows this company’s placement rounds for shortlisted students.</div>
             </div>
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddEditDriveRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Round result flow</label>
+            <div class="row g-2">
+              <div class="col-md-6">
+                <input type="radio" class="btn-check" name="editRoundProgression" id="editRoundProgSeq" value="sequential">
+                <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="editRoundProgSeq">
+                  <div class="fw-semibold">Type 1 · Sequential</div>
+                  <div class="small text-muted-2 mt-1">Only <strong>Select</strong> advances to the next round.</div>
+                </label>
+              </div>
+              <div class="col-md-6">
+                <input type="radio" class="btn-check" name="editRoundProgression" id="editRoundProgPar" value="parallel">
+                <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="editRoundProgPar">
+                  <div class="fw-semibold">Type 2 · All rounds</div>
+                  <div class="small text-muted-2 mt-1">Mark Select / Reject / Waiting on every round.</div>
+                </label>
+              </div>
+            </div>
           </div>
           <div id="editDriveRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
           <div id="editDriveRounds" class="d-flex flex-column gap-2"></div>
@@ -418,6 +457,25 @@
                 <button type="button" class="btn btn-sm btn-primary" id="btnSaveDriveShortlistRounds"><i class="bi bi-check2 me-1"></i>Save rounds</button>
               </div>
             </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Round result flow</label>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <input type="radio" class="btn-check" name="shortlistRoundProgression" id="shortlistRoundProgSeq" value="sequential">
+                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="shortlistRoundProgSeq">
+                    <div class="fw-semibold">Type 1 · Sequential</div>
+                    <div class="small text-muted-2 mt-1">Only Select advances to the next round.</div>
+                  </label>
+                </div>
+                <div class="col-md-6">
+                  <input type="radio" class="btn-check" name="shortlistRoundProgression" id="shortlistRoundProgPar" value="parallel">
+                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="shortlistRoundProgPar">
+                    <div class="fw-semibold">Type 2 · All rounds</div>
+                    <div class="small text-muted-2 mt-1">Mark outcomes on every round independently.</div>
+                  </label>
+                </div>
+              </div>
+            </div>
             <div id="driveShortlistRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
             <div id="driveShortlistRounds" class="d-flex flex-column gap-2"></div>
           </div>
@@ -447,7 +505,7 @@
             </div>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddDriveResult"><i class="bi bi-plus-lg me-1"></i>Add package result</button>
           </div>
-          <div id="driveRoundsResults" class="d-flex flex-column gap-3"></div>
+          <div id="driveRoundsResults"></div>
           <div class="table-wrap mt-4 d-none" id="driveFinalResultsWrap">
             <h6 class="fw-bold mb-2">Final package / joining records</h6>
             <table class="table-modern">
@@ -633,18 +691,19 @@ function updateDriveRoundsFlowPreview(containerId) {
 function renderDriveRoundsEditor(containerId, rows, { removable = true } = {}) {
   const el = document.getElementById(containerId);
   if (!el) return;
-  const list = Array.isArray(rows) && rows.length ? rows : defaultDriveRounds(3);
+  const list = Array.isArray(rows) && rows.length ? rows : defaultDriveRounds(1);
+  const canRemove = removable && list.length > 1;
   el.innerHTML = list.map((row, idx) => `
     <div class="row g-2 align-items-end drive-round-row" data-round-index="${idx}">
-      <div class="${removable && list.length > 3 ? 'col-sm-9' : 'col-sm-12'}">
+      <div class="${canRemove ? 'col-sm-9' : 'col-sm-12'}">
         <label class="form-label small fw-semibold mb-1">Round ${idx + 1}</label>
         <select class="form-select drive-round-type" aria-label="Round ${idx + 1} type">
           ${roundTypeOptionsHtml(row.type)}
         </select>
       </div>
-      ${removable && list.length > 3
+      ${canRemove
         ? `<div class="col-sm-3">
-            <button type="button" class="btn btn-outline-danger btn-sm w-100 drive-round-remove" data-round-index="${idx}" title="Remove round"><i class="bi bi-trash"></i></button>
+            <button type="button" class="btn btn-outline-danger btn-sm w-100 drive-round-remove" data-round-index="${idx}" title="Delete round"><i class="bi bi-trash me-1"></i>Delete</button>
           </div>`
         : ''}
     </div>
@@ -702,8 +761,11 @@ function removeDriveRoundRow(stateRefName, index) {
   const cfg = map[stateRefName];
   if (!cfg) return;
   syncDriveRoundsState(cfg.id, stateRefName);
+  if (cfg.rows().length <= 1) {
+    toast('At least one round is required.', 'warn');
+    return;
+  }
   const next = cfg.rows().filter((_, i) => i !== index);
-  while (next.length < 3) next.push({ order: next.length + 1, type: '', label: '' });
   cfg.set(next.map((r, i) => ({ ...r, order: i + 1 })));
   renderDriveRoundsEditor(cfg.id, cfg.rows());
 }
@@ -1288,6 +1350,7 @@ let driveApplicants = [];
 let driveApplicantsTab = 'applied';
 let driveResults = [];
 let driveDetailMainTab = 'applicants';
+let driveResultsRoundTab = null;
 let activeDriveId = null;
 let activeDrive = null;
 let editingDriveResultId = null;
@@ -1380,9 +1443,7 @@ function updateDriveApplicantTabCounts() {
     if (showRounds) {
       const drive = allDrives.find(d => String(d.id) === String(activeDriveId)) || DriveStore.get?.(activeDriveId) || null;
       shortlistDriveRoundRows = normalizeDriveRounds(drive?.selectionRounds);
-      while (shortlistDriveRoundRows.length < 3) {
-        shortlistDriveRoundRows.push({ order: shortlistDriveRoundRows.length + 1, type: '', label: '' });
-      }
+      setRoundProgression('shortlistRoundProgression', drive?.roundProgression || 'parallel');
       renderDriveRoundsEditor('driveShortlistRounds', shortlistDriveRoundRows);
     }
   }
@@ -1462,10 +1523,40 @@ function driveConfiguredRounds(drive) {
   }).filter(Boolean);
 }
 
+function driveRoundProgression(drive) {
+  return String(drive?.roundProgression || 'parallel').toLowerCase() === 'sequential'
+    ? 'sequential'
+    : 'parallel';
+}
+
+function readRoundProgression(name) {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return String(el?.value || 'sequential').toLowerCase() === 'parallel' ? 'parallel' : 'sequential';
+}
+
+function setRoundProgression(name, value) {
+  const mode = String(value || 'parallel').toLowerCase() === 'sequential' ? 'sequential' : 'parallel';
+  const el = document.querySelector(`input[name="${name}"][value="${mode}"]`);
+  if (el) el.checked = true;
+}
+
 function applicantRoundOutcome(app, order) {
   const outcomes = Array.isArray(app?.roundOutcomes) ? app.roundOutcomes : [];
   const row = outcomes.find(o => Number(o.order) === Number(order));
   return String(row?.status || 'waiting').toLowerCase();
+}
+
+/** Type 1: only candidates Selected in every previous round appear in later rounds. */
+function candidatesEligibleForRound(candidates, roundOrder, progression) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  const order = Number(roundOrder) || 1;
+  if (progression !== 'sequential' || order <= 1) return list;
+  return list.filter(a => {
+    for (let prev = 1; prev < order; prev += 1) {
+      if (applicantRoundOutcome(a, prev) !== 'selected') return false;
+    }
+    return true;
+  });
 }
 
 function renderDriveRoundsResults() {
@@ -1476,49 +1567,92 @@ function renderDriveRoundsResults() {
     || (typeof DriveStore !== 'undefined' ? DriveStore.get?.(activeDriveId) : null)
     || null;
   const rounds = driveConfiguredRounds(drive);
-  const candidates = driveApplicants.filter(a => {
+  const progression = driveRoundProgression(drive);
+  const pool = driveApplicants.filter(a => {
     const s = String(a.status || '').toLowerCase();
     return s === 'shortlisted' || s === 'selected' || s === 'rejected';
   });
 
+  const hint = document.getElementById('driveResultsHint');
+  if (hint) {
+    hint.textContent = progression === 'sequential'
+      ? 'Type 1 · Sequential: only Select moves a candidate to the next round. Waiting / Reject stay out.'
+      : 'Type 2 · All rounds: mark Select / Reject / Waiting on every round independently.';
+  }
+
   if (!rounds.length) {
+    driveResultsRoundTab = null;
     host.innerHTML = `<div class="text-muted-2 p-3 border rounded text-center">
       No company rounds configured yet. Open the <strong>Shortlisted</strong> tab and save Interview / GD / Coding rounds first.
     </div>`;
     return;
   }
-  if (!candidates.length) {
-    host.innerHTML = `<div class="text-muted-2 p-3 border rounded text-center">
-      No shortlisted candidates yet. Shortlist applicants first, then mark round outcomes here.
-    </div>`;
+
+  if (!rounds.some(r => Number(r.order) === Number(driveResultsRoundTab))) {
+    driveResultsRoundTab = rounds[0].order;
+  }
+  const activeRound = rounds.find(r => Number(r.order) === Number(driveResultsRoundTab)) || rounds[0];
+  const candidates = candidatesEligibleForRound(pool, activeRound.order, progression);
+
+  const tabsHtml = `
+    <ul class="nav nav-pills gap-2 mb-3 flex-wrap" id="driveRoundResultTabs" role="tablist">
+      ${rounds.map(r => {
+        const count = candidatesEligibleForRound(pool, r.order, progression).length;
+        return `
+        <li class="nav-item" role="presentation">
+          <button type="button" class="nav-link ${Number(r.order) === Number(activeRound.order) ? 'active' : ''}"
+            data-round-tab="${r.order}" role="tab"
+            aria-selected="${Number(r.order) === Number(activeRound.order) ? 'true' : 'false'}">
+            Round ${r.order}: ${r.label}
+            <span class="badge bg-secondary ms-1">${count}</span>
+          </button>
+        </li>`;
+      }).join('')}
+    </ul>`;
+
+  if (!pool.length) {
+    host.innerHTML = `${tabsHtml}
+      <div class="text-muted-2 p-3 border rounded text-center">
+        No shortlisted candidates yet. Shortlist applicants first, then mark round outcomes here.
+      </div>`;
     return;
   }
 
-  host.innerHTML = rounds.map(round => {
-    const rows = candidates.map(a => {
-      const current = applicantRoundOutcome(a, round.order);
-      const btn = (status, label, cls) => {
-        const active = current === status;
-        return `<button type="button" class="btn btn-sm ${active ? `btn-${cls} active` : `btn-outline-${cls}`} drive-round-outcome-btn"
-          data-app-id="${a.id}" data-order="${round.order}" data-type="${round.type}" data-status="${status}"
-          ${active ? 'disabled aria-pressed="true"' : 'aria-pressed="false"'}">${label}</button>`;
-      };
-      return `<tr>
-        <td class="fw-semibold small">${a.studentName || '—'}</td>
-        <td>${a.registerNumber || '—'}</td>
-        <td>${a.department || '—'}</td>
-        <td>${driveApplicantStatusBadge(a.status)}</td>
-        <td>
-          <div class="btn-group drive-round-outcome-btns" role="group" aria-label="Round ${round.order} outcome">
-            ${btn('selected', 'Select', 'success')}
-            ${btn('rejected', 'Reject', 'danger')}
-            ${btn('waiting', 'Waiting', 'secondary')}
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
-    return `<div class="drive-round-result-card">
-      <h6>Round ${round.order}: ${round.label}</h6>
+  if (!candidates.length) {
+    host.innerHTML = `${tabsHtml}
+      <div class="text-muted-2 p-3 border rounded text-center">
+        ${progression === 'sequential'
+          ? `No candidates advanced to Round ${activeRound.order} yet. Mark <strong>Select</strong> on the previous round first.`
+          : 'No candidates for this round.'}
+      </div>`;
+    return;
+  }
+
+  const rows = candidates.map(a => {
+    const current = applicantRoundOutcome(a, activeRound.order);
+    const btn = (status, label, cls) => {
+      const active = current === status;
+      return `<button type="button" class="btn btn-sm ${active ? `btn-${cls} active` : `btn-outline-${cls}`} drive-round-outcome-btn"
+        data-app-id="${a.id}" data-order="${activeRound.order}" data-type="${activeRound.type}" data-status="${status}"
+        ${active ? 'disabled aria-pressed="true"' : 'aria-pressed="false"'}">${label}</button>`;
+    };
+    return `<tr>
+      <td class="fw-semibold small">${a.studentName || '—'}</td>
+      <td>${a.registerNumber || '—'}</td>
+      <td>${a.department || '—'}</td>
+      <td>${driveApplicantStatusBadge(a.status)}</td>
+      <td>
+        <div class="btn-group drive-round-outcome-btns" role="group" aria-label="Round ${activeRound.order} outcome">
+          ${btn('selected', 'Select', 'success')}
+          ${btn('rejected', 'Reject', 'danger')}
+          ${btn('waiting', 'Waiting', 'secondary')}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  host.innerHTML = `${tabsHtml}
+    <div class="drive-round-result-card" data-active-round="${activeRound.order}">
       <div class="table-wrap mb-0">
         <table class="table-modern mb-0">
           <thead><tr>
@@ -1528,7 +1662,6 @@ function renderDriveRoundsResults() {
         </table>
       </div>
     </div>`;
-  }).join('');
 }
 
 window.setDriveRoundOutcome = async (appId, order, type, status) => {
@@ -1664,6 +1797,7 @@ window.openDriveApplicants = async driveId => {
   activeDriveId = d.id;
   activeDrive = d;
   driveApplicantsTab = 'applied';
+  driveResultsRoundTab = null;
   driveDetailMainTab = 'applicants';
   showDriveDetailPanel('applicants');
   document.querySelectorAll('#driveApplicantTabs .nav-link').forEach(btn => {
@@ -1829,6 +1963,7 @@ window.openCreateDrive = async () => {
   }
   applyCreateDriveDeptScope();
   createDriveRoundRows = defaultDriveRounds(3);
+  setRoundProgression('roundProgression', 'sequential');
   renderDriveRoundsEditor('createDriveRounds', createDriveRoundRows);
   await populateCreateDriveCompanies();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('createModal')).show();
@@ -1976,6 +2111,7 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     status: 'Open',
     statusCls: 'success',
     selectionRounds: readDriveRoundsFromEditor('createDriveRounds'),
+    roundProgression: readRoundProgression('roundProgression'),
   });
   if (!result) return;
   bootstrap.Modal.getInstance(document.getElementById('createModal'))?.hide();
@@ -2030,9 +2166,7 @@ window.openEditDrive = id => {
   document.getElementById('editDescription').value = d.description || '';
 
   editDriveRoundRows = normalizeDriveRounds(d.selectionRounds);
-  while (editDriveRoundRows.length < 3) {
-    editDriveRoundRows.push({ order: editDriveRoundRows.length + 1, type: '', label: '' });
-  }
+  setRoundProgression('editRoundProgression', d.roundProgression || 'parallel');
   renderDriveRoundsEditor('editDriveRounds', editDriveRoundRows);
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
@@ -2108,6 +2242,7 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
       description: document.getElementById('editDescription').value.trim(),
 
       selectionRounds: readDriveRoundsFromEditor('editDriveRounds'),
+      roundProgression: readRoundProgression('editRoundProgression'),
 
     }, editingDrive || DriveStore.get(id));
   } catch (err) {
@@ -2334,21 +2469,28 @@ document.getElementById('btnSaveDriveShortlistRounds')?.addEventListener('click'
     toast('Select at least one round type (Interview, GD, Coding, …).', 'warn');
     return;
   }
+  const roundProgression = readRoundProgression('shortlistRoundProgression');
   const existing = allDrives.find(d => String(d.id) === String(activeDriveId)) || DriveStore.get(activeDriveId) || activeDrive;
-  const result = await DriveStore.update(activeDriveId, { selectionRounds }, existing);
+  const result = await DriveStore.update(activeDriveId, { selectionRounds, roundProgression }, existing);
   if (!result) return;
-  if (existing) existing.selectionRounds = selectionRounds;
-  if (activeDrive) activeDrive.selectionRounds = selectionRounds;
-  shortlistDriveRoundRows = normalizeDriveRounds(selectionRounds);
-  while (shortlistDriveRoundRows.length < 3) {
-    shortlistDriveRoundRows.push({ order: shortlistDriveRoundRows.length + 1, type: '', label: '' });
+  if (existing) {
+    existing.selectionRounds = selectionRounds;
+    existing.roundProgression = roundProgression;
   }
+  if (activeDrive) {
+    activeDrive.selectionRounds = selectionRounds;
+    activeDrive.roundProgression = roundProgression;
+  }
+  shortlistDriveRoundRows = normalizeDriveRounds(selectionRounds);
   renderDriveRoundsEditor('driveShortlistRounds', shortlistDriveRoundRows);
   toast('Company shortlist rounds saved.', 'success');
   await loadDrives();
   const refreshed = allDrives.find(d => String(d.id) === String(activeDriveId));
-  if (refreshed) activeDrive = { ...refreshed, selectionRounds };
-  else if (activeDrive) activeDrive.selectionRounds = selectionRounds;
+  if (refreshed) activeDrive = { ...refreshed, selectionRounds, roundProgression };
+  else if (activeDrive) {
+    activeDrive.selectionRounds = selectionRounds;
+    activeDrive.roundProgression = roundProgression;
+  }
   if (driveDetailMainTab === 'results') renderDriveRoundsResults();
 });
 
@@ -2359,6 +2501,12 @@ document.getElementById('driveDetailMainTabs')?.addEventListener('click', e => {
 });
 
 document.getElementById('driveRoundsResults')?.addEventListener('click', e => {
+  const tabBtn = e.target.closest('[data-round-tab]');
+  if (tabBtn) {
+    driveResultsRoundTab = Number(tabBtn.dataset.roundTab);
+    renderDriveRoundsResults();
+    return;
+  }
   const btn = e.target.closest('.drive-round-outcome-btn');
   if (!btn || btn.disabled) return;
   setDriveRoundOutcome(btn.dataset.appId, btn.dataset.order, btn.dataset.type, btn.dataset.status);

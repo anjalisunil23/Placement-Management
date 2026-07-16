@@ -4316,6 +4316,11 @@ const DriveStore = {
     } else if (Array.isArray(existing?.selectionRounds)) {
       body.selectionRounds = existing.selectionRounds;
     }
+    if (p.roundProgression !== undefined && p.roundProgression !== null && p.roundProgression !== '') {
+      body.roundProgression = String(p.roundProgression).toLowerCase() === 'sequential' ? 'sequential' : 'parallel';
+    } else if (existing?.roundProgression) {
+      body.roundProgression = String(existing.roundProgression).toLowerCase() === 'sequential' ? 'sequential' : 'parallel';
+    }
     if (companyId) body.companyId = companyId;
     const recruitmentDate = String(p.date ?? p.recruitmentDate ?? existing?.date ?? '').trim();
     if (recruitmentDate && recruitmentDate !== '—' && recruitmentDate !== 'TBD') body.date = recruitmentDate;
@@ -4502,6 +4507,7 @@ const DriveStore = {
         description: p.description || '',
       },
       selectionRounds: Array.isArray(p.selectionRounds) ? p.selectionRounds : [],
+      roundProgression: String(p.roundProgression || 'sequential').toLowerCase() === 'parallel' ? 'parallel' : 'sequential',
     };
 
     const formatErrors = (res) => {
