@@ -555,16 +555,27 @@ final class StaffService
     }
 
     /**
-     * Load class batches from AES for the staff department scope.
+     * Refresh class-teacher / co-class-teacher batches from the live AES session.
+     * Never backfill the whole department list — that would let any staff edit any class.
      *
      * @param array<string, mixed> $ctx
      * @return list<string>
      */
     public function refreshAssignedClassBatchesFromAes(array $ctx): array
     {
-        $batches = (new PlacementFilterService())->fetchBatchOptions($ctx, '', '');
+        $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
+        $batches = [];
+        if (is_array($aesProfile) && $aesProfile !== []) {
+            $batches = (new AesLoginService())->resolveAssignedClassBatches([], $aesProfile);
+        }
         if ($batches === []) {
-            return [];
+            $batches = StaffContext::assignedClassBatches(array_merge($ctx, [
+                // Force profile-only read without re-entering session merge noise.
+            ]));
+            // If still empty or looks like a department-wide dump, clear stored assignments.
+            if (count($batches) > 12) {
+                $batches = [];
+            }
         }
 
         $profileId = (string) ($ctx['profile']['_id'] ?? '');

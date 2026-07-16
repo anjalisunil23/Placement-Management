@@ -21,8 +21,11 @@
         <div class="page-header">
           <div>
             <h1 class="page-title">Placements &amp; Higher Education</h1>
+            <p class="text-muted-2 small mb-0 mt-1">Only the AES class teacher and co-class teacher can add or edit details for their class.</p>
           </div>
         </div>
+
+        <div id="classTeacherBanner" class="alert alert-warning py-2 px-3 mb-3 d-none" role="status"></div>
 
         <div class="card-surface p-3 p-md-4 mb-3">
           <div class="row g-2 align-items-end">
@@ -492,6 +495,8 @@
     let filterBatch = '';
     let sortKey = '';
     let sortDir = 'asc';
+    let canEditSelectedBatch = false;
+    let apiAssignedBatches = [];
 
     const SORT_ICON = '<i class="bi bi-chevron-expand registry-sort-icon" aria-hidden="true"></i>';
 
@@ -583,7 +588,43 @@
       const fromUser = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
       const profile = u.profile && typeof u.profile === 'object' ? u.profile : {};
       const fromProfile = Array.isArray(profile.assignedClassBatches) ? profile.assignedClassBatches : [];
-      return [...new Set([...fromUser, ...fromProfile].map(v => String(v || '').trim()).filter(Boolean))];
+      return [...new Set([
+        ...apiAssignedBatches,
+        ...fromUser,
+        ...fromProfile,
+      ].map(v => String(v || '').trim()).filter(Boolean))];
+    }
+
+    function updateClassTeacherBanner() {
+      const el = document.getElementById('classTeacherBanner');
+      if (!el) return;
+      const assigned = assignedBatches();
+      if (!assigned.length) {
+        el.classList.remove('d-none');
+        el.className = 'alert alert-warning py-2 px-3 mb-3';
+        el.textContent = 'No AES class-teacher / co-class-teacher assignment found on your account. You can view classes, but cannot add or edit placement details.';
+        return;
+      }
+      if (filterBatch && !canEditSelectedBatch) {
+        el.classList.remove('d-none');
+        el.className = 'alert alert-warning py-2 px-3 mb-3';
+        el.textContent = `You are not the class teacher or co-class teacher for ${filterBatch}. Viewing only — edits are disabled.`;
+        return;
+      }
+      if (filterBatch && canEditSelectedBatch) {
+        el.classList.remove('d-none');
+        el.className = 'alert alert-success py-2 px-3 mb-3';
+        el.textContent = `You can add and edit placement / higher-education details for ${filterBatch}.`;
+        return;
+      }
+      el.classList.add('d-none');
+      el.textContent = '';
+    }
+
+    function batchIsAssigned(batch) {
+      const b = String(batch || '').trim();
+      if (!b) return false;
+      return assignedBatches().some(a => a.toLowerCase() === b.toLowerCase());
     }
 
     function batchLooksLikeProgramme(batch, program) {
@@ -661,6 +702,8 @@
       }
       fillSelect('filterBatch', batches, 'All batches', filterBatch, true);
       filterBatch = document.getElementById('filterBatch')?.value || '';
+      canEditSelectedBatch = batchIsAssigned(filterBatch);
+      updateClassTeacherBanner();
 
       const branchEl = document.getElementById('filterProgram');
       const batchEl = document.getElementById('filterBatch');
@@ -732,9 +775,11 @@
         const hasDoc = !!(r.hasOfferLetter || r.hasJoiningLetter || r.hasCompanyIdDoc);
         const hasEmployer = String(r.employer || '').trim() !== '';
         const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
-        const detailsBtn = hasEmployer
-          ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
-          : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`;
+        const detailsBtn = !canEditSelectedBatch
+          ? `<button type="button" class="registry-action-btn add" title="Only class teacher / co-class teacher can edit" disabled><i class="bi bi-lock-fill"></i></button>`
+          : (hasEmployer
+            ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
+            : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`);
         const typeLabel = hasEmployer
           ? (r.type === 'Higher Education' ? 'Higher Education' : 'Placement')
           : '';
@@ -776,6 +821,10 @@
     }
 
     function openEditPlacement(studentId) {
+      if (!canEditSelectedBatch) {
+        toast('Only the class teacher or co-class teacher can add or edit placement details for this batch.', 'warn');
+        return;
+      }
       const row = findRowByStudentId(studentId);
       if (!row) {
         toast('Record not found.', 'warn');
@@ -830,6 +879,10 @@
 
     async function saveEditPlacement(ev) {
       ev.preventDefault();
+      if (!canEditSelectedBatch) {
+        toast('Only the class teacher or co-class teacher can submit placement details for this batch.', 'warn');
+        return;
+      }
       const studentId = document.getElementById('editStudentId').value;
       const payload = {
         employer: document.getElementById('editEmployer').value.trim(),
@@ -971,6 +1024,17 @@
         return;
       }
       allRows = Array.isArray(data.rows) ? data.rows : [];
+      if (Array.isArray(data.assignedClassBatches)) {
+        apiAssignedBatches = data.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
+        try {
+          const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+          if (typeof Auth !== 'undefined' && Auth.set) {
+            Auth.set({ ...u, assignedClassBatches: apiAssignedBatches });
+          }
+        } catch (_) { /* ignore */ }
+      }
+      canEditSelectedBatch = data.canEditBatch === true || batchIsAssigned(filterBatch);
+      updateClassTeacherBanner();
       applyClientFilter();
     }
 

@@ -49,6 +49,9 @@ final class StaffContext
     }
 
     /**
+     * AES class / co-class teacher assignments for this staff member.
+     * Empty means the staff is not recorded as class teacher for any batch.
+     *
      * @param array<string, mixed> $ctx
      * @return list<string>
      */
@@ -75,11 +78,63 @@ final class StaffContext
         }
 
         $fromSession = (new AesLoginService())->resolveAssignedClassBatches([], $aesProfile);
-        if ($fromSession === []) {
-            return $fromProfile;
+        // Live AES class-teacher assignments win when present.
+        if ($fromSession !== []) {
+            return $fromSession;
         }
 
-        return array_values(array_unique(array_merge($fromProfile, $fromSession)));
+        // Avoid treating an old department-wide backfill as personal CT assignments.
+        if (count($fromProfile) > 12) {
+            return [];
+        }
+
+        return $fromProfile;
+    }
+
+    /**
+     * Whether this staff member is class teacher or co-class teacher for the batch.
+     */
+    public static function canEditClassBatch(array $ctx, string $batch): bool
+    {
+        $batch = trim($batch);
+        if ($batch === '') {
+            return false;
+        }
+        foreach (self::assignedClassBatches($ctx) as $assigned) {
+            if (strcasecmp(trim((string) $assigned), $batch) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Placement / higher-education details may only be added by the AES class
+     * teacher or co-class teacher of the student's class batch.
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $ctx
+     */
+    public static function assertCanEditClassPlacement(array $student, array $ctx): void
+    {
+        self::requireDepartmentScope($ctx);
+        $batch = trim((string) (
+            $student['classBatch']
+            ?? $student['stud_class']
+            ?? $student['batch']
+            ?? ''
+        ));
+        if ($batch === '') {
+            Response::forbidden('This student has no class batch; only class teachers can edit placement details.');
+        }
+        if (!self::canEditClassBatch($ctx, $batch)) {
+            Response::forbidden(
+                'Only the class teacher or co-class teacher of '
+                . $batch
+                . ' can add or edit placement / higher-education details.'
+            );
+        }
     }
 
     /**

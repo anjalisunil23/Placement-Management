@@ -90,6 +90,8 @@ final class StaffPlacementRegistryService
         return [
             'filters' => $filterOptions,
             'rows'    => $filtered,
+            'canEditBatch' => $batch !== '' && StaffContext::canEditClassBatch($staffCtx, $batch),
+            'assignedClassBatches' => StaffContext::assignedClassBatches($staffCtx),
             'totals'  => [
                 'all'               => count($filtered),
                 'placement'         => $placementCount,
@@ -856,6 +858,7 @@ final class StaffPlacementRegistryService
             Response::notFound('Student not found.');
         }
         $this->assertRegistryStudentInDepartment($student, $staffCtx);
+        StaffContext::assertCanEditClassPlacement($student, $staffCtx);
         $student = $this->ensureLocalStudentForStaffEdit($student, $staffCtx);
 
         $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
@@ -947,9 +950,8 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * Registry entry is department-scoped, not limited to the staff member's
-     * assigned teaching classes. This allows staff to maintain all displayed
-     * final-year BCA/MCA/INMCA rows in their parent department.
+     * Registry entry is department-scoped for viewing. Writes are further limited
+     * to AES class teacher / co-class teacher of the student's batch.
      *
      * @param array<string, mixed> $student
      * @param array<string, mixed> $staffCtx
@@ -1197,6 +1199,7 @@ final class StaffPlacementRegistryService
             Response::notFound('Student not found.');
         }
         $this->assertRegistryStudentInDepartment($student, $staffCtx);
+        StaffContext::assertCanEditClassPlacement($student, $staffCtx);
         $student = $this->ensureLocalStudentForStaffEdit($student, $staffCtx);
 
         $hasOffer = isset($_FILES['offerLetter']) && (int) ($_FILES['offerLetter']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;

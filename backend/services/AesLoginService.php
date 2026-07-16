@@ -1862,6 +1862,12 @@ final class AesLoginService
         $raw = $this->pick($aesDetails, [
             'assigned_classes', 'assignedClasses', 'classes', 'class_list', 'classList',
             'assigned_batches', 'assignedBatches', 'batches', 'stud_classes', 'stud_class_list',
+            // AES class teacher / co-class teacher assignment lists
+            'class_teacher_classes', 'classTeacherClasses', 'classteacher_classes',
+            'co_class_teacher_classes', 'coClassTeacherClasses', 'coclass_teacher_classes',
+            'co_class_classes', 'coclass_classes', 'class_incharge_classes',
+            'classInchargeClasses', 'tutor_classes', 'tutorClasses', 'tutorship',
+            'staff_classes', 'staffClasses', 'faculty_classes', 'facultyClasses',
         ]);
         if ($raw === '' || $raw === null) {
             $raw = $extras['assignedClassBatches'] ?? $extras['classBatch'] ?? $extras['classes'] ?? '';
@@ -1869,6 +1875,20 @@ final class AesLoginService
 
         $labels = [];
         $this->collectAssignedClassBatchLabels($raw, $labels);
+
+        // Scan known class-teacher / co-class-teacher containers on the AES profile.
+        foreach ($aesDetails as $key => $value) {
+            if (!is_string($key) || !is_array($value)) {
+                continue;
+            }
+            if (!preg_match(
+                '/(class[_\s-]?teacher|co[_\s-]?class|class[_\s-]?incharge|tutor|assigned[_\s-]?class|staff[_\s-]?class|faculty[_\s-]?class)/i',
+                $key
+            )) {
+                continue;
+            }
+            $this->collectAssignedClassBatchLabels($value, $labels);
+        }
 
         return array_values(array_unique(array_filter(array_map(
             static fn ($batch) => trim((string) $batch),
@@ -1923,11 +1943,39 @@ final class AesLoginService
     {
         foreach (['stud_class', 'class_name', 'className', 'batch', 'classBatch', 'class'] as $key) {
             if (!empty($row[$key]) && is_scalar($row[$key])) {
-                return true;
+                return $this->rowLooksLikeClassTeacherAssignment($row);
             }
         }
 
         return false;
+    }
+
+    /**
+     * Keep rows that are class teacher / co-class teacher (or have no role marker).
+     *
+     * @param array<string, mixed> $row
+     */
+    private function rowLooksLikeClassTeacherAssignment(array $row): bool
+    {
+        $role = strtolower(trim((string) (
+            $row['role']
+            ?? $row['teacher_role']
+            ?? $row['teacherRole']
+            ?? $row['class_role']
+            ?? $row['classRole']
+            ?? $row['type']
+            ?? $row['assignment']
+            ?? $row['designation']
+            ?? ''
+        )));
+        if ($role === '') {
+            return true;
+        }
+
+        return (bool) preg_match(
+            '/co[_\s-]?class|class[_\s-]?teacher|class[_\s-]?incharge|co[_\s-]?teacher|tutor|advisor|incharge|mentor/i',
+            $role
+        );
     }
 
     /**
