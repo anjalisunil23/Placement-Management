@@ -42,4 +42,18 @@ assertTrue(StaffContext::canEditClassBatch(
     'MCA2025-27-S3'
 ), 'Nimmy is CT for MCA 2025-27');
 
+$binumon = [
+    'user' => ['name' => 'Binumon Joseph', 'email' => 'binumon@amaljyothi.ac.in'],
+    'profile' => [
+        // Stale department-wide dump (the live bug).
+        'assignedClassBatches' => ['MCA2025-27-S3', 'MCAINT2023-28-S7', 'MCA2026-28-S1'],
+    ],
+    'departmentId' => 'dept1',
+];
+assertTrue(StaffContext::canEditClassBatch($binumon, 'MCAINT2023-28-S7'), 'Binumon can edit his INMCA class');
+assertTrue(!StaffContext::canEditClassBatch($binumon, 'MCA2025-27-S3'), 'Binumon cannot edit MCA even with stale profile batches');
+$assigned = StaffContext::assignedClassBatches($binumon);
+assertTrue(in_array('MCAINT2023-28', $assigned, true) || in_array('MCAINT2023-28-S7', $assigned, true), 'assigned lists Binumon cohort');
+assertTrue(!in_array('MCA2025-27-S3', $assigned, true) && !in_array('MCA2025-27', $assigned, true), 'assigned excludes foreign MCA batch');
+
 echo "All class-incharge checks passed.\n";

@@ -584,15 +584,17 @@
     }
 
     function assignedBatches() {
+      // Prefer server list (registry CT/CoCT only). Ignore stale localStorage dumps.
+      if (apiAssignedBatches.length) {
+        return [...apiAssignedBatches];
+      }
       const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
       const fromUser = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
       const profile = u.profile && typeof u.profile === 'object' ? u.profile : {};
       const fromProfile = Array.isArray(profile.assignedClassBatches) ? profile.assignedClassBatches : [];
-      return [...new Set([
-        ...apiAssignedBatches,
-        ...fromUser,
-        ...fromProfile,
-      ].map(v => String(v || '').trim()).filter(Boolean))];
+      const merged = [...new Set([...fromUser, ...fromProfile].map(v => String(v || '').trim()).filter(Boolean))];
+      // Client-side guard: huge lists are the old department-wide backfill.
+      return merged.length > 12 ? [] : merged;
     }
 
     function updateClassTeacherBanner() {

@@ -126,6 +126,24 @@ final class ClassInchargeRegistry
     }
 
     /**
+     * True when this class label belongs to a CT/CoCT-mapped cohort.
+     */
+    public static function isMappedCohort(string $batch): bool
+    {
+        $cohort = self::cohortKey($batch);
+        if ($cohort === '') {
+            return false;
+        }
+        foreach (array_keys(self::assignments()) as $key) {
+            if (strcasecmp(self::cohortKey((string) $key), $cohort) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param array<string, mixed> $staffCtx
      * @return list<string>
      */

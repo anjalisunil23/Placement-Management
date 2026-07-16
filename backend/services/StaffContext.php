@@ -50,14 +50,20 @@ final class StaffContext
     }
 
     /**
-     * Class-incharge batches for this staff member (AES session + CT/CoCT registry).
-     * Empty means the staff is not class teacher / co-class teacher for any batch.
+     * Class-incharge batches for this staff member.
+     * For MCA / Integrated MCA (and other mapped cohorts), only CT/CoCT registry
+     * matches count — never trust a stale department-wide assignedClassBatches dump.
      *
      * @param array<string, mixed> $ctx
      * @return list<string>
      */
     public static function assignedClassBatches(array $ctx): array
     {
+        $fromRegistry = ClassInchargeRegistry::batchesForStaff($ctx);
+        if ($fromRegistry !== []) {
+            return array_values(array_unique($fromRegistry));
+        }
+
         $profile = is_array($ctx['profile'] ?? null) ? $ctx['profile'] : [];
         $raw = $profile['assignedClassBatches'] ?? [];
         if (!is_array($raw)) {
@@ -73,53 +79,26 @@ final class StaffContext
             $raw
         ), static fn ($batch) => $batch !== ''));
 
-        // Drop polluted department-wide backfills.
-        if (count($fromProfile) > 12) {
-            $fromProfile = [];
-        }
-
         $fromSession = [];
         $aesProfile = Security::getSessionAesProfile();
         if (is_array($aesProfile) && $aesProfile !== []) {
             $fromSession = (new AesLoginService())->resolveAssignedClassBatches([], $aesProfile);
         }
 
-        $fromRegistry = ClassInchargeRegistry::batchesForStaff($ctx);
+        $merged = array_values(array_unique(array_merge($fromSession, $fromProfile)));
+        // Strip any batch that belongs to a mapped CT/CoCT cohort — this staff is
+        // not that incharge (registry miss), so they must not inherit edit rights.
+        $merged = array_values(array_filter(
+            $merged,
+            static fn (string $batch): bool => !ClassInchargeRegistry::isMappedCohort($batch)
+        ));
 
-        // Registry (CT/CoCT directory) is authoritative for edit rights when matched.
-        // Merge AES session / profile labels for the same cohorts when present.
-        $merged = array_merge($fromRegistry, $fromSession, $fromProfile);
-        if ($fromRegistry !== []) {
-            // Keep only labels that belong to registry cohorts (or exact registry keys).
-            $allowedCohorts = array_map(
-                static fn (string $b) => ClassInchargeRegistry::cohortKey($b),
-                $fromRegistry
-            );
-            $merged = array_values(array_filter(
-                $merged,
-                static function (string $batch) use ($allowedCohorts): bool {
-                    $cohort = ClassInchargeRegistry::cohortKey($batch);
-                    foreach ($allowedCohorts as $allowed) {
-                        if (strcasecmp($cohort, $allowed) === 0) {
-                            return true;
-                        }
-                    }
-
-                    return false;
-                }
-            ));
-            // Always include canonical cohort keys from registry.
-            $merged = array_merge($merged, $fromRegistry);
-        } elseif ($fromSession !== []) {
-            $merged = $fromSession;
-        } else {
-            $merged = $fromProfile;
+        // Drop leftover department-wide dumps.
+        if (count($merged) > 12) {
+            return [];
         }
 
-        return array_values(array_unique(array_filter(array_map(
-            static fn ($batch) => trim((string) $batch),
-            $merged
-        ), static fn ($batch) => $batch !== '')));
+        return $merged;
     }
 
     /**
