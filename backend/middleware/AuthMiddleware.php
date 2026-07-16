@@ -23,6 +23,45 @@ final class AuthMiddleware
 {
   private static ?array $currentUser = null;
 
+  public static function resolvedRole(array $user): string
+  {
+    $email = strtolower(trim((string) ($user['email'] ?? '')));
+    $aesService = new \PMS\Services\AesLoginService();
+    if ($aesService->isSuperAdminEmail($email)) {
+      return 'admin';
+    }
+
+    $role = trim((string) ($user['role'] ?? ''));
+    if ($role === 'staff' && self::isHodStaff($user)) {
+      return 'placement_officer';
+    }
+
+    return $role;
+  }
+
+  private static function isHodStaff(array $user): bool
+  {
+    if (trim((string) ($user['role'] ?? '')) !== 'staff') {
+      return false;
+    }
+
+    try {
+      $profile = \PMS\Services\StaffContext::ensureProfile($user);
+    } catch (\Throwable) {
+      $profile = [];
+    }
+
+    $designation = strtoupper(trim((string) ($profile['designation'] ?? $user['designation'] ?? '')));
+    if ($designation === '') {
+      return false;
+    }
+
+    return preg_match(
+      '/\bHOD\b|\bHEAD\s+OF\s+DEPARTMENT\b|\bDEPARTMENT\s+HEAD\b|\bPROFESSOR\s*&\s*HEAD\b/',
+      $designation
+    ) === 1;
+  }
+
   /**
    * Authenticate request; returns user document or sends 401.
    *
@@ -92,14 +131,11 @@ final class AuthMiddleware
     $config = require dirname(__DIR__) . '/config/app.php';
     $data = DocumentHelper::serialize($user);
     $aesService = new \PMS\Services\AesLoginService();
-    $email = strtolower(trim((string) ($data['email'] ?? '')));
-    if ($aesService->isSuperAdminEmail($email)) {
-      $data['role'] = 'admin';
-      $data['dashboard'] = $config['role_dashboards']['admin'] ?? '/dashboard.html';
-    } else {
-      $data['dashboard'] = $config['role_dashboards'][$user['role']] ?? '/public-stats.html';
-    }
-    if (($data['role'] ?? '') === 'alumni') {
+    $effectiveRole = self::resolvedRole($user);
+    $data['role'] = $effectiveRole;
+    $data['dashboard'] = $config['role_dashboards'][$effectiveRole] ?? '/public-stats.html';
+
+    if ($effectiveRole === 'alumni') {
       $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
       if ($profile) {
         $data = array_merge($data, AlumniModel::profileToUserFields($profile));
@@ -110,13 +146,13 @@ final class AuthMiddleware
         $data['photo'] = $photo['photo'];
       }
     }
-    if (($data['role'] ?? $user['role'] ?? '') === 'company') {
+    if ($effectiveRole === 'company') {
       $company = (new CompanyModel())->findByUserId((string) $user['_id']);
       if ($company) {
         $data = array_merge($data, CompanyModel::profileToUserFields($company));
       }
     }
-    if (($data['role'] ?? $user['role'] ?? '') === 'staff') {
+    if (($user['role'] ?? '') === 'staff') {
       $profile = \PMS\Services\StaffContext::ensureProfile($user);
       $dept = !empty($profile['departmentId'])
         ? (new DepartmentModel())->findById((string) $profile['departmentId'])
@@ -135,8 +171,11 @@ final class AuthMiddleware
         $data['photo'] = $photo['photo'];
       }
     }
-    if (($data['role'] ?? $user['role'] ?? '') === 'placement_officer') {
+    if ($effectiveRole === 'placement_officer') {
       $profile = (new PlacementOfficerModel())->findByUserId((string) $user['_id']);
+      if (!$profile && ($user['role'] ?? '') === 'staff') {
+        $profile = \PMS\Services\StaffContext::ensureProfile($user);
+      }
       if ($profile) {
         $dept = !empty($profile['departmentId'])
           ? (new DepartmentModel())->findById((string) $profile['departmentId'])
@@ -194,7 +233,7 @@ final class AuthMiddleware
     $aesProfile = Security::getSessionAesProfile();
     $service = new \PMS\Services\AesLoginService();
     $data = $service->applyAesSessionToUserFields($data);
-    if (($data['role'] ?? $user['role'] ?? '') === 'student') {
+    if ($effectiveRole === 'student') {
       $syncedName = $service->syncStudentNameFromPlacement(
           array_merge($user, $data),
           (string) ($data['registerNumber'] ?? '')
@@ -222,10 +261,8 @@ final class AuthMiddleware
       }
     }
 
-    if ($aesService->isSuperAdminEmail(strtolower(trim((string) ($data['email'] ?? ''))))) {
-      $data['role'] = 'admin';
-      $data['dashboard'] = $config['role_dashboards']['admin'] ?? '/dashboard.html';
-    }
+    $data['role'] = self::resolvedRole(array_merge($user, $data));
+    $data['dashboard'] = $config['role_dashboards'][$data['role']] ?? '/public-stats.html';
 
     $safe = DocumentHelper::jsonSafe($data);
     return is_array($safe) ? $safe : $data;

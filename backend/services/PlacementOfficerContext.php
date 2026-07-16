@@ -25,7 +25,8 @@ final class PlacementOfficerContext
      */
     public static function resolve(array $user): array
     {
-        if (($user['role'] ?? '') === 'admin') {
+        $effectiveRole = \PMS\Middleware\AuthMiddleware::resolvedRole($user);
+        if ($effectiveRole === 'admin') {
             return [
                 'isAdmin'      => true,
                 'departmentId' => null,
@@ -34,13 +35,22 @@ final class PlacementOfficerContext
             ];
         }
 
-        if (($user['role'] ?? '') !== 'placement_officer') {
+        if ($effectiveRole !== 'placement_officer') {
             Response::forbidden('Placement officer access required.');
         }
 
         $profile = (new PlacementOfficerModel())->findByUserId((string) $user['_id']);
         if (!$profile) {
-            Response::forbidden('Placement officer profile not found. Contact admin.');
+            $staffProfile = StaffContext::ensureProfile($user);
+            if (empty($staffProfile['departmentId'])) {
+                Response::forbidden('Placement officer profile not found. Contact admin.');
+            }
+            $profile = [
+                'userId' => $user['_id'] ?? null,
+                'departmentId' => $staffProfile['departmentId'] ?? null,
+                'designation' => $staffProfile['designation'] ?? 'HOD',
+                'virtual' => true,
+            ];
         }
 
         if (empty($profile['departmentId'])) {

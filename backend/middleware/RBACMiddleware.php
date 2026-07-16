@@ -20,7 +20,7 @@ final class RBACMiddleware
     public static function requireRoles(array $allowedRoles): array
     {
         $user = AuthMiddleware::authenticate();
-        if (!in_array($user['role'] ?? '', $allowedRoles, true)) {
+        if (!in_array(AuthMiddleware::resolvedRole($user), $allowedRoles, true)) {
             Response::forbidden('You do not have permission to access this resource.');
         }
         return $user;
@@ -61,6 +61,6 @@ final class RBACMiddleware
      */
     public static function canAccess(array $user, array $roles): bool
     {
-        return in_array($user['role'] ?? '', $roles, true);
+        return in_array(AuthMiddleware::resolvedRole($user), $roles, true);
     }
 }
