@@ -84,6 +84,8 @@
                   <th class="registry-sortable" data-sort="admissionNo" data-label="Sl#">Sl#</th>
                   <th class="registry-sortable" data-sort="studentName" data-label="Student Name">Student Name</th>
                   <th class="registry-sortable" data-sort="admissionNo" data-label="Admission No">Admission No</th>
+                  <th class="registry-sortable" data-sort="courseId" data-label="Course ID">Course ID</th>
+                  <th class="registry-sortable" data-sort="branchId" data-label="Branch ID">Branch ID</th>
                   <th class="registry-sortable" data-sort="contact" data-label="Contact">Contact</th>
                   <th class="registry-sortable" data-sort="employer" data-label="Name of the Employer">Name of the
                     Employer</th>
@@ -97,7 +99,7 @@
               </thead>
               <tbody id="registryRows">
                 <tr>
-                  <td colspan="10" class="text-muted-2 p-4 text-center">Loading…</td>
+                  <td colspan="12" class="text-muted-2 p-4 text-center">Loading…</td>
                 </tr>
               </tbody>
             </table>
@@ -114,13 +116,13 @@
 
         <!-- Edit placement modal (AES 5.2.1 layout) -->
         <div class="modal fade" id="editPlacementModal" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+          <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content registry-edit-modal">
-              <div class="modal-header">
-                <h5 class="modal-title fw-bold">5.2.1</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-              </div>
-              <form id="editPlacementForm">
+              <form id="editPlacementForm" class="registry-edit-form">
+                <div class="modal-header">
+                  <h5 class="modal-title fw-bold">5.2.1</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
                 <div class="modal-body">
                   <input type="hidden" id="editStudentId" />
                   <input type="hidden" id="editRole" />
@@ -215,9 +217,11 @@
                     </div>
                   </div>
                 </div>
-                <div class="modal-footer">
-                  <button type="button" class="btn btn-danger" data-bs-dismiss="modal">Cancel</button>
-                  <button type="submit" class="btn btn-success" id="editPlacementSaveBtn">Submit</button>
+                <div class="modal-footer registry-edit-footer">
+                  <button type="button" class="btn btn-danger px-4" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" class="btn btn-success px-4" id="editPlacementSaveBtn">
+                    <i class="bi bi-check2 me-1"></i>Submit
+                  </button>
                 </div>
               </form>
             </div>
@@ -404,6 +408,36 @@
             font-size: .8125rem
           }
 
+          .registry-edit-modal {
+            max-height: calc(100vh - 2rem);
+            display: flex;
+            flex-direction: column
+          }
+
+          .registry-edit-form {
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 2rem);
+            min-height: 0
+          }
+
+          .registry-edit-modal .modal-body {
+            overflow-y: auto;
+            flex: 1 1 auto;
+            min-height: 0
+          }
+
+          .registry-edit-footer {
+            flex-shrink: 0;
+            position: sticky;
+            bottom: 0;
+            z-index: 5;
+            background: #fff;
+            border-top: 1px solid #dee2e6;
+            justify-content: flex-end;
+            gap: .75rem
+          }
+
           .registry-edit-modal .modal-title {
             font-size: 1.15rem;
             color: #212529
@@ -554,6 +588,7 @@
       filteredRows = !q ? allRows.slice() : allRows.filter(r => {
         const hay = [
           r.studentName, r.registerNumber, r.admissionNo, r.employer,
+          r.courseId, r.branchId,
           r.departmentName, r.departmentCode, r.program, r.branch, r.batch,
           r.contact, r.address, r.package, r.type, r.phone, r.email,
         ].join(' ').toLowerCase();
@@ -584,8 +619,8 @@
       if (!slice.length) {
         const needClass = !filterDepartmentId || !filterProgram || !filterBatch;
         tbody.innerHTML = needClass
-          ? '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>'
-          : '<tr><td colspan="10" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
+          ? '<tr><td colspan="12" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>'
+          : '<tr><td colspan="12" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
         return;
       }
 
@@ -605,6 +640,8 @@
       <td>${sl}</td>
       <td><span class="registry-student-name">${esc(String(r.studentName || '—').toUpperCase())}</span></td>
       <td>${esc(r.admissionNo || r.registerNumber || '—')}</td>
+      <td>${esc(r.courseId || '—')}</td>
+      <td>${esc(r.branchId || '—')}</td>
       <td class="registry-cell-contact">${esc(formatContact(r))}</td>
       <td>${esc(r.employer || '')}</td>
       <td>${esc(typeLabel)}</td>
@@ -719,23 +756,60 @@
         toast(res?.message || 'Could not update placement.', 'error');
         return;
       }
+      const savedId = String(res?.data?.studentId || studentId);
       if (evidence) {
         const fd = new FormData();
         fd.append('offerLetter', evidence, evidence.name);
-        const up = await StaffApi.uploadStudentPlacementDocuments(studentId, fd);
+        const up = await StaffApi.uploadStudentPlacementDocuments(savedId, fd);
         if (!up?.success) {
           btn.disabled = false;
           btn.innerHTML = label;
+          applySubmittedRow(studentId, savedId, payload, false);
           toast(up?.message || 'Details saved, but evidence upload failed.', 'warn');
           await loadRegistry();
           return;
         }
+        applySubmittedRow(studentId, savedId, payload, true);
+      } else {
+        applySubmittedRow(studentId, savedId, payload, false);
       }
       btn.disabled = false;
       btn.innerHTML = label;
       bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).hide();
       toast(evidence ? 'Placement details and evidence submitted.' : 'Placement details submitted.', 'success');
       await loadRegistry();
+    }
+
+    function applySubmittedRow(oldStudentId, savedStudentId, payload, hasOfferLetter) {
+      const patch = (row) => {
+        if (String(row.studentId) !== String(oldStudentId) && String(row.studentId) !== String(savedStudentId)) {
+          return row;
+        }
+        return {
+          ...row,
+          studentId: savedStudentId || row.studentId,
+          employer: payload.employer,
+          role: payload.role || row.role || '',
+          type: payload.type || row.type || 'Placement',
+          package: payload.package || '',
+          employerContact: payload.employerContact || '',
+          address: payload.address || '',
+          joinDate: payload.joinDate || '',
+          endDate: payload.endDate || '',
+          academicDuration: payload.academicDuration || '',
+          internshipDetails: payload.internshipDetails || '',
+          natureOfJob: payload.natureOfJob || '',
+          monthlySalary: payload.monthlySalary || '',
+          placementStatus: payload.placementStatus || '',
+          offerLetterVerified: !!payload.offerLetterVerified,
+          verificationDate: payload.verificationDate || '',
+          hasOfferLetter: hasOfferLetter || !!row.hasOfferLetter,
+          source: row.source === 'class_roster' ? 'placement' : (row.source || 'placement'),
+        };
+      };
+      allRows = allRows.map(patch);
+      filteredRows = filteredRows.map(patch);
+      renderTable();
     }
 
     async function saveUploadPlacement(ev) {
@@ -775,13 +849,13 @@
         filteredRows = [];
         document.getElementById('rowCount').textContent = '';
         document.getElementById('pageInfo').textContent = '';
-        tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>';
         return;
       }
-      tbody.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
         return;
       }
       allRows = Array.isArray(data.rows) ? data.rows : [];

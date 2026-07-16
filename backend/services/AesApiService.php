@@ -1182,6 +1182,23 @@ final class AesApiService
             $record['backlogs'] = (int) $record['backlog'];
         }
 
+        $courseId = $this->pickScalarId($record, [
+            'courseId', 'course_id', 'CourseId', 'courseid', 'courseID',
+            'stud_courseid', 'stud_course_id', 'stud_courseId',
+        ]);
+        if ($courseId !== '') {
+            $record['courseId'] = $courseId;
+            $record['course_id'] = $courseId;
+        }
+        $branchId = $this->pickScalarId($record, [
+            'branchId', 'branch_id', 'BranchId', 'branchid', 'branchID',
+            'stud_branchid', 'stud_branch_id', 'stud_branchId',
+        ]);
+        if ($branchId !== '') {
+            $record['branchId'] = $branchId;
+            $record['branch_id'] = $branchId;
+        }
+
         $marks10 = $this->pickMarkPercentFromRecord($record, [
             'marks10th', 'marks_10th', 'mark10th', 'mark_10th', 'sslc', 'sslc_marks', 'sslcMarks',
             'sslc_percentage', 'sslcPercent', 'sslc_percent', 'sslc_per', 'sslcper', 'sslcpercent',
@@ -1682,6 +1699,25 @@ final class AesApiService
         }
 
         return null;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param list<string> $keys
+     */
+    private function pickScalarId(array $record, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $record) || $record[$key] === null || $record[$key] === '') {
+                continue;
+            }
+            $value = trim((string) $record[$key]);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     /**

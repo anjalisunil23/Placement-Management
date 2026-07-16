@@ -1218,6 +1218,28 @@ final class OfficerDataService
         $row['stud_class'] = $classBatch !== '' ? $classBatch : (string) ($row['stud_class'] ?? '');
         $row['stud_course'] = $programme !== '' ? $programme : (string) ($row['stud_course'] ?? '');
         $row['stud_branch'] = trim((string) ($record['stud_branch'] ?? $row['stud_branch'] ?? ''));
+        $courseId = trim((string) (
+            $record['courseId']
+            ?? $record['course_id']
+            ?? $row['courseId']
+            ?? $row['course_id']
+            ?? ''
+        ));
+        $branchId = trim((string) (
+            $record['branchId']
+            ?? $record['branch_id']
+            ?? $row['branchId']
+            ?? $row['branch_id']
+            ?? ''
+        ));
+        if ($courseId !== '') {
+            $row['courseId'] = $courseId;
+            $row['course_id'] = $courseId;
+        }
+        if ($branchId !== '') {
+            $row['branchId'] = $branchId;
+            $row['branch_id'] = $branchId;
+        }
         if ($year !== '') {
             $row['year'] = $year;
         }

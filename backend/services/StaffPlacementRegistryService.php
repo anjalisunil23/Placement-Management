@@ -136,19 +136,25 @@ final class StaffPlacementRegistryService
     private function deduplicateStudentRows(array $rows): array
     {
         $unique = [];
-        $seen = [];
         foreach ($rows as $row) {
             $key = $this->studentRowKey($row);
-            if ($key !== '' && isset($seen[$key])) {
+            if ($key === '') {
+                $unique[] = $row;
                 continue;
             }
-            if ($key !== '') {
-                $seen[$key] = true;
+            if (!isset($unique[$key])) {
+                $unique[$key] = $row;
+                continue;
             }
-            $unique[] = $row;
+            // Prefer the row that already has placement / HE details filled in.
+            $existingEmployer = trim((string) ($unique[$key]['employer'] ?? ''));
+            $newEmployer = trim((string) ($row['employer'] ?? ''));
+            if ($existingEmployer === '' && $newEmployer !== '') {
+                $unique[$key] = $row;
+            }
         }
 
-        return $unique;
+        return array_values($unique);
     }
 
     /**
@@ -190,12 +196,15 @@ final class StaffPlacementRegistryService
         $branch = $deptFields['branch'];
         $batch = trim((string) ($row['classBatch'] ?? ''));
         $admissionNo = $this->resolveAdmissionNo($row, $register);
+        $ids = $this->resolveCourseBranchIds($row);
 
         $meta = [
             'studentId'       => $studentId,
             'studentName'     => $studentName,
             'registerNumber'  => $register,
             'admissionNo'     => $admissionNo,
+            'courseId'        => $ids['courseId'],
+            'branchId'        => $ids['branchId'],
             'phone'           => $phone,
             'email'           => $email,
             'contact'         => $contact,
@@ -579,6 +588,8 @@ final class StaffPlacementRegistryService
                 (string) ($row['studentName'] ?? ''),
                 (string) ($row['registerNumber'] ?? ''),
                 (string) ($row['admissionNo'] ?? ''),
+                (string) ($row['courseId'] ?? ''),
+                (string) ($row['branchId'] ?? ''),
                 (string) ($row['employer'] ?? ''),
                 (string) ($row['contact'] ?? ''),
                 (string) ($row['address'] ?? ''),
@@ -687,6 +698,42 @@ final class StaffPlacementRegistryService
         }
 
         return '';
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array{courseId:string,branchId:string}
+     */
+    private function resolveCourseBranchIds(array $row): array
+    {
+        $courseId = '';
+        foreach ([
+            'courseId', 'course_id', 'CourseId', 'courseid',
+            'stud_courseid', 'stud_course_id', 'stud_courseId',
+        ] as $key) {
+            $value = trim((string) ($row[$key] ?? ''));
+            if ($value !== '') {
+                $courseId = $value;
+                break;
+            }
+        }
+
+        $branchId = '';
+        foreach ([
+            'branchId', 'branch_id', 'BranchId', 'branchid',
+            'stud_branchid', 'stud_branch_id', 'stud_branchId',
+        ] as $key) {
+            $value = trim((string) ($row[$key] ?? ''));
+            if ($value !== '') {
+                $branchId = $value;
+                break;
+            }
+        }
+
+        return [
+            'courseId' => $courseId,
+            'branchId' => $branchId,
+        ];
     }
 
     private function formatContact(string $phone, string $email): string
@@ -967,6 +1014,8 @@ final class StaffPlacementRegistryService
                 ?? ''
             )),
             'branch'         => trim((string) ($student['stud_branch'] ?? $student['branch'] ?? 'Regular')),
+            'courseId'       => trim((string) ($student['courseId'] ?? $student['course_id'] ?? '')),
+            'branchId'       => trim((string) ($student['branchId'] ?? $student['branch_id'] ?? '')),
             'personal'       => [
                 'fullName'       => $name,
                 'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
@@ -1007,6 +1056,8 @@ final class StaffPlacementRegistryService
         ));
         $branch = trim((string) ($aesStudent['stud_branch'] ?? $aesStudent['branch'] ?? ''));
         $batch = trim((string) ($aesStudent['classBatch'] ?? $aesStudent['stud_class'] ?? ''));
+        $courseId = trim((string) ($aesStudent['courseId'] ?? $aesStudent['course_id'] ?? ''));
+        $branchId = trim((string) ($aesStudent['branchId'] ?? $aesStudent['branch_id'] ?? ''));
         $patch = [];
         if ($programme !== '' && trim((string) ($existing['programme'] ?? '')) === '') {
             $patch['programme'] = $programme;
@@ -1016,6 +1067,12 @@ final class StaffPlacementRegistryService
         }
         if ($batch !== '' && trim((string) ($existing['classBatch'] ?? '')) === '') {
             $patch['classBatch'] = $batch;
+        }
+        if ($courseId !== '' && trim((string) ($existing['courseId'] ?? '')) === '') {
+            $patch['courseId'] = $courseId;
+        }
+        if ($branchId !== '' && trim((string) ($existing['branchId'] ?? '')) === '') {
+            $patch['branchId'] = $branchId;
         }
         if ($patch !== []) {
             $model->update((string) $existing['_id'], $patch);
