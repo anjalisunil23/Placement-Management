@@ -64,9 +64,10 @@ const AdminApi = {
       aesOnly: !!row.aesOnly,
       isNew: !!(row.isNew || row.aesOnly),
       department: row.departmentCode || dept.code || dept.name || '',
-      departmentName: (typeof resolveCollegeProgrammeLabel === 'function'
-        ? (resolveCollegeProgrammeLabel(row.departmentCode || dept.code || row.departmentName || dept.name) || '')
-        : '') || row.departmentName || dept.name || dept.code || '',
+      departmentName: row.departmentName || dept.name || dept.code || ''
+        || (typeof resolveCollegeProgrammeLabel === 'function'
+          ? (resolveCollegeProgrammeLabel(row.departmentCode || dept.code) || '')
+          : ''),
       classBatch: row.classBatch || '',
       year: row.year || '',
       semester: row.semester || '',

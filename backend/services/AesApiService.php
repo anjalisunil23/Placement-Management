@@ -287,12 +287,47 @@ final class AesApiService
             return [];
         }
 
+        $departments = $this->loadDepartmentsFromApi();
+        $deptByAesId = [];
+        foreach ($departments as $dept) {
+            $aesId = trim((string) ($dept['aesId'] ?? ''));
+            if ($aesId !== '' && preg_match('/^\d+$/', $aesId) === 1) {
+                $deptByAesId[$aesId] = $dept;
+            }
+        }
+
         $out = [];
         $seen = [];
         foreach ($records as $record) {
             $normalized = $this->normalizePlacementStudentRecord($record);
             if ($normalized === []) {
                 continue;
+            }
+            $deptAesId = trim((string) (
+                $normalized['stud_deptcode']
+                ?? $normalized['parentDepartmentCode']
+                ?? ''
+            ));
+            if ($deptAesId !== '' && isset($deptByAesId[$deptAesId])) {
+                $parent = $deptByAesId[$deptAesId];
+                $normalized['parentDepartmentCode'] = $deptAesId;
+                $normalized['parentDepartmentName'] = (string) ($parent['name'] ?? '');
+                $normalized['parentDepartmentShort'] = (string) ($parent['short'] ?? $parent['code'] ?? '');
+                if (empty($normalized['departmentName']) || $this->isCourseLevelShort((string) ($normalized['departmentName'] ?? ''))) {
+                    $branchName = trim((string) ($normalized['stud_branch'] ?? $normalized['branch_name'] ?? ''));
+                    $normalized['departmentName'] = $branchName !== ''
+                        ? $branchName
+                        : (string) ($parent['name'] ?? '');
+                    $normalized['deptName'] = $normalized['departmentName'];
+                }
+                if ($this->isCourseLevelShort((string) ($normalized['department'] ?? $normalized['deptCode'] ?? ''))) {
+                    $short = (string) ($parent['short'] ?? $parent['code'] ?? '');
+                    if ($short !== '') {
+                        $normalized['department'] = $short;
+                        $normalized['deptCode'] = $short;
+                        $normalized['department_code'] = $short;
+                    }
+                }
             }
             $key = strtoupper(trim((string) (
                 $normalized['admno']
@@ -309,6 +344,14 @@ final class AesApiService
         }
 
         return $out;
+    }
+
+    /** Course-level AES shorts (B.Tech / M.Tech), not department codes. */
+    public function isCourseLevelShort(string $code): bool
+    {
+        $needle = strtoupper(preg_replace('/[^A-Z0-9]/', '', trim($code)) ?? '');
+
+        return in_array($needle, ['BT', 'MT', 'BTECH', 'MTECH'], true);
     }
 
     /**
@@ -616,7 +659,9 @@ final class AesApiService
             $code = strtoupper($row['code']);
             $name = strtoupper($row['name']);
             $short = strtoupper($row['short'] ?? '');
-            if ($code === $needle || $name === $needle || ($short !== '' && $short === $needle)) {
+            $aesId = strtoupper(trim((string) ($row['aesId'] ?? '')));
+            if ($code === $needle || $name === $needle || ($short !== '' && $short === $needle)
+                || ($aesId !== '' && $aesId === $needle)) {
                 return $row;
             }
         }
@@ -1088,46 +1133,54 @@ final class AesApiService
             ?? $record['department_code']
             ?? ''
         )));
-        $branch = strtoupper(trim((string) (
+        $courseShort = strtoupper(trim((string) (
             $record['stud_cource_short']
             ?? $record['stud_course']
             ?? ''
         )));
+        $branchName = trim((string) (
+            $record['stud_branch']
+            ?? $record['branch_name']
+            ?? $record['branchName']
+            ?? ''
+        ));
 
         if ($parentCode !== '') {
             $record['parentDepartmentCode'] = $parentCode;
             $record['stud_deptcode'] = $parentCode;
         }
-        if ($branch !== '') {
-            $record['branch'] = $branch;
-            $record['programme'] = $branch;
-            $record['deptCode'] = $branch;
-            $record['department'] = $branch;
-            $branchLabel = DepartmentProgrammeCatalog::programmeLabel($branch);
-            $legacyName = trim((string) (
-                $record['parentDepartmentName']
-                ?? $record['dept_name']
-                ?? $record['department_name']
-                ?? $record['branch_name']
-                ?? ''
-            ));
-            $readableName = $branchLabel !== ''
-                ? $branchLabel
-                : ($legacyName !== '' && strcasecmp($legacyName, $branch) !== 0 ? $legacyName : $branch);
-            $record['departmentName'] = $readableName;
-            $record['deptName'] = $readableName;
-        } elseif ($parentCode !== '') {
+
+        // Prefer AES stud_branch as the human department name (e.g. "Computer Science and Engineering").
+        if ($branchName !== '') {
+            $record['stud_branch'] = $branchName;
+            $record['branch_name'] = $branchName;
+            $record['departmentName'] = $branchName;
+            $record['deptName'] = $branchName;
+        }
+
+        // Course shorts like BT (B.Tech) / MT (M.Tech) are not department codes.
+        if ($courseShort !== '' && !$this->isCourseLevelShort($courseShort)) {
+            $record['branch'] = $courseShort;
+            $record['programme'] = $courseShort;
+            $record['deptCode'] = $courseShort;
+            $record['department'] = $courseShort;
+            $branchLabel = DepartmentProgrammeCatalog::programmeLabel($courseShort);
+            if ($branchLabel !== '' && ($branchName === '' || strcasecmp($branchName, $courseShort) === 0)) {
+                $record['departmentName'] = $branchLabel;
+                $record['deptName'] = $branchLabel;
+            }
+        } elseif ($parentCode !== '' && empty($record['department'])) {
             $record['deptCode'] = $parentCode;
             $record['department'] = $parentCode;
         }
 
         $legacyName = trim((string) (
-            $record['dept_name']
+            $record['parentDepartmentName']
+            ?? $record['dept_name']
             ?? $record['department_name']
-            ?? $record['branch_name']
             ?? ''
         ));
-        if ($branch === '' && $legacyName !== '') {
+        if ($legacyName !== '' && empty($record['departmentName'])) {
             $record['departmentName'] = $legacyName;
             $record['deptName'] = $legacyName;
         }

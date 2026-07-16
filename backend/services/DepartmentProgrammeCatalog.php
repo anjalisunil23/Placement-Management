@@ -82,15 +82,9 @@ final class DepartmentProgrammeCatalog
                 ],
             ],
             [
-                'parent' => 'Biotechnology',
-                'programmes' => [
-                    ['code' => 'BT', 'label' => 'BT — Biotechnology', 'aliases' => ['BIOTECH', 'BIOTECHNOLOGY']],
-                ],
-            ],
-            [
                 'parent' => 'Metallurgical & Materials',
                 'programmes' => [
-                    ['code' => 'MG', 'label' => 'MG — Metallurgical & Materials Engineering', 'aliases' => ['MT', 'MET', 'MME']],
+                    ['code' => 'MG', 'label' => 'MG — Metallurgical & Materials Engineering', 'aliases' => ['MET', 'MME']],
                 ],
             ],
         ];

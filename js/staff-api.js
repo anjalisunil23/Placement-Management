@@ -31,10 +31,9 @@ const StaffApi = {
     const deptCode = row.departmentCode
       || deptObj?.code
       || (typeof row.department === 'string' ? row.department : '');
-    const catalogName = typeof resolveCollegeProgrammeLabel === 'function'
-      ? (resolveCollegeProgrammeLabel(deptCode || row.departmentName || deptObj?.name) || '')
-      : '';
-    const deptName = catalogName || row.departmentName || deptObj?.name || deptCode;
+    const deptName = row.departmentName || deptObj?.name
+      || (typeof resolveCollegeProgrammeLabel === 'function' ? (resolveCollegeProgrammeLabel(deptCode) || '') : '')
+      || deptCode;
     return {
       id: row.id || row._id || StaffApi.id(row),
       studentId: row.id || row._id || row.studentId || StaffApi.id(row),

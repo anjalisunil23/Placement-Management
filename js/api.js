@@ -2665,15 +2665,9 @@ const DEPARTMENT_PROGRAMME_GROUPS = [
     ],
   },
   {
-    parent: 'Biotechnology',
-    programmes: [
-      { code: 'BT', label: 'BT — Biotechnology', aliases: ['BIOTECH', 'BIOTECHNOLOGY'] },
-    ],
-  },
-  {
     parent: 'Metallurgical & Materials',
     programmes: [
-      { code: 'MG', label: 'MG — Metallurgical & Materials Engineering', aliases: ['MT', 'MET', 'MME'] },
+      { code: 'MG', label: 'MG — Metallurgical & Materials Engineering', aliases: ['MET', 'MME'] },
     ],
   },
 ];
@@ -2723,14 +2717,18 @@ function resolveCollegeProgrammeLabel(code) {
   return '';
 }
 
-/** Prefer full department / programme name over short codes like "BT". */
+/** Prefer AES / API full department names over short course codes like "BT". */
 function studentDepartmentLabel(s) {
   if (!s || typeof s !== 'object') return '—';
-  const code = String(s.departmentCode || s.department || '').trim();
+  const code = String(s.departmentCode || (typeof s.department === 'string' ? s.department : '') || '').trim();
   const name = String(s.departmentName || '').trim();
+  // AES getAllStudInfo4Placement stud_branch values are full names with spaces.
+  if (name && !/^\d+$/.test(name) && (/\s/.test(name) || name.length > 4)) {
+    return name;
+  }
   const fromCatalog = resolveCollegeProgrammeLabel(code) || resolveCollegeProgrammeLabel(name);
   if (fromCatalog) return fromCatalog;
-  if (name && !/^\d+$/.test(name) && name.toUpperCase() !== code.toUpperCase()) return name;
+  if (name && name.toUpperCase() !== code.toUpperCase()) return name;
   if (typeof resolveDepartmentRecord === 'function') {
     const rec = resolveDepartmentRecord(code || name);
     const rn = String(rec?.name || '').trim();
