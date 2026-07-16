@@ -168,7 +168,7 @@ final class PlacementFilterService
      * @param array<string, mixed> $ctx
      * @return list<string>
      */
-    public function fetchBatchOptions(array $ctx, string $program = '', string $branch = ''): array
+    public function fetchBatchOptions(array $ctx, string $program = '', string $branch = '', bool $finalYearOnly = false): array
     {
         $branch = trim($branch);
         $program = trim($program);
@@ -189,7 +189,18 @@ final class PlacementFilterService
             $batches[] = $batch;
         }
 
-        return $this->sortLabels(array_values(array_unique($batches)));
+        $batches = $this->sortLabels(array_values(array_unique($batches)));
+        if (!$finalYearOnly) {
+            return $batches;
+        }
+
+        $hint = trim($program . ' ' . $branch);
+        $classifier = new OfficerDataService();
+
+        return array_values(array_filter(
+            $batches,
+            static fn (string $batch): bool => $classifier->isFinalYearClassBatch($batch, $hint)
+        ));
     }
 
     /**

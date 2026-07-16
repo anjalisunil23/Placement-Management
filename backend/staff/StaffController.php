@@ -287,7 +287,7 @@ final class StaffController
             'departments' => $svc->fetchDepartmentOptions($ctx),
             'programs' => $svc->fetchProgramOptions($ctx),
             'branches' => $program !== '' ? $svc->fetchBranchOptions($ctx, $program) : [],
-            'batches'  => $svc->fetchBatchOptions($ctx, $program, $branch),
+            'batches'  => $svc->fetchBatchOptions($ctx, $program, $branch, true),
         ]));
     }
 

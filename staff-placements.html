@@ -161,10 +161,8 @@
                       <input class="form-control" id="editAddress" placeholder="Address of the Employer" />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editPackage" id="editPackageLabel">Pay package at
-                        appointment (In INR per annum) (applicable for students who got placement) / Name of program
-                        admitted to (applicable for students who progressed to higher education)</label>
-                      <input class="form-control" id="editPackage" placeholder="Pay package at appointment" />
+                      <label class="form-label small fw-semibold" for="editPackage" id="editPackageLabel">Package</label>
+                      <input class="form-control" id="editPackage" placeholder="Package" />
                     </div>
                     <div class="col-md-6">
                       <label class="form-label small fw-semibold" for="editPlacementStatus">Placement status</label>
@@ -444,10 +442,6 @@
           .registry-edit-modal .form-label {
             color: #495057;
             line-height: 1.35
-          }
-
-          .registry-edit-modal #editPackageLabel {
-            font-size: .8rem
           }
         </style>
 
@@ -795,11 +789,8 @@
     }
 
     function syncEditPackageHint() {
-      const isHigher = document.getElementById('editType')?.value === 'Higher Education';
       const pkg = document.getElementById('editPackage');
-      if (pkg) {
-        pkg.placeholder = isHigher ? 'Name of program admitted to' : 'Pay package at appointment';
-      }
+      if (pkg) pkg.placeholder = 'Package';
     }
 
     function openEditPlacement(studentId) {

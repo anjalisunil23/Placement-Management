@@ -1028,6 +1028,14 @@ final class OfficerDataService
     }
 
     /**
+     * Whether a stud_class / classBatch label represents a final-year outgoing cohort.
+     */
+    public function isFinalYearClassBatch(string $batch, string $programmeHint = ''): bool
+    {
+        return $this->looksLikeFinalYearClassBatch($batch, $programmeHint);
+    }
+
+    /**
      * Detect PG / MCA programmes even when labels are glued (MCA2025-27-S3, MCA Regular).
      */
     private function isPgPlacementProgramme(string $text): bool
@@ -1104,8 +1112,19 @@ final class OfficerDataService
         }
 
         // Year-range batches like MCA2025-27 / 2023-27 without semester.
-        if (preg_match('/20\d{2}\s*[-–]\s*\d{2,4}/', $batch) === 1) {
-            return true;
+        // Previous logic treated *any* year-range as final-year, which could surface older outgoing batches.
+        // Tighten by checking the end-year against the current year window.
+        if (preg_match('/20\d{2}\s*[-–]\s*(\d{2,4})/', $batch, $m) === 1) {
+            $endRaw = trim((string) ($m[1] ?? ''));
+            if ($endRaw !== '') {
+                $endYear = strlen($endRaw) === 2 ? (2000 + (int) $endRaw) : (int) $endRaw;
+                $nowYear = (int) date('Y');
+                // Allow the "final year" window to include batches completing in current year,
+                // and (for late academic cycles) the next year.
+                if ($endYear >= $nowYear && $endYear <= ($nowYear + 1)) {
+                    return true;
+                }
+            }
         }
 
         if ($isPg && preg_match('/REGULAR/', $batch . ' ' . $programmeHint) === 1) {

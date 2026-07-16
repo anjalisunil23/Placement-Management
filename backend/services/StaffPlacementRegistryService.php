@@ -456,7 +456,7 @@ final class StaffPlacementRegistryService
         $programs = $filterSvc->fetchProgramOptions($staffCtx);
         $branches = $program !== '' ? $filterSvc->fetchBranchOptions($staffCtx, $program) : [];
         $batches = $program !== ''
-            ? $filterSvc->fetchBatchOptions($staffCtx, $program, $branch)
+            ? $filterSvc->fetchBatchOptions($staffCtx, $program, $branch, true)
             : [];
 
         return [
