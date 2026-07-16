@@ -195,9 +195,11 @@ final class AuthMiddleware
     $service = new \PMS\Services\AesLoginService();
     $data = $service->applyAesSessionToUserFields($data);
     if (($data['role'] ?? $user['role'] ?? '') === 'student') {
+      // forceApiLookup=false: still refreshes when stored name is email-local / missing.
       $syncedName = $service->syncStudentNameFromPlacement(
           array_merge($user, $data),
-          (string) ($data['registerNumber'] ?? '')
+          (string) ($data['registerNumber'] ?? ''),
+          false
       );
       if ($syncedName !== '') {
         $data['name'] = $syncedName;

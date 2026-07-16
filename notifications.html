@@ -27,7 +27,23 @@
   </ul>
   <div class="tab-content p-3 p-md-4">
     <div class="tab-pane fade show active" id="unread"><div id="nlistUnread" class="d-flex flex-column gap-2"></div></div>
-    <div class="tab-pane fade" id="read"><div id="nlistRead" class="d-flex flex-column gap-2"></div></div>
+    <div class="tab-pane fade" id="read">
+      <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3" id="readToolbar" hidden>
+        <div class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" id="selectAllRead" />
+          <label class="form-check-label small" for="selectAllRead">Select all</label>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-danger" id="deleteSelectedRead" disabled>
+            <i class="bi bi-trash me-1"></i>Delete selected
+          </button>
+          <button type="button" class="btn btn-sm btn-danger" id="deleteAllRead">
+            <i class="bi bi-trash3 me-1"></i>Delete all
+          </button>
+        </div>
+      </div>
+      <div id="nlistRead" class="d-flex flex-column gap-2"></div>
+    </div>
     <div class="tab-pane fade" id="jobposters"><div id="nlistJobs" class="d-flex flex-column gap-2"></div></div>
     <div class="tab-pane fade" id="appupdates"><div id="nlistApps" class="d-flex flex-column gap-2"></div></div>
     <div class="tab-pane fade" id="email">
@@ -91,8 +107,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260716fast"></script>
-<script src="js/app.js?v=20260716name"></script>
+<script src="js/api.js?v=20260716notifdel"></script>
+<script src="js/app.js?v=20260716notifdel"></script>
 <script>
 onAppReady(() => {
 const role = Auth.role();
@@ -154,16 +170,20 @@ function notifAccent(rawType) {
   return 'var(--primary)';
 }
 
-function notifCard(n) {
+function notifCard(n, { selectable = false } = {}) {
   const icon = notifIcon(n.rawType || n.type);
   const accent = notifAccent(n.rawType || n.type);
   const ago = formatDate(n.createdAt);
   const reviewHint = (n.rawType === 'self_placement_submitted' && n.metadata?.studentId)
     ? '<div class="small text-warning mt-1"><i class="bi bi-arrow-right-circle me-1"></i>Click to review placement report</div>' : '';
-  return `<div class="notif-card ${n.read ? '' : 'unread'}" data-id="${n.id}" role="button" tabindex="0" style="cursor:pointer;border-left:3px solid ${accent}">
+  const check = selectable
+    ? `<div class="me-2 pt-1" onclick="event.stopPropagation()"><input type="checkbox" class="form-check-input notif-select" data-id="${escHtml(n.id)}" aria-label="Select notification"/></div>`
+    : '';
+  return `<div class="notif-card ${n.read ? '' : 'unread'} d-flex align-items-start gap-2" data-id="${escHtml(n.id)}" role="button" tabindex="0" style="cursor:pointer;border-left:3px solid ${accent}">
+    ${check}
     <div class="notif-ic" style="background:color-mix(in srgb,var(--${icon[0]}) 15%,transparent);color:var(--${icon[0]})"><i class="bi ${icon[1]}"></i></div>
-    <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${n.title}</strong><small class="text-muted-2">${ago}</small></div>
-    <p class="mb-0 small text-muted-2">${n.body}</p>${reviewHint}</div>
+    <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${escHtml(n.title)}</strong><small class="text-muted-2">${ago}</small></div>
+    <p class="mb-0 small text-muted-2">${escHtml(n.body)}</p>${reviewHint}</div>
   </div>`;
 }
 
@@ -339,13 +359,85 @@ async function openBroadcastModal() {
 
 function renderInbox() {
   const all = notificationRows;
+  const readRows = all.filter(n => n.read);
   document.getElementById('unreadBadge').textContent = all.filter(n => !n.read).length;
-  document.getElementById('nlistUnread').innerHTML = all.filter(n => !n.read).map(notifCard).join('') || '<p class="text-muted-2">No unread notifications.</p>';
-  document.getElementById('nlistRead').innerHTML = all.filter(n => n.read).map(notifCard).join('') || '<p class="text-muted-2">No read notifications yet.</p>';
+  document.getElementById('nlistUnread').innerHTML = all.filter(n => !n.read).map(n => notifCard(n)).join('') || '<p class="text-muted-2">No unread notifications.</p>';
+  const toolbar = document.getElementById('readToolbar');
+  if (toolbar) toolbar.hidden = readRows.length === 0;
+  document.getElementById('nlistRead').innerHTML = readRows.length
+    ? readRows.map(n => notifCard(n, { selectable: true })).join('')
+    : '<p class="text-muted-2">No read notifications yet.</p>';
+  const selectAll = document.getElementById('selectAllRead');
+  if (selectAll) selectAll.checked = false;
+  syncReadSelection();
   if (isStudent) {
-    document.getElementById('nlistJobs').innerHTML = all.filter(n => n.type === 'job_poster').map(notifCard).join('') || '<p class="text-muted-2">No job posters yet.</p>';
-    document.getElementById('nlistApps').innerHTML = all.filter(n => n.type === 'application_update').map(notifCard).join('') || '<p class="text-muted-2">No application updates yet.</p>';
+    document.getElementById('nlistJobs').innerHTML = all.filter(n => n.type === 'job_poster').map(n => notifCard(n)).join('') || '<p class="text-muted-2">No job posters yet.</p>';
+    document.getElementById('nlistApps').innerHTML = all.filter(n => n.type === 'application_update').map(n => notifCard(n)).join('') || '<p class="text-muted-2">No application updates yet.</p>';
   }
+}
+
+function selectedReadIds() {
+  return [...document.querySelectorAll('#nlistRead .notif-select:checked')]
+    .map(el => String(el.dataset.id || '').trim())
+    .filter(Boolean);
+}
+
+function syncReadSelection() {
+  const ids = selectedReadIds();
+  const btn = document.getElementById('deleteSelectedRead');
+  if (btn) btn.disabled = ids.length === 0;
+  const boxes = [...document.querySelectorAll('#nlistRead .notif-select')];
+  const selectAll = document.getElementById('selectAllRead');
+  if (selectAll && boxes.length) {
+    selectAll.checked = boxes.every(b => b.checked);
+    selectAll.indeterminate = !selectAll.checked && boxes.some(b => b.checked);
+  }
+}
+
+async function deleteNotificationsByIds(ids) {
+  const unique = [...new Set((ids || []).map(String).filter(Boolean))];
+  if (!unique.length) return false;
+  if (Auth.hasRealAuth() && notifApiBase) {
+    const res = await api(`${notifApiBase}/delete-selected`, {
+      method: 'POST',
+      body: { ids: unique },
+      skipAuthRedirect: true,
+    });
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete notifications.', 'error');
+      return false;
+    }
+  } else if (notifStore?.removeMany) {
+    notifStore.removeMany(unique);
+  } else if (notifStore) {
+    unique.forEach(id => notifStore.remove?.(id));
+  }
+  await loadNotifications();
+  renderInbox();
+  NotificationInbox.refreshBadge?.();
+  return true;
+}
+
+async function deleteAllReadNotifications() {
+  if (Auth.hasRealAuth() && notifApiBase) {
+    const res = await api(`${notifApiBase}/delete-all`, {
+      method: 'POST',
+      body: { readOnly: true },
+      skipAuthRedirect: true,
+    });
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete notifications.', 'error');
+      return false;
+    }
+  } else if (notifStore?.removeRead) {
+    notifStore.removeRead();
+  } else if (notifStore?.removeMany) {
+    notifStore.removeMany(notificationRows.filter(n => n.read).map(n => n.id));
+  }
+  await loadNotifications();
+  renderInbox();
+  NotificationInbox.refreshBadge?.();
+  return true;
 }
 
 function showReadTab() {
@@ -410,8 +502,15 @@ function bindNotificationClicks() {
     if (!el || el.dataset.bound === '1') return;
     el.dataset.bound = '1';
     el.addEventListener('click', e => {
+      if (e.target.closest('.notif-select')) {
+        syncReadSelection();
+        return;
+      }
       const card = e.target.closest('.notif-card[data-id]');
       if (card) openNotification(card.dataset.id);
+    });
+    el.addEventListener('change', e => {
+      if (e.target.classList.contains('notif-select')) syncReadSelection();
     });
     el.addEventListener('keydown', e => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -421,10 +520,51 @@ function bindNotificationClicks() {
   });
 }
 
+function bindReadDeleteActions() {
+  document.getElementById('selectAllRead')?.addEventListener('change', (e) => {
+    const checked = !!e.target.checked;
+    document.querySelectorAll('#nlistRead .notif-select').forEach(box => { box.checked = checked; });
+    syncReadSelection();
+  });
+  document.getElementById('deleteSelectedRead')?.addEventListener('click', async () => {
+    const ids = selectedReadIds();
+    if (!ids.length) {
+      toast('Select at least one notification.', 'warn');
+      return;
+    }
+    if (!(await confirmAction({
+      title: 'Delete selected',
+      message: `Delete ${ids.length} selected notification${ids.length === 1 ? '' : 's'}?`,
+      confirmText: 'Delete',
+      variant: 'danger',
+    }))) return;
+    if (await deleteNotificationsByIds(ids)) {
+      toast(ids.length === 1 ? 'Notification deleted.' : `${ids.length} notifications deleted.`, 'success');
+    }
+  });
+  document.getElementById('deleteAllRead')?.addEventListener('click', async () => {
+    const count = notificationRows.filter(n => n.read).length;
+    if (!count) {
+      toast('No read notifications to delete.', 'warn');
+      return;
+    }
+    if (!(await confirmAction({
+      title: 'Delete all read',
+      message: `Delete all ${count} read notification${count === 1 ? '' : 's'}? This cannot be undone.`,
+      confirmText: 'Delete all',
+      variant: 'danger',
+    }))) return;
+    if (await deleteAllReadNotifications()) {
+      toast('All read notifications deleted.', 'success');
+    }
+  });
+}
+
 if (hasInbox) {
   loadNotifications().then(() => {
     renderInbox();
     bindNotificationClicks();
+    bindReadDeleteActions();
     if (isAdminLike) loadBroadcastHistory();
   });
   document.getElementById('markAllRead')?.addEventListener('click', async () => {

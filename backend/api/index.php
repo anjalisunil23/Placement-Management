@@ -223,6 +223,8 @@ $routes = [
     ['DELETE', '/admin/placement-news/{id}',         [AdminController::class, 'deletePlacementNews']],
     ['GET',    '/admin/notifications',               [AdminController::class, 'notifications']],
     ['POST',   '/admin/notifications/read-all',      [AdminController::class, 'markAllNotificationsRead']],
+    ['POST',   '/admin/notifications/delete-selected', [AdminController::class, 'deleteSelectedNotifications']],
+    ['POST',   '/admin/notifications/delete-all',    [AdminController::class, 'deleteAllNotifications']],
     ['POST',   '/admin/notifications/{id}/read',     [AdminController::class, 'markNotificationRead']],
     ['POST',   '/admin/broadcast',                   [AdminController::class, 'broadcast']],
     ['GET',    '/admin/broadcasts',                  [AdminController::class, 'listBroadcasts']],
@@ -253,6 +255,8 @@ $routes = [
     ['GET',  '/student/results',         [StudentController::class, 'myResults']],
     ['GET',  '/student/notifications',     [StudentController::class, 'notifications']],
     ['POST', '/student/notifications/read-all', [StudentController::class, 'markAllNotificationsRead']],
+    ['POST', '/student/notifications/delete-selected', [StudentController::class, 'deleteSelectedNotifications']],
+    ['POST', '/student/notifications/delete-all', [StudentController::class, 'deleteAllNotifications']],
     ['GET',  '/student/placement-history', [StudentController::class, 'placementHistory']],
     ['POST', '/student/self-placement',    [StudentController::class, 'submitSelfPlacement']],
     ['POST', '/student/placement/current', [StudentController::class, 'updateCurrentPlacement']],
@@ -280,6 +284,8 @@ $routes = [
     ['POST', '/company/applications/{id}/result', [CompanyController::class, 'updateResult']],
     ['GET',  '/company/notifications',              [CompanyController::class, 'notifications']],
     ['POST', '/company/notifications/read-all',     [CompanyController::class, 'markAllNotificationsRead']],
+    ['POST', '/company/notifications/delete-selected', [CompanyController::class, 'deleteSelectedNotifications']],
+    ['POST', '/company/notifications/delete-all',   [CompanyController::class, 'deleteAllNotifications']],
     ['POST', '/company/notifications/{id}/read',    [CompanyController::class, 'markNotificationRead']],
     ['GET',  '/company/recruiting',                   [CompanyController::class, 'recruitingOverview']],
 
@@ -307,6 +313,8 @@ $routes = [
     ['GET',  '/staff/hiring-overview',            [StaffController::class, 'hiringOverview']],
     ['GET',  '/staff/notifications',              [StaffController::class, 'notifications']],
     ['POST', '/staff/notifications/read-all',     [StaffController::class, 'markAllNotificationsRead']],
+    ['POST', '/staff/notifications/delete-selected', [StaffController::class, 'deleteSelectedNotifications']],
+    ['POST', '/staff/notifications/delete-all',   [StaffController::class, 'deleteAllNotifications']],
     ['POST', '/staff/notifications/{id}/read',    [StaffController::class, 'markNotificationRead']],
 
     // Alumni
@@ -328,6 +336,8 @@ $routes = [
     ['GET',  '/alumni/applications', [AlumniController::class, 'myApplications']],
     ['GET',  '/alumni/notifications', [AlumniController::class, 'notifications']],
     ['POST', '/alumni/notifications/read-all', [AlumniController::class, 'markAllNotificationsRead']],
+    ['POST', '/alumni/notifications/delete-selected', [AlumniController::class, 'deleteSelectedNotifications']],
+    ['POST', '/alumni/notifications/delete-all', [AlumniController::class, 'deleteAllNotifications']],
     ['POST', '/alumni/notifications/{id}/read', [AlumniController::class, 'markNotificationRead']],
     ['GET',  '/alumni/success-stories', [AlumniController::class, 'listSuccessStories']],
     ['POST', '/alumni/success-stories', [AlumniController::class, 'createSuccessStory']],
@@ -384,6 +394,8 @@ $routes = [
     ['GET',  '/officer/placements-higher-education',  [OfficerController::class, 'placementsHigherEducation']],
     ['GET',  '/officer/notifications',               [OfficerController::class, 'notifications']],
     ['POST', '/officer/notifications/read-all',      [OfficerController::class, 'markAllNotificationsRead']],
+    ['POST', '/officer/notifications/delete-selected', [OfficerController::class, 'deleteSelectedNotifications']],
+    ['POST', '/officer/notifications/delete-all',    [OfficerController::class, 'deleteAllNotifications']],
     ['POST', '/officer/notifications/{id}/read',     [OfficerController::class, 'markNotificationRead']],
 
     // Health & public

@@ -1124,6 +1124,33 @@ final class OfficerController
         Response::success(['updated' => $count], 'All notifications marked as read.');
     }
 
+    /** POST /api/officer/notifications/delete-selected */
+    public function deleteSelectedNotifications(): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $ids = is_array($input['ids'] ?? null) ? $input['ids'] : [];
+        $ids = array_values(array_filter(array_map(static fn ($id) => trim((string) $id), $ids)));
+        if ($ids === []) {
+            Response::error('Select at least one notification to delete.', 422);
+        }
+        $count = (new NotificationModel())->deleteOwned((string) $user['_id'], $ids);
+        Response::success(['deleted' => $count], $count === 1 ? 'Notification deleted.' : "{$count} notifications deleted.");
+    }
+
+    /** POST /api/officer/notifications/delete-all */
+    public function deleteAllNotifications(): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $readOnly = !array_key_exists('readOnly', $input) || filter_var($input['readOnly'], FILTER_VALIDATE_BOOL);
+        $count = (new NotificationModel())->deleteAllForUser((string) $user['_id'], $readOnly);
+        Response::success(
+            ['deleted' => $count],
+            $readOnly ? 'All read notifications deleted.' : 'All notifications deleted.'
+        );
+    }
+
     private function isLiteProfileRequest(): bool
     {
         $lite = $_GET['lite'] ?? $_SERVER['HTTP_X_PROFILE_LITE'] ?? '';

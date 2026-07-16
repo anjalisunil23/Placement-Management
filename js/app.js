@@ -142,18 +142,19 @@ function shellDisplayName(user) {
     if (resolved) return resolved;
   }
   const candidates = [
-    user.name,
-    user.displayName,
     user.stud_name,
+    user.displayName,
     user.studentName,
     user.fullName,
     user.fullname,
     user.aesProfile?.stud_name,
+    user.name,
     user.aesProfile?.name,
   ];
   for (const raw of candidates) {
     const n = String(raw || '').trim();
     if (!n) continue;
+    if (typeof isLikelyEmailLocalName === 'function' && isLikelyEmailLocalName(n)) continue;
     if (typeof sanitizeDisplayName === 'function') {
       const clean = sanitizeDisplayName(n, user.registerNumber || '');
       if (clean) return clean;

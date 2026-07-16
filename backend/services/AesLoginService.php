@@ -975,32 +975,45 @@ final class AesLoginService
         }
 
         $current = trim((string) ($user['name'] ?? ''));
-        $emails = array_values(array_filter([
-            strtolower(trim((string) ($user['email'] ?? ''))),
-        ]));
-        // Keep /auth/me fast, but full profile loads must refresh the authoritative AES name.
-        if (!$forceApiLookup
-            && $current !== ''
-            && $this->isRealPersonName($current)
-            && !$this->isPlaceholderName($current, $register)
-            && !$this->isEmailDerivedName($current, $emails)) {
+        $emails = array_values(array_filter(array_map(
+            static fn ($v) => strtolower(trim((string) $v)),
+            [
+                $user['email'] ?? '',
+                $user['personalEmail'] ?? '',
+                $user['collegeEmail'] ?? '',
+                $aesProfile['personalEmail'] ?? '',
+                $aesProfile['collegeEmail'] ?? '',
+                $aesProfile['stud_personal_mails'] ?? '',
+                $aesProfile['stud_ajce_mails'] ?? '',
+            ]
+        )));
+        $needsNameRefresh = $current === ''
+            || $this->isPlaceholderName($current, $register)
+            || !$this->isRealPersonName($current)
+            || $this->isEmailDerivedName($current, $emails)
+            || $this->isLikelyEmailLocalName($current);
+        // Keep /auth/me fast, but always refresh when the stored name looks email-derived.
+        if (!$forceApiLookup && !$needsNameRefresh) {
             return $current;
         }
 
-        if ($forceApiLookup) {
+        if ($forceApiLookup || $needsNameRefresh) {
             // Prefer numeric AES stud_admno over a university register number.
             $apiRegister = (new AesApiService())->resolveQualificationAdmissionNumber($aesProfile, $register);
-            $apiName = $this->fetchStudentNameFromPlacementApi($apiRegister);
+            $apiName = $this->fetchStudentNameFromPlacementApi($apiRegister !== '' ? $apiRegister : $register);
+            if ($apiName === '') {
+                $apiName = $this->resolveAesName($aesProfile, [], $register, (string) ($user['personalEmail'] ?? ''), true);
+            }
         } else {
             $apiName = $this->resolveAesName($aesProfile, [], $register, '');
         }
-        if ($apiName === '') {
-            return $current;
+        if ($apiName === '' || $this->isLikelyEmailLocalName($apiName) || $this->isEmailDerivedName($apiName, $emails)) {
+            return $needsNameRefresh ? '' : $current;
         }
 
         if ($current === ''
             || strcasecmp($current, $apiName) !== 0
-            || $this->isEmailDerivedName($current, $emails)) {
+            || $needsNameRefresh) {
             (new UserModel())->updateUser((string) $user['_id'], ['name' => $apiName]);
 
             return $apiName;
@@ -3879,35 +3892,41 @@ final class AesLoginService
         $register = $this->resolveAesAdmissionNumber($register, $aesProfile, $mapped);
 
         // Prefer identity already present on the AES callback / session (login critical path).
-        $placementName = trim($this->pickInsensitive($aesProfile, [
-            'stud_name', 'student_name', 'studentName', 'studentnam', 'student_full_name', 'name', 'fullname', 'full_name', 'fullnameName',
-        ]));
-        if ($placementName !== '' && $this->isRealPersonName($placementName) && !$this->isPlaceholderName($placementName, $register)) {
-            return $placementName;
-        }
-
-        $name = $this->scanNameFromAesData(array_merge($aesProfile, $mapped), $register);
         $emailCheck = array_values(array_filter([
             strtolower(trim((string) ($mapped['collegeEmail'] ?? ''))),
             strtolower(trim((string) ($mapped['email'] ?? ''))),
             strtolower(trim((string) ($mapped['personalEmail'] ?? ''))),
             strtolower(trim($personalEmail)),
         ]));
-        if ($name !== '' && !$this->isEmailDerivedName($name, $emailCheck)) {
+        $placementName = trim($this->pickInsensitive($aesProfile, [
+            'stud_name', 'student_name', 'studentName', 'studentnam', 'student_full_name', 'fullname', 'full_name', 'fullnameName',
+        ]));
+        if ($placementName === '') {
+            $placementName = trim($this->pickInsensitive($aesProfile, ['name']));
+        }
+        if (
+            $placementName !== ''
+            && $this->isRealPersonName($placementName)
+            && !$this->isPlaceholderName($placementName, $register)
+            && !$this->isEmailDerivedName($placementName, $emailCheck)
+            && !$this->isLikelyEmailLocalName($placementName)
+        ) {
+            return $placementName;
+        }
+
+        $name = $this->scanNameFromAesData(array_merge($aesProfile, $mapped), $register);
+        if (
+            $name !== ''
+            && !$this->isEmailDerivedName($name, $emailCheck)
+            && !$this->isLikelyEmailLocalName($name)
+        ) {
             return $name;
         }
 
-        if ($personalEmail !== '' && $this->isPersonalEmailDomain($personalEmail)) {
-            $inferred = $this->inferNameFromEmail($personalEmail);
-            if ($this->isRealPersonName($inferred) && !$this->isPlaceholderName($inferred, $register)) {
-                return $inferred;
-            }
-        }
-
-        // Optional live AES placement lookup only when callback data had no usable name.
+        // Do not invent a display name from personal email — fetch AES stud_name instead.
         if ($allowApiLookup && $register !== '') {
             $apiName = $this->fetchStudentNameFromPlacementApi($register);
-            if ($apiName !== '') {
+            if ($apiName !== '' && !$this->isLikelyEmailLocalName($apiName)) {
                 return $apiName;
             }
         }
@@ -4145,8 +4164,26 @@ final class AesLoginService
         if ($name === '' || preg_match('/^\d+$/', $name)) {
             return false;
         }
+        if (!preg_match('/[a-zA-Z]/', $name)) {
+            return false;
+        }
+        // Reject email-local / handle style (e.g. Amalskumarofficialz).
+        if ($this->isLikelyEmailLocalName($name)) {
+            return false;
+        }
 
-        return (bool) preg_match('/[a-zA-Z]/', $name);
+        return true;
+    }
+
+    /** Single-token usernames that look like an email local-part, not a person name. */
+    private function isLikelyEmailLocalName(string $name): bool
+    {
+        $name = trim($name);
+        if ($name === '' || str_contains($name, ' ')) {
+            return false;
+        }
+
+        return (bool) preg_match('/^[A-Za-z][A-Za-z0-9._+-]{8,}$/', $name);
     }
 
     private function shouldReplaceDisplayName(string $current, string $registerNumber): bool
@@ -4158,8 +4195,11 @@ final class AesLoginService
         if ($registerNumber !== '' && strcasecmp($current, $registerNumber) === 0) {
             return true;
         }
+        if (preg_match('/^\d+$/', $current)) {
+            return true;
+        }
 
-        return (bool) preg_match('/^\d+$/', $current);
+        return $this->isLikelyEmailLocalName($current);
     }
 
     private function missingAesConfigMessage(): string

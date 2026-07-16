@@ -171,7 +171,13 @@ final class StudentController
     $liteProfile = $this->isLiteProfileRequest();
     $forceRefresh = $this->isForcedAesRefreshRequest();
     $forceNameRefresh = $this->isForcedAesNameRefreshRequest();
-    if (!$liteProfile || $forceRefresh || $forceNameRefresh) {
+    $storedName = trim((string) ($user['name'] ?? ''));
+    $needsNameSync = $forceNameRefresh
+      || $storedName === ''
+      || !preg_match('/\s/', $storedName)
+      || preg_match('/^[A-Za-z][A-Za-z0-9._+-]{8,}$/', $storedName);
+    // Always resolve AES stud_name when lite would otherwise keep an email-local username.
+    if (!$liteProfile || $forceRefresh || $needsNameSync) {
       if ($reg !== '' && (string) ($profile['registerNumber'] ?? '') === '') {
         $this->studentModel->update((string) $profile['_id'], ['registerNumber' => $reg]);
         $profile['registerNumber'] = $reg;
@@ -180,10 +186,12 @@ final class StudentController
       if ($apiName !== '') {
         $user['name'] = $apiName;
       }
-      $aes->syncStudentDepartmentIfMissing($profile, array_merge(
-          \PMS\Utils\Security::getSessionAesProfile(),
-          ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
-      ));
+      if (!$liteProfile || $forceRefresh) {
+        $aes->syncStudentDepartmentIfMissing($profile, array_merge(
+            \PMS\Utils\Security::getSessionAesProfile(),
+            ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
+        ));
+      }
     }
     if ($forceRefresh || (!$liteProfile && $this->shouldRefreshAesPlacement($profile))) {
       $profile = $aes->refreshStudentPlacementData($profile);
@@ -1503,6 +1511,33 @@ final class StudentController
     $user = RBACMiddleware::requireStudent();
     $count = (new NotificationModel())->markAllRead((string) $user['_id']);
     Response::success(['updated' => $count], 'All notifications marked as read.');
+  }
+
+  /** POST /api/student/notifications/delete-selected */
+  public function deleteSelectedNotifications(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+    $ids = is_array($input['ids'] ?? null) ? $input['ids'] : [];
+    $ids = array_values(array_filter(array_map(static fn ($id) => trim((string) $id), $ids)));
+    if ($ids === []) {
+      Response::error('Select at least one notification to delete.', 422);
+    }
+    $count = (new NotificationModel())->deleteOwned((string) $user['_id'], $ids);
+    Response::success(['deleted' => $count], $count === 1 ? 'Notification deleted.' : "{$count} notifications deleted.");
+  }
+
+  /** POST /api/student/notifications/delete-all */
+  public function deleteAllNotifications(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+    $readOnly = !array_key_exists('readOnly', $input) || filter_var($input['readOnly'], FILTER_VALIDATE_BOOL);
+    $count = (new NotificationModel())->deleteAllForUser((string) $user['_id'], $readOnly);
+    Response::success(
+      ['deleted' => $count],
+      $readOnly ? 'All read notifications deleted.' : 'All notifications deleted.'
+    );
   }
 
   /** GET /api/student/applications */

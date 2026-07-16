@@ -67,4 +67,47 @@ class NotificationModel extends BaseModel
         }
         return $this->count(['userId' => $id, 'read' => false]);
     }
+
+    /**
+     * Delete notifications owned by the user.
+     *
+     * @param list<string> $ids
+     */
+    public function deleteOwned(string $userId, array $ids): int
+    {
+        $uid = Security::toObjectId($userId);
+        if ($uid === null) {
+            return 0;
+        }
+        $oids = [];
+        foreach ($ids as $id) {
+            $oid = Security::toObjectId((string) $id);
+            if ($oid !== null) {
+                $oids[] = $oid;
+            }
+        }
+        if ($oids === []) {
+            return 0;
+        }
+
+        return $this->deleteMany([
+            'userId' => $uid,
+            '_id'    => ['$in' => $oids],
+        ]);
+    }
+
+    /** Delete all notifications for a user (optionally only read ones). */
+    public function deleteAllForUser(string $userId, bool $readOnly = false): int
+    {
+        $uid = Security::toObjectId($userId);
+        if ($uid === null) {
+            return 0;
+        }
+        $filter = ['userId' => $uid];
+        if ($readOnly) {
+            $filter['read'] = true;
+        }
+
+        return $this->deleteMany($filter);
+    }
 }
