@@ -4292,6 +4292,11 @@ const DriveStore = {
       type: existing?.type || 'pooled',
       time: existing?.time || '10:00',
     };
+    if (Array.isArray(p.selectionRounds)) {
+      body.selectionRounds = p.selectionRounds;
+    } else if (Array.isArray(existing?.selectionRounds)) {
+      body.selectionRounds = existing.selectionRounds;
+    }
     if (companyId) body.companyId = companyId;
     const recruitmentDate = String(p.date ?? p.recruitmentDate ?? existing?.date ?? '').trim();
     if (recruitmentDate && recruitmentDate !== '—' && recruitmentDate !== 'TBD') body.date = recruitmentDate;
@@ -4477,6 +4482,7 @@ const DriveStore = {
         deadline: (p.deadline && p.deadline !== 'TBD') ? p.deadline : '',
         description: p.description || '',
       },
+      selectionRounds: Array.isArray(p.selectionRounds) ? p.selectionRounds : [],
     };
 
     const formatErrors = (res) => {

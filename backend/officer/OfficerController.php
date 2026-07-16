@@ -400,10 +400,13 @@ final class OfficerController
                 $input['branches'] = array_values(array_filter(array_map('trim', explode(',', $input['branches']))));
             }
         }
-        $allowed = ['title','companyId','type','date','time','branches','eligibility','tier','jdFile','status','departmentId'];
+        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','tier','jdFile','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
         if (isset($update['eligibility']) && is_array($update['eligibility'])) {
             $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);
+        }
+        if (array_key_exists('selectionRounds', $update)) {
+            $update['selectionRounds'] = DriveModel::normalizeSelectionRounds($update['selectionRounds']);
         }
 
         // For placement officers, keep drive scoped to their department

@@ -101,6 +101,7 @@ const OfficerApi = {
         : (Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '')),
       tier: d.tier || 'Tier 2',
       eligibility: { ...elig, package: pkg, deadline, jobType, mode, location, minCgpa, maxBacklogs },
+      selectionRounds: Array.isArray(d.selectionRounds) ? d.selectionRounds : [],
       status,
       statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
       applied: d.applied ?? 0,

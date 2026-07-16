@@ -232,6 +232,13 @@
             <div class="col-md-6"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" name="deadline"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Mode</label><select class="form-select" name="mode"><option>On-campus</option><option>Virtual</option><option>Hybrid</option></select></div>
           </div>
+          <div class="mt-4" id="createDriveRoundsSection">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddCreateDriveRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
+            </div>
+            <div id="createDriveRounds" class="d-flex flex-column gap-2"></div>
+          </div>
         </div>
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -282,6 +289,14 @@
         <div class="col-md-3"><label class="form-label small fw-semibold">Gender</label><select class="form-select" id="editGender"><option value="any">Any</option><option value="male">Male only</option><option value="female">Female only</option></select></div>
 
         <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="editDescription" rows="3"></textarea></div>
+
+        <div class="col-12" id="editDriveRoundsSection">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddEditDriveRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
+          </div>
+          <div id="editDriveRounds" class="d-flex flex-column gap-2"></div>
+        </div>
 
       </div>
 
@@ -367,6 +382,20 @@
             <li class="nav-item"><button type="button" class="nav-link" data-tab="placed">Placed <span class="badge bg-secondary ms-1" id="tabCountPlaced">0</span></button></li>
           </ul>
           <p class="small text-muted-2 mb-2" id="driveShortlistHint">Select applicants below to mark them as company shortlisted.</p>
+
+          <div class="border rounded p-3 mb-3 bg-light d-none" id="driveShortlistRoundsPanel">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div>
+                <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
+                <div class="small text-muted-2">Set Round 1 / 2 / 3 types for this company drive (Interview, GD, Coding, …).</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddDriveShortlistRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
+                <button type="button" class="btn btn-sm btn-primary" id="btnSaveDriveShortlistRounds"><i class="bi bi-check2 me-1"></i>Save rounds</button>
+              </div>
+            </div>
+            <div id="driveShortlistRounds" class="d-flex flex-column gap-2"></div>
+          </div>
 
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3" id="driveShortlistSelectBar">
             <div class="small text-muted-2" id="driveShortlistSelectHint">On All applicants, tick students and shortlist them for this drive.</div>
@@ -472,7 +501,7 @@ async function loadDriveRoleScripts() {
   if (typeof OfficerApi !== 'undefined' && typeof AdminApi !== 'undefined' && typeof StaffApi !== 'undefined') return;
   const tags = [
     'js/admin-api.js?v=20260713w',
-    'js/officer-api.js?v=20260716drivefields',
+    'js/officer-api.js?v=20260716rounds',
     'js/staff-api.js?v=20260713w',
   ];
   await Promise.all(tags.map((src) => new Promise((resolve) => {
@@ -499,6 +528,121 @@ let pendingDrive = null;
 let applyCertificateFiles = [];
 let allDrives = [];
 let editingDrive = null;
+let createDriveRoundRows = [];
+let editDriveRoundRows = [];
+let shortlistDriveRoundRows = [];
+
+const DRIVE_ROUND_TYPES = [
+  { value: 'interview', label: 'Interview' },
+  { value: 'gd', label: 'GD' },
+  { value: 'coding', label: 'Coding' },
+  { value: 'aptitude', label: 'Aptitude' },
+  { value: 'technical', label: 'Technical Test' },
+  { value: 'hr', label: 'HR Round' },
+  { value: 'other', label: 'Other' },
+];
+
+function defaultDriveRounds(count = 3) {
+  return Array.from({ length: count }, (_, i) => ({ order: i + 1, type: '', label: '' }));
+}
+
+function normalizeDriveRounds(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const mapped = list.map((r, i) => {
+    const type = String(r?.type || '').trim().toLowerCase();
+    const known = DRIVE_ROUND_TYPES.find(t => t.value === type);
+    return {
+      order: i + 1,
+      type: known ? type : '',
+      label: String(r?.label || known?.label || '').trim(),
+    };
+  }).filter(r => r.type);
+  return mapped.length ? mapped : defaultDriveRounds(3);
+}
+
+function roundTypeOptionsHtml(selected = '') {
+  const sel = String(selected || '').toLowerCase();
+  return `<option value="">Select type…</option>` + DRIVE_ROUND_TYPES.map(t =>
+    `<option value="${t.value}" ${t.value === sel ? 'selected' : ''}>${t.label}</option>`
+  ).join('');
+}
+
+function renderDriveRoundsEditor(containerId, rows, { removable = true } = {}) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const list = Array.isArray(rows) && rows.length ? rows : defaultDriveRounds(3);
+  el.innerHTML = list.map((row, idx) => `
+    <div class="row g-2 align-items-end drive-round-row" data-round-index="${idx}">
+      <div class="${removable && list.length > 3 ? 'col-sm-9' : 'col-sm-12'}">
+        <label class="form-label small fw-semibold mb-1">Round ${idx + 1}</label>
+        <select class="form-select drive-round-type" aria-label="Round ${idx + 1} type">
+          ${roundTypeOptionsHtml(row.type)}
+        </select>
+      </div>
+      ${removable && list.length > 3
+        ? `<div class="col-sm-3">
+            <button type="button" class="btn btn-outline-danger btn-sm w-100 drive-round-remove" data-round-index="${idx}" title="Remove round"><i class="bi bi-trash"></i></button>
+          </div>`
+        : ''}
+    </div>
+  `).join('');
+}
+
+function readDriveRoundsFromEditor(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return [];
+  return [...el.querySelectorAll('.drive-round-row')].map((row, idx) => {
+    const type = String(row.querySelector('.drive-round-type')?.value || '').trim().toLowerCase();
+    const known = DRIVE_ROUND_TYPES.find(t => t.value === type);
+    if (!type || !known) return null;
+    return { order: idx + 1, type, label: known.label };
+  }).filter(Boolean);
+}
+
+function syncDriveRoundsState(containerId, stateRefName) {
+  const rows = [...document.querySelectorAll(`#${containerId} .drive-round-row`)].map((row) => ({
+    order: Number(row.dataset.roundIndex || 0) + 1,
+    type: String(row.querySelector('.drive-round-type')?.value || '').trim().toLowerCase(),
+    label: '',
+  }));
+  if (stateRefName === 'create') createDriveRoundRows = rows;
+  if (stateRefName === 'edit') editDriveRoundRows = rows;
+  if (stateRefName === 'shortlist') shortlistDriveRoundRows = rows;
+}
+
+function addDriveRoundRow(stateRefName) {
+  const map = {
+    create: { rows: () => createDriveRoundRows, set: (v) => { createDriveRoundRows = v; }, id: 'createDriveRounds' },
+    edit: { rows: () => editDriveRoundRows, set: (v) => { editDriveRoundRows = v; }, id: 'editDriveRounds' },
+    shortlist: { rows: () => shortlistDriveRoundRows, set: (v) => { shortlistDriveRoundRows = v; }, id: 'driveShortlistRounds' },
+  };
+  const cfg = map[stateRefName];
+  if (!cfg) return;
+  syncDriveRoundsState(cfg.id, stateRefName);
+  const next = cfg.rows().slice();
+  if (next.length >= 12) {
+    toast('Maximum 12 rounds allowed.', 'warn');
+    return;
+  }
+  next.push({ order: next.length + 1, type: '', label: '' });
+  cfg.set(next);
+  renderDriveRoundsEditor(cfg.id, next);
+}
+
+function removeDriveRoundRow(stateRefName, index) {
+  const map = {
+    create: { rows: () => createDriveRoundRows, set: (v) => { createDriveRoundRows = v; }, id: 'createDriveRounds' },
+    edit: { rows: () => editDriveRoundRows, set: (v) => { editDriveRoundRows = v; }, id: 'editDriveRounds' },
+    shortlist: { rows: () => shortlistDriveRoundRows, set: (v) => { shortlistDriveRoundRows = v; }, id: 'driveShortlistRounds' },
+  };
+  const cfg = map[stateRefName];
+  if (!cfg) return;
+  syncDriveRoundsState(cfg.id, stateRefName);
+  const next = cfg.rows().filter((_, i) => i !== index);
+  while (next.length < 3) next.push({ order: next.length + 1, type: '', label: '' });
+  cfg.set(next.map((r, i) => ({ ...r, order: i + 1 })));
+  renderDriveRoundsEditor(cfg.id, cfg.rows());
+}
 
 function certificateFileKey(file) {
   return `${file?.name || ''}|${file?.size || 0}|${file?.lastModified || 0}`;
@@ -1152,10 +1296,23 @@ function updateDriveApplicantTabCounts() {
   const hint = document.getElementById('driveShortlistHint');
   if (hint) {
     hint.textContent = driveApplicantsTab === 'shortlisted'
-      ? 'Students marked shortlisted for this drive.'
+      ? 'Students marked shortlisted for this drive. Configure company selection rounds below.'
       : driveApplicantsTab === 'placed'
         ? 'Students recorded as placed for this drive.'
         : 'Select applicants below to mark them as company shortlisted.';
+  }
+  const roundsPanel = document.getElementById('driveShortlistRoundsPanel');
+  if (roundsPanel) {
+    const showRounds = canManage && driveApplicantsTab === 'shortlisted';
+    roundsPanel.classList.toggle('d-none', !showRounds);
+    if (showRounds) {
+      const drive = allDrives.find(d => String(d.id) === String(activeDriveId)) || DriveStore.get?.(activeDriveId) || null;
+      shortlistDriveRoundRows = normalizeDriveRounds(drive?.selectionRounds);
+      while (shortlistDriveRoundRows.length < 3) {
+        shortlistDriveRoundRows.push({ order: shortlistDriveRoundRows.length + 1, type: '', label: '' });
+      }
+      renderDriveRoundsEditor('driveShortlistRounds', shortlistDriveRoundRows);
+    }
   }
   updateDriveShortlistSelectUi();
 }
@@ -1480,6 +1637,8 @@ window.openCreateDrive = async () => {
     });
   }
   applyCreateDriveDeptScope();
+  createDriveRoundRows = defaultDriveRounds(3);
+  renderDriveRoundsEditor('createDriveRounds', createDriveRoundRows);
   await populateCreateDriveCompanies();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('createModal')).show();
 };
@@ -1625,6 +1784,7 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     profile: 'General',
     status: 'Open',
     statusCls: 'success',
+    selectionRounds: readDriveRoundsFromEditor('createDriveRounds'),
   });
   if (!result) return;
   bootstrap.Modal.getInstance(document.getElementById('createModal'))?.hide();
@@ -1677,6 +1837,12 @@ window.openEditDrive = id => {
   document.getElementById('editGender').value = elig.gender || 'any';
 
   document.getElementById('editDescription').value = d.description || '';
+
+  editDriveRoundRows = normalizeDriveRounds(d.selectionRounds);
+  while (editDriveRoundRows.length < 3) {
+    editDriveRoundRows.push({ order: editDriveRoundRows.length + 1, type: '', label: '' });
+  }
+  renderDriveRoundsEditor('editDriveRounds', editDriveRoundRows);
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
 
@@ -1749,6 +1915,8 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
       gender: document.getElementById('editGender').value || 'any',
 
       description: document.getElementById('editDescription').value.trim(),
+
+      selectionRounds: readDriveRoundsFromEditor('editDriveRounds'),
 
     }, editingDrive || DriveStore.get(id));
   } catch (err) {
@@ -1934,6 +2102,47 @@ document.getElementById('driveApplicantRows')?.addEventListener('change', e => {
 
 document.getElementById('btnShortlistSelected')?.addEventListener('click', () => {
   shortlistSelectedApplicants();
+});
+
+document.getElementById('btnAddCreateDriveRound')?.addEventListener('click', () => addDriveRoundRow('create'));
+document.getElementById('btnAddEditDriveRound')?.addEventListener('click', () => addDriveRoundRow('edit'));
+document.getElementById('btnAddDriveShortlistRound')?.addEventListener('click', () => addDriveRoundRow('shortlist'));
+
+document.getElementById('createDriveRounds')?.addEventListener('click', e => {
+  const btn = e.target.closest('.drive-round-remove');
+  if (!btn) return;
+  removeDriveRoundRow('create', Number(btn.dataset.roundIndex || -1));
+});
+document.getElementById('editDriveRounds')?.addEventListener('click', e => {
+  const btn = e.target.closest('.drive-round-remove');
+  if (!btn) return;
+  removeDriveRoundRow('edit', Number(btn.dataset.roundIndex || -1));
+});
+document.getElementById('driveShortlistRounds')?.addEventListener('click', e => {
+  const btn = e.target.closest('.drive-round-remove');
+  if (!btn) return;
+  removeDriveRoundRow('shortlist', Number(btn.dataset.roundIndex || -1));
+});
+
+document.getElementById('btnSaveDriveShortlistRounds')?.addEventListener('click', async () => {
+  if (!canManage || !activeDriveId) return;
+  const selectionRounds = readDriveRoundsFromEditor('driveShortlistRounds');
+  if (!selectionRounds.length) {
+    toast('Select at least one round type (Interview, GD, Coding, …).', 'warn');
+    return;
+  }
+  const existing = allDrives.find(d => String(d.id) === String(activeDriveId)) || DriveStore.get(activeDriveId) || activeDrive;
+  const result = await DriveStore.update(activeDriveId, { selectionRounds }, existing);
+  if (!result) return;
+  if (existing) existing.selectionRounds = selectionRounds;
+  if (activeDrive) activeDrive.selectionRounds = selectionRounds;
+  shortlistDriveRoundRows = normalizeDriveRounds(selectionRounds);
+  while (shortlistDriveRoundRows.length < 3) {
+    shortlistDriveRoundRows.push({ order: shortlistDriveRoundRows.length + 1, type: '', label: '' });
+  }
+  renderDriveRoundsEditor('driveShortlistRounds', shortlistDriveRoundRows);
+  toast('Company shortlist rounds saved.', 'success');
+  await loadDrives();
 });
 
 document.getElementById('driveDetailMainTabs')?.addEventListener('click', e => {

@@ -255,6 +255,7 @@ final class Collections
                     'gender'       => 'string (any|male|female)',
                     'skills'       => 'array',
                 ],
+                'selectionRounds' => 'array[{order:int,type:string,label:string}]',
                 'tier'        => 'string',
                 'jdFile'      => 'string|null',
                 'shortlistDocument' => 'string|null (server path; stripped from API)',

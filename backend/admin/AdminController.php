@@ -97,6 +97,9 @@ final class AdminController
         if (isset($input['branches']) && is_string($input['branches'])) {
             $input['branches'] = json_decode($input['branches'], true) ?? [];
         }
+        if (array_key_exists('selectionRounds', $input)) {
+            $input['selectionRounds'] = DriveModel::normalizeSelectionRounds($input['selectionRounds']);
+        }
         $companyModel = new CompanyModel();
         $companyId = (string) ($input['companyId'] ?? '');
         if ($companyId === '' || !$companyModel->findById($companyId)) {
@@ -140,10 +143,13 @@ final class AdminController
         if (isset($input['branches']) && is_string($input['branches'])) {
             $input['branches'] = json_decode($input['branches'], true) ?? [];
         }
-        $allowed = ['title','companyId','type','date','time','branches','eligibility','tier','jdFile','status','departmentId'];
+        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','tier','jdFile','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
         if (isset($update['eligibility']) && is_array($update['eligibility'])) {
             $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);
+        }
+        if (array_key_exists('selectionRounds', $update)) {
+            $update['selectionRounds'] = DriveModel::normalizeSelectionRounds($update['selectionRounds']);
         }
         $model->update($id, $update);
         Response::success(null, 'Drive updated.');

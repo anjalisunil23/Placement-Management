@@ -95,6 +95,7 @@ class DriveModel extends BaseModel
             'time'        => $data['time'],
             'branches'    => $data['branches'] ?? [],
             'eligibility' => $data['eligibility'] ?? [],
+            'selectionRounds' => self::normalizeSelectionRounds($data['selectionRounds'] ?? []),
             'tier'        => $data['tier'] ?? 'Tier 2',
             'jdFile'      => $data['jdFile'] ?? null,
             'attendance'  => [],
@@ -104,6 +105,59 @@ class DriveModel extends BaseModel
             'departmentId'=> isset($data['departmentId']) ? Security::toObjectId($data['departmentId']) : null,
         ];
         return $this->insert($doc);
+    }
+
+    /**
+     * Company shortlist selection rounds for a drive.
+     *
+     * @param mixed $raw
+     * @return list<array{order:int,type:string,label:string}>
+     */
+    public static function normalizeSelectionRounds(mixed $raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $allowed = [
+            'interview' => 'Interview',
+            'gd' => 'GD',
+            'coding' => 'Coding',
+            'aptitude' => 'Aptitude',
+            'technical' => 'Technical Test',
+            'hr' => 'HR Round',
+            'other' => 'Other',
+        ];
+        $out = [];
+        $order = 1;
+        foreach ($raw as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $type = strtolower(trim((string) ($row['type'] ?? '')));
+            if ($type === '' || !isset($allowed[$type])) {
+                continue;
+            }
+            $label = trim((string) ($row['label'] ?? ''));
+            if ($label === '') {
+                $label = $allowed[$type];
+            }
+            $out[] = [
+                'order' => $order,
+                'type' => $type,
+                'label' => $label,
+            ];
+            $order++;
+            if ($order > 12) {
+                break;
+            }
+        }
+
+        return $out;
     }
 
     public function markAttendance(string $driveId, string $studentId, bool $present): bool
