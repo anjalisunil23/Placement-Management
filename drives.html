@@ -456,6 +456,7 @@
           <div class="table-wrap">
             <table class="table-modern">
               <thead><tr id="driveApplicantHead">
+                <th style="width:3rem">SI.No</th>
                 <th style="width:2.5rem" class="drive-shortlist-col"><input type="checkbox" class="form-check-input" id="driveApplicantSelectAll" title="Select all eligible" aria-label="Select all eligible"></th>
                 <th>Student</th><th>Register No</th><th>Dept</th><th>Email</th><th>Phone</th><th>Resume</th><th>Status</th><th>Applied</th>
               </tr></thead>
@@ -1443,7 +1444,7 @@ function renderDriveApplicantRows() {
   const list = groups[driveApplicantsTab] || [];
   const tbody = document.getElementById('driveApplicantRows');
   const showSelect = driveApplicantsTab === 'applied';
-  const cols = showSelect ? 9 : 8;
+  const cols = showSelect ? 10 : 9;
   if (!list.length) {
     const emptyMsg = ({
       applied: 'No applicants for this company drive yet.',
@@ -1455,7 +1456,7 @@ function renderDriveApplicantRows() {
     updateDriveShortlistSelectUi();
     return;
   }
-  tbody.innerHTML = list.map(a => {
+  tbody.innerHTML = list.map((a, idx) => {
     const eligible = canShortlistApplicant(a);
     const checkCell = showSelect
       ? `<td class="drive-shortlist-col">${eligible
@@ -1463,6 +1464,7 @@ function renderDriveApplicantRows() {
         : '<span class="small text-muted-2">—</span>'}</td>`
       : '';
     return `<tr data-app-id="${a.id}">
+    <td class="text-muted-2">${idx + 1}</td>
     ${checkCell}
     <td><strong>${a.studentName || '—'}</strong></td>
     <td>${a.registerNumber || '—'}</td>
