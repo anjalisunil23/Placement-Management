@@ -64,26 +64,8 @@ try {
         $role = 'admin';
     }
     $target = (string) ($config['role_dashboards'][$role] ?? '/dashboard.html');
-    if ($role === 'admin' || $role === 'placement_officer') {
-        $target = '/dashboard.html';
-    }
     if ($target === '' || $target[0] !== '/') {
         $target = '/' . ltrim($target, '/');
-    }
-
-    if ($role === 'alumni') {
-        $isWorking = $user['isWorking'] ?? null;
-        if ($isWorking === null) {
-            try {
-                $alumni = (new \PMS\Models\AlumniModel())->findByUserId((string) ($user['_id'] ?? ''));
-                $isWorking = is_array($alumni) ? ($alumni['isWorking'] ?? true) : true;
-            } catch (Throwable) {
-                $isWorking = true;
-            }
-        }
-        if ($isWorking === false) {
-            $target = '/drives.html';
-        }
     }
 
     $next = ltrim($target, '/');

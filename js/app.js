@@ -704,7 +704,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   animateCounters();
   // Defer badge refresh so it doesn't contend with the page's first data fetch.
-  setTimeout(() => { NotificationInbox.refreshBadge?.(); }, 0);
+  setTimeout(() => { NotificationInbox.refreshBadge?.(); }, 1800);
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();
 });

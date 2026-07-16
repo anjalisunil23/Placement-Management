@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260713r';
+const APP_SCRIPT_VERSION = '20260716fast';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -444,8 +444,8 @@ const ROLE_HOME = {
   admin: 'dashboard.html',
   placement_officer: 'dashboard.html',
   staff: 'dashboard.html',
-  student: 'drives.html',
-  company: 'company.html',
+  student: 'dashboard.html',
+  company: 'dashboard.html',
   alumni: 'dashboard.html',
 };
 
@@ -525,14 +525,9 @@ async function performServerLogin(email, password, next = '') {
   localStorage.setItem('ph-token', 'session');
   Auth.applySessionUser(user);
   Auth._sessionReady = true;
-  Auth.bootstrap().catch(() => { Auth._sessionReady = false; });
+  try { sessionStorage.setItem('ph_auth_boot_at', String(Date.now())); } catch (_) {}
+  // Skip /auth/me before redirect — next page soft-bootstraps from the cached session.
   const redirect = Auth.resolveRedirect(next);
-  if (user.role === 'company' && !Auth.isAllowed(redirect.split('#')[0])) {
-    return { success: true, redirect: absAppPath(Auth.homePage('company')) };
-  }
-  if (user.role === 'alumni' && !Auth.isAllowed(redirect.split('#')[0])) {
-    return { success: true, redirect: absAppPath(Auth.homePage('alumni')) };
-  }
   return { success: true, redirect: absAppPath(redirect) };
 }
 
@@ -564,12 +559,8 @@ const Auth = {
   homePage(role) {
     const u = this.user();
     const r = role || this.role();
-    if (r === 'admin') return 'dashboard.html';
     if (r === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
-    }
-    if (r === 'alumni' && u && typeof u.isWorking === 'boolean' && !u.isWorking) {
-      return 'drives.html';
     }
     if (u?.dashboard) {
       const page = String(u.dashboard).replace(/^\//, '').split('#')[0];
@@ -578,8 +569,6 @@ const Auth = {
     return ROLE_HOME[r] || 'dashboard.html';
   },
   resolveRedirect(next) {
-    if (this.role() === 'admin') return 'dashboard.html';
-    if (this.role() === 'placement_officer') return 'dashboard.html';
     if (this.role() === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
     }
@@ -672,6 +661,11 @@ const Auth = {
     localStorage.removeItem('ph-user');
     localStorage.removeItem('ph-token');
     localStorage.removeItem('ph-role');
+    try {
+      Object.keys(sessionStorage)
+        .filter((k) => k.startsWith('ph-unread-') || k === 'ph_auth_boot_at')
+        .forEach((k) => sessionStorage.removeItem(k));
+    } catch (_) { /* ignore */ }
   },
   logout() {
     apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
@@ -700,12 +694,10 @@ const Auth = {
     try {
       const bootAt = Number(sessionStorage.getItem('ph_auth_boot_at') || 0);
       const cached = this.user();
-      if (soft && cached?.role && this.token() && bootAt > 0 && (Date.now() - bootAt) < 20000) {
+      // Trust a recently verified session across tabs so navigation does not
+      // re-block on /auth/me (or silently re-fetch AES-heavy userResponse).
+      if (soft && cached?.role && this.token() && bootAt > 0 && (Date.now() - bootAt) < 120000) {
         this._sessionReady = true;
-        // Refresh quietly after first paint.
-        queueMicrotask(() => {
-          this.refreshSession().catch(() => {});
-        });
         return true;
       }
     } catch (_) { /* sessionStorage may be blocked */ }
@@ -777,9 +769,7 @@ const Auth = {
     try {
       // lite=1 avoids AES refresh on every page. Use { refresh: true } only when
       // CGPA/placement data must be re-synced (registration / settings).
-      const qs = opts.refresh
-        ? 'refresh=1'
-        : (role === 'student' ? 'lite=1&nameRefresh=1' : 'lite=1');
+      const qs = opts.refresh ? 'refresh=1' : 'lite=1';
       const res = await apiFetch(path + (path.includes('?') ? '&' : '?') + qs, { skipAuthRedirect: true, skipAuthRetry: true });
       if (!res?.success || !res.data) return false;
       const p = res.data;
@@ -2203,15 +2193,25 @@ const NotificationInbox = {
     return map[role] || null;
   },
   async unreadCount(role) {
+    const cacheKey = 'ph-unread-' + (role || Auth.role() || 'anon');
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
+      if (cached && Number.isFinite(cached.count) && (Date.now() - Number(cached.at || 0)) < 60000) {
+        return cached.count;
+      }
+    } catch { /* ignore */ }
+    let count = 0;
     const base = this.apiBase(role);
     if (Auth.hasRealAuth() && base) {
       const res = await api(base, { skipAuthRedirect: true });
-      if (res?.success) return (res.data || []).filter(n => !n.read).length;
-      return 0;
+      if (res?.success) count = (res.data || []).filter(n => !n.read).length;
+    } else {
+      const store = this.store(role);
+      store?.seed?.();
+      count = (store?.all() || []).filter(n => !n.read).length;
     }
-    const store = this.store(role);
-    store?.seed?.();
-    return (store?.all() || []).filter(n => !n.read).length;
+    try { sessionStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), count })); } catch { /* ignore */ }
+    return count;
   },
   async refreshBadge() {
     const role = Auth.role();
@@ -3293,7 +3293,14 @@ const DepartmentStore = {
   },
   save(l) { this._cache = l; localStorage.setItem(DEPTS_KEY, JSON.stringify(l)); },
   async fetch({ includeAll = false, force = false } = {}) {
-    void force;
+    const TTL_MS = 10 * 60 * 1000;
+    let fetchedAt = 0;
+    try { fetchedAt = Number(localStorage.getItem(DEPTS_KEY + '-at') || 0); } catch { /* ignore */ }
+    const cached = this.all();
+    if (!force && cached.length && fetchedAt > 0 && (Date.now() - fetchedAt) < TTL_MS) {
+      return includeAll ? (this._allCache || cached) : cached;
+    }
+
     let list = null;
     // Public list syncs AES → local and returns academic departments for all roles.
     const publicRes = await apiFetch('/public/departments', { skipAuthRedirect: true });
@@ -3331,6 +3338,7 @@ const DepartmentStore = {
       if (finalList.length) {
         this._cache = finalList;
         localStorage.setItem(DEPTS_KEY, JSON.stringify(finalList));
+        try { localStorage.setItem(DEPTS_KEY + '-at', String(Date.now())); } catch { /* ignore */ }
         return finalList;
       }
     }

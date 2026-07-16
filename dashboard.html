@@ -329,8 +329,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260715jobimages"></script>
-<script src="js/app.js?v=20260715notificationtab"></script>
+<script src="js/api.js?v=20260716fast"></script>
+<script src="js/app.js?v=20260716fast"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -406,7 +406,7 @@ if (role === 'admin') {
   (async () => {
     let s;
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      await Auth.ensureSession();
+      if (!Auth.hasLiveSession()) await Auth.ensureSession();
       [s] = await Promise.all([dashboardStats(), DriveStore.fetch()]);
     } else {
       s = await dashboardStats();

@@ -137,13 +137,30 @@ final class PublicController
     /** GET /api/public/departments — for registration and forms (no auth) */
     public function listDepartments(): void
     {
+        $model = new DepartmentModel();
+        $localCount = 0;
         try {
-            (new \PMS\Services\AesApiService())->syncDepartmentsToLocal();
+            $localCount = count($model->findAll([], 5));
         } catch (\Throwable) {
-            // Serve local departments when AES API is unreachable.
+            $localCount = 0;
         }
 
-        $departments = (new DepartmentModel())->findAll([], 200);
+        // AES department sync is expensive — refresh at most once per hour when local data exists.
+        $stampFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_dept_sync_stamp';
+        $ttlSeconds = 3600;
+        $stampAge = is_file($stampFile) ? (time() - (int) @file_get_contents($stampFile)) : PHP_INT_MAX;
+        $shouldSync = $localCount === 0 || $stampAge >= $ttlSeconds;
+
+        if ($shouldSync) {
+            try {
+                (new \PMS\Services\AesApiService())->syncDepartmentsToLocal();
+                @file_put_contents($stampFile, (string) time());
+            } catch (\Throwable) {
+                // Serve local departments when AES API is unreachable.
+            }
+        }
+
+        $departments = $model->findAll([], 200);
         $assignedDeptIds = [];
         foreach ((new PlacementOfficerModel())->findAll([], 200) as $profile) {
             $deptId = (string) ($profile['departmentId'] ?? '');

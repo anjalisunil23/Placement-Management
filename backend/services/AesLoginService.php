@@ -1635,7 +1635,8 @@ final class AesLoginService
             $aesDetails,
             $mapped,
             $profile['registerNumber'],
-            (string) ($mapped['personalEmail'] ?? $mapped['email'] ?? $profile['email'])
+            (string) ($mapped['personalEmail'] ?? $mapped['email'] ?? $profile['email']),
+            false
         );
         $allEmails = array_values(array_filter([
             strtolower(trim((string) ($user['email'] ?? ''))),
