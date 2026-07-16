@@ -1023,14 +1023,18 @@ function renderResumes() {
   const rows = resumeRows;
   document.getElementById('resumeRows').innerHTML = rows.length ? rows.map(r => {
     const fileCell = r.viewUrl
-      ? `<a href="${r.viewUrl}" target="_blank" rel="noopener noreferrer" class="link-info text-decoration-none fw-medium">${r.fileName}</a>`
-      : `<span class="text-muted-2">${r.fileName}</span>`;
+      ? `<a href="${r.viewUrl}" target="_blank" rel="noopener noreferrer" class="link-info text-decoration-none fw-medium">${escHtml(r.fileName || '')}</a>`
+      : `<span class="text-muted-2">${escHtml(r.fileName || '')}</span>`;
+    const storage = String(r.storage || r.path || r.bucketPath || '');
+    const storageLabel = storage === 's3' || storage.startsWith('s3://')
+      ? 'S3'
+      : (resumeUseApi ? 'S3' : 'Local');
     return `
     <tr>
-      <td><strong>${r.label}</strong></td>
-      <td>${r.profileType}</td>
-      <td>${fileCell} <small class="text-muted-2">(${(r.fileSize/1024).toFixed(1)} KB)</small></td>
-      <td><span class="small text-muted-2">Stored</span></td>
+      <td><strong>${escHtml(r.label || '')}</strong></td>
+      <td>${escHtml(r.profileType || '')}</td>
+      <td>${fileCell} <small class="text-muted-2">(${((r.fileSize || 0)/1024).toFixed(1)} KB)</small></td>
+      <td><span class="small text-muted-2">${storageLabel}</span></td>
       <td>${formatDate(r.uploadedAt)}</td>
       <td><button class="btn btn-sm btn-outline-danger" onclick="deleteResume('${r._id}')"><i class="bi bi-trash"></i></button></td>
     </tr>`;
@@ -1111,38 +1115,34 @@ document.getElementById('resumeUploadForm')?.addEventListener('submit', async e 
   }
   if (!(await confirmAction({ title: 'Upload resume', message: `Upload "${label || file.name}" for ${profileType || 'selected profile'}?`, confirmText: 'Upload', variant: 'primary' }))) return;
 
-  if (Auth.hasRealAuth()) {
-    const uploadFd = new FormData();
-    uploadFd.append('file', file, file.name);
-    uploadFd.append('label', label);
-    uploadFd.append('profileType', profileType);
-    try {
-      const res = await fetch(API_BASE + '/student/resumes/upload', {
-        method:'POST',
-        body: uploadFd,
-        headers: Auth.token() ? { Authorization: `Bearer ${Auth.token()}` } : {},
-        credentials:'include',
-      });
-      const json = await res.json().catch(() => ({ success:false, message:'Bad response' }));
-      if (res.ok && json.success) {
-        toast('Resume uploaded.', 'success');
-        form.reset();
-        resetFilePickers(['resumeUploadFile']);
-        await refreshResumes();
-        return;
-      }
-      toast(json.message || 'Upload failed — using local storage.', 'warn');
-    } catch {
-      toast('Server unavailable — saved locally.', 'warn');
-    }
+  if (!Auth.hasRealAuth()) {
+    toast('Sign in to upload resumes to S3 storage.', 'warn');
+    return;
   }
 
-  await uploadResumeLocal(file, profileType, label);
-  toast('Resume uploaded.', 'success');
-  form.reset();
-  resetFilePickers(['resumeUploadFile']);
-  resumeUseApi = false;
-  await refreshResumes();
+  const uploadFd = new FormData();
+  uploadFd.append('file', file, file.name);
+  uploadFd.append('label', label);
+  uploadFd.append('profileType', profileType);
+  try {
+    const res = await fetch(API_BASE + '/student/resumes/upload', {
+      method:'POST',
+      body: uploadFd,
+      headers: Auth.token() ? { Authorization: `Bearer ${Auth.token()}` } : {},
+      credentials:'include',
+    });
+    const json = await res.json().catch(() => ({ success:false, message:'Bad response' }));
+    if (res.ok && json.success) {
+      toast('Resume uploaded to S3.', 'success');
+      form.reset();
+      resetFilePickers(['resumeUploadFile']);
+      await refreshResumes();
+      return;
+    }
+    toast(json.message || 'S3 upload failed. Resume was not saved.', 'error');
+  } catch {
+    toast('Server unavailable. Resume was not saved.', 'error');
+  }
 });
 
 async function refreshResumes() {

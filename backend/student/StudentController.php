@@ -608,7 +608,12 @@ final class StudentController
 
     (new ApplicationWorkflowService())->onResumeUploaded((string) $profile['_id']);
 
-    Response::success(['filename' => $filename], 'Resume uploaded. Awaiting verification.');
+    Response::success([
+      'filename' => $filename,
+      'path' => $path,
+      'storedName' => $storedName,
+      'storage' => 's3',
+    ], 'Resume uploaded to S3. Awaiting verification.');
   }
 
   /** GET /api/student/resumes */
@@ -619,6 +624,13 @@ final class StudentController
     $rows = (new ResumeModel())->findByStudent((string) $profile['_id'], 50);
 
     $out = array_map(function (array $r) {
+      $path = (string) ($r['path'] ?? '');
+      if ($path === '' && !empty($r['storedName'])) {
+        $path = (new ObjectStorageService())->uri(
+          ObjectStorageService::FOLDER_RESUMES,
+          basename((string) $r['storedName'])
+        );
+      }
       return [
         '_id' => (string) $r['_id'],
         'label' => $r['label'] ?? '',
@@ -627,6 +639,8 @@ final class StudentController
         'fileSize' => (int) ($r['fileSize'] ?? 0),
         'verified' => (bool) ($r['verified'] ?? false),
         'isDefault' => (bool) ($r['isDefault'] ?? false),
+        'path' => $path,
+        'storage' => str_starts_with($path, 's3://') ? 's3' : 'legacy',
         'uploadedAt' => isset($r['uploadedAt']) ? DocumentHelper::serialize($r['uploadedAt']) : null,
         'viewUrl' => '/backend/api/student/resumes/' . (string) $r['_id'] . '/view',
       ];
@@ -683,6 +697,7 @@ final class StudentController
       'fileSize' => (int) ($_FILES['file']['size'] ?? 0),
       'mime' => (string) ($_FILES['file']['type'] ?? ''),
       'storedName' => $storedName,
+      'path' => $path,
       'verified' => false,
       'isDefault' => false,
       'uploadedAt' => DocumentHelper::now(),
@@ -694,6 +709,7 @@ final class StudentController
       'resume' => [
         'filename'   => $doc['fileName'],
         'path'       => $path,
+        'storedName' => $storedName,
         'verified'   => false,
         'uploadedAt' => DocumentHelper::now(),
       ],
@@ -701,7 +717,12 @@ final class StudentController
 
     (new ApplicationWorkflowService())->onResumeUploaded((string) $profile['_id']);
 
-    Response::success(['id' => $id], 'Resume uploaded.', 201);
+    Response::success([
+      'id' => $id,
+      'path' => $path,
+      'storedName' => $storedName,
+      'storage' => 's3',
+    ], 'Resume uploaded to S3.', 201);
   }
 
   /** GET /api/student/resumes/{id}/view */

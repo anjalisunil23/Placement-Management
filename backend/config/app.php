@@ -52,17 +52,22 @@ return [
     ],
     's3' => [
         // Campus Lambda (presigned URL API) — primary upload/download/delete path.
-        'api_endpoint' => $_ENV['AWS_S3_API_ENDPOINT']
-            ?? 'https://hep6ztvxpjewibbu6z57hmfijm0czbnu.lambda-url.ap-south-1.on.aws',
+        // Empty env value must not wipe the default (?? alone keeps "").
+        'api_endpoint' => (static function (): string {
+            $fromEnv = trim((string) ($_ENV['AWS_S3_API_ENDPOINT'] ?? ''));
+            return $fromEnv !== ''
+                ? rtrim($fromEnv, '/')
+                : 'https://hep6ztvxpjewibbu6z57hmfijm0czbnu.lambda-url.ap-south-1.on.aws';
+        })(),
         // Logical folder root shown in s3:// URIs and Lambda object keys.
-        'prefix' => $_ENV['AWS_S3_PREFIX'] ?? 'ajce-placements',
+        'prefix' => (trim((string) ($_ENV['AWS_S3_PREFIX'] ?? '')) ?: 'ajce-placements'),
         // Physical AWS bucket name (informational / URI normalization).
-        'physical_bucket' => $_ENV['AWS_S3_PHYSICAL_BUCKET'] ?? 'iqac-docs',
-        'bucket' => $_ENV['AWS_S3_BUCKET'] ?? 'ajce-placements',
+        'physical_bucket' => (trim((string) ($_ENV['AWS_S3_PHYSICAL_BUCKET'] ?? '')) ?: 'iqac-docs'),
+        'bucket' => (trim((string) ($_ENV['AWS_S3_BUCKET'] ?? '')) ?: 'ajce-placements'),
         // Lambda download/delete always prefixes this root.
-        'docs_root' => $_ENV['AWS_S3_DOCS_ROOT'] ?? 'Docs',
+        'docs_root' => (trim((string) ($_ENV['AWS_S3_DOCS_ROOT'] ?? '')) ?: 'Docs'),
         'region' => $_ENV['AWS_REGION'] ?? $_ENV['AWS_DEFAULT_REGION'] ?? 'ap-south-1',
-        'public_base_url' => rtrim($_ENV['AWS_S3_PUBLIC_BASE_URL'] ?? '', '/'),
+        'public_base_url' => rtrim((string) ($_ENV['AWS_S3_PUBLIC_BASE_URL'] ?? ''), '/'),
         'timeout' => (int) ($_ENV['AWS_S3_TIMEOUT'] ?? 60),
     ],
     'uploads' => [

@@ -1809,7 +1809,8 @@ const ResumeBucket = {
         await this.fetch();
         const fromProfile = this.all().find(r => r.fromProfile);
         if (fromProfile) {
-          const bucketPath = `s3://${RESUME_BUCKET}/${u.registerNumber || u.email || 'student'}/${normalizeProfileType(type).replace(/\s+/g, '-')}/${fromProfile.fileName}`;
+          const bucketPath = fromProfile.bucketPath
+            || `s3://${RESUME_BUCKET}/resumes/${fromProfile.fileName}`;
           const tagged = {
             ...fromProfile,
             label: label || type,
@@ -1821,13 +1822,15 @@ const ResumeBucket = {
           this.save(list);
           return tagged;
         }
-      } else if (res.message) {
-        toast(res.message, 'warn');
+        return this.all()[0] || null;
       }
+      if (res.message) toast(res.message, 'error');
+      throw new Error(res.message || 'S3 resume upload failed');
     }
+    // Demo / offline only — never used for real authenticated student sessions.
     const id = 'res-' + Date.now();
-    const safeName = (file.name || 'resume.pdf').replace(/[^\w.\-]/g, '_');
-    const bucketPath = `s3://${RESUME_BUCKET}/${u.registerNumber || u.email || 'student'}/${normalizeProfileType(type).replace(/\s+/g, '-')}/${id}-${safeName}`;
+    const safeName = (file.name || 'resume.pdf').replace(/[^\w.\-]+/g, '_');
+    const bucketPath = `s3://${RESUME_BUCKET}/resumes/${id}-${safeName}`;
     const entry = {
       id,
       label: label || type,
