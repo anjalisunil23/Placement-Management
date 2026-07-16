@@ -1185,6 +1185,9 @@ final class AesApiService
         $courseId = $this->pickScalarId($record, [
             'courseId', 'course_id', 'CourseId', 'courseid', 'courseID',
             'stud_courseid', 'stud_course_id', 'stud_courseId',
+            // AES stud-info has no dedicated courseId; parent dept code is the
+            // closest stable numeric course/department key on the student row.
+            'stud_deptcode', 'deptCode', 'dept_code', 'parentDepartmentCode',
         ]);
         if ($courseId !== '') {
             $record['courseId'] = $courseId;
@@ -1197,6 +1200,7 @@ final class AesApiService
         if ($branchId !== '') {
             $record['branchId'] = $branchId;
             $record['branch_id'] = $branchId;
+            $record['stud_branchid'] = $branchId;
         }
 
         $marks10 = $this->pickMarkPercentFromRecord($record, [

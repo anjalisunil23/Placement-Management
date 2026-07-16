@@ -1394,6 +1394,11 @@ final class OfficerDataService
         $courseId = trim((string) (
             $record['courseId']
             ?? $record['course_id']
+            ?? $record['stud_courseid']
+            ?? $record['stud_course_id']
+            ?? $record['stud_deptcode']
+            ?? $record['deptCode']
+            ?? $record['parentDepartmentCode']
             ?? $row['courseId']
             ?? $row['course_id']
             ?? ''
@@ -1401,8 +1406,11 @@ final class OfficerDataService
         $branchId = trim((string) (
             $record['branchId']
             ?? $record['branch_id']
+            ?? $record['stud_branchid']
+            ?? $record['stud_branch_id']
             ?? $row['branchId']
             ?? $row['branch_id']
+            ?? $row['stud_branchid']
             ?? ''
         ));
         if ($courseId !== '') {
@@ -1412,6 +1420,21 @@ final class OfficerDataService
         if ($branchId !== '') {
             $row['branchId'] = $branchId;
             $row['branch_id'] = $branchId;
+            $row['stud_branchid'] = $branchId;
+        }
+        $deptAesId = trim((string) (
+            $record['stud_deptcode']
+            ?? $record['parentDepartmentCode']
+            ?? $record['deptCode']
+            ?? ''
+        ));
+        if ($deptAesId !== '' && ctype_digit($deptAesId)) {
+            $row['stud_deptcode'] = $deptAesId;
+            $row['parentDepartmentCode'] = $deptAesId;
+            if ($courseId === '') {
+                $row['courseId'] = $deptAesId;
+                $row['course_id'] = $deptAesId;
+            }
         }
         if ($year !== '') {
             $row['year'] = $year;

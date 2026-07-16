@@ -710,6 +710,9 @@ final class StaffPlacementRegistryService
         foreach ([
             'courseId', 'course_id', 'CourseId', 'courseid',
             'stud_courseid', 'stud_course_id', 'stud_courseId',
+            // AES getStudInfo4Placement does not return courseId; stud_deptcode is
+            // the numeric course/department key available on every student row.
+            'stud_deptcode', 'deptCode', 'dept_code', 'parentDepartmentCode',
         ] as $key) {
             $value = trim((string) ($row[$key] ?? ''));
             if ($value !== '') {
@@ -727,6 +730,15 @@ final class StaffPlacementRegistryService
             if ($value !== '') {
                 $branchId = $value;
                 break;
+            }
+        }
+
+        // Also inspect nested AES/local department payloads.
+        $dept = is_array($row['department'] ?? null) ? $row['department'] : [];
+        if ($courseId === '') {
+            $courseId = trim((string) ($dept['aesId'] ?? $dept['code'] ?? ''));
+            if ($courseId !== '' && !ctype_digit($courseId)) {
+                $courseId = '';
             }
         }
 
