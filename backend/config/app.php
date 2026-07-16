@@ -50,10 +50,26 @@ return [
         'signature'=> $_ENV['WHATSAPP_SIGNATURE'] ?? 'AJCE Placement Cell',
         'timeout'  => (int) ($_ENV['WHATSAPP_TIMEOUT'] ?? 15),
     ],
+    's3' => [
+        // Campus Lambda (presigned URL API) — primary upload/download/delete path.
+        'api_endpoint' => $_ENV['AWS_S3_API_ENDPOINT']
+            ?? 'https://hep6ztvxpjewibbu6z57hmfijm0czbnu.lambda-url.ap-south-1.on.aws',
+        // Logical folder root shown in s3:// URIs and Lambda object keys.
+        'prefix' => $_ENV['AWS_S3_PREFIX'] ?? 'ajce-placements',
+        // Physical AWS bucket name (informational / URI normalization).
+        'physical_bucket' => $_ENV['AWS_S3_PHYSICAL_BUCKET'] ?? 'iqac-docs',
+        'bucket' => $_ENV['AWS_S3_BUCKET'] ?? 'ajce-placements',
+        // Lambda download/delete always prefixes this root.
+        'docs_root' => $_ENV['AWS_S3_DOCS_ROOT'] ?? 'Docs',
+        'region' => $_ENV['AWS_REGION'] ?? $_ENV['AWS_DEFAULT_REGION'] ?? 'ap-south-1',
+        'public_base_url' => rtrim($_ENV['AWS_S3_PUBLIC_BASE_URL'] ?? '', '/'),
+        'timeout' => (int) ($_ENV['AWS_S3_TIMEOUT'] ?? 60),
+    ],
     'uploads' => [
         'max_resume' => (int) ($_ENV['MAX_RESUME_SIZE'] ?? 5242880),
         'max_certificate' => (int) ($_ENV['MAX_CERTIFICATE_SIZE'] ?? 5242880),
         'max_jd'     => (int) ($_ENV['MAX_JD_SIZE'] ?? 10485760),
+        // Legacy local dirs kept for reading older files only; new uploads go to S3.
         'resume_dir' => $rootPath . '/uploads/ajce-placements/resumes',
         'certificate_dir' => $rootPath . '/uploads/certificates',
         'reports_dir'=> $rootPath . '/uploads/ajce-placements/reports',

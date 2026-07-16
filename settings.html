@@ -100,9 +100,9 @@
           <div class="col-md-4"><label class="form-label small fw-semibold">Resume label</label><input class="form-control" name="label" placeholder="e.g. SDE Resume v2" required/></div>
           <div class="col-md-4"><label class="form-label small fw-semibold">Job profile</label><select class="form-select" name="profileType" id="resumeProfileType" required></select></div>
           <div class="col-md-4">
-            <label class="form-label small fw-semibold">PDF / DOC file</label>
+            <label class="form-label small fw-semibold">PDF file</label>
             <div class="file-picker">
-              <input type="file" name="file" id="resumeUploadFile" accept=".pdf,.doc,.docx" hidden/>
+              <input type="file" name="file" id="resumeUploadFile" accept=".pdf,application/pdf" hidden/>
               <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="resumeUploadFile"><i class="bi bi-upload me-1"></i>Choose file</button>
               <span class="file-picker-name text-muted-2 small" data-file-picker-name="resumeUploadFile">No file chosen</span>
             </div>
@@ -1075,30 +1075,12 @@ async function uploadResumeLocal(file, profileType, label) {
   return entry;
 }
 
-function resumeSafeNamePart(name) {
-  return String(name || '').replace(/[^a-zA-Z0-9]/g, '');
-}
-
 function validateStudentResumeFilename(fileName) {
-  const name = resumeSafeNamePart(document.getElementById('profName')?.value || user.name || '');
-  const reg = String(document.getElementById('profRegNo')?.value || user.registerNumber || '').trim();
-  if (!name || !reg) {
-    return { ok: false, message: 'Name and register number are required before uploading a resume.' };
-  }
-  const base = String(fileName || '').replace(/\.[^.]+$/, '');
   const ext = String(fileName || '').includes('.')
     ? String(fileName).split('.').pop().toLowerCase()
     : '';
-  if (!['pdf', 'doc', 'docx'].includes(ext)) {
-    return { ok: false, message: 'Upload a PDF or DOC resume file.' };
-  }
-  const expectedBase = `${name}_${reg}_Resume`;
-  if (base.toLowerCase() !== expectedBase.toLowerCase()) {
-    const expected = `${expectedBase}.${ext === 'pdf' ? 'pdf' : ext}`;
-    return {
-      ok: false,
-      message: `Rename your file to ${expected} and try again.`,
-    };
+  if (ext !== 'pdf') {
+    return { ok: false, message: 'Upload a PDF resume file.' };
   }
   return { ok: true };
 }
@@ -1119,7 +1101,7 @@ document.getElementById('resumeUploadForm')?.addEventListener('submit', async e 
     return;
   }
   if (!file?.name) {
-    toast('Choose a PDF or DOC resume file.', 'warn');
+    toast('Choose a PDF resume file.', 'warn');
     return;
   }
   const nameCheck = validateStudentResumeFilename(file.name);

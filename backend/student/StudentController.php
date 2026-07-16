@@ -24,6 +24,7 @@ use PMS\Services\AesApiService;
 use PMS\Services\AesLoginService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\NotificationService;
+use PMS\Services\ObjectStorageService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
@@ -581,30 +582,25 @@ final class StudentController
     }
 
     $registerNo = $profile['registerNumber'] ?? '';
-    if (!Security::validateResumeFilename($_FILES['resume']['name'], $user['name'], $registerNo)) {
-      $exampleName = preg_replace('/[^a-zA-Z0-9]/', '', (string) ($user['name'] ?? 'Student')) ?: 'Student';
-      Response::error(
-        "Rename your file to {$exampleName}_{$registerNo}_Resume.pdf and try again.",
-        400
-      );
-    }
-
-    $dir = $config['uploads']['resume_dir'];
-    if (!is_dir($dir)) {
-      mkdir($dir, 0755, true);
-    }
-
     $filename = basename($_FILES['resume']['name']);
-    $path = $dir . '/' . $registerNo . '_' . time() . '_' . $filename;
-
-    if (!move_uploaded_file($_FILES['resume']['tmp_name'], $path)) {
-      Response::error('Failed to save resume.', 500);
+    $hintName = $registerNo . '_' . time() . '_' . $filename;
+    $storage = new ObjectStorageService($config);
+    try {
+      $path = $storage->putUploadedFile(
+        ObjectStorageService::FOLDER_RESUMES,
+        $hintName,
+        $_FILES['resume']
+      );
+    } catch (\Throwable $e) {
+      Response::error('Failed to save resume to S3: ' . $e->getMessage(), 500);
     }
+    $storedName = $storage->storedNameFromUri($path);
 
     $this->studentModel->update((string) $profile['_id'], [
       'resume' => [
         'filename'   => $filename,
         'path'       => $path,
+        'storedName' => $storedName,
         'verified'   => false,
         'uploadedAt' => DocumentHelper::now(),
       ],
@@ -663,31 +659,20 @@ final class StudentController
     }
 
     $registerNo = (string) ($profile['registerNumber'] ?? '');
-    if ($registerNo === '' || !Security::validateResumeFilename(
-      (string) ($_FILES['file']['name'] ?? ''),
-      (string) ($user['name'] ?? ''),
-      $registerNo
-    )) {
-      $exampleName = preg_replace('/[^a-zA-Z0-9]/', '', (string) ($user['name'] ?? 'Student')) ?: 'Student';
-      Response::error(
-        "Rename your file to {$exampleName}_{$registerNo}_Resume.pdf and try again.",
-        400
-      );
-    }
-
-    $dir = $config['uploads']['resume_dir'];
-    if (!is_dir($dir)) {
-      mkdir($dir, 0755, true);
-    }
-
     $ext = strtolower(pathinfo($_FILES['file']['name'] ?? '', PATHINFO_EXTENSION));
     $safeLabel = preg_replace('/[^a-zA-Z0-9_-]+/', '-', strtolower($profileType));
-    $storedName = $registerNo . '_' . $safeLabel . '_' . time() . '.' . $ext;
-    $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $storedName;
-
-    if (!move_uploaded_file($_FILES['file']['tmp_name'], $path)) {
-      Response::error('Failed to save resume.', 500);
+    $hintName = ($registerNo !== '' ? $registerNo . '_' : '') . $safeLabel . '_' . time() . '.' . $ext;
+    $storage = new ObjectStorageService($config);
+    try {
+      $path = $storage->putUploadedFile(
+        ObjectStorageService::FOLDER_RESUMES,
+        $hintName,
+        $_FILES['file']
+      );
+    } catch (\Throwable $e) {
+      Response::error('Failed to save resume to S3: ' . $e->getMessage(), 500);
     }
+    $storedName = $storage->storedNameFromUri($path);
 
     $doc = [
       'userId' => Security::toObjectId((string) $user['_id']),
@@ -730,34 +715,25 @@ final class StudentController
       Response::notFound('Resume not found.');
     }
 
-    $config = require dirname(__DIR__) . '/config/app.php';
-    $dir = $config['uploads']['resume_dir'];
-    $legacyDir = dirname(__DIR__, 2) . '/uploads/resumes';
     $stored = basename((string) ($resume['storedName'] ?? ''));
     if ($stored === '') {
       Response::notFound('Resume not found.');
     }
-    $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $stored;
-    if (!is_file($path)) {
-      $legacyPath = rtrim($legacyDir, '/\\') . DIRECTORY_SEPARATOR . $stored;
-      if (!is_file($legacyPath)) {
-      Response::notFound('Resume file missing.');
-      }
-      $path = $legacyPath;
-    }
-
+    $storage = new ObjectStorageService();
+    $path = $storage->uri(ObjectStorageService::FOLDER_RESUMES, $stored);
     $ext = strtolower(pathinfo((string) ($resume['fileName'] ?? ''), PATHINFO_EXTENSION));
-    $mime = match ($ext) {
-      'pdf'  => 'application/pdf',
-      'doc'  => 'application/msword',
-      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      default => 'application/octet-stream',
-    };
-    header('Content-Type: ' . $mime);
-    header('Content-Disposition: inline; filename="' . basename((string) ($resume['fileName'] ?? 'resume.pdf')) . '"');
-    header('X-Content-Type-Options: nosniff');
-    readfile($path);
-    exit;
+    $mime = $storage->guessMime((string) ($resume['fileName'] ?? $stored));
+    try {
+      $storage->streamWithFallback(
+        $path,
+        (string) ($resume['fileName'] ?? 'resume.pdf'),
+        $mime,
+        true,
+        ObjectStorageService::FOLDER_RESUMES
+      );
+    } catch (\Throwable) {
+      Response::notFound('Resume file missing.');
+    }
   }
 
   /** POST /api/student/resumes/{id}/delete */
@@ -771,19 +747,13 @@ final class StudentController
       Response::notFound('Resume not found.');
     }
 
-    $config = require dirname(__DIR__) . '/config/app.php';
-    $dir = $config['uploads']['resume_dir'];
-    $legacyDir = dirname(__DIR__, 2) . '/uploads/resumes';
     $stored = basename((string) ($resume['storedName'] ?? ''));
     if ($stored !== '') {
-      foreach ([
-        rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $stored,
-        rtrim($legacyDir, '/\\') . DIRECTORY_SEPARATOR . $stored,
-      ] as $path) {
-        if (is_file($path)) {
-          @unlink($path);
-        }
-      }
+      $storage = new ObjectStorageService();
+      $storage->delete($storage->uri(ObjectStorageService::FOLDER_RESUMES, $stored));
+      // Also remove any leftover local copies.
+      $storage->delete(dirname(__DIR__, 2) . '/uploads/resumes/' . $stored);
+      $storage->delete(dirname(__DIR__, 2) . '/uploads/ajce-placements/resumes/' . $stored);
     }
 
     (new ResumeModel())->delete($resumeId);
@@ -825,24 +795,26 @@ final class StudentController
       Response::error($error, 400);
     }
 
-    $dir = $config['uploads']['photo_dir'] ?? (dirname(__DIR__, 2) . '/uploads/photos');
-    if (!is_dir($dir)) {
-      mkdir($dir, 0755, true);
-    }
-
     $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
     $registerNo = (string) ($profile['registerNumber'] ?? 'student');
-    $filename = $registerNo . '_photo_' . time() . '.' . $ext;
-    $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
-
-    if (!move_uploaded_file($_FILES['photo']['tmp_name'], $path)) {
-      Response::error('Failed to save photo.', 500);
+    $hintName = $registerNo . '_photo_' . time() . '.' . $ext;
+    $storage = new ObjectStorageService($config);
+    try {
+      $path = $storage->putUploadedFile(
+        ObjectStorageService::FOLDER_PHOTOS,
+        $hintName,
+        $_FILES['photo']
+      );
+    } catch (\Throwable $e) {
+      Response::error('Failed to save photo to S3: ' . $e->getMessage(), 500);
     }
 
-    $relative = '/uploads/photos/' . $filename;
+    $filename = $storage->storedNameFromUri($path);
+    $relative = $storage->mediaUrl(ObjectStorageService::FOLDER_PHOTOS, $filename);
     $this->studentModel->update((string) $profile['_id'], [
       'photo' => [
         'file'       => $filename,
+        'path'       => $path,
         'url'        => $relative,
         'source'     => 'upload',
         'uploadedAt' => DocumentHelper::now(),
@@ -858,14 +830,13 @@ final class StudentController
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
 
-    // Best-effort delete existing file (if it exists on disk)
     $existing = $profile['photo'] ?? null;
-    if (is_array($existing) && !empty($existing['file'])) {
-      $config = require dirname(__DIR__) . '/config/app.php';
-      $dir = $config['uploads']['photo_dir'] ?? (dirname(__DIR__, 2) . '/uploads/photos');
-      $candidate = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . basename((string) $existing['file']);
-      if (is_file($candidate)) {
-        @unlink($candidate);
+    if (is_array($existing)) {
+      $storage = new ObjectStorageService();
+      if (!empty($existing['path'])) {
+        $storage->delete((string) $existing['path']);
+      } elseif (!empty($existing['file'])) {
+        $storage->delete($storage->uri(ObjectStorageService::FOLDER_PHOTOS, basename((string) $existing['file'])));
       }
     }
 
@@ -1112,19 +1083,21 @@ final class StudentController
       Response::error($error, 400);
     }
 
-    $dir = $config['uploads']['signed_dir'] ?? ($config['uploads']['reports_dir'] . '/signed');
-    if (!is_dir($dir)) {
-      mkdir($dir, 0755, true);
-    }
-
     $registerNo = $profile['registerNumber'] ?? 'student';
-    $path = $dir . '/' . $registerNo . '_signed_' . time() . '.pdf';
-    if (!move_uploaded_file($_FILES['report']['tmp_name'], $path)) {
-      Response::error('Failed to save signed report.', 500);
+    $storedName = $registerNo . '_signed_' . time() . '.pdf';
+    $storage = new ObjectStorageService($config);
+    try {
+      $path = $storage->putUploadedFile(
+        ObjectStorageService::FOLDER_SIGNED_REPORTS,
+        $storedName,
+        $_FILES['report']
+      );
+    } catch (\Throwable $e) {
+      Response::error('Failed to save signed report to S3: ' . $e->getMessage(), 500);
     }
 
     $this->studentModel->update((string) $profile['_id'], ['signedReport' => $path]);
-    Response::success(['path' => basename($path)], 'Signed report uploaded.');
+    Response::success(['path' => $storedName], 'Signed report uploaded.');
   }
 
   /** POST /api/student/self-placement — off-campus / self-reported placement (or next after end date) */
@@ -1198,16 +1171,19 @@ final class StudentController
       if ($error) {
         Response::error($error, 400);
       }
-      $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
-      if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-        Response::error('Server upload folder is not writable.', 500);
-      }
-      $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
-      if (!move_uploaded_file($_FILES['offerLetter']['tmp_name'], $path)) {
-        Response::error('Failed to save offer letter.', 500);
+      $storedName = $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
+      $storage = new ObjectStorageService($config);
+      try {
+        $path = $storage->putUploadedFile(
+          ObjectStorageService::FOLDER_OFFER_LETTERS,
+          $storedName,
+          $_FILES['offerLetter']
+        );
+      } catch (\Throwable $e) {
+        Response::error('Failed to save offer letter to S3: ' . $e->getMessage(), 500);
       }
       $savedPaths[] = $path;
-      $offerLetter = basename($path);
+      $offerLetter = $path;
     }
 
     $joiningLetter = $this->saveOptionalSelfPlacementUpload(
@@ -1288,7 +1264,7 @@ final class StudentController
     $saved = $this->studentModel->update((string) $profile['_id'], $patch);
     if (!$saved) {
       foreach ($savedPaths as $savedPath) {
-        @unlink($savedPath);
+        (new ObjectStorageService())->delete((string) $savedPath);
       }
       Response::error('Could not save placement report.', 500);
     }
@@ -1383,16 +1359,19 @@ final class StudentController
       if ($error) {
         Response::error($error, 400);
       }
-      $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
-      if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-        Response::error('Server upload folder is not writable.', 500);
-      }
-      $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
-      if (!move_uploaded_file($_FILES['offerLetter']['tmp_name'], $path)) {
-        Response::error('Failed to save offer letter.', 500);
+      $storedName = $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
+      $storage = new ObjectStorageService($config);
+      try {
+        $path = $storage->putUploadedFile(
+          ObjectStorageService::FOLDER_OFFER_LETTERS,
+          $storedName,
+          $_FILES['offerLetter']
+        );
+      } catch (\Throwable $e) {
+        Response::error('Failed to save offer letter to S3: ' . $e->getMessage(), 500);
       }
       $savedPaths[] = $path;
-      $offerLetter = basename($path);
+      $offerLetter = $path;
     }
 
     $newJoining = $this->saveOptionalSelfPlacementUpload(
@@ -1459,7 +1438,7 @@ final class StudentController
     ]);
     if (!$saved) {
       foreach ($savedPaths as $savedPath) {
-        @unlink($savedPath);
+        (new ObjectStorageService())->delete((string) $savedPath);
       }
       Response::error('Could not update placement details.', 500);
     }
@@ -1669,19 +1648,20 @@ final class StudentController
       Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ': ' . $error, 400);
     }
 
-    $dir = $config['uploads']['self_placement_dir'] ?? ($config['uploads']['offer_letter_dir'] . '/../self_placement');
-    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-      Response::error('Server upload folder is not writable.', 500);
-    }
-
     $ext = strtolower(pathinfo((string) ($_FILES[$field]['name'] ?? ''), PATHINFO_EXTENSION));
-    $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
-    if (!move_uploaded_file($_FILES[$field]['tmp_name'], $path)) {
-      Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . '.', 500);
+    $storedName = $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
+    $folder = $field === 'offerLetter'
+      ? ObjectStorageService::FOLDER_OFFER_LETTERS
+      : ObjectStorageService::FOLDER_SELF_PLACEMENT;
+    $storage = new ObjectStorageService($config);
+    try {
+      $path = $storage->putUploadedFile($folder, $storedName, $_FILES[$field]);
+    } catch (\Throwable $e) {
+      Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . ' to S3: ' . $e->getMessage(), 500);
     }
 
     $savedPaths[] = $path;
 
-    return basename($path);
+    return $path;
   }
 }

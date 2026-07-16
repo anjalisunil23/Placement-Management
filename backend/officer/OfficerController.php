@@ -34,6 +34,7 @@ use PMS\Services\AesLoginService;
 use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
+use PMS\Services\ObjectStorageService;
 
 use PMS\Utils\DocumentHelper;
 
@@ -233,17 +234,17 @@ final class OfficerController
 
             }
 
-            $dir = $config['uploads']['jd_dir'];
-
-            if (!is_dir($dir)) {
-
-                mkdir($dir, 0755, true);
-
+            $storedName = time() . '_' . basename((string) $_FILES['jd']['name']);
+            $storage = new ObjectStorageService($config);
+            try {
+                $input['jdFile'] = $storage->putUploadedFile(
+                    ObjectStorageService::FOLDER_JD,
+                    $storedName,
+                    $_FILES['jd']
+                );
+            } catch (\Throwable $e) {
+                Response::error('Failed to save JD to S3: ' . $e->getMessage(), 500);
             }
-
-            $input['jdFile'] = $dir . '/' . time() . '_' . basename($_FILES['jd']['name']);
-
-            move_uploaded_file($_FILES['jd']['tmp_name'], $input['jdFile']);
 
         }
 
@@ -357,14 +358,19 @@ final class OfficerController
             Response::notFound('No shortlist document uploaded for this drive.');
         }
 
-        $path = $file['path'];
-        $filename = $file['filename'];
-        $mime = mime_content_type($path) ?: 'application/octet-stream';
-        header('Content-Type: ' . $mime);
-        header('Content-Disposition: inline; filename="' . str_replace('"', '', $filename) . '"');
-        header('Content-Length: ' . (string) filesize($path));
-        readfile($path);
-        exit;
+        $storage = new ObjectStorageService();
+        $mime = $storage->guessMime($file['filename']);
+        try {
+            $storage->streamWithFallback(
+                $file['path'],
+                $file['filename'],
+                $mime,
+                true,
+                ObjectStorageService::FOLDER_SHORTLISTS
+            );
+        } catch (\Throwable) {
+            Response::notFound('No shortlist document uploaded for this drive.');
+        }
     }
 
     /** PUT /api/officer/drives/{id} */

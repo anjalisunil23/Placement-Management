@@ -1682,10 +1682,9 @@ function studentKey(suffix) {
 }
 
 function resumeUploadFileName(file, user) {
-  const safeName = (user?.name || 'Student').replace(/[^a-zA-Z0-9]/g, '') || 'Student';
-  const reg = user?.registerNumber || 'student';
-  const ext = (String(file?.name || '').match(/\.[^.]+$/) || ['.pdf'])[0];
-  return `${safeName}_${reg}_Resume${ext}`;
+  const original = String(file?.name || 'resume.pdf');
+  const base = original.replace(/[^\w.\-]+/g, '_');
+  return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
 }
 
 function normalizeProfileType(value) {

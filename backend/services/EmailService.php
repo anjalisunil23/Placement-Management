@@ -222,11 +222,28 @@ final class EmailService
     {
         $subject = "PMS {$reportType} Report — " . date('Y-m-d');
         $body = "<p>Please find the attached {$reportType} placement report.</p>";
-        foreach ($recipients as $email) {
-            if ($email === '') {
-                continue;
+        $localPath = $reportPath;
+        $temp = false;
+        if ($reportPath !== '' && !is_file($reportPath)) {
+            try {
+                $materialized = (new ObjectStorageService())->materialize($reportPath);
+                $localPath = $materialized['path'];
+                $temp = $materialized['temp'];
+            } catch (\Throwable) {
+                $localPath = '';
             }
-            $this->send($email, $subject, $body, true, is_file($reportPath) ? $reportPath : null);
+        }
+        try {
+            foreach ($recipients as $email) {
+                if ($email === '') {
+                    continue;
+                }
+                $this->send($email, $subject, $body, true, ($localPath !== '' && is_file($localPath)) ? $localPath : null);
+            }
+        } finally {
+            if ($temp && $localPath !== '' && is_file($localPath)) {
+                @unlink($localPath);
+            }
         }
     }
 

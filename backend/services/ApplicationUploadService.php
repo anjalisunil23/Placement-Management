@@ -40,9 +40,8 @@ final class ApplicationUploadService
         if ($resumeId !== '') {
             $resumeDoc = (new ResumeModel())->findById($resumeId);
             if ($resumeDoc && (string) ($resumeDoc['studentId'] ?? '') === $studentId) {
-                $config = require dirname(__DIR__) . '/config/app.php';
                 $storedName = (string) ($resumeDoc['storedName'] ?? '');
-                $path = rtrim($config['uploads']['resume_dir'], '/\\') . DIRECTORY_SEPARATOR . $storedName;
+                $path = (new ObjectStorageService())->uri(ObjectStorageService::FOLDER_RESUMES, $storedName);
                 $resume = [
                     'resumeId' => $resumeId,
                     'label'    => (string) ($resumeDoc['label'] ?? ''),
@@ -81,19 +80,12 @@ final class ApplicationUploadService
         }
 
         $config = require dirname(__DIR__) . '/config/app.php';
-        $dir = (string) ($config['uploads']['certificate_dir'] ?? '');
-        if ($dir === '') {
-            return [];
-        }
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
         $allowed = Security::allowedCertificateExtensions();
         $maxSize = (int) ($config['uploads']['max_certificate'] ?? $config['uploads']['max_resume'] ?? 5242880);
         $files = $this->normalizeUploadedFiles($_FILES['certificates']);
         $stored = [];
         $safeReg = preg_replace('/[^a-z0-9]/i', '', $registerNumber) ?: 'applicant';
+        $storage = new ObjectStorageService($config);
 
         foreach ($files as $file) {
             if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
@@ -105,9 +97,15 @@ final class ApplicationUploadService
             }
 
             $original = basename((string) ($file['name'] ?? 'certificate'));
-            $path = $dir . DIRECTORY_SEPARATOR . $safeReg . '_' . time() . '_' . bin2hex(random_bytes(4)) . '_' . $original;
-            if (!move_uploaded_file((string) $file['tmp_name'], $path)) {
-                throw new \RuntimeException('Failed to save certificate file.');
+            $filename = $safeReg . '_' . time() . '_' . bin2hex(random_bytes(4)) . '_' . $original;
+            try {
+                $path = $storage->putUploadedFile(
+                    ObjectStorageService::FOLDER_CERTIFICATES,
+                    $filename,
+                    $file
+                );
+            } catch (\Throwable $e) {
+                throw new \RuntimeException('Failed to save certificate to S3: ' . $e->getMessage());
             }
 
             $stored[] = [

@@ -13,6 +13,7 @@ use PMS\Models\PublicPageContentModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Services\AnalyticsService;
+use PMS\Services\ObjectStorageService;
 use PMS\Services\PlacementOfficerContext;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -71,6 +72,7 @@ final class PublicController
             Collections::BROADCAST_LOGS,
         ];
         $missingTables = array_values(array_diff($requiredTables, $tables));
+        $storage = new ObjectStorageService();
 
         Response::success([
             'status'   => $db['ok'] ? 'ok' : 'error',
@@ -82,6 +84,10 @@ final class PublicController
                 'tables'    => count($tables),
                 'missingTables' => $missingTables,
                 'error'     => $db['error'],
+            ],
+            's3' => [
+                'configured' => $storage->isConfigured(),
+                'bucket'     => $storage->bucket(),
             ],
             'build' => [
                 'deployVersion'    => $deployVersion,
@@ -227,5 +233,32 @@ final class PublicController
             $departmentId = $ctx['departmentId'];
         }
         Response::success((new AnalyticsService())->getPlacementConsole($departmentId));
+    }
+
+    /** GET /api/media/{folder}/{file} — stream public media (photos, job-posters) from S3 */
+    public function serveMedia(string $folder, string $file): void
+    {
+        $folder = trim(str_replace('\\', '/', $folder), '/');
+        $allowed = [
+            ObjectStorageService::FOLDER_PHOTOS,
+            ObjectStorageService::FOLDER_JOB_POSTERS,
+        ];
+        if (!in_array($folder, $allowed, true)) {
+            Response::notFound('Media not found.');
+        }
+
+        $file = basename(str_replace('\\', '/', $file));
+        if ($file === '' || $file === '.' || $file === '..') {
+            Response::notFound('Media not found.');
+        }
+
+        $storage = new ObjectStorageService();
+        $uri = $storage->uri($folder, $file);
+        $mime = $storage->guessMime($file);
+        try {
+            $storage->streamWithFallback($uri, $file, $mime, true, $folder);
+        } catch (\Throwable) {
+            Response::notFound('Media not found.');
+        }
     }
 }

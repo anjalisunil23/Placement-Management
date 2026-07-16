@@ -1226,16 +1226,19 @@ final class StaffPlacementRegistryService
             if ($error) {
                 Response::error($error, 400);
             }
-            $dir = $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters');
-            if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-                Response::error('Server upload folder is not writable.', 500);
-            }
-            $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
-            if (!move_uploaded_file($_FILES['offerLetter']['tmp_name'], $path)) {
-                Response::error('Failed to save offer letter.', 500);
+            $storedName = $registerNo . '_' . $safeCompany . '_offer_' . time() . '.pdf';
+            $storage = new ObjectStorageService($config);
+            try {
+                $path = $storage->putUploadedFile(
+                    ObjectStorageService::FOLDER_OFFER_LETTERS,
+                    $storedName,
+                    $_FILES['offerLetter']
+                );
+            } catch (\Throwable $e) {
+                Response::error('Failed to save offer letter to S3: ' . $e->getMessage(), 500);
             }
             $savedPaths[] = $path;
-            $offerLetter = basename($path);
+            $offerLetter = $path;
         }
 
         $joiningLetter = $this->saveStaffDoc('joiningLetter', $registerNo, $safeCompany, 'joining_letter', ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp'], $savedPaths) ?? $joiningLetter;
@@ -1264,8 +1267,9 @@ final class StaffPlacementRegistryService
             'placed'        => true,
         ]);
         if (!$ok) {
+            $storage = new ObjectStorageService();
             foreach ($savedPaths as $p) {
-                @unlink($p);
+                $storage->delete((string) $p);
             }
             Response::error('Could not save documents.', 500);
         }
@@ -1310,18 +1314,20 @@ final class StaffPlacementRegistryService
             Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ': ' . $error, 400);
         }
 
-        $dir = $config['uploads']['self_placement_dir'] ?? ($config['uploads']['offer_letter_dir'] . '/../self_placement');
-        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-            Response::error('Server upload folder is not writable.', 500);
-        }
-
         $ext = strtolower(pathinfo((string) ($_FILES[$field]['name'] ?? ''), PATHINFO_EXTENSION));
-        $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
-        if (!move_uploaded_file($_FILES[$field]['tmp_name'], $path)) {
-            Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . '.', 500);
+        $storedName = $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
+        $storage = new ObjectStorageService($config);
+        try {
+            $path = $storage->putUploadedFile(
+                ObjectStorageService::FOLDER_SELF_PLACEMENT,
+                $storedName,
+                $_FILES[$field]
+            );
+        } catch (\Throwable $e) {
+            Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . ' to S3: ' . $e->getMessage(), 500);
         }
         $savedPaths[] = $path;
 
-        return basename($path);
+        return $path;
     }
 }

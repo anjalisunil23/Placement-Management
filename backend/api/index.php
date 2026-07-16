@@ -400,6 +400,7 @@ $routes = [
 
     // Health & public
     ['GET', '/health',                  [PublicController::class, 'health']],
+    ['GET', '/media/{folder}/{file}',   [PublicController::class, 'serveMedia']],
     ['GET', '/public/departments',      [PublicController::class, 'listDepartments']],
     ['GET', '/public/placement-stats',  [PublicController::class, 'placementStats']],
     ['GET', '/public/site-content',    [PublicController::class, 'siteContent']],

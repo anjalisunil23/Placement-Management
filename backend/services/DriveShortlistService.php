@@ -70,18 +70,19 @@ final class DriveShortlistService
                 $documentCsvText = (string) file_get_contents($tmp);
             }
 
-            $dir = (string) ($config['uploads']['shortlist_dir'] ?? ($config['uploads']['jd_dir'] . '/shortlists'));
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
-
             $safeName = preg_replace('/[^a-zA-Z0-9._-]+/', '_', basename((string) $documentFile['name'])) ?: 'shortlist.pdf';
-            $stored = $dir . '/' . $driveId . '_' . time() . '_' . $safeName;
-            if (!move_uploaded_file((string) $documentFile['tmp_name'], $stored)) {
-                Response::error('Could not save shortlist document.', 500);
+            $storedName = $driveId . '_' . time() . '_' . $safeName;
+            $storage = new ObjectStorageService($config);
+            try {
+                $documentPath = $storage->putUploadedFile(
+                    ObjectStorageService::FOLDER_SHORTLISTS,
+                    $storedName,
+                    $documentFile
+                );
+            } catch (\Throwable $e) {
+                Response::error('Could not save shortlist document to S3: ' . $e->getMessage(), 500);
             }
 
-            $documentPath = $stored;
             $documentName = (string) $documentFile['name'];
             $documentSaved = true;
             $driveModel->update($driveId, [
@@ -220,13 +221,13 @@ final class DriveShortlistService
         }
 
         $path = (string) ($drive['shortlistDocument'] ?? '');
-        if ($path === '' || !is_file($path) || !is_readable($path)) {
+        if ($path === '') {
             return null;
         }
 
         return [
             'path' => $path,
-            'filename' => (string) ($drive['shortlistDocumentName'] ?? basename($path)),
+            'filename' => (string) ($drive['shortlistDocumentName'] ?? basename(str_replace('\\', '/', $path))),
         ];
     }
 

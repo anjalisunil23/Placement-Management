@@ -19,6 +19,7 @@ use PMS\Services\AesLoginService;
 use PMS\Services\ApplicationUploadService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\JobFeedService;
+use PMS\Services\ObjectStorageService;
 use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\NotificationService;
@@ -142,16 +143,18 @@ final class AlumniController
         );
       }
     } catch (\RuntimeException $e) {
+      $storage = new ObjectStorageService();
       foreach ($savedPaths as $path) {
-        @unlink($path);
+        $storage->delete((string) $path);
       }
       Response::error($e->getMessage(), 400);
     }
 
     $docs['updatedAt'] = DocumentHelper::now();
     if (!$model->update((string) $profile['_id'], ['employmentDocs' => $docs])) {
+      $storage = new ObjectStorageService();
       foreach ($savedPaths as $path) {
-        @unlink($path);
+        $storage->delete((string) $path);
       }
       Response::error('Could not save employment documents.', 500);
     }
@@ -246,8 +249,8 @@ final class AlumniController
     try {
       $id = (new AlumniJobPostModel())->createPost((string) $user['_id'], $input);
     } catch (\Throwable $e) {
-      if ($savedPosterPath !== '' && is_file($savedPosterPath)) {
-        @unlink($savedPosterPath);
+      if ($savedPosterPath !== '') {
+        (new ObjectStorageService())->delete($savedPosterPath);
       }
       throw $e;
     }
@@ -269,19 +272,22 @@ final class AlumniController
     if ($error) {
       Response::error($error, 400);
     }
-    $dir = (string) ($config['uploads']['job_poster_dir'] ?? (dirname(__DIR__, 2) . '/uploads/job-posters'));
-    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-      Response::error('Could not create the job poster directory.', 500);
-    }
     $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
     $filename = preg_replace('/[^a-zA-Z0-9_-]/', '_', $prefix)
       . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
-    if (!move_uploaded_file((string) $file['tmp_name'], $path)) {
-      Response::error('Failed to save the job poster.', 500);
+    $storage = new ObjectStorageService($config);
+    try {
+      $path = $storage->putUploadedFile(
+        ObjectStorageService::FOLDER_JOB_POSTERS,
+        $filename,
+        $file
+      );
+    } catch (\Throwable $e) {
+      Response::error('Failed to save the job poster to S3: ' . $e->getMessage(), 500);
     }
+    $storedName = $storage->storedNameFromUri($path);
     return [
-      'url' => '/uploads/job-posters/' . $filename,
+      'url' => $storage->mediaUrl(ObjectStorageService::FOLDER_JOB_POSTERS, $storedName),
       'path' => $path,
       'type' => $ext === 'pdf' ? 'pdf' : 'image',
     ];
@@ -721,20 +727,22 @@ final class AlumniController
       throw new \RuntimeException(ucfirst(str_replace('_', ' ', $prefix)) . ': ' . $error);
     }
 
-    $dir = $config['uploads']['alumni_employment_dir'] ?? ($config['uploads']['self_placement_dir'] . '/../alumni_employment');
-    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-      throw new \RuntimeException('Server upload folder is not writable.');
-    }
-
     $ext = strtolower(pathinfo((string) ($_FILES[$field]['name'] ?? ''), PATHINFO_EXTENSION));
-    $path = $dir . '/alumni_' . $userKey . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
-    if (!move_uploaded_file($_FILES[$field]['tmp_name'], $path)) {
-      throw new \RuntimeException('Failed to save ' . str_replace('_', ' ', $prefix) . '.');
+    $storedName = 'alumni_' . $userKey . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
+    $storage = new ObjectStorageService($config);
+    try {
+      $path = $storage->putUploadedFile(
+        ObjectStorageService::FOLDER_ALUMNI_EMPLOYMENT,
+        $storedName,
+        $_FILES[$field]
+      );
+    } catch (\Throwable $e) {
+      throw new \RuntimeException('Failed to save ' . str_replace('_', ' ', $prefix) . ' to S3: ' . $e->getMessage());
     }
 
     $savedPaths[] = $path;
 
-    return basename($path);
+    return $path;
   }
 
   private function streamEmploymentDoc(string $field): void
@@ -746,32 +754,24 @@ final class AlumniController
     }
 
     $docs = is_array($profile['employmentDocs'] ?? null) ? $profile['employmentDocs'] : null;
-    $filename = (string) ($docs[$field] ?? '');
-    if ($filename === '') {
+    $stored = (string) ($docs[$field] ?? '');
+    if ($stored === '') {
       Response::notFound('Document not found.');
     }
 
-    $config = require dirname(__DIR__) . '/config/app.php';
-    $dir = $config['uploads']['alumni_employment_dir'] ?? ($config['uploads']['self_placement_dir'] . '/../alumni_employment');
-    $path = $dir . '/' . basename($filename);
-    if (!is_file($path)) {
+    $downloadName = basename(str_replace('\\', '/', $stored));
+    $storage = new ObjectStorageService();
+    $mime = $storage->guessMime($downloadName);
+    try {
+      $storage->streamWithFallback(
+        $stored,
+        $downloadName,
+        $mime,
+        true,
+        ObjectStorageService::FOLDER_ALUMNI_EMPLOYMENT
+      );
+    } catch (\Throwable) {
       Response::notFound('Document file missing on server.');
     }
-
-    $mime = match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
-      'pdf'  => 'application/pdf',
-      'png'  => 'image/png',
-      'jpg', 'jpeg' => 'image/jpeg',
-      'webp' => 'image/webp',
-      'doc'  => 'application/msword',
-      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      default => 'application/octet-stream',
-    };
-
-    header('Content-Type: ' . $mime);
-    header('Content-Disposition: inline; filename="' . basename($path) . '"');
-    header('Content-Length: ' . (string) filesize($path));
-    readfile($path);
-    exit;
   }
 }

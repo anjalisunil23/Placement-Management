@@ -529,10 +529,6 @@ final class ReportService
     private function saveReport(string $type, string $title, array $headers, array $rows, ReportContext $ctx): array
     {
         $config = require dirname(__DIR__) . '/config/app.php';
-        $dir = $config['uploads']['reports_dir'];
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
 
         $ext = match ($ctx->format) {
             'csv' => 'csv',
@@ -544,24 +540,46 @@ final class ReportService
             $ext = 'xls';
         }
         $filename = $type . '_report_' . date('Ymd_His') . '.' . $ext;
-        $path = $dir . '/' . $filename;
+        $tmp = tempnam(sys_get_temp_dir(), 'pms_report_');
+        if ($tmp === false) {
+            throw new \RuntimeException('Unable to create temp report file.');
+        }
+        $path = $tmp . '.' . $ext;
+        @rename($tmp, $path);
+        $uri = '';
 
-        if ($ext === 'csv') {
-            $this->writeCsv($path, $headers, $rows);
-        } elseif ($ext === 'xlsx') {
-            $this->writeXlsx($path, $title, $headers, $rows);
-        } elseif ($ext === 'xls') {
-            $this->writeExcelXml($path, $title, $headers, $rows);
-        } else {
-            $html = $this->buildTableHtml($title, $headers, $rows, $ctx);
-            $this->writePdf($path, $html, $title);
+        try {
+            if ($ext === 'csv') {
+                $this->writeCsv($path, $headers, $rows);
+            } elseif ($ext === 'xlsx') {
+                $this->writeXlsx($path, $title, $headers, $rows);
+            } elseif ($ext === 'xls') {
+                $this->writeExcelXml($path, $title, $headers, $rows);
+            } else {
+                $html = $this->buildTableHtml($title, $headers, $rows, $ctx);
+                $this->writePdf($path, $html, $title);
+            }
+
+            $storage = new ObjectStorageService($config);
+            try {
+                $uri = $storage->putLocalFile(
+                    ObjectStorageService::FOLDER_REPORTS,
+                    $filename,
+                    $path
+                );
+            } catch (\Throwable $e) {
+                throw new \RuntimeException('Failed to save report to S3: ' . $e->getMessage(), 0, $e);
+            }
+        } finally {
+            @unlink($path);
         }
 
+        $storedName = (new ObjectStorageService($config))->storedNameFromUri($uri);
         (new ReportModel())->record([
             'type'         => $type,
             'title'        => $title,
-            'filename'     => $filename,
-            'path'         => $path,
+            'filename'     => $storedName,
+            'path'         => $uri,
             'format'       => $ext,
             'generatedBy'  => $ctx->generatedBy,
             'departmentId' => $ctx->departmentId,
@@ -575,10 +593,10 @@ final class ReportService
         ]);
 
         return [
-            'filename'    => $filename,
+            'filename'    => $storedName,
             'format'      => $ext,
             'title'       => $title,
-            'downloadUrl' => '/backend/api/admin/reports/download/' . rawurlencode($filename),
+            'downloadUrl' => '/backend/api/admin/reports/download/' . rawurlencode($storedName),
         ];
     }
 

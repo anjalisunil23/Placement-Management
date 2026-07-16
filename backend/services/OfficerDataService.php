@@ -303,7 +303,7 @@ final class OfficerDataService
     }
 
     /**
-     * Resolve filesystem path for an application's resume (application snapshot or student profile).
+     * Resolve stored path/URI for an application's resume (application snapshot or student profile).
      *
      * @param array<string, mixed> $app
      * @return array{path: string, filename: string}|null
@@ -316,19 +316,23 @@ final class OfficerDataService
 
         $path = (string) ($appResume['path'] ?? $studentResume['path'] ?? '');
         if ($path === '') {
+            $storedName = (string) ($studentResume['storedName'] ?? '');
+            if ($storedName !== '') {
+                $path = (new ObjectStorageService())->uri(ObjectStorageService::FOLDER_RESUMES, $storedName);
+            }
+        }
+        if ($path === '') {
             return null;
         }
 
         if (str_starts_with($path, 'uploads://')) {
-            $config = require dirname(__DIR__) . '/config/app.php';
-            $path = rtrim($config['uploads']['resume_dir'], '/\\') . '/' . basename($path);
+            $path = (new ObjectStorageService())->uri(
+                ObjectStorageService::FOLDER_RESUMES,
+                basename($path)
+            );
         }
 
-        if (!is_file($path) || !is_readable($path)) {
-            return null;
-        }
-
-        $filename = (string) ($appResume['fileName'] ?? $studentResume['filename'] ?? basename($path));
+        $filename = (string) ($appResume['fileName'] ?? $studentResume['filename'] ?? basename(str_replace('\\', '/', $path)));
 
         return ['path' => $path, 'filename' => $filename];
     }
@@ -341,18 +345,19 @@ final class OfficerDataService
             Response::notFound('Resume file not found for this application.');
         }
 
-        $mime = 'application/octet-stream';
-        $ext = strtolower(pathinfo($file['filename'], PATHINFO_EXTENSION));
-        if ($ext === 'pdf') {
-            $mime = 'application/pdf';
-        } elseif (in_array($ext, ['doc', 'docx'], true)) {
-            $mime = 'application/msword';
+        $storage = new ObjectStorageService();
+        $mime = $storage->guessMime($file['filename']);
+        try {
+            $storage->streamWithFallback(
+                $file['path'],
+                $file['filename'],
+                $mime,
+                true,
+                ObjectStorageService::FOLDER_RESUMES
+            );
+        } catch (\Throwable) {
+            Response::notFound('Resume file not found for this application.');
         }
-
-        header('Content-Type: ' . $mime);
-        header('Content-Disposition: inline; filename="' . basename($file['filename']) . '"');
-        readfile($file['path']);
-        exit;
     }
 
     /**
@@ -3278,10 +3283,10 @@ final class OfficerDataService
 
     private function resumeNameValid(string $name, string $registerNumber, string $fileName): bool
     {
-        if ($fileName === '' || $registerNumber === '') {
+        if ($fileName === '') {
             return false;
         }
-        return Security::validateResumeFilename($fileName, $name, $registerNumber);
+        return strtolower(pathinfo($fileName, PATHINFO_EXTENSION)) === 'pdf';
     }
 
     public function streamStudentResume(string $studentId, array $ctx): void
@@ -3292,18 +3297,19 @@ final class OfficerDataService
             Response::notFound('Resume file not found for this student.');
         }
 
-        $mime = 'application/octet-stream';
-        $ext = strtolower(pathinfo($file['filename'], PATHINFO_EXTENSION));
-        if ($ext === 'pdf') {
-            $mime = 'application/pdf';
-        } elseif (in_array($ext, ['doc', 'docx'], true)) {
-            $mime = 'application/msword';
+        $storage = new ObjectStorageService();
+        $mime = $storage->guessMime($file['filename']);
+        try {
+            $storage->streamWithFallback(
+                $file['path'],
+                $file['filename'],
+                $mime,
+                true,
+                ObjectStorageService::FOLDER_RESUMES
+            );
+        } catch (\Throwable) {
+            Response::notFound('Resume file not found for this student.');
         }
-
-        header('Content-Type: ' . $mime);
-        header('Content-Disposition: inline; filename="' . basename($file['filename']) . '"');
-        readfile($file['path']);
-        exit;
     }
 
     /**

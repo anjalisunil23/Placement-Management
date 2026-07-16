@@ -154,21 +154,10 @@ final class Security
         return null;
     }
 
-    /**
-     * Validate resume filename: Name_RegisterNo_Resume.ext
-     */
-    public static function validateResumeFilename(string $filename, string $name, string $registerNumber): bool
-    {
-        $safeName = preg_replace('/[^a-zA-Z0-9]/', '', $name);
-        $expected = $safeName . '_' . $registerNumber . '_Resume';
-        $base = pathinfo($filename, PATHINFO_FILENAME);
-        return strcasecmp($base, $expected) === 0;
-    }
-
     /** @return string[] */
     public static function allowedResumeExtensions(): array
     {
-        return ['pdf', 'doc', 'docx'];
+        return ['pdf'];
     }
 
     /** @return string[] */

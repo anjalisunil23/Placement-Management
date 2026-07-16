@@ -15,6 +15,7 @@ use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\CompanyApplicationService;
 use PMS\Services\EmailService;
 use PMS\Services\NotificationService;
+use PMS\Services\ObjectStorageService;
 use PMS\Services\PlacementChanceService;
 use PMS\Services\RecruitingService;
 use PMS\Utils\DocumentHelper;
@@ -100,29 +101,32 @@ final class CompanyController
             Response::error($error, 400);
         }
 
-        $dir = $config['uploads']['photo_dir'] ?? (dirname(__DIR__, 2) . '/uploads/photos');
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
         $ext = strtolower(pathinfo((string) $_FILES['photo']['name'], PATHINFO_EXTENSION));
-        $filename = 'company_' . (string) $company['_id'] . '_' . time() . '.' . $ext;
-        $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
-        if (!move_uploaded_file($_FILES['photo']['tmp_name'], $path)) {
-            Response::error('Failed to save profile photo.', 500);
+        $hintName = 'company_' . (string) $company['_id'] . '_' . time() . '.' . $ext;
+        $storage = new ObjectStorageService($config);
+        try {
+            $path = $storage->putUploadedFile(
+                ObjectStorageService::FOLDER_PHOTOS,
+                $hintName,
+                $_FILES['photo']
+            );
+        } catch (\Throwable $e) {
+            Response::error('Failed to save profile photo to S3: ' . $e->getMessage(), 500);
         }
 
         $oldPhoto = is_array($company['recruiterPhoto'] ?? null) ? $company['recruiterPhoto'] : [];
-        if (!empty($oldPhoto['file'])) {
-            $oldPath = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . basename((string) $oldPhoto['file']);
-            if ($oldPath !== $path && is_file($oldPath)) {
-                @unlink($oldPath);
-            }
+        if (!empty($oldPhoto['path'])) {
+            $storage->delete((string) $oldPhoto['path']);
+        } elseif (!empty($oldPhoto['file'])) {
+            $storage->delete($storage->uri(ObjectStorageService::FOLDER_PHOTOS, basename((string) $oldPhoto['file'])));
         }
 
-        $relative = '/uploads/photos/' . $filename;
+        $filename = $storage->storedNameFromUri($path);
+        $relative = $storage->mediaUrl(ObjectStorageService::FOLDER_PHOTOS, $filename);
         $this->companyModel->update((string) $company['_id'], [
             'recruiterPhoto' => [
                 'file'       => $filename,
+                'path'       => $path,
                 'url'        => $relative,
                 'uploadedAt' => DocumentHelper::now(),
             ],
@@ -307,20 +311,24 @@ final class CompanyController
             if ($err) {
                 Response::error($err, 400);
             }
-            $dir = $config['uploads']['jd_dir'];
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
+            $storedName = time() . '_' . basename((string) $_FILES['jd']['name']);
+            $storage = new ObjectStorageService($config);
+            try {
+                $input['jdFile'] = $storage->putUploadedFile(
+                    ObjectStorageService::FOLDER_JD,
+                    $storedName,
+                    $_FILES['jd']
+                );
+            } catch (\Throwable $e) {
+                Response::error('Failed to save JD to S3: ' . $e->getMessage(), 500);
             }
-            $jdPath = $dir . '/' . time() . '_' . basename($_FILES['jd']['name']);
-            move_uploaded_file($_FILES['jd']['tmp_name'], $jdPath);
-            $input['jdFile'] = $jdPath;
         }
 
         try {
             $id = (new JobModel())->createJob($input);
         } catch (\Throwable $e) {
-            if ($savedPosterPath !== '' && is_file($savedPosterPath)) {
-                @unlink($savedPosterPath);
+            if ($savedPosterPath !== '') {
+                (new ObjectStorageService())->delete($savedPosterPath);
             }
             throw $e;
         }
@@ -342,19 +350,22 @@ final class CompanyController
         if ($error) {
             Response::error($error, 400);
         }
-        $dir = (string) ($config['uploads']['job_poster_dir'] ?? (dirname(__DIR__, 2) . '/uploads/job-posters'));
-        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-            Response::error('Could not create the job poster directory.', 500);
-        }
         $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
         $filename = preg_replace('/[^a-zA-Z0-9_-]/', '_', $prefix)
             . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-        $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
-        if (!move_uploaded_file((string) $file['tmp_name'], $path)) {
-            Response::error('Failed to save the job poster.', 500);
+        $storage = new ObjectStorageService($config);
+        try {
+            $path = $storage->putUploadedFile(
+                ObjectStorageService::FOLDER_JOB_POSTERS,
+                $filename,
+                $file
+            );
+        } catch (\Throwable $e) {
+            Response::error('Failed to save the job poster to S3: ' . $e->getMessage(), 500);
         }
+        $storedName = $storage->storedNameFromUri($path);
         return [
-            'url' => '/uploads/job-posters/' . $filename,
+            'url' => $storage->mediaUrl(ObjectStorageService::FOLDER_JOB_POSTERS, $storedName),
             'path' => $path,
             'type' => $ext === 'pdf' ? 'pdf' : 'image',
         ];

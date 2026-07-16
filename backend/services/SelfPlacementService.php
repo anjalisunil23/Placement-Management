@@ -105,21 +105,31 @@ final class SelfPlacementService
             Response::notFound('Document not found.');
         }
 
-        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        $mime = match ($ext) {
-            'pdf'  => 'application/pdf',
-            'png'  => 'image/png',
-            'jpg', 'jpeg' => 'image/jpeg',
-            'webp' => 'image/webp',
-            'doc'  => 'application/msword',
-            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            default => 'application/octet-stream',
-        };
-
-        header('Content-Type: ' . $mime);
-        header('Content-Disposition: inline; filename="' . basename($path) . '"');
-        readfile($path);
-        exit;
+        $downloadName = basename(str_replace('\\', '/', $path));
+        $folderHint = $field === 'offerLetter'
+            ? ObjectStorageService::FOLDER_OFFER_LETTERS
+            : ObjectStorageService::FOLDER_SELF_PLACEMENT;
+        $storage = new ObjectStorageService();
+        $mime = $storage->guessMime($downloadName);
+        try {
+            $storage->streamWithFallback($path, $downloadName, $mime, true, $folderHint);
+        } catch (\Throwable) {
+            // Offer letters may also live under self_placement (legacy).
+            if ($folderHint === ObjectStorageService::FOLDER_OFFER_LETTERS) {
+                try {
+                    $storage->streamWithFallback(
+                        $path,
+                        $downloadName,
+                        $mime,
+                        true,
+                        ObjectStorageService::FOLDER_SELF_PLACEMENT
+                    );
+                } catch (\Throwable) {
+                    Response::notFound('Document not found.');
+                }
+            }
+            Response::notFound('Document not found.');
+        }
     }
 
     /**
@@ -223,8 +233,9 @@ final class SelfPlacementService
             'placement'        => $placement,
         ]);
         if (!$saved) {
+            $storage = new ObjectStorageService();
             foreach ($savedPaths as $path) {
-                @unlink($path);
+                $storage->delete((string) $path);
             }
             Response::error('Could not save placement.', 500);
         }
@@ -528,25 +539,26 @@ final class SelfPlacementService
             Response::error(ucfirst(str_replace('_', ' ', $prefix)) . ': ' . $error, 400);
         }
 
-        $dir = $field === 'offerLetter'
-            ? ($config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters'))
-            : ($config['uploads']['self_placement_dir'] ?? ($config['uploads']['offer_letter_dir'] . '/../self_placement'));
-        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-            Response::error('Server upload folder is not writable.', 500);
-        }
-
         $ext = strtolower(pathinfo((string) ($_FILES[$field]['name'] ?? ''), PATHINFO_EXTENSION));
-        $path = $dir . '/' . $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
-        if (!move_uploaded_file($_FILES[$field]['tmp_name'], $path)) {
-            Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . '.', 500);
+        $storedName = $registerNo . '_' . $safeCompany . '_' . $prefix . '_' . time() . '.' . $ext;
+        $folder = $field === 'offerLetter'
+            ? ObjectStorageService::FOLDER_OFFER_LETTERS
+            : ObjectStorageService::FOLDER_SELF_PLACEMENT;
+        $storage = new ObjectStorageService($config);
+        try {
+            $path = $storage->putUploadedFile($folder, $storedName, $_FILES[$field]);
+        } catch (\Throwable $e) {
+            Response::error('Failed to save ' . str_replace('_', ' ', $prefix) . ' to S3: ' . $e->getMessage(), 500);
         }
 
         $savedPaths[] = $path;
 
-        return basename($path);
+        return $path;
     }
 
     /**
+     * Returns stored s3 URI, legacy absolute path, or basename for storage resolution.
+     *
      * @param array<string, mixed> $student
      */
     private function selfPlacementDocPath(array $student, string $field): ?string
@@ -561,22 +573,7 @@ final class SelfPlacementService
             return null;
         }
 
-        $config = require dirname(__DIR__) . '/config/app.php';
-        $dirs = [
-            $config['uploads']['self_placement_dir'] ?? '',
-            $config['uploads']['offer_letter_dir'] ?? ($config['uploads']['reports_dir'] . '/offer_letters'),
-        ];
-        $basename = basename($file);
-        foreach ($dirs as $dir) {
-            if ($dir === '') {
-                continue;
-            }
-            $path = rtrim($dir, '/\\') . '/' . $basename;
-            if (is_file($path)) {
-                return $path;
-            }
-        }
-
-        return null;
+        // Prefer full URI / absolute path as stored; basename works with folder hints.
+        return $file;
     }
 }

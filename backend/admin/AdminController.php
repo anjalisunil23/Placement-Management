@@ -36,6 +36,7 @@ use PMS\Services\TrackingService;
 use PMS\Services\PlacementOfficerContext;
 use PMS\Services\ReportContext;
 use PMS\Services\ReportService;
+use PMS\Services\ObjectStorageService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
@@ -209,14 +210,19 @@ final class AdminController
             Response::notFound('No shortlist document uploaded for this drive.');
         }
 
-        $path = $file['path'];
-        $filename = $file['filename'];
-        $mime = mime_content_type($path) ?: 'application/octet-stream';
-        header('Content-Type: ' . $mime);
-        header('Content-Disposition: inline; filename="' . str_replace('"', '', $filename) . '"');
-        header('Content-Length: ' . (string) filesize($path));
-        readfile($path);
-        exit;
+        $storage = new ObjectStorageService();
+        $mime = $storage->guessMime($file['filename']);
+        try {
+            $storage->streamWithFallback(
+                $file['path'],
+                $file['filename'],
+                $mime,
+                true,
+                ObjectStorageService::FOLDER_SHORTLISTS
+            );
+        } catch (\Throwable) {
+            Response::notFound('No shortlist document uploaded for this drive.');
+        }
     }
 
     // --- Applications (Admin can view and transition any application) ---
@@ -967,14 +973,34 @@ final class AdminController
 
         if (!empty($input['email'])) {
             $email = new EmailService();
-            $config = require dirname(__DIR__) . '/config/app.php';
-            $reportPath = $config['uploads']['reports_dir'] . '/' . $result['filename'];
-            $recipients = array_filter([
-                $_ENV['MAIL_FROM'] ?? 'admin@college.edu',
-                $_ENV['MAIL_STAFF'] ?? '',
-                $scope['user']['email'] ?? '',
-            ]);
-            $email->sendReportToManagement($recipients, $reportPath, $result['title']);
+            $storage = new ObjectStorageService();
+            $uri = $storage->uri(ObjectStorageService::FOLDER_REPORTS, $result['filename']);
+            $tmpPath = null;
+            try {
+                $body = $storage->getContentsWithFallback($uri, ObjectStorageService::FOLDER_REPORTS);
+                $tmpPath = tempnam(sys_get_temp_dir(), 'pms_mail_');
+                if ($tmpPath === false) {
+                    throw new \RuntimeException('Unable to create temp attachment.');
+                }
+                $named = $tmpPath . '_' . $result['filename'];
+                @rename($tmpPath, $named);
+                $tmpPath = $named;
+                if (file_put_contents($tmpPath, $body) === false) {
+                    throw new \RuntimeException('Unable to write temp attachment.');
+                }
+                $recipients = array_filter([
+                    $_ENV['MAIL_FROM'] ?? 'admin@college.edu',
+                    $_ENV['MAIL_STAFF'] ?? '',
+                    $scope['user']['email'] ?? '',
+                ]);
+                $email->sendReportToManagement($recipients, $tmpPath, $result['title']);
+            } catch (\Throwable) {
+                // Report was generated; email attachment is best-effort.
+            } finally {
+                if (is_string($tmpPath) && $tmpPath !== '' && is_file($tmpPath)) {
+                    @unlink($tmpPath);
+                }
+            }
         }
 
         Response::success($result, 'Report generated.');
@@ -1614,29 +1640,20 @@ final class AdminController
         if (!preg_match('/^[a-z0-9_\-]+\.(pdf|csv|xlsx|xls)$/i', $filename)) {
             Response::error('Invalid filename.', 400);
         }
-    $config = require dirname(__DIR__) . '/config/app.php';
-    $dir = $config['uploads']['reports_dir'];
-    $legacyDir = dirname(__DIR__, 2) . '/uploads/reports';
-    $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
-    if (!is_file($path)) {
-        $legacyPath = rtrim($legacyDir, '/\\') . DIRECTORY_SEPARATOR . $filename;
-        if (is_file($legacyPath)) {
-            $path = $legacyPath;
-        } else {
+        $storage = new ObjectStorageService();
+        $uri = $storage->uri(ObjectStorageService::FOLDER_REPORTS, $filename);
+        $mime = $storage->guessMime($filename);
+        try {
+            $storage->streamWithFallback(
+                $uri,
+                $filename,
+                $mime,
+                false,
+                ObjectStorageService::FOLDER_REPORTS
+            );
+        } catch (\Throwable) {
             Response::notFound('Report file not found.');
         }
-        }
-        $lower = strtolower($filename);
-        $mime = match (true) {
-            str_ends_with($lower, '.csv') => 'text/csv',
-            str_ends_with($lower, '.xlsx') => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            str_ends_with($lower, '.xls') => 'application/vnd.ms-excel',
-            default => 'application/pdf',
-        };
-        header('Content-Type: ' . $mime);
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-        readfile($path);
-        exit;
     }
 
     // --- System settings, public page content, placement news ---
