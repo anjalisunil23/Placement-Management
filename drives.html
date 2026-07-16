@@ -446,19 +446,11 @@
           </ul>
           <p class="small text-muted-2 mb-2" id="driveShortlistHint">Applied applicants for this company drive.</p>
 
-          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3" id="driveShortlistSelectBar">
-            <div class="small text-muted-2" id="driveShortlistSelectHint">Tick students still in Applied status to shortlist them for this company drive.</div>
-            <button type="button" class="btn btn-sm btn-primary" id="btnShortlistSelected" disabled>
-              <i class="bi bi-check2-square me-1"></i>Shortlist selected
-            </button>
-          </div>
-
           <div class="table-wrap">
             <table class="table-modern">
               <thead><tr id="driveApplicantHead">
                 <th style="width:3rem">SI.No</th>
-                <th style="width:2.5rem" class="drive-shortlist-col"><input type="checkbox" class="form-check-input" id="driveApplicantSelectAll" title="Select all eligible" aria-label="Select all eligible"></th>
-                <th>Student</th><th>Register No</th><th>Dept</th><th>Email</th><th>Phone</th><th>Resume</th><th>Status</th><th>Applied</th>
+                <th>Student</th><th>Register No</th><th>Dept</th><th>Email</th><th>Phone</th><th>Resume</th><th>Status</th><th>Applied</th><th>Action</th>
               </tr></thead>
               <tbody id="driveApplicantRows"></tbody>
             </table>
@@ -1391,31 +1383,6 @@ function canShortlistApplicant(a) {
   return status === 'applied';
 }
 
-function updateDriveShortlistSelectUi() {
-  const onApplied = driveApplicantsTab === 'applied';
-  const bar = document.getElementById('driveShortlistSelectBar');
-  const headCol = document.querySelector('#driveApplicantHead .drive-shortlist-col');
-  const selectAll = document.getElementById('driveApplicantSelectAll');
-  const btn = document.getElementById('btnShortlistSelected');
-  if (bar) bar.classList.toggle('d-none', !onApplied);
-  if (headCol) headCol.classList.toggle('d-none', !onApplied);
-  const checked = onApplied
-    ? [...document.querySelectorAll('#driveApplicantRows .drive-shortlist-check:checked')]
-    : [];
-  if (btn) {
-    btn.disabled = checked.length === 0;
-    btn.innerHTML = checked.length
-      ? `<i class="bi bi-check2-square me-1"></i>Shortlist selected (${checked.length})`
-      : '<i class="bi bi-check2-square me-1"></i>Shortlist selected';
-  }
-  if (selectAll) {
-    const eligible = [...document.querySelectorAll('#driveApplicantRows .drive-shortlist-check')];
-    selectAll.checked = eligible.length > 0 && eligible.every(el => el.checked);
-    selectAll.indeterminate = eligible.some(el => el.checked) && !selectAll.checked;
-    selectAll.disabled = !onApplied || eligible.length === 0;
-  }
-}
-
 function updateDriveApplicantTabCounts() {
   const groups = driveApplicantGroups(driveApplicants);
   const setCount = (id, n) => {
@@ -1435,7 +1402,6 @@ function updateDriveApplicantTabCounts() {
       rejected: 'Rejected at a company round or overall for this drive.',
     })[driveApplicantsTab] || '';
   }
-  updateDriveShortlistSelectUi();
   updateRecruitmentResultsTabCount();
 }
 
@@ -1443,8 +1409,7 @@ function renderDriveApplicantRows() {
   const groups = driveApplicantGroups(driveApplicants);
   const list = groups[driveApplicantsTab] || [];
   const tbody = document.getElementById('driveApplicantRows');
-  const showSelect = driveApplicantsTab === 'applied';
-  const cols = showSelect ? 10 : 9;
+  const cols = 10;
   if (!list.length) {
     const emptyMsg = ({
       applied: 'No applicants for this company drive yet.',
@@ -1453,19 +1418,14 @@ function renderDriveApplicantRows() {
       rejected: 'No rejected candidates.',
     })[driveApplicantsTab] || 'No applicants.';
     tbody.innerHTML = `<tr><td colspan="${cols}" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
-    updateDriveShortlistSelectUi();
     return;
   }
   tbody.innerHTML = list.map((a, idx) => {
-    const eligible = canShortlistApplicant(a);
-    const checkCell = showSelect
-      ? `<td class="drive-shortlist-col">${eligible
-        ? `<input type="checkbox" class="form-check-input drive-shortlist-check" value="${a.id}" aria-label="Select ${a.studentName || a.registerNumber || 'applicant'}">`
-        : '<span class="small text-muted-2">—</span>'}</td>`
-      : '';
+    const action = canShortlistApplicant(a)
+      ? `<button type="button" class="btn btn-sm btn-outline-primary drive-shortlist-one" data-app-id="${a.id}">Shortlist</button>`
+      : '<span class="small text-muted-2">—</span>';
     return `<tr data-app-id="${a.id}">
     <td class="text-muted-2">${idx + 1}</td>
-    ${checkCell}
     <td><strong>${a.studentName || '—'}</strong></td>
     <td>${a.registerNumber || '—'}</td>
     <td>${a.department || '—'}</td>
@@ -1474,9 +1434,9 @@ function renderDriveApplicantRows() {
     <td>${driveApplicantResumeCell(a)}</td>
     <td>${driveApplicantResultBadge(a)}</td>
     <td>${a.appliedAt ? new Date(a.appliedAt).toLocaleDateString() : '—'}</td>
+    <td>${action}</td>
   </tr>`;
   }).join('');
-  updateDriveShortlistSelectUi();
 }
 
 function showDriveDetailPanel(panel) {
@@ -1695,12 +1655,7 @@ window.openDriveApplicants = async driveId => {
   });
   document.getElementById('driveApplicantsTitle').textContent = `${d.company} · ${d.role}`;
   document.getElementById('driveApplicantsSub').textContent = `${d.package || '—'} · ${d.status || '—'} · Deadline ${d.deadline || '—'}`;
-  document.getElementById('driveApplicantRows').innerHTML = '<tr><td colspan="7" class="text-muted-2 p-4 text-center">Loading applicants…</td></tr>';
-  const selectAll = document.getElementById('driveApplicantSelectAll');
-  if (selectAll) {
-    selectAll.checked = false;
-    selectAll.indeterminate = false;
-  }
+  document.getElementById('driveApplicantRows').innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading applicants…</td></tr>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('driveApplicantsModal')).show();
   try {
     driveApplicants = await ApplicationPipeline.fetchByDrive(driveId);
@@ -1713,39 +1668,17 @@ window.openDriveApplicants = async driveId => {
   updateRecruitmentResultsTabCount();
 };
 
-async function shortlistSelectedApplicants() {
-  if (!canManage || !activeDriveId) return;
-  const ids = [...document.querySelectorAll('#driveApplicantRows .drive-shortlist-check:checked')]
-    .map(el => el.value)
-    .filter(Boolean);
-  if (!ids.length) {
-    toast('Select at least one applicant to shortlist.', 'warn');
+async function shortlistOneApplicant(appId) {
+  if (!canManage || !activeDriveId || !appId) return;
+  const success = await ApplicationPipeline.shortlist(appId, { quiet: true });
+  if (!success) {
+    toast('Could not shortlist applicant.', 'warn');
     return;
   }
-  const btn = document.getElementById('btnShortlistSelected');
-  if (btn) btn.disabled = true;
-  try {
-    let ok = 0;
-    let fail = 0;
-    for (const id of ids) {
-      const success = await ApplicationPipeline.shortlist(id, { quiet: true });
-      if (success) ok += 1;
-      else fail += 1;
-    }
-    if (ok) toast(`${ok} student${ok === 1 ? '' : 's'} shortlisted.`, 'success');
-    if (fail) toast(`${fail} could not be shortlisted.`, 'warn');
-    driveApplicants = await ApplicationPipeline.fetchByDrive(activeDriveId);
-    if (ok) {
-      driveApplicantsTab = 'shortlisted';
-      document.querySelectorAll('#driveApplicantTabs .nav-link').forEach(btnEl => {
-        btnEl.classList.toggle('active', btnEl.dataset.tab === 'shortlisted');
-      });
-    }
-    updateDriveApplicantTabCounts();
-    renderDriveApplicantRows();
-  } finally {
-    updateDriveShortlistSelectUi();
-  }
+  toast('Student shortlisted.', 'success');
+  driveApplicants = await ApplicationPipeline.fetchByDrive(activeDriveId);
+  updateDriveApplicantTabCounts();
+  renderDriveApplicantRows();
 }
 
 function enrichDriveApplicantCounts(apps) {
@@ -2302,21 +2235,10 @@ document.getElementById('driveApplicantTabs')?.addEventListener('click', e => {
   renderDriveApplicantRows();
 });
 
-document.getElementById('driveApplicantSelectAll')?.addEventListener('change', e => {
-  const checked = !!e.target.checked;
-  document.querySelectorAll('#driveApplicantRows .drive-shortlist-check').forEach(el => {
-    el.checked = checked;
-  });
-  updateDriveShortlistSelectUi();
-});
-
-document.getElementById('driveApplicantRows')?.addEventListener('change', e => {
-  if (!e.target.classList.contains('drive-shortlist-check')) return;
-  updateDriveShortlistSelectUi();
-});
-
-document.getElementById('btnShortlistSelected')?.addEventListener('click', () => {
-  shortlistSelectedApplicants();
+document.getElementById('driveApplicantRows')?.addEventListener('click', e => {
+  const btn = e.target.closest('.drive-shortlist-one');
+  if (!btn) return;
+  shortlistOneApplicant(btn.dataset.appId);
 });
 
 document.getElementById('btnAddCreateDriveRound')?.addEventListener('click', () => addDriveRoundRow('create'));
