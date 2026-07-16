@@ -21,7 +21,7 @@
         <div class="page-header">
           <div>
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">Only the AES class teacher and co-class teacher can add or edit details for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">Only the class teacher and co-class teacher (class incharge) of a batch can add or edit entries for that class.</p>
           </div>
         </div>
 
@@ -602,19 +602,19 @@
       if (!assigned.length) {
         el.classList.remove('d-none');
         el.className = 'alert alert-warning py-2 px-3 mb-3';
-        el.textContent = 'No AES class-teacher / co-class-teacher assignment found on your account. You can view classes, but cannot add or edit placement details.';
+        el.textContent = 'No class-incharge assignment found for your account. You can view classes, but cannot add or edit placement details.';
         return;
       }
       if (filterBatch && !canEditSelectedBatch) {
         el.classList.remove('d-none');
         el.className = 'alert alert-warning py-2 px-3 mb-3';
-        el.textContent = `You are not the class teacher or co-class teacher for ${filterBatch}. Viewing only — edits are disabled.`;
+        el.textContent = `Only the class teacher / co-class teacher of ${filterBatch} can add or edit entries. Viewing only.`;
         return;
       }
       if (filterBatch && canEditSelectedBatch) {
         el.classList.remove('d-none');
         el.className = 'alert alert-success py-2 px-3 mb-3';
-        el.textContent = `You can add and edit placement / higher-education details for ${filterBatch}.`;
+        el.textContent = `You are class incharge for ${filterBatch} — you can add and edit placement / higher-education details.`;
         return;
       }
       el.classList.add('d-none');
@@ -702,7 +702,8 @@
       }
       fillSelect('filterBatch', batches, 'All batches', filterBatch, true);
       filterBatch = document.getElementById('filterBatch')?.value || '';
-      canEditSelectedBatch = batchIsAssigned(filterBatch);
+      // Server list response is authoritative for edit rights.
+      canEditSelectedBatch = false;
       updateClassTeacherBanner();
 
       const branchEl = document.getElementById('filterProgram');
@@ -776,7 +777,7 @@
         const hasEmployer = String(r.employer || '').trim() !== '';
         const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
         const detailsBtn = !canEditSelectedBatch
-          ? `<button type="button" class="registry-action-btn add" title="Only class teacher / co-class teacher can edit" disabled><i class="bi bi-lock-fill"></i></button>`
+          ? `<button type="button" class="registry-action-btn add" title="Only class incharge can add or edit" disabled><i class="bi bi-lock-fill"></i></button>`
           : (hasEmployer
             ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
             : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`);
@@ -822,7 +823,7 @@
 
     function openEditPlacement(studentId) {
       if (!canEditSelectedBatch) {
-        toast('Only the class teacher or co-class teacher can add or edit placement details for this batch.', 'warn');
+        toast('Only the class incharge (class teacher / co-class teacher) can add or edit entries for this batch.', 'warn');
         return;
       }
       const row = findRowByStudentId(studentId);
@@ -880,7 +881,7 @@
     async function saveEditPlacement(ev) {
       ev.preventDefault();
       if (!canEditSelectedBatch) {
-        toast('Only the class teacher or co-class teacher can submit placement details for this batch.', 'warn');
+        toast('Only the class incharge (class teacher / co-class teacher) can submit placement details for this batch.', 'warn');
         return;
       }
       const studentId = document.getElementById('editStudentId').value;
@@ -1033,7 +1034,7 @@
           }
         } catch (_) { /* ignore */ }
       }
-      canEditSelectedBatch = data.canEditBatch === true || batchIsAssigned(filterBatch);
+      canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
       applyClientFilter();
     }

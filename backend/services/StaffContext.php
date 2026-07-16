@@ -33,6 +33,7 @@ final class StaffContext
             'profile'      => $profile,
             'departmentId' => $departmentId,
             'department'   => $department,
+            'user'         => $user,
         ];
     }
 
@@ -49,8 +50,8 @@ final class StaffContext
     }
 
     /**
-     * AES class / co-class teacher assignments for this staff member.
-     * Empty means the staff is not recorded as class teacher for any batch.
+     * Class-incharge batches for this staff member (AES session + CT/CoCT registry).
+     * Empty means the staff is not class teacher / co-class teacher for any batch.
      *
      * @param array<string, mixed> $ctx
      * @return list<string>
@@ -72,23 +73,53 @@ final class StaffContext
             $raw
         ), static fn ($batch) => $batch !== ''));
 
-        $aesProfile = Security::getSessionAesProfile();
-        if (!is_array($aesProfile) || $aesProfile === []) {
-            return $fromProfile;
-        }
-
-        $fromSession = (new AesLoginService())->resolveAssignedClassBatches([], $aesProfile);
-        // Live AES class-teacher assignments win when present.
-        if ($fromSession !== []) {
-            return $fromSession;
-        }
-
-        // Avoid treating an old department-wide backfill as personal CT assignments.
+        // Drop polluted department-wide backfills.
         if (count($fromProfile) > 12) {
-            return [];
+            $fromProfile = [];
         }
 
-        return $fromProfile;
+        $fromSession = [];
+        $aesProfile = Security::getSessionAesProfile();
+        if (is_array($aesProfile) && $aesProfile !== []) {
+            $fromSession = (new AesLoginService())->resolveAssignedClassBatches([], $aesProfile);
+        }
+
+        $fromRegistry = ClassInchargeRegistry::batchesForStaff($ctx);
+
+        // Registry (CT/CoCT directory) is authoritative for edit rights when matched.
+        // Merge AES session / profile labels for the same cohorts when present.
+        $merged = array_merge($fromRegistry, $fromSession, $fromProfile);
+        if ($fromRegistry !== []) {
+            // Keep only labels that belong to registry cohorts (or exact registry keys).
+            $allowedCohorts = array_map(
+                static fn (string $b) => ClassInchargeRegistry::cohortKey($b),
+                $fromRegistry
+            );
+            $merged = array_values(array_filter(
+                $merged,
+                static function (string $batch) use ($allowedCohorts): bool {
+                    $cohort = ClassInchargeRegistry::cohortKey($batch);
+                    foreach ($allowedCohorts as $allowed) {
+                        if (strcasecmp($cohort, $allowed) === 0) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
+            ));
+            // Always include canonical cohort keys from registry.
+            $merged = array_merge($merged, $fromRegistry);
+        } elseif ($fromSession !== []) {
+            $merged = $fromSession;
+        } else {
+            $merged = $fromProfile;
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn ($batch) => trim((string) $batch),
+            $merged
+        ), static fn ($batch) => $batch !== '')));
     }
 
     /**
@@ -100,8 +131,29 @@ final class StaffContext
         if ($batch === '') {
             return false;
         }
+
+        $cohort = ClassInchargeRegistry::cohortKey($batch);
+        $knownInRegistry = false;
+        foreach (array_keys(ClassInchargeRegistry::assignments()) as $key) {
+            if (strcasecmp(ClassInchargeRegistry::cohortKey((string) $key), $cohort) === 0) {
+                $knownInRegistry = true;
+                break;
+            }
+        }
+        // For mapped MCA / Integrated MCA classes, only the directory CT/CoCT may edit.
+        if ($knownInRegistry) {
+            return ClassInchargeRegistry::staffIsInchargeOfBatch($ctx, $batch);
+        }
+
         foreach (self::assignedClassBatches($ctx) as $assigned) {
-            if (strcasecmp(trim((string) $assigned), $batch) === 0) {
+            $assigned = trim((string) $assigned);
+            if ($assigned === '') {
+                continue;
+            }
+            if (strcasecmp($assigned, $batch) === 0) {
+                return true;
+            }
+            if (strcasecmp(ClassInchargeRegistry::cohortKey($assigned), $cohort) === 0) {
                 return true;
             }
         }
@@ -110,8 +162,8 @@ final class StaffContext
     }
 
     /**
-     * Placement / higher-education details may only be added by the AES class
-     * teacher or co-class teacher of the student's class batch.
+     * Placement / higher-education details may only be added by the class
+     * teacher or co-class teacher (class incharge) of the student's class batch.
      *
      * @param array<string, mixed> $student
      * @param array<string, mixed> $ctx
@@ -126,11 +178,11 @@ final class StaffContext
             ?? ''
         ));
         if ($batch === '') {
-            Response::forbidden('This student has no class batch; only class teachers can edit placement details.');
+            Response::forbidden('This student has no class batch; only the class incharge can edit placement details.');
         }
         if (!self::canEditClassBatch($ctx, $batch)) {
             Response::forbidden(
-                'Only the class teacher or co-class teacher of '
+                'Only the class teacher or co-class teacher (class incharge) of '
                 . $batch
                 . ' can add or edit placement / higher-education details.'
             );
