@@ -233,8 +233,7 @@ function pickDisplayName(u) {
   const emails = [merged.collegeEmail, merged.email, merged.personalEmail].filter(Boolean);
   const current = String(merged.name || '').trim();
   if (current && !isPlaceholderName(current, reg) && !emails.some((e) => isEmailDerivedName(current, e))) return current;
-  const inferred = inferNameFromEmail(merged.personalEmail || '');
-  if (inferred && !isPlaceholderName(inferred, reg)) return inferred;
+  // Never invent a display name from email — wait for AES getStudInfo4Placement stud_name.
   return '';
 }
 

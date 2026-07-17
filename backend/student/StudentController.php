@@ -171,28 +171,20 @@ final class StudentController
     $apiName = '';
     $liteProfile = $this->isLiteProfileRequest();
     $forceRefresh = $this->isForcedAesRefreshRequest();
-    $forceNameRefresh = $this->isForcedAesNameRefreshRequest();
-    $storedName = trim((string) ($user['name'] ?? ''));
-    $needsNameSync = $forceNameRefresh
-      || $storedName === ''
-      || !preg_match('/\s/', $storedName)
-      || preg_match('/^[A-Za-z][A-Za-z0-9._+-]{8,}$/', $storedName);
-    // Always resolve AES stud_name when lite would otherwise keep an email-local username.
-    if (!$liteProfile || $forceRefresh || $needsNameSync) {
-      if ($reg !== '' && (string) ($profile['registerNumber'] ?? '') === '') {
-        $this->studentModel->update((string) $profile['_id'], ['registerNumber' => $reg]);
-        $profile['registerNumber'] = $reg;
-      }
-      $apiName = $aes->syncStudentNameFromPlacement($user, $reg, true);
-      if ($apiName !== '') {
-        $user['name'] = $apiName;
-      }
-      if (!$liteProfile || $forceRefresh) {
-        $aes->syncStudentDepartmentIfMissing($profile, array_merge(
-            \PMS\Utils\Security::getSessionAesProfile(),
-            ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
-        ));
-      }
+    // Display name must come from getStudInfo4Placement (AES stud_name), never from email.
+    if ($reg !== '' && (string) ($profile['registerNumber'] ?? '') === '') {
+      $this->studentModel->update((string) $profile['_id'], ['registerNumber' => $reg]);
+      $profile['registerNumber'] = $reg;
+    }
+    $apiName = $aes->syncStudentNameFromPlacement($user, $reg, true);
+    if ($apiName !== '') {
+      $user['name'] = $apiName;
+    }
+    if (!$liteProfile || $forceRefresh) {
+      $aes->syncStudentDepartmentIfMissing($profile, array_merge(
+          \PMS\Utils\Security::getSessionAesProfile(),
+          ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
+      ));
     }
     if ($forceRefresh || (!$liteProfile && $this->shouldRefreshAesPlacement($profile))) {
       $profile = $aes->refreshStudentPlacementData($profile);
@@ -266,6 +258,8 @@ final class StudentController
       'phone'         => (string) ($merged['phone'] ?? $personal['phone'] ?? ''),
       'gender'        => (string) ($merged['gender'] ?? $personal['gender'] ?? ''),
     ];
+    $out['stud_name'] = (string) ($out['user']['stud_name'] ?? '');
+    $out['displayName'] = (string) ($out['user']['name'] ?? '');
 
     $dbDept = $dept ? [
       'id'   => (string) ($dept['_id'] ?? ''),

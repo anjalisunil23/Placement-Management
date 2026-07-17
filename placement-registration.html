@@ -406,7 +406,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260716profilename"></script>
+<script src="js/api.js?v=20260717studname"></script>
 <script>
 (function initCollegeLogo() {
   const el = document.getElementById('collegeLogo');
@@ -533,10 +533,18 @@ function resolveStudentBranch(u) {
 function fillFromUser(u) {
   if (!u) return;
   if (u.registerNumber) document.getElementById('regNo').value = u.registerNumber;
-  if (u.name) {
-    document.getElementById('regName').value = u.name;
+  // Prefer AES getStudInfo4Placement stud_name — never invent from email.
+  const displayName = String(
+    u.stud_name
+    || (typeof pickPlacementApiName === 'function' ? pickPlacementApiName(u, u.registerNumber) : '')
+    || (typeof resolveSessionName === 'function' ? resolveSessionName(u, u.registerNumber) : '')
+    || u.name
+    || ''
+  ).trim();
+  if (displayName) {
+    document.getElementById('regName').value = displayName;
     const nameSpan = document.getElementById('declarationStudentName');
-    if (nameSpan) nameSpan.textContent = u.name;
+    if (nameSpan) nameSpan.textContent = displayName;
   }
   if (u.phone) {
     const parts = typeof splitContactPhone === 'function'

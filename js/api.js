@@ -103,6 +103,9 @@ function isEmailDerivedName(name, email) {
   if (!n || !e || !e.includes('@')) return false;
   const inferred = inferNameFromEmail(e);
   if (inferred && n.toLowerCase() === inferred.toLowerCase()) return true;
+  // Multi-token AES names must not match email locals via compact equality
+  // (e.g. "Deepthi DPK" vs deepthidpk004@gmail.com).
+  if (/\s/.test(n)) return false;
   let local = (e.split('@')[0] || '').replace(/\d+$/, '').replace(/[._+-]+/g, '');
   const compact = n.toLowerCase().replace(/[^a-z0-9]/g, '');
   return !!(local && compact && local === compact);
@@ -139,8 +142,9 @@ function isUsableDisplayName(name, merged = {}) {
 
 function resolveSessionName(merged, registerNumber) {
   const reg = registerNumber || merged.registerNumber || '';
+  // getStudInfo4Placement stud_name wins over email-local heuristics.
   const placementName = pickPlacementApiName(merged, reg);
-  if (placementName && isUsableDisplayName(placementName, merged)) return placementName;
+  if (placementName && !isPlaceholderDisplayName(placementName)) return placementName;
   const sources = [merged, merged.aesProfile || {}];
   const candidates = [];
   for (const src of sources) {
@@ -842,14 +846,18 @@ const Auth = {
         cgpa: p.cgpa ?? u.cgpa ?? p.academic?.cgpa,
       };
       const resolvedCgpa = resolveSessionCgpa(profileForCgpa);
+      const aesStudName = sanitizeDisplayName(u.stud_name || p.stud_name || '', reg);
+      const trustAesName = !!(aesStudName && !isPlaceholderDisplayName(aesStudName));
       const merged = {
         ...prev,
         ...u,
         registerNumber: reg,
-        name: (apiPersonName && isUsableDisplayName(apiPersonName, { ...prev, ...u }))
-          ? apiPersonName
-          : (prev.name || ''),
-        stud_name: u.stud_name || u.name || p.stud_name || apiPersonName || prev.stud_name || '',
+        name: trustAesName
+          ? aesStudName
+          : ((apiPersonName && isUsableDisplayName(apiPersonName, { ...prev, ...u }))
+            ? apiPersonName
+            : (prev.name || '')),
+        stud_name: aesStudName || u.stud_name || u.name || p.stud_name || apiPersonName || prev.stud_name || '',
         academic: p.academic || prev.academic,
         cgpa: resolvedCgpa ?? prev.cgpa,
         department: readableDept || prev.department || '',
@@ -877,6 +885,7 @@ const Auth = {
           : (Array.isArray(prev.assignedClassBatches) ? prev.assignedClassBatches : []),
       };
       const resolvedName = resolveSessionName(merged, reg)
+        || (trustAesName ? aesStudName : '')
         || (isUsableDisplayName(apiPersonName, merged) ? apiPersonName : '')
         || (isUsableDisplayName(merged.name, merged) ? merged.name : '');
       this.applySessionUser({
