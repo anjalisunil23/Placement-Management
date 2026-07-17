@@ -248,36 +248,6 @@
             <div class="col-md-6"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" name="deadline"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Mode</label><select class="form-select" name="mode"><option>On-campus</option><option>Virtual</option><option>Hybrid</option></select></div>
           </div>
-          <div class="mt-4" id="createDriveRoundsSection">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <div>
-                <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
-                <div class="small text-muted-2">Define how this company runs placement after shortlist (Round 1 → Round 2 → Round 3…).</div>
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddCreateDriveRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small fw-semibold">Round result flow</label>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <input type="radio" class="btn-check" name="roundProgression" id="createRoundProgSeq" value="sequential" checked>
-                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="createRoundProgSeq">
-                    <div class="fw-semibold">Type 1 · Sequential</div>
-                    <div class="small text-muted-2 mt-1">Only <strong>Select</strong> in a round moves the candidate to the next. Waiting / Reject stay out.</div>
-                  </label>
-                </div>
-                <div class="col-md-6">
-                  <input type="radio" class="btn-check" name="roundProgression" id="createRoundProgPar" value="parallel">
-                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="createRoundProgPar">
-                    <div class="fw-semibold">Type 2 · All rounds</div>
-                    <div class="small text-muted-2 mt-1">Enter Select / Reject / Waiting on every round independently.</div>
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div id="createDriveRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
-            <div id="createDriveRounds" class="d-flex flex-column gap-2"></div>
-          </div>
         </div>
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -328,37 +298,6 @@
         <div class="col-md-3"><label class="form-label small fw-semibold">Gender</label><select class="form-select" id="editGender"><option value="any">Any</option><option value="male">Male only</option><option value="female">Female only</option></select></div>
 
         <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="editDescription" rows="3"></textarea></div>
-
-        <div class="col-12" id="editDriveRoundsSection">
-          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-            <div>
-              <h6 class="fw-bold mb-0">Company shortlist rounds</h6>
-              <div class="small text-muted-2">Shows this company’s placement rounds for shortlisted students.</div>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddEditDriveRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Round result flow</label>
-            <div class="row g-2">
-              <div class="col-md-6">
-                <input type="radio" class="btn-check" name="editRoundProgression" id="editRoundProgSeq" value="sequential">
-                <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="editRoundProgSeq">
-                  <div class="fw-semibold">Type 1 · Sequential</div>
-                  <div class="small text-muted-2 mt-1">Only <strong>Select</strong> advances to the next round.</div>
-                </label>
-              </div>
-              <div class="col-md-6">
-                <input type="radio" class="btn-check" name="editRoundProgression" id="editRoundProgPar" value="parallel">
-                <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="editRoundProgPar">
-                  <div class="fw-semibold">Type 2 · All rounds</div>
-                  <div class="small text-muted-2 mt-1">Mark Select / Reject / Waiting on every round.</div>
-                </label>
-              </div>
-            </div>
-          </div>
-          <div id="editDriveRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
-          <div id="editDriveRounds" class="d-flex flex-column gap-2"></div>
-        </div>
 
       </div>
 
@@ -458,6 +397,39 @@
         </div>
 
         <div id="driveResultsPanel" class="d-none">
+          <div class="border rounded p-3 mb-3 bg-light d-none" id="adminRecruitmentRoundsConfig">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+              <div>
+                <h6 class="fw-bold mb-0">Recruitment rounds</h6>
+                <div class="small text-muted-2">Add the company rounds here before recording candidate results.</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRecruitmentRound"><i class="bi bi-plus-lg me-1"></i>Add round</button>
+                <button type="button" class="btn btn-sm btn-primary" id="btnSaveRecruitmentRounds"><i class="bi bi-check2 me-1"></i>Save rounds</button>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Round result flow</label>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <input type="radio" class="btn-check" name="resultsRoundProgression" id="resultsRoundProgSeq" value="sequential">
+                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="resultsRoundProgSeq">
+                    <div class="fw-semibold">Type 1 · Sequential</div>
+                    <div class="small text-muted-2 mt-1">Only Select advances to the next round.</div>
+                  </label>
+                </div>
+                <div class="col-md-6">
+                  <input type="radio" class="btn-check" name="resultsRoundProgression" id="resultsRoundProgPar" value="parallel">
+                  <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="resultsRoundProgPar">
+                    <div class="fw-semibold">Type 2 · All rounds</div>
+                    <div class="small text-muted-2 mt-1">Mark every round independently.</div>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div id="recruitmentRoundsFlow" class="drive-rounds-flow mb-3" aria-live="polite"></div>
+            <div id="recruitmentRoundsEditor" class="d-flex flex-column gap-2"></div>
+          </div>
           <p class="small text-muted-2 mb-3" id="driveResultsHint">Company placement rounds for shortlisted candidates. Mark each round as Select, Reject, or Waiting.</p>
           <div id="driveRoundsResults"></div>
         </div>
@@ -509,8 +481,7 @@ let pendingDrive = null;
 let applyCertificateFiles = [];
 let allDrives = [];
 let editingDrive = null;
-let createDriveRoundRows = [];
-let editDriveRoundRows = [];
+let recruitmentResultRoundRows = [];
 
 const DRIVE_ROUND_TYPES = [
   { value: 'interview', label: 'Interview' },
@@ -548,8 +519,7 @@ function roundTypeOptionsHtml(selected = '') {
 }
 
 function roundsFlowPreviewId(containerId) {
-  if (containerId === 'createDriveRounds') return 'createDriveRoundsFlow';
-  if (containerId === 'editDriveRounds') return 'editDriveRoundsFlow';
+  if (containerId === 'recruitmentRoundsEditor') return 'recruitmentRoundsFlow';
   return '';
 }
 
@@ -620,14 +590,12 @@ function syncDriveRoundsState(containerId, stateRefName) {
     type: String(row.querySelector('.drive-round-type')?.value || '').trim().toLowerCase(),
     label: '',
   }));
-  if (stateRefName === 'create') createDriveRoundRows = rows;
-  if (stateRefName === 'edit') editDriveRoundRows = rows;
+  if (stateRefName === 'results') recruitmentResultRoundRows = rows;
 }
 
 function addDriveRoundRow(stateRefName) {
   const map = {
-    create: { rows: () => createDriveRoundRows, set: (v) => { createDriveRoundRows = v; }, id: 'createDriveRounds' },
-    edit: { rows: () => editDriveRoundRows, set: (v) => { editDriveRoundRows = v; }, id: 'editDriveRounds' },
+    results: { rows: () => recruitmentResultRoundRows, set: (v) => { recruitmentResultRoundRows = v; }, id: 'recruitmentRoundsEditor' },
   };
   const cfg = map[stateRefName];
   if (!cfg) return;
@@ -644,8 +612,7 @@ function addDriveRoundRow(stateRefName) {
 
 function removeDriveRoundRow(stateRefName, index) {
   const map = {
-    create: { rows: () => createDriveRoundRows, set: (v) => { createDriveRoundRows = v; }, id: 'createDriveRounds' },
-    edit: { rows: () => editDriveRoundRows, set: (v) => { editDriveRoundRows = v; }, id: 'editDriveRounds' },
+    results: { rows: () => recruitmentResultRoundRows, set: (v) => { recruitmentResultRoundRows = v; }, id: 'recruitmentRoundsEditor' },
   };
   const cfg = map[stateRefName];
   if (!cfg) return;
@@ -1447,9 +1414,22 @@ function showDriveDetailPanel(panel) {
   document.getElementById('driveApplicantsPanel').classList.toggle('d-none', panel !== 'applicants');
   document.getElementById('driveResultsPanel').classList.toggle('d-none', panel !== 'results');
   if (panel === 'results') {
+    renderAdminRecruitmentRoundsConfig();
     renderDriveRoundsResults();
     updateRecruitmentResultsTabCount();
   }
+}
+
+function renderAdminRecruitmentRoundsConfig() {
+  const panel = document.getElementById('adminRecruitmentRoundsConfig');
+  if (!panel) return;
+  const isAdmin = role === 'admin';
+  panel.classList.toggle('d-none', !isAdmin);
+  if (!isAdmin) return;
+  const drive = activeDriveForApplicants();
+  recruitmentResultRoundRows = normalizeDriveRounds(drive?.selectionRounds);
+  setRoundProgression('resultsRoundProgression', drive?.roundProgression || 'sequential');
+  renderDriveRoundsEditor('recruitmentRoundsEditor', recruitmentResultRoundRows);
 }
 
 function driveConfiguredRounds(drive) {
@@ -1526,7 +1506,9 @@ function renderDriveRoundsResults() {
   if (!rounds.length) {
     driveResultsRoundTab = null;
     host.innerHTML = `<div class="text-muted-2 p-3 border rounded text-center">
-      No company rounds configured yet. Open the <strong>Shortlisted</strong> tab and save Interview / GD / Coding rounds first.
+      ${role === 'admin'
+        ? 'No company rounds configured yet. Add and save the recruitment rounds above.'
+        : 'No company rounds configured yet.'}
     </div>`;
     return;
   }
@@ -1784,9 +1766,6 @@ window.openCreateDrive = async () => {
     });
   }
   applyCreateDriveDeptScope();
-  createDriveRoundRows = defaultDriveRounds(3);
-  setRoundProgression('roundProgression', 'sequential');
-  renderDriveRoundsEditor('createDriveRounds', createDriveRoundRows);
   await populateCreateDriveCompanies();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('createModal')).show();
 };
@@ -1932,8 +1911,6 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     profile: 'General',
     status: 'Open',
     statusCls: 'success',
-    selectionRounds: readDriveRoundsFromEditor('createDriveRounds'),
-    roundProgression: readRoundProgression('roundProgression'),
   });
   if (!result) return;
   bootstrap.Modal.getInstance(document.getElementById('createModal'))?.hide();
@@ -1986,10 +1963,6 @@ window.openEditDrive = id => {
   document.getElementById('editGender').value = elig.gender || 'any';
 
   document.getElementById('editDescription').value = d.description || '';
-
-  editDriveRoundRows = normalizeDriveRounds(d.selectionRounds);
-  setRoundProgression('editRoundProgression', d.roundProgression || 'parallel');
-  renderDriveRoundsEditor('editDriveRounds', editDriveRoundRows);
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
 
@@ -2062,9 +2035,6 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
       gender: document.getElementById('editGender').value || 'any',
 
       description: document.getElementById('editDescription').value.trim(),
-
-      selectionRounds: readDriveRoundsFromEditor('editDriveRounds'),
-      roundProgression: readRoundProgression('editRoundProgression'),
 
     }, editingDrive || DriveStore.get(id));
   } catch (err) {
@@ -2241,26 +2211,42 @@ document.getElementById('driveApplicantRows')?.addEventListener('click', e => {
   shortlistOneApplicant(btn.dataset.appId);
 });
 
-document.getElementById('btnAddCreateDriveRound')?.addEventListener('click', () => addDriveRoundRow('create'));
-document.getElementById('btnAddEditDriveRound')?.addEventListener('click', () => addDriveRoundRow('edit'));
+document.getElementById('btnAddRecruitmentRound')?.addEventListener('click', () => addDriveRoundRow('results'));
+document.getElementById('recruitmentRoundsEditor')?.addEventListener('click', e => {
+  const btn = e.target.closest('.drive-round-remove');
+  if (!btn) return;
+  removeDriveRoundRow('results', Number(btn.dataset.roundIndex || -1));
+});
+document.getElementById('recruitmentRoundsEditor')?.addEventListener('change', e => {
+  if (!e.target.classList.contains('drive-round-type')) return;
+  updateDriveRoundsFlowPreview('recruitmentRoundsEditor');
+});
 
-document.getElementById('createDriveRounds')?.addEventListener('click', e => {
-  const btn = e.target.closest('.drive-round-remove');
-  if (!btn) return;
-  removeDriveRoundRow('create', Number(btn.dataset.roundIndex || -1));
-});
-document.getElementById('createDriveRounds')?.addEventListener('change', e => {
-  if (!e.target.classList.contains('drive-round-type')) return;
-  updateDriveRoundsFlowPreview('createDriveRounds');
-});
-document.getElementById('editDriveRounds')?.addEventListener('click', e => {
-  const btn = e.target.closest('.drive-round-remove');
-  if (!btn) return;
-  removeDriveRoundRow('edit', Number(btn.dataset.roundIndex || -1));
-});
-document.getElementById('editDriveRounds')?.addEventListener('change', e => {
-  if (!e.target.classList.contains('drive-round-type')) return;
-  updateDriveRoundsFlowPreview('editDriveRounds');
+document.getElementById('btnSaveRecruitmentRounds')?.addEventListener('click', async () => {
+  if (role !== 'admin' || !activeDriveId) return;
+  const selectionRounds = readDriveRoundsFromEditor('recruitmentRoundsEditor');
+  if (!selectionRounds.length) {
+    toast('Select at least one recruitment round.', 'warn');
+    return;
+  }
+  const roundProgression = readRoundProgression('resultsRoundProgression');
+  const existing = activeDriveForApplicants();
+  const saved = await DriveStore.update(activeDriveId, { selectionRounds, roundProgression }, existing);
+  if (!saved) return;
+  if (activeDrive) {
+    activeDrive.selectionRounds = selectionRounds;
+    activeDrive.roundProgression = roundProgression;
+  }
+  const listRow = allDrives.find(d => String(d.id) === String(activeDriveId));
+  if (listRow) {
+    listRow.selectionRounds = selectionRounds;
+    listRow.roundProgression = roundProgression;
+  }
+  driveResultsRoundTab = selectionRounds[0]?.order || 1;
+  recruitmentResultRoundRows = normalizeDriveRounds(selectionRounds);
+  renderDriveRoundsEditor('recruitmentRoundsEditor', recruitmentResultRoundRows);
+  renderDriveRoundsResults();
+  toast('Recruitment rounds saved.', 'success');
 });
 
 document.getElementById('driveDetailMainTabs')?.addEventListener('click', e => {
