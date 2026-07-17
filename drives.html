@@ -1248,8 +1248,6 @@ function deriveApplicantResult(app, drive = activeDriveForApplicants()) {
   const workflowPending = new Set(['resume_pending', 'resume_verified', 'officer_approved', 'company_review']);
   const outcomes = Array.isArray(app?.roundOutcomes) ? [...app.roundOutcomes] : [];
   outcomes.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-  const rounds = driveConfiguredRounds(drive);
-  const lastRoundOrder = rounds.length ? Number(rounds[rounds.length - 1].order) : 0;
 
   if (status === 'applied') {
     return { bucket: 'applied', cls: 'info', label: 'Applied' };
@@ -1263,35 +1261,18 @@ function deriveApplicantResult(app, drive = activeDriveForApplicants()) {
 
   const rejectedOutcome = [...outcomes].reverse().find(o => String(o.status || '').toLowerCase() === 'rejected');
   if (rejectedOutcome || status === 'rejected') {
-    const order = Number(rejectedOutcome?.order || 0);
-    const label = order > 0
-      ? `Rejected · ${roundLabelForOrder(drive, order)}`
-      : 'Rejected';
-    return { bucket: 'rejected', cls: 'danger', label };
+    return { bucket: 'rejected', cls: 'danger', label: 'Rejected' };
   }
 
   const latest = outcomes.length ? outcomes[outcomes.length - 1] : null;
   const latestStatus = String(latest?.status || '').toLowerCase();
-  const latestOrder = Number(latest?.order || 0);
 
   if (latestStatus === 'waiting') {
-    return {
-      bucket: 'pending',
-      cls: 'warning',
-      label: `Waiting · ${roundLabelForOrder(drive, latestOrder)}`,
-    };
+    return { bucket: 'pending', cls: 'warning', label: 'Waiting' };
   }
 
   if (latestStatus === 'selected') {
-    const roundText = roundLabelForOrder(drive, latestOrder);
-    if (lastRoundOrder > 0 && latestOrder >= lastRoundOrder) {
-      return { bucket: 'shortlisted', cls: 'success', label: `Selected · ${roundText}` };
-    }
-    return {
-      bucket: 'shortlisted',
-      cls: 'success',
-      label: `Selected · ${roundText} → next`,
-    };
+    return { bucket: 'shortlisted', cls: 'success', label: 'Selected' };
   }
 
   if (status === 'selected') {
