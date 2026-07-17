@@ -1112,8 +1112,9 @@ input[type="file"].form-control:focus::file-selector-button{
 .landing-page-footer{
   margin-top:3rem;
   padding:2.5rem 0 1.5rem;
-  border-top:1px solid var(--border);
-  background:#f8fafc;
+  border-top:none;
+  background:#0F172A;
+  color:#cbd5e1;
 }
 .landing-page-footer-grid{
   display:grid;
@@ -1122,35 +1123,35 @@ input[type="file"].form-control:focus::file-selector-button{
 }
 .landing-page-footer-title{
   font-weight:700;
-  color:var(--text);
+  color:#fff;
   margin-bottom:.5rem;
 }
 .landing-page-footer-heading{
   font-weight:700;
-  color:var(--text);
+  color:#fff;
   margin-bottom:.5rem;
   font-size:.95rem;
 }
 .landing-page-footer-text{
   margin:0;
-  color:#64748b;
+  color:#94a3b8;
   font-size:.9rem;
   line-height:1.7;
 }
 .landing-page-footer-text a{
-  color:#334155;
+  color:#e2e8f0;
   text-decoration:none;
 }
 .landing-page-footer-text a:hover{
-  color:var(--ajce-maroon,#7a1f2b);
+  color:#ff5638;
   text-decoration:underline;
 }
 .landing-page-footer-bottom{
   margin-top:1.75rem;
   padding-top:1rem;
-  border-top:1px solid var(--border);
+  border-top:1px solid rgba(148,163,184,.25);
   text-align:center;
-  color:#94a3b8;
+  color:#64748b;
   font-size:.85rem;
 }
 @media (max-width:768px){
