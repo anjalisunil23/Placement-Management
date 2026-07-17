@@ -7,7 +7,6 @@ namespace PMS\Admin;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\AlumniModel;
 use PMS\Models\BlacklistModel;
-use PMS\Models\BroadcastLogModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
@@ -1895,65 +1894,6 @@ final class AdminController
             ['deleted' => $count],
             $readOnly ? 'All read notifications deleted.' : 'All notifications deleted.'
         );
-    }
-
-    /** POST /api/admin/broadcast */
-    public function broadcast(): void
-    {
-        $user = RBACMiddleware::requireRoles(['admin', 'placement_officer']);
-        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-        $errors = Validator::validate($input, [
-            'title'   => 'required',
-            'message' => 'required',
-            'audience'=> 'required',
-        ]);
-        if (!empty($errors)) {
-            Response::error('Validation failed.', 422, $errors);
-        }
-
-        $audience = (string) $input['audience'];
-        $departmentId = !empty($input['departmentId']) ? (string) $input['departmentId'] : null;
-        $sendEmail = array_key_exists('sendEmail', $input) ? (bool) $input['sendEmail'] : true;
-        $role = (string) ($user['role'] ?? '');
-
-        if ($role === 'placement_officer') {
-            $ctx = PlacementOfficerContext::resolve($user);
-            if (!$ctx['isAdmin']) {
-                if (!in_array($audience, ['students'], true)) {
-                    Response::error('Placement officers can only broadcast to students in their department.', 403);
-                }
-                $departmentId = $ctx['departmentId'];
-            }
-        } elseif ($role === 'admin' && $audience === 'students' && $departmentId) {
-            // Admin may target a specific department.
-        } elseif ($role === 'admin' && $audience === 'everyone') {
-            // Admin-only audience.
-        } elseif ($role === 'admin') {
-            // Other admin audiences allowed.
-        }
-
-        if ($role !== 'admin' && in_array($audience, ['everyone', 'officers', 'companies'], true)) {
-            Response::error('You do not have permission to broadcast to this audience.', 403);
-        }
-
-        $result = (new NotificationService())->broadcast(
-            $user,
-            trim((string) $input['title']),
-            trim((string) $input['message']),
-            $audience,
-            $departmentId,
-            $sendEmail
-        );
-
-        Response::success($result, "Broadcast sent to {$result['recipientCount']} recipient(s).", 201);
-    }
-
-    /** GET /api/admin/broadcasts */
-    public function listBroadcasts(): void
-    {
-        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
-        $rows = (new BroadcastLogModel())->recent(100);
-        Response::success(DocumentHelper::serializeMany($rows));
     }
 
     /** GET /api/admin/tracking */

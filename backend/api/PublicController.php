@@ -69,7 +69,6 @@ final class PublicController
             Collections::PUBLIC_PAGE_CONTENT,
             Collections::PLACEMENT_NEWS,
             Collections::SUCCESS_STORIES,
-            Collections::BROADCAST_LOGS,
         ];
         $missingTables = array_values(array_diff($requiredTables, $tables));
         $storage = new ObjectStorageService();

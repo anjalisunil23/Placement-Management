@@ -227,8 +227,6 @@ $routes = [
     ['POST',   '/admin/notifications/delete-selected', [AdminController::class, 'deleteSelectedNotifications']],
     ['POST',   '/admin/notifications/delete-all',    [AdminController::class, 'deleteAllNotifications']],
     ['POST',   '/admin/notifications/{id}/read',     [AdminController::class, 'markNotificationRead']],
-    ['POST',   '/admin/broadcast',                   [AdminController::class, 'broadcast']],
-    ['GET',    '/admin/broadcasts',                  [AdminController::class, 'listBroadcasts']],
     ['GET',    '/admin/tracking',                    [AdminController::class, 'placementTracking']],
     ['GET',    '/admin/analytics/extended',          [AdminController::class, 'extendedAnalytics']],
     ['GET',    '/admin/placement-console',           [AdminController::class, 'placementConsole']],

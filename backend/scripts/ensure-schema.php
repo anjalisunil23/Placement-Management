@@ -54,7 +54,6 @@ $required = [
     Collections::PUBLIC_PAGE_CONTENT,
     Collections::PLACEMENT_NEWS,
     Collections::SUCCESS_STORIES,
-    Collections::BROADCAST_LOGS,
 ];
 
 $existing = Database::pdo()->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);

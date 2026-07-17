@@ -2150,7 +2150,6 @@ const AdminNotifs = {
       { id:'adm1', type:'drive_announcement', title:'New drive published', body:'Google SDE-1 is now open for registrations.', read:false, createdAt: new Date(Date.now()-120000).toISOString() },
       { id:'adm2', type:'offer', title:'Offer accepted', body:'Kabir Singh accepted Amazon SDE Intern offer.', read:false, createdAt: new Date(Date.now()-720000).toISOString() },
       { id:'adm3', type:'resume_review', title:'Resume needs review', body:'18 new resumes pending verification.', read:false, createdAt: new Date(Date.now()-3600000).toISOString() },
-      { id:'adm4', type:'application_update', title:'Broadcast delivered', body:'Placement drive announcement email reached 1,240 students.', read:true, createdAt: new Date(Date.now()-86400000).toISOString() },
     ]);
   },
   markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
@@ -2171,52 +2170,6 @@ const CompanyNotifs = {
   },
   markRead(id) { const sid = String(id); this.save(this.all().map(n => String(n.id) === sid ? { ...n, read: true } : n)); },
   markAllRead() { this.save(this.all().map(n => ({ ...n, read: true }))); },
-};
-
-const BroadcastStore = {
-  _cache: null,
-  normalize(row) {
-    return {
-      id: row.id || row._id,
-      title: row.title || '',
-      message: row.message || '',
-      audience: row.audience || '',
-      audienceLabel: row.audienceLabel || row.audience || '',
-      recipientCount: row.recipientCount ?? 0,
-      emailSentCount: row.emailSentCount ?? 0,
-      sendEmail: row.sendEmail !== false,
-      status: row.status || 'delivered',
-      sentByName: row.sentByName || '',
-      createdAt: row.createdAt || '',
-    };
-  },
-  all() {
-    if (this._cache) return this._cache;
-    try { return JSON.parse(localStorage.getItem('ph-broadcast-logs') || '[]'); } catch { return []; }
-  },
-  save(list) {
-    this._cache = list;
-    localStorage.setItem('ph-broadcast-logs', JSON.stringify(list));
-  },
-  async fetch() {
-    const res = await api('/admin/broadcasts', { skipAuthRedirect: true });
-    if (res?.success && Array.isArray(res.data)) {
-      this._cache = res.data.map(r => this.normalize(r));
-      this.save(this._cache);
-      return this._cache;
-    }
-    return this.all();
-  },
-  async send(payload) {
-    if (!(await requireWriteSession())) return null;
-    const res = await api('/admin/broadcast', { method: 'POST', body: payload });
-    if (res.success) {
-      await this.fetch();
-      return res.data;
-    }
-    toast(res.message || 'Broadcast failed.', 'error');
-    return null;
-  },
 };
 
 const NotificationInbox = {
