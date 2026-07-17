@@ -1109,3 +1109,53 @@ input[type="file"].form-control:focus::file-selector-button{
   font-size:.875rem;
   color:#64748b;
 }
+.landing-page-footer{
+  margin-top:3rem;
+  padding:2.5rem 0 1.5rem;
+  border-top:1px solid var(--border);
+  background:#f8fafc;
+}
+.landing-page-footer-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:1.75rem 2rem;
+}
+.landing-page-footer-title{
+  font-weight:700;
+  color:var(--text);
+  margin-bottom:.5rem;
+}
+.landing-page-footer-heading{
+  font-weight:700;
+  color:var(--text);
+  margin-bottom:.5rem;
+  font-size:.95rem;
+}
+.landing-page-footer-text{
+  margin:0;
+  color:#64748b;
+  font-size:.9rem;
+  line-height:1.7;
+}
+.landing-page-footer-text a{
+  color:#334155;
+  text-decoration:none;
+}
+.landing-page-footer-text a:hover{
+  color:var(--ajce-maroon,#7a1f2b);
+  text-decoration:underline;
+}
+.landing-page-footer-bottom{
+  margin-top:1.75rem;
+  padding-top:1rem;
+  border-top:1px solid var(--border);
+  text-align:center;
+  color:#94a3b8;
+  font-size:.85rem;
+}
+@media (max-width:768px){
+  .landing-page-footer-grid{
+    grid-template-columns:1fr;
+    gap:1.25rem;
+  }
+}
