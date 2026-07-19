@@ -657,11 +657,7 @@ final class StudentController
     $profileType = (string) ($_POST['profileType'] ?? 'General');
 
     $config = require dirname(__DIR__) . '/config/app.php';
-    $error = Security::validateUploadedFile(
-      $_FILES['file'],
-      $config['uploads']['max_resume'],
-      Security::allowedResumeExtensions()
-    );
+    $error = Security::validatePdfExtensionOnly($_FILES['file']);
     if ($error) {
       Response::error($error, 400);
     }
@@ -722,8 +718,15 @@ final class StudentController
   /** GET /api/student/resumes/{id}/view */
   public function viewResume(string $resumeId): void
   {
-    $user = RBACMiddleware::requireStudent();
-    $profile = $this->getStudentProfile($user);
+    $user = RBACMiddleware::requireRoles(['student', 'alumni']);
+    if (($user['role'] ?? '') === 'alumni') {
+      $profile = $this->studentModel->findByUserId((string) $user['_id']);
+      if (!$profile) {
+        Response::notFound('Student profile not found.');
+      }
+    } else {
+      $profile = $this->getStudentProfile($user);
+    }
 
     $resume = (new ResumeModel())->findById($resumeId);
     if (!$resume || (string) ($resume['studentId'] ?? '') !== (string) $profile['_id']) {

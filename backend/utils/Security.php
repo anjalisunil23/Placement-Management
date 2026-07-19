@@ -160,6 +160,24 @@ final class Security
         return ['pdf'];
     }
 
+    /**
+     * Resume-bucket uploads: only require a successful PDF file upload (no size/MIME checks).
+     */
+    public static function validatePdfExtensionOnly(array $file): ?string
+    {
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            return 'File upload failed.';
+        }
+        if (($file['size'] ?? 0) <= 0) {
+            return 'Resume file required.';
+        }
+        $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+        if ($ext !== 'pdf') {
+            return 'Upload a PDF resume file.';
+        }
+        return null;
+    }
+
     /** @return string[] */
     public static function allowedPhotoExtensions(): array
     {
