@@ -346,6 +346,13 @@ final class AdminController
         (new OfficerDataService())->streamApplicationResume($appId, $scope['ctx']);
     }
 
+    /** GET /api/admin/applications/{id}/certificates/{index} */
+    public function downloadApplicationCertificate(string $appId, string $index): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->streamApplicationCertificate($appId, (int) $index, $scope['ctx']);
+    }
+
     /** GET /api/admin/users */
     public function listUsers(): void
     {

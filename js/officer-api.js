@@ -148,6 +148,15 @@ const OfficerApi = {
   mapApplication(a) {
     const id = OfficerApi.id(a);
     const hasResume = !!(a.hasResume || a.resumePath || a.resumeFileName);
+    const certificates = (Array.isArray(a.certificates) ? a.certificates : []).map((c, i) => {
+      const index = Number.isFinite(Number(c.index)) ? Number(c.index) : i;
+      return {
+        index,
+        fileName: c.fileName || '',
+        label: c.label || c.fileName || `Certificate ${index + 1}`,
+        url: `${API_BASE}/officer/applications/${encodeURIComponent(id)}/certificates/${encodeURIComponent(index)}`,
+      };
+    });
     return {
       id,
       driveId: a.driveId || '',
@@ -167,6 +176,11 @@ const OfficerApi = {
       resumeFileName: a.resumeFileName || '',
       hasResume,
       resumeUrl: hasResume ? `${API_BASE}/officer/applications/${encodeURIComponent(id)}/resume` : '',
+      certificates,
+      certificateCount: certificates.length || Number(a.certificateCount || 0),
+      customAnswers: Array.isArray(a.customAnswers) ? a.customAnswers : [],
+      applicantDob: a.applicantDob || '',
+      applicantAge: a.applicantAge ?? null,
       roundOutcomes: Array.isArray(a.roundOutcomes) ? a.roundOutcomes : [],
     };
   },

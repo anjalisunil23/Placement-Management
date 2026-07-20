@@ -938,6 +938,13 @@ final class OfficerController
         (new OfficerDataService())->streamApplicationResume($appId, $scope['ctx']);
     }
 
+    /** GET /api/officer/applications/{id}/certificates/{index} */
+    public function downloadApplicationCertificate(string $appId, string $index): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->streamApplicationCertificate($appId, (int) $index, $scope['ctx']);
+    }
+
     /** GET /api/officer/applications/pending */
     public function pendingApplications(): void
     {

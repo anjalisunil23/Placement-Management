@@ -178,12 +178,46 @@ final class OfficerDataService
             $row['hasResume'] = $resumePath !== '';
             $certs = is_array($app['certificates'] ?? null) ? $app['certificates'] : [];
             $row['certificateCount'] = count($certs);
-            $row['certificates'] = array_map(static function (array $cert) {
-                return [
+            $row['certificates'] = [];
+            foreach ($certs as $idx => $cert) {
+                if (!is_array($cert)) {
+                    continue;
+                }
+                $row['certificates'][] = [
+                    'index'    => (int) $idx,
                     'fileName' => (string) ($cert['fileName'] ?? ''),
-                    'label'    => (string) ($cert['label'] ?? ''),
+                    'label'    => (string) ($cert['label'] ?? pathinfo((string) ($cert['fileName'] ?? ''), PATHINFO_FILENAME)),
                 ];
-            }, $certs);
+            }
+            $customAnswers = is_array($app['customAnswers'] ?? null) ? $app['customAnswers'] : [];
+            $row['customAnswers'] = [];
+            foreach ($customAnswers as $answer) {
+                if (!is_array($answer)) {
+                    continue;
+                }
+                $title = trim((string) ($answer['title'] ?? ''));
+                $value = trim((string) ($answer['value'] ?? ''));
+                if ($title === '' && $value === '') {
+                    continue;
+                }
+                $row['customAnswers'][] = [
+                    'fieldId' => (string) ($answer['fieldId'] ?? ''),
+                    'title'   => $title,
+                    'value'   => $value,
+                ];
+            }
+            $dob = trim((string) ($app['applicantDob'] ?? $personal['dob'] ?? ''));
+            $row['applicantDob'] = $dob;
+            $age = $app['applicantAge'] ?? null;
+            if (($age === null || $age === '') && $dob !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
+                try {
+                    $born = new \DateTimeImmutable($dob);
+                    $age = (int) $born->diff(new \DateTimeImmutable('today'))->y;
+                } catch (\Throwable) {
+                    $age = null;
+                }
+            }
+            $row['applicantAge'] = is_numeric($age) ? (int) $age : null;
             $rows[] = $row;
         }
 
@@ -393,6 +427,46 @@ final class OfficerDataService
             );
         } catch (\Throwable) {
             Response::notFound('Resume file not found for this application.');
+        }
+    }
+
+    /**
+     * Stream a certificate PDF attached to an application.
+     *
+     * @param array<string, mixed> $ctx
+     */
+    public function streamApplicationCertificate(string $appId, int $index, array $ctx): void
+    {
+        $app = $this->assertApplicationInScope($appId, $ctx);
+        $certs = is_array($app['certificates'] ?? null) ? $app['certificates'] : [];
+        if ($index < 0 || $index >= count($certs) || !is_array($certs[$index] ?? null)) {
+            Response::notFound('Certificate not found for this application.');
+        }
+        $cert = $certs[$index];
+        $path = trim((string) ($cert['path'] ?? ''));
+        $filename = trim((string) ($cert['fileName'] ?? ''));
+        if ($filename === '' && $path !== '') {
+            $filename = basename($path);
+        }
+        if ($path === '') {
+            Response::notFound('Certificate file not found for this application.');
+        }
+        if ($filename === '') {
+            $filename = 'certificate.pdf';
+        }
+
+        $storage = new ObjectStorageService();
+        $mime = $storage->guessMime($filename);
+        try {
+            $storage->streamWithFallback(
+                $path,
+                $filename,
+                $mime,
+                true,
+                ObjectStorageService::FOLDER_CERTIFICATES
+            );
+        } catch (\Throwable) {
+            Response::notFound('Certificate file not found for this application.');
         }
     }
 

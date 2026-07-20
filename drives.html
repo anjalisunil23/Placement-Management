@@ -498,12 +498,30 @@
   </div>
 </div>
 
+<div class="modal fade" id="viewApplicationModal" tabindex="-1" aria-labelledby="viewApplicationTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title fw-bold" id="viewApplicationTitle">Application details</h5>
+          <p class="small text-muted-2 mb-0" id="viewApplicationSub"></p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="viewApplicationBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260719resumepreview"></script>
+<script src="js/api.js?v=20260720appview"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -513,8 +531,8 @@ async function loadDriveRoleScripts() {
   if (!needManage) return;
   if (typeof OfficerApi !== 'undefined' && typeof AdminApi !== 'undefined' && typeof StaffApi !== 'undefined') return;
   const tags = [
-    'js/admin-api.js?v=20260713w',
-    'js/officer-api.js?v=20260716rounds',
+    'js/admin-api.js?v=20260720appview',
+    'js/officer-api.js?v=20260720appview',
     'js/staff-api.js?v=20260713w',
   ];
   await Promise.all(tags.map((src) => new Promise((resolve) => {
@@ -1575,12 +1593,119 @@ function driveApplicantGroups(apps) {
 
 function driveApplicantResumeCell(a) {
   if (!a.hasResume && !a.resumeUrl) return '<span class="small text-muted-2">—</span>';
-  return `<a href="${a.resumeUrl}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf me-1"></i>View resume</a>`;
+  return `<button type="button" class="btn btn-sm btn-outline-primary drive-open-pdf" data-pdf-url="${escapeApplyHtml(a.resumeUrl)}" data-pdf-label="Resume"><i class="bi bi-file-earmark-pdf me-1"></i>View resume</button>`;
 }
 
 function canShortlistApplicant(a) {
   const status = String(a?.status || '').toLowerCase();
   return status === 'applied';
+}
+
+function formatApplicantDob(dob) {
+  const raw = String(dob || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw || '—';
+  try {
+    return new Date(`${raw}T00:00:00`).toLocaleDateString();
+  } catch {
+    return raw;
+  }
+}
+
+async function openAuthenticatedPdf(url, label = 'document') {
+  const path = String(url || '');
+  if (!path) {
+    toast('File not available.', 'warn');
+    return;
+  }
+  try {
+    if (typeof Auth?.ensureSession === 'function') await Auth.ensureSession();
+    const headers = { Accept: 'application/pdf,application/octet-stream,*/*' };
+    const token = Auth.token();
+    if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const apiPath = path.startsWith(API_BASE) ? path.slice(API_BASE.length) : path.replace(/^.*\/api/, '');
+    const fetchUrl = path.startsWith('http') ? path : (API_BASE + (apiPath.startsWith('/') ? apiPath : `/${apiPath}`));
+    const res = await fetch(fetchUrl, { method: 'GET', headers, credentials: 'include', cache: 'no-store' });
+    if (!res.ok) {
+      toast(`Could not open ${label}.`, 'error');
+      return;
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    window.open(objectUrl, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  } catch {
+    toast(`Could not open ${label}.`, 'error');
+  }
+}
+
+function openViewApplication(appId) {
+  const a = (driveApplicants || []).find(row => String(row.id) === String(appId));
+  if (!a) {
+    toast('Could not load this application.', 'warn');
+    return;
+  }
+  const titleEl = document.getElementById('viewApplicationTitle');
+  const subEl = document.getElementById('viewApplicationSub');
+  const bodyEl = document.getElementById('viewApplicationBody');
+  if (titleEl) titleEl.textContent = a.studentName || 'Application details';
+  if (subEl) {
+    subEl.textContent = [
+      a.registerNumber || '',
+      a.department || '',
+      a.status ? String(a.status).replace(/_/g, ' ') : '',
+    ].filter(Boolean).join(' · ');
+  }
+
+  const answers = Array.isArray(a.customAnswers) ? a.customAnswers : [];
+  const certs = Array.isArray(a.certificates) ? a.certificates : [];
+  const answersHtml = answers.length
+    ? `<div class="table-wrap"><table class="table-modern mb-0"><tbody>
+        ${answers.map(ans => `<tr><th class="small" style="width:36%">${escapeApplyHtml(ans.title || 'Field')}</th><td>${escapeApplyHtml(ans.value || '—')}</td></tr>`).join('')}
+      </tbody></table></div>`
+    : '<p class="small text-muted-2 mb-0">No custom fields submitted.</p>';
+
+  const certsHtml = certs.length
+    ? `<div class="d-flex flex-column gap-2">
+        ${certs.map((c, i) => `
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 border rounded p-2">
+            <div>
+              <div class="fw-semibold small">${escapeApplyHtml(c.label || `Certificate ${i + 1}`)}</div>
+              <div class="small text-muted-2">${escapeApplyHtml(c.fileName || 'PDF')}</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary drive-open-pdf"
+              data-pdf-url="${escapeApplyHtml(c.url || '')}"
+              data-pdf-label="${escapeApplyHtml(c.label || 'certificate')}">
+              <i class="bi bi-file-earmark-pdf me-1"></i>View PDF
+            </button>
+          </div>`).join('')}
+      </div>`
+    : '<p class="small text-muted-2 mb-0">No certificates uploaded.</p>';
+
+  bodyEl.innerHTML = `
+    <div class="row g-3 mb-3">
+      <div class="col-md-6"><div class="small text-muted-2">Email</div><div>${escapeApplyHtml(a.email || '—')}</div></div>
+      <div class="col-md-6"><div class="small text-muted-2">Phone</div><div>${escapeApplyHtml(a.phone || '—')}</div></div>
+      <div class="col-md-6"><div class="small text-muted-2">Date of birth</div><div>${escapeApplyHtml(formatApplicantDob(a.applicantDob))}</div></div>
+      <div class="col-md-6"><div class="small text-muted-2">Age</div><div>${a.applicantAge != null && a.applicantAge !== '' ? escapeApplyHtml(String(a.applicantAge)) : '—'}</div></div>
+      <div class="col-md-6"><div class="small text-muted-2">Applied on</div><div>${a.appliedAt ? escapeApplyHtml(new Date(a.appliedAt).toLocaleString()) : '—'}</div></div>
+      <div class="col-md-6"><div class="small text-muted-2">Status</div><div>${driveApplicantResultBadge(a)}</div></div>
+    </div>
+
+    <h6 class="fw-bold mb-2">Resume</h6>
+    <div class="mb-3">${a.hasResume || a.resumeUrl
+      ? `<button type="button" class="btn btn-sm btn-outline-primary drive-open-pdf" data-pdf-url="${escapeApplyHtml(a.resumeUrl)}" data-pdf-label="Resume"><i class="bi bi-file-earmark-pdf me-1"></i>View resume${a.resumeFileName ? ` · ${escapeApplyHtml(a.resumeFileName)}` : ''}</button>`
+      : '<span class="small text-muted-2">No resume attached.</span>'}</div>
+
+    <h6 class="fw-bold mb-2">Additional fields</h6>
+    <div class="mb-3">${answersHtml}</div>
+
+    <h6 class="fw-bold mb-2">Certificates</h6>
+    <div>${certsHtml}</div>
+  `;
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('viewApplicationModal')).show();
 }
 
 function updateDriveApplicantTabCounts() {
@@ -1621,16 +1746,23 @@ function renderDriveApplicantRows() {
     return;
   }
   tbody.innerHTML = list.map((a, idx) => {
-    const action = canShortlistApplicant(a)
+    const shortlist = canShortlistApplicant(a)
       ? `<button type="button" class="btn btn-sm btn-outline-primary drive-shortlist-one" data-app-id="${a.id}">Shortlist</button>`
-      : '<span class="small text-muted-2">—</span>';
+      : '';
+    const action = `
+      <div class="d-flex flex-wrap gap-1">
+        <button type="button" class="btn btn-sm btn-outline-secondary drive-view-application" data-app-id="${a.id}">
+          <i class="bi bi-eye me-1"></i>View application
+        </button>
+        ${shortlist}
+      </div>`;
     return `<tr data-app-id="${a.id}">
     <td class="text-muted-2">${idx + 1}</td>
-    <td><strong>${a.studentName || '—'}</strong></td>
-    <td>${a.registerNumber || '—'}</td>
-    <td>${a.department || '—'}</td>
-    <td class="small">${a.email || '—'}</td>
-    <td class="small">${a.phone || '—'}</td>
+    <td><strong>${escapeApplyHtml(a.studentName || '—')}</strong></td>
+    <td>${escapeApplyHtml(a.registerNumber || '—')}</td>
+    <td>${escapeApplyHtml(a.department || '—')}</td>
+    <td class="small">${escapeApplyHtml(a.email || '—')}</td>
+    <td class="small">${escapeApplyHtml(a.phone || '—')}</td>
     <td>${driveApplicantResumeCell(a)}</td>
     <td>${driveApplicantResultBadge(a)}</td>
     <td>${a.appliedAt ? new Date(a.appliedAt).toLocaleDateString() : '—'}</td>
@@ -2673,9 +2805,25 @@ document.getElementById('driveApplicantTabs')?.addEventListener('click', e => {
 });
 
 document.getElementById('driveApplicantRows')?.addEventListener('click', e => {
+  const viewBtn = e.target.closest('.drive-view-application');
+  if (viewBtn) {
+    openViewApplication(viewBtn.dataset.appId);
+    return;
+  }
+  const pdfBtn = e.target.closest('.drive-open-pdf');
+  if (pdfBtn) {
+    openAuthenticatedPdf(pdfBtn.dataset.pdfUrl, pdfBtn.dataset.pdfLabel || 'document');
+    return;
+  }
   const btn = e.target.closest('.drive-shortlist-one');
   if (!btn) return;
   shortlistOneApplicant(btn.dataset.appId);
+});
+
+document.getElementById('viewApplicationBody')?.addEventListener('click', e => {
+  const pdfBtn = e.target.closest('.drive-open-pdf');
+  if (!pdfBtn) return;
+  openAuthenticatedPdf(pdfBtn.dataset.pdfUrl, pdfBtn.dataset.pdfLabel || 'document');
 });
 
 document.getElementById('btnAddRecruitmentRound')?.addEventListener('click', () => addDriveRoundRow('results'));
