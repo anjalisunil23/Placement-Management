@@ -95,12 +95,13 @@ final class OfficerDataService
                 default => $status,
             };
 
-            $studentResume = is_array($student['resume'] ?? null) ? $student['resume'] : [];
+            $studentArr = is_array($student) ? $student : [];
             $appResume = is_array($app['resume'] ?? null) ? $app['resume'] : [];
-            $resumePath = (string) ($appResume['path'] ?? $studentResume['path'] ?? '');
-            $resumeFile = (string) ($appResume['fileName'] ?? $studentResume['filename'] ?? '');
+            $resumeFileMeta = $this->resumeFileForApplication($app);
+            $resumePath = is_array($resumeFileMeta) ? (string) ($resumeFileMeta['path'] ?? '') : '';
+            $resumeFile = is_array($resumeFileMeta) ? (string) ($resumeFileMeta['filename'] ?? '') : '';
             if ($resumeFile === '' && $resumePath !== '') {
-                $resumeFile = basename($resumePath);
+                $resumeFile = basename(str_replace('\\', '/', $resumePath));
             }
 
             $companyName = (string) ($company['companyName'] ?? '');
@@ -111,8 +112,8 @@ final class OfficerDataService
                 }
             }
 
-            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
-            $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+            $personal = is_array($studentArr['personal'] ?? null) ? $studentArr['personal'] : [];
+            $academic = is_array($studentArr['academic'] ?? null) ? $studentArr['academic'] : [];
             $userEmail = is_array($user) ? trim((string) ($user['email'] ?? '')) : '';
             $userPhone = is_array($user) ? trim((string) ($user['phone'] ?? '')) : '';
             $collegeEmail = trim((string) ($personal['collegeEmail'] ?? $userEmail));
@@ -121,11 +122,46 @@ final class OfficerDataService
             $phone = trim((string) ($personal['phone'] ?? $userPhone));
             $cgpa = (float) ($academic['cgpa'] ?? 0);
 
+            $studentName = $studentArr !== []
+                ? $this->studentDisplayName($studentArr, is_array($user) ? $user : null)
+                : '';
+
+            // Backfill contact/CGPA from AES when local profile fields are thin.
+            if ($studentArr !== [] && ($email === '' || $phone === '' || $cgpa <= 0)) {
+                $aesRow = $this->applyAesPlacementFieldsToRow([
+                    'academic' => $academic,
+                    'personal' => $personal,
+                    'collegeEmail' => $collegeEmail,
+                    'personalEmail' => $personalEmail,
+                    'phone' => $phone,
+                ], $studentArr);
+                $aesAcademic = is_array($aesRow['academic'] ?? null) ? $aesRow['academic'] : $academic;
+                $aesPersonal = is_array($aesRow['personal'] ?? null) ? $aesRow['personal'] : $personal;
+                if ($cgpa <= 0) {
+                    $cgpa = (float) ($aesAcademic['cgpa'] ?? 0);
+                }
+                if ($phone === '') {
+                    $phone = trim((string) ($aesRow['phone'] ?? $aesPersonal['phone'] ?? ''));
+                }
+                if ($collegeEmail === '') {
+                    $collegeEmail = trim((string) ($aesRow['collegeEmail'] ?? ''));
+                }
+                if ($personalEmail === '') {
+                    $personalEmail = trim((string) ($aesRow['personalEmail'] ?? ''));
+                }
+                if ($email === '') {
+                    $email = $collegeEmail !== '' ? $collegeEmail : $personalEmail;
+                }
+                if ($studentName === '') {
+                    $studentName = trim((string) ($aesRow['displayName'] ?? ''));
+                }
+            }
+
             $row = DocumentHelper::serialize($app) ?? [];
             $row['driveId'] = (string) ($app['driveId'] ?? '');
             $row['studentId'] = (string) ($app['studentId'] ?? '');
-            $row['studentName'] = is_array($user) ? (string) ($user['name'] ?? '') : '';
-            $row['registerNumber'] = is_array($student) ? (string) ($student['registerNumber'] ?? '') : '';
+            $row['studentName'] = $studentName;
+            $row['registerNumber'] = $studentArr !== [] ? (string) ($studentArr['registerNumber'] ?? '') : '';
             $row['department'] = is_array($dept) ? (string) ($dept['code'] ?? $dept['name'] ?? '') : '';
             $row['email'] = $email;
             $row['collegeEmail'] = $collegeEmail;
@@ -133,7 +169,7 @@ final class OfficerDataService
             $row['phone'] = $phone;
             $row['cgpa'] = $cgpa > 0 ? $cgpa : null;
             $row['company'] = $companyName;
-            $row['role'] = $drive['title'] ?? '';
+            $row['role'] = is_array($drive) ? (string) ($drive['title'] ?? '') : '';
             $row['stage'] = $stage;
             $row['appliedAt'] = $row['createdAt'] ?? null;
             $row['resumeLabel'] = (string) ($appResume['label'] ?? '');

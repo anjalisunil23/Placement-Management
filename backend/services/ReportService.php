@@ -65,20 +65,52 @@ final class ReportService
     private function generateStudentReport(ReportContext $ctx): array
     {
         $students = $this->studentModel->findAll($this->studentFilter($ctx), 1000);
-        $headers = ['Register No', 'Name', 'Department', 'CGPA', 'Backlogs', 'Placed', 'Resume'];
+        $officer = new OfficerDataService();
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $appBase = rtrim((string) ($config['url'] ?? ''), '/');
+        if ($appBase === '') {
+            $appBase = 'http://localhost';
+        }
+
+        $headers = ['Register No', 'Name', 'Department', 'CGPA', 'Backlogs', 'Placed', 'Resume', 'Resume Link'];
         $rows = [];
         foreach ($students as $s) {
             $user = $this->userModel->findById((string) ($s['userId'] ?? ''));
             $dept = $this->departmentModel->findById((string) ($s['departmentId'] ?? ''));
-            $resume = $s['resume'] ?? [];
+            $enriched = $officer->enrichStudentListRow(
+                ['academic' => is_array($s['academic'] ?? null) ? $s['academic'] : []],
+                $s,
+                is_array($user) ? $user : null,
+                true
+            );
+            $name = trim((string) ($enriched['displayName'] ?? ''));
+            if ($name === '' && is_array($user)) {
+                $name = trim((string) ($user['name'] ?? ''));
+            }
+            $academic = is_array($enriched['academic'] ?? null)
+                ? $enriched['academic']
+                : (is_array($s['academic'] ?? null) ? $s['academic'] : []);
+            $resume = is_array($s['resume'] ?? null) ? $s['resume'] : [];
+            $hasResume = !empty($resume['path'])
+                || !empty($resume['storedName'])
+                || !empty($resume['filename']);
+            $studentId = (string) ($s['_id'] ?? $s['id'] ?? '');
+            $resumeLink = ($hasResume && $studentId !== '')
+                ? $appBase . '/backend/api/admin/students/' . rawurlencode($studentId) . '/resume'
+                : '';
+            $resumeStatus = !empty($resume['verified'])
+                ? 'Verified'
+                : ($hasResume ? 'Pending' : 'Missing');
+
             $rows[] = [
-                $s['registerNumber'] ?? '',
-                $user['name'] ?? '',
-                $dept['code'] ?? $dept['name'] ?? 'N/A',
-                (string) ($s['academic']['cgpa'] ?? 0),
-                (string) ($s['academic']['backlogs'] ?? 0),
+                (string) ($s['registerNumber'] ?? ''),
+                $name,
+                (string) ($dept['code'] ?? $dept['name'] ?? 'N/A'),
+                (string) ($academic['cgpa'] ?? 0),
+                (string) ($academic['backlogs'] ?? 0),
                 ($s['placed'] ?? false) ? 'Yes' : 'No',
-                !empty($resume['verified']) ? 'Verified' : (!empty($resume['path']) ? 'Pending' : 'Missing'),
+                $resumeStatus,
+                $resumeLink,
             ];
         }
 
@@ -415,22 +447,19 @@ final class ReportService
      */
     private function enrichApplicationRows(array $apps): array
     {
+        $enriched = (new OfficerDataService())->enrichApplications($apps);
         $rows = [];
-        foreach ($apps as $app) {
-            $student = $this->studentModel->findById((string) ($app['studentId'] ?? ''));
-            $user = $student ? $this->userModel->findById((string) ($student['userId'] ?? '')) : null;
-            $company = $this->companyModel->findById((string) ($app['companyId'] ?? ''));
-            $date = self::formatDate($app['updatedAt'] ?? $app['createdAt'] ?? null);
-
+        foreach ($enriched as $app) {
             $rows[] = [
-                $user['name'] ?? '',
-                $student['registerNumber'] ?? '',
-                $company['companyName'] ?? '',
-                (string) ($app['driveId'] ?? ''),
+                (string) ($app['studentName'] ?? ''),
+                (string) ($app['registerNumber'] ?? ''),
+                (string) ($app['company'] ?? ''),
+                (string) ($app['role'] ?? ''),
                 (string) ($app['status'] ?? ''),
-                $date,
+                self::formatDate($app['updatedAt'] ?? $app['appliedAt'] ?? $app['createdAt'] ?? null),
             ];
         }
+
         return $rows;
     }
 
