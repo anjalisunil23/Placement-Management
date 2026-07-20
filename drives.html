@@ -468,7 +468,12 @@
           <h5 class="modal-title fw-bold" id="driveApplicantsTitle">Drive details</h5>
           <p class="small text-muted-2 mb-0" id="driveApplicantsSub"></p>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="d-flex align-items-center gap-2 ms-auto">
+          <button type="button" class="btn btn-sm btn-outline-primary d-none" id="btnMarkDriveCompleted">
+            <i class="bi bi-check2-circle me-1"></i>Mark completed
+          </button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
       </div>
       <div class="modal-body">
         <ul class="nav nav-tabs mb-3" id="driveDetailMainTabs">
@@ -1443,12 +1448,72 @@ function filteredDrives() {
 
 function manageActions(d) {
   if (!canManage) return '';
+  const completedBtn = String(d.status || '') === 'Completed'
+    ? ''
+    : `<button type="button" class="icon-btn" style="width:30px;height:30px;color:var(--success)" title="Mark completed" onclick="event.stopPropagation(); markDriveCompleted('${d.id}')"><i class="bi bi-check2-circle"></i></button>`;
   return `<div class="d-flex gap-1">
     <button type="button" class="icon-btn" style="width:30px;height:30px" title="View applicants" onclick="event.stopPropagation(); openDriveApplicants('${d.id}')"><i class="bi bi-people"></i></button>
+    ${completedBtn}
     <button type="button" class="icon-btn" style="width:30px;height:30px" title="Edit" onclick="event.stopPropagation(); openEditDrive('${d.id}')"><i class="bi bi-pencil"></i></button>
     <button type="button" class="icon-btn" style="width:30px;height:30px;color:var(--danger)" title="Delete" onclick="event.stopPropagation(); deleteDrive('${d.id}')"><i class="bi bi-trash"></i></button>
   </div>`;
 }
+
+function syncMarkDriveCompletedButton(drive) {
+  const btn = document.getElementById('btnMarkDriveCompleted');
+  if (!btn) return;
+  const show = canManage && drive && String(drive.status || '') !== 'Completed';
+  btn.classList.toggle('d-none', !show);
+}
+
+async function markDriveCompleted(driveId) {
+  if (!canManage) return;
+  const id = String(driveId || activeDriveId || '').trim();
+  if (!id) return;
+  const d = allDrives.find(x => String(x.id) === id) || DriveStore.get(id) || activeDrive;
+  if (!d) {
+    toast('Could not find this drive.', 'warn');
+    return;
+  }
+  if (String(d.status || '') === 'Completed') {
+    toast('This drive is already completed.', 'info');
+    return;
+  }
+  if (!(await confirmAction({
+    title: 'Mark drive completed',
+    message: `Mark "${d.company || 'this drive'} · ${d.role || d.title || ''}" as completed? It will move to the Completed filter.`,
+    confirmText: 'Mark completed',
+    variant: 'primary',
+  }))) return;
+
+  const saved = await DriveStore.update(id, { status: 'Completed' }, d);
+  if (!saved) {
+    toast('Could not mark drive as completed.', 'error');
+    return;
+  }
+
+  const patch = {
+    status: 'Completed',
+    statusCls: (typeof driveStatusCls === 'function' ? driveStatusCls('Completed') : 'primary'),
+  };
+  allDrives = allDrives.map(row => String(row.id) === id ? { ...row, ...patch } : row);
+  if (activeDrive && String(activeDrive.id) === id) {
+    activeDrive = { ...activeDrive, ...patch };
+  }
+  const storeRow = typeof DriveStore?.get === 'function' ? DriveStore.get(id) : null;
+  if (storeRow) Object.assign(storeRow, patch);
+
+  const sub = document.getElementById('driveApplicantsSub');
+  if (sub && String(activeDriveId) === id) {
+    const live = allDrives.find(x => String(x.id) === id) || activeDrive || d;
+    sub.textContent = `${live.package || '—'} · ${live.status || '—'} · Deadline ${live.deadline || '—'}`;
+  }
+  syncMarkDriveCompletedButton(allDrives.find(x => String(x.id) === id) || { status: 'Completed' });
+  renderRows();
+  toast('Drive marked as completed.', 'success');
+}
+
+window.markDriveCompleted = markDriveCompleted;
 
 
 
@@ -2069,6 +2134,7 @@ window.openDriveApplicants = async driveId => {
   });
   document.getElementById('driveApplicantsTitle').textContent = `${d.company} · ${d.role}`;
   document.getElementById('driveApplicantsSub').textContent = `${d.package || '—'} · ${d.status || '—'} · Deadline ${d.deadline || '—'}`;
+  syncMarkDriveCompletedButton(d);
   document.getElementById('driveApplicantRows').innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading applicants…</td></tr>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('driveApplicantsModal')).show();
   try {
@@ -2845,6 +2911,9 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
 document.getElementById('driveSearch')?.addEventListener('input', renderRows);
 
 document.getElementById('driveStatusFilter')?.addEventListener('change', renderRows);
+document.getElementById('btnMarkDriveCompleted')?.addEventListener('click', () => {
+  markDriveCompleted(activeDriveId);
+});
 
 document.getElementById('driveJobTypeFilter')?.addEventListener('change', renderRows);
 
