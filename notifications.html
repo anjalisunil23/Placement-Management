@@ -45,12 +45,18 @@
     <div class="tab-pane fade" id="jobposts">
       <div id="pendingJobPostsPanel" class="d-none mb-4">
         <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-          <h6 class="fw-bold mb-0">Awaiting approval <span class="badge-soft warning ms-1" id="pendingJobCount">0</span></h6>
+          <div>
+            <h6 class="fw-bold mb-0">Awaiting approval <span class="badge-soft warning ms-1" id="pendingJobCount">0</span></h6>
+            <div class="small text-muted-2" id="pendingJobHint"></div>
+          </div>
         </div>
         <div id="pendingJobRows"><div class="text-muted-2 text-center p-3">Loading…</div></div>
       </div>
       <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-        <h6 class="fw-bold mb-0">Available posts <span class="badge-soft muted ms-1" id="jobFeedCount">0</span></h6>
+        <div>
+          <h6 class="fw-bold mb-0"><span id="jobFeedHeading">Available posts</span> <span class="badge-soft muted ms-1" id="jobFeedCount">0</span></h6>
+          <div class="small text-muted-2" id="jobFeedHint"></div>
+        </div>
         <select class="form-select form-select-sm w-auto" id="jobSourceFilter">
           <option value="">All sources</option>
           <option value="company">Company posts</option>
@@ -65,8 +71,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260720jobapprove"></script>
-<script src="js/app.js?v=20260720jobapprove"></script>
+<script src="js/api.js?v=20260720jobscope"></script>
+<script src="js/app.js?v=20260720jobscope"></script>
 <script>
 onAppReady(() => {
 const role = Auth.role();
@@ -74,6 +80,8 @@ const isStudent = role === 'student';
 const isAlumni = role === 'alumni';
 const isStaff = role === 'staff';
 const isAdminLike = role === 'admin' || role === 'placement_officer';
+const isAdmin = role === 'admin';
+const isOfficer = role === 'placement_officer';
 const isSeekingAlumni = isAlumni && (typeof alumniIsWorking !== 'function' || !alumniIsWorking());
 const canViewJobFeed = isAdminLike || isStaff || isStudent || isSeekingAlumni;
 const hasInbox = !!NotificationInbox.store(role);
@@ -208,8 +216,18 @@ function pendingJobEndpoint() {
 
 function renderJobFeed() {
   const source = document.getElementById('jobSourceFilter')?.value || '';
-  const liveRows = jobFeedRows.filter(row => !['pending', 'rejected'].includes(String(row.status || '').toLowerCase()));
+  // Published-as-drive posts are hidden; pending stays in the approval queue.
+  const liveRows = jobFeedRows.filter(row => {
+    if (String(row.driveId || '').trim()) return false;
+    return !['pending', 'rejected'].includes(String(row.status || '').toLowerCase());
+  });
   const rows = source ? liveRows.filter(row => row.sourceType === source) : liveRows;
+  const hint = document.getElementById('jobFeedHint');
+  if (hint) {
+    hint.textContent = isOfficer
+      ? 'Only unpublished posts for your department. Multi-department posts are admin-only.'
+      : (isAdmin ? 'Posts already published as drives are hidden here.' : '');
+  }
   document.getElementById('jobFeedCount').textContent = rows.length;
   document.getElementById('jobFeedRows').innerHTML = rows.length ? `<div class="row g-3">${rows.map(row => {
     const branches = Array.isArray(row.branches) && row.branches.length ? row.branches.join(', ') : 'All departments';
@@ -222,11 +240,7 @@ function renderJobFeed() {
     const statusCls = ['open','ongoing'].includes(status) ? 'success' : (status === 'reviewing' ? 'warning' : 'muted');
     const posterUrl = row.posterUrl || row.imageUrl || '';
     const posterType = row.posterType || (row.imageUrl ? 'image' : '');
-    const hasDrive = !!String(row.driveId || '').trim();
-    const canPublish = isAdminLike && !hasDrive && ['open', 'ongoing', 'reviewing', 'pending'].includes(status);
-    const driveNote = hasDrive
-      ? `<div class="small text-success mt-2"><i class="bi bi-check2-circle me-1"></i>Published as drive</div>`
-      : '';
+    const canPublish = isAdminLike && ['open', 'ongoing', 'reviewing'].includes(status);
     const actions = canPublish
       ? `<div class="d-flex flex-wrap gap-2 mt-3">
           <button type="button" class="btn btn-sm btn-primary job-feed-approve-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" data-source="${escHtml(row.sourceType || '')}">
@@ -238,7 +252,7 @@ function renderJobFeed() {
       ${posterType === 'image' && posterUrl ? `<img src="${escHtml(posterUrl)}" alt="${escHtml(row.title)} job poster" class="w-100 rounded-3 mb-3" style="height:180px;object-fit:cover" loading="lazy"/>` : ''}
       <div class="d-flex justify-content-between gap-2 mb-2">
         <span class="badge-soft ${row.sourceType === 'company' ? 'info' : 'muted'}">${escHtml(row.sourceLabel)}</span>
-        <span class="badge-soft ${statusCls}">${escHtml(hasDrive ? 'published' : status)}</span>
+        <span class="badge-soft ${statusCls}">${escHtml(status)}</span>
       </div>
       <h6 class="fw-bold mb-1">${escHtml(row.title)}</h6>
       <div class="small text-muted-2 mb-3">${escHtml(row.companyName)}</div>
@@ -251,7 +265,6 @@ function renderJobFeed() {
       </div>
       ${row.description ? `<p class="small text-muted-2 mt-3 mb-0">${escHtml(row.description)}</p>` : ''}
       ${posterType === 'pdf' && posterUrl ? `<a class="btn btn-sm btn-outline-primary mt-3" href="${escHtml(posterUrl)}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>View job poster</a>` : ''}
-      ${driveNote}
       <div class="mt-auto">
         ${actions}
         <div class="small text-muted-2 mt-3">Posted ${escHtml(formatDate(row.createdAt))}</div>
@@ -264,6 +277,12 @@ function renderPendingJobPosts() {
   const panel = document.getElementById('pendingJobPostsPanel');
   if (!panel || !isAdminLike) return;
   panel.classList.toggle('d-none', false);
+  const hint = document.getElementById('pendingJobHint');
+  if (hint) {
+    hint.textContent = isOfficer
+      ? 'Approve or reject posts for your department only.'
+      : 'Single-department posts can also be handled by that department’s officer. Multi-department posts are admin-only.';
+  }
   document.getElementById('pendingJobCount').textContent = String(pendingJobRows.length);
   document.getElementById('pendingJobRows').innerHTML = pendingJobRows.length
     ? `<div class="table-wrap"><table class="table-modern"><thead><tr>
@@ -272,7 +291,7 @@ function renderPendingJobPosts() {
         <tr data-post-id="${escHtml(row.id)}">
           <td><strong>${escHtml(row.title)}</strong></td>
           <td>${escHtml(row.company)}</td>
-          <td>${escHtml(row.departmentCode || row.departmentName || '—')}</td>
+          <td>${escHtml(row.departmentCode || row.departmentName || (isAdmin ? 'Multi / All' : '—'))}</td>
           <td class="small">${escHtml(row.posterName || row.posterEmail || '—')}</td>
           <td><span class="badge-soft muted">${escHtml(row.sourceLabel || row.sourceType || '—')}</span></td>
           <td class="small text-muted-2">${escHtml(formatDate(row.createdAt))}</td>

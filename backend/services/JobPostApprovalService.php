@@ -40,7 +40,7 @@ final class JobPostApprovalService
     public function listPending(array $ctx): array
     {
         $all = $this->posts->findAll([], 500);
-        $rows = array_values(array_filter($all, static function (array $post): bool {
+        $rows = array_values(array_filter($all, function (array $post): bool {
             $status = strtolower((string) ($post['status'] ?? ''));
             $driveId = trim((string) ($post['driveId'] ?? ''));
             if ($driveId !== '') {
@@ -48,13 +48,21 @@ final class JobPostApprovalService
             }
             return in_array($status, ['pending', 'open', 'reviewing'], true);
         }));
-        if (!$ctx['isAdmin']) {
-            $deptId = (string) ($ctx['departmentId'] ?? '');
+
+        if (empty($ctx['isAdmin'])) {
+            $deptId = trim((string) ($ctx['departmentId'] ?? ''));
             $rows = array_values(array_filter(
                 $rows,
-                static function (array $post) use ($deptId): bool {
-                    $postDept = (string) ($post['departmentId'] ?? '');
-                    return $postDept === '' || $postDept === $deptId;
+                function (array $post) use ($deptId): bool {
+                    if ($deptId === '') {
+                        return false;
+                    }
+                    // Multi-department / college-wide posts are admin-only.
+                    if ($this->isMultiDepartmentPost($post)) {
+                        return false;
+                    }
+                    $postDept = trim((string) ($post['departmentId'] ?? ''));
+                    return $postDept !== '' && $postDept === $deptId;
                 }
             ));
         }
@@ -203,8 +211,23 @@ final class JobPostApprovalService
      */
     private function approveCompanyJob(array $job, array $reviewer, array $ctx, ?string $departmentIdOverride): array
     {
-        if (empty($ctx['isAdmin']) && empty($ctx['departmentId'])) {
-            Response::forbidden('Placement officer access required.');
+        if (empty($ctx['isAdmin'])) {
+            // Officers may only publish company jobs that resolve to their single department.
+            if ($this->isMultiDepartmentPost($job)) {
+                Response::forbidden('Only admin can publish multi-department company jobs as drives.');
+            }
+            $officerDept = trim((string) ($ctx['departmentId'] ?? ''));
+            $jobDept = trim((string) ($job['departmentId'] ?? ''));
+            if ($jobDept === '') {
+                $eligibility = is_array($job['eligibility'] ?? null) ? $job['eligibility'] : [];
+                $deps = $eligibility['departments'] ?? [];
+                if (is_array($deps) && isset($deps[0])) {
+                    $jobDept = trim((string) $deps[0]);
+                }
+            }
+            if ($officerDept === '' || $jobDept === '' || $jobDept !== $officerDept) {
+                Response::forbidden('You can only publish job posts for your department.');
+            }
         }
 
         if (!empty($job['driveId'])) {
@@ -456,23 +479,68 @@ final class JobPostApprovalService
         if (!empty($ctx['isAdmin'])) {
             return;
         }
-        $officerDept = (string) ($ctx['departmentId'] ?? '');
+
+        $officerDept = trim((string) ($ctx['departmentId'] ?? ''));
         if ($officerDept === '') {
             Response::forbidden('You can only review job posts for your department.');
         }
+
+        if ($this->isMultiDepartmentPost($post)) {
+            Response::forbidden('Only admin can review multi-department job posts.');
+        }
+
         $postDept = trim((string) ($post['departmentId'] ?? ''));
         $override = trim((string) ($departmentIdOverride ?? ''));
-        if ($postDept === '' || $postDept === $officerDept) {
-            if ($override === '' || $override === $officerDept) {
-                return;
-            }
-        }
-        if ($postDept !== '' && $postDept !== $officerDept) {
+        if ($postDept === '' || $postDept !== $officerDept) {
             Response::forbidden('You can only review job posts for your department.');
         }
         if ($override !== '' && $override !== $officerDept) {
             Response::forbidden('You can only review job posts for your department.');
         }
+    }
+
+    /** @param array<string, mixed> $post */
+    private function isMultiDepartmentPost(array $post): bool
+    {
+        $eligibility = is_array($post['eligibility'] ?? null) ? $post['eligibility'] : [];
+        $departments = $eligibility['departments'] ?? [];
+        $deptIds = [];
+        if (is_array($departments)) {
+            foreach ($departments as $id) {
+                $value = trim((string) $id);
+                if ($value !== '') {
+                    $deptIds[$value] = true;
+                }
+            }
+        }
+        $postDept = trim((string) ($post['departmentId'] ?? ''));
+        if ($postDept !== '') {
+            $deptIds[$postDept] = true;
+        }
+        if (count($deptIds) > 1) {
+            return true;
+        }
+
+        $branches = $eligibility['branches'] ?? $post['branches'] ?? [];
+        if (is_string($branches)) {
+            $branches = preg_split('/[,;]+/', $branches) ?: [];
+        }
+        $branchCodes = [];
+        if (is_array($branches)) {
+            foreach ($branches as $branch) {
+                $code = strtoupper(trim((string) $branch));
+                if ($code !== '') {
+                    $branchCodes[$code] = true;
+                }
+            }
+        }
+
+        // No single department and not exactly one branch => college-wide / multi (admin only).
+        if ($postDept === '' && count($deptIds) === 0 && count($branchCodes) !== 1) {
+            return true;
+        }
+
+        return false;
     }
 
     /** @return array<string, mixed> */

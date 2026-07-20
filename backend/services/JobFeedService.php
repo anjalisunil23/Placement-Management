@@ -21,7 +21,9 @@ final class JobFeedService
     /** @return array<int, array<string, mixed>> */
     public function listForAdmin(): array
     {
-        return $this->listPosts([], null, true, null);
+        return $this->listPosts([], null, true, null, [
+            'excludePublished' => true,
+        ]);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -31,7 +33,14 @@ final class JobFeedService
         if ($ctx['isAdmin']) {
             return $this->listForAdmin();
         }
-        return $this->listPosts($this->departmentCodes($ctx['department']), null, false, null);
+        $departmentId = trim((string) ($ctx['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            return [];
+        }
+        return $this->listPosts($this->departmentCodes($ctx['department']), null, true, null, [
+            'excludePublished' => true,
+            'officerDepartmentId' => $departmentId,
+        ]);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -42,7 +51,9 @@ final class JobFeedService
             return [];
         }
         $department = (new DepartmentModel())->findById((string) $staff['departmentId']);
-        return $this->listPosts($this->departmentCodes($department), null, false, null);
+        return $this->listPosts($this->departmentCodes($department), null, false, null, [
+            'excludePublished' => true,
+        ]);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -52,7 +63,9 @@ final class JobFeedService
         if (!$student) {
             return [];
         }
-        return $this->listPosts($this->studentDepartmentCodes($student), 'student', false, $student);
+        return $this->listPosts($this->studentDepartmentCodes($student), 'student', false, $student, [
+            'excludePublished' => true,
+        ]);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -73,16 +86,23 @@ final class JobFeedService
             return [];
         }
 
-        return $this->listPosts($this->studentDepartmentCodes($student), 'alumni', false, $student);
+        return $this->listPosts($this->studentDepartmentCodes($student), 'alumni', false, $student, [
+            'excludePublished' => true,
+        ]);
     }
 
     /**
      * @param string[] $viewerCodes
+     * @param array{excludePublished?:bool,officerDepartmentId?:string} $options
      * @return array<int, array<string, mixed>>
      */
-    private function listPosts(array $viewerCodes, ?string $audience, bool $includeAllStatuses, ?array $student): array
+    private function listPosts(array $viewerCodes, ?string $audience, bool $includeAllStatuses, ?array $student, array $options = []): array
     {
-        if (!$includeAllStatuses && $viewerCodes === []) {
+        $excludePublished = !empty($options['excludePublished']);
+        $officerDepartmentId = trim((string) ($options['officerDepartmentId'] ?? ''));
+        $officerScoped = $officerDepartmentId !== '';
+
+        if (!$includeAllStatuses && !$officerScoped && $viewerCodes === []) {
             return [];
         }
 
@@ -96,9 +116,22 @@ final class JobFeedService
             $rows[] = $this->normalizeAlumniPost($post);
         }
 
-        $rows = array_values(array_filter($rows, function (array $row) use ($viewerCodes, $audience, $includeAllStatuses, $student): bool {
+        $rows = array_values(array_filter($rows, function (array $row) use ($viewerCodes, $audience, $includeAllStatuses, $student, $excludePublished, $officerScoped, $officerDepartmentId): bool {
+            if ($excludePublished && trim((string) ($row['driveId'] ?? '')) !== '') {
+                return false;
+            }
+
+            $status = strtolower((string) ($row['status'] ?? ''));
+            if ($officerScoped) {
+                // Officers only review unpublished posts for their own single department.
+                if (in_array($status, ['rejected', 'closed'], true)) {
+                    return false;
+                }
+                return $this->matchesOfficerDepartmentScope($row, $officerDepartmentId, $viewerCodes);
+            }
+
             // Pending/rejected posts are admin/officer review queues, not public feed items.
-            if (!$includeAllStatuses && !in_array($row['status'], ['open', 'ongoing', 'reviewing'], true)) {
+            if (!$includeAllStatuses && !in_array($status, ['open', 'ongoing', 'reviewing'], true)) {
                 return false;
             }
             if ($audience !== null && !in_array($row['audience'], [$audience, 'both'], true)) {
@@ -118,30 +151,117 @@ final class JobFeedService
         return $rows;
     }
 
+    /**
+     * Multi-department / college-wide posts are admin-only.
+     * A post is department-specific when it has exactly one departmentId (or one matching branch).
+     *
+     * @param array<string, mixed> $row
+     * @param string[] $officerCodes
+     */
+    private function matchesOfficerDepartmentScope(array $row, string $officerDepartmentId, array $officerCodes): bool
+    {
+        if ($this->isMultiDepartmentScope($row)) {
+            return false;
+        }
+
+        $postDept = trim((string) ($row['departmentId'] ?? ''));
+        if ($postDept !== '') {
+            return $postDept === $officerDepartmentId;
+        }
+
+        $eligibility = is_array($row['eligibility'] ?? null) ? $row['eligibility'] : [];
+        $departments = $eligibility['departments'] ?? [];
+        if (is_array($departments)) {
+            $deptIds = array_values(array_unique(array_filter(array_map(
+                static fn (mixed $id): string => trim((string) $id),
+                $departments
+            ))));
+            if (count($deptIds) === 1) {
+                return $deptIds[0] === $officerDepartmentId;
+            }
+        }
+
+        $branches = is_array($row['branches'] ?? null) ? $row['branches'] : [];
+        if (count($branches) === 1 && $officerCodes !== []) {
+            return in_array(strtoupper((string) $branches[0]), $officerCodes, true);
+        }
+
+        return false;
+    }
+
+    /** @param array<string, mixed> $row */
+    private function isMultiDepartmentScope(array $row): bool
+    {
+        $eligibility = is_array($row['eligibility'] ?? null) ? $row['eligibility'] : [];
+        $departments = $eligibility['departments'] ?? [];
+        $deptIds = [];
+        if (is_array($departments)) {
+            foreach ($departments as $id) {
+                $value = trim((string) $id);
+                if ($value !== '') {
+                    $deptIds[$value] = true;
+                }
+            }
+        }
+        $postDept = trim((string) ($row['departmentId'] ?? ''));
+        if ($postDept !== '') {
+            $deptIds[$postDept] = true;
+        }
+        if (count($deptIds) > 1) {
+            return true;
+        }
+
+        $branches = is_array($row['branches'] ?? null) ? $row['branches'] : [];
+        $branchCount = count(array_values(array_unique(array_filter(array_map(
+            static fn (mixed $b): string => strtoupper(trim((string) $b)),
+            $branches
+        )))));
+
+        // No department + no/all branches => college-wide / multi-department (admin only).
+        if ($postDept === '' && count($deptIds) === 0 && $branchCount !== 1) {
+            return true;
+        }
+
+        // Multiple branch targets without a single departmentId => multi-department.
+        if ($postDept === '' && count($deptIds) === 0 && $branchCount > 1) {
+            return true;
+        }
+
+        return false;
+    }
+
     /** @return array<string, mixed> */
     private function normalizeCompanyJob(array $job, string $companyName): array
     {
         $serialized = DocumentHelper::serialize($job);
         $eligibility = is_array($job['eligibility'] ?? null) ? $job['eligibility'] : [];
+        $departmentId = trim((string) ($job['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            $deps = $eligibility['departments'] ?? [];
+            if (is_array($deps) && isset($deps[0])) {
+                $departmentId = trim((string) $deps[0]);
+            }
+        }
         return [
-            'id'          => (string) ($job['_id'] ?? ''),
-            'sourceType'  => 'company',
-            'sourceLabel' => 'Company',
-            'companyName' => $companyName,
-            'title'       => trim((string) ($job['title'] ?? 'Job')),
-            'description' => trim((string) ($job['description'] ?? '')),
-            'imageUrl'    => trim((string) ($job['imageUrl'] ?? '')),
-            'posterUrl'   => trim((string) ($job['posterUrl'] ?? $job['imageUrl'] ?? '')),
-            'posterType'  => trim((string) ($job['posterType'] ?? (($job['imageUrl'] ?? '') !== '' ? 'image' : ''))),
-            'jobType'     => trim((string) ($job['jobType'] ?? 'Full-time')),
-            'package'     => trim((string) ($job['package'] ?? '')),
-            'location'    => trim((string) ($job['location'] ?? '')),
-            'status'      => strtolower(trim((string) ($job['status'] ?? 'open'))),
-            'audience'    => $this->normalizeAudience($job['audience'] ?? $eligibility['audience'] ?? 'both'),
-            'eligibility' => $eligibility,
-            'branches'    => $this->targetBranches($job),
-            'driveId'     => (string) ($job['driveId'] ?? ''),
-            'createdAt'   => $serialized['createdAt'] ?? null,
+            'id'           => (string) ($job['_id'] ?? ''),
+            'sourceType'   => 'company',
+            'sourceLabel'  => 'Company',
+            'companyName'  => $companyName,
+            'title'        => trim((string) ($job['title'] ?? 'Job')),
+            'description'  => trim((string) ($job['description'] ?? '')),
+            'imageUrl'     => trim((string) ($job['imageUrl'] ?? '')),
+            'posterUrl'    => trim((string) ($job['posterUrl'] ?? $job['imageUrl'] ?? '')),
+            'posterType'   => trim((string) ($job['posterType'] ?? (($job['imageUrl'] ?? '') !== '' ? 'image' : ''))),
+            'jobType'      => trim((string) ($job['jobType'] ?? 'Full-time')),
+            'package'      => trim((string) ($job['package'] ?? '')),
+            'location'     => trim((string) ($job['location'] ?? '')),
+            'status'       => strtolower(trim((string) ($job['status'] ?? 'open'))),
+            'audience'     => $this->normalizeAudience($job['audience'] ?? $eligibility['audience'] ?? 'both'),
+            'eligibility'  => $eligibility,
+            'branches'     => $this->targetBranches($job),
+            'departmentId' => $departmentId,
+            'driveId'      => (string) ($job['driveId'] ?? ''),
+            'createdAt'    => $serialized['createdAt'] ?? null,
         ];
     }
 
