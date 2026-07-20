@@ -430,6 +430,7 @@ const PAGE_PERMS = {
   'alumni-jobs.html':       ['alumni'],
   'alumni-referrals.html':  ['alumni'],
   'alumni-success-stories.html': ['alumni'],
+  'staff-jobs.html':        ['staff'],
   'staff-recommend.html':   ['staff'],
   'staff-placements.html':  ['staff'],
   'admin-companies.html':   ['admin','placement_officer'],
@@ -449,7 +450,7 @@ const PAGE_PERMS = {
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
-const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html'];
 
 /** Placement Cell guidelines version students must accept on first login. */
@@ -1314,11 +1315,13 @@ function mapApiReferralStatus(status) {
 
 function mapApiJobPostStatus(status) {
   const map = {
+    pending: ['Pending approval', 'warning'],
     open: ['Open', 'success'],
     reviewing: ['Reviewing', 'info'],
     closed: ['Closed', 'muted'],
+    rejected: ['Rejected', 'danger'],
   };
-  const [label, cls] = map[(status || '').toLowerCase()] || ['Open', 'success'];
+  const [label, cls] = map[(status || '').toLowerCase()] || ['Pending approval', 'warning'];
   return { statusLabel: label, statusCls: cls };
 }
 

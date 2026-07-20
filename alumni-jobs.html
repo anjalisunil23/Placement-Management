@@ -9,14 +9,17 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div><h1 class="page-title">Job Posts</h1></div>
+  <div>
+    <h1 class="page-title">Job Posts</h1>
+    <p class="text-muted-2 small mb-0">Posts are reviewed by admin or the department placement officer, then published as a drive.</p>
+  </div>
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
 </div>
 
 <div class="card-surface">
   <div class="p-3 p-md-4"><h6 class="fw-bold mb-0">Your job postings <span class="badge-soft muted ms-1" id="jobCountBadge">0</span></h6></div>
   <div class="table-wrap">
-    <table class="table-modern"><thead><tr><th>Role</th><th>Company</th><th>Package</th><th>Posted</th><th>Status</th></tr></thead>
+    <table class="table-modern"><thead><tr><th>Role</th><th>Company</th><th>Department</th><th>Package</th><th>Posted</th><th>Status</th></tr></thead>
     <tbody id="jobRows"></tbody></table>
   </div>
 </div>
@@ -30,30 +33,36 @@
       <div class="col-md-4"><label class="form-label small fw-semibold">Type</label><select class="form-select" name="type"><option>Full-time</option><option>Internship</option><option>Contract</option></select></div>
       <div class="col-md-4"><label class="form-label small fw-semibold">Package (LPA)</label><input class="form-control" name="package"/></div>
       <div class="col-md-4"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location"/></div>
-      <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" name="status" id="jobStatus">
-        <option value="open">Open</option>
-        <option value="reviewing">Reviewing</option>
-        <option value="closed">Closed</option>
-      </select></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Eligible branches</label><input class="form-control" name="branches" placeholder="CSE, IT, ECE"/><div class="form-text">Use department codes separated by commas. Leave blank for all departments.</div></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Visible to</label><select class="form-select" name="audience"><option value="both">Students and job-seeking alumni</option><option value="student">Students only</option><option value="alumni">Job-seeking alumni only</option></select></div>
+      <div class="col-md-6">
+        <label class="form-label small fw-semibold">Department</label>
+        <select class="form-select" name="departmentId" id="jobDepartment" required>
+          <option value="">Select department</option>
+        </select>
+        <div class="form-text">One department only. That department’s placement officer (or admin) will approve.</div>
+      </div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Visible to</label><select class="form-select" name="audience"><option value="student">Students only</option><option value="both">Students and job-seeking alumni</option><option value="alumni">Job-seeking alumni only</option></select></div>
       <div class="col-12"><label class="form-label small fw-semibold">Job poster (optional)</label><input class="form-control" type="file" name="poster" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"/><div class="form-text">JPG, PNG, WebP, or PDF · maximum 10 MB</div></div>
       <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="4"></textarea></div>
     </div>
-    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Post job</button></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Submit for approval</button></div>
   </form>
 </div></div></div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260716profilename"></script>
-<script src="js/app.js?v=20260716notifflat"></script>
+<script src="js/api.js?v=20260720jobpost"></script>
+<script src="js/app.js?v=20260720jobpost"></script>
 <script>
 const user = Auth.user() || demoUserFor('alumni');
 document.getElementById('jobCompany').value = user.company || '';
 
 let jobRows = [];
 let jobsUseApi = false;
+const deptById = {};
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
 
 function fmtAlumniPackage(pkg) {
   const s = String(pkg ?? '').trim();
@@ -64,7 +73,7 @@ function fmtAlumniPackage(pkg) {
 }
 
 function countActiveJobPosts(rows) {
-  return rows.filter(j => ['open', 'reviewing'].includes(String(j.status || '').toLowerCase())).length;
+  return rows.filter(j => ['pending', 'open', 'reviewing'].includes(String(j.status || '').toLowerCase())).length;
 }
 
 function statsFromJobRows(rows) {
@@ -76,21 +85,33 @@ function statsFromJobRows(rows) {
   };
 }
 
+function deptLabel(j) {
+  const id = String(j.departmentId || '');
+  const dept = deptById[id];
+  if (dept) return dept.code ? `${dept.code}` : (dept.name || '—');
+  const elig = j.eligibility || {};
+  const branches = Array.isArray(elig.branches) ? elig.branches : [];
+  return branches[0] || '—';
+}
+
 function normalizeJobPost(j) {
   const st = mapApiJobPostStatus(j.status);
   return {
     id: String(j._id || j.id || ''),
     title: j.title || '',
     company: j.company || '',
+    departmentId: j.departmentId || '',
+    departmentLabel: deptLabel(j),
     package: fmtAlumniPackage(j.package),
     imageUrl: j.imageUrl || '',
     posterUrl: j.posterUrl || j.imageUrl || '',
     posterType: j.posterType || (j.imageUrl ? 'image' : ''),
     views: Number(j.views) || 0,
     createdAt: j.createdAt,
-    status: j.status || 'open',
+    status: j.status || 'pending',
     statusLabel: j.statusLabel || st.statusLabel,
     statusCls: j.statusCls || st.statusCls,
+    eligibility: j.eligibility || {},
   };
 }
 
@@ -105,10 +126,21 @@ function renderJobs() {
     <tr>
       <td><div class="d-flex align-items-center gap-2">${j.posterType === 'image' && j.posterUrl ? `<a href="${j.posterUrl}" target="_blank" rel="noopener"><img src="${j.posterUrl}" alt="" class="rounded-2" style="width:42px;height:42px;object-fit:cover"/></a>` : j.posterType === 'pdf' && j.posterUrl ? `<a href="${j.posterUrl}" target="_blank" rel="noopener" title="View job poster"><i class="bi bi-file-earmark-pdf-fill text-danger fs-4"></i></a>` : ''}<strong>${j.title}</strong></div></td>
       <td>${j.company}</td>
+      <td>${j.departmentLabel}</td>
       <td>${j.package}</td>
       <td>${formatDate(j.createdAt)}</td>
       <td><span class="badge-soft ${j.statusCls}">${j.statusLabel}</span></td>
-    </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No job posts yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No job posts yet.</td></tr>';
+}
+
+async function loadDepartments() {
+  const sel = document.getElementById('jobDepartment');
+  const res = await api('/public/departments', { noRedirectOn401: true });
+  const rows = res?.success && Array.isArray(res.data) ? res.data : [];
+  rows.forEach(d => { deptById[String(d.id || d._id || '')] = d; });
+  sel.innerHTML = '<option value="">Select department</option>' + rows.map(d =>
+    `<option value="${escHtml(String(d.id || ''))}">${escHtml(d.code || '')} — ${escHtml(d.name || '')}</option>`
+  ).join('');
 }
 
 async function loadJobPosts() {
@@ -139,39 +171,45 @@ async function loadJobPosts() {
   renderStats({ ...AlumniJobPosts.stats(), totalPosts: jobRows.length });
 }
 
-onAppReady(() => { loadJobPosts().then(renderJobs); });
+onAppReady(async () => {
+  await loadDepartments();
+  await loadJobPosts();
+  renderJobs();
+});
 
 document.getElementById('postJobForm').addEventListener('submit', async e => {
   e.preventDefault();
   const formData = new FormData(e.target);
   const data = Object.fromEntries(formData.entries());
+  if (!data.departmentId) {
+    toast('Select a department for this job post.', 'warn');
+    return;
+  }
   const poster = formData.get('poster');
   if (poster instanceof File && poster.name && (!/\.(jpe?g|png|webp|pdf)$/i.test(poster.name) || poster.size > 10 * 1024 * 1024)) {
     toast('Choose a JPG, PNG, WebP, or PDF poster up to 10 MB.', 'warn');
     return;
   }
-  if (!(await confirmAction({ title: 'Post job', message: `Post job opening for ${data.title || 'this role'}?`, confirmText: 'Post job', variant: 'primary' }))) return;
+  if (!(await confirmAction({ title: 'Submit job post', message: `Submit "${data.title || 'this role'}" for approval?`, confirmText: 'Submit', variant: 'primary' }))) return;
   if (jobsUseApi) {
     const res = await api('/alumni/job-posts', { method: 'POST', body: formData, noRedirectOn401: true });
     if (res?.success) {
-      toast('Job posted successfully.', 'success');
+      toast(res.message || 'Job post submitted for approval.', 'success');
       bootstrap.Modal.getInstance(document.getElementById('postJob')).hide();
       e.target.reset();
       document.getElementById('jobCompany').value = user.company || '';
-      document.getElementById('jobStatus').value = 'open';
       await loadJobPosts();
       renderJobs();
       return;
     }
-    jobsUseApi = false;
-    toast(res?.message || 'Server error — saved locally.', 'warn');
+    toast(res?.message || 'Could not submit job post.', 'error');
+    return;
   }
-  AlumniJobPosts.add(data);
-  toast('Job posted successfully.', 'success');
+  AlumniJobPosts.add({ ...data, status: 'pending' });
+  toast('Job post submitted for approval.', 'success');
   bootstrap.Modal.getInstance(document.getElementById('postJob')).hide();
   e.target.reset();
   document.getElementById('jobCompany').value = user.company || '';
-  document.getElementById('jobStatus').value = 'open';
   await loadJobPosts();
   renderJobs();
 });

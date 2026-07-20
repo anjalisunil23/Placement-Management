@@ -677,6 +677,34 @@ final class OfficerController
         Response::success($result, 'Placement report rejected.');
     }
 
+    /** GET /api/officer/job-posts/pending */
+    public function listPendingJobPosts(): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $ctx = PlacementOfficerContext::resolve($user);
+        Response::success((new \PMS\Services\JobPostApprovalService())->listPending($ctx));
+    }
+
+    /** POST /api/officer/job-posts/{id}/approve */
+    public function approveJobPost(string $id): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $result = (new \PMS\Services\JobPostApprovalService())->approve($id, $user, $ctx);
+        Response::success($result, 'Job post approved and published as a drive.');
+    }
+
+    /** POST /api/officer/job-posts/{id}/reject */
+    public function rejectJobPost(string $id): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $reason = trim((string) ($input['reason'] ?? ''));
+        $result = (new \PMS\Services\JobPostApprovalService())->reject($id, $user, $ctx, $reason);
+        Response::success($result, 'Job post rejected.');
+    }
+
     /** GET /api/officer/applications */
     public function listApplications(): void
     {

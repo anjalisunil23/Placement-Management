@@ -97,6 +97,7 @@ final class JobFeedService
         }
 
         $rows = array_values(array_filter($rows, function (array $row) use ($viewerCodes, $audience, $includeAllStatuses, $student): bool {
+            // Pending/rejected posts are admin/officer review queues, not public feed items.
             if (!$includeAllStatuses && !in_array($row['status'], ['open', 'ongoing', 'reviewing'], true)) {
                 return false;
             }
@@ -149,25 +150,30 @@ final class JobFeedService
     {
         $serialized = DocumentHelper::serialize($post);
         $eligibility = is_array($post['eligibility'] ?? null) ? $post['eligibility'] : [];
+        $source = strtolower(trim((string) ($post['sourceType'] ?? 'alumni')));
+        if ($source !== 'staff') {
+            $source = 'alumni';
+        }
         return [
-            'id'          => (string) ($post['_id'] ?? ''),
-            'sourceType'  => 'alumni',
-            'sourceLabel' => 'Alumni',
-            'companyName' => trim((string) ($post['company'] ?? 'Company')),
-            'title'       => trim((string) ($post['title'] ?? 'Job')),
-            'description' => trim((string) ($post['description'] ?? '')),
-            'imageUrl'    => trim((string) ($post['imageUrl'] ?? '')),
-            'posterUrl'   => trim((string) ($post['posterUrl'] ?? $post['imageUrl'] ?? '')),
-            'posterType'  => trim((string) ($post['posterType'] ?? (($post['imageUrl'] ?? '') !== '' ? 'image' : ''))),
-            'jobType'     => trim((string) ($post['jobType'] ?? 'Full-time')),
-            'package'     => trim((string) ($post['package'] ?? '')),
-            'location'    => trim((string) ($post['location'] ?? '')),
-            'status'      => strtolower(trim((string) ($post['status'] ?? 'open'))),
-            'audience'    => $this->normalizeAudience($post['audience'] ?? 'both'),
-            'eligibility' => $eligibility,
-            'branches'    => $this->targetBranches($post),
-            'driveId'     => '',
-            'createdAt'   => $serialized['createdAt'] ?? null,
+            'id'           => (string) ($post['_id'] ?? ''),
+            'sourceType'   => $source,
+            'sourceLabel'  => $source === 'staff' ? 'Staff' : 'Alumni',
+            'companyName'  => trim((string) ($post['company'] ?? 'Company')),
+            'title'        => trim((string) ($post['title'] ?? 'Job')),
+            'description'  => trim((string) ($post['description'] ?? '')),
+            'imageUrl'     => trim((string) ($post['imageUrl'] ?? '')),
+            'posterUrl'    => trim((string) ($post['posterUrl'] ?? $post['imageUrl'] ?? '')),
+            'posterType'   => trim((string) ($post['posterType'] ?? (($post['imageUrl'] ?? '') !== '' ? 'image' : ''))),
+            'jobType'      => trim((string) ($post['jobType'] ?? 'Full-time')),
+            'package'      => trim((string) ($post['package'] ?? '')),
+            'location'     => trim((string) ($post['location'] ?? '')),
+            'status'       => strtolower(trim((string) ($post['status'] ?? 'pending'))),
+            'audience'     => $this->normalizeAudience($post['audience'] ?? 'both'),
+            'eligibility'  => $eligibility,
+            'branches'     => $this->targetBranches($post),
+            'departmentId' => (string) ($post['departmentId'] ?? ''),
+            'driveId'      => (string) ($post['driveId'] ?? ''),
+            'createdAt'    => $serialized['createdAt'] ?? null,
         ];
     }
 

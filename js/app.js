@@ -80,6 +80,7 @@ const NAV = [
 
   { section: "Staff", roles: ['staff'] },
   { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
+  { href: "staff-jobs.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
 
   { section: "Company", roles: ['company'] },
@@ -119,6 +120,7 @@ const PAGE_LABELS = {
   'alumni-jobs.html': 'Job Posts',
   'alumni-referrals.html': 'Referrals',
   'alumni-success-stories.html': 'Success Stories',
+  'staff-jobs.html': 'Job Posts',
   'staff-recommend.html': 'Recommend Company',
   'staff-placements.html': 'Placements & Higher Education',
   'users.html': 'User Management',

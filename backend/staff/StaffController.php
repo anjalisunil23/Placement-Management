@@ -462,4 +462,112 @@ final class StaffController
         $input['reason'] = $input['reason'] ?? 'Referred by faculty for campus recruitment.';
         return $input;
     }
+
+    /** GET /api/staff/job-posts */
+    public function listJobPosts(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $posts = (new \PMS\Models\AlumniJobPostModel())->findByOwner((string) $user['_id']);
+        Response::success(DocumentHelper::serializeMany($posts));
+    }
+
+    /** POST /api/staff/job-posts */
+    public function createJobPost(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $profile = $this->getProfile($user);
+        $departmentId = trim((string) ($profile['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            Response::error('Your staff profile has no department. Contact admin.', 422);
+        }
+        $department = (new DepartmentModel())->findById($departmentId);
+        if (!$department) {
+            Response::error('Your department could not be resolved.', 422);
+        }
+
+        $input = !empty($_POST) ? $_POST : (json_decode(file_get_contents('php://input') ?: '{}', true) ?? []);
+        $errors = Validator::validate($input, [
+            'title'   => 'required',
+            'company' => 'required',
+        ]);
+        if (!empty($errors)) {
+            Response::error('Validation failed.', 422, $errors);
+        }
+
+        $branchCodes = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $value): string => strtoupper(trim((string) $value)),
+            [$department['code'] ?? '', $department['shortName'] ?? '']
+        ))));
+        $input['departmentId'] = $departmentId;
+        $input['eligibility'] = [
+            'branches' => $branchCodes,
+            'departments' => [$departmentId],
+        ];
+        $input['status'] = 'pending';
+        $input['audience'] = $input['audience'] ?? 'student';
+
+        $savedPosterPath = '';
+        $posterFile = $_FILES['poster'] ?? $_FILES['image'] ?? null;
+        if (is_array($posterFile) && ($posterFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $savedPoster = $this->storeJobPoster($posterFile, 'staff_' . (string) $user['_id']);
+            $input['posterUrl'] = $savedPoster['url'];
+            $input['posterType'] = $savedPoster['type'];
+            if ($savedPoster['type'] === 'image') {
+                $input['imageUrl'] = $savedPoster['url'];
+            }
+            $savedPosterPath = $savedPoster['path'];
+        }
+
+        try {
+            $id = (new \PMS\Models\AlumniJobPostModel())->createPost((string) $user['_id'], $input, 'staff');
+        } catch (\Throwable $e) {
+            if ($savedPosterPath !== '') {
+                (new \PMS\Services\ObjectStorageService())->delete($savedPosterPath);
+            }
+            throw $e;
+        }
+
+        $created = (new \PMS\Models\AlumniJobPostModel())->findById($id);
+        if (!$created) {
+            $created = array_merge($input, ['_id' => $id, 'sourceType' => 'staff']);
+        }
+        (new \PMS\Services\JobPostApprovalService())->notifyReviewers($created, $user);
+        Response::success(['id' => $id, 'status' => 'pending'], 'Job post submitted for approval.', 201);
+    }
+
+    /**
+     * @param array<string, mixed> $file
+     * @return array{url:string,path:string,type:string}
+     */
+    private function storeJobPoster(array $file, string $prefix): array
+    {
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $error = \PMS\Utils\Security::validateUploadedFile(
+            $file,
+            (int) ($config['uploads']['max_job_poster'] ?? 10 * 1024 * 1024),
+            ['jpg', 'jpeg', 'png', 'webp', 'pdf']
+        );
+        if ($error) {
+            Response::error($error, 400);
+        }
+        $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $filename = preg_replace('/[^a-zA-Z0-9_-]/', '_', $prefix)
+            . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        $storage = new \PMS\Services\ObjectStorageService($config);
+        try {
+            $path = $storage->putUploadedFile(
+                \PMS\Services\ObjectStorageService::FOLDER_JOB_POSTERS,
+                $filename,
+                $file
+            );
+        } catch (\Throwable $e) {
+            Response::error('Failed to save the job poster to S3: ' . $e->getMessage(), 500);
+        }
+        $storedName = $storage->storedNameFromUri($path);
+        return [
+            'url' => $storage->mediaUrl(\PMS\Services\ObjectStorageService::FOLDER_JOB_POSTERS, $storedName),
+            'path' => $path,
+            'type' => $ext === 'pdf' ? 'pdf' : 'image',
+        ];
+    }
 }

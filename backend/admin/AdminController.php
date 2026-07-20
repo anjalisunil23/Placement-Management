@@ -1139,6 +1139,34 @@ final class AdminController
         Response::success($result, 'Placement report rejected.');
     }
 
+    /** GET /api/admin/job-posts/pending */
+    public function listPendingJobPosts(): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        Response::success((new \PMS\Services\JobPostApprovalService())->listPending($ctx));
+    }
+
+    /** POST /api/admin/job-posts/{id}/approve */
+    public function approveJobPost(string $id): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        $result = (new \PMS\Services\JobPostApprovalService())->approve($id, $admin, $ctx);
+        Response::success($result, 'Job post approved and published as a drive.');
+    }
+
+    /** POST /api/admin/job-posts/{id}/reject */
+    public function rejectJobPost(string $id): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $reason = trim((string) ($input['reason'] ?? ''));
+        $result = (new \PMS\Services\JobPostApprovalService())->reject($id, $admin, $ctx, $reason);
+        Response::success($result, 'Job post rejected.');
+    }
+
     /** GET /api/admin/blacklist */
     public function listBlacklist(): void
     {

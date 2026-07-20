@@ -220,21 +220,32 @@ final class AlumniController
     }
     $input = !empty($_POST) ? $_POST : (json_decode(file_get_contents('php://input') ?: '{}', true) ?? []);
     $errors = Validator::validate($input, [
-      'title'   => 'required',
-      'company' => 'required',
+      'title'        => 'required',
+      'company'      => 'required',
+      'departmentId' => 'required',
     ]);
     if (!empty($errors)) {
       Response::error('Validation failed.', 422, $errors);
     }
-    $branches = is_array($input['branches'] ?? null)
-      ? $input['branches']
-      : (preg_split('/[,;]+/', (string) ($input['branches'] ?? '')) ?: []);
+
+    $departmentId = trim((string) ($input['departmentId'] ?? ''));
+    $department = (new \PMS\Models\DepartmentModel())->findById($departmentId);
+    if (!$department) {
+      Response::error('Select a valid department for this job post.', 422);
+    }
+
+    $branchCodes = array_values(array_unique(array_filter(array_map(
+      static fn (mixed $value): string => strtoupper(trim((string) $value)),
+      [$department['code'] ?? '', $department['shortName'] ?? '']
+    ))));
+    $input['departmentId'] = $departmentId;
     $input['eligibility'] = [
-      'branches' => array_values(array_unique(array_filter(array_map(
-        static fn (mixed $branch): string => strtoupper(trim((string) $branch)),
-        $branches
-      )))),
+      'branches' => $branchCodes,
+      'departments' => [$departmentId],
     ];
+    $input['status'] = 'pending';
+    $input['audience'] = $input['audience'] ?? 'student';
+
     $savedPosterPath = '';
     $posterFile = $_FILES['poster'] ?? $_FILES['image'] ?? null;
     if (is_array($posterFile) && ($posterFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
@@ -247,14 +258,20 @@ final class AlumniController
       $savedPosterPath = $savedPoster['path'];
     }
     try {
-      $id = (new AlumniJobPostModel())->createPost((string) $user['_id'], $input);
+      $id = (new AlumniJobPostModel())->createPost((string) $user['_id'], $input, 'alumni');
     } catch (\Throwable $e) {
       if ($savedPosterPath !== '') {
         (new ObjectStorageService())->delete($savedPosterPath);
       }
       throw $e;
     }
-    Response::success(['id' => $id], 'Job posted successfully.', 201);
+
+    $created = (new AlumniJobPostModel())->findById($id);
+    if (!$created) {
+      $created = array_merge($input, ['_id' => $id, 'sourceType' => 'alumni']);
+    }
+    (new \PMS\Services\JobPostApprovalService())->notifyReviewers($created, $user);
+    Response::success(['id' => $id, 'status' => 'pending'], 'Job post submitted for approval.', 201);
   }
 
   /**
