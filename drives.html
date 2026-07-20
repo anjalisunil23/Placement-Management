@@ -112,7 +112,9 @@
     border:1px solid var(--border,#e2e8f0);border-radius:10px;overflow:hidden;
     background:#f8fafc;min-height:280px;
   }
-  .apply-resume-preview iframe{
+  .apply-resume-preview-embed,
+  .apply-resume-preview iframe,
+  .apply-resume-preview embed{
     width:100%;height:360px;border:0;display:block;background:#fff;
   }
   .apply-resume-preview-empty{
@@ -340,7 +342,7 @@
     </div>
     <div class="apply-resume-preview mb-3" id="applyResumePreview">
       <div class="apply-resume-preview-empty" id="applyResumePreviewEmpty">Select a resume to preview.</div>
-      <iframe id="applyResumePreviewFrame" title="Resume preview" class="d-none"></iframe>
+      <embed id="applyResumePreviewFrame" type="application/pdf" class="d-none apply-resume-preview-embed" />
     </div>
 
     <label class="form-label small fw-semibold mt-3">Certificates <span class="text-muted fw-normal">(optional)</span></label>
@@ -2153,6 +2155,11 @@ function clearApplyResumePreview() {
   }
 }
 
+function looksLikePdf(bytes) {
+  if (!bytes || bytes.length < 4) return false;
+  return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // %PDF
+}
+
 async function updateApplyResumePreview() {
   const sel = document.getElementById('applyResumeSelect');
   const resumeId = String(sel?.value || '');
@@ -2193,7 +2200,12 @@ async function updateApplyResumePreview() {
   if (link) link.classList.add('d-none');
 
   try {
-    const headers = {};
+    if (typeof Auth?.ensureSession === 'function') {
+      await Auth.ensureSession();
+    }
+    if (requestId !== applyResumePreviewRequest) return;
+
+    const headers = { Accept: 'application/pdf,application/octet-stream,*/*' };
     const token = Auth.token();
     if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
       headers.Authorization = `Bearer ${token}`;
@@ -2202,34 +2214,51 @@ async function updateApplyResumePreview() {
       method: 'GET',
       headers,
       credentials: 'include',
+      cache: 'no-store',
     });
     if (requestId !== applyResumePreviewRequest) return;
-    if (!res.ok) {
-      throw new Error('Could not load resume preview.');
-    }
-    const blob = await res.blob();
+
+    const buffer = await res.arrayBuffer();
     if (requestId !== applyResumePreviewRequest) return;
-    const type = String(blob.type || '').toLowerCase();
-    if (type && !type.includes('pdf') && !type.includes('octet-stream')) {
-      throw new Error('Resume preview is not a PDF.');
+    const bytes = new Uint8Array(buffer);
+
+    if (!res.ok) {
+      let message = `Could not load resume preview (${res.status}).`;
+      try {
+        const text = new TextDecoder().decode(bytes);
+        const json = JSON.parse(text);
+        if (json?.message) message = json.message;
+      } catch { /* not JSON */ }
+      throw new Error(message);
     }
-    const pdfBlob = type.includes('pdf') ? blob : new Blob([blob], { type: 'application/pdf' });
+
+    if (!looksLikePdf(bytes)) {
+      let message = 'Resume file is not a valid PDF.';
+      try {
+        const text = new TextDecoder().decode(bytes);
+        const json = JSON.parse(text);
+        if (json?.message) message = json.message;
+      } catch { /* not JSON */ }
+      throw new Error(message);
+    }
+
+    const pdfBlob = new Blob([buffer], { type: 'application/pdf' });
     applyResumePreviewObjectUrl = URL.createObjectURL(pdfBlob);
     if (empty) empty.classList.add('d-none');
     if (frame) {
       frame.classList.remove('d-none');
-      frame.src = applyResumePreviewObjectUrl;
+      frame.setAttribute('src', applyResumePreviewObjectUrl);
     }
     if (link) {
       link.href = applyResumePreviewObjectUrl;
       link.classList.remove('d-none');
     }
-  } catch {
+  } catch (err) {
     if (requestId !== applyResumePreviewRequest) return;
     if (frame) frame.classList.add('d-none');
     if (empty) {
       empty.classList.remove('d-none');
-      empty.textContent = 'Could not load resume preview.';
+      empty.textContent = err?.message || 'Could not load resume preview.';
     }
     if (link) {
       link.classList.add('d-none');

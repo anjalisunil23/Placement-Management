@@ -729,29 +729,51 @@ final class StudentController
     }
 
     $resume = (new ResumeModel())->findById($resumeId);
-    if (!$resume || (string) ($resume['studentId'] ?? '') !== (string) $profile['_id']) {
+    $resumeStudentId = strtolower((string) ($resume['studentId'] ?? ''));
+    $profileId = strtolower((string) ($profile['_id'] ?? ''));
+    if (!$resume || $resumeStudentId === '' || $resumeStudentId !== $profileId) {
       Response::notFound('Resume not found.');
     }
 
-    $stored = basename((string) ($resume['storedName'] ?? ''));
-    if ($stored === '') {
-      Response::notFound('Resume not found.');
-    }
     $storage = new ObjectStorageService();
-    $path = $storage->uri(ObjectStorageService::FOLDER_RESUMES, $stored);
-    $ext = strtolower(pathinfo((string) ($resume['fileName'] ?? ''), PATHINFO_EXTENSION));
-    $mime = $storage->guessMime((string) ($resume['fileName'] ?? $stored));
-    try {
-      $storage->streamWithFallback(
-        $path,
-        (string) ($resume['fileName'] ?? 'resume.pdf'),
-        $mime,
-        true,
-        ObjectStorageService::FOLDER_RESUMES
-      );
-    } catch (\Throwable) {
+    $fileName = (string) ($resume['fileName'] ?? 'resume.pdf');
+    $mime = $storage->guessMime($fileName !== '' ? $fileName : 'resume.pdf');
+    if ($mime === 'application/octet-stream') {
+      $mime = 'application/pdf';
+    }
+
+    $candidates = [];
+    $path = trim((string) ($resume['path'] ?? ''));
+    if ($path !== '') {
+      $candidates[] = $path;
+    }
+    $stored = basename((string) ($resume['storedName'] ?? ''));
+    if ($stored !== '') {
+      $candidates[] = $storage->uri(ObjectStorageService::FOLDER_RESUMES, $stored);
+    }
+    if ($candidates === []) {
       Response::notFound('Resume file missing.');
     }
+
+    foreach (array_values(array_unique($candidates)) as $candidate) {
+      try {
+        // Ensure JSON content-type from earlier middleware is not left in place.
+        if (!headers_sent()) {
+          header_remove('Content-Type');
+        }
+        $storage->streamWithFallback(
+          $candidate,
+          $fileName !== '' ? $fileName : 'resume.pdf',
+          $mime,
+          true,
+          ObjectStorageService::FOLDER_RESUMES
+        );
+      } catch (\Throwable) {
+        // Try the next candidate path.
+      }
+    }
+
+    Response::notFound('Resume file missing.');
   }
 
   /** POST /api/student/resumes/{id}/delete */
