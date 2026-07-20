@@ -246,7 +246,8 @@ final class Security
     {
         $exp = time() + max(60, $ttlSeconds);
         $payload = strtolower(trim($kind)) . '|' . trim($resourceId) . '|' . $exp;
-        $sig = hash_hmac('sha256', $payload, self::downloadSigningKey());
+        // 32-hex (128-bit) keeps Excel hyperlinks shorter / more reliable.
+        $sig = substr(hash_hmac('sha256', $payload, self::downloadSigningKey()), 0, 32);
 
         return ['exp' => $exp, 'sig' => $sig];
     }
@@ -254,13 +255,14 @@ final class Security
     public static function verifyDownload(string $kind, string $resourceId, mixed $exp, mixed $sig): bool
     {
         $expTs = (int) $exp;
-        $sigStr = trim((string) $sig);
+        $sigStr = strtolower(trim((string) $sig));
         if ($expTs < time() || $sigStr === '' || trim($resourceId) === '') {
             return false;
         }
         $payload = strtolower(trim($kind)) . '|' . trim($resourceId) . '|' . $expTs;
-        $expected = hash_hmac('sha256', $payload, self::downloadSigningKey());
+        $full = hash_hmac('sha256', $payload, self::downloadSigningKey());
+        $short = substr($full, 0, 32);
 
-        return hash_equals($expected, $sigStr);
+        return hash_equals($short, $sigStr) || hash_equals($full, $sigStr);
     }
 }

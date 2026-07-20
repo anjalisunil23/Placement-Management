@@ -411,6 +411,8 @@ $routes = [
     // Health & public
     ['GET', '/health',                  [PublicController::class, 'health']],
     ['GET', '/media/{folder}/{file}',   [PublicController::class, 'serveMedia']],
+    ['GET', '/public/report-resume/application/{id}/{exp}/{sig}', [PublicController::class, 'serveReportApplicationResume']],
+    ['GET', '/public/report-resume/student/{id}/{exp}/{sig}', [PublicController::class, 'serveReportStudentResume']],
     ['GET', '/public/report-resume/application/{id}', [PublicController::class, 'serveReportApplicationResume']],
     ['GET', '/public/report-resume/student/{id}', [PublicController::class, 'serveReportStudentResume']],
     ['GET', '/public/departments',      [PublicController::class, 'listDepartments']],

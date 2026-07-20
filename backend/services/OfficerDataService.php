@@ -419,9 +419,10 @@ final class OfficerDataService
      */
     public function streamApplicationResumeSigned(string $appId): void
     {
+        $appId = trim($appId);
         $app = (new ApplicationModel())->findById($appId);
         if (!$app) {
-            Response::notFound('Application not found.');
+            Response::notFound('Application not found for this resume link. Generate the report again.');
         }
         $this->streamResolvedApplicationResume($app, true);
     }

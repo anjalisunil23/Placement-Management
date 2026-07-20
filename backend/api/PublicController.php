@@ -264,13 +264,14 @@ final class PublicController
     }
 
     /**
-     * GET /api/public/report-resume/application/{id}?exp=&sig=
+     * GET /api/public/report-resume/application/{id}/{exp}/{sig}
+     * Also accepts ?exp=&sig= for older Excel links.
      * Time-limited link for Excel report resume cells (no login required).
      */
-    public function serveReportApplicationResume(string $id): void
+    public function serveReportApplicationResume(string $id, ?string $exp = null, ?string $sig = null): void
     {
-        $exp = $_GET['exp'] ?? '';
-        $sig = $_GET['sig'] ?? '';
+        $exp = $exp ?? (string) ($_GET['exp'] ?? '');
+        $sig = $sig ?? (string) ($_GET['sig'] ?? '');
         if (!Security::verifyDownload('application_resume', $id, $exp, $sig)) {
             Response::forbidden('This resume link is invalid or has expired. Generate the report again.');
         }
@@ -278,12 +279,12 @@ final class PublicController
     }
 
     /**
-     * GET /api/public/report-resume/student/{id}?exp=&sig=
+     * GET /api/public/report-resume/student/{id}/{exp}/{sig}
      */
-    public function serveReportStudentResume(string $id): void
+    public function serveReportStudentResume(string $id, ?string $exp = null, ?string $sig = null): void
     {
-        $exp = $_GET['exp'] ?? '';
-        $sig = $_GET['sig'] ?? '';
+        $exp = $exp ?? (string) ($_GET['exp'] ?? '');
+        $sig = $sig ?? (string) ($_GET['sig'] ?? '');
         if (!Security::verifyDownload('student_resume', $id, $exp, $sig)) {
             Response::forbidden('This resume link is invalid or has expired. Generate the report again.');
         }

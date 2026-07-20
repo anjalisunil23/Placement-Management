@@ -455,12 +455,13 @@ final class ReportService
         $token = Security::signDownload($kind, $resourceId, 2_592_000); // 30 days
         $pathKind = $kind === 'student_resume' ? 'student' : 'application';
 
+        // Path-based token (no ?query) — Excel hyperlinks handle this more reliably.
         return $appBase
             . '/backend/api/public/report-resume/'
             . $pathKind . '/'
-            . rawurlencode($resourceId)
-            . '?exp=' . rawurlencode((string) $token['exp'])
-            . '&sig=' . rawurlencode($token['sig']);
+            . rawurlencode($resourceId) . '/'
+            . rawurlencode((string) $token['exp']) . '/'
+            . rawurlencode($token['sig']);
     }
 
     /**
@@ -722,9 +723,7 @@ final class ReportService
         }
 
         $sheetName = $this->sanitizeSheetName($title !== '' ? $title : 'Report');
-        $built = $this->buildXlsxSheetWithLinks($headers, $rows);
-        $sheetXml = $built['sheet'];
-        $sheetRelsXml = $built['rels'];
+        $sheetXml = $this->buildXlsxSheetWithLinks($headers, $rows);
 
         $contentTypes = <<<'XML'
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -790,9 +789,6 @@ XML;
         $zip->addFromString('xl/_rels/workbook.xml.rels', $workbookRels);
         $zip->addFromString('xl/styles.xml', $styles);
         $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
-        if ($sheetRelsXml !== '') {
-            $zip->addFromString('xl/worksheets/_rels/sheet1.xml.rels', $sheetRelsXml);
-        }
         $zip->close();
     }
 
@@ -838,7 +834,8 @@ XML;
                 $cell = (string) ($row[$i] ?? '');
                 if ($this->isHttpUrl($cell)) {
                     $display = $this->hyperlinkDisplayText($cell);
-                    $xml .= '<Cell ss:StyleID="Hyperlink" ss:HRef="' . $esc($cell) . '"><Data ss:Type="String">'
+                    $formula = '=HYPERLINK("' . str_replace('"', '""', $cell) . '","' . str_replace('"', '""', $display) . '")';
+                    $xml .= '<Cell ss:StyleID="Hyperlink" ss:Formula="' . $esc($formula) . '"><Data ss:Type="String">'
                         . $esc($display) . '</Data></Cell>';
                 } else {
                     $type = is_numeric($cell) && !preg_match('/^0\d+/', $cell) ? 'Number' : 'String';
@@ -872,17 +869,14 @@ XML;
     /**
      * @param string[] $headers
      * @param array<int, string[]> $rows
-     * @return array{sheet: string, rels: string}
      */
-    private function buildXlsxSheetWithLinks(array $headers, array $rows): array
+    private function buildXlsxSheetWithLinks(array $headers, array $rows): string
     {
         $xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
-            . ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
             . '<sheetData>';
 
         $xml .= $this->xlsxRowXml(1, $headers, true, []);
-        $hyperlinks = [];
         $rowNum = 2;
         foreach ($rows as $row) {
             $cells = [];
@@ -895,38 +889,12 @@ XML;
                 }
             }
             $xml .= $this->xlsxRowXml($rowNum, $cells, false, $linkCols);
-            foreach ($linkCols as $colIndex => $url) {
-                $hyperlinks[] = [
-                    'ref' => $this->xlsxColumnLetter($colIndex + 1) . $rowNum,
-                    'url' => $url,
-                ];
-            }
             $rowNum++;
         }
 
-        $xml .= '</sheetData>';
+        $xml .= '</sheetData></worksheet>';
 
-        $rels = '';
-        if ($hyperlinks !== []) {
-            $xml .= '<hyperlinks>';
-            $rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
-            foreach ($hyperlinks as $i => $link) {
-                $rid = 'rId' . ($i + 1);
-                $xml .= '<hyperlink ref="' . htmlspecialchars($link['ref'], ENT_XML1 | ENT_QUOTES, 'UTF-8')
-                    . '" r:id="' . $rid . '"/>';
-                $rels .= '<Relationship Id="' . $rid . '"'
-                    . ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"'
-                    . ' Target="' . htmlspecialchars($link['url'], ENT_XML1 | ENT_QUOTES, 'UTF-8') . '"'
-                    . ' TargetMode="External"/>';
-            }
-            $xml .= '</hyperlinks>';
-            $rels .= '</Relationships>';
-        }
-
-        $xml .= '</worksheet>';
-
-        return ['sheet' => $xml, 'rels' => $rels];
+        return $xml;
     }
 
     /**
@@ -940,13 +908,25 @@ XML;
             $col = $this->xlsxColumnLetter($i + 1);
             $ref = $col . $rowNum;
             $isLink = !$header && isset($linkCols[$i]);
-            $display = $isLink ? $this->hyperlinkDisplayText((string) $value) : (string) $value;
+            if ($isLink) {
+                $url = (string) $value;
+                $display = $this->hyperlinkDisplayText($url);
+                $urlEsc = htmlspecialchars(str_replace('"', '""', $url), ENT_XML1 | ENT_QUOTES, 'UTF-8');
+                $labelEsc = htmlspecialchars(str_replace('"', '""', $display), ENT_XML1 | ENT_QUOTES, 'UTF-8');
+                $displayEsc = htmlspecialchars($display, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+                // HYPERLINK() formula is more reliable in Excel than relationship hyperlinks.
+                $xml .= '<c r="' . $ref . '" s="2">'
+                    . '<f>HYPERLINK("' . $urlEsc . '","' . $labelEsc . '")</f>'
+                    . '<v>' . $displayEsc . '</v>'
+                    . '</c>';
+                continue;
+            }
             $text = htmlspecialchars(
-                str_replace(["\r\n", "\r"], "\n", $display),
+                str_replace(["\r\n", "\r"], "\n", (string) $value),
                 ENT_XML1 | ENT_QUOTES,
                 'UTF-8'
             );
-            $style = $header ? ' s="1"' : ($isLink ? ' s="2"' : '');
+            $style = $header ? ' s="1"' : '';
             $xml .= '<c r="' . $ref . '" t="inlineStr"' . $style . '><is><t xml:space="preserve">'
                 . $text . '</t></is></c>';
         }
