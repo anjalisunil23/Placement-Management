@@ -98,16 +98,22 @@
   .drive-detail-meta span{display:inline-flex;align-items:flex-start;gap:.35rem}
   .drive-detail-branches{line-height:1.45}
   .apply-cert-list{
-    display:flex;flex-direction:column;gap:.35rem;
-    max-height:140px;overflow:auto;
-    border:1px solid var(--border,#e2e8f0);border-radius:8px;
-    padding:.35rem .5rem;background:var(--surface,#fff);
+    display:flex;flex-direction:column;gap:.65rem;
+    max-height:220px;overflow:auto;
   }
-  .apply-cert-item{
+  .apply-cert-tile{
+    border:1px solid var(--border,#e2e8f0);border-radius:10px;
+    padding:.75rem .85rem;background:var(--surface,#fff);
+    display:flex;flex-direction:column;gap:.55rem;
+  }
+  .apply-cert-tile-head{
     display:flex;align-items:center;justify-content:space-between;gap:.5rem;
-    font-size:.85rem;line-height:1.3;
   }
-  .apply-cert-item span{min-width:0;word-break:break-word}
+  .apply-cert-tile-head .title{
+    font-size:.82rem;font-weight:600;color:#334155;
+  }
+  .apply-cert-tile .file-picker{margin:0}
+  .apply-dob-age-row .form-control[readonly]{background:#f8fafc}
   .apply-resume-preview{
     border:1px solid var(--border,#e2e8f0);border-radius:10px;overflow:hidden;
     background:#f8fafc;min-height:280px;
@@ -345,14 +351,25 @@
       <embed id="applyResumePreviewFrame" type="application/pdf" class="d-none apply-resume-preview-embed" />
     </div>
 
-    <label class="form-label small fw-semibold mt-3">Certificates <span class="text-muted fw-normal">(optional)</span></label>
-    <div class="form-text mb-2">Add one or more certificates (PDF or image).</div>
-    <div id="applyCertList" class="apply-cert-list mb-2 d-none" aria-live="polite"></div>
-    <div class="file-picker">
-      <input type="file" id="applyCertificates" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple hidden/>
-      <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="applyCertificates"><i class="bi bi-upload me-1"></i>Add certificates</button>
-      <span class="file-picker-name text-muted-2 small" data-file-picker-name="applyCertificates">No files chosen</span>
+    <div class="row g-3 apply-dob-age-row mt-1 mb-1">
+      <div class="col-md-6">
+        <label class="form-label small fw-semibold" for="applyDob">Date of birth</label>
+        <input type="date" class="form-control" id="applyDob" autocomplete="bday"/>
+        <div class="form-text">Used to calculate your age automatically.</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small fw-semibold" for="applyAge">Age</label>
+        <input type="text" class="form-control" id="applyAge" readonly placeholder="—" tabindex="-1"/>
+      </div>
     </div>
+
+    <label class="form-label small fw-semibold mt-3">Certificates <span class="text-muted fw-normal">(optional)</span></label>
+    <div class="form-text mb-2">Add a tile for each certificate — enter a title and attach a PDF.</div>
+    <div id="applyCertList" class="apply-cert-list mb-2" aria-live="polite"></div>
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddCertificateTile">
+      <i class="bi bi-plus-lg me-1"></i>Add certificate
+    </button>
+    <input type="file" id="applyCertificateFileInput" accept=".pdf,application/pdf" hidden/>
 
     <div class="alert alert-info small mt-3 mb-0 d-none" id="applyResumeHint">Upload a resume in <a href="settings.html#resumes">Profile &amp; Resumes</a> before applying.</div>
 
@@ -500,7 +517,8 @@ let isStudent = false;
 let isStaff = false;
 let alumniSeeking = false;
 let pendingDrive = null;
-let applyCertificateFiles = [];
+let applyCertificateTiles = [];
+let applyCertPickIndex = -1;
 let allDrives = [];
 let editingDrive = null;
 let recruitmentResultRoundRows = [];
@@ -648,55 +666,142 @@ function removeDriveRoundRow(stateRefName, index) {
   renderDriveRoundsEditor(cfg.id, cfg.rows());
 }
 
-function certificateFileKey(file) {
-  return `${file?.name || ''}|${file?.size || 0}|${file?.lastModified || 0}`;
+function escapeApplyHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function ageFromDob(dobStr) {
+  const raw = String(dobStr || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+  const dob = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(dob.getTime())) return '';
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age -= 1;
+  if (age < 0 || age > 120) return '';
+  return String(age);
+}
+
+function syncApplyAgeFromDob() {
+  const dobEl = document.getElementById('applyDob');
+  const ageEl = document.getElementById('applyAge');
+  if (!ageEl) return;
+  ageEl.value = ageFromDob(dobEl?.value || '');
+}
+
+function resolveApplicantDob() {
+  const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+  const personal = (u.personal && typeof u.personal === 'object') ? u.personal : {};
+  const candidates = [
+    personal.dob,
+    u.dob,
+    u.dateOfBirth,
+    u.aesProfile?.dob,
+    u.aesProfile?.date_of_birth,
+  ];
+  for (const c of candidates) {
+    const raw = String(c || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const m = raw.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  }
+  return '';
+}
+
+function resetApplyDobAge() {
+  const dobEl = document.getElementById('applyDob');
+  if (dobEl) dobEl.value = resolveApplicantDob();
+  syncApplyAgeFromDob();
 }
 
 function renderApplyCertificateList() {
   const list = document.getElementById('applyCertList');
-  const nameEl = document.querySelector('[data-file-picker-name="applyCertificates"]');
   if (!list) return;
 
-  if (!applyCertificateFiles.length) {
-    list.innerHTML = '';
-    list.classList.add('d-none');
-    if (nameEl) {
-      nameEl.textContent = 'No files chosen';
-      nameEl.classList.remove('has-file');
-    }
+  if (!applyCertificateTiles.length) {
+    list.innerHTML = '<div class="small text-muted-2">No certificate tiles yet. Click “Add certificate” to create one.</div>';
     return;
   }
 
-  list.classList.remove('d-none');
-  list.innerHTML = applyCertificateFiles.map((file, index) => `
-    <div class="apply-cert-item">
-      <span><i class="bi bi-file-earmark-text me-1"></i>${file.name}</span>
-      <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-remove-cert="${index}" aria-label="Remove ${file.name}">Remove</button>
-    </div>`).join('');
+  list.innerHTML = applyCertificateTiles.map((tile, index) => {
+    const fileName = tile.file?.name || '';
+    return `
+    <div class="apply-cert-tile" data-cert-index="${index}">
+      <div class="apply-cert-tile-head">
+        <span class="title">Certificate ${index + 1}</span>
+        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-remove-cert="${index}" aria-label="Remove certificate ${index + 1}">Remove</button>
+      </div>
+      <div>
+        <label class="form-label small fw-semibold mb-1" for="applyCertTitle${index}">Title</label>
+        <input type="text" class="form-control form-control-sm" id="applyCertTitle${index}" data-cert-title="${index}"
+          placeholder="e.g. AWS Cloud Practitioner" value="${escapeApplyHtml(tile.title || '')}" maxlength="120"/>
+      </div>
+      <div class="file-picker">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-pick-cert="${index}">
+          <i class="bi bi-file-earmark-pdf me-1"></i>${fileName ? 'Change PDF' : 'Select PDF'}
+        </button>
+        <span class="file-picker-name text-muted-2 small ${fileName ? 'has-file' : ''}">${fileName ? escapeApplyHtml(fileName) : 'No PDF chosen'}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('[data-cert-title]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const idx = Number(input.getAttribute('data-cert-title'));
+      if (!Number.isFinite(idx) || !applyCertificateTiles[idx]) return;
+      applyCertificateTiles[idx].title = String(input.value || '').trim();
+    });
+  });
 
   list.querySelectorAll('[data-remove-cert]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const idx = Number(btn.getAttribute('data-remove-cert'));
       if (!Number.isFinite(idx)) return;
-      applyCertificateFiles.splice(idx, 1);
+      applyCertificateTiles.splice(idx, 1);
       renderApplyCertificateList();
     });
   });
 
-  if (nameEl) {
-    nameEl.textContent = applyCertificateFiles.length === 1
-      ? applyCertificateFiles[0].name
-      : `${applyCertificateFiles.length} files selected`;
-    nameEl.classList.add('has-file');
-  }
+  list.querySelectorAll('[data-pick-cert]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.getAttribute('data-pick-cert'));
+      if (!Number.isFinite(idx)) return;
+      applyCertPickIndex = idx;
+      const fileInput = document.getElementById('applyCertificateFileInput');
+      if (fileInput) {
+        fileInput.value = '';
+        fileInput.click();
+      }
+    });
+  });
+}
+
+function addCertificateTile() {
+  applyCertificateTiles.push({ title: '', file: null });
+  renderApplyCertificateList();
 }
 
 function resetApplyCertificates() {
-  applyCertificateFiles = [];
-  const certInput = document.getElementById('applyCertificates');
-  if (typeof resetFilePickers === 'function') resetFilePickers(['applyCertificates']);
-  else if (certInput) certInput.value = '';
+  applyCertificateTiles = [];
+  applyCertPickIndex = -1;
+  const certInput = document.getElementById('applyCertificateFileInput');
+  if (certInput) certInput.value = '';
   renderApplyCertificateList();
+}
+
+function collectApplyCertificateEntries() {
+  return applyCertificateTiles
+    .map((tile) => ({
+      title: String(tile.title || '').trim(),
+      file: tile.file || null,
+    }))
+    .filter((tile) => tile.file && tile.file.name);
 }
 
 function canApplyToDrives() {
@@ -2089,6 +2194,7 @@ window.openApply = async driveId => {
   const resumeHint = document.getElementById('applyResumeHint');
 
   resetApplyCertificates();
+  resetApplyDobAge();
 
   if (!resumes.length) {
     sel.innerHTML = '<option value="">No resumes found — upload one first</option>';
@@ -2287,17 +2393,32 @@ document.getElementById('driveDetailApplyBtn')?.addEventListener('click', () => 
   openApply(id);
 });
 
-document.getElementById('applyCertificates')?.addEventListener('change', () => {
-  const input = document.getElementById('applyCertificates');
-  const incoming = [...(input?.files || [])];
-  const seen = new Set(applyCertificateFiles.map(certificateFileKey));
-  incoming.forEach((file) => {
-    const key = certificateFileKey(file);
-    if (!seen.has(key)) {
-      seen.add(key);
-      applyCertificateFiles.push(file);
-    }
-  });
+document.getElementById('btnAddCertificateTile')?.addEventListener('click', () => {
+  addCertificateTile();
+});
+
+document.getElementById('applyDob')?.addEventListener('change', syncApplyAgeFromDob);
+document.getElementById('applyDob')?.addEventListener('input', syncApplyAgeFromDob);
+
+document.getElementById('applyCertificateFileInput')?.addEventListener('change', () => {
+  const input = document.getElementById('applyCertificateFileInput');
+  const file = input?.files?.[0] || null;
+  const idx = applyCertPickIndex;
+  applyCertPickIndex = -1;
+  if (!file || !Number.isFinite(idx) || !applyCertificateTiles[idx]) {
+    if (input) input.value = '';
+    return;
+  }
+  const ext = String(file.name || '').split('.').pop()?.toLowerCase() || '';
+  if (ext !== 'pdf' && file.type !== 'application/pdf') {
+    toast('Certificates must be PDF files.', 'warn');
+    if (input) input.value = '';
+    return;
+  }
+  applyCertificateTiles[idx].file = file;
+  if (!String(applyCertificateTiles[idx].title || '').trim()) {
+    applyCertificateTiles[idx].title = String(file.name || '').replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim();
+  }
   if (input) input.value = '';
   renderApplyCertificateList();
 });
@@ -2324,10 +2445,27 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
 
   if (!resumeId) { toast('Upload a resume for this job profile first.', 'warn'); return; }
 
-  const certFiles = [...applyCertificateFiles];
+  const incompleteTile = applyCertificateTiles.find((tile) => {
+    const hasTitle = String(tile.title || '').trim() !== '';
+    const hasFile = !!(tile.file && tile.file.name);
+    return hasTitle !== hasFile;
+  });
+  if (incompleteTile) {
+    toast('Each certificate tile needs both a title and a PDF, or leave both empty.', 'warn');
+    return;
+  }
+
+  const dob = String(document.getElementById('applyDob')?.value || '').trim();
+  if (dob && !ageFromDob(dob)) {
+    toast('Enter a valid date of birth.', 'warn');
+    return;
+  }
+
+  const certEntries = collectApplyCertificateEntries();
+  const extras = { dob };
   const app = alumniSeeking
-    ? await AlumniApps.apply(pendingDrive, resumeId, certFiles)
-    : await StudentApps.apply(pendingDrive, resumeId, certFiles);
+    ? await AlumniApps.apply(pendingDrive, resumeId, certEntries, extras)
+    : await StudentApps.apply(pendingDrive, resumeId, certEntries, extras);
   if (!app) return;
 
   bootstrap.Modal.getInstance(document.getElementById('applyModal')).hide();

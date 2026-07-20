@@ -456,6 +456,7 @@ final class AlumniController
     }
 
     $student = (new StudentModel())->findById($studentId) ?? $student;
+    $student = $uploads->applyDobToProfile($student, $input, new StudentModel());
     $resume = $uploads->resolveResume($input, $student, $studentId);
 
     try {
@@ -475,6 +476,20 @@ final class AlumniController
     }
     if ($certificates !== []) {
       $createData['certificates'] = $certificates;
+    }
+
+    $dob = trim((string) ($input['dob'] ?? ($student['personal']['dob'] ?? '')));
+    if ($dob !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
+      $createData['applicantDob'] = $dob;
+      try {
+        $born = new \DateTimeImmutable($dob);
+        $age = (int) $born->diff(new \DateTimeImmutable('today'))->y;
+        if ($age >= 0 && $age <= 120) {
+          $createData['applicantAge'] = $age;
+        }
+      } catch (\Throwable) {
+        // Age is optional metadata.
+      }
     }
 
     $appId = $appModel->createApplication($createData);

@@ -1068,6 +1068,7 @@ final class StudentController
     }
 
     $profile = $this->studentModel->findById($studentId) ?? $profile;
+    $profile = $uploads->applyDobToProfile($profile, $input, $this->studentModel);
     $resume = $uploads->resolveResume($input, $profile, $studentId);
 
     try {
@@ -1088,6 +1089,15 @@ final class StudentController
     }
     if ($certificates !== []) {
       $createData['certificates'] = $certificates;
+    }
+
+    $dob = trim((string) ($input['dob'] ?? ($profile['personal']['dob'] ?? '')));
+    if ($dob !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
+      $createData['applicantDob'] = $dob;
+      $age = $this->ageFromDob($dob);
+      if ($age !== null) {
+        $createData['applicantAge'] = $age;
+      }
     }
 
     $appId = $appModel->createApplication($createData);
@@ -1703,5 +1713,24 @@ final class StudentController
     $savedPaths[] = $path;
 
     return $path;
+  }
+
+  private function ageFromDob(string $dob): ?int
+  {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
+      return null;
+    }
+    try {
+      $born = new \DateTimeImmutable($dob);
+      $today = new \DateTimeImmutable('today');
+      $age = (int) $born->diff($today)->y;
+      if ($age < 0 || $age > 120) {
+        return null;
+      }
+
+      return $age;
+    } catch (\Throwable) {
+      return null;
+    }
   }
 }

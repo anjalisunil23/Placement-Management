@@ -1909,22 +1909,29 @@ const StudentApps = {
     this.save(mapped);
     return mapped;
   },
-  async apply(drive, resumeId, certificateFiles = []) {
+  async apply(drive, resumeId, certificateEntries = [], extras = {}) {
     if (this.hasApplied(drive.id)) return null;
     const resume = ResumeBucket.all().find(r => r.id === resumeId);
     const resumePath = this.resumePathForApply(resume);
-    const certs = Array.isArray(certificateFiles) ? certificateFiles.filter(f => f?.name) : [];
+    const entries = Array.isArray(certificateEntries)
+      ? certificateEntries.filter(e => e?.file?.name)
+      : [];
+    const dob = String(extras?.dob || '').trim();
 
     if (Auth.role() === 'student' && Auth.hasSession() && !Auth.isDemo()) {
       let res;
-      if (certs.length) {
+      if (entries.length || dob) {
         const form = new FormData();
         form.append('driveId', drive.id);
         form.append('resumeId', resumeId || '');
         form.append('resumeLabel', resume?.label || '');
         form.append('resumeFileName', resume?.fileName || '');
         form.append('resumePath', resumePath || '');
-        certs.forEach(file => form.append('certificates[]', file));
+        if (dob) form.append('dob', dob);
+        entries.forEach((entry) => {
+          form.append('certificates[]', entry.file);
+          form.append('certificateTitles[]', String(entry.title || '').trim());
+        });
         res = await apiFetch('/student/apply', { method: 'POST', body: form });
       } else {
         res = await api('/student/apply', {
@@ -2028,22 +2035,29 @@ const AlumniApps = {
     this.save(mapped);
     return mapped;
   },
-  async apply(drive, resumeId, certificateFiles = []) {
+  async apply(drive, resumeId, certificateEntries = [], extras = {}) {
     if (this.hasApplied(drive.id)) return null;
     if (Auth.role() !== 'alumni' || !Auth.hasRealAuth() || Auth.isDemo()) return null;
     const resume = ResumeBucket.all().find(r => r.id === resumeId);
     const resumePath = StudentApps.resumePathForApply(resume);
-    const certs = Array.isArray(certificateFiles) ? certificateFiles.filter(f => f?.name) : [];
+    const entries = Array.isArray(certificateEntries)
+      ? certificateEntries.filter(e => e?.file?.name)
+      : [];
+    const dob = String(extras?.dob || '').trim();
 
     let res;
-    if (certs.length) {
+    if (entries.length || dob) {
       const form = new FormData();
       form.append('driveId', drive.id);
       form.append('resumeId', resumeId || '');
       form.append('resumeLabel', resume?.label || '');
       form.append('resumeFileName', resume?.fileName || '');
       form.append('resumePath', resumePath || '');
-      certs.forEach(file => form.append('certificates[]', file));
+      if (dob) form.append('dob', dob);
+      entries.forEach((entry) => {
+        form.append('certificates[]', entry.file);
+        form.append('certificateTitles[]', String(entry.title || '').trim());
+      });
       res = await apiFetch('/alumni/apply', { method: 'POST', body: form });
     } else {
       res = await api('/alumni/apply', {

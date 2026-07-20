@@ -84,6 +84,12 @@ class ApplicationModel extends BaseModel
         if (!empty($data['certificates']) && is_array($data['certificates'])) {
             $doc['certificates'] = $data['certificates'];
         }
+        if (!empty($data['applicantDob'])) {
+            $doc['applicantDob'] = (string) $data['applicantDob'];
+        }
+        if (isset($data['applicantAge']) && is_numeric($data['applicantAge'])) {
+            $doc['applicantAge'] = (int) $data['applicantAge'];
+        }
         return $this->insert($doc);
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Models\ResumeModel;
+use PMS\Models\StudentModel;
 use PMS\Utils\Security;
 
 /**
@@ -83,11 +84,15 @@ final class ApplicationUploadService
         $allowed = Security::allowedCertificateExtensions();
         $maxSize = (int) ($config['uploads']['max_certificate'] ?? $config['uploads']['max_resume'] ?? 5242880);
         $files = $this->normalizeUploadedFiles($_FILES['certificates']);
+        $titles = $_POST['certificateTitles'] ?? $_POST['certificate_titles'] ?? [];
+        if (!is_array($titles)) {
+            $titles = [];
+        }
         $stored = [];
         $safeReg = preg_replace('/[^a-z0-9]/i', '', $registerNumber) ?: 'applicant';
         $storage = new ObjectStorageService($config);
 
-        foreach ($files as $file) {
+        foreach ($files as $index => $file) {
             if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
                 continue;
             }
@@ -108,14 +113,48 @@ final class ApplicationUploadService
                 throw new \RuntimeException('Failed to save certificate to S3: ' . $e->getMessage());
             }
 
+            $title = trim((string) ($titles[$index] ?? ''));
+            if ($title === '') {
+                $title = (string) pathinfo($original, PATHINFO_FILENAME);
+            }
+
             $stored[] = [
                 'fileName' => $original,
                 'path'     => $path,
-                'label'    => pathinfo($original, PATHINFO_FILENAME),
+                'label'    => $title,
             ];
         }
 
         return $stored;
+    }
+
+    /**
+     * Persist applicant DOB on the student profile when provided on apply.
+     *
+     * @param array<string, mixed> $profile
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function applyDobToProfile(array $profile, array $input, StudentModel $studentModel): array
+    {
+        $dob = trim((string) ($input['dob'] ?? ''));
+        if ($dob === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
+            return $profile;
+        }
+
+        $personal = is_array($profile['personal'] ?? null) ? $profile['personal'] : [];
+        if (($personal['dob'] ?? '') === $dob) {
+            return $profile;
+        }
+
+        $personal['dob'] = $dob;
+        $studentId = (string) ($profile['_id'] ?? '');
+        if ($studentId !== '') {
+            $studentModel->update($studentId, ['personal' => $personal]);
+            $profile['personal'] = $personal;
+        }
+
+        return $profile;
     }
 
     /**

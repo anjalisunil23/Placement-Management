@@ -187,7 +187,7 @@ final class Security
     /** @return string[] */
     public static function allowedCertificateExtensions(): array
     {
-        return ['pdf', 'png', 'jpg', 'jpeg', 'webp'];
+        return ['pdf'];
     }
 
     public static function validateUploadedFile(array $file, int $maxSize, array $allowedExtensions): ?string
