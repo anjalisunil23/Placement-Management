@@ -247,23 +247,56 @@ final class ReportService
     private function generateSelectionReport(ReportContext $ctx): array
     {
         $studentIds = $this->scopedStudentObjectIds($ctx);
-        $statuses = ['shortlisted', 'selected', 'rejected', 'company_review'];
-        $headers = ['Status', 'Count'];
+        $headers = ['Category', 'Status', 'Count', 'What this means'];
         $rows = [];
 
-        foreach ($statuses as $status) {
+        $applicationStatuses = [
+            'shortlisted' => [
+                'label' => 'Shortlisted',
+                'meaning' => 'Drive applications currently marked shortlisted',
+            ],
+            'selected' => [
+                'label' => 'Selected',
+                'meaning' => 'Drive applications currently marked selected by the company/officer flow',
+            ],
+            'rejected' => [
+                'label' => 'Rejected',
+                'meaning' => 'Drive applications currently marked rejected',
+            ],
+            'company_review' => [
+                'label' => 'Under company review',
+                'meaning' => 'Drive applications waiting in company review',
+            ],
+        ];
+
+        foreach ($applicationStatuses as $status => $meta) {
             $filter = ['status' => $status];
             if ($studentIds !== null) {
                 $filter['studentId'] = $studentIds === [] ? ['$in' => []] : ['$in' => $studentIds];
             }
-            $rows[] = [ucfirst(str_replace('_', ' ', $status)), (string) $this->applicationModel->count($filter)];
+            $rows[] = [
+                'Drive applications',
+                $meta['label'],
+                (string) $this->applicationModel->count($filter),
+                $meta['meaning'],
+            ];
         }
 
         $results = $this->scopedResults($ctx);
         $selected = count(array_filter($results, fn ($r) => ($r['status'] ?? '') === 'selected'));
         $rejected = count(array_filter($results, fn ($r) => ($r['status'] ?? '') === 'rejected'));
-        $rows[] = ['Results — Selected', (string) $selected];
-        $rows[] = ['Results — Rejected', (string) $rejected];
+        $rows[] = [
+            'Recruitment results registry',
+            'Selected',
+            (string) $selected,
+            'Outcomes saved in recruitment results as selected (separate from application status above)',
+        ];
+        $rows[] = [
+            'Recruitment results registry',
+            'Rejected',
+            (string) $rejected,
+            'Outcomes saved in recruitment results as rejected (separate from application status above)',
+        ];
 
         $title = 'Selection Count Report';
         if ($ctx->departmentId) {

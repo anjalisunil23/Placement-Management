@@ -215,38 +215,6 @@ final class EmailService
         return $result['ok'];
     }
 
-    /**
-     * @param string[] $recipients
-     */
-    public function sendReportToManagement(array $recipients, string $reportPath, string $reportType): void
-    {
-        $subject = "PMS {$reportType} Report — " . date('Y-m-d');
-        $body = "<p>Please find the attached {$reportType} placement report.</p>";
-        $localPath = $reportPath;
-        $temp = false;
-        if ($reportPath !== '' && !is_file($reportPath)) {
-            try {
-                $materialized = (new ObjectStorageService())->materialize($reportPath);
-                $localPath = $materialized['path'];
-                $temp = $materialized['temp'];
-            } catch (\Throwable) {
-                $localPath = '';
-            }
-        }
-        try {
-            foreach ($recipients as $email) {
-                if ($email === '') {
-                    continue;
-                }
-                $this->send($email, $subject, $body, true, ($localPath !== '' && is_file($localPath)) ? $localPath : null);
-            }
-        } finally {
-            if ($temp && $localPath !== '' && is_file($localPath)) {
-                @unlink($localPath);
-            }
-        }
-    }
-
     private function apiKey(): string
     {
         $key = trim((string) ($this->config['api_key'] ?? ''));

@@ -71,7 +71,7 @@ const REPORT_DEFS = [
   { type: 'company', title: 'Company Recruitment Report', desc: 'Company-wise hiring & selection count', icon: 'bi-building', badge: 'success' },
   { type: 'monthly', title: 'Monthly Placement Report', desc: 'Month-wise offers and activity', icon: 'bi-calendar-month', badge: 'warning' },
   { type: 'annual', title: 'Annual Placement Report', desc: 'FY summary for management', icon: 'bi-file-earmark-bar-graph', badge: 'primary' },
-  { type: 'selection', title: 'Selection Count Report', desc: 'Shortlisted vs selected breakdown', icon: 'bi-check2-square', badge: 'success' },
+  { type: 'selection', title: 'Selection Count Report', desc: 'Application status totals vs recruitment-result totals', icon: 'bi-check2-square', badge: 'success' },
 ];
 
 let reportCompanies = [];
@@ -123,11 +123,8 @@ function renderCards() {
         <h6 class="fw-bold mb-1">${r.title}</h6>
         <p class="text-muted-2 small mb-3">${r.desc}</p>
         <div class="d-flex gap-2 flex-wrap">
-          <button class="btn btn-sm btn-success" onclick="generateReport('${r.type}','xlsx')">
+          <button class="btn btn-sm btn-success" onclick="generateReport('${r.type}')">
             <i class="bi bi-file-earmark-excel me-1"></i>Download Excel
-          </button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','xlsx',true)">
-            <i class="bi bi-envelope me-1"></i>Email Excel
           </button>
         </div>
       </div>
@@ -250,7 +247,6 @@ async function generateCompanyApplicantsReport(companyId, companyName, cardEl) {
     ...filters,
     format: 'xlsx',
     companyId,
-    email: false,
   });
   if (btn) {
     btn.classList.remove('disabled');
@@ -275,7 +271,7 @@ async function generateCompanyApplicantsReport(companyId, companyName, cardEl) {
   }
 }
 
-async function generateReport(type, format = 'xlsx', email = false) {
+async function generateReport(type) {
   if (!(await Auth.ensureSession())) {
     toast(Auth.isDemo()
       ? 'Preview mode cannot generate reports. Sign in with your account first.'
@@ -285,11 +281,11 @@ async function generateReport(type, format = 'xlsx', email = false) {
   const btn = event?.currentTarget;
   if (btn) { btn.disabled = true; }
   const filters = reportFilters();
-  const res = await ReportCenter.generate(type, { ...filters, format: 'xlsx', email: !!email });
+  const res = await ReportCenter.generate(type, { ...filters, format: 'xlsx' });
   if (btn) { btn.disabled = false; }
   if (res.success) {
     toast(res.message || 'Report generated.', 'success');
-    if (res.data?.downloadUrl && !email) {
+    if (res.data?.downloadUrl) {
       try {
         await ReportCenter.downloadFile(
           res.data.downloadUrl,

@@ -1024,38 +1024,6 @@ final class AdminController
             Response::error($e->getMessage(), 400);
         }
 
-        if (!empty($input['email'])) {
-            $email = new EmailService();
-            $storage = new ObjectStorageService();
-            $uri = $storage->uri(ObjectStorageService::FOLDER_REPORTS, $result['filename']);
-            $tmpPath = null;
-            try {
-                $body = $storage->getContentsWithFallback($uri, ObjectStorageService::FOLDER_REPORTS);
-                $tmpPath = tempnam(sys_get_temp_dir(), 'pms_mail_');
-                if ($tmpPath === false) {
-                    throw new \RuntimeException('Unable to create temp attachment.');
-                }
-                $named = $tmpPath . '_' . $result['filename'];
-                @rename($tmpPath, $named);
-                $tmpPath = $named;
-                if (file_put_contents($tmpPath, $body) === false) {
-                    throw new \RuntimeException('Unable to write temp attachment.');
-                }
-                $recipients = array_filter([
-                    $_ENV['MAIL_FROM'] ?? 'admin@college.edu',
-                    $_ENV['MAIL_STAFF'] ?? '',
-                    $scope['user']['email'] ?? '',
-                ]);
-                $email->sendReportToManagement($recipients, $tmpPath, $result['title']);
-            } catch (\Throwable) {
-                // Report was generated; email attachment is best-effort.
-            } finally {
-                if (is_string($tmpPath) && $tmpPath !== '' && is_file($tmpPath)) {
-                    @unlink($tmpPath);
-                }
-            }
-        }
-
         Response::success($result, 'Report generated.');
     }
 
