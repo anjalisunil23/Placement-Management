@@ -476,22 +476,26 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         $profile = $this->getProfile($user);
-        $departmentId = trim((string) ($profile['departmentId'] ?? ''));
-        if ($departmentId === '') {
-            Response::error('Your staff profile has no department. Contact admin.', 422);
-        }
-        $department = (new DepartmentModel())->findById($departmentId);
-        if (!$department) {
-            Response::error('Your department could not be resolved.', 422);
-        }
-
         $input = !empty($_POST) ? $_POST : (json_decode(file_get_contents('php://input') ?: '{}', true) ?? []);
+
         $errors = Validator::validate($input, [
             'title'   => 'required',
             'company' => 'required',
         ]);
         if (!empty($errors)) {
             Response::error('Validation failed.', 422, $errors);
+        }
+
+        $departmentId = trim((string) ($input['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            $departmentId = trim((string) ($profile['departmentId'] ?? ''));
+        }
+        if ($departmentId === '') {
+            Response::error('Select a department for this job post.', 422);
+        }
+        $department = (new DepartmentModel())->findById($departmentId);
+        if (!$department) {
+            Response::error('Select a valid department for this job post.', 422);
         }
 
         $branchCodes = array_values(array_unique(array_filter(array_map(
