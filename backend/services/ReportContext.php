@@ -13,7 +13,7 @@ final class ReportContext
         public ?string $departmentId = null,
         public ?string $dateFrom = null,
         public ?string $dateTo = null,
-        public string $format = 'pdf',
+        public string $format = 'xlsx',
         public ?string $generatedBy = null,
         public int $month = 0,
         public int $year = 0,
@@ -33,13 +33,14 @@ final class ReportContext
     public static function fromInput(array $input, ?string $forcedDepartmentId = null, ?string $userId = null): self
     {
         $companyId = isset($input['companyId']) ? trim((string) $input['companyId']) : '';
+        $formatRaw = strtolower(trim((string) ($input['format'] ?? 'xlsx')));
+        // Reports are Excel-only.
+        $format = in_array($formatRaw, ['xlsx', 'excel', 'xls'], true) ? 'xlsx' : 'xlsx';
         return new self(
             departmentId: $forcedDepartmentId ?: (isset($input['departmentId']) ? (string) $input['departmentId'] : null),
             dateFrom: isset($input['dateFrom']) ? (string) $input['dateFrom'] : null,
             dateTo: isset($input['dateTo']) ? (string) $input['dateTo'] : null,
-            format: in_array($input['format'] ?? 'pdf', ['pdf', 'csv', 'xlsx', 'excel'], true)
-                ? (string) (($input['format'] === 'excel') ? 'xlsx' : $input['format'])
-                : 'pdf',
+            format: $format,
             generatedBy: $userId,
             month: (int) ($input['month'] ?? date('n')),
             year: (int) ($input['year'] ?? date('Y')),

@@ -15,7 +15,7 @@ use PMS\Utils\Security;
 use TCPDF;
 
 /**
- * PDF / CSV / Excel report generation — campus-wide or department-scoped.
+ * Excel report generation — campus-wide or department-scoped.
  */
 final class ReportService
 {
@@ -249,10 +249,8 @@ final class ReportService
      */
     private function generateApplicantsReport(ReportContext $ctx): array
     {
-        // Prefer Excel/CSV so Excel opens the roster cleanly; PDF still supported.
-        if (!in_array($ctx->format, ['csv', 'pdf', 'xlsx'], true)) {
-            $ctx->format = 'xlsx';
-        }
+        // Applicants roster is Excel-only.
+        $ctx->format = 'xlsx';
 
         $company = null;
         $companyName = '';
@@ -530,12 +528,9 @@ final class ReportService
     {
         $config = require dirname(__DIR__) . '/config/app.php';
 
-        $ext = match ($ctx->format) {
-            'csv' => 'csv',
-            'xlsx', 'excel' => 'xlsx',
-            default => 'pdf',
-        };
-        if ($ext === 'xlsx' && !class_exists(\ZipArchive::class)) {
+        // Reports download as Excel only.
+        $ext = 'xlsx';
+        if (!class_exists(\ZipArchive::class)) {
             // Servers without ext-zip still get an Excel-compatible workbook.
             $ext = 'xls';
         }
@@ -549,15 +544,10 @@ final class ReportService
         $uri = '';
 
         try {
-            if ($ext === 'csv') {
-                $this->writeCsv($path, $headers, $rows);
-            } elseif ($ext === 'xlsx') {
+            if ($ext === 'xlsx') {
                 $this->writeXlsx($path, $title, $headers, $rows);
-            } elseif ($ext === 'xls') {
-                $this->writeExcelXml($path, $title, $headers, $rows);
             } else {
-                $html = $this->buildTableHtml($title, $headers, $rows, $ctx);
-                $this->writePdf($path, $html, $title);
+                $this->writeExcelXml($path, $title, $headers, $rows);
             }
 
             $storage = new ObjectStorageService($config);

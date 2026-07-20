@@ -26,7 +26,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Reports Center</h1>
-    <p class="page-sub" id="repSub">Generate, download and email placement reports from live database records.</p>
+    <p class="page-sub" id="repSub">Generate and download placement reports as Excel from live database records.</p>
   </div>
   <div class="d-flex gap-2 flex-wrap align-items-center">
     <input type="month" class="form-control" id="filterMonth" style="width:auto" title="Month for monthly reports"/>
@@ -123,17 +123,11 @@ function renderCards() {
         <h6 class="fw-bold mb-1">${r.title}</h6>
         <p class="text-muted-2 small mb-3">${r.desc}</p>
         <div class="d-flex gap-2 flex-wrap">
-          <button class="btn btn-sm btn-primary" onclick="generateReport('${r.type}','pdf')">
-            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-          </button>
           <button class="btn btn-sm btn-success" onclick="generateReport('${r.type}','xlsx')">
-            <i class="bi bi-file-earmark-excel me-1"></i>Excel
+            <i class="bi bi-file-earmark-excel me-1"></i>Download Excel
           </button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','csv')">
-            <i class="bi bi-filetype-csv me-1"></i>CSV
-          </button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','pdf',true)">
-            <i class="bi bi-envelope me-1"></i>Email
+          <button class="btn btn-sm btn-outline-secondary" onclick="generateReport('${r.type}','xlsx',true)">
+            <i class="bi bi-envelope me-1"></i>Email Excel
           </button>
         </div>
       </div>
@@ -274,7 +268,7 @@ async function generateCompanyApplicantsReport(companyId, companyName, cardEl) {
   }
 }
 
-async function generateReport(type, format, email = false) {
+async function generateReport(type, format = 'xlsx', email = false) {
   if (!(await Auth.ensureSession())) {
     toast(Auth.isDemo()
       ? 'Preview mode cannot generate reports. Sign in with your account first.'
@@ -284,7 +278,7 @@ async function generateReport(type, format, email = false) {
   const btn = event?.currentTarget;
   if (btn) { btn.disabled = true; }
   const filters = reportFilters();
-  const res = await ReportCenter.generate(type, { ...filters, format, email: !!email });
+  const res = await ReportCenter.generate(type, { ...filters, format: 'xlsx', email: !!email });
   if (btn) { btn.disabled = false; }
   if (res.success) {
     toast(res.message || 'Report generated.', 'success');
