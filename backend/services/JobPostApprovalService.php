@@ -39,12 +39,23 @@ final class JobPostApprovalService
      */
     public function listPending(array $ctx): array
     {
-        $rows = $this->posts->findAll(['status' => 'pending'], 300);
+        $all = $this->posts->findAll([], 500);
+        $rows = array_values(array_filter($all, static function (array $post): bool {
+            $status = strtolower((string) ($post['status'] ?? ''));
+            $driveId = trim((string) ($post['driveId'] ?? ''));
+            if ($driveId !== '') {
+                return false;
+            }
+            return in_array($status, ['pending', 'open', 'reviewing'], true);
+        }));
         if (!$ctx['isAdmin']) {
             $deptId = (string) ($ctx['departmentId'] ?? '');
             $rows = array_values(array_filter(
                 $rows,
-                static fn (array $post): bool => (string) ($post['departmentId'] ?? '') === $deptId
+                static function (array $post) use ($deptId): bool {
+                    $postDept = (string) ($post['departmentId'] ?? '');
+                    return $postDept === '' || $postDept === $deptId;
+                }
             ));
         }
 
@@ -56,28 +67,54 @@ final class JobPostApprovalService
     }
 
     /**
+     * Approve an alumni/staff job post or a company job and publish it as a drive.
+     *
      * @param array<string, mixed> $reviewer
      * @param array{isAdmin:bool,departmentId:?string,department:?array} $ctx
      * @return array<string, mixed>
      */
-    public function approve(string $postId, array $reviewer, array $ctx): array
+    public function approve(string $postId, array $reviewer, array $ctx, ?string $departmentIdOverride = null): array
     {
-        $post = $this->requirePost($postId);
-        $this->assertCanReview($post, $ctx);
+        if (!Security::isValidId($postId)) {
+            Response::error('Invalid job post id.', 400);
+        }
 
-        if (strtolower((string) ($post['status'] ?? '')) !== 'pending') {
-            Response::error('Only pending job posts can be approved.', 422);
+        $alumniPost = $this->posts->findById($postId);
+        if ($alumniPost) {
+            return $this->approveAlumniOrStaffPost($alumniPost, $reviewer, $ctx, $departmentIdOverride);
+        }
+
+        $companyJob = (new \PMS\Models\JobModel())->findById($postId);
+        if ($companyJob) {
+            return $this->approveCompanyJob($companyJob, $reviewer, $ctx, $departmentIdOverride);
+        }
+
+        Response::notFound('Job post not found.');
+    }
+
+    /**
+     * @param array<string, mixed> $post
+     * @param array<string, mixed> $reviewer
+     * @param array{isAdmin:bool,departmentId:?string,department:?array} $ctx
+     * @return array<string, mixed>
+     */
+    private function approveAlumniOrStaffPost(array $post, array $reviewer, array $ctx, ?string $departmentIdOverride): array
+    {
+        $this->assertCanReview($post, $ctx, $departmentIdOverride);
+
+        $status = strtolower((string) ($post['status'] ?? ''));
+        if (!in_array($status, ['pending', 'open', 'reviewing'], true)) {
+            Response::error('This job post cannot be approved.', 422);
         }
 
         if (!empty($post['driveId'])) {
             Response::error('This job post is already linked to a drive.', 409);
         }
 
-        $departmentId = (string) ($post['departmentId'] ?? '');
-        $department = $departmentId !== '' ? $this->departments->findById($departmentId) : null;
-        if (!$department) {
-            Response::error('Job post is missing a valid department.', 422);
-        }
+        $resolved = $this->resolveDepartmentForPublish($post, $ctx, $departmentIdOverride);
+        $departmentId = $resolved['departmentId'];
+        $department = $resolved['department'];
+        $branchCodes = $resolved['branchCodes'];
 
         $companyName = trim((string) ($post['company'] ?? ''));
         if ($companyName === '') {
@@ -85,13 +122,16 @@ final class JobPostApprovalService
         }
 
         $companyId = $this->resolveOrCreateCompany($companyName);
-        $branchCodes = $this->departmentBranchCodes($department);
         $title = trim((string) ($post['title'] ?? 'Job opening'));
         $date = date('Y-m-d');
         $time = '10:00';
         $eligibility = is_array($post['eligibility'] ?? null) ? $post['eligibility'] : [];
-        $eligibility['branches'] = $branchCodes;
-        $eligibility['departments'] = [$departmentId];
+        if ($branchCodes !== []) {
+            $eligibility['branches'] = $branchCodes;
+        }
+        if ($departmentId !== '') {
+            $eligibility['departments'] = [$departmentId];
+        }
 
         $dup = $this->drives->findDuplicateDrive($companyId, $title, $date, null, $departmentId);
         if ($dup !== null) {
@@ -111,7 +151,7 @@ final class JobPostApprovalService
             'branches' => $branchCodes,
             'eligibility' => $eligibility,
             'tier' => 'Tier 2',
-            'departmentId' => $departmentId,
+            'departmentId' => $departmentId !== '' ? $departmentId : null,
             'jdFile' => null,
         ];
         if (!empty($post['posterUrl']) && ($post['posterType'] ?? '') === 'pdf') {
@@ -120,22 +160,21 @@ final class JobPostApprovalService
 
         $reviewerId = (string) ($reviewer['_id'] ?? '');
         $driveId = $this->drives->createDrive($driveInput, $reviewerId);
+        $postId = (string) ($post['_id'] ?? '');
 
-        $this->posts->update($postId, [
+        $patch = [
             'status' => 'open',
             'driveId' => Security::toObjectId($driveId),
             'approvedBy' => $reviewerId !== '' ? Security::toObjectId($reviewerId) : null,
             'approvedAt' => DocumentHelper::now(),
             'rejectedReason' => '',
-        ]);
+        ];
+        if ($departmentId !== '' && empty($post['departmentId'])) {
+            $patch['departmentId'] = Security::toObjectId($departmentId);
+        }
+        $this->posts->update($postId, $patch);
 
-        $studentIds = PlacementOfficerContext::userIdsInDepartment([
-            'isAdmin' => false,
-            'departmentId' => $departmentId,
-            'department' => $department,
-            'profile' => null,
-        ]);
-        $this->notifications->announceDrive($title, $date, $studentIds !== [] ? $studentIds : null);
+        $this->announcePublishedDrive($title, $date, $departmentId, $department);
 
         $ownerId = (string) ($post['ownerUserId'] ?? $post['alumniUserId'] ?? '');
         if ($ownerId !== '' && Security::isValidId($ownerId)) {
@@ -151,8 +190,175 @@ final class JobPostApprovalService
         $updated = $this->posts->findById($postId) ?? $post;
         return [
             'driveId' => $driveId,
+            'sourceType' => strtolower((string) ($post['sourceType'] ?? 'alumni')),
             'post' => $this->serializePost($updated),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @param array<string, mixed> $reviewer
+     * @param array{isAdmin:bool,departmentId:?string,department:?array} $ctx
+     * @return array<string, mixed>
+     */
+    private function approveCompanyJob(array $job, array $reviewer, array $ctx, ?string $departmentIdOverride): array
+    {
+        if (empty($ctx['isAdmin']) && empty($ctx['departmentId'])) {
+            Response::forbidden('Placement officer access required.');
+        }
+
+        if (!empty($job['driveId'])) {
+            Response::error('This job is already linked to a drive.', 409);
+        }
+
+        $status = strtolower((string) ($job['status'] ?? 'open'));
+        if (!in_array($status, ['open', 'ongoing', 'reviewing', 'pending'], true)) {
+            Response::error('This job cannot be published as a drive.', 422);
+        }
+
+        $resolved = $this->resolveDepartmentForPublish($job, $ctx, $departmentIdOverride);
+        $departmentId = $resolved['departmentId'];
+        $department = $resolved['department'];
+        $branchCodes = $resolved['branchCodes'];
+        if ($branchCodes === []) {
+            $eligibility = is_array($job['eligibility'] ?? null) ? $job['eligibility'] : [];
+            $rawBranches = $eligibility['branches'] ?? $job['branches'] ?? [];
+            if (is_string($rawBranches)) {
+                $rawBranches = preg_split('/[,;]+/', $rawBranches) ?: [];
+            }
+            if (is_array($rawBranches)) {
+                $branchCodes = array_values(array_unique(array_filter(array_map(
+                    static fn (mixed $v): string => strtoupper(trim((string) $v)),
+                    $rawBranches
+                ))));
+            }
+        }
+
+        $companyId = (string) ($job['companyId'] ?? '');
+        if ($companyId === '' || !$this->companies->findById($companyId)) {
+            $companyName = trim((string) ($job['companyName'] ?? ''));
+            if ($companyName === '') {
+                Response::error('Company job is missing a valid company.', 422);
+            }
+            $companyId = $this->resolveOrCreateCompany($companyName);
+        }
+
+        $title = trim((string) ($job['title'] ?? 'Job opening'));
+        $date = date('Y-m-d');
+        $time = '10:00';
+        $eligibility = is_array($job['eligibility'] ?? null) ? $job['eligibility'] : [];
+        if ($branchCodes !== []) {
+            $eligibility['branches'] = $branchCodes;
+        }
+        if ($departmentId !== '') {
+            $eligibility['departments'] = [$departmentId];
+        }
+
+        $dup = $this->drives->findDuplicateDrive($companyId, $title, $date, null, $departmentId);
+        if ($dup !== null) {
+            Response::error(
+                'A drive for this company, role, and date already exists for this department.',
+                409,
+                ['existingId' => (string) ($dup['_id'] ?? '')]
+            );
+        }
+
+        $driveInput = [
+            'title' => $title,
+            'companyId' => $companyId,
+            'type' => 'direct',
+            'date' => $date,
+            'time' => $time,
+            'branches' => $branchCodes,
+            'eligibility' => $eligibility,
+            'tier' => 'Tier 2',
+            'departmentId' => $departmentId !== '' ? $departmentId : null,
+            'jdFile' => $job['jdFile'] ?? null,
+        ];
+        if (empty($driveInput['jdFile']) && !empty($job['posterUrl']) && ($job['posterType'] ?? '') === 'pdf') {
+            $driveInput['jdFile'] = (string) $job['posterUrl'];
+        }
+
+        $reviewerId = (string) ($reviewer['_id'] ?? '');
+        $driveId = $this->drives->createDrive($driveInput, $reviewerId);
+        $jobId = (string) ($job['_id'] ?? '');
+        (new \PMS\Models\JobModel())->update($jobId, [
+            'driveId' => Security::toObjectId($driveId),
+            'status' => 'open',
+        ]);
+
+        $this->announcePublishedDrive($title, $date, $departmentId, $department);
+
+        return [
+            'driveId' => $driveId,
+            'sourceType' => 'company',
+            'post' => [
+                'id' => $jobId,
+                'title' => $title,
+                'driveId' => $driveId,
+                'status' => 'open',
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @param array{isAdmin:bool,departmentId:?string,department:?array} $ctx
+     * @return array{departmentId:string,department:?array,branchCodes:string[]}
+     */
+    private function resolveDepartmentForPublish(array $item, array $ctx, ?string $departmentIdOverride): array
+    {
+        $override = trim((string) ($departmentIdOverride ?? ''));
+        $fromItem = trim((string) ($item['departmentId'] ?? ''));
+        if ($fromItem === '') {
+            $eligibility = is_array($item['eligibility'] ?? null) ? $item['eligibility'] : [];
+            $deps = $eligibility['departments'] ?? [];
+            if (is_array($deps) && isset($deps[0])) {
+                $fromItem = trim((string) $deps[0]);
+            }
+        }
+
+        $departmentId = $override !== '' ? $override : $fromItem;
+        if ($departmentId === '' && empty($ctx['isAdmin'])) {
+            $departmentId = trim((string) ($ctx['departmentId'] ?? ''));
+        }
+
+        if ($departmentId === '') {
+            if (!empty($ctx['isAdmin'])) {
+                return ['departmentId' => '', 'department' => null, 'branchCodes' => []];
+            }
+            Response::error('Select a department before publishing this job as a drive.', 422);
+        }
+
+        if (empty($ctx['isAdmin']) && (string) ($ctx['departmentId'] ?? '') !== $departmentId) {
+            Response::forbidden('You can only publish drives for your department.');
+        }
+
+        $department = $this->departments->findById($departmentId);
+        if (!$department) {
+            Response::error('Selected department is invalid.', 422);
+        }
+
+        return [
+            'departmentId' => $departmentId,
+            'department' => $department,
+            'branchCodes' => $this->departmentBranchCodes($department),
+        ];
+    }
+
+    private function announcePublishedDrive(string $title, string $date, string $departmentId, ?array $department): void
+    {
+        if ($departmentId === '' || $department === null) {
+            $this->notifications->announceDrive($title, $date, null);
+            return;
+        }
+        $studentIds = PlacementOfficerContext::userIdsInDepartment([
+            'isAdmin' => false,
+            'departmentId' => $departmentId,
+            'department' => $department,
+            'profile' => null,
+        ]);
+        $this->notifications->announceDrive($title, $date, $studentIds !== [] ? $studentIds : null);
     }
 
     /**
@@ -165,8 +371,9 @@ final class JobPostApprovalService
         $post = $this->requirePost($postId);
         $this->assertCanReview($post, $ctx);
 
-        if (strtolower((string) ($post['status'] ?? '')) !== 'pending') {
-            Response::error('Only pending job posts can be rejected.', 422);
+        $status = strtolower((string) ($post['status'] ?? ''));
+        if (!in_array($status, ['pending', 'open', 'reviewing'], true) || !empty($post['driveId'])) {
+            Response::error('Only unpublished job posts can be rejected.', 422);
         }
 
         $reason = trim($reason);
@@ -244,14 +451,26 @@ final class JobPostApprovalService
      * @param array<string, mixed> $post
      * @param array{isAdmin:bool,departmentId:?string} $ctx
      */
-    private function assertCanReview(array $post, array $ctx): void
+    private function assertCanReview(array $post, array $ctx, ?string $departmentIdOverride = null): void
     {
         if (!empty($ctx['isAdmin'])) {
             return;
         }
-        $postDept = (string) ($post['departmentId'] ?? '');
         $officerDept = (string) ($ctx['departmentId'] ?? '');
-        if ($postDept === '' || $officerDept === '' || $postDept !== $officerDept) {
+        if ($officerDept === '') {
+            Response::forbidden('You can only review job posts for your department.');
+        }
+        $postDept = trim((string) ($post['departmentId'] ?? ''));
+        $override = trim((string) ($departmentIdOverride ?? ''));
+        if ($postDept === '' || $postDept === $officerDept) {
+            if ($override === '' || $override === $officerDept) {
+                return;
+            }
+        }
+        if ($postDept !== '' && $postDept !== $officerDept) {
+            Response::forbidden('You can only review job posts for your department.');
+        }
+        if ($override !== '' && $override !== $officerDept) {
             Response::forbidden('You can only review job posts for your department.');
         }
     }

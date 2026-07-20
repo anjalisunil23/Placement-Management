@@ -1152,7 +1152,14 @@ final class AdminController
     {
         $admin = RBACMiddleware::requireAdmin();
         $ctx = PlacementOfficerContext::resolve($admin);
-        $result = (new \PMS\Services\JobPostApprovalService())->approve($id, $admin, $ctx);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $departmentId = trim((string) ($input['departmentId'] ?? ''));
+        $result = (new \PMS\Services\JobPostApprovalService())->approve(
+            $id,
+            $admin,
+            $ctx,
+            $departmentId !== '' ? $departmentId : null
+        );
         Response::success($result, 'Job post approved and published as a drive.');
     }
 

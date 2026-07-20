@@ -690,7 +690,14 @@ final class OfficerController
     {
         $user = RBACMiddleware::requirePlacementOfficer();
         $ctx = PlacementOfficerContext::resolve($user);
-        $result = (new \PMS\Services\JobPostApprovalService())->approve($id, $user, $ctx);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $departmentId = trim((string) ($input['departmentId'] ?? ''));
+        $result = (new \PMS\Services\JobPostApprovalService())->approve(
+            $id,
+            $user,
+            $ctx,
+            $departmentId !== '' ? $departmentId : null
+        );
         Response::success($result, 'Job post approved and published as a drive.');
     }
 
