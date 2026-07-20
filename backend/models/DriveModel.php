@@ -97,6 +97,7 @@ class DriveModel extends BaseModel
             'eligibility' => $data['eligibility'] ?? [],
             'selectionRounds' => self::normalizeSelectionRounds($data['selectionRounds'] ?? []),
             'roundProgression' => self::normalizeRoundProgression($data['roundProgression'] ?? null),
+            'applicationFields' => self::normalizeApplicationFields($data['applicationFields'] ?? []),
             'tier'        => $data['tier'] ?? 'Tier 2',
             'jdFile'      => $data['jdFile'] ?? null,
             'attendance'  => [],
@@ -177,6 +178,60 @@ class DriveModel extends BaseModel
         }
         // Existing drives without a value keep independent behaviour.
         return 'parallel';
+    }
+
+    /**
+     * Extra text fields students fill when applying to this drive.
+     *
+     * @param mixed $raw
+     * @return list<array{id:string,title:string,required:bool}>
+     */
+    public static function normalizeApplicationFields(mixed $raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $out = [];
+        $seen = [];
+        $n = 1;
+        foreach ($raw as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $title = trim((string) ($row['title'] ?? $row['label'] ?? $row['name'] ?? ''));
+            if ($title === '') {
+                continue;
+            }
+            $id = trim((string) ($row['id'] ?? ''));
+            if ($id === '' || !preg_match('/^[a-zA-Z0-9_-]{1,40}$/', $id)) {
+                $id = 'field_' . $n;
+            }
+            if (isset($seen[$id])) {
+                $id = $id . '_' . $n;
+            }
+            $seen[$id] = true;
+            $requiredRaw = $row['required'] ?? false;
+            $required = $requiredRaw === true
+                || $requiredRaw === 1
+                || $requiredRaw === '1'
+                || strtolower((string) $requiredRaw) === 'true';
+            $out[] = [
+                'id' => $id,
+                'title' => mb_substr($title, 0, 120),
+                'required' => $required,
+            ];
+            $n++;
+            if ($n > 20) {
+                break;
+            }
+        }
+
+        return $out;
     }
 
     public function markAttendance(string $driveId, string $studentId, bool $present): bool

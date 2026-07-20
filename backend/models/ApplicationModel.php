@@ -90,6 +90,9 @@ class ApplicationModel extends BaseModel
         if (isset($data['applicantAge']) && is_numeric($data['applicantAge'])) {
             $doc['applicantAge'] = (int) $data['applicantAge'];
         }
+        if (!empty($data['customAnswers']) && is_array($data['customAnswers'])) {
+            $doc['customAnswers'] = $data['customAnswers'];
+        }
         return $this->insert($doc);
     }
 

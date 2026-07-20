@@ -254,6 +254,9 @@ final class OfficerController
         if (array_key_exists('roundProgression', $input)) {
             $input['roundProgression'] = DriveModel::normalizeRoundProgression($input['roundProgression']);
         }
+        if (array_key_exists('applicationFields', $input)) {
+            $input['applicationFields'] = DriveModel::normalizeApplicationFields($input['applicationFields']);
+        }
 
         $id = (new DriveModel())->createDrive($input, (string) $user['_id']);
 
@@ -405,7 +408,7 @@ final class OfficerController
                 $input['branches'] = array_values(array_filter(array_map('trim', explode(',', $input['branches']))));
             }
         }
-        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','roundProgression','tier','jdFile','status','departmentId'];
+        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','roundProgression','applicationFields','tier','jdFile','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
         if (isset($update['eligibility']) && is_array($update['eligibility'])) {
             $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);
@@ -415,6 +418,9 @@ final class OfficerController
         }
         if (array_key_exists('roundProgression', $update)) {
             $update['roundProgression'] = DriveModel::normalizeRoundProgression($update['roundProgression']);
+        }
+        if (array_key_exists('applicationFields', $update)) {
+            $update['applicationFields'] = DriveModel::normalizeApplicationFields($update['applicationFields']);
         }
 
         // For placement officers, keep drive scoped to their department

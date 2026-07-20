@@ -103,6 +103,7 @@ const OfficerApi = {
       eligibility: { ...elig, package: pkg, deadline, jobType, mode, location, minCgpa, maxBacklogs },
       selectionRounds: Array.isArray(d.selectionRounds) ? d.selectionRounds : [],
       roundProgression: String(d.roundProgression || 'parallel').toLowerCase() === 'sequential' ? 'sequential' : 'parallel',
+      applicationFields: Array.isArray(d.applicationFields) ? d.applicationFields : [],
       status,
       statusCls: { Open: 'success', Ongoing: 'info', Completed: 'primary', Closed: 'muted' }[status] || 'muted',
       applied: d.applied ?? 0,

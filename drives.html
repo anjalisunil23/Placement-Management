@@ -267,6 +267,13 @@
             <div class="col-md-6"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" name="deadline"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Mode</label><select class="form-select" name="mode"><option>On-campus</option><option>Virtual</option><option>Hybrid</option></select></div>
           </div>
+
+          <h6 class="fw-bold mb-2 mt-4">Additional application fields <span class="text-muted fw-normal small">(optional)</span></h6>
+          <p class="small text-muted-2 mb-2">Add custom title + textbox fields students must fill when applying to this drive.</p>
+          <div id="createApplicationFields" class="d-flex flex-column gap-2 mb-2"></div>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddCreateAppField">
+            <i class="bi bi-plus-lg me-1"></i>Add field
+          </button>
         </div>
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -318,6 +325,15 @@
 
         <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="editDescription" rows="3"></textarea></div>
 
+        <div class="col-12">
+          <h6 class="fw-bold mb-2 mt-1">Additional application fields <span class="text-muted fw-normal small">(optional)</span></h6>
+          <p class="small text-muted-2 mb-2">Students see these title + textbox fields when applying.</p>
+          <div id="editApplicationFields" class="d-flex flex-column gap-2 mb-2"></div>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddEditAppField">
+            <i class="bi bi-plus-lg me-1"></i>Add field
+          </button>
+        </div>
+
       </div>
 
     </div>
@@ -361,6 +377,11 @@
         <label class="form-label small fw-semibold" for="applyAge">Age</label>
         <input type="text" class="form-control" id="applyAge" readonly placeholder="—" tabindex="-1"/>
       </div>
+    </div>
+
+    <div id="applyCustomFieldsWrap" class="d-none mt-3">
+      <label class="form-label small fw-semibold mb-2">Additional details</label>
+      <div id="applyCustomFields" class="d-flex flex-column gap-2"></div>
     </div>
 
     <label class="form-label small fw-semibold mt-3">Certificates <span class="text-muted fw-normal">(optional)</span></label>
@@ -519,6 +540,8 @@ let alumniSeeking = false;
 let pendingDrive = null;
 let applyCertificateTiles = [];
 let applyCertPickIndex = -1;
+let createApplicationFieldRows = [];
+let editApplicationFieldRows = [];
 let allDrives = [];
 let editingDrive = null;
 let recruitmentResultRoundRows = [];
@@ -664,6 +687,108 @@ function removeDriveRoundRow(stateRefName, index) {
   const next = cfg.rows().filter((_, i) => i !== index);
   cfg.set(next.map((r, i) => ({ ...r, order: i + 1 })));
   renderDriveRoundsEditor(cfg.id, cfg.rows());
+}
+
+function normalizeApplicationFieldRows(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  return list.map((row, i) => ({
+    id: String(row?.id || `field_${i + 1}`).trim() || `field_${i + 1}`,
+    title: String(row?.title || row?.label || '').trim(),
+    required: !!(row?.required),
+  })).filter(row => row.title);
+}
+
+function renderApplicationFieldsEditor(containerId, rows, { onChange } = {}) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    el.innerHTML = '<div class="small text-muted-2">No custom fields yet.</div>';
+    return;
+  }
+  el.innerHTML = list.map((row, index) => `
+    <div class="border rounded p-2 bg-white" data-app-field-index="${index}">
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+        <span class="small fw-semibold text-muted-2">Field ${index + 1}</span>
+        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-remove-app-field="${index}">Remove</button>
+      </div>
+      <label class="form-label small fw-semibold mb-1">Field title</label>
+      <input type="text" class="form-control form-control-sm mb-2" data-app-field-title="${index}"
+        placeholder="e.g. Preferred location / GitHub URL" value="${escapeApplyHtml(row.title || '')}" maxlength="120"/>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="${containerId}_req_${index}" data-app-field-required="${index}" ${row.required ? 'checked' : ''}/>
+        <label class="form-check-label small" for="${containerId}_req_${index}">Required when applying</label>
+      </div>
+    </div>
+  `).join('');
+
+  el.querySelectorAll('[data-app-field-title]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const idx = Number(input.getAttribute('data-app-field-title'));
+      if (!Number.isFinite(idx) || !list[idx]) return;
+      list[idx].title = String(input.value || '').trim();
+      onChange?.(list);
+    });
+  });
+  el.querySelectorAll('[data-app-field-required]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const idx = Number(input.getAttribute('data-app-field-required'));
+      if (!Number.isFinite(idx) || !list[idx]) return;
+      list[idx].required = !!input.checked;
+      onChange?.(list);
+    });
+  });
+  el.querySelectorAll('[data-remove-app-field]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.getAttribute('data-remove-app-field'));
+      if (!Number.isFinite(idx)) return;
+      list.splice(idx, 1);
+      onChange?.(list);
+      renderApplicationFieldsEditor(containerId, list, { onChange });
+    });
+  });
+}
+
+function readApplicationFieldsFromEditor(rows) {
+  return normalizeApplicationFieldRows(rows).map((row, i) => ({
+    id: row.id || `field_${i + 1}`,
+    title: row.title,
+    required: !!row.required,
+  }));
+}
+
+function renderApplyCustomFields(drive) {
+  const wrap = document.getElementById('applyCustomFieldsWrap');
+  const host = document.getElementById('applyCustomFields');
+  if (!wrap || !host) return;
+  const fields = normalizeApplicationFieldRows(drive?.applicationFields);
+  if (!fields.length) {
+    wrap.classList.add('d-none');
+    host.innerHTML = '';
+    return;
+  }
+  wrap.classList.remove('d-none');
+  host.innerHTML = fields.map((field) => `
+    <div>
+      <label class="form-label small fw-semibold" for="applyCustom_${escapeApplyHtml(field.id)}">
+        ${escapeApplyHtml(field.title)}${field.required ? ' <span class="text-danger">*</span>' : ''}
+      </label>
+      <input type="text" class="form-control" id="applyCustom_${escapeApplyHtml(field.id)}"
+        data-custom-field-id="${escapeApplyHtml(field.id)}"
+        data-custom-field-title="${escapeApplyHtml(field.title)}"
+        data-custom-field-required="${field.required ? '1' : '0'}"
+        ${field.required ? 'required' : ''} maxlength="2000" autocomplete="off"/>
+    </div>
+  `).join('');
+}
+
+function collectApplyCustomAnswers() {
+  return [...document.querySelectorAll('#applyCustomFields [data-custom-field-id]')].map((input) => ({
+    fieldId: String(input.getAttribute('data-custom-field-id') || '').trim(),
+    title: String(input.getAttribute('data-custom-field-title') || '').trim(),
+    value: String(input.value || '').trim(),
+    required: input.getAttribute('data-custom-field-required') === '1',
+  })).filter((row) => row.fieldId);
 }
 
 function escapeApplyHtml(value) {
@@ -1875,6 +2000,10 @@ window.openCreateDrive = async () => {
   }
   applyCreateDriveDeptScope();
   await populateCreateDriveCompanies();
+  createApplicationFieldRows = [];
+  renderApplicationFieldsEditor('createApplicationFields', createApplicationFieldRows, {
+    onChange: (rows) => { createApplicationFieldRows = rows; },
+  });
   bootstrap.Modal.getOrCreateInstance(document.getElementById('createModal')).show();
 };
 
@@ -2016,6 +2145,7 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     time: '10:00',
     recruitmentDate,
     description: fd.get('description') || '',
+    applicationFields: readApplicationFieldsFromEditor(createApplicationFieldRows),
     profile: 'General',
     status: 'Open',
     statusCls: 'success',
@@ -2071,6 +2201,14 @@ window.openEditDrive = id => {
   document.getElementById('editGender').value = elig.gender || 'any';
 
   document.getElementById('editDescription').value = d.description || '';
+
+  editApplicationFieldRows = normalizeApplicationFieldRows(d.applicationFields).map((row, i) => ({
+    ...row,
+    id: row.id || `field_${i + 1}`,
+  }));
+  renderApplicationFieldsEditor('editApplicationFields', editApplicationFieldRows, {
+    onChange: (rows) => { editApplicationFieldRows = rows; },
+  });
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
 
@@ -2144,6 +2282,8 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
 
       description: document.getElementById('editDescription').value.trim(),
 
+      applicationFields: readApplicationFieldsFromEditor(editApplicationFieldRows),
+
     }, editingDrive || DriveStore.get(id));
   } catch (err) {
     toast(err?.message || 'Could not update drive.', 'error');
@@ -2195,6 +2335,7 @@ window.openApply = async driveId => {
 
   resetApplyCertificates();
   resetApplyDobAge();
+  renderApplyCustomFields(pendingDrive);
 
   if (!resumes.length) {
     sel.innerHTML = '<option value="">No resumes found — upload one first</option>';
@@ -2393,6 +2534,20 @@ document.getElementById('driveDetailApplyBtn')?.addEventListener('click', () => 
   openApply(id);
 });
 
+document.getElementById('btnAddCreateAppField')?.addEventListener('click', () => {
+  createApplicationFieldRows.push({ id: `field_${createApplicationFieldRows.length + 1}`, title: '', required: false });
+  renderApplicationFieldsEditor('createApplicationFields', createApplicationFieldRows, {
+    onChange: (rows) => { createApplicationFieldRows = rows; },
+  });
+});
+
+document.getElementById('btnAddEditAppField')?.addEventListener('click', () => {
+  editApplicationFieldRows.push({ id: `field_${editApplicationFieldRows.length + 1}`, title: '', required: false });
+  renderApplicationFieldsEditor('editApplicationFields', editApplicationFieldRows, {
+    onChange: (rows) => { editApplicationFieldRows = rows; },
+  });
+});
+
 document.getElementById('btnAddCertificateTile')?.addEventListener('click', () => {
   addCertificateTile();
 });
@@ -2461,8 +2616,18 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
     return;
   }
 
+  const customAnswers = collectApplyCustomAnswers();
+  const missingRequired = customAnswers.find((row) => row.required && !row.value);
+  if (missingRequired) {
+    toast(`Please fill in: ${missingRequired.title}`, 'warn');
+    return;
+  }
+
   const certEntries = collectApplyCertificateEntries();
-  const extras = { dob };
+  const extras = {
+    dob,
+    customAnswers: customAnswers.map(({ fieldId, title, value }) => ({ fieldId, title, value })),
+  };
   const app = alumniSeeking
     ? await AlumniApps.apply(pendingDrive, resumeId, certEntries, extras)
     : await StudentApps.apply(pendingDrive, resumeId, certEntries, extras);

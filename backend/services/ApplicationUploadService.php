@@ -158,6 +158,75 @@ final class ApplicationUploadService
     }
 
     /**
+     * Parse custom application field answers from apply payload.
+     *
+     * @param array<string, mixed> $input
+     * @param list<array{id?:string,title?:string,required?:bool}> $fields
+     * @return list<array{fieldId:string,title:string,value:string}>
+     */
+    public function parseCustomAnswers(array $input, array $fields): array
+    {
+        $raw = $input['customAnswers'] ?? $input['custom_answers'] ?? null;
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($raw)) {
+            $raw = [];
+        }
+
+        $byId = [];
+        foreach ($raw as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $fieldId = trim((string) ($row['fieldId'] ?? $row['id'] ?? ''));
+            if ($fieldId === '') {
+                continue;
+            }
+            $byId[$fieldId] = trim((string) ($row['value'] ?? $row['answer'] ?? ''));
+        }
+
+        // Also accept flat customAnswer[{id}] from multipart forms.
+        foreach ($input as $key => $value) {
+            if (!is_string($key) || !str_starts_with($key, 'customAnswer[')) {
+                continue;
+            }
+            if (!preg_match('/^customAnswer\[([^\]]+)\]$/', $key, $m)) {
+                continue;
+            }
+            $byId[trim($m[1])] = trim((string) $value);
+        }
+
+        $out = [];
+        foreach ($fields as $field) {
+            if (!is_array($field)) {
+                continue;
+            }
+            $fieldId = trim((string) ($field['id'] ?? ''));
+            $title = trim((string) ($field['title'] ?? ''));
+            if ($fieldId === '' || $title === '') {
+                continue;
+            }
+            $value = trim((string) ($byId[$fieldId] ?? ''));
+            $required = !empty($field['required']);
+            if ($required && $value === '') {
+                throw new \RuntimeException('Please fill in: ' . $title);
+            }
+            if ($value === '') {
+                continue;
+            }
+            $out[] = [
+                'fieldId' => $fieldId,
+                'title' => $title,
+                'value' => mb_substr($value, 0, 2000),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
      * @param array<string, mixed> $fileField
      * @return list<array<string, mixed>>
      */

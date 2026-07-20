@@ -492,6 +492,16 @@ final class AlumniController
       }
     }
 
+    $driveFields = DriveModel::normalizeApplicationFields($drive['applicationFields'] ?? []);
+    try {
+      $customAnswers = $uploads->parseCustomAnswers($input, $driveFields);
+    } catch (\RuntimeException $e) {
+      Response::error($e->getMessage(), 422);
+    }
+    if ($customAnswers !== []) {
+      $createData['customAnswers'] = $customAnswers;
+    }
+
     $appId = $appModel->createApplication($createData);
 
     (new NotificationService())->notifyUser(

@@ -1917,10 +1917,11 @@ const StudentApps = {
       ? certificateEntries.filter(e => e?.file?.name)
       : [];
     const dob = String(extras?.dob || '').trim();
+    const customAnswers = Array.isArray(extras?.customAnswers) ? extras.customAnswers : [];
 
     if (Auth.role() === 'student' && Auth.hasSession() && !Auth.isDemo()) {
       let res;
-      if (entries.length || dob) {
+      if (entries.length || dob || customAnswers.length) {
         const form = new FormData();
         form.append('driveId', drive.id);
         form.append('resumeId', resumeId || '');
@@ -1928,6 +1929,7 @@ const StudentApps = {
         form.append('resumeFileName', resume?.fileName || '');
         form.append('resumePath', resumePath || '');
         if (dob) form.append('dob', dob);
+        if (customAnswers.length) form.append('customAnswers', JSON.stringify(customAnswers));
         entries.forEach((entry) => {
           form.append('certificates[]', entry.file);
           form.append('certificateTitles[]', String(entry.title || '').trim());
@@ -2044,9 +2046,10 @@ const AlumniApps = {
       ? certificateEntries.filter(e => e?.file?.name)
       : [];
     const dob = String(extras?.dob || '').trim();
+    const customAnswers = Array.isArray(extras?.customAnswers) ? extras.customAnswers : [];
 
     let res;
-    if (entries.length || dob) {
+    if (entries.length || dob || customAnswers.length) {
       const form = new FormData();
       form.append('driveId', drive.id);
       form.append('resumeId', resumeId || '');
@@ -2054,6 +2057,7 @@ const AlumniApps = {
       form.append('resumeFileName', resume?.fileName || '');
       form.append('resumePath', resumePath || '');
       if (dob) form.append('dob', dob);
+      if (customAnswers.length) form.append('customAnswers', JSON.stringify(customAnswers));
       entries.forEach((entry) => {
         form.append('certificates[]', entry.file);
         form.append('certificateTitles[]', String(entry.title || '').trim());
@@ -4299,6 +4303,11 @@ const DriveStore = {
     } else if (existing?.roundProgression) {
       body.roundProgression = String(existing.roundProgression).toLowerCase() === 'sequential' ? 'sequential' : 'parallel';
     }
+    if (Array.isArray(p.applicationFields)) {
+      body.applicationFields = p.applicationFields;
+    } else if (Array.isArray(existing?.applicationFields)) {
+      body.applicationFields = existing.applicationFields;
+    }
     if (companyId) body.companyId = companyId;
     const recruitmentDate = String(p.date ?? p.recruitmentDate ?? existing?.date ?? '').trim();
     if (recruitmentDate && recruitmentDate !== '—' && recruitmentDate !== 'TBD') body.date = recruitmentDate;
@@ -4356,6 +4365,7 @@ const DriveStore = {
       applicationStatus: d.applicationStatus || null,
       eligible: check ? check.eligible !== false : true,
       eligibilityReasons: check?.reasons || [],
+      applicationFields: Array.isArray(d.applicationFields) ? d.applicationFields : [],
       _fromApi: true,
     };
   },
@@ -4486,6 +4496,7 @@ const DriveStore = {
       },
       selectionRounds: Array.isArray(p.selectionRounds) ? p.selectionRounds : [],
       roundProgression: String(p.roundProgression || 'sequential').toLowerCase() === 'parallel' ? 'parallel' : 'sequential',
+      applicationFields: Array.isArray(p.applicationFields) ? p.applicationFields : [],
     };
 
     const formatErrors = (res) => {

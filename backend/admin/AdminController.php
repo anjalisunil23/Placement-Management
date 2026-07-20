@@ -102,6 +102,9 @@ final class AdminController
         if (array_key_exists('roundProgression', $input)) {
             $input['roundProgression'] = DriveModel::normalizeRoundProgression($input['roundProgression']);
         }
+        if (array_key_exists('applicationFields', $input)) {
+            $input['applicationFields'] = DriveModel::normalizeApplicationFields($input['applicationFields']);
+        }
         $companyModel = new CompanyModel();
         $companyId = (string) ($input['companyId'] ?? '');
         if ($companyId === '' || !$companyModel->findById($companyId)) {
@@ -124,7 +127,7 @@ final class AdminController
         $id = (new DriveModel())->createDrive($input, (string) $admin['_id']);
         (new NotificationService())->announceDrive(
             (string) $input['title'],
-            (string) $input['date']
+            (string) ($input['date'] ?? '')
         );
         Response::success(['id' => $id], 'Drive created.', 201);
     }
@@ -145,7 +148,7 @@ final class AdminController
         if (isset($input['branches']) && is_string($input['branches'])) {
             $input['branches'] = json_decode($input['branches'], true) ?? [];
         }
-        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','roundProgression','tier','jdFile','status','departmentId'];
+        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','roundProgression','applicationFields','tier','jdFile','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
         if (isset($update['eligibility']) && is_array($update['eligibility'])) {
             $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);
@@ -155,6 +158,9 @@ final class AdminController
         }
         if (array_key_exists('roundProgression', $update)) {
             $update['roundProgression'] = DriveModel::normalizeRoundProgression($update['roundProgression']);
+        }
+        if (array_key_exists('applicationFields', $update)) {
+            $update['applicationFields'] = DriveModel::normalizeApplicationFields($update['applicationFields']);
         }
         $model->update($id, $update);
         Response::success(null, 'Drive updated.');
