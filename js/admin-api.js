@@ -547,6 +547,66 @@ const ReportCenter = {
     return downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`;
   },
 
+  downloadApiPath(downloadUrl) {
+    const href = this.downloadHref(downloadUrl);
+    if (href.startsWith('/backend/api/')) return href.slice('/backend/api'.length);
+    if (href.startsWith('/api/')) return href.slice('/api'.length);
+    return href;
+  },
+
+  async downloadFile(downloadUrl, fallbackName = 'report.xlsx') {
+    const apiPath = this.downloadApiPath(downloadUrl);
+    if (!apiPath || apiPath === '#') {
+      throw new Error('Download link missing.');
+    }
+    const headers = { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,*/*' };
+    const token = Auth.token();
+    if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const res = await fetch(API_BASE + apiPath, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const buffer = await res.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (!res.ok) {
+      let message = `Could not download report (${res.status}).`;
+      try {
+        const json = JSON.parse(new TextDecoder().decode(bytes));
+        if (json?.message) message = json.message;
+      } catch { /* not JSON */ }
+      throw new Error(message);
+    }
+    // Avoid saving JSON error bodies as .xlsx (e.g. 200 with error payload)
+    if (bytes.length >= 1 && bytes[0] === 0x7b) { // '{'
+      let parsed = null;
+      try {
+        parsed = JSON.parse(new TextDecoder().decode(bytes));
+      } catch { /* binary that happens to start with '{' */ }
+      if (parsed && typeof parsed === 'object' && (parsed.success === false || parsed.message)) {
+        throw new Error(parsed.message || 'Report file not found.');
+      }
+    }
+    const type = String(res.headers.get('content-type') || '').toLowerCase();
+    if (type.includes('json') || type.includes('text/html')) {
+      throw new Error('Report download returned an invalid file. Try generating again.');
+    }
+    const blob = new Blob([buffer], {
+      type: type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = fallbackName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+  },
+
   formatLabel(fmt) {
     const f = String(fmt || 'xlsx').toLowerCase();
     if (f === 'xlsx' || f === 'excel' || f === 'xls') return 'Excel';

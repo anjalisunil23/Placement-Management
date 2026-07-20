@@ -560,11 +560,33 @@ final class ReportService
             } catch (\Throwable $e) {
                 throw new \RuntimeException('Failed to save report to S3: ' . $e->getMessage(), 0, $e);
             }
+
+            $storedName = $storage->storedNameFromUri($uri);
+            if ($storedName === '') {
+                $storedName = $filename;
+            }
+
+            // Keep a local copy so download works even if S3 retrieval fails.
+            $localDir = dirname(__DIR__, 2) . '/uploads/reports';
+            if (!is_dir($localDir) && !@mkdir($localDir, 0775, true) && !is_dir($localDir)) {
+                throw new \RuntimeException('Unable to create local reports directory.');
+            }
+            $localPath = $localDir . DIRECTORY_SEPARATOR . $storedName;
+            $copied = @copy($path, $localPath);
+            if (!$copied && is_readable($path)) {
+                $copied = @file_put_contents($localPath, (string) file_get_contents($path)) !== false;
+            }
+            if (!$copied || !is_file($localPath)) {
+                throw new \RuntimeException('Report was uploaded but could not be saved locally for download.');
+            }
         } finally {
             @unlink($path);
         }
 
-        $storedName = (new ObjectStorageService($config))->storedNameFromUri($uri);
+        if ($uri === '' || !isset($storedName) || $storedName === '') {
+            throw new \RuntimeException('Report was generated but could not be stored.');
+        }
+
         (new ReportModel())->record([
             'type'         => $type,
             'title'        => $title,

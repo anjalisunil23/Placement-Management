@@ -449,21 +449,33 @@ final class ObjectStorageService
             try {
                 return $this->getContents($this->uri($resolved['folder'], $resolved['filename']));
             } catch (\Throwable) {
-                if ($resolved['local'] !== null && is_file($resolved['local'])) {
-                    $body = file_get_contents($resolved['local']);
-                    if ($body !== false) {
-                        return $body;
-                    }
-                }
-                throw new \RuntimeException('File not found.');
+                // Fall through to local lookups below.
             }
         }
-        if ($resolved['local'] !== null && is_file($resolved['local'])) {
-            $body = file_get_contents($resolved['local']);
+
+        $localCandidates = [];
+        if ($resolved['local'] !== null) {
+            $localCandidates[] = $resolved['local'];
+        }
+        $folder = $resolved['folder'] !== '' ? $resolved['folder'] : (string) ($folderHint ?? '');
+        $filename = $resolved['filename'] !== '' ? $resolved['filename'] : basename($uriOrPath);
+        if ($folder !== '' && $filename !== '') {
+            $legacy = $this->legacyLocalPath($folder, $filename);
+            if ($legacy !== null) {
+                $localCandidates[] = $legacy;
+            }
+        }
+
+        foreach (array_values(array_unique(array_filter($localCandidates))) as $local) {
+            if (!is_file($local) || !is_readable($local)) {
+                continue;
+            }
+            $body = file_get_contents($local);
             if ($body !== false) {
                 return $body;
             }
         }
+
         throw new \RuntimeException('File not found.');
     }
 

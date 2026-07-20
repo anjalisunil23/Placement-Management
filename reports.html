@@ -60,9 +60,9 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260716xlsx"></script>
+<script src="js/admin-api.js?v=20260720exceldl"></script>
 <script src="js/officer-api.js?v=20260716xlsx"></script>
-<script src="js/api.js?v=20260716profilename"></script>
+<script src="js/api.js?v=20260719resumepreview"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
 const REPORT_DEFS = [
@@ -259,7 +259,14 @@ async function generateCompanyApplicantsReport(companyId, companyName, cardEl) {
   if (res.success) {
     toast(`Excel ready for ${companyName || 'company'}.`, 'success');
     if (res.data?.downloadUrl) {
-      window.open(ReportCenter.downloadHref(res.data.downloadUrl), '_blank');
+      try {
+        await ReportCenter.downloadFile(
+          res.data.downloadUrl,
+          `${String(companyName || 'company').replace(/[^\w.\-]+/g, '_')}_applicants.xlsx`
+        );
+      } catch (err) {
+        toast(err?.message || 'Could not download Excel report.', 'error');
+      }
     }
   } else if (res.status === 401) {
     toast(res.message || 'Please sign in again.', 'warn');
@@ -283,7 +290,14 @@ async function generateReport(type, format = 'xlsx', email = false) {
   if (res.success) {
     toast(res.message || 'Report generated.', 'success');
     if (res.data?.downloadUrl && !email) {
-      window.open(ReportCenter.downloadHref(res.data.downloadUrl), '_blank');
+      try {
+        await ReportCenter.downloadFile(
+          res.data.downloadUrl,
+          `${String(type || 'report').replace(/[^\w.\-]+/g, '_')}_report.xlsx`
+        );
+      } catch (err) {
+        toast(err?.message || 'Could not download Excel report.', 'error');
+      }
     }
   } else if (res.status === 401) {
     toast(res.message || 'Please sign in again.', 'warn');

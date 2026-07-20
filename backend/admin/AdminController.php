@@ -15,6 +15,7 @@ use PMS\Models\ApplicationModel;
 use PMS\Models\AlumniReferralModel;
 use PMS\Models\PlacementNewsModel;
 use PMS\Models\RecommendationModel;
+use PMS\Models\ReportModel;
 use PMS\Models\PlacementOfficerModel;
 use PMS\Models\StaffModel;
 use PMS\Models\PublicPageContentModel;
@@ -1681,24 +1682,70 @@ final class AdminController
     public function downloadReport(string $filename): void
     {
         (new OfficerDataService())->requireScope();
-        $filename = basename($filename);
-        if (!preg_match('/^[a-z0-9_\-]+\.(pdf|csv|xlsx|xls)$/i', $filename)) {
+        $filename = basename(rawurldecode($filename));
+        if (!preg_match('/^[a-z0-9._\-]+\.(pdf|csv|xlsx|xls)$/i', $filename)) {
             Response::error('Invalid filename.', 400);
         }
+
         $storage = new ObjectStorageService();
-        $uri = $storage->uri(ObjectStorageService::FOLDER_REPORTS, $filename);
         $mime = $storage->guessMime($filename);
-        try {
-            $storage->streamWithFallback(
-                $uri,
-                $filename,
-                $mime,
-                false,
-                ObjectStorageService::FOLDER_REPORTS
-            );
-        } catch (\Throwable) {
-            Response::notFound('Report file not found.');
+        if (!str_contains($mime, 'sheet') && !str_contains($mime, 'excel') && !str_contains($mime, 'csv') && $mime !== 'application/pdf') {
+            $mime = str_ends_with(strtolower($filename), '.xls')
+                ? 'application/vnd.ms-excel'
+                : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         }
+
+        $candidates = [];
+        $meta = (new ReportModel())->findOne(['filename' => $filename]);
+        if (is_array($meta) && !empty($meta['path'])) {
+            $candidates[] = (string) $meta['path'];
+        }
+        $candidates[] = $storage->uri(ObjectStorageService::FOLDER_REPORTS, $filename);
+        $candidates[] = dirname(__DIR__, 2) . '/uploads/reports/' . $filename;
+        $candidates[] = dirname(__DIR__, 2) . '/uploads/ajce-placements/reports/' . $filename;
+
+        $lastError = null;
+        foreach (array_values(array_unique(array_filter($candidates))) as $candidate) {
+            try {
+                if (!headers_sent()) {
+                    header_remove('Content-Type');
+                }
+                $storage->streamWithFallback(
+                    $candidate,
+                    $filename,
+                    $mime,
+                    false,
+                    ObjectStorageService::FOLDER_REPORTS
+                );
+            } catch (\Throwable $e) {
+                $lastError = $e;
+            }
+        }
+
+        // Direct local stream if storage helpers still fail.
+        foreach ([
+            dirname(__DIR__, 2) . '/uploads/reports/' . $filename,
+            dirname(__DIR__, 2) . '/uploads/ajce-placements/reports/' . $filename,
+        ] as $localPath) {
+            if (!is_file($localPath) || !is_readable($localPath)) {
+                continue;
+            }
+            $body = file_get_contents($localPath);
+            if ($body === false) {
+                continue;
+            }
+            if (!headers_sent()) {
+                header_remove('Content-Type');
+            }
+            header('Content-Type: ' . $mime);
+            header('Content-Disposition: attachment; filename="' . str_replace(['"', "\r", "\n"], '', $filename) . '"');
+            header('Content-Length: ' . (string) strlen($body));
+            header('X-Content-Type-Options: nosniff');
+            echo $body;
+            exit;
+        }
+
+        Response::notFound('Report file not found.');
     }
 
     // --- System settings, public page content, placement news ---
