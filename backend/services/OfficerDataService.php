@@ -410,11 +410,12 @@ final class OfficerDataService
     public function streamApplicationResume(string $appId, array $ctx): void
     {
         $app = $this->assertApplicationInScope($appId, $ctx);
-        $this->streamResolvedApplicationResume($app);
+        $this->streamResolvedApplicationResume($app, false);
     }
 
     /**
      * Stream application resume without officer-scope check (signed public report links).
+     * Forces PDF download (attachment) for Excel "Open resume" clicks.
      */
     public function streamApplicationResumeSigned(string $appId): void
     {
@@ -422,13 +423,13 @@ final class OfficerDataService
         if (!$app) {
             Response::notFound('Application not found.');
         }
-        $this->streamResolvedApplicationResume($app);
+        $this->streamResolvedApplicationResume($app, true);
     }
 
     /**
      * @param array<string, mixed> $app
      */
-    private function streamResolvedApplicationResume(array $app): void
+    private function streamResolvedApplicationResume(array $app, bool $forceDownload = false): void
     {
         $file = $this->resumeFileForApplication($app);
         if ($file === null) {
@@ -436,13 +437,16 @@ final class OfficerDataService
         }
 
         $storage = new ObjectStorageService();
-        $mime = $storage->guessMime($file['filename']);
+        $filename = $this->resumeDownloadFilename((string) ($file['filename'] ?? 'resume.pdf'), $forceDownload);
+        $mime = $forceDownload
+            ? 'application/pdf'
+            : $storage->guessMime($filename);
         try {
             $storage->streamWithFallback(
                 $file['path'],
-                $file['filename'],
+                $filename,
                 $mime,
-                true,
+                !$forceDownload,
                 ObjectStorageService::FOLDER_RESUMES
             );
         } catch (\Throwable) {
@@ -3422,16 +3426,16 @@ final class OfficerDataService
     public function streamStudentResume(string $studentId, array $ctx): void
     {
         PlacementOfficerContext::assertStudentInDepartment($studentId, $ctx);
-        $this->streamResolvedStudentResume($studentId);
+        $this->streamResolvedStudentResume($studentId, false);
     }
 
     /** Stream student resume without department scope (signed public report links). */
     public function streamStudentResumeSigned(string $studentId): void
     {
-        $this->streamResolvedStudentResume($studentId);
+        $this->streamResolvedStudentResume($studentId, true);
     }
 
-    private function streamResolvedStudentResume(string $studentId): void
+    private function streamResolvedStudentResume(string $studentId, bool $forceDownload = false): void
     {
         $file = $this->resumeFileForApplication(['studentId' => $studentId, 'resume' => []]);
         if ($file === null) {
@@ -3439,18 +3443,35 @@ final class OfficerDataService
         }
 
         $storage = new ObjectStorageService();
-        $mime = $storage->guessMime($file['filename']);
+        $filename = $this->resumeDownloadFilename((string) ($file['filename'] ?? 'resume.pdf'), $forceDownload);
+        $mime = $forceDownload
+            ? 'application/pdf'
+            : $storage->guessMime($filename);
         try {
             $storage->streamWithFallback(
                 $file['path'],
-                $file['filename'],
+                $filename,
                 $mime,
-                true,
+                !$forceDownload,
                 ObjectStorageService::FOLDER_RESUMES
             );
         } catch (\Throwable) {
             Response::notFound('Resume file not found for this student.');
         }
+    }
+
+    private function resumeDownloadFilename(string $filename, bool $forcePdf): string
+    {
+        $filename = basename(str_replace('\\', '/', trim($filename)));
+        if ($filename === '' || $filename === '.' || $filename === '..') {
+            $filename = 'resume.pdf';
+        }
+        if ($forcePdf && !str_ends_with(strtolower($filename), '.pdf')) {
+            $base = pathinfo($filename, PATHINFO_FILENAME);
+            $filename = ($base !== '' ? $base : 'resume') . '.pdf';
+        }
+
+        return $filename;
     }
 
     /**

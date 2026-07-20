@@ -965,7 +965,7 @@ XML;
     private function hyperlinkDisplayText(string $url): string
     {
         if (stripos($url, '/resume') !== false || stripos($url, 'report-resume') !== false) {
-            return 'Open resume';
+            return 'Download resume';
         }
 
         return 'Open link';
