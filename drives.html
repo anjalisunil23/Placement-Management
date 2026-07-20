@@ -143,6 +143,46 @@
   .drive-round-result-card h6{margin:0 0 .75rem;font-weight:700}
   .drive-round-outcome-btns .btn.active{pointer-events:none}
   #driveRoundResultTabs .nav-link{font-size:.875rem}
+  #driveApplicantsPanel .drive-applicants-table{
+    table-layout:fixed;width:100%;
+  }
+  #driveApplicantsPanel .drive-applicants-table thead th{
+    white-space:nowrap;font-size:.72rem;letter-spacing:.02em;
+  }
+  #driveApplicantsPanel .drive-applicants-table tbody td{
+    vertical-align:middle;padding:.7rem .85rem;font-size:.875rem;white-space:normal;
+  }
+  #driveApplicantsPanel .drive-applicants-table .col-si{width:3.25rem;color:#94a3b8}
+  #driveApplicantsPanel .drive-applicants-table .col-status{width:7.5rem;white-space:nowrap}
+  #driveApplicantsPanel .drive-applicants-table .col-applied{width:7rem;white-space:nowrap}
+  #driveApplicantsPanel .drive-applicants-table .col-actions{width:12.5rem;white-space:nowrap}
+  #driveApplicantsPanel .applicant-name{
+    font-weight:600;color:#0f172a;line-height:1.25;
+    text-transform:none;letter-spacing:0;
+  }
+  #driveApplicantsPanel .applicant-meta{
+    margin-top:.15rem;font-size:.78rem;color:#64748b;line-height:1.35;
+  }
+  #driveApplicantsPanel .applicant-contact{
+    font-size:.82rem;line-height:1.35;color:#334155;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
+  }
+  #driveApplicantsPanel .applicant-contact .phone{
+    display:block;margin-top:.1rem;color:#64748b;font-size:.78rem;
+  }
+  #driveApplicantsPanel .applicant-actions{
+    display:inline-flex;align-items:center;gap:.35rem;flex-wrap:nowrap;
+  }
+  #driveApplicantsPanel .applicant-actions .btn{
+    white-space:nowrap;padding:.25rem .55rem;font-size:.78rem;line-height:1.3;
+  }
+  #driveApplicantsPanel .table-wrap{
+    border:1px solid #e2e8f0;border-radius:10px;overflow:auto;background:#fff;
+  }
+  #driveApplicantsModal .modal-dialog{max-width:min(1100px,96vw)}
+  #driveApplicantTabs.nav-pills .nav-link{
+    border-radius:999px;padding:.35rem .85rem;font-size:.82rem;font-weight:600;
+  }
 </style>
 </head>
 
@@ -446,10 +486,14 @@
           <p class="small text-muted-2 mb-2" id="driveShortlistHint">Applied applicants for this company drive.</p>
 
           <div class="table-wrap">
-            <table class="table-modern">
+            <table class="table-modern drive-applicants-table">
               <thead><tr id="driveApplicantHead">
-                <th style="width:3rem">SI.No</th>
-                <th>Student</th><th>Register No</th><th>Dept</th><th>Email</th><th>Phone</th><th>Resume</th><th>Status</th><th>Applied</th><th>Action</th>
+                <th class="col-si">#</th>
+                <th>Student</th>
+                <th>Contact</th>
+                <th class="col-status">Status</th>
+                <th class="col-applied">Applied</th>
+                <th class="col-actions">Actions</th>
               </tr></thead>
               <tbody id="driveApplicantRows"></tbody>
             </table>
@@ -1592,8 +1636,18 @@ function driveApplicantGroups(apps) {
 }
 
 function driveApplicantResumeCell(a) {
-  if (!a.hasResume && !a.resumeUrl) return '<span class="small text-muted-2">—</span>';
-  return `<button type="button" class="btn btn-sm btn-outline-primary drive-open-pdf" data-pdf-url="${escapeApplyHtml(a.resumeUrl)}" data-pdf-label="Resume"><i class="bi bi-file-earmark-pdf me-1"></i>View resume</button>`;
+  if (!a.hasResume && !a.resumeUrl) return '';
+  return `<button type="button" class="btn btn-sm btn-outline-secondary drive-open-pdf" data-pdf-url="${escapeApplyHtml(a.resumeUrl)}" data-pdf-label="Resume" title="View resume"><i class="bi bi-file-earmark-pdf"></i></button>`;
+}
+
+function formatApplicantDisplayName(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return '—';
+  // Soften ALL-CAPS AES names without breaking mixed-case names.
+  if (raw === raw.toUpperCase() && /[A-Z]/.test(raw)) {
+    return raw.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return raw;
 }
 
 function canShortlistApplicant(a) {
@@ -1649,7 +1703,7 @@ function openViewApplication(appId) {
   const titleEl = document.getElementById('viewApplicationTitle');
   const subEl = document.getElementById('viewApplicationSub');
   const bodyEl = document.getElementById('viewApplicationBody');
-  if (titleEl) titleEl.textContent = a.studentName || 'Application details';
+  if (titleEl) titleEl.textContent = formatApplicantDisplayName(a.studentName) || 'Application details';
   if (subEl) {
     subEl.textContent = [
       a.registerNumber || '',
@@ -1734,7 +1788,7 @@ function renderDriveApplicantRows() {
   const groups = driveApplicantGroups(driveApplicants);
   const list = groups[driveApplicantsTab] || [];
   const tbody = document.getElementById('driveApplicantRows');
-  const cols = 10;
+  const cols = 6;
   if (!list.length) {
     const emptyMsg = ({
       applied: 'No applicants for this company drive yet.',
@@ -1746,27 +1800,37 @@ function renderDriveApplicantRows() {
     return;
   }
   tbody.innerHTML = list.map((a, idx) => {
+    const name = formatApplicantDisplayName(a.studentName);
+    const reg = String(a.registerNumber || '').trim();
+    const dept = String(a.department || '').trim();
+    const email = String(a.email || '').trim();
+    const phone = String(a.phone || '').trim();
+    const meta = [reg, dept].filter(Boolean).join(' · ');
+    const resumeBtn = driveApplicantResumeCell(a);
     const shortlist = canShortlistApplicant(a)
-      ? `<button type="button" class="btn btn-sm btn-outline-primary drive-shortlist-one" data-app-id="${a.id}">Shortlist</button>`
+      ? `<button type="button" class="btn btn-sm btn-primary drive-shortlist-one" data-app-id="${a.id}">Shortlist</button>`
       : '';
-    const action = `
-      <div class="d-flex flex-wrap gap-1">
-        <button type="button" class="btn btn-sm btn-outline-secondary drive-view-application" data-app-id="${a.id}">
-          <i class="bi bi-eye me-1"></i>View application
-        </button>
-        ${shortlist}
-      </div>`;
     return `<tr data-app-id="${a.id}">
-    <td class="text-muted-2">${idx + 1}</td>
-    <td><strong>${escapeApplyHtml(a.studentName || '—')}</strong></td>
-    <td>${escapeApplyHtml(a.registerNumber || '—')}</td>
-    <td>${escapeApplyHtml(a.department || '—')}</td>
-    <td class="small">${escapeApplyHtml(a.email || '—')}</td>
-    <td class="small">${escapeApplyHtml(a.phone || '—')}</td>
-    <td>${driveApplicantResumeCell(a)}</td>
-    <td>${driveApplicantResultBadge(a)}</td>
-    <td>${a.appliedAt ? new Date(a.appliedAt).toLocaleDateString() : '—'}</td>
-    <td>${action}</td>
+    <td class="col-si">${idx + 1}</td>
+    <td>
+      <div class="applicant-name">${escapeApplyHtml(name)}</div>
+      ${meta ? `<div class="applicant-meta">${escapeApplyHtml(meta)}</div>` : ''}
+    </td>
+    <td>
+      <div class="applicant-contact" title="${escapeApplyHtml(email || '')}">${escapeApplyHtml(email || '—')}</div>
+      ${phone ? `<div class="applicant-contact phone">${escapeApplyHtml(phone)}</div>` : ''}
+    </td>
+    <td class="col-status">${driveApplicantResultBadge(a)}</td>
+    <td class="col-applied text-muted-2">${a.appliedAt ? new Date(a.appliedAt).toLocaleDateString() : '—'}</td>
+    <td class="col-actions">
+      <div class="applicant-actions">
+        <button type="button" class="btn btn-sm btn-outline-secondary drive-view-application" data-app-id="${a.id}" title="View application">
+          <i class="bi bi-eye"></i>
+        </button>
+        ${resumeBtn}
+        ${shortlist}
+      </div>
+    </td>
   </tr>`;
   }).join('');
 }
@@ -2002,7 +2066,7 @@ window.openDriveApplicants = async driveId => {
   });
   document.getElementById('driveApplicantsTitle').textContent = `${d.company} · ${d.role}`;
   document.getElementById('driveApplicantsSub').textContent = `${d.package || '—'} · ${d.status || '—'} · Deadline ${d.deadline || '—'}`;
-  document.getElementById('driveApplicantRows').innerHTML = '<tr><td colspan="10" class="text-muted-2 p-4 text-center">Loading applicants…</td></tr>';
+  document.getElementById('driveApplicantRows').innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading applicants…</td></tr>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('driveApplicantsModal')).show();
   try {
     driveApplicants = await ApplicationPipeline.fetchByDrive(driveId);
