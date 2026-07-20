@@ -79,9 +79,13 @@ final class StaffPlacementRegistryService
 
         $placementCount = 0;
         $higherCount = 0;
+        $researchCount = 0;
         foreach ($filtered as $row) {
-            if (($row['type'] ?? '') === 'Higher Education') {
+            $rowType = (string) ($row['type'] ?? '');
+            if ($rowType === 'Higher Education') {
                 $higherCount++;
+            } elseif ($rowType === 'Research') {
+                $researchCount++;
             } else {
                 $placementCount++;
             }
@@ -96,6 +100,7 @@ final class StaffPlacementRegistryService
                 'all'               => count($filtered),
                 'placement'         => $placementCount,
                 'higher_education'  => $higherCount,
+                'research'          => $researchCount,
             ],
         ];
     }
@@ -599,7 +604,11 @@ final class StaffPlacementRegistryService
                 return false;
             }
             if ($type !== '') {
-                $want = $type === 'higher_education' ? 'Higher Education' : 'Placement';
+                $want = match ($type) {
+                    'higher_education' => 'Higher Education',
+                    'research' => 'Research',
+                    default => 'Placement',
+                };
                 $employer = trim((string) ($row['employer'] ?? ''));
                 // Keep unfilled class-roster rows visible so staff can add details.
                 if ($employer !== '' && (string) ($row['type'] ?? '') !== $want) {
@@ -795,6 +804,9 @@ final class StaffPlacementRegistryService
         if (in_array($raw, ['higher_education', 'higher_ed', 'higher education', 'highereducation', 'education'], true)) {
             return 'Higher Education';
         }
+        if (in_array($raw, ['research', 'research scholar', 'phd', 'ph.d', 'fellowship'], true)) {
+            return 'Research';
+        }
         if ($raw === 'placement' || $raw === 'self_reported' || $raw === 'campus' || $raw === 'company_selection') {
             return 'Placement';
         }
@@ -881,7 +893,14 @@ final class StaffPlacementRegistryService
         $fordvv = $this->normalizeFlag01($input['fordvv'] ?? 1);
         $includedvv = $this->normalizeFlag01($input['includedvv'] ?? 1);
         $typeRaw = trim((string) ($input['type'] ?? 'Placement'));
-        $recordType = stripos($typeRaw, 'higher') !== false ? 'Higher Education' : 'Placement';
+        $typeKey = strtolower($typeRaw);
+        if (str_contains($typeKey, 'higher') || str_contains($typeKey, 'education')) {
+            $recordType = 'Higher Education';
+        } elseif (str_contains($typeKey, 'research')) {
+            $recordType = 'Research';
+        } else {
+            $recordType = 'Placement';
+        }
 
         if ($employer === '') {
             Response::error('Employer / institution name is required.', 422);

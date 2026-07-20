@@ -53,6 +53,7 @@
                 <option value="">All types</option>
                 <option value="placement">Placement</option>
                 <option value="higher_education">Higher Education</option>
+                <option value="research">Research</option>
               </select>
             </div>
           </div>
@@ -143,6 +144,7 @@
                       <select class="form-select" id="editType">
                         <option value="Placement">Placement</option>
                         <option value="Higher Education">Higher Education</option>
+                        <option value="Research">Research</option>
                       </select>
                     </div>
                     <div class="col-md-6">
@@ -757,7 +759,7 @@
             ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
             : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`);
         const typeLabel = hasEmployer
-          ? (r.type === 'Higher Education' ? 'Higher Education' : 'Placement')
+          ? (r.type === 'Higher Education' || r.type === 'Research' ? r.type : 'Placement')
           : '';
         const fordvv = r.fordvv === 0 || r.fordvv === '0' ? 0 : 1;
         const includedvv = r.includedvv === 0 || r.includedvv === '0' ? 0 : 1;
@@ -807,7 +809,11 @@
       document.getElementById('editStudentName').value = row.studentName || '';
       document.getElementById('editEmployer').value = row.employer || '';
       document.getElementById('editRole').value = row.role || '';
-      document.getElementById('editType').value = row.type === 'Higher Education' ? 'Higher Education' : 'Placement';
+      document.getElementById('editType').value = (
+        row.type === 'Higher Education' || row.type === 'Research'
+          ? row.type
+          : 'Placement'
+      );
       document.getElementById('editPackage').value = row.package || '';
       document.getElementById('editEmployerContact').value = row.employerContact || '';
       document.getElementById('editAddress').value = row.address || '';
