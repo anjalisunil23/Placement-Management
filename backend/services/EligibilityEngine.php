@@ -64,8 +64,16 @@ final class EligibilityEngine
         bool $enrich = true,
         ?string $resumeId = null
     ): array {
-        if (($drive['status'] ?? '') === 'completed') {
+        if (($drive['status'] ?? '') === 'completed'
+            || DriveLifecycle::effectiveStatus($drive) === 'completed'
+        ) {
             return ['eligible' => false, 'reasons' => ['This drive has been completed.']];
+        }
+
+        if (!DriveLifecycle::isRegistrationOpen($drive)
+            || DriveLifecycle::effectiveStatus($drive) === 'closed'
+        ) {
+            return ['eligible' => false, 'reasons' => ['Registration for this drive is closed.']];
         }
 
         if ($enrich) {

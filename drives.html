@@ -208,7 +208,7 @@
 
     <div class="col-md-5"><div class="search-with-icon"><i class="bi bi-search"></i><input class="form-control" id="driveSearch" placeholder="Search by company, role…"/></div></div>
 
-    <div class="col-6 col-md-3" id="driveStatusFilterWrap"><select class="form-select" id="driveStatusFilter"><option value="">All Status</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Closed">Closed</option></select></div>
+    <div class="col-6 col-md-3" id="driveStatusFilterWrap"><select class="form-select" id="driveStatusFilter"><option value="Active" selected>Active</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Closed">Closed</option><option value="Completed">Completed</option></select></div>
 
     <div class="col-6 col-md-4" id="driveJobTypeFilterWrap"><select class="form-select" id="driveJobTypeFilter"><option value="">All job types</option><option>Full-time</option><option>Internship</option><option>Internship + PPO</option></select></div>
 
@@ -565,8 +565,8 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260720appview"></script>
-<script src="js/app.js?v=20260716notifflat"></script>
+<script src="js/api.js?v=20260720driveclosed"></script>
+<script src="js/app.js?v=20260720driveclosed"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
 async function loadDriveRoleScripts() {
@@ -576,7 +576,7 @@ async function loadDriveRoleScripts() {
   if (typeof OfficerApi !== 'undefined' && typeof AdminApi !== 'undefined' && typeof StaffApi !== 'undefined') return;
   const tags = [
     'js/admin-api.js?v=20260720appview',
-    'js/officer-api.js?v=20260720appview',
+    'js/officer-api.js?v=20260720driveclosed',
     'js/staff-api.js?v=20260713w',
   ];
   await Promise.all(tags.map((src) => new Promise((resolve) => {
@@ -1326,7 +1326,7 @@ function setupStatusFilter() {
   } else if (isStaff) {
     statusWrap?.classList.add('d-none');
     exportWrap?.classList.add('d-none');
-    sel.value = '';
+    sel.value = 'Active';
     const searchCol = document.getElementById('driveSearch')?.closest('[class*="col-"]');
     if (searchCol) searchCol.className = 'col-md-8';
     if (jobWrap) jobWrap.className = 'col-12 col-md-4';
@@ -1334,9 +1334,8 @@ function setupStatusFilter() {
     statusWrap?.classList.remove('d-none');
     exportWrap?.classList.remove('d-none');
     if (jobWrap) jobWrap.className = 'col-6 col-md-4';
-    if (!sel.querySelector('option[value=""]')) {
-      sel.innerHTML = '<option value="">All Status</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Closed">Closed</option>';
-    }
+    sel.innerHTML = '<option value="Active" selected>Active</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Closed">Closed</option><option value="Completed">Completed</option>';
+    sel.value = 'Active';
   }
 }
 
@@ -1410,7 +1409,7 @@ function filteredDrives() {
 
   const q = (document.getElementById('driveSearch')?.value || '').trim().toLowerCase();
 
-  const status = document.getElementById('driveStatusFilter')?.value || '';
+  const status = document.getElementById('driveStatusFilter')?.value || 'Active';
   const jobType = document.getElementById('driveJobTypeFilter')?.value || '';
   const openOnly = isStudent || alumniSeeking;
 
@@ -1423,8 +1422,12 @@ function filteredDrives() {
     if (openOnly) {
       const st = String(d.status || '').toLowerCase();
       if (st !== 'open' && st !== 'ongoing') return false;
+    } else if (status === 'Active' || status === '') {
+      // Main drives list: hide completed (view them via Completed filter).
+      if (String(d.status || '') === 'Completed') return false;
+    } else if (status && d.status !== status) {
+      return false;
     }
-    else if (status && d.status !== status) return false;
 
     if (jobType && (d.jobType || '') !== jobType) return false;
 
@@ -1852,9 +1855,9 @@ function showDriveDetailPanel(panel) {
 function renderAdminRecruitmentRoundsConfig() {
   const panel = document.getElementById('adminRecruitmentRoundsConfig');
   if (!panel) return;
-  const isAdmin = role === 'admin';
-  panel.classList.toggle('d-none', !isAdmin);
-  if (!isAdmin) return;
+  // Admin and placement officer can configure rounds and enter per-round results.
+  panel.classList.toggle('d-none', !canManage);
+  if (!canManage) return;
   const drive = activeDriveForApplicants();
   recruitmentResultRoundRows = normalizeDriveRounds(drive?.selectionRounds);
   setRoundProgression('resultsRoundProgression', drive?.roundProgression || 'sequential');
@@ -1935,7 +1938,7 @@ function renderDriveRoundsResults() {
   if (!rounds.length) {
     driveResultsRoundTab = null;
     host.innerHTML = `<div class="text-muted-2 p-3 border rounded text-center">
-      ${role === 'admin'
+      ${canManage
         ? 'No company rounds configured yet. Add and save the recruitment rounds above.'
         : 'No company rounds configured yet.'}
     </div>`;
@@ -2902,7 +2905,7 @@ document.getElementById('recruitmentRoundsEditor')?.addEventListener('change', e
 });
 
 document.getElementById('btnSaveRecruitmentRounds')?.addEventListener('click', async () => {
-  if (role !== 'admin' || !activeDriveId) return;
+  if (!canManage || !activeDriveId) return;
   const selectionRounds = readDriveRoundsFromEditor('recruitmentRoundsEditor');
   if (!selectionRounds.length) {
     toast('Select at least one recruitment round.', 'warn');

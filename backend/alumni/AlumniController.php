@@ -361,7 +361,15 @@ final class AlumniController
       Response::success([], 'No linked student profile — drives unavailable.');
       return;
     }
-    $drives = (new DriveModel())->findAll(['status' => ['$ne' => 'completed']], 50);
+    $allDrives = (new DriveModel())->findAll([], 50);
+    $drives = array_values(array_filter(
+      $allDrives,
+      static fn (array $drive): bool => !in_array(
+        \PMS\Services\DriveLifecycle::effectiveStatus($drive),
+        ['completed', 'closed'],
+        true
+      )
+    ));
     $engine = new EligibilityEngine();
     $studentId = (string) $student['_id'];
     $companyModel = new CompanyModel();

@@ -902,7 +902,7 @@ final class StudentController
     $drives = array_values(array_filter(
       $allDrives,
       static function (array $drive): bool {
-        $status = strtolower((string) ($drive['status'] ?? 'scheduled'));
+        $status = \PMS\Services\DriveLifecycle::effectiveStatus($drive);
         return !in_array($status, ['completed', 'closed'], true);
       }
     ));
@@ -969,7 +969,15 @@ final class StudentController
     $engine = new EligibilityEngine();
     $studentId = (string) $profile['_id'];
 
-    $drives = $driveModel->findAll(['status' => ['$ne' => 'completed']], 50);
+    $drives = $driveModel->findAll([], 50);
+    $drives = array_values(array_filter(
+      $drives,
+      static fn (array $drive): bool => !in_array(
+        \PMS\Services\DriveLifecycle::effectiveStatus($drive),
+        ['completed', 'closed'],
+        true
+      )
+    ));
     $appModel = new ApplicationModel();
     $drives = array_values(array_filter(
       $drives,

@@ -4320,7 +4320,7 @@ const DriveStore = {
   mapStudentDrive(d) {
     const statusMap = { scheduled: 'Open', open: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
     const rawStatus = (d.status || '').toLowerCase();
-    const status = statusMap[rawStatus] || d.status || 'Open';
+    let status = statusMap[rawStatus] || d.status || 'Open';
     const title = String(d.title || d.role || '').trim();
     let company = String(d.companyName || d.company || '').trim();
     let role = title || '—';
@@ -4337,7 +4337,8 @@ const DriveStore = {
     delete elig.reasons;
     const check = d.eligibilityCheck || (eligSrc.eligible !== undefined ? eligSrc : null);
     const pkg = String(d.package || elig.package || '').trim();
-    const regDeadline = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
+    const regDeadline = String(elig.deadline || d.registrationDeadline || '').trim();
+    const displayDeadline = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
     const recruitmentDate = String(d.recruitmentDate || d.date || '').trim();
     const jobType = String(d.jobType || elig.jobType || '').trim();
     const mode = String(d.mode || elig.mode || '').trim();
@@ -4345,6 +4346,11 @@ const DriveStore = {
     const location = String(d.location || elig.location || '').trim();
     const description = String(d.description || elig.description || '').trim();
     const branches = formatDriveBranches(d.branches ?? elig.branches ?? '');
+    if (status !== 'Completed' && /^\d{4}-\d{2}-\d{2}/.test(regDeadline)) {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      if (todayStr > regDeadline.slice(0, 10)) status = 'Closed';
+    }
     return {
       id: d._id || d.id,
       companyId: d.companyId || '',
@@ -4362,7 +4368,7 @@ const DriveStore = {
       maxBacklogs: elig.maxBacklogs ?? '',
       status,
       statusCls: driveStatusCls(status),
-      deadline: (regDeadline && regDeadline !== 'TBD') ? regDeadline : '—',
+      deadline: (displayDeadline && displayDeadline !== 'TBD') ? displayDeadline : '—',
       profile: d.profile || 'General',
       applied: d.applied ? 1 : 0,
       applicationStatus: d.applicationStatus || null,

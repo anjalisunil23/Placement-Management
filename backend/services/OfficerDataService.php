@@ -3512,9 +3512,13 @@ final class OfficerDataService
 
             $elig = is_array($row['eligibility'] ?? null) ? $row['eligibility'] : [];
             $package = trim((string) ($elig['package'] ?? $row['package'] ?? ''));
-            $deadline = trim((string) ($elig['deadline'] ?? $row['deadline'] ?? ''));
+            $regDeadline = DriveLifecycle::registrationDeadline(is_array($drive) ? $drive : $row);
+            $deadline = $regDeadline !== ''
+                ? $regDeadline
+                : trim((string) ($elig['deadline'] ?? $row['deadline'] ?? ''));
             $jobType = trim((string) ($elig['jobType'] ?? $row['jobType'] ?? ''));
             $mode = trim((string) ($elig['mode'] ?? $row['mode'] ?? ''));
+            // Display-only fallback for empty deadline column (does not affect Closed derivation).
             if ($deadline === '' && !empty($row['date'])) {
                 $deadline = (string) $row['date'];
             }
@@ -3522,9 +3526,12 @@ final class OfficerDataService
             $row['deadline'] = $deadline;
             $row['jobType'] = $jobType;
             $row['mode'] = $mode;
+            $row['status'] = DriveLifecycle::effectiveStatus(is_array($drive) ? $drive : $row);
             $row['eligibility'] = array_merge($elig, [
                 'package'  => $package,
-                'deadline' => $deadline,
+                // Keep explicit registration deadline in eligibility for clients;
+                // do not overwrite with recruitment-date fallback.
+                'deadline' => $regDeadline !== '' ? $regDeadline : trim((string) ($elig['deadline'] ?? '')),
                 'jobType'  => $jobType,
                 'mode'     => $mode,
             ]);

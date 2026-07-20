@@ -62,17 +62,24 @@ const OfficerApi = {
 
   mapDrive(d) {
     const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
-    const status = statusMap[(d.status || '').toLowerCase()] || d.status || 'Open';
+    let status = statusMap[(d.status || '').toLowerCase()] || d.status || 'Open';
     const meta = typeof driveResultMeta === 'function' ? driveResultMeta(d) : { company: d.companyName || d.company || '', role: d.title || d.role || '' };
     const elig = (d.eligibility && typeof d.eligibility === 'object') ? d.eligibility : {};
     const pkg = String(elig.package || d.package || '').trim();
-    const deadline = String(elig.deadline || d.deadline || '').trim();
+    const deadline = String(elig.deadline || d.registrationDeadline || '').trim();
+    const displayDeadline = String(elig.deadline || d.deadline || d.registrationDeadline || '').trim();
     const jobType = String(elig.jobType || d.jobType || '').trim();
     const recruitmentDate = String(d.recruitmentDate || d.date || '').trim();
     const mode = String(d.mode || elig.mode || '').trim();
     const location = String(d.location || elig.location || '').trim();
     const minCgpa = elig.minCgpa ?? d.minCgpa ?? '';
     const maxBacklogs = elig.maxBacklogs ?? d.maxBacklogs ?? '';
+    // After registration deadline → Closed (unless already Completed).
+    if (status !== 'Completed' && /^\d{4}-\d{2}-\d{2}/.test(deadline)) {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      if (todayStr > deadline.slice(0, 10)) status = 'Closed';
+    }
     return {
       id: OfficerApi.id(d),
       company: meta.company || d.companyName || d.company || '',
@@ -90,7 +97,7 @@ const OfficerApi = {
       recruitmentDate: recruitmentDate || '—',
       time: d.time || '10:00',
       package: pkg || '—',
-      deadline: (deadline && deadline !== 'TBD') ? deadline : '—',
+      deadline: (displayDeadline && displayDeadline !== 'TBD') ? displayDeadline : '—',
       mode: mode || '—',
       location: location || '—',
       minCgpa,
@@ -100,7 +107,7 @@ const OfficerApi = {
         ? formatDriveBranches(d.branches ?? elig.branches ?? '')
         : (Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '')),
       tier: d.tier || 'Tier 2',
-      eligibility: { ...elig, package: pkg, deadline, jobType, mode, location, minCgpa, maxBacklogs },
+      eligibility: { ...elig, package: pkg, deadline: deadline || elig.deadline || '', jobType, mode, location, minCgpa, maxBacklogs },
       selectionRounds: Array.isArray(d.selectionRounds) ? d.selectionRounds : [],
       roundProgression: String(d.roundProgression || 'parallel').toLowerCase() === 'sequential' ? 'sequential' : 'parallel',
       applicationFields: Array.isArray(d.applicationFields) ? d.applicationFields : [],
