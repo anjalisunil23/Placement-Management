@@ -2114,32 +2114,64 @@ window.openApply = async driveId => {
 
 };
 
-function resumePreviewUrl(resume) {
+function resumePreviewApiPath(resume) {
   if (!resume) return '';
-  const direct = String(resume.viewUrl || resume.bucketPath || '');
-  if (direct.startsWith('/')) return direct;
   const id = String(resume.id || '');
   if (/^[a-f0-9]{24}$/i.test(id)) {
-    return `/backend/api/student/resumes/${encodeURIComponent(id)}/view`;
+    return `/student/resumes/${encodeURIComponent(id)}/view`;
   }
+  const direct = String(resume.viewUrl || resume.bucketPath || '');
+  if (direct.startsWith('/backend/api/')) {
+    return direct.slice('/backend/api'.length);
+  }
+  if (direct.startsWith('/student/')) return direct;
   return '';
 }
 
-function updateApplyResumePreview() {
+let applyResumePreviewObjectUrl = '';
+let applyResumePreviewRequest = 0;
+
+function clearApplyResumePreview() {
+  const frame = document.getElementById('applyResumePreviewFrame');
+  const empty = document.getElementById('applyResumePreviewEmpty');
+  const link = document.getElementById('applyResumeOpenLink');
+  if (applyResumePreviewObjectUrl) {
+    URL.revokeObjectURL(applyResumePreviewObjectUrl);
+    applyResumePreviewObjectUrl = '';
+  }
+  if (frame) {
+    frame.classList.add('d-none');
+    frame.removeAttribute('src');
+  }
+  if (link) {
+    link.classList.add('d-none');
+    link.removeAttribute('href');
+  }
+  if (empty) {
+    empty.classList.remove('d-none');
+    empty.textContent = 'Select a resume to preview.';
+  }
+}
+
+async function updateApplyResumePreview() {
   const sel = document.getElementById('applyResumeSelect');
   const resumeId = String(sel?.value || '');
   const resume = ResumeBucket.all().find(r => String(r.id) === resumeId)
     || ResumeBucket.forProfile(pendingDrive?.profile || 'General').find(r => String(r.id) === resumeId);
-  const url = resumePreviewUrl(resume);
+  const apiPath = resumePreviewApiPath(resume);
   const frame = document.getElementById('applyResumePreviewFrame');
   const empty = document.getElementById('applyResumePreviewEmpty');
   const link = document.getElementById('applyResumeOpenLink');
+  const requestId = ++applyResumePreviewRequest;
 
-  if (!url) {
-    if (frame) {
-      frame.classList.add('d-none');
-      frame.removeAttribute('src');
-    }
+  if (applyResumePreviewObjectUrl) {
+    URL.revokeObjectURL(applyResumePreviewObjectUrl);
+    applyResumePreviewObjectUrl = '';
+  }
+  if (frame) frame.removeAttribute('src');
+
+  if (!apiPath) {
+    if (frame) frame.classList.add('d-none');
     if (empty) {
       empty.classList.remove('d-none');
       empty.textContent = resumeId
@@ -2153,25 +2185,66 @@ function updateApplyResumePreview() {
     return;
   }
 
-  if (empty) empty.classList.add('d-none');
-  if (frame) {
-    frame.classList.remove('d-none');
-    if (frame.getAttribute('src') !== url) frame.src = url;
+  if (empty) {
+    empty.classList.remove('d-none');
+    empty.textContent = 'Loading preview…';
   }
-  if (link) {
-    link.href = url;
-    link.classList.remove('d-none');
+  if (frame) frame.classList.add('d-none');
+  if (link) link.classList.add('d-none');
+
+  try {
+    const headers = {};
+    const token = Auth.token();
+    if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const res = await fetch(API_BASE + apiPath, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    });
+    if (requestId !== applyResumePreviewRequest) return;
+    if (!res.ok) {
+      throw new Error('Could not load resume preview.');
+    }
+    const blob = await res.blob();
+    if (requestId !== applyResumePreviewRequest) return;
+    const type = String(blob.type || '').toLowerCase();
+    if (type && !type.includes('pdf') && !type.includes('octet-stream')) {
+      throw new Error('Resume preview is not a PDF.');
+    }
+    const pdfBlob = type.includes('pdf') ? blob : new Blob([blob], { type: 'application/pdf' });
+    applyResumePreviewObjectUrl = URL.createObjectURL(pdfBlob);
+    if (empty) empty.classList.add('d-none');
+    if (frame) {
+      frame.classList.remove('d-none');
+      frame.src = applyResumePreviewObjectUrl;
+    }
+    if (link) {
+      link.href = applyResumePreviewObjectUrl;
+      link.classList.remove('d-none');
+    }
+  } catch {
+    if (requestId !== applyResumePreviewRequest) return;
+    if (frame) frame.classList.add('d-none');
+    if (empty) {
+      empty.classList.remove('d-none');
+      empty.textContent = 'Could not load resume preview.';
+    }
+    if (link) {
+      link.classList.add('d-none');
+      link.removeAttribute('href');
+    }
   }
 }
 
-document.getElementById('applyResumeSelect')?.addEventListener('change', updateApplyResumePreview);
+document.getElementById('applyResumeSelect')?.addEventListener('change', () => {
+  updateApplyResumePreview();
+});
 
 document.getElementById('applyModal')?.addEventListener('hidden.bs.modal', () => {
-  const frame = document.getElementById('applyResumePreviewFrame');
-  if (frame) {
-    frame.classList.add('d-none');
-    frame.removeAttribute('src');
-  }
+  applyResumePreviewRequest += 1;
+  clearApplyResumePreview();
 });
 
 document.getElementById('driveDetailApplyBtn')?.addEventListener('click', () => {
