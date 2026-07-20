@@ -255,8 +255,8 @@ final class StaffPlacementRegistryService
                 'placementStatus'  => (string) ($placement['placementStatus'] ?? ''),
                 'offerLetterVerified' => (bool) ($placement['offerLetterVerified'] ?? false),
                 'verificationDate' => (string) ($placement['verificationDate'] ?? ''),
-                'fordvv'           => $this->normalizeFlag01($placement['fordvv'] ?? 1),
-                'includedvv'       => $this->normalizeFlag01($placement['includedvv'] ?? 1),
+                'fordvv'           => $this->normalizeVvValue($placement['fordvv'] ?? '1'),
+                'includedvv'       => $this->normalizeVvValue($placement['includedvv'] ?? '1'),
                 'type'             => $this->resolveRecordType($placement),
                 'source'           => (string) ($placement['source'] ?? 'placement'),
                 'hasOfferLetter'   => (string) ($placement['offerLetter'] ?? '') !== ''
@@ -289,8 +289,8 @@ final class StaffPlacementRegistryService
                     'placementStatus'  => (string) ($self['placementStatus'] ?? ''),
                     'offerLetterVerified' => (bool) ($self['offerLetterVerified'] ?? false),
                     'verificationDate' => (string) ($self['verificationDate'] ?? ''),
-                    'fordvv'           => $this->normalizeFlag01($self['fordvv'] ?? $placement['fordvv'] ?? 1),
-                    'includedvv'       => $this->normalizeFlag01($self['includedvv'] ?? $placement['includedvv'] ?? 1),
+                    'fordvv'           => $this->normalizeVvValue($self['fordvv'] ?? $placement['fordvv'] ?? '1'),
+                    'includedvv'       => $this->normalizeVvValue($self['includedvv'] ?? $placement['includedvv'] ?? '1'),
                     'type'             => $this->resolveRecordType($self, 'Placement'),
                     'source'           => 'self_placement',
                     'hasOfferLetter'   => (string) ($self['offerLetter'] ?? '') !== '',
@@ -389,8 +389,8 @@ final class StaffPlacementRegistryService
                 'placementStatus'  => '',
                 'offerLetterVerified' => false,
                 'verificationDate' => '',
-                'fordvv'           => $this->normalizeFlag01($placement['fordvv'] ?? 1),
-                'includedvv'       => $this->normalizeFlag01($placement['includedvv'] ?? 1),
+                'fordvv'           => $this->normalizeVvValue($placement['fordvv'] ?? '1'),
+                'includedvv'       => $this->normalizeVvValue($placement['includedvv'] ?? '1'),
                 'type'             => 'Placement',
                 'source'           => 'class_roster',
                 'hasOfferLetter'   => false,
@@ -422,8 +422,8 @@ final class StaffPlacementRegistryService
         }
         $seen[$key] = true;
 
-        $data['fordvv'] = $this->normalizeFlag01($data['fordvv'] ?? 1);
-        $data['includedvv'] = $this->normalizeFlag01($data['includedvv'] ?? 1);
+        $data['fordvv'] = $this->normalizeVvValue($data['fordvv'] ?? '1');
+        $data['includedvv'] = $this->normalizeVvValue($data['includedvv'] ?? '1');
 
         return array_merge($meta, $data);
     }
@@ -441,8 +441,8 @@ final class StaffPlacementRegistryService
             return null;
         }
 
-        $data['fordvv'] = $this->normalizeFlag01($data['fordvv'] ?? 1);
-        $data['includedvv'] = $this->normalizeFlag01($data['includedvv'] ?? 1);
+        $data['fordvv'] = $this->normalizeVvValue($data['fordvv'] ?? '1');
+        $data['includedvv'] = $this->normalizeVvValue($data['includedvv'] ?? '1');
 
         return array_merge($meta, $data);
     }
@@ -831,29 +831,20 @@ final class StaffPlacementRegistryService
         return trim((string) $value);
     }
 
-    /** NAAC-style 0/1 flag; defaults to 1 when missing or invalid. */
-    private function normalizeFlag01(mixed $value, int $default = 1): int
+    /**
+     * Free-text VV fields (kept editable for future AES / NAAC codes).
+     */
+    private function normalizeVvValue(mixed $value, string $default = '1'): string
     {
-        if ($value === null || $value === '') {
+        if ($value === null) {
             return $default;
         }
         if (is_bool($value)) {
-            return $value ? 1 : 0;
+            return $value ? '1' : '0';
         }
-        if (is_numeric($value)) {
-            $n = (int) $value;
+        $raw = trim((string) $value);
 
-            return ($n === 0 || $n === 1) ? $n : $default;
-        }
-        $raw = strtolower(trim((string) $value));
-        if (in_array($raw, ['1', 'true', 'yes', 'y'], true)) {
-            return 1;
-        }
-        if (in_array($raw, ['0', 'false', 'no', 'n'], true)) {
-            return 0;
-        }
-
-        return $default;
+        return $raw !== '' ? $raw : $default;
     }
 
     /**
@@ -890,8 +881,8 @@ final class StaffPlacementRegistryService
             FILTER_VALIDATE_BOOL
         );
         $verificationDate = trim((string) ($input['verificationDate'] ?? ''));
-        $fordvv = $this->normalizeFlag01($input['fordvv'] ?? 1);
-        $includedvv = $this->normalizeFlag01($input['includedvv'] ?? 1);
+        $fordvv = $this->normalizeVvValue($input['fordvv'] ?? '1');
+        $includedvv = $this->normalizeVvValue($input['includedvv'] ?? '1');
         $typeRaw = trim((string) ($input['type'] ?? 'Placement'));
         $typeKey = strtolower($typeRaw);
         if (str_contains($typeKey, 'higher') || str_contains($typeKey, 'education')) {

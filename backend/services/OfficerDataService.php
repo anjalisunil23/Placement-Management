@@ -410,6 +410,26 @@ final class OfficerDataService
     public function streamApplicationResume(string $appId, array $ctx): void
     {
         $app = $this->assertApplicationInScope($appId, $ctx);
+        $this->streamResolvedApplicationResume($app);
+    }
+
+    /**
+     * Stream application resume without officer-scope check (signed public report links).
+     */
+    public function streamApplicationResumeSigned(string $appId): void
+    {
+        $app = (new ApplicationModel())->findById($appId);
+        if (!$app) {
+            Response::notFound('Application not found.');
+        }
+        $this->streamResolvedApplicationResume($app);
+    }
+
+    /**
+     * @param array<string, mixed> $app
+     */
+    private function streamResolvedApplicationResume(array $app): void
+    {
         $file = $this->resumeFileForApplication($app);
         if ($file === null) {
             Response::notFound('Resume file not found for this application.');
@@ -3402,6 +3422,17 @@ final class OfficerDataService
     public function streamStudentResume(string $studentId, array $ctx): void
     {
         PlacementOfficerContext::assertStudentInDepartment($studentId, $ctx);
+        $this->streamResolvedStudentResume($studentId);
+    }
+
+    /** Stream student resume without department scope (signed public report links). */
+    public function streamStudentResumeSigned(string $studentId): void
+    {
+        $this->streamResolvedStudentResume($studentId);
+    }
+
+    private function streamResolvedStudentResume(string $studentId): void
+    {
         $file = $this->resumeFileForApplication(['studentId' => $studentId, 'resume' => []]);
         if ($file === null) {
             Response::notFound('Resume file not found for this student.');

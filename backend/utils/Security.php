@@ -224,4 +224,43 @@ final class Security
         }
         return null;
     }
+
+    /** Signing secret for time-limited public download links (Excel report resume URLs). */
+    public static function downloadSigningKey(): string
+    {
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $secret = trim((string) ($config['jwt']['secret'] ?? ''));
+        if ($secret === '' || $secret === 'insecure-default-change-me') {
+            $secret = 'pms-report-download-' . (string) ($config['url'] ?? 'localhost');
+        }
+
+        return $secret;
+    }
+
+    /**
+     * Build exp + sig for a public download link.
+     *
+     * @return array{exp: int, sig: string}
+     */
+    public static function signDownload(string $kind, string $resourceId, int $ttlSeconds = 2_592_000): array
+    {
+        $exp = time() + max(60, $ttlSeconds);
+        $payload = strtolower(trim($kind)) . '|' . trim($resourceId) . '|' . $exp;
+        $sig = hash_hmac('sha256', $payload, self::downloadSigningKey());
+
+        return ['exp' => $exp, 'sig' => $sig];
+    }
+
+    public static function verifyDownload(string $kind, string $resourceId, mixed $exp, mixed $sig): bool
+    {
+        $expTs = (int) $exp;
+        $sigStr = trim((string) $sig);
+        if ($expTs < time() || $sigStr === '' || trim($resourceId) === '') {
+            return false;
+        }
+        $payload = strtolower(trim($kind)) . '|' . trim($resourceId) . '|' . $expTs;
+        $expected = hash_hmac('sha256', $payload, self::downloadSigningKey());
+
+        return hash_equals($expected, $sigStr);
+    }
 }

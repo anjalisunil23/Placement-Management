@@ -96,7 +96,7 @@ final class ReportService
                 || !empty($resume['filename']);
             $studentId = (string) ($s['_id'] ?? $s['id'] ?? '');
             $resumeLink = ($hasResume && $studentId !== '')
-                ? $appBase . '/backend/api/admin/students/' . rawurlencode($studentId) . '/resume'
+                ? $this->signedResumeUrl($appBase, 'student_resume', $studentId)
                 : '';
             $resumeStatus = !empty($resume['verified'])
                 ? 'Verified'
@@ -393,7 +393,7 @@ final class ReportService
             }
             $resumeLink = '';
             if ($hasResume && $appId !== '') {
-                $resumeLink = $appBase . '/backend/api/admin/applications/' . rawurlencode($appId) . '/resume';
+                $resumeLink = $this->signedResumeUrl($appBase, 'application_resume', $appId);
             }
 
             $rows[] = [
@@ -445,6 +445,22 @@ final class ReportService
             '' => '—',
             default => ucfirst(str_replace('_', ' ', $status)),
         };
+    }
+
+    /**
+     * Time-limited public resume URL for Excel (works without admin login in the browser).
+     */
+    private function signedResumeUrl(string $appBase, string $kind, string $resourceId): string
+    {
+        $token = Security::signDownload($kind, $resourceId, 2_592_000); // 30 days
+        $pathKind = $kind === 'student_resume' ? 'student' : 'application';
+
+        return $appBase
+            . '/backend/api/public/report-resume/'
+            . $pathKind . '/'
+            . rawurlencode($resourceId)
+            . '?exp=' . rawurlencode((string) $token['exp'])
+            . '&sig=' . rawurlencode($token['sig']);
     }
 
     /**

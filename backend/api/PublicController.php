@@ -14,9 +14,11 @@ use PMS\Models\SystemSettingsModel;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Services\AnalyticsService;
 use PMS\Services\ObjectStorageService;
+use PMS\Services\OfficerDataService;
 use PMS\Services\PlacementOfficerContext;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
+use PMS\Utils\Security;
 
 /**
  * Public and analytics API endpoints.
@@ -259,5 +261,32 @@ final class PublicController
         } catch (\Throwable) {
             Response::notFound('Media not found.');
         }
+    }
+
+    /**
+     * GET /api/public/report-resume/application/{id}?exp=&sig=
+     * Time-limited link for Excel report resume cells (no login required).
+     */
+    public function serveReportApplicationResume(string $id): void
+    {
+        $exp = $_GET['exp'] ?? '';
+        $sig = $_GET['sig'] ?? '';
+        if (!Security::verifyDownload('application_resume', $id, $exp, $sig)) {
+            Response::forbidden('This resume link is invalid or has expired. Generate the report again.');
+        }
+        (new OfficerDataService())->streamApplicationResumeSigned($id);
+    }
+
+    /**
+     * GET /api/public/report-resume/student/{id}?exp=&sig=
+     */
+    public function serveReportStudentResume(string $id): void
+    {
+        $exp = $_GET['exp'] ?? '';
+        $sig = $_GET['sig'] ?? '';
+        if (!Security::verifyDownload('student_resume', $id, $exp, $sig)) {
+            Response::forbidden('This resume link is invalid or has expired. Generate the report again.');
+        }
+        (new OfficerDataService())->streamStudentResumeSigned($id);
     }
 }
