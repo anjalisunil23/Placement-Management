@@ -258,6 +258,14 @@ const StaffApi = {
     return res;
   },
 
+  async updateStudentProfile(studentId, body) {
+    const res = await api(`/staff/students/${encodeURIComponent(studentId)}/profile`, {
+      method: 'PUT',
+      body,
+    });
+    return res;
+  },
+
   async uploadStudentPlacementDocuments(studentId, formData) {
     const res = await api(`/staff/students/${encodeURIComponent(studentId)}/placement/documents`, {
       method: 'POST',

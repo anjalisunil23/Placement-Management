@@ -25,6 +25,7 @@ use PMS\Services\AesLoginService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\NotificationService;
 use PMS\Services\ObjectStorageService;
+use PMS\Services\StudentProfileEditService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
@@ -345,6 +346,10 @@ final class StudentController
       }
     }
 
+    $fieldState = (new StudentProfileEditService())->fieldStateForStudent($profile);
+    $out['lockedFields'] = $fieldState['lockedFields'];
+    $out['editableFields'] = $fieldState['editableFields'];
+
     Response::success(DocumentHelper::jsonSafe($out));
   }
 
@@ -390,97 +395,16 @@ final class StudentController
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
     $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-
-    $allowed = ['personal', 'academic', 'certifications'];
-    $update = [];
-    foreach ($allowed as $key) {
-      if (!isset($input[$key]) || !is_array($input[$key])) {
-        continue;
-      }
-      $existing = is_array($profile[$key] ?? null) ? $profile[$key] : [];
-      $patch = $input[$key];
-      if ($key === 'academic') {
-        $patch = $this->sanitizeAcademicPatch($patch);
-      }
-      if ($key === 'personal') {
-        $patch = $this->sanitizePersonalPatch($patch);
-      }
-      if ($patch === []) {
-        continue;
-      }
-      $update[$key] = array_merge($existing, $patch);
+    if (!is_array($input)) {
+      $input = [];
     }
 
-    if ($update === []) {
-      Response::error('No valid fields to update.', 422);
-    }
-
-    $this->studentModel->update((string) $profile['_id'], $update);
-    Response::success(null, 'Profile updated.');
-  }
-
-  /**
-   * @param array<string, mixed> $personal
-   * @return array<string, mixed>
-   */
-  private function sanitizePersonalPatch(array $personal): array
-  {
-    $out = [];
-    if (array_key_exists('phone', $personal)) {
-      $phone = trim((string) $personal['phone']);
-      $out['phone'] = $phone;
-    }
-    if (array_key_exists('personalEmail', $personal)) {
-      $email = strtolower(trim((string) $personal['personalEmail']));
-      if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $out['personalEmail'] = $email;
-      }
-    }
-    if (array_key_exists('maritalStatus', $personal)) {
-      $status = trim((string) $personal['maritalStatus']);
-      $allowed = ['', 'Single', 'Married', 'Other'];
-      if (in_array($status, $allowed, true)) {
-        $out['maritalStatus'] = $status;
-      }
-    }
-
-    return $out;
-  }
-
-  /**
-   * @param array<string, mixed> $academic
-   * @return array<string, mixed>
-   */
-  private function sanitizeAcademicPatch(array $academic): array
-  {
-    $out = [];
-    if (array_key_exists('cgpa', $academic) && is_numeric($academic['cgpa'])) {
-      $cgpa = (float) $academic['cgpa'];
-      if ($cgpa >= 0 && $cgpa <= 10) {
-        $out['cgpa'] = $cgpa;
-      }
-    }
-    if (array_key_exists('backlogs', $academic) && is_numeric($academic['backlogs'])) {
-      $out['backlogs'] = max(0, (int) $academic['backlogs']);
-    }
-    foreach (['marks10th', 'marks12th', 'ugMarks', 'mcaMarks'] as $markKey) {
-      if (!array_key_exists($markKey, $academic)) {
-        continue;
-      }
-      $raw = $academic[$markKey];
-      if ($raw === '' || $raw === null) {
-        continue;
-      }
-      if (!is_numeric($raw)) {
-        continue;
-      }
-      $mark = (float) $raw;
-      if ($mark > 0 && $mark <= 100) {
-        $out[$markKey] = $mark;
-      }
-    }
-
-    return $out;
+    $updated = (new StudentProfileEditService())->applyStudentUpdate($profile, $input);
+    $fieldState = (new StudentProfileEditService())->fieldStateForStudent($updated);
+    Response::success([
+      'lockedFields'   => $fieldState['lockedFields'],
+      'editableFields' => $fieldState['editableFields'],
+    ], 'Profile updated.');
   }
 
   /** POST /api/student/policy/accept — Placement Cell registration + guidelines confirmation */
@@ -534,6 +458,11 @@ final class StudentController
     if ($registration['email'] !== '' && !str_ends_with($registration['email'], '@students.amaljyothi.ac.in')) {
       $personal['personalEmail'] = $registration['email'];
     }
+    $locks = is_array($profile['profileFieldLocks'] ?? null) ? $profile['profileFieldLocks'] : [];
+    $locks['personal.phone'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+    if (!empty($personal['personalEmail'])) {
+      $locks['personal.personalEmail'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+    }
 
     $this->studentModel->update((string) $profile['_id'], [
       'policyAccepted'   => true,
@@ -542,6 +471,7 @@ final class StudentController
       'placementRegistration' => $registration,
       'classBatch'       => $branch . ($mtechBranch !== '' ? ' — ' . $mtechBranch : ''),
       'personal'         => $personal,
+      'profileFieldLocks'=> $locks,
     ]);
 
     try {

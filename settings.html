@@ -40,15 +40,18 @@
         <div class="row g-3">
           <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Full name</label><input class="form-control" id="profName" disabled title="Name comes from college records"/></div>
           <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">College email</label><input class="form-control" id="profCollegeEmail" disabled placeholder="Not provided by college login"/></div>
-          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Personal email</label><input type="email" class="form-control" id="profPersonalEmail" placeholder="e.g. name@gmail.com" autocomplete="email"/></div>
+          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Personal email</label><input type="email" class="form-control" id="profPersonalEmail" placeholder="e.g. name@gmail.com" autocomplete="email"/><div class="form-text d-none" id="profPersonalEmailHint">Contact your class teacher to change this.</div></div>
           <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Role</label><input class="form-control" id="profRole" disabled/></div>
-          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
-          <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
+          <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/><div class="form-text d-none" id="profPhoneHint">Contact your class teacher to change this.</div></div>
+          <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo" disabled title="Register number comes from college records"/></div>
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Gender</label><input class="form-control" id="profGender" disabled placeholder="Synced from college records"/></div>
           <div class="col-md-6 role-field-student">
             <label class="form-label small fw-semibold">Marital status</label>
             <input class="form-control" id="profMaritalStatus" disabled placeholder="Synced from college records"/>
           </div>
+          <div class="col-md-4 role-field-student" id="profMarks10Wrap"><label class="form-label small fw-semibold">10th marks (%)</label><input type="number" step="0.01" min="0" max="100" class="form-control" id="profMarks10" placeholder="If missing"/><div class="form-text d-none" id="profMarks10Hint">Contact your class teacher to change this.</div></div>
+          <div class="col-md-4 role-field-student" id="profMarks12Wrap"><label class="form-label small fw-semibold">12th marks (%)</label><input type="number" step="0.01" min="0" max="100" class="form-control" id="profMarks12" placeholder="If missing"/><div class="form-text d-none" id="profMarks12Hint">Contact your class teacher to change this.</div></div>
+          <div class="col-md-4 role-field-student" id="profCgpaWrap"><label class="form-label small fw-semibold">CGPA</label><input type="number" step="0.01" min="0" max="10" class="form-control" id="profCgpa" placeholder="If missing"/><div class="form-text d-none" id="profCgpaHint">Contact your class teacher to change this.</div></div>
           <div class="col-12 role-field-student" id="profQualificationsWrap" style="display:none">
             <label class="form-label small fw-semibold">Education qualifications</label>
             <div class="table-wrap">
@@ -693,6 +696,49 @@ function renderProfileQualifications(quals) {
   }).join('');
 }
 
+function applyStudentFieldLocks(p) {
+  const locked = new Set(Array.isArray(p?.lockedFields) ? p.lockedFields : []);
+  const editable = new Set(Array.isArray(p?.editableFields) ? p.editableFields : []);
+  const personal = p?.personal || {};
+  const ac = p?.academic || {};
+
+  const lockInput = (inputId, hintId, path, displayValue) => {
+    const el = document.getElementById(inputId);
+    const hint = document.getElementById(hintId);
+    if (!el) return;
+    const isLocked = locked.has(path) || (!editable.has(path) && displayValue !== '' && displayValue != null);
+    el.disabled = !!isLocked;
+    if (hint) hint.classList.toggle('d-none', !isLocked);
+    if (isLocked) {
+      el.title = 'Already set — ask your class teacher or co-class teacher to change this';
+    } else {
+      el.title = '';
+      el.placeholder = el.placeholder || 'Enter if missing';
+    }
+  };
+
+  const phone = String(personal.phone || p?.user?.phone || '').trim();
+  const personalEmail = String(personal.personalEmail || p?.user?.personalEmail || '').trim();
+  const marks10 = Number(ac.marks10th || p?.marks10th || 0) > 0 ? Number(ac.marks10th || p.marks10th) : '';
+  const marks12 = Number(ac.marks12th || p?.marks12th || ac.ugMarks || 0) > 0
+    ? Number(ac.marks12th || p.marks12th || ac.ugMarks)
+    : '';
+  const cgpa = Number(ac.cgpa || p?.cgpa || 0) > 0 ? Number(ac.cgpa || p.cgpa) : '';
+
+  const m10 = document.getElementById('profMarks10');
+  const m12 = document.getElementById('profMarks12');
+  const cg = document.getElementById('profCgpa');
+  if (m10) m10.value = marks10 === '' ? '' : String(marks10);
+  if (m12) m12.value = marks12 === '' ? '' : String(marks12);
+  if (cg) cg.value = cgpa === '' ? '' : String(cgpa);
+
+  lockInput('profPhone', 'profPhoneHint', 'personal.phone', phone);
+  lockInput('profPersonalEmail', 'profPersonalEmailHint', 'personal.personalEmail', personalEmail);
+  lockInput('profMarks10', 'profMarks10Hint', 'academic.marks10th', marks10);
+  lockInput('profMarks12', 'profMarks12Hint', 'academic.marks12th', marks12);
+  lockInput('profCgpa', 'profCgpaHint', 'academic.cgpa', cgpa);
+}
+
 function applyProfileEmails(merged) {
   const collegeEl = document.getElementById('profCollegeEmail');
   const personalEl = document.getElementById('profPersonalEmail');
@@ -803,6 +849,7 @@ async function loadSettingsProfile() {
       if (apiPhoto) setAvatarPhoto(apiPhoto);
     else setAvatarInitials();
       document.getElementById('profPhone').value = apiPhone;
+      applyStudentFieldLocks(p);
       user = {
         ...user,
         name: apiName || user.name,
@@ -1229,31 +1276,64 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     return;
   }
   if (role === 'student') {
-    const phoneVal = document.getElementById('profPhone').value.trim();
-    const personalEmailVal = document.getElementById('profPersonalEmail').value.trim().toLowerCase();
+    const phoneEl = document.getElementById('profPhone');
+    const personalEl = document.getElementById('profPersonalEmail');
+    const phoneVal = phoneEl?.disabled ? '' : (phoneEl?.value || '').trim();
+    const personalEmailVal = personalEl?.disabled ? '' : (personalEl?.value || '').trim().toLowerCase();
     if (personalEmailVal && !personalEmailVal.includes('@')) {
       toast('Enter a valid personal email.', 'warn');
       return;
     }
-    const payload = {
-      personal: {
-        phone: phoneVal,
-        ...(personalEmailVal ? { personalEmail: personalEmailVal } : { personalEmail: '' }),
-      },
-    };
+    const academic = {};
+    const marks10El = document.getElementById('profMarks10');
+    const marks12El = document.getElementById('profMarks12');
+    const cgpaEl = document.getElementById('profCgpa');
+    if (marks10El && !marks10El.disabled && marks10El.value.trim() !== '') {
+      academic.marks10th = parseFloat(marks10El.value);
+    }
+    if (marks12El && !marks12El.disabled && marks12El.value.trim() !== '') {
+      academic.marks12th = parseFloat(marks12El.value);
+    }
+    if (cgpaEl && !cgpaEl.disabled && cgpaEl.value.trim() !== '') {
+      academic.cgpa = parseFloat(cgpaEl.value);
+    }
+    const personal = {};
+    if (phoneEl && !phoneEl.disabled && phoneVal) personal.phone = phoneVal;
+    if (personalEl && !personalEl.disabled && personalEmailVal) personal.personalEmail = personalEmailVal;
+    const payload = {};
+    if (Object.keys(personal).length) payload.personal = personal;
+    if (Object.keys(academic).length) payload.academic = academic;
+    if (!Object.keys(payload).length) {
+      toast('No empty profile fields to update. Ask your class teacher to change existing values.', 'warn');
+      return;
+    }
     if (Auth.hasRealAuth()) {
       const res = await api('/student/profile', { method: 'PUT', body: payload, noRedirectOn401: true });
       if (!res?.success) {
         toast(res?.message || 'Could not save profile to server.', 'warn');
+        return;
       }
+      if (res.data) applyStudentFieldLocks({
+        ...res.data,
+        personal: { ...(user.personal || {}), ...personal },
+        academic: { ...(user.academic || {}), ...academic },
+        user: {
+          phone: personal.phone ?? user.phone,
+          personalEmail: personal.personalEmail ?? user.personalEmail,
+        },
+        marks10th: academic.marks10th,
+        marks12th: academic.marks12th,
+        cgpa: academic.cgpa,
+      });
     }
     Auth.set({
       ...user,
       name: user.name,
-      phone: phoneVal,
-      personalEmail: personalEmailVal,
+      phone: personal.phone !== undefined ? personal.phone : user.phone,
+      personalEmail: personal.personalEmail !== undefined ? personal.personalEmail : user.personalEmail,
       maritalStatus: document.getElementById('profMaritalStatus')?.value || user.maritalStatus || '',
       registerNumber: document.getElementById('profRegNo').value,
+      cgpa: academic.cgpa !== undefined ? academic.cgpa : user.cgpa,
     }, Auth.token());
     toast('Settings saved.', 'success');
     return;

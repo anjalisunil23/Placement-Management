@@ -1448,12 +1448,8 @@ function filteredDrives() {
 
 function manageActions(d) {
   if (!canManage) return '';
-  const completedBtn = String(d.status || '') === 'Completed'
-    ? ''
-    : `<button type="button" class="icon-btn" style="width:30px;height:30px;color:var(--success)" title="Mark completed" onclick="event.stopPropagation(); markDriveCompleted('${d.id}')"><i class="bi bi-check2-circle"></i></button>`;
   return `<div class="d-flex gap-1">
     <button type="button" class="icon-btn" style="width:30px;height:30px" title="View applicants" onclick="event.stopPropagation(); openDriveApplicants('${d.id}')"><i class="bi bi-people"></i></button>
-    ${completedBtn}
     <button type="button" class="icon-btn" style="width:30px;height:30px" title="Edit" onclick="event.stopPropagation(); openEditDrive('${d.id}')"><i class="bi bi-pencil"></i></button>
     <button type="button" class="icon-btn" style="width:30px;height:30px;color:var(--danger)" title="Delete" onclick="event.stopPropagation(); deleteDrive('${d.id}')"><i class="bi bi-trash"></i></button>
   </div>`;

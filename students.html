@@ -464,16 +464,32 @@
         <div class="text-center text-muted-2 py-4 d-none" id="fyProfileLoading">Loading profile…</div>
         <div class="text-center text-danger py-4 d-none" id="fyProfileError">Could not load profile.</div>
         <div id="fyProfileBody" class="d-none">
-          <div class="row g-2 g-md-3 small">
+          <div class="row g-2 g-md-3 small" id="fyProfileIdentity">
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Register No.</span><span class="fw-medium" id="fySpRegNo">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Department</span><span class="fw-medium" id="fySpDept">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Batch / Class</span><span class="fw-medium" id="fySpBatch">—</span></div>
             <div class="col-12 profile-field"><span class="text-muted-2 d-block">College Email</span><span class="fw-medium profile-email-value" id="fySpCollegeEmail">—</span></div>
-            <div class="col-12 profile-field"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium profile-email-value" id="fySpPersonalEmail">—</span></div>
-            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Gender</span><span class="fw-medium" id="fySpGender">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Marital status</span><span class="fw-medium" id="fySpMaritalStatus">—</span></div>
+          </div>
+          <div class="row g-2 g-md-3 small mt-1" id="fyProfileReadOnly">
+            <div class="col-12 profile-field"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium profile-email-value" id="fySpPersonalEmail">—</span></div>
+            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Current CGPA</span><span class="fw-medium" id="fySpCgpa">—</span></div>
+            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">10th Marks</span><span class="fw-medium" id="fySpMarks10">—</span></div>
+            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">12th Marks</span><span class="fw-medium" id="fySpMarks12">—</span></div>
+            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Backlogs</span><span class="fw-medium" id="fySpBacklogs">—</span></div>
+          </div>
+          <div id="fyProfileEditWrap" class="d-none mt-2">
+            <div class="alert alert-info small py-2 mb-3">You are the class teacher / co-class teacher for this batch. You can update contact and academic fields.</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label small fw-semibold">Personal email</label><input type="email" class="form-control form-control-sm" id="fyEditPersonalEmail"/></div>
+              <div class="col-md-6"><label class="form-label small fw-semibold">Phone</label><input class="form-control form-control-sm" id="fyEditPhone"/></div>
+              <div class="col-md-4"><label class="form-label small fw-semibold">10th marks (%)</label><input type="number" step="0.01" min="0" max="100" class="form-control form-control-sm" id="fyEditMarks10"/></div>
+              <div class="col-md-4"><label class="form-label small fw-semibold">12th marks (%)</label><input type="number" step="0.01" min="0" max="100" class="form-control form-control-sm" id="fyEditMarks12"/></div>
+              <div class="col-md-4"><label class="form-label small fw-semibold">CGPA</label><input type="number" step="0.01" min="0" max="10" class="form-control form-control-sm" id="fyEditCgpa"/></div>
+              <div class="col-md-4"><label class="form-label small fw-semibold">Backlogs</label><input type="number" step="1" min="0" class="form-control form-control-sm" id="fyEditBacklogs"/></div>
+            </div>
           </div>
           <div id="fySpQualificationsWrap" class="mt-3" style="display:none">
             <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
@@ -488,6 +504,7 @@
       </div>
       <div class="modal-footer border-0 pt-0">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary d-none" id="fyProfileSaveBtn"><i class="bi bi-save me-1"></i>Save profile</button>
       </div>
     </div>
   </div>
@@ -1826,6 +1843,7 @@ async function loadFinalYearStudents(force = false) {
 
 let finalYearProfileModal = null;
 let finalYearProfileSeq = 0;
+let finalYearEditStudent = null;
 
 function finalYearStudentByReg(reg) {
   const key = normStudentReg(reg);
@@ -1848,6 +1866,30 @@ function setFinalYearProfileAvatar(s) {
   }
 }
 
+function syncFinalYearProfileEditMode(s) {
+  const canEdit = role === 'staff' && !!(s && s.canEditProfile);
+  finalYearEditStudent = canEdit ? s : null;
+  document.getElementById('fyProfileEditWrap')?.classList.toggle('d-none', !canEdit);
+  document.getElementById('fyProfileReadOnly')?.classList.toggle('d-none', !!canEdit);
+  document.getElementById('fyProfileSaveBtn')?.classList.toggle('d-none', !canEdit);
+  if (!canEdit) return;
+  const personalEmail = s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : '') || '';
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val == null || val === '' ? '' : String(val);
+  };
+  setVal('fyEditPersonalEmail', personalEmail);
+  setVal('fyEditPhone', s.phone || '');
+  const marks10 = s.marks10th ?? s.academic?.marks10th;
+  const marks12 = s.marks12th ?? s.ugMarks ?? s.academic?.marks12th ?? s.academic?.ugMarks;
+  const cgpa = s.cgpa ?? s.academic?.cgpa;
+  const backlogs = s.backlogs ?? s.academic?.backlogs;
+  setVal('fyEditMarks10', marks10 != null && Number(marks10) > 0 ? Number(marks10) : '');
+  setVal('fyEditMarks12', marks12 != null && Number(marks12) > 0 ? Number(marks12) : '');
+  setVal('fyEditCgpa', cgpa != null && Number(cgpa) > 0 ? Number(cgpa) : '');
+  setVal('fyEditBacklogs', backlogs != null && backlogs !== '' ? Number(backlogs) : '');
+}
+
 function fillFinalYearProfileFields(s) {
   const set = (id, val) => {
     const el = document.getElementById(id);
@@ -1868,12 +1910,75 @@ function fillFinalYearProfileFields(s) {
   set('fySpMaritalStatus', formatProfileValue(s.maritalStatus || s.personal?.maritalStatus));
   const cgpa = s.cgpa ?? s.academic?.cgpa;
   set('fySpCgpa', cgpa != null && Number(cgpa) > 0 ? String(Number(cgpa)) : '—');
+  set('fySpMarks10', formatMarkPct(s.marks10th ?? s.academic?.marks10th));
+  set('fySpMarks12', formatMarkPct(s.marks12th ?? s.ugMarks ?? s.academic?.marks12th));
+  const backlogs = s.backlogs ?? s.academic?.backlogs;
+  set('fySpBacklogs', backlogs != null && backlogs !== '' ? String(backlogs) : '—');
   // Same education table as the student Profile page (academic.qualifications).
   renderQualificationsTable(
     pickProfileQualifications(s.qualifications, s.academic?.qualifications),
     'fySpQualificationsBody',
     'fySpQualificationsWrap'
   );
+  syncFinalYearProfileEditMode(s);
+}
+
+async function saveFinalYearStudentProfile() {
+  if (role !== 'staff' || !finalYearEditStudent || typeof StaffApi === 'undefined') return;
+  const id = String(finalYearEditStudent.id || finalYearEditStudent.studentId || finalYearEditStudent.registerNumber || '').trim();
+  if (!id) {
+    toast('Student id missing.', 'warn');
+    return;
+  }
+  const personalEmail = (document.getElementById('fyEditPersonalEmail')?.value || '').trim().toLowerCase();
+  if (personalEmail && !personalEmail.includes('@')) {
+    toast('Enter a valid personal email.', 'warn');
+    return;
+  }
+  const payload = {
+    personal: {
+      phone: (document.getElementById('fyEditPhone')?.value || '').trim(),
+      personalEmail,
+    },
+    academic: {},
+  };
+  const marks10 = document.getElementById('fyEditMarks10')?.value;
+  const marks12 = document.getElementById('fyEditMarks12')?.value;
+  const cgpa = document.getElementById('fyEditCgpa')?.value;
+  const backlogs = document.getElementById('fyEditBacklogs')?.value;
+  if (marks10 !== '' && marks10 != null) payload.academic.marks10th = parseFloat(marks10);
+  if (marks12 !== '' && marks12 != null) payload.academic.marks12th = parseFloat(marks12);
+  if (cgpa !== '' && cgpa != null) payload.academic.cgpa = parseFloat(cgpa);
+  if (backlogs !== '' && backlogs != null) payload.academic.backlogs = parseInt(backlogs, 10);
+
+  const btn = document.getElementById('fyProfileSaveBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await StaffApi.updateStudentProfile(id, payload);
+    if (!res?.success) {
+      toast(res?.message || 'Could not update profile.', 'error');
+      return;
+    }
+    const data = res.data || {};
+    const personal = data.personal || payload.personal;
+    const academic = data.academic || payload.academic;
+    finalYearEditStudent = {
+      ...finalYearEditStudent,
+      phone: personal.phone ?? finalYearEditStudent.phone,
+      personalEmail: personal.personalEmail ?? finalYearEditStudent.personalEmail,
+      marks10th: academic.marks10th ?? finalYearEditStudent.marks10th,
+      marks12th: academic.marks12th ?? finalYearEditStudent.marks12th,
+      ugMarks: academic.marks12th ?? academic.ugMarks ?? finalYearEditStudent.ugMarks,
+      cgpa: academic.cgpa ?? finalYearEditStudent.cgpa,
+      backlogs: academic.backlogs ?? finalYearEditStudent.backlogs,
+      canEditProfile: true,
+      academic: { ...(finalYearEditStudent.academic || {}), ...academic },
+    };
+    fillFinalYearProfileFields(finalYearEditStudent);
+    toast('Student profile updated.', 'success');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function openFinalYearStudent(reg) {
@@ -1923,6 +2028,7 @@ async function openFinalYearStudent(reg) {
       ...(full || {}),
       ...markOverlay,
       registerNumber: (full && full.registerNumber) || registerKey,
+      canEditProfile: !!(full && full.canEditProfile),
       qualifications: mergedQuals,
       academic: {
         ...((full && full.academic) || {}),
@@ -1935,6 +2041,10 @@ async function openFinalYearStudent(reg) {
   document.getElementById('fyProfileError')?.classList.remove('d-none');
   document.getElementById('fyProfileError').textContent = 'Could not load full profile (including qualifications). Showing list details.';
 }
+
+document.getElementById('fyProfileSaveBtn')?.addEventListener('click', () => {
+  saveFinalYearStudentProfile().catch(() => toast('Could not update profile.', 'error'));
+});
 
 document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.final-year-open');

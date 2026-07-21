@@ -55,13 +55,25 @@
     PMS.get('/student/profile').then(res => {
       const p = res.data;
       const ac = p.academic || {};
+      const locked = new Set(p.lockedFields || []);
       certifications = p.certifications || [];
       renderCerts();
-      document.getElementById('ugMarks').value = ac.ugMarks || '';
-      document.getElementById('mcaMarks').value = ac.mcaMarks || '';
-      document.getElementById('cgpa').value = ac.cgpa || '';
-      document.getElementById('backlogs').value = ac.backlogs || '';
-      document.getElementById('phone').value = (p.personal || {}).phone || '';
+      const setLocked = (id, path, value) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = value || '';
+        if (locked.has(path) || (value !== '' && value != null && Number(value) !== 0)) {
+          el.disabled = true;
+          el.title = 'Ask your class teacher to change this';
+        }
+      };
+      setLocked('ugMarks', 'academic.ugMarks', ac.ugMarks);
+      setLocked('mcaMarks', 'academic.mcaMarks', ac.mcaMarks);
+      setLocked('cgpa', 'academic.cgpa', ac.cgpa);
+      document.getElementById('backlogs').value = ac.backlogs ?? '';
+      document.getElementById('backlogs').disabled = true;
+      document.getElementById('backlogs').title = 'Ask your class teacher to change this';
+      setLocked('phone', 'personal.phone', (p.personal || {}).phone);
       document.getElementById('policyStatus').textContent = p.policyAccepted ? '✓ Accepted' : 'Not accepted';
       document.getElementById('signedStatus').innerHTML = p.signedReport ? '<span class="badge bg-success">Signed report uploaded</span>' : '<span class="badge bg-warning">Not uploaded</span>';
     });
@@ -85,16 +97,28 @@
 
     document.getElementById('profileForm').addEventListener('submit', async e => {
       e.preventDefault();
-      await PMS.put('/student/profile', {
-        academic: {
-          ugMarks: parseFloat(document.getElementById('ugMarks').value),
-          mcaMarks: parseFloat(document.getElementById('mcaMarks').value),
-          cgpa: parseFloat(document.getElementById('cgpa').value),
-          backlogs: parseInt(document.getElementById('backlogs').value)
-        },
-        personal: { phone: document.getElementById('phone').value }
+      const academic = {};
+      const personal = {};
+      ['ugMarks', 'mcaMarks', 'cgpa'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.disabled && el.value !== '') academic[id] = parseFloat(el.value);
       });
+      const phoneEl = document.getElementById('phone');
+      if (phoneEl && !phoneEl.disabled && phoneEl.value.trim()) personal.phone = phoneEl.value.trim();
+      const body = {};
+      if (Object.keys(academic).length) body.academic = academic;
+      if (Object.keys(personal).length) body.personal = personal;
+      if (!Object.keys(body).length) {
+        alert('No empty fields to update. Ask your class teacher to change existing values.');
+        return;
+      }
+      const res = await PMS.put('/student/profile', body);
+      if (res && res.success === false) {
+        alert(res.message || 'Could not save profile.');
+        return;
+      }
       alert('Profile saved.');
+      location.reload();
     });
 
     document.getElementById('acceptPolicy').addEventListener('click', async () => {

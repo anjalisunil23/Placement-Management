@@ -20,6 +20,7 @@ use PMS\Services\StaffService;
 use PMS\Services\RecruitingService;
 use PMS\Services\AesLoginService;
 use PMS\Services\NotificationService;
+use PMS\Services\StudentProfileEditService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Validator;
@@ -241,12 +242,31 @@ final class StaffController
         StaffContext::requireDepartmentScope($ctx);
         $officerCtx = StaffContext::officerCompatible($ctx);
         $register = trim((string) ($_GET['registerNumber'] ?? ''));
-        Response::success((new OfficerDataService())->getStudentOverview(
+        $overview = (new OfficerDataService())->getStudentOverview(
             $studentId,
             $officerCtx,
             'staff',
             $register !== '' ? $register : null
-        ));
+        );
+        $batch = trim((string) ($overview['classBatch'] ?? ''));
+        $overview['canEditProfile'] = $batch !== '' && StaffContext::canEditClassBatch($ctx, $batch);
+        Response::success($overview);
+    }
+
+    /** PUT /api/staff/students/{id}/profile — class teacher / co-class teacher only */
+    public function updateStudentProfile(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(
+            DocumentHelper::jsonSafe((new StudentProfileEditService())->applyStaffUpdate($ctx, $studentId, $input)),
+            'Student profile updated.'
+        );
     }
 
     /** GET /api/staff/students/{id}/qualifications */
