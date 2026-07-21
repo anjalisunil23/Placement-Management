@@ -31,11 +31,9 @@
       <div class="col-md-4"><label class="form-label small fw-semibold">Package (LPA)</label><input class="form-control" name="package"/></div>
       <div class="col-md-4"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location"/></div>
       <div class="col-md-6">
-        <label class="form-label small fw-semibold">Department</label>
-        <select class="form-select" name="departmentId" id="jobDepartment" required>
-          <option value="">Select department</option>
-        </select>
-        <div class="form-text">One department only. That department’s placement officer (or admin) will approve.</div>
+        <label class="form-label small fw-semibold">Departments</label>
+        <div class="border rounded p-2" style="max-height:200px;overflow-y:auto" id="jobDepartment"></div>
+        <div class="form-text">Select one or more departments for this job post.</div>
       </div>
       <div class="col-md-6"><label class="form-label small fw-semibold">Visible to</label><select class="form-select" name="audience"><option value="student">Students only</option><option value="both">Students and job-seeking alumni</option><option value="alumni">Job-seeking alumni only</option></select></div>
       <div class="col-12"><label class="form-label small fw-semibold">Job poster (optional)</label><input class="form-control" type="file" name="poster" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"/><div class="form-text">JPG, PNG, WebP, or PDF · maximum 10 MB</div></div>
@@ -145,12 +143,12 @@ function renderJobs() {
 }
 
 async function loadDepartments() {
-  const sel = document.getElementById('jobDepartment');
+  const container = document.getElementById('jobDepartment');
   const res = await api('/public/departments', { noRedirectOn401: true });
   const rows = res?.success && Array.isArray(res.data) ? res.data : [];
   rows.forEach(d => { deptById[String(d.id || d._id || '')] = d; });
-  sel.innerHTML = '<option value="">Select department</option>' + rows.map(d =>
-    `<option value="${escHtml(String(d.id || ''))}">${escHtml(d.code || '')} — ${escHtml(d.name || '')}</option>`
+  container.innerHTML = rows.map(d =>
+    `<div class="form-check"><input class="form-check-input dept-check" type="checkbox" name="departmentIds[]" value="${escHtml(String(d.id || ''))}" id="dept_${escHtml(String(d.id || ''))}"/><label class="form-check-label small" for="dept_${escHtml(String(d.id || ''))}">${escHtml(d.code || '')} — ${escHtml(d.name || '')}</label></div>`
   ).join('');
 }
 
@@ -192,9 +190,15 @@ document.getElementById('postJobForm').addEventListener('submit', async e => {
   e.preventDefault();
   const formData = new FormData(e.target);
   const data = Object.fromEntries(formData.entries());
-  if (!data.departmentId) {
-    toast('Select a department for this job post.', 'warn');
+  const selectedDepartments = [...document.querySelectorAll('#jobDepartment .dept-check:checked')].map(el => el.value).filter(Boolean);
+  if (!selectedDepartments.length) {
+    toast('Select at least one department for this job post.', 'warn');
     return;
+  }
+  formData.delete('departmentIds[]');
+  selectedDepartments.forEach(id => formData.append('departmentIds[]', id));
+  if (selectedDepartments.length === 1) {
+    formData.set('departmentId', selectedDepartments[0]);
   }
   const poster = formData.get('poster');
   if (poster instanceof File && poster.name && (!/\.(jpe?g|png|webp|pdf)$/i.test(poster.name) || poster.size > 10 * 1024 * 1024)) {
