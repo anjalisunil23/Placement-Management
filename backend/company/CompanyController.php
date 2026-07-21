@@ -462,6 +462,12 @@ final class CompanyController
         $user = RBACMiddleware::requireCompany();
         $app = OwnershipHelper::requireCompanyApplication($appId, $user);
         $company = $this->getCompany($user);
+        $current = (string) ($app['status'] ?? 'applied');
+        if (in_array($current, ['company_review', 'shortlisted', 'selected'], true)) {
+            Response::success(null, 'Application is already under review or processed.');
+            return;
+        }
+
         (new ApplicationWorkflowService())->transition($appId, 'company_review', (string) $user['_id']);
         $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
         if ($student && !empty($student['userId'])) {
@@ -480,6 +486,16 @@ final class CompanyController
         $user = RBACMiddleware::requireCompany();
         $app = OwnershipHelper::requireCompanyApplication($appId, $user);
         $company = $this->getCompany($user);
+        $current = (string) ($app['status'] ?? 'applied');
+        if ($current === 'shortlisted') {
+            Response::success(null, 'Already shortlisted.');
+            return;
+        }
+        if ($current === 'selected') {
+            Response::success(null, 'Applicant already offered.');
+            return;
+        }
+
         (new ApplicationWorkflowService())->transition($appId, 'shortlisted', (string) $user['_id']);
         $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
         if ($student && !empty($student['userId'])) {

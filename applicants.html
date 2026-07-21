@@ -53,8 +53,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260716profilename"></script>
-<script src="js/app.js?v=20260716notifflat"></script>
+<script src="js/api.js?v=20260721applicantactions"></script>
+<script src="js/app.js?v=20260721applicantactions"></script>
 <script>
 const user = Auth.user() || demoUserFor('company');
 const co = user.companyName || 'Acme Cloud';
@@ -112,6 +112,22 @@ function filteredRows() {
   });
 }
 
+function applicantActionButtons(row) {
+  const status = String(row.rawStatus || row.status || 'applied');
+  if (['rejected', 'withdrawn'].includes(status)) {
+    return '<span class="text-muted-2 small">—</span>';
+  }
+  if (status === 'shortlisted') {
+    return `<div class="btn-group btn-group-sm">
+      <button type="button" class="btn btn-outline-success" data-action="result" data-id="${row.id}">Offer</button>
+    </div>`;
+  }
+  return `<div class="btn-group btn-group-sm">
+    <button type="button" class="btn btn-outline-primary" data-action="review" data-id="${row.id}">Review</button>
+    <button type="button" class="btn btn-outline-success" data-action="shortlist" data-id="${row.id}">Shortlist</button>
+  </div>`;
+}
+
 function renderTable() {
   const rows = filteredRows();
   renderQuickStats(applicantRows);
@@ -122,12 +138,7 @@ function renderTable() {
       <td>${r.roll || '—'}</td><td>${r.dept || '—'}</td><td>${r.cgpa ?? '—'}</td>
       <td>${appStatusBadge(r.status)}</td>
       <td>${r.hasResume !== false ? '<i class="bi bi-file-earmark-pdf-fill text-danger"></i>' : '<span class="text-muted-2">—</span>'}</td>
-      <td>
-        ${['selected','offered','rejected','withdrawn'].includes(r.status) ? '<span class="text-muted-2 small">—</span>' : `<div class="btn-group btn-group-sm">
-          ${r.status !== 'shortlisted' ? `<button type="button" class="btn btn-outline-primary" data-action="review" data-id="${r.id}">Review</button>
-          <button type="button" class="btn btn-outline-success" data-action="shortlist" data-id="${r.id}">Shortlist</button>` : `<button type="button" class="btn btn-outline-success" data-action="result" data-id="${r.id}">Offer</button>`}
-        </div>`}
-      </td>
+      <td>${applicantActionButtons(r)}</td>
     </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No applicants yet.</td></tr>';
 }
 
