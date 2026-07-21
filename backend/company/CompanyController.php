@@ -18,6 +18,7 @@ use PMS\Services\EmailService;
 use PMS\Services\JobPostApprovalService;
 use PMS\Services\NotificationService;
 use PMS\Services\ObjectStorageService;
+use PMS\Services\OfficerDataService;
 use PMS\Services\RecruitingService;
 use PMS\Services\ReportService;
 use PMS\Utils\DocumentHelper;
@@ -571,6 +572,14 @@ final class CompanyController
     public function filterApplicants(): void
     {
         $this->applications();
+    }
+
+    /** GET /api/company/applications/{id}/resume */
+    public function downloadApplicationResume(string $appId): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        OwnershipHelper::requireCompanyApplication($appId, $user);
+        (new OfficerDataService())->streamApplicationResumeById($appId, false);
     }
 
     /** POST /api/company/applications/{id}/review — company applicants page only */

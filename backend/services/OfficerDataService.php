@@ -407,6 +407,18 @@ final class OfficerDataService
         return ['path' => $path, 'filename' => $filename];
     }
 
+    /**
+     * Stream application resume without officer department scope (caller must authorize).
+     */
+    public function streamApplicationResumeById(string $appId, bool $forceDownload = false): void
+    {
+        $app = (new ApplicationModel())->findById(trim($appId));
+        if (!$app) {
+            Response::notFound('Application not found.');
+        }
+        $this->streamResolvedApplicationResume($app, $forceDownload);
+    }
+
     public function streamApplicationResume(string $appId, array $ctx): void
     {
         $app = $this->assertApplicationInScope($appId, $ctx);

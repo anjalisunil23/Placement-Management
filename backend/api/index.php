@@ -283,6 +283,7 @@ $routes = [
     ['GET',  '/company/applications/export',      [CompanyController::class, 'exportApplications']],
     ['GET',  '/company/applications/filter',      [CompanyController::class, 'filterApplicants']],
     ['POST', '/company/applications/upload-results', [CompanyController::class, 'uploadResults']],
+    ['GET',  '/company/applications/{id}/resume', [CompanyController::class, 'downloadApplicationResume']],
     ['POST', '/company/applications/{id}/review',   [CompanyController::class, 'startReview']],
     ['POST', '/company/applications/{id}/shortlist', [CompanyController::class, 'shortlist']],
     ['POST', '/company/applications/{id}/result', [CompanyController::class, 'updateResult']],

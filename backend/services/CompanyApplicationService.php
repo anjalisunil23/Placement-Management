@@ -162,6 +162,8 @@ final class CompanyApplicationService
     ): array {
         $serialized = DocumentHelper::serialize($app);
         $dept = $student ? $this->departmentCode($student, $deptModel, $deptCache) : '';
+        $appId = (string) ($serialized['id'] ?? $serialized['_id'] ?? $app['_id'] ?? '');
+        $hasResume = (new OfficerDataService())->resumeFileForApplication($app) !== null;
         $serialized['student'] = [
             'name'           => $user['name'] ?? 'Student',
             'registerNumber' => $student['registerNumber'] ?? '',
@@ -169,7 +171,7 @@ final class CompanyApplicationService
             'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
             'cgpa'           => (float) ($student['academic']['cgpa'] ?? 0),
             'backlogs'       => (int) ($student['academic']['backlogs'] ?? 0),
-            'hasResume'      => !empty($student['resume']['filename']),
+            'hasResume'      => $hasResume,
         ];
         $serialized['drive'] = $drive ? [
             'title'   => $drive['title'] ?? '',
@@ -183,6 +185,9 @@ final class CompanyApplicationService
         ] : null;
         $serialized['uiStatus'] = $this->displayStatus($app);
         $serialized['companyViewStatus'] = strtolower(trim((string) ($app['companyViewStatus'] ?? '')));
+        $serialized['resumeUrl'] = ($hasResume && $appId !== '')
+            ? '/backend/api/company/applications/' . rawurlencode($appId) . '/resume'
+            : '';
         return $serialized;
     }
 
