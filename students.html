@@ -472,6 +472,7 @@
             <div class="col-12 profile-field"><span class="text-muted-2 d-block">Personal Email</span><span class="fw-medium profile-email-value" id="fySpPersonalEmail">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Phone</span><span class="fw-medium" id="fySpPhone">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Gender</span><span class="fw-medium" id="fySpGender">—</span></div>
+            <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Marital status</span><span class="fw-medium" id="fySpMaritalStatus">—</span></div>
             <div class="col-6 col-md-4 profile-field"><span class="text-muted-2 d-block">Current CGPA</span><span class="fw-medium" id="fySpCgpa">—</span></div>
           </div>
           <div id="fySpQualificationsWrap" class="mt-3" style="display:none">
@@ -1182,6 +1183,7 @@ function buildDisplayProfile(listRow, api) {
     departmentName: api.departmentName || listRow?.departmentName || listRow?.department || '',
     classBatch: api.classBatch || listRow?.classBatch || '',
     gender: api.gender || listRow?.gender || '',
+    maritalStatus: api.maritalStatus || api.personal?.maritalStatus || listRow?.maritalStatus || '',
     cgpa: api.cgpa ?? api.academic?.cgpa ?? listRow?.cgpa ?? null,
     marks10th: api.marks10th ?? api.academic?.marks10th ?? listRow?.marks10th ?? null,
     marks12th: api.marks12th ?? api.academic?.marks12th ?? listRow?.marks12th ?? listRow?.ugMarks ?? null,
@@ -1863,6 +1865,7 @@ function fillFinalYearProfileFields(s) {
   setProfileEmailField('fySpPersonalEmail', s.personalEmail || (!/\.ajce\.in$|@(students\.)?amaljyothi\.ac\.in$/i.test(s.email || '') ? s.email : ''));
   set('fySpPhone', formatProfileValue(s.phone));
   set('fySpGender', formatProfileValue(s.gender));
+  set('fySpMaritalStatus', formatProfileValue(s.maritalStatus || s.personal?.maritalStatus));
   const cgpa = s.cgpa ?? s.academic?.cgpa;
   set('fySpCgpa', cgpa != null && Number(cgpa) > 0 ? String(Number(cgpa)) : '—');
   // Same education table as the student Profile page (academic.qualifications).

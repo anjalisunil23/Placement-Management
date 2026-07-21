@@ -96,9 +96,12 @@ final class Collections
                 'registerNumber' => 'string',
                 'departmentId'   => 'ObjectId',
                 'personal'       => [
-                    'phone'   => 'string',
-                    'address' => 'string',
-                    'dob'     => 'string',
+                    'phone'          => 'string',
+                    'personalEmail'  => 'string',
+                    'address'        => 'string',
+                    'dob'            => 'string',
+                    'gender'         => 'string',
+                    'maritalStatus'  => 'string (Single|Married|Other)',
                 ],
                 'academic' => [
                     'ugMarks'    => 'float',

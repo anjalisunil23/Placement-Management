@@ -825,6 +825,19 @@ final class AesLoginService
         if ($gender !== '' && trim((string) ($personal['gender'] ?? '')) !== $gender) {
             $personalPatch['gender'] = $gender;
         }
+        $maritalStatus = $this->normalizeMaritalStatus((string) (
+            $mapped['maritalStatus']
+            ?? $placement['stud_marital']
+            ?? $placement['stud_maritalstatus']
+            ?? $placement['stud_marital_status']
+            ?? $placement['maritalStatus']
+            ?? $placement['marital_status']
+            ?? $placement['marital']
+            ?? ''
+        ));
+        if ($maritalStatus !== '' && trim((string) ($personal['maritalStatus'] ?? '')) !== $maritalStatus) {
+            $personalPatch['maritalStatus'] = $maritalStatus;
+        }
         if ($personalPatch !== []) {
             $patch['personal'] = array_merge($personal, $personalPatch);
         }
@@ -1458,6 +1471,11 @@ final class AesLoginService
             'gender'         => $this->normalizeGender($this->pickInsensitive($aesDetails, [
                 'stud_gender', 'gender', 'sex', 'stud_sex', 'Gender', 'SEX',
             ])),
+            'maritalStatus'  => $this->normalizeMaritalStatus($this->pickInsensitive($aesDetails, [
+                'stud_marital', 'stud_maritalstatus', 'stud_marital_status', 'stud_married',
+                'maritalStatus', 'marital_status', 'marital', 'married', 'MaritalStatus',
+                'Marital', 'MARITAL', 'stud_Marital',
+            ])),
             'bloodGroup'     => $this->pick($aesDetails, ['bloodGroup', 'blood_group', 'blood']),
             'address'        => $this->pick($aesDetails, ['address', 'addr', 'permanent_address', 'permanentAddress']),
             'parentName'     => $this->pick($aesDetails, ['parentName', 'parent_name', 'father_name', 'fatherName', 'guardian']),
@@ -1771,7 +1789,7 @@ final class AesLoginService
         if (!empty($extras['personalEmail'])) {
             $personalPatch['personalEmail'] = strtolower(trim((string) $extras['personalEmail']));
         }
-        foreach (['phone', 'gender', 'bloodGroup', 'address', 'parentName', 'dob', 'aadhar', 'course', 'year', 'semester'] as $field) {
+        foreach (['phone', 'gender', 'maritalStatus', 'bloodGroup', 'address', 'parentName', 'dob', 'aadhar', 'course', 'year', 'semester'] as $field) {
             if (!empty($extras[$field])) {
                 $personalPatch[$field] = $extras[$field];
             }
@@ -3425,6 +3443,31 @@ final class AesLoginService
         }
 
         return $value;
+    }
+
+    /**
+     * Normalize AES marital status from getStudInfo4Placement (stud_marital, etc.).
+     */
+    public function normalizeMaritalStatus(string $raw): string
+    {
+        $value = trim($raw);
+        if ($value === '') {
+            return '';
+        }
+
+        $lower = strtolower($value);
+        if (in_array($lower, ['1', 's', 'single', 'unmarried', 'u', 'bachelor', 'unwed'], true)) {
+            return 'Single';
+        }
+        if (in_array($lower, ['2', 'm', 'married', 'wed', 'wedded'], true)) {
+            return 'Married';
+        }
+        if (in_array($lower, ['3', 'o', 'other', 'divorced', 'widowed', 'widow', 'separated'], true)) {
+            return 'Other';
+        }
+
+        // Title-case unknown AES labels so they still display.
+        return mb_convert_case($value, MB_CASE_TITLE, 'UTF-8');
     }
 
     /**

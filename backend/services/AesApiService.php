@@ -1255,6 +1255,19 @@ final class AesApiService
         if (isset($record['backlog']) && $record['backlog'] !== '' && is_numeric($record['backlog'])) {
             $record['backlogs'] = (int) $record['backlog'];
         }
+        $maritalRaw = trim((string) (
+            $record['stud_marital']
+            ?? $record['stud_maritalstatus']
+            ?? $record['stud_marital_status']
+            ?? $record['maritalStatus']
+            ?? $record['marital_status']
+            ?? $record['marital']
+            ?? ''
+        ));
+        if ($maritalRaw !== '') {
+            $record['stud_marital'] = $maritalRaw;
+            $record['maritalStatus'] = $maritalRaw;
+        }
 
         $courseId = $this->pickScalarId($record, [
             'courseId', 'course_id', 'CourseId', 'courseid', 'courseID',

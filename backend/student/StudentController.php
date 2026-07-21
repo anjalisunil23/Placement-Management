@@ -257,6 +257,7 @@ final class StudentController
       'personalEmail' => $personalEmail,
       'phone'         => (string) ($merged['phone'] ?? $personal['phone'] ?? ''),
       'gender'        => (string) ($merged['gender'] ?? $personal['gender'] ?? ''),
+      'maritalStatus' => (string) ($merged['maritalStatus'] ?? $personal['maritalStatus'] ?? ''),
     ];
     $out['stud_name'] = (string) ($out['user']['stud_name'] ?? '');
     $out['displayName'] = (string) ($out['user']['name'] ?? '');
@@ -280,6 +281,11 @@ final class StudentController
     $out['programme'] = $resolvedDept['name'];
     $out['branch'] = $resolvedDept['name'];
     $out['gender'] = (string) ($merged['gender'] ?? $personal['gender'] ?? '');
+    $out['maritalStatus'] = (string) ($merged['maritalStatus'] ?? $personal['maritalStatus'] ?? '');
+    if (!empty($merged['maritalStatus']) && empty($personal['maritalStatus'])) {
+      $personal['maritalStatus'] = (string) $merged['maritalStatus'];
+      $out['personal'] = $personal;
+    }
     if (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0) {
       $out['academic'] = $academic;
       $out['cgpa'] = (float) $academic['cgpa'];
@@ -428,6 +434,13 @@ final class StudentController
       $email = strtolower(trim((string) $personal['personalEmail']));
       if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $out['personalEmail'] = $email;
+      }
+    }
+    if (array_key_exists('maritalStatus', $personal)) {
+      $status = trim((string) $personal['maritalStatus']);
+      $allowed = ['', 'Single', 'Married', 'Other'];
+      if (in_array($status, $allowed, true)) {
+        $out['maritalStatus'] = $status;
       }
     }
 

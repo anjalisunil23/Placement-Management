@@ -45,6 +45,10 @@
           <div class="col-md-6 role-field-person"><label class="form-label small fw-semibold">Phone</label><input class="form-control" id="profPhone" placeholder="Phone number"/></div>
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Register number</label><input class="form-control" id="profRegNo"/></div>
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Gender</label><input class="form-control" id="profGender" disabled placeholder="Synced from college records"/></div>
+          <div class="col-md-6 role-field-student">
+            <label class="form-label small fw-semibold">Marital status</label>
+            <input class="form-control" id="profMaritalStatus" disabled placeholder="Synced from college records"/>
+          </div>
           <div class="col-12 role-field-student" id="profQualificationsWrap" style="display:none">
             <label class="form-label small fw-semibold">Education qualifications</label>
             <div class="table-wrap">
@@ -708,10 +712,14 @@ function applyProfileFromUser(u, activeRole) {
   applyProfileEmails(merged);
   if (phoneEl) phoneEl.value = pickPhone(merged);
   if (roleEl) roleEl.value = ROLE_LABELS[r] || r || '';
-  if (r === 'student') {
+    if (r === 'student') {
     document.getElementById('profRegNo').value = merged.registerNumber || merged.admission_no || merged.username || '';
     const genderEl = document.getElementById('profGender');
     if (genderEl) genderEl.value = pickGender(merged);
+    const maritalEl = document.getElementById('profMaritalStatus');
+    if (maritalEl) {
+      maritalEl.value = String(merged.maritalStatus || merged.personal?.maritalStatus || '').trim();
+    }
   }
   if (r === 'staff') {
     document.getElementById('profStaffDept').value = pickDepartmentDisplay(merged) || merged.department || merged.departmentName || '';
@@ -786,6 +794,10 @@ async function loadSettingsProfile() {
       document.getElementById('profRegNo').value = reg;
       const genderEl = document.getElementById('profGender');
       if (genderEl) genderEl.value = apiGender;
+      const maritalEl = document.getElementById('profMaritalStatus');
+      if (maritalEl) {
+        maritalEl.value = String(p.maritalStatus || personal.maritalStatus || '').trim();
+      }
       renderProfileQualifications(p.qualifications || ac.qualifications || []);
       const apiPhoto = pickPhotoUrl(profileCtx) || p.photoUrl || p.photo?.url || '';
       if (apiPhoto) setAvatarPhoto(apiPhoto);
@@ -803,6 +815,7 @@ async function loadSettingsProfile() {
         cgpa: apiCgpa || user.cgpa,
         phone: apiPhone || user.phone,
         gender: apiGender || user.gender || '',
+        maritalStatus: String(p.maritalStatus || personal.maritalStatus || user.maritalStatus || '').trim(),
         photoUrl: apiPhoto || user.photoUrl || '',
         photo: p.photo || user.photo,
       };
@@ -1239,6 +1252,7 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
       name: user.name,
       phone: phoneVal,
       personalEmail: personalEmailVal,
+      maritalStatus: document.getElementById('profMaritalStatus')?.value || user.maritalStatus || '',
       registerNumber: document.getElementById('profRegNo').value,
     }, Auth.token());
     toast('Settings saved.', 'success');

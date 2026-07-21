@@ -2200,6 +2200,17 @@ final class OfficerDataService
         $phone = $contact['phone'];
 
         $gender = trim((string) ($personal['gender'] ?? $mapped['gender'] ?? ''));
+        $maritalStatus = trim((string) ($mapped['maritalStatus'] ?? $personal['maritalStatus'] ?? ''));
+        if ($maritalStatus === '') {
+            $maritalStatus = (new AesLoginService())->normalizeMaritalStatus(trim((string) (
+                $placement['stud_marital']
+                ?? $placement['stud_maritalstatus']
+                ?? $placement['maritalStatus']
+                ?? $placement['marital_status']
+                ?? $placement['marital']
+                ?? ''
+            )));
+        }
 
         $classBatch = trim((string) ($mapped['classBatch'] ?? $placement['classBatch'] ?? ''));
         if ($classBatch === '') {
@@ -2306,6 +2317,7 @@ final class OfficerDataService
             'personalEmail'   => $personalEmail,
             'phone'           => $phone,
             'gender'          => $gender,
+            'maritalStatus'   => $maritalStatus,
             'department'      => $aesDeptCode !== '' ? $aesDeptCode : (string) ($dept['code'] ?? ''),
             'departmentName'  => $aesDeptName !== '' ? $aesDeptName : (string) ($dept['name'] ?? $dept['code'] ?? ''),
             'classBatch'      => $classBatch,
@@ -3117,6 +3129,22 @@ final class OfficerDataService
             $personal['gender'] = $gender;
             $row['personal'] = $personal;
             $row['gender'] = $gender;
+        }
+        $maritalStatus = trim((string) ($mapped['maritalStatus'] ?? $personal['maritalStatus'] ?? ''));
+        if ($maritalStatus === '') {
+            $maritalStatus = (new AesLoginService())->normalizeMaritalStatus(trim((string) (
+                $placement['stud_marital']
+                ?? $placement['stud_maritalstatus']
+                ?? $placement['maritalStatus']
+                ?? $placement['marital_status']
+                ?? $placement['marital']
+                ?? ''
+            )));
+        }
+        if ($maritalStatus !== '') {
+            $personal['maritalStatus'] = $maritalStatus;
+            $row['personal'] = $personal;
+            $row['maritalStatus'] = $maritalStatus;
         }
         if ($contact['collegeEmail'] !== '') {
             $row['collegeEmail'] = $contact['collegeEmail'];
