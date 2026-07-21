@@ -123,10 +123,10 @@ function renderTable() {
       <td>${appStatusBadge(r.status)}</td>
       <td>${r.hasResume !== false ? '<i class="bi bi-file-earmark-pdf-fill text-danger"></i>' : '<span class="text-muted-2">—</span>'}</td>
       <td>
-        <div class="btn-group btn-group-sm">
-          <button type="button" class="btn btn-outline-primary" data-action="review" data-id="${r.id}">Review</button>
-          <button type="button" class="btn btn-outline-success" data-action="shortlist" data-id="${r.id}">Shortlist</button>
-        </div>
+        ${['selected','offered','rejected','withdrawn'].includes(r.status) ? '<span class="text-muted-2 small">—</span>' : `<div class="btn-group btn-group-sm">
+          ${r.status !== 'shortlisted' ? `<button type="button" class="btn btn-outline-primary" data-action="review" data-id="${r.id}">Review</button>
+          <button type="button" class="btn btn-outline-success" data-action="shortlist" data-id="${r.id}">Shortlist</button>` : `<button type="button" class="btn btn-outline-success" data-action="result" data-id="${r.id}">Offer</button>`}
+        </div>`}
       </td>
     </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No applicants yet.</td></tr>';
 }
