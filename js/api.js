@@ -295,7 +295,8 @@ function resolveSessionCgpa(merged) {
   const keys = ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa'];
   for (const key of keys) {
     const val = merged[key] ?? academic[key] ?? merged.aesProfile?.[key];
-    if (val != null && val !== '' && Number(val) > 0) return Number(val);
+    const n = Number(val);
+    if (Number.isFinite(n) && n > 0 && n <= 10) return n;
   }
   return undefined;
 }

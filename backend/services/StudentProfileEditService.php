@@ -70,8 +70,11 @@ final class StudentProfileEditService
      */
     public function applyStudentUpdate(array $profile, array $input): array
     {
+        $profile = $this->sanitizeProfileDocument($profile);
         $personalPatch = $this->sanitizePersonal(is_array($input['personal'] ?? null) ? $input['personal'] : []);
-        $academicPatch = $this->sanitizeAcademic(is_array($input['academic'] ?? null) ? $input['academic'] : [], false);
+        $academicIn = is_array($input['academic'] ?? null) ? $input['academic'] : [];
+        unset($academicIn['qualifications']);
+        $academicPatch = $this->sanitizeAcademic($academicIn, false);
 
         $rejected = [];
         $personal = is_array($profile['personal'] ?? null) ? $profile['personal'] : [];
@@ -102,6 +105,9 @@ final class StudentProfileEditService
                 $rejected[] = $path;
                 continue;
             }
+            if ($key === 'qualifications') {
+                continue;
+            }
             $existingVal = $academic[$key] ?? null;
             if ($this->valuesEqual($path, $existingVal, $value)) {
                 continue;
@@ -115,6 +121,21 @@ final class StudentProfileEditService
             }
             $academic[$key] = $value;
             $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+        }
+
+        $qualPatch = is_array($input['academic']['qualifications'] ?? null)
+            ? $input['academic']['qualifications']
+            : (is_array($input['qualifications'] ?? null) ? $input['qualifications'] : null);
+        if (is_array($qualPatch)) {
+            $mergedQuals = $this->mergeStudentQualificationFills(
+                is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [],
+                $qualPatch,
+                $locks,
+                $now,
+                $rejected
+            );
+            $academic['qualifications'] = $mergedQuals['rows'];
+            $locks = $mergedQuals['locks'];
         }
 
         if ($rejected !== []) {
@@ -170,9 +191,12 @@ final class StudentProfileEditService
         $profile = $this->ensureLocalStudent($staffCtx, $resolved);
 
         $personalPatch = $this->sanitizePersonal(is_array($input['personal'] ?? null) ? $input['personal'] : []);
-        $academicPatch = $this->sanitizeAcademic(is_array($input['academic'] ?? null) ? $input['academic'] : [], true);
+        $academicIn = is_array($input['academic'] ?? null) ? $input['academic'] : [];
+        $qualIn = is_array($academicIn['qualifications'] ?? null) ? $academicIn['qualifications'] : null;
+        unset($academicIn['qualifications']);
+        $academicPatch = $this->sanitizeAcademic($academicIn, true);
 
-        if ($personalPatch === [] && $academicPatch === []) {
+        if ($personalPatch === [] && $academicPatch === [] && !is_array($qualIn)) {
             Response::error('No valid fields to update.', 422);
         }
 
@@ -194,6 +218,10 @@ final class StudentProfileEditService
             if ($key === 'backlogs' || !$this->isEmptyValue($path, $value)) {
                 $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'staff'];
             }
+        }
+        if (is_array($qualIn)) {
+            $existingRows = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+            $academic['qualifications'] = $this->mergeStaffQualificationRows($existingRows, $qualIn, $locks, $now);
         }
 
         $update = [
@@ -223,14 +251,49 @@ final class StudentProfileEditService
      */
     public function isFieldLockedForStudent(array $profile, string $path): bool
     {
+        $value = $this->readPath($profile, $path);
+        // Invalid CGPA (e.g. admission number mis-mapped as CGPA) is treated as unset.
+        if ($path === 'academic.cgpa' && !$this->isValidCgpa($value)) {
+            return false;
+        }
+
         $locks = is_array($profile['profileFieldLocks'] ?? null) ? $profile['profileFieldLocks'] : [];
-        if (isset($locks[$path]) && is_array($locks[$path])) {
+        if (isset($locks[$path]) && is_array($locks[$path]) && !$this->isEmptyValue($path, $value)) {
             return true;
         }
 
-        $value = $this->readPath($profile, $path);
-
         return !$this->isEmptyValue($path, $value);
+    }
+
+    /**
+     * Normalize profile academic values before lock-state / API responses.
+     * Clears bogus CGPA values (e.g. register numbers > 10).
+     *
+     * @param array<string, mixed> $profile
+     * @return array<string, mixed>
+     */
+    public function sanitizeProfileDocument(array $profile): array
+    {
+        $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+        $changed = false;
+        if (array_key_exists('cgpa', $academic) && !$this->isValidCgpa($academic['cgpa'])) {
+            unset($academic['cgpa']);
+            $changed = true;
+        }
+        if ($changed) {
+            $profile['academic'] = $academic;
+            $id = (string) ($profile['_id'] ?? '');
+            if ($id !== '' && Security::isValidId($id)) {
+                $this->students->update($id, ['academic' => $academic]);
+            }
+        }
+
+        return $profile;
+    }
+
+    public function isValidCgpa(mixed $value): bool
+    {
+        return is_numeric($value) && (float) $value > 0 && (float) $value <= 10;
     }
 
     /**
@@ -262,7 +325,7 @@ final class StudentProfileEditService
         $out = [];
         if (array_key_exists('cgpa', $academic) && is_numeric($academic['cgpa'])) {
             $cgpa = (float) $academic['cgpa'];
-            if ($cgpa >= 0 && $cgpa <= 10) {
+            if ($cgpa > 0 && $cgpa <= 10) {
                 $out['cgpa'] = $cgpa;
             }
         }
@@ -297,6 +360,9 @@ final class StudentProfileEditService
         if (is_string($value)) {
             return trim($value) === '';
         }
+        if ($path === 'academic.cgpa') {
+            return !$this->isValidCgpa($value);
+        }
         if (str_starts_with($path, 'academic.') && $path !== 'academic.backlogs') {
             return !is_numeric($value) || (float) $value <= 0;
         }
@@ -305,6 +371,134 @@ final class StudentProfileEditService
         }
 
         return $value === '' || $value === [];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $existing
+     * @param list<mixed> $patch
+     * @param array<string, mixed> $locks
+     * @param list<string> $rejected
+     * @return array{rows: list<array<string, mixed>>, locks: array<string, mixed>}
+     */
+    private function mergeStudentQualificationFills(
+        array $existing,
+        array $patch,
+        array $locks,
+        string $now,
+        array &$rejected
+    ): array {
+        $rows = $existing;
+        foreach ($patch as $idx => $rowPatch) {
+            if (!is_array($rowPatch) || !isset($rows[(int) $idx]) || !is_array($rows[(int) $idx])) {
+                continue;
+            }
+            $i = (int) $idx;
+            $row = $rows[$i];
+            foreach (['mark', 'maxMark', 'percentage', 'institution', 'registerNumber', 'monthYear'] as $field) {
+                if (!array_key_exists($field, $rowPatch)) {
+                    continue;
+                }
+                $path = 'academic.qualifications.' . $i . '.' . $field;
+                $newVal = $rowPatch[$field];
+                if ($field === 'institution' || $field === 'registerNumber' || $field === 'monthYear') {
+                    $newVal = trim((string) $newVal);
+                    $existingVal = trim((string) ($row[$field] ?? $row[strtolower($field)] ?? ''));
+                    if ($newVal === '' || strcasecmp($existingVal, $newVal) === 0) {
+                        continue;
+                    }
+                    if ($existingVal !== '' || (isset($locks[$path]) && is_array($locks[$path]))) {
+                        $rejected[] = $path;
+                        continue;
+                    }
+                    $row[$field] = $newVal;
+                    $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+                    continue;
+                }
+                if ($newVal === '' || $newVal === null || !is_numeric($newVal)) {
+                    continue;
+                }
+                $num = (float) $newVal;
+                if ($num <= 0) {
+                    continue;
+                }
+                if ($field === 'mark' && $num > 1000) {
+                    continue;
+                }
+                if (($field === 'maxMark' || $field === 'percentage') && $num > 1000) {
+                    continue;
+                }
+                $existingNum = isset($row[$field]) && is_numeric($row[$field]) ? (float) $row[$field] : 0.0;
+                if ($existingNum > 0) {
+                    if (abs($existingNum - $num) < 0.0001) {
+                        continue;
+                    }
+                    $rejected[] = $path;
+                    continue;
+                }
+                if (isset($locks[$path]) && is_array($locks[$path])) {
+                    $rejected[] = $path;
+                    continue;
+                }
+                $row[$field] = $num;
+                if ($field === 'maxMark') {
+                    $row['maxmark'] = $num;
+                }
+                $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+            }
+            // Auto % when mark + max present and percentage still empty.
+            $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : 0.0;
+            $max = isset($row['maxMark']) && is_numeric($row['maxMark'])
+                ? (float) $row['maxMark']
+                : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
+            $pct = isset($row['percentage']) && is_numeric($row['percentage']) ? (float) $row['percentage'] : 0.0;
+            if ($pct <= 0 && $mark > 0 && $max > 0) {
+                $row['percentage'] = round(($mark / $max) * 100, 2);
+                $locks['academic.qualifications.' . $i . '.percentage'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+            }
+            $rows[$i] = $row;
+        }
+
+        return ['rows' => $rows, 'locks' => $locks];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $existing
+     * @param list<mixed> $patch
+     * @param array<string, mixed> $locks
+     * @return list<array<string, mixed>>
+     */
+    private function mergeStaffQualificationRows(array $existing, array $patch, array &$locks, string $now): array
+    {
+        $rows = $existing;
+        foreach ($patch as $idx => $rowPatch) {
+            if (!is_array($rowPatch) || !isset($rows[(int) $idx]) || !is_array($rows[(int) $idx])) {
+                continue;
+            }
+            $i = (int) $idx;
+            $row = $rows[$i];
+            foreach (['mark', 'maxMark', 'percentage', 'institution', 'registerNumber', 'monthYear'] as $field) {
+                if (!array_key_exists($field, $rowPatch)) {
+                    continue;
+                }
+                $path = 'academic.qualifications.' . $i . '.' . $field;
+                if (in_array($field, ['institution', 'registerNumber', 'monthYear'], true)) {
+                    $row[$field] = trim((string) $rowPatch[$field]);
+                } elseif ($rowPatch[$field] === '' || $rowPatch[$field] === null) {
+                    continue;
+                } elseif (is_numeric($rowPatch[$field])) {
+                    $row[$field] = (float) $rowPatch[$field];
+                    if ($field === 'maxMark') {
+                        $row['maxmark'] = (float) $rowPatch[$field];
+                    }
+                } else {
+                    continue;
+                }
+                $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'staff'];
+            }
+            $rows[$i] = $row;
+        }
+
+        return $rows;
     }
 
     private function valuesEqual(string $path, mixed $a, mixed $b): bool

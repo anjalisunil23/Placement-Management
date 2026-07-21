@@ -287,7 +287,7 @@ final class StudentController
       $personal['maritalStatus'] = (string) $merged['maritalStatus'];
       $out['personal'] = $personal;
     }
-    if (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0) {
+    if (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0 && (float) $academic['cgpa'] <= 10) {
       $out['academic'] = $academic;
       $out['cgpa'] = (float) $academic['cgpa'];
     }
@@ -346,9 +346,19 @@ final class StudentController
       }
     }
 
-    $fieldState = (new StudentProfileEditService())->fieldStateForStudent($profile);
+    $fieldSvc = new StudentProfileEditService();
+    $profile = $fieldSvc->sanitizeProfileDocument($profile);
+    $fieldState = $fieldSvc->fieldStateForStudent($profile);
     $out['lockedFields'] = $fieldState['lockedFields'];
     $out['editableFields'] = $fieldState['editableFields'];
+    // Ensure response CGPA is never an invalid admno-like value.
+    $respCgpa = $out['cgpa'] ?? ($out['academic']['cgpa'] ?? null);
+    if (!$fieldSvc->isValidCgpa($respCgpa)) {
+      unset($out['cgpa']);
+      if (is_array($out['academic'] ?? null)) {
+        unset($out['academic']['cgpa']);
+      }
+    }
 
     Response::success(DocumentHelper::jsonSafe($out));
   }

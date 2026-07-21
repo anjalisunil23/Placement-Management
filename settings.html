@@ -673,57 +673,165 @@ function formatQualMark(val) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
+function validCgpa(val) {
+  const n = Number(val);
+  return Number.isFinite(n) && n > 0 && n <= 10 ? n : '';
+}
+
+function validMarkPct(val) {
+  const n = Number(val);
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : '';
+}
+
+function deriveMarksFromQualifications(quals) {
+  const rows = Array.isArray(quals) ? quals : [];
+  let marks10 = '';
+  let marks12 = '';
+  let cgpa = '';
+  rows.forEach(q => {
+    if (!q || typeof q !== 'object') return;
+    const label = String(q.qualification || '').toUpperCase();
+    const pct = Number(q.percentage);
+    const mark = Number(q.mark);
+    const maxMark = Number(q.maxMark ?? q.maxmark);
+    if (!marks10 && pct > 0 && /\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|SECONDARY)\b/.test(label)) {
+      marks10 = pct;
+    }
+    if (!marks12 && pct > 0 && /\b(HSC|12TH|12\s*STD|PLUS\s*TWO|PLUS2|PUC|CLASS\s*XII|HIGHER\s*SECONDARY)\b/.test(label)) {
+      marks12 = pct;
+    }
+    if (!cgpa && mark > 0 && mark <= 10 && (/\b(CGPA|CURRENT)\b/.test(label) || (!label && (!maxMark || maxMark <= 10)))) {
+      cgpa = mark;
+    }
+  });
+  return { marks10, marks12, cgpa };
+}
+
+function qualCellEmpty(val) {
+  if (val == null || val === '') return true;
+  if (typeof val === 'number') return !(val > 0);
+  const n = Number(val);
+  if (Number.isFinite(n)) return !(n > 0);
+  return String(val).trim() === '' || String(val).trim() === '—';
+}
+
+let settingsQualRows = [];
+
 function renderProfileQualifications(quals) {
   const body = document.getElementById('profQualificationsBody');
   const wrap = document.getElementById('profQualificationsWrap');
   if (!body || !wrap) return;
-  const rows = Array.isArray(quals) ? quals : [];
-  if (!rows.length) {
+  settingsQualRows = Array.isArray(quals) ? quals.map(q => ({ ...(q || {}) })) : [];
+  if (!settingsQualRows.length) {
     wrap.style.display = 'none';
     body.innerHTML = '';
     return;
   }
   wrap.style.display = '';
-  body.innerHTML = rows.map(q => {
+  const canEdit = role === 'student';
+  body.innerHTML = settingsQualRows.map((q, i) => {
     const qual = escHtml(q.qualification || '—');
-    const inst = escHtml(q.institution || q.instname || '—');
-    const reg = escHtml(q.registerNumber || q.regno || '—');
-    const my = escHtml(q.monthYear || q.monthyear || '—');
-    const mark = escHtml(formatQualMark(q.mark));
-    const max = escHtml(formatQualMark(q.maxMark ?? q.maxmark));
-    const pct = q.percentage != null && Number(q.percentage) > 0 ? escHtml(`${Number(q.percentage)}%`) : '—';
-    return `<tr><td>${qual}</td><td>${inst}</td><td>${reg}</td><td>${my}</td><td>${mark}</td><td>${max}</td><td>${pct}</td></tr>`;
+    const cell = (field, display, opts = {}) => {
+      const empty = qualCellEmpty(q[field] ?? q[field === 'maxMark' ? 'maxmark' : field]);
+      if (!canEdit || !empty) {
+        return `<td>${escHtml(display)}</td>`;
+      }
+      const step = opts.step || '0.01';
+      const max = opts.max != null ? ` max="${opts.max}"` : '';
+      const type = opts.type || 'number';
+      return `<td><input type="${type}" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="${field}" step="${step}"${max} min="0" placeholder="Enter" aria-label="${field}"/></td>`;
+    };
+    const instEmpty = qualCellEmpty(q.institution || q.instname);
+    const regEmpty = qualCellEmpty(q.registerNumber || q.regno);
+    const myEmpty = qualCellEmpty(q.monthYear || q.monthyear);
+    const inst = (!canEdit || !instEmpty)
+      ? `<td>${escHtml(q.institution || q.instname || '—')}</td>`
+      : `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="institution" placeholder="Enter" aria-label="institution"/></td>`;
+    const reg = (!canEdit || !regEmpty)
+      ? `<td>${escHtml(q.registerNumber || q.regno || '—')}</td>`
+      : `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="registerNumber" placeholder="Enter" aria-label="registerNumber"/></td>`;
+    const my = (!canEdit || !myEmpty)
+      ? `<td>${escHtml(q.monthYear || q.monthyear || '—')}</td>`
+      : `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="monthYear" placeholder="Enter" aria-label="monthYear"/></td>`;
+    const pctDisplay = q.percentage != null && Number(q.percentage) > 0 ? `${Number(q.percentage)}%` : '—';
+    return `<tr>
+      <td>${qual}</td>
+      ${inst}${reg}${my}
+      ${cell('mark', formatQualMark(q.mark), { max: 1000 })}
+      ${cell('maxMark', formatQualMark(q.maxMark ?? q.maxmark), { max: 1000 })}
+      ${cell('percentage', pctDisplay === '—' ? '—' : String(Number(q.percentage)), { max: 100 })}
+    </tr>`;
   }).join('');
 }
 
+function collectQualificationEdits() {
+  const patch = {};
+  document.querySelectorAll('.qual-edit-input').forEach(el => {
+    const idx = el.getAttribute('data-qual-idx');
+    const field = el.getAttribute('data-qual-field');
+    if (idx == null || !field) return;
+    const raw = String(el.value || '').trim();
+    if (!raw) return;
+    if (!patch[idx]) patch[idx] = {};
+    if (field === 'institution' || field === 'registerNumber' || field === 'monthYear') {
+      patch[idx][field] = raw;
+    } else {
+      const n = parseFloat(raw);
+      if (!Number.isFinite(n) || n <= 0) return;
+      patch[idx][field] = n;
+    }
+  });
+  return Object.keys(patch).length ? Object.keys(patch).sort((a, b) => Number(a) - Number(b)).reduce((acc, k) => {
+    acc[Number(k)] = patch[k];
+    return acc;
+  }, {}) : null;
+}
+
+function bindLockedFieldHint(inputId, hintId) {
+  const el = document.getElementById(inputId);
+  const hint = document.getElementById(hintId);
+  if (!el || !hint || el.dataset.lockHintBound === '1') return;
+  el.dataset.lockHintBound = '1';
+  const show = () => {
+    if (el.readOnly || el.disabled) hint.classList.remove('d-none');
+  };
+  const hide = () => hint.classList.add('d-none');
+  el.addEventListener('focus', show);
+  el.addEventListener('click', show);
+  el.addEventListener('blur', hide);
+}
+
 function applyStudentFieldLocks(p) {
-  const locked = new Set(Array.isArray(p?.lockedFields) ? p.lockedFields : []);
-  const editable = new Set(Array.isArray(p?.editableFields) ? p.editableFields : []);
   const personal = p?.personal || {};
   const ac = p?.academic || {};
+  const derived = deriveMarksFromQualifications(p?.qualifications || ac.qualifications || settingsQualRows);
 
   const lockInput = (inputId, hintId, path, displayValue) => {
     const el = document.getElementById(inputId);
     const hint = document.getElementById(hintId);
     if (!el) return;
-    const isLocked = locked.has(path) || (!editable.has(path) && displayValue !== '' && displayValue != null);
-    el.disabled = !!isLocked;
-    if (hint) hint.classList.toggle('d-none', !isLocked);
-    if (isLocked) {
-      el.title = 'Already set — ask your class teacher or co-class teacher to change this';
+    const hasValue = displayValue !== '' && displayValue != null;
+    // Empty fields are always editable for students; filled fields are locked.
+    const freeze = !!hasValue;
+    el.readOnly = freeze;
+    el.disabled = false;
+    if (hint) hint.classList.add('d-none');
+    el.classList.toggle('bg-light', freeze);
+    el.style.cursor = freeze ? 'default' : '';
+    if (freeze) {
+      el.title = 'Already set — click for help';
     } else {
       el.title = '';
       el.placeholder = el.placeholder || 'Enter if missing';
     }
+    bindLockedFieldHint(inputId, hintId);
   };
 
   const phone = String(personal.phone || p?.user?.phone || '').trim();
   const personalEmail = String(personal.personalEmail || p?.user?.personalEmail || '').trim();
-  const marks10 = Number(ac.marks10th || p?.marks10th || 0) > 0 ? Number(ac.marks10th || p.marks10th) : '';
-  const marks12 = Number(ac.marks12th || p?.marks12th || ac.ugMarks || 0) > 0
-    ? Number(ac.marks12th || p.marks12th || ac.ugMarks)
-    : '';
-  const cgpa = Number(ac.cgpa || p?.cgpa || 0) > 0 ? Number(ac.cgpa || p.cgpa) : '';
+  let marks10 = validMarkPct(ac.marks10th || p?.marks10th) || validMarkPct(derived.marks10);
+  let marks12 = validMarkPct(ac.marks12th || p?.marks12th || ac.ugMarks) || validMarkPct(derived.marks12);
+  let cgpa = validCgpa(ac.cgpa || p?.cgpa) || validCgpa(derived.cgpa);
 
   const m10 = document.getElementById('profMarks10');
   const m12 = document.getElementById('profMarks12');
@@ -1278,8 +1386,8 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
   if (role === 'student') {
     const phoneEl = document.getElementById('profPhone');
     const personalEl = document.getElementById('profPersonalEmail');
-    const phoneVal = phoneEl?.disabled ? '' : (phoneEl?.value || '').trim();
-    const personalEmailVal = personalEl?.disabled ? '' : (personalEl?.value || '').trim().toLowerCase();
+    const phoneVal = phoneEl?.readOnly ? '' : (phoneEl?.value || '').trim();
+    const personalEmailVal = personalEl?.readOnly ? '' : (personalEl?.value || '').trim().toLowerCase();
     if (personalEmailVal && !personalEmailVal.includes('@')) {
       toast('Enter a valid personal email.', 'warn');
       return;
@@ -1288,18 +1396,35 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     const marks10El = document.getElementById('profMarks10');
     const marks12El = document.getElementById('profMarks12');
     const cgpaEl = document.getElementById('profCgpa');
-    if (marks10El && !marks10El.disabled && marks10El.value.trim() !== '') {
-      academic.marks10th = parseFloat(marks10El.value);
+    if (marks10El && !marks10El.readOnly && marks10El.value.trim() !== '') {
+      const n = validMarkPct(marks10El.value);
+      if (!n) {
+        toast('10th marks must be between 0 and 100.', 'warn');
+        return;
+      }
+      academic.marks10th = n;
     }
-    if (marks12El && !marks12El.disabled && marks12El.value.trim() !== '') {
-      academic.marks12th = parseFloat(marks12El.value);
+    if (marks12El && !marks12El.readOnly && marks12El.value.trim() !== '') {
+      const n = validMarkPct(marks12El.value);
+      if (!n) {
+        toast('12th marks must be between 0 and 100.', 'warn');
+        return;
+      }
+      academic.marks12th = n;
     }
-    if (cgpaEl && !cgpaEl.disabled && cgpaEl.value.trim() !== '') {
-      academic.cgpa = parseFloat(cgpaEl.value);
+    if (cgpaEl && !cgpaEl.readOnly && cgpaEl.value.trim() !== '') {
+      const n = validCgpa(cgpaEl.value);
+      if (!n) {
+        toast('CGPA must be between 0 and 10.', 'warn');
+        return;
+      }
+      academic.cgpa = n;
     }
+    const qualEdits = collectQualificationEdits();
+    if (qualEdits) academic.qualifications = qualEdits;
     const personal = {};
-    if (phoneEl && !phoneEl.disabled && phoneVal) personal.phone = phoneVal;
-    if (personalEl && !personalEl.disabled && personalEmailVal) personal.personalEmail = personalEmailVal;
+    if (phoneEl && !phoneEl.readOnly && phoneVal) personal.phone = phoneVal;
+    if (personalEl && !personalEl.readOnly && personalEmailVal) personal.personalEmail = personalEmailVal;
     const payload = {};
     if (Object.keys(personal).length) payload.personal = personal;
     if (Object.keys(academic).length) payload.academic = academic;
@@ -1313,18 +1438,10 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
         toast(res?.message || 'Could not save profile to server.', 'warn');
         return;
       }
-      if (res.data) applyStudentFieldLocks({
-        ...res.data,
-        personal: { ...(user.personal || {}), ...personal },
-        academic: { ...(user.academic || {}), ...academic },
-        user: {
-          phone: personal.phone ?? user.phone,
-          personalEmail: personal.personalEmail ?? user.personalEmail,
-        },
-        marks10th: academic.marks10th,
-        marks12th: academic.marks12th,
-        cgpa: academic.cgpa,
-      });
+      // Reload so qualification cells and locks refresh from server.
+      await loadSettingsProfile();
+      toast('Settings saved.', 'success');
+      return;
     }
     Auth.set({
       ...user,

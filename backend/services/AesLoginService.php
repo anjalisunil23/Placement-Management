@@ -875,18 +875,25 @@ final class AesLoginService
         $patch = [];
         $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
 
-        if (isset($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
+        if (isset($qual['cgpa']) && (float) $qual['cgpa'] > 0 && (float) $qual['cgpa'] <= 10) {
             $apiCgpa = (float) $qual['cgpa'];
             if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
                 $academic['cgpa'] = $apiCgpa;
                 $patch['academic'] = $academic;
             }
-        } elseif (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0) {
+        } elseif (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0 && (float) $qualMapped['cgpa'] <= 10) {
             $apiCgpa = (float) $qualMapped['cgpa'];
             if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
                 $academic['cgpa'] = $apiCgpa;
                 $patch['academic'] = $academic;
             }
+        }
+
+        // Drop previously stored invalid CGPA (e.g. admission number mis-mapped).
+        $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
+        if (isset($academic['cgpa']) && ((float) $academic['cgpa'] <= 0 || (float) $academic['cgpa'] > 10)) {
+            unset($academic['cgpa']);
+            $patch['academic'] = $academic;
         }
 
         $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
@@ -1488,7 +1495,10 @@ final class AesLoginService
             'totcgpa', 'tot_cgpa', 'curcgpa', 'cur_cgpa', 'grade_point', 'gradePoint',
         ]);
         if ($cgpa !== '' && is_numeric($cgpa)) {
-            $mapped['cgpa'] = (float) $cgpa;
+            $cgpaN = (float) $cgpa;
+            if ($cgpaN > 0 && $cgpaN <= 10) {
+                $mapped['cgpa'] = $cgpaN;
+            }
         }
         $backlogs = $this->pick($aesDetails, ['backlogs', 'backlog', 'arrears', 'standing_arrears']);
         if ($backlogs !== '' && is_numeric($backlogs)) {
