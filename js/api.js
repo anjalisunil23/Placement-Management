@@ -586,6 +586,9 @@ const Auth = {
     if (r === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
     }
+    if (r === 'student' && this._profileIncomplete) {
+      return 'settings.html';
+    }
     if (u?.dashboard) {
       const page = String(u.dashboard).replace(/^\//, '').split('#')[0];
       if (page && this.isAllowed(page)) return page;
@@ -595,6 +598,9 @@ const Auth = {
   resolveRedirect(next) {
     if (this.role() === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
+    }
+    if (this.role() === 'student' && this._profileIncomplete) {
+      return 'settings.html';
     }
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
@@ -899,13 +905,14 @@ const Auth = {
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
-      // Remind students once per session if profile has missing fields.
+      // Track and remind students about missing profile fields.
       if (role === 'student' && Array.isArray(p.missingFields) && p.missingFields.length) {
+        this._profileIncomplete = true;
+        const page = document.body?.dataset?.page || '';
         const key = 'ph_missing_fields_reminded';
         try {
           if (!sessionStorage.getItem(key)) {
             sessionStorage.setItem(key, '1');
-            const page = document.body?.dataset?.page || '';
             const names = p.missingFields.slice(0, 5).join(', ');
             const extra = p.missingFields.length > 5 ? ` and ${p.missingFields.length - 5} more` : '';
             const msg = `Your profile has missing fields: ${names}${extra}. Please update them in Settings.`;
@@ -914,6 +921,12 @@ const Auth = {
             }
           }
         } catch (_) { /* sessionStorage blocked */ }
+        if (page && page !== 'settings.html') {
+          window.location.href = '/settings.html';
+          return true;
+        }
+      } else if (role === 'student') {
+        this._profileIncomplete = false;
       }
       return true;
     } catch {
