@@ -41,6 +41,16 @@
         <h5 class="fw-bold mb-0">Public page statistics</h5>
         <button class="btn btn-primary btn-sm" id="btnSavePublic"><i class="bi bi-check2-lg me-1"></i>Save</button>
       </div>
+      <div class="alert alert-info small py-2 px-3 mb-3" id="liveStatsInfo">
+        <i class="bi bi-info-circle me-1"></i><strong>Live data</strong> is computed from campus records. Override values are used only when live data is zero. The public portal always shows the higher of the two.
+      </div>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm table-bordered mb-0 small">
+          <thead class="table-light"><tr><th>Metric</th><th>Live (auto)</th><th>Override</th><th>Shown on portal</th></tr></thead>
+          <tbody id="liveStatsTable"><tr><td colspan="4" class="text-muted-2">Loading live stats…</td></tr></tbody>
+        </table>
+      </div>
+      <h6 class="fw-semibold mb-2">Edit overrides</h6>
       <form id="publicForm" class="row g-3">
         <div class="col-md-6">
           <label class="form-label small fw-semibold">Students placed</label>
@@ -129,6 +139,36 @@ function loadPublic() {
   document.getElementById('placementRate').value = p.placementRate ?? 0;
   document.getElementById('lowestPkg').value = p.lowestPkg ?? 0;
   document.getElementById('achievements').value = p.achievements || '';
+  renderLiveStatsTable();
+}
+
+function renderLiveStatsTable() {
+  const live = PublicPageContent.liveStats();
+  const editorial = PublicPageContent.get();
+  if (!live) {
+    document.getElementById('liveStatsTable').innerHTML = '<tr><td colspan="4" class="text-muted-2">Live stats unavailable. Save overrides to populate the public portal.</td></tr>';
+    return;
+  }
+  const salary = live.salaryHighlights || {};
+  const metrics = [
+    { label: 'Students placed', liveVal: live.totalPlaced || 0, editVal: editorial.placed || 0 },
+    { label: 'Companies', liveVal: live.totalCompanies || 0, editVal: editorial.companies || 0, useMax: true },
+    { label: 'Highest package (LPA)', liveVal: salary.highest || 0, editVal: editorial.highestPkg || 0, useMax: true },
+    { label: 'Average package (LPA)', liveVal: salary.average || 0, editVal: editorial.avgPkg || 0 },
+    { label: 'Median package (LPA)', liveVal: salary.median || 0, editVal: editorial.medianPkg || 0 },
+    { label: 'Lowest package (LPA)', liveVal: salary.lowest || 0, editVal: editorial.lowestPkg || 0 },
+    { label: 'Placement rate (%)', liveVal: live.placementPercentage || 0, editVal: editorial.placementRate || 0 },
+  ];
+  document.getElementById('liveStatsTable').innerHTML = metrics.map(m => {
+    const shown = m.useMax ? Math.max(m.liveVal, m.editVal) : (m.liveVal > 0 ? m.liveVal : m.editVal);
+    const src = m.liveVal > 0 ? 'live' : 'override';
+    return `<tr>
+      <td>${m.label}</td>
+      <td class="fw-semibold text-primary">${m.liveVal}</td>
+      <td>${m.editVal}</td>
+      <td><span class="badge-soft ${src === 'live' ? 'success' : 'warning'}">${shown}</span></td>
+    </tr>`;
+  }).join('');
 }
 
 document.getElementById('btnSaveSys').addEventListener('click', async () => {
@@ -266,6 +306,7 @@ async function initSettingsPage() {
     SystemSettings.fetch(),
     PublicPageContent.fetch(),
     PlacementNewsStore.fetch(),
+    PlacementNewsStore.fetchPublic(),
   ]);
   loadSystem();
   loadPublic();

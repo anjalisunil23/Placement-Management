@@ -259,28 +259,44 @@ final class CompanyController
             Response::error('Validation failed.', 422, $errors);
         }
 
-        $departmentId = trim((string) ($input['departmentId'] ?? ''));
-        if ($departmentId === '') {
-            Response::error('Select a department for this job post.', 422);
+        $rawDepartmentIds = $input['departmentIds'] ?? $input['departmentIds[]'] ?? $input['departmentId'] ?? [];
+        if (!is_array($rawDepartmentIds)) {
+            $rawDepartmentIds = [$rawDepartmentIds];
         }
-        $department = (new DepartmentModel())->findById($departmentId);
-        if (!$department) {
-            Response::error('Select a valid department for this job post.', 422);
+        $departmentIds = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $value): string => trim((string) $value),
+            $rawDepartmentIds
+        ))));
+        if ($departmentIds === []) {
+            Response::error('Select at least one department for this job post.', 422);
         }
 
-        $branchCodes = array_values(array_unique(array_filter(array_map(
-            static fn (mixed $value): string => strtoupper(trim((string) $value)),
-            [$department['code'] ?? '', $department['shortName'] ?? '']
-        ))));
+        $departments = [];
+        $branchCodesMap = [];
+        foreach ($departmentIds as $departmentId) {
+            $department = (new DepartmentModel())->findById($departmentId);
+            if (!$department) {
+                Response::error('Select valid departments for this job post.', 422);
+            }
+            $departments[] = $department;
+            foreach ([$department['code'] ?? '', $department['shortName'] ?? ''] as $value) {
+                $code = strtoupper(trim((string) $value));
+                if ($code !== '') {
+                    $branchCodesMap[$code] = true;
+                }
+            }
+        }
+        $branchCodes = array_keys($branchCodesMap);
 
         $input['companyId'] = (string) $company['_id'];
         $input['ownerUserId'] = (string) $user['_id'];
         $input['companyName'] = (string) ($company['companyName'] ?? '');
         $input['company'] = $input['companyName'];
-        $input['departmentId'] = $departmentId;
+        $input['departmentId'] = count($departmentIds) === 1 ? $departmentIds[0] : '';
+        $input['departmentIds'] = $departmentIds;
         $input['eligibility'] = [
             'branches' => $branchCodes,
-            'departments' => [$departmentId],
+            'departments' => $departmentIds,
         ];
         $input['status'] = 'pending';
         $input['audience'] = $input['audience'] ?? 'both';

@@ -20,12 +20,20 @@ class JobModel extends BaseModel
     public function createJob(array $data): string
     {
         $departmentId = trim((string) ($data['departmentId'] ?? ''));
+        $departmentIds = $data['departmentIds'] ?? [];
+        if (!is_array($departmentIds)) {
+            $departmentIds = [];
+        }
         $doc = [
             'companyId'   => Security::toObjectId($data['companyId']),
             'ownerUserId' => isset($data['ownerUserId']) ? Security::toObjectId($data['ownerUserId']) : null,
             'sourceType'  => 'company',
             'companyName' => trim((string) ($data['companyName'] ?? '')),
             'departmentId'=> $departmentId !== '' ? Security::toObjectId($departmentId) : null,
+            'departmentIds'=> array_values(array_filter(array_map(
+                static fn (mixed $value): ?object => Security::toObjectId((string) $value),
+                $departmentIds
+            ))),
             'driveId'     => isset($data['driveId']) ? Security::toObjectId($data['driveId']) : null,
             'title'       => $data['title'],
             'description' => $data['description'] ?? '',
@@ -46,7 +54,7 @@ class JobModel extends BaseModel
 
     public function updateJob(string $id, array $data): bool
     {
-        $allowed = ['title', 'description', 'package', 'location', 'eligibility', 'status', 'jobType', 'openings', 'audience', 'departmentId'];
+        $allowed = ['title', 'description', 'package', 'location', 'eligibility', 'status', 'jobType', 'openings', 'audience', 'departmentId', 'departmentIds'];
         $update = array_intersect_key($data, array_flip($allowed));
         if (empty($update)) {
             return false;

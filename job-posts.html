@@ -1,16 +1,258 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Job Posts · AJCE Placements</title>
-  <script>
-    // Job Posts live under Notifications Center.
-    window.location.replace('notifications.html#jobposts');
-  </script>
-  <meta http-equiv="refresh" content="0;url=notifications.html#jobposts"/>
-</head>
-<body>
-  <p>Job Posts moved to <a href="notifications.html#jobposts">Notifications → Job Posts</a>.</p>
-</body>
-</html>
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Job Posts · AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260713p" rel="stylesheet"/></head>
+<body data-page="job-posts.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Job Posts</h1>
+    <p class="text-muted-2 small mb-0" id="jobPostsSub">Review pending job posts and browse unpublished posts before they become placement drives.</p>
+  </div>
+</div>
+
+<div id="pendingJobPostsPanel" class="card-surface mb-3">
+  <div class="p-3 p-md-4 border-bottom">
+    <h6 class="fw-bold mb-1">Awaiting approval <span class="badge-soft warning ms-1" id="pendingJobCount">0</span></h6>
+    <div class="small text-muted-2" id="pendingJobHint"></div>
+  </div>
+  <div class="p-3 p-md-4" id="pendingJobRows"><div class="text-muted-2 text-center p-3">Loading…</div></div>
+</div>
+
+<div class="card-surface">
+  <div class="p-3 p-md-4 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between">
+    <div>
+      <h6 class="fw-bold mb-1"><span id="jobFeedHeading">Available posts</span> <span class="badge-soft muted ms-1" id="jobFeedCount">0</span></h6>
+      <div class="small text-muted-2" id="jobFeedHint"></div>
+    </div>
+    <select class="form-select form-select-sm w-auto" id="jobSourceFilter">
+      <option value="">All sources</option>
+      <option value="company">Company posts</option>
+      <option value="alumni">Alumni posts</option>
+      <option value="staff">Staff posts</option>
+    </select>
+  </div>
+  <div class="p-3 p-md-4" id="jobFeedRows"><div class="text-muted-2 text-center p-4">Loading job posts…</div></div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=20260721adminjobposts"></script>
+<script src="js/app.js?v=20260721adminjobposts"></script>
+<script>
+onAppReady(() => {
+const role = Auth.role();
+const isAdmin = role === 'admin';
+const isOfficer = role === 'placement_officer';
+const isAdminLike = isAdmin || isOfficer;
+
+if (!isAdminLike) {
+  window.location.replace('notifications.html');
+  return;
+}
+
+let jobFeedRows = [];
+let pendingJobRows = [];
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
+
+function jobFeedEndpoint() {
+  return role === 'admin' ? '/admin/jobs' : '/officer/jobs';
+}
+
+function pendingJobEndpoint() {
+  return role === 'admin' ? '/admin/job-posts/pending' : '/officer/job-posts/pending';
+}
+
+function renderJobFeed() {
+  const source = document.getElementById('jobSourceFilter')?.value || '';
+  const liveRows = jobFeedRows.filter(row => {
+    if (String(row.driveId || '').trim()) return false;
+    return !['pending', 'rejected'].includes(String(row.status || '').toLowerCase());
+  });
+  const rows = source ? liveRows.filter(row => row.sourceType === source) : liveRows;
+  const hint = document.getElementById('jobFeedHint');
+  if (hint) {
+    hint.textContent = isOfficer
+      ? 'Only unpublished posts for your department. Multi-department posts are admin-only.'
+      : 'Posts already published as drives are hidden here.';
+  }
+  document.getElementById('jobFeedCount').textContent = rows.length;
+  document.getElementById('jobFeedRows').innerHTML = rows.length ? `<div class="row g-3">${rows.map(row => {
+    const branches = Array.isArray(row.branches) && row.branches.length ? row.branches.join(', ') : 'All departments';
+    const eligibility = row.eligibility || {};
+    const eligibilityLabel = [
+      Number(eligibility.minCgpa || 0) > 0 ? `CGPA ${eligibility.minCgpa}+` : '',
+      eligibility.maxBacklogs != null ? `Backlogs <= ${eligibility.maxBacklogs}` : '',
+    ].filter(Boolean).join(' · ') || 'No additional academic criteria';
+    const status = String(row.status || 'open');
+    const statusCls = ['open','ongoing'].includes(status) ? 'success' : (status === 'reviewing' ? 'warning' : 'muted');
+    const posterUrl = row.posterUrl || row.imageUrl || '';
+    const posterType = row.posterType || (row.imageUrl ? 'image' : '');
+    const canPublish = ['open', 'ongoing', 'reviewing'].includes(status);
+    const actions = canPublish
+      ? `<div class="d-flex flex-wrap gap-2 mt-3">
+          <button type="button" class="btn btn-sm btn-primary job-feed-approve-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" data-source="${escHtml(row.sourceType || '')}">
+            <i class="bi bi-check2-circle me-1"></i>Approve &amp; publish drive
+          </button>
+        </div>`
+      : '';
+    return `<div class="col-md-6 col-xl-4"><article class="card-surface h-100 p-3 d-flex flex-column">
+      ${posterType === 'image' && posterUrl ? `<img src="${escHtml(posterUrl)}" alt="${escHtml(row.title)} job poster" class="w-100 rounded-3 mb-3" style="height:180px;object-fit:cover" loading="lazy"/>` : ''}
+      <div class="d-flex justify-content-between gap-2 mb-2">
+        <span class="badge-soft ${row.sourceType === 'company' ? 'info' : 'muted'}">${escHtml(row.sourceLabel)}</span>
+        <span class="badge-soft ${statusCls}">${escHtml(status)}</span>
+      </div>
+      <h6 class="fw-bold mb-1">${escHtml(row.title)}</h6>
+      <div class="small text-muted-2 mb-3">${escHtml(row.companyName)}</div>
+      <div class="small d-grid gap-1">
+        <div><i class="bi bi-briefcase me-2"></i>${escHtml(row.jobType || '—')}</div>
+        <div><i class="bi bi-cash-coin me-2"></i>${escHtml(row.package || '—')}</div>
+        <div><i class="bi bi-geo-alt me-2"></i>${escHtml(row.location || '—')}</div>
+        <div><i class="bi bi-diagram-3 me-2"></i>${escHtml(branches)}</div>
+        <div><i class="bi bi-mortarboard me-2"></i>${escHtml(eligibilityLabel)}</div>
+      </div>
+      ${row.description ? `<p class="small text-muted-2 mt-3 mb-0">${escHtml(row.description)}</p>` : ''}
+      ${posterType === 'pdf' && posterUrl ? `<a class="btn btn-sm btn-outline-primary mt-3" href="${escHtml(posterUrl)}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>View job poster</a>` : ''}
+      <div class="mt-auto">
+        ${actions}
+        <div class="small text-muted-2 mt-3">Posted ${escHtml(formatDate(row.createdAt))}</div>
+      </div>
+    </article></div>`;
+  }).join('')}</div>` : '<div class="text-muted-2 text-center p-4">No related job posts available.</div>';
+}
+
+function renderPendingJobPosts() {
+  const hint = document.getElementById('pendingJobHint');
+  if (hint) {
+    hint.textContent = isOfficer
+      ? 'Approve or reject posts for your department only.'
+      : 'Single-department posts can also be handled by that department’s officer. Multi-department posts are admin-only.';
+  }
+  document.getElementById('pendingJobCount').textContent = String(pendingJobRows.length);
+  document.getElementById('pendingJobRows').innerHTML = pendingJobRows.length
+    ? `<div class="row g-3">${pendingJobRows.map(row => {
+        const dept = row.departmentCode || row.departmentName || (isAdmin ? 'Multi / All' : '—');
+        const posterUrl = row.posterUrl || '';
+        const posterType = row.posterType || '';
+        return `<div class="col-md-6 col-xl-4">
+          <article class="card-surface h-100 p-3 d-flex flex-column border" data-post-id="${escHtml(row.id)}">
+            ${posterType === 'image' && posterUrl
+              ? `<img src="${escHtml(posterUrl)}" alt="" class="w-100 rounded-3 mb-3" style="height:160px;object-fit:cover" loading="lazy"/>`
+              : ''}
+            <div class="d-flex justify-content-between gap-2 mb-2">
+              <span class="badge-soft muted">${escHtml(row.sourceLabel || row.sourceType || '—')}</span>
+              <span class="badge-soft warning">Pending</span>
+            </div>
+            <h6 class="fw-bold mb-1">${escHtml(row.title)}</h6>
+            <div class="small text-muted-2 mb-3">${escHtml(row.company)}</div>
+            <div class="small d-grid gap-1">
+              <div><i class="bi bi-diagram-3 me-2"></i>${escHtml(dept)}</div>
+              <div><i class="bi bi-person me-2"></i>${escHtml(row.posterName || row.posterEmail || '—')}</div>
+              <div><i class="bi bi-briefcase me-2"></i>${escHtml(row.jobType || '—')}</div>
+              <div><i class="bi bi-cash-coin me-2"></i>${escHtml(row.package || '—')}</div>
+            </div>
+            ${posterType === 'pdf' && posterUrl
+              ? `<a class="btn btn-sm btn-outline-primary mt-3 align-self-start" href="${escHtml(posterUrl)}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>View poster</a>`
+              : ''}
+            <div class="mt-auto pt-3">
+              <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-primary job-approve-btn" data-id="${escHtml(row.id)}">Approve</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary job-reject-btn" data-id="${escHtml(row.id)}">Reject</button>
+              </div>
+              <div class="small text-muted-2 mt-2">Posted ${escHtml(formatDate(row.createdAt))}</div>
+            </div>
+          </article>
+        </div>`;
+      }).join('')}</div>`
+    : '<div class="text-muted-2 text-center p-3 border rounded">No job posts awaiting approval.</div>';
+}
+
+async function loadPendingJobPosts() {
+  const res = await api(pendingJobEndpoint(), { noRedirectOn401: true });
+  pendingJobRows = res?.success && Array.isArray(res.data) ? res.data : [];
+  renderPendingJobPosts();
+}
+
+async function loadJobFeed() {
+  const res = await api(jobFeedEndpoint(), { noRedirectOn401: true });
+  if (!res?.success) {
+    jobFeedRows = [];
+    renderJobFeed();
+    toast(res?.message || 'Could not load job posts.', 'error');
+    return;
+  }
+  jobFeedRows = Array.isArray(res.data) ? res.data : [];
+  renderJobFeed();
+}
+
+async function approveJobPost(id, opts = {}) {
+  const endpoint = role === 'admin'
+    ? `/admin/job-posts/${id}/approve`
+    : `/officer/job-posts/${id}/approve`;
+  const title = opts.title || 'this job';
+  if (!(await confirmAction({
+    title: 'Approve & publish drive',
+    message: `Approve "${title}" and publish it as an open placement drive? Students will be notified.`,
+    confirmText: 'Approve & publish',
+    variant: 'primary',
+  }))) return;
+  const body = {};
+  if (opts.departmentId) body.departmentId = opts.departmentId;
+  const res = await api(endpoint, {
+    method: 'POST',
+    body: Object.keys(body).length ? body : undefined,
+    noRedirectOn401: true,
+  });
+  if (!res?.success) {
+    toast(res?.message || 'Could not approve job post.', 'error');
+    return;
+  }
+  toast(res.message || 'Approved and published as a drive.', 'success');
+  await Promise.all([loadPendingJobPosts(), loadJobFeed()]);
+}
+
+async function rejectJobPost(id) {
+  const reason = window.prompt('Optional rejection reason:');
+  if (reason === null) return;
+  const endpoint = role === 'admin'
+    ? `/admin/job-posts/${id}/reject`
+    : `/officer/job-posts/${id}/reject`;
+  if (!(await confirmAction({ title: 'Reject job post', message: 'Reject this job post?', confirmText: 'Reject', variant: 'danger' }))) return;
+  const res = await api(endpoint, { method: 'POST', body: { reason: String(reason || '').trim() }, noRedirectOn401: true });
+  if (!res?.success) {
+    toast(res?.message || 'Could not reject job post.', 'error');
+    return;
+  }
+  toast(res.message || 'Job post rejected.', 'success');
+  await loadPendingJobPosts();
+}
+
+document.getElementById('jobSourceFilter')?.addEventListener('change', renderJobFeed);
+document.getElementById('jobFeedRows')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.job-feed-approve-btn');
+  if (!btn?.dataset.id) return;
+  await approveJobPost(btn.dataset.id, { title: btn.dataset.title || '' });
+});
+document.getElementById('pendingJobRows')?.addEventListener('click', async (e) => {
+  const approveBtn = e.target.closest('.job-approve-btn');
+  const rejectBtn = e.target.closest('.job-reject-btn');
+  if (approveBtn?.dataset.id) {
+    await approveJobPost(approveBtn.dataset.id);
+    return;
+  }
+  if (rejectBtn?.dataset.id) {
+    await rejectJobPost(rejectBtn.dataset.id);
+  }
+});
+
+loadPendingJobPosts();
+loadJobFeed();
+});
+</script></body></html>

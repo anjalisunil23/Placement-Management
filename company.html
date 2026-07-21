@@ -11,7 +11,7 @@
 <div class="page-header">
   <div class="flex-grow-1 min-w-0">
     <h1 class="page-title">Job Portal</h1>
-    <p class="text-muted-2 small mb-0">Choose a department for each post. Admin or that department’s placement officer must approve before it becomes a drive.</p>
+    <p class="text-muted-2 small mb-0">Choose one or more departments for each post. Admin or the selected departments’ placement officers must approve before it becomes a drive.</p>
   </div>
   <div class="page-header-actions">
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
@@ -61,11 +61,11 @@
       <div class="col-md-6"><label class="form-label small fw-semibold">Package (LPA)</label><input class="form-control" name="package"/></div>
       <div class="col-md-6"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location"/></div>
       <div class="col-12">
-        <label class="form-label small fw-semibold">Department</label>
-        <select class="form-select" name="departmentId" id="jobDepartment" required>
+        <label class="form-label small fw-semibold">Departments</label>
+        <select class="form-select" name="departmentIds[]" id="jobDepartment" multiple required size="6">
           <option value="">Select department</option>
         </select>
-        <div class="form-text">One department only. That department’s placement officer (or admin) will approve.</div>
+        <div class="form-text">Select one or more departments. Hold Ctrl (or Cmd on Mac) to choose multiple options.</div>
       </div>
       <div class="col-12"><label class="form-label small fw-semibold">Job poster (optional)</label><input class="form-control" type="file" name="poster" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"/><div class="form-text">JPG, PNG, WebP, or PDF · maximum 10 MB</div></div>
       <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="4"></textarea></div>
@@ -77,8 +77,8 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/api.js?v=20260721companypost"></script>
-<script src="js/app.js?v=20260721companypost"></script><script src="js/charts.js?v=20260713p"></script>
+<script src="js/api.js?v=20260721companymulti"></script>
+<script src="js/app.js?v=20260721companymulti"></script><script src="js/charts.js?v=20260713p"></script>
 <script>
 let jobRows = [];
 let funnelChart = null;
@@ -88,20 +88,34 @@ function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 }
 
+function deptLabelsForJob(j) {
+  const elig = j.eligibility || {};
+  const departmentIds = Array.isArray(elig.departments) ? elig.departments.map(v => String(v || '')).filter(Boolean) : [];
+  const labels = departmentIds.map(id => {
+    const dept = deptById[id];
+    return dept ? (dept.code || dept.name || '') : '';
+  }).filter(Boolean);
+  if (labels.length) return labels;
+  const singleId = String(j.departmentId || '');
+  if (singleId && deptById[singleId]) {
+    const dept = deptById[singleId];
+    return [dept.code || dept.name || '—'];
+  }
+  const branches = Array.isArray(elig.branches) ? elig.branches : [];
+  return branches.length ? branches.map(v => String(v || '')).filter(Boolean) : ['—'];
+}
+
 function normalizeJob(j) {
   const st = mapCompanyJobStatus(j.status);
-  const deptId = String(j.departmentId || '');
-  const dept = deptById[deptId];
-  const elig = j.eligibility || {};
-  const branches = Array.isArray(elig.branches) ? elig.branches : [];
+  const labels = deptLabelsForJob(j);
   return {
     id: String(j._id || j.id || ''),
     title: j.title || '',
     jobType: j.jobType || j.type || 'Full-time',
     package: j.package || '',
     location: j.location || '',
-    departmentId: deptId,
-    departmentLabel: dept ? (dept.code || dept.name || '—') : (branches[0] || '—'),
+    departmentLabels: labels,
+    departmentLabel: labels.join(', '),
     imageUrl: j.imageUrl || '',
     posterUrl: j.posterUrl || j.imageUrl || '',
     posterType: j.posterType || (j.imageUrl ? 'image' : ''),
@@ -159,7 +173,7 @@ async function loadDepartments() {
   const res = await api('/public/departments', { noRedirectOn401: true });
   const rows = res?.success && Array.isArray(res.data) ? res.data : [];
   rows.forEach(d => { deptById[String(d.id || d._id || '')] = d; });
-  sel.innerHTML = '<option value="">Select department</option>' + rows.map(d =>
+  sel.innerHTML = rows.map(d =>
     `<option value="${escHtml(String(d.id || ''))}">${escHtml(d.code || '')} — ${escHtml(d.name || '')}</option>`
   ).join('');
 }
@@ -206,8 +220,9 @@ document.getElementById('postJobForm').addEventListener('submit', async e => {
   e.preventDefault();
   const formData = new FormData(e.target);
   const data = Object.fromEntries(formData.entries());
-  if (!data.departmentId) {
-    toast('Select a department for this job post.', 'warn');
+  const selectedDepartments = formData.getAll('departmentIds[]').map(v => String(v || '').trim()).filter(Boolean);
+  if (!selectedDepartments.length) {
+    toast('Select at least one department for this job post.', 'warn');
     return;
   }
   const poster = formData.get('poster');
