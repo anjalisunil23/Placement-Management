@@ -2274,12 +2274,14 @@ function appStatusBadge(status) {
 
 function mapCompanyJobStatus(status) {
   const map = {
+    pending: ['Pending approval', 'warning'],
     open: ['Open', 'success'],
     reviewing: ['Reviewing', 'warning'],
     closed: ['Closed', 'muted'],
     ongoing: ['Ongoing', 'info'],
+    rejected: ['Rejected', 'danger'],
   };
-  const [label, cls] = map[String(status || 'open').toLowerCase()] || ['Open', 'success'];
+  const [label, cls] = map[String(status || 'pending').toLowerCase()] || ['Pending approval', 'warning'];
   return { statusLabel: label, statusCls: cls };
 }
 

@@ -9,7 +9,10 @@
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
-  <div class="flex-grow-1 min-w-0"><h1 class="page-title">Job Portal</h1></div>
+  <div class="flex-grow-1 min-w-0">
+    <h1 class="page-title">Job Portal</h1>
+    <p class="text-muted-2 small mb-0">Choose a department for each post. Admin or that department’s placement officer must approve before it becomes a drive.</p>
+  </div>
   <div class="page-header-actions">
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#postJob"><i class="bi bi-plus-lg me-1"></i>Post a Job</button>
   </div>
@@ -49,53 +52,62 @@
   </div>
 </div>
 
-<div class="modal fade" id="postJob" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal fade" id="postJob" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title fw-bold">Post a new job</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
   <form id="postJobForm">
     <div class="modal-body row g-3">
       <div class="col-md-6"><label class="form-label small fw-semibold">Role</label><input class="form-control" name="title" required/></div>
-      <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Type</label><select class="form-select" name="jobType"><option>Full-time</option><option>Internship</option></select></div>
-      <div class="col-6 col-md-3"><label class="form-label small fw-semibold">CTC (LPA)</label><input class="form-control" name="package" required/></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location" required/></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Openings</label><input class="form-control" name="openings" type="number" min="0"/></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Eligible branches</label><input class="form-control" name="branches" placeholder="CSE, IT, ECE"/><div class="form-text">Use department codes separated by commas. Leave blank for all departments.</div></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Visible to</label><select class="form-select" name="audience"><option value="both">Students and job-seeking alumni</option><option value="student">Students only</option><option value="alumni">Job-seeking alumni only</option></select></div>
-      <div class="col-12"><hr class="my-1"/><h6 class="fw-bold mb-0">Eligibility criteria</h6></div>
-      <div class="col-md-4"><label class="form-label small fw-semibold">Minimum CGPA</label><input class="form-control" type="number" name="minCgpa" min="0" max="10" step="0.1" value="0"/></div>
-      <div class="col-md-4"><label class="form-label small fw-semibold">Maximum backlogs</label><input class="form-control" type="number" name="maxBacklogs" min="0" max="50" value="0"/></div>
-      <div class="col-md-4"><label class="form-label small fw-semibold">Gender</label><select class="form-select" name="gender"><option value="any">Any</option><option value="male">Male</option><option value="female">Female</option></select></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Minimum 10th %</label><input class="form-control" type="number" name="min10th" min="0" max="100" value="0"/></div>
-      <div class="col-md-6"><label class="form-label small fw-semibold">Minimum 12th %</label><input class="form-control" type="number" name="min12th" min="0" max="100" value="0"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Type</label><select class="form-select" name="type"><option>Full-time</option><option>Internship</option><option>Contract</option></select></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Package (LPA)</label><input class="form-control" name="package"/></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location"/></div>
+      <div class="col-12">
+        <label class="form-label small fw-semibold">Department</label>
+        <select class="form-select" name="departmentId" id="jobDepartment" required>
+          <option value="">Select department</option>
+        </select>
+        <div class="form-text">One department only. That department’s placement officer (or admin) will approve.</div>
+      </div>
       <div class="col-12"><label class="form-label small fw-semibold">Job poster (optional)</label><input class="form-control" type="file" name="poster" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"/><div class="form-text">JPG, PNG, WebP, or PDF · maximum 10 MB</div></div>
-      <div class="col-12"><label class="form-label small fw-semibold">JD</label><textarea class="form-control" name="description" rows="5"></textarea></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="4"></textarea></div>
     </div>
-    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Post job</button></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Submit for approval</button></div>
   </form>
 </div></div></div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/api.js?v=20260716profilename"></script>
-<script src="js/app.js?v=20260716notifflat"></script><script src="js/charts.js?v=20260713p"></script>
+<script src="js/api.js?v=20260721companypost"></script>
+<script src="js/app.js?v=20260721companypost"></script><script src="js/charts.js?v=20260713p"></script>
 <script>
 let jobRows = [];
 let funnelChart = null;
+const deptById = {};
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
 
 function normalizeJob(j) {
   const st = mapCompanyJobStatus(j.status);
+  const deptId = String(j.departmentId || '');
+  const dept = deptById[deptId];
+  const elig = j.eligibility || {};
+  const branches = Array.isArray(elig.branches) ? elig.branches : [];
   return {
     id: String(j._id || j.id || ''),
     title: j.title || '',
     jobType: j.jobType || j.type || 'Full-time',
     package: j.package || '',
     location: j.location || '',
+    departmentId: deptId,
+    departmentLabel: dept ? (dept.code || dept.name || '—') : (branches[0] || '—'),
     imageUrl: j.imageUrl || '',
     posterUrl: j.posterUrl || j.imageUrl || '',
     posterType: j.posterType || (j.imageUrl ? 'image' : ''),
     applicantCount: j.applicantCount ?? 0,
     createdAt: j.createdAt,
-    status: j.status || 'open',
+    status: j.status || 'pending',
     statusLabel: st.statusLabel,
     statusCls: st.statusCls,
   };
@@ -134,11 +146,22 @@ function renderStats(dash) {
 function renderJobs() {
   document.getElementById('jobRows').innerHTML = jobRows.length ? jobRows.map(j => `
     <tr>
-      <td><div class="d-flex align-items-center gap-2">${j.posterType === 'image' && j.posterUrl ? `<a href="${j.posterUrl}" target="_blank" rel="noopener"><img src="${j.posterUrl}" alt="" class="rounded-2" style="width:42px;height:42px;object-fit:cover"/></a>` : j.posterType === 'pdf' && j.posterUrl ? `<a href="${j.posterUrl}" target="_blank" rel="noopener" title="View job poster"><i class="bi bi-file-earmark-pdf-fill text-danger fs-4"></i></a>` : ''}<div><strong>${j.title}</strong><div class="small text-muted-2">${j.location || '—'} · ${formatDate(j.createdAt)}</div></div></div></td>
-      <td>${j.jobType}</td>
+      <td><div class="d-flex align-items-center gap-2">${j.posterType === 'image' && j.posterUrl ? `<a href="${escHtml(j.posterUrl)}" target="_blank" rel="noopener"><img src="${escHtml(j.posterUrl)}" alt="" class="rounded-2" style="width:42px;height:42px;object-fit:cover"/></a>` : j.posterType === 'pdf' && j.posterUrl ? `<a href="${escHtml(j.posterUrl)}" target="_blank" rel="noopener" title="View job poster"><i class="bi bi-file-earmark-pdf-fill text-danger fs-4"></i></a>` : ''}<div><strong>${escHtml(j.title)}</strong><div class="small text-muted-2">${escHtml(j.departmentLabel || '—')} · ${escHtml(j.location || '—')} · ${escHtml(formatDate(j.createdAt))}</div></div></div></td>
+      <td>${escHtml(j.jobType)}</td>
       <td>${j.applicantCount}</td>
-      <td><span class="badge-soft ${j.statusCls}">${j.statusLabel}</span></td>
+      <td><span class="badge-soft ${j.statusCls}">${escHtml(j.statusLabel)}</span></td>
     </tr>`).join('') : '<tr><td colspan="4" class="text-muted-2 p-4">No job postings yet.</td></tr>';
+}
+
+async function loadDepartments() {
+  const sel = document.getElementById('jobDepartment');
+  if (!sel) return;
+  const res = await api('/public/departments', { noRedirectOn401: true });
+  const rows = res?.success && Array.isArray(res.data) ? res.data : [];
+  rows.forEach(d => { deptById[String(d.id || d._id || '')] = d; });
+  sel.innerHTML = '<option value="">Select department</option>' + rows.map(d =>
+    `<option value="${escHtml(String(d.id || ''))}">${escHtml(d.code || '')} — ${escHtml(d.name || '')}</option>`
+  ).join('');
 }
 
 async function loadPortal() {
@@ -174,31 +197,38 @@ async function loadPortal() {
   renderJobs();
 }
 
-onAppReady(() => { loadPortal(); });
+onAppReady(async () => {
+  await loadDepartments();
+  await loadPortal();
+});
 
 document.getElementById('postJobForm').addEventListener('submit', async e => {
   e.preventDefault();
   const formData = new FormData(e.target);
   const data = Object.fromEntries(formData.entries());
+  if (!data.departmentId) {
+    toast('Select a department for this job post.', 'warn');
+    return;
+  }
   const poster = formData.get('poster');
   if (poster instanceof File && poster.name && (!/\.(jpe?g|png|webp|pdf)$/i.test(poster.name) || poster.size > 10 * 1024 * 1024)) {
     toast('Choose a JPG, PNG, WebP, or PDF poster up to 10 MB.', 'warn');
     return;
   }
-  if (!(await confirmAction({ title: 'Post job', message: `Post job opening for ${data.title || 'this role'}?`, confirmText: 'Post job', variant: 'primary' }))) return;
+  if (!(await confirmAction({ title: 'Submit job post', message: `Submit "${data.title || 'this role'}" for approval?`, confirmText: 'Submit', variant: 'primary' }))) return;
   if (Auth.hasRealAuth()) {
     const res = await api('/company/jobs', { method: 'POST', body: formData, noRedirectOn401: true });
     if (res?.success) {
-      toast('Job posted successfully.', 'success');
+      toast(res.message || 'Job post submitted for approval.', 'success');
       bootstrap.Modal.getInstance(document.getElementById('postJob')).hide();
       e.target.reset();
       await loadPortal();
       return;
     }
-    toast(res?.message || 'Could not post job.', 'error');
+    toast(res?.message || 'Could not submit job post.', 'error');
     return;
   }
-  toast('Job posted successfully.', 'success');
+  toast('Job post submitted for approval.', 'success');
   bootstrap.Modal.getInstance(document.getElementById('postJob')).hide();
   e.target.reset();
 });

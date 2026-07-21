@@ -49,6 +49,23 @@ final class JobPostApprovalService
             return in_array($status, ['pending', 'open', 'reviewing'], true);
         }));
 
+        $companyJobs = (new \PMS\Models\JobModel())->findAll([], 500);
+        foreach ($companyJobs as $job) {
+            $status = strtolower((string) ($job['status'] ?? ''));
+            $driveId = trim((string) ($job['driveId'] ?? ''));
+            if ($driveId !== '') {
+                continue;
+            }
+            if (!in_array($status, ['pending', 'open', 'reviewing'], true)) {
+                continue;
+            }
+            if (empty($job['company'])) {
+                $job['company'] = (string) ($job['companyName'] ?? '');
+            }
+            $job['sourceType'] = 'company';
+            $rows[] = $job;
+        }
+
         if (empty($ctx['isAdmin'])) {
             $deptId = trim((string) ($ctx['departmentId'] ?? ''));
             $rows = array_values(array_filter(
@@ -391,7 +408,31 @@ final class JobPostApprovalService
      */
     public function reject(string $postId, array $reviewer, array $ctx, string $reason = ''): array
     {
-        $post = $this->requirePost($postId);
+        if (!Security::isValidId($postId)) {
+            Response::error('Invalid job post id.', 400);
+        }
+
+        $alumniPost = $this->posts->findById($postId);
+        if ($alumniPost) {
+            return $this->rejectAlumniOrStaffPost($alumniPost, $reviewer, $ctx, $reason);
+        }
+
+        $companyJob = (new \PMS\Models\JobModel())->findById($postId);
+        if ($companyJob) {
+            return $this->rejectCompanyJob($companyJob, $reviewer, $ctx, $reason);
+        }
+
+        Response::notFound('Job post not found.');
+    }
+
+    /**
+     * @param array<string, mixed> $post
+     * @param array<string, mixed> $reviewer
+     * @param array{isAdmin:bool,departmentId:?string} $ctx
+     * @return array<string, mixed>
+     */
+    private function rejectAlumniOrStaffPost(array $post, array $reviewer, array $ctx, string $reason = ''): array
+    {
         $this->assertCanReview($post, $ctx);
 
         $status = strtolower((string) ($post['status'] ?? ''));
@@ -401,6 +442,7 @@ final class JobPostApprovalService
 
         $reason = trim($reason);
         $reviewerId = (string) ($reviewer['_id'] ?? '');
+        $postId = (string) ($post['_id'] ?? '');
         $this->posts->update($postId, [
             'status' => 'rejected',
             'rejectedReason' => $reason,
@@ -429,6 +471,59 @@ final class JobPostApprovalService
     }
 
     /**
+     * @param array<string, mixed> $job
+     * @param array<string, mixed> $reviewer
+     * @param array{isAdmin:bool,departmentId:?string} $ctx
+     * @return array<string, mixed>
+     */
+    private function rejectCompanyJob(array $job, array $reviewer, array $ctx, string $reason = ''): array
+    {
+        if (empty($job['company'])) {
+            $job['company'] = (string) ($job['companyName'] ?? '');
+        }
+        $job['sourceType'] = 'company';
+        $this->assertCanReview($job, $ctx);
+
+        $status = strtolower((string) ($job['status'] ?? ''));
+        if (!in_array($status, ['pending', 'open', 'reviewing'], true) || !empty($job['driveId'])) {
+            Response::error('Only unpublished job posts can be rejected.', 422);
+        }
+
+        $reason = trim($reason);
+        $reviewerId = (string) ($reviewer['_id'] ?? '');
+        $jobId = (string) ($job['_id'] ?? '');
+        (new \PMS\Models\JobModel())->update($jobId, [
+            'status' => 'rejected',
+            'rejectedReason' => $reason,
+            'approvedBy' => $reviewerId !== '' ? Security::toObjectId($reviewerId) : null,
+            'approvedAt' => DocumentHelper::now(),
+        ]);
+
+        $title = trim((string) ($job['title'] ?? 'Job opening'));
+        $ownerId = (string) ($job['ownerUserId'] ?? '');
+        if ($ownerId !== '' && Security::isValidId($ownerId)) {
+            $message = "Your job post \"{$title}\" was not approved.";
+            if ($reason !== '') {
+                $message .= ' Reason: ' . $reason;
+            }
+            $this->notifications->notifyUser(
+                $ownerId,
+                'job_post',
+                'Job post not approved',
+                $message,
+                ['jobPostId' => $jobId]
+            );
+        }
+
+        $updated = (new \PMS\Models\JobModel())->findById($jobId) ?? $job;
+        if (empty($updated['company'])) {
+            $updated['company'] = (string) ($updated['companyName'] ?? '');
+        }
+        $updated['sourceType'] = 'company';
+        return ['post' => $this->serializePost($updated)];
+    }
+
+    /**
      * Notify admin + department placement officer about a new pending post.
      *
      * @param array<string, mixed> $post
@@ -437,10 +532,14 @@ final class JobPostApprovalService
     public function notifyReviewers(array $post, array $poster): void
     {
         $title = trim((string) ($post['title'] ?? 'Job opening'));
-        $company = trim((string) ($post['company'] ?? 'a company'));
+        $company = trim((string) ($post['company'] ?? $post['companyName'] ?? 'a company'));
         $posterName = trim((string) ($poster['name'] ?? 'Someone'));
         $source = strtolower((string) ($post['sourceType'] ?? 'alumni'));
-        $sourceLabel = $source === 'staff' ? 'Staff' : 'Alumni';
+        $sourceLabel = match ($source) {
+            'staff' => 'Staff',
+            'company' => 'Company',
+            default => 'Alumni',
+        };
         $departmentId = (string) ($post['departmentId'] ?? '');
         $dept = $departmentId !== '' ? $this->departments->findById($departmentId) : null;
         $deptLabel = trim((string) ($dept['code'] ?? $dept['name'] ?? 'department'));
@@ -599,19 +698,24 @@ final class JobPostApprovalService
         $ownerId = (string) ($post['ownerUserId'] ?? $post['alumniUserId'] ?? '');
         $owner = $ownerId !== '' ? (new UserModel())->findById($ownerId) : null;
         $source = strtolower((string) ($post['sourceType'] ?? 'alumni'));
+        $sourceLabel = match ($source) {
+            'staff' => 'Staff',
+            'company' => 'Company',
+            default => 'Alumni',
+        };
 
         return [
             'id' => (string) ($post['_id'] ?? ''),
             'title' => trim((string) ($post['title'] ?? '')),
-            'company' => trim((string) ($post['company'] ?? '')),
-            'jobType' => trim((string) ($post['jobType'] ?? 'Full-time')),
+            'company' => trim((string) ($post['company'] ?? $post['companyName'] ?? '')),
+            'jobType' => trim((string) ($post['jobType'] ?? $post['type'] ?? 'Full-time')),
             'package' => trim((string) ($post['package'] ?? '')),
             'location' => trim((string) ($post['location'] ?? '')),
             'description' => trim((string) ($post['description'] ?? '')),
             'status' => strtolower(trim((string) ($post['status'] ?? 'pending'))),
             'audience' => strtolower(trim((string) ($post['audience'] ?? 'both'))),
             'sourceType' => $source,
-            'sourceLabel' => $source === 'staff' ? 'Staff' : 'Alumni',
+            'sourceLabel' => $sourceLabel,
             'departmentId' => $departmentId,
             'departmentCode' => trim((string) ($department['code'] ?? '')),
             'departmentName' => trim((string) ($department['name'] ?? '')),

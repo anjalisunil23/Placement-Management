@@ -6,6 +6,7 @@ namespace PMS\Company;
 
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\CompanyModel;
+use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
@@ -14,6 +15,7 @@ use PMS\Models\UserModel;
 use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\CompanyApplicationService;
 use PMS\Services\EmailService;
+use PMS\Services\JobPostApprovalService;
 use PMS\Services\NotificationService;
 use PMS\Services\ObjectStorageService;
 use PMS\Services\PlacementChanceService;
@@ -251,43 +253,40 @@ final class CompanyController
         $input = !empty($_POST) ? $_POST : (json_decode(file_get_contents('php://input') ?: '{}', true) ?? []);
 
         $errors = Validator::validate($input, [
-            'title'    => 'required',
-            'package'  => 'required',
-            'location' => 'required',
+            'title' => 'required',
         ]);
         if (!empty($errors)) {
             Response::error('Validation failed.', 422, $errors);
         }
 
+        $departmentId = trim((string) ($input['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            Response::error('Select a department for this job post.', 422);
+        }
+        $department = (new DepartmentModel())->findById($departmentId);
+        if (!$department) {
+            Response::error('Select a valid department for this job post.', 422);
+        }
+
+        $branchCodes = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $value): string => strtoupper(trim((string) $value)),
+            [$department['code'] ?? '', $department['shortName'] ?? '']
+        ))));
+
         $input['companyId'] = (string) $company['_id'];
         $input['ownerUserId'] = (string) $user['_id'];
         $input['companyName'] = (string) ($company['companyName'] ?? '');
-        if (isset($input['eligibility']) && is_string($input['eligibility'])) {
-            $input['eligibility'] = json_decode($input['eligibility'], true) ?? [];
+        $input['company'] = $input['companyName'];
+        $input['departmentId'] = $departmentId;
+        $input['eligibility'] = [
+            'branches' => $branchCodes,
+            'departments' => [$departmentId],
+        ];
+        $input['status'] = 'pending';
+        $input['audience'] = $input['audience'] ?? 'both';
+        if (!empty($input['type']) && empty($input['jobType'])) {
+            $input['jobType'] = $input['type'];
         }
-        $eligibility = is_array($input['eligibility'] ?? null) ? $input['eligibility'] : [];
-        if (array_key_exists('branches', $input)) {
-            $branches = is_array($input['branches'])
-                ? $input['branches']
-                : (preg_split('/[,;]+/', (string) $input['branches']) ?: []);
-            $eligibility['branches'] = array_values(array_unique(array_filter(array_map(
-                static fn (mixed $branch): string => strtoupper(trim((string) $branch)),
-                $branches
-            ))));
-        }
-        foreach (['minCgpa', 'min10th', 'min12th'] as $field) {
-            if (array_key_exists($field, $input)) {
-                $eligibility[$field] = (float) $input[$field];
-            }
-        }
-        if (array_key_exists('maxBacklogs', $input)) {
-            $eligibility['maxBacklogs'] = (int) $input['maxBacklogs'];
-        }
-        if (array_key_exists('gender', $input)) {
-            $gender = strtolower(trim((string) $input['gender']));
-            $eligibility['gender'] = in_array($gender, ['male', 'female'], true) ? $gender : 'any';
-        }
-        $input['eligibility'] = $eligibility;
 
         $savedPosterPath = '';
         $posterFile = $_FILES['poster'] ?? $_FILES['image'] ?? null;
@@ -332,7 +331,22 @@ final class CompanyController
             }
             throw $e;
         }
-        Response::success(['id' => $id], 'Job posted.', 201);
+
+        $created = (new JobModel())->findById($id);
+        if (!$created) {
+            $created = array_merge($input, ['_id' => $id, 'sourceType' => 'company']);
+        }
+        // Normalize fields used by notifyReviewers / pending queue UI.
+        if (empty($created['company'])) {
+            $created['company'] = (string) ($created['companyName'] ?? $input['companyName'] ?? '');
+        }
+        $created['sourceType'] = 'company';
+        $poster = $user;
+        if (trim((string) ($poster['name'] ?? '')) === '') {
+            $poster['name'] = (string) ($company['companyName'] ?? 'Company');
+        }
+        (new JobPostApprovalService())->notifyReviewers($created, $poster);
+        Response::success(['id' => $id, 'status' => 'pending'], 'Job post submitted for approval.', 201);
     }
 
     /**
