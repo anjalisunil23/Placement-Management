@@ -222,7 +222,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
     if (branch) qs.set('branch', branch);
     if (status) qs.set('status', status);
 
-    const headers = { Accept: 'text/csv,*/*' };
+    const headers = { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,*/*' };
     const token = Auth.token();
     if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
       headers.Authorization = `Bearer ${token}`;
@@ -250,8 +250,10 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
     }
     const disposition = res.headers.get('content-disposition') || '';
     const match = /filename="?([^"]+)"?/i.exec(disposition);
-    const filename = match?.[1] || `${String(co || 'company').replace(/[^\w.\-]+/g, '_')}-candidate-results.csv`;
-    const blob = new Blob([buffer], { type: type || 'text/csv;charset=utf-8' });
+    const filename = match?.[1] || `${String(co || 'company').replace(/[^\w.\-]+/g, '_')}-candidate-results.xlsx`;
+    const blob = new Blob([buffer], {
+      type: type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = objectUrl;
@@ -260,7 +262,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(objectUrl);
-    toast('Candidate results downloaded.', 'success');
+    toast('Excel candidate results downloaded.', 'success');
   } catch (err) {
     toast(err?.message || 'Could not export candidate results.', 'error');
   } finally {

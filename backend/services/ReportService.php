@@ -599,6 +599,41 @@ final class ReportService
     }
 
     /**
+     * Build a temporary Excel workbook for direct download (not stored in report history).
+     *
+     * @param string[] $headers
+     * @param array<int, string[]> $rows
+     * @return array{path: string, filename: string, mime: string, format: string}
+     */
+    public function buildExcelDownload(string $title, array $headers, array $rows, string $filenameBase = 'export'): array
+    {
+        $ext = class_exists(\ZipArchive::class) ? 'xlsx' : 'xls';
+        $safeBase = preg_replace('/[^A-Za-z0-9._-]+/', '_', $filenameBase) ?: 'export';
+        $filename = $safeBase . '-' . date('Ymd-His') . '.' . $ext;
+        $tmp = tempnam(sys_get_temp_dir(), 'pms_xlsx_');
+        if ($tmp === false) {
+            throw new \RuntimeException('Unable to create temp Excel file.');
+        }
+        $path = $tmp . '.' . $ext;
+        @rename($tmp, $path);
+
+        if ($ext === 'xlsx') {
+            $this->writeXlsx($path, $title, $headers, $rows);
+            $mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        } else {
+            $this->writeExcelXml($path, $title, $headers, $rows);
+            $mime = 'application/vnd.ms-excel';
+        }
+
+        return [
+            'path' => $path,
+            'filename' => $filename,
+            'mime' => $mime,
+            'format' => $ext,
+        ];
+    }
+
+    /**
      * @param string[] $headers
      * @param array<int, string[]> $rows
      * @return array{filename: string, format: string, title: string, downloadUrl: string}

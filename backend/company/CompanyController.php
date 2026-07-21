@@ -19,6 +19,7 @@ use PMS\Services\JobPostApprovalService;
 use PMS\Services\NotificationService;
 use PMS\Services\ObjectStorageService;
 use PMS\Services\RecruitingService;
+use PMS\Services\ReportService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\OwnershipHelper;
 use PMS\Utils\Response;
@@ -449,7 +450,7 @@ final class CompanyController
         Response::success($rows);
     }
 
-    /** GET /api/company/applications/export — download candidate results as CSV */
+    /** GET /api/company/applications/export — download candidate results as Excel */
     public function exportApplications(): void
     {
         $user = RBACMiddleware::requireCompany();
@@ -465,7 +466,6 @@ final class CompanyController
 
         $companyName = trim((string) ($company['companyName'] ?? 'company'));
         $safeName = preg_replace('/[^A-Za-z0-9._-]+/', '_', $companyName) ?: 'company';
-        $filename = $safeName . '-candidate-results-' . date('Ymd-His') . '.csv';
 
         $headers = [
             'Candidate',
@@ -482,21 +482,7 @@ final class CompanyController
             'Resume',
         ];
 
-        if (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-        header('Content-Type: text/csv; charset=UTF-8');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-        header('Cache-Control: no-store, no-cache, must-revalidate');
-        header('Pragma: no-cache');
-
-        $out = fopen('php://output', 'w');
-        if ($out === false) {
-            Response::error('Could not create export file.', 500);
-        }
-        fwrite($out, "\xEF\xBB\xBF");
-        fputcsv($out, $headers);
-
+        $excelRows = [];
         foreach ($rows as $row) {
             $student = is_array($row['student'] ?? null) ? $row['student'] : [];
             $drive = is_array($row['drive'] ?? null) ? $row['drive'] : [];
@@ -512,11 +498,11 @@ final class CompanyController
             $isSelected = $companyView === 'selected' || in_array($rawStatus, ['selected', 'placed'], true);
             $role = trim((string) ($drive['title'] ?? $job['title'] ?? ''));
             $appliedAt = (string) ($row['appliedAt'] ?? $row['createdAt'] ?? '');
-            if ($appliedAt !== '' && preg_match('/^\d{4}-\d{2}-\d{2}/', $appliedAt, $m)) {
+            if ($appliedAt !== '' && preg_match('/^\d{4}-\d{2}-\d{2}/', $appliedAt)) {
                 $appliedAt = substr($appliedAt, 0, 10);
             }
 
-            fputcsv($out, [
+            $excelRows[] = [
                 (string) ($student['name'] ?? ''),
                 (string) ($student['registerNumber'] ?? ''),
                 (string) ($student['department'] ?? ''),
@@ -529,14 +515,41 @@ final class CompanyController
                 (string) ($row['email'] ?? $student['email'] ?? ''),
                 (string) ($row['phone'] ?? $student['phone'] ?? ''),
                 !empty($student['hasResume']) ? 'Yes' : 'No',
-            ]);
+            ];
         }
 
-        if ($rows === []) {
-            fputcsv($out, ['No applicants found for the current filters.', '', '', '', '', '', '', '', '', '', '', '']);
+        if ($excelRows === []) {
+            $excelRows[] = ['No applicants found for the current filters.', '', '', '', '', '', '', '', '', '', '', ''];
         }
 
-        fclose($out);
+        try {
+            $file = (new ReportService())->buildExcelDownload(
+                'Candidate Results — ' . ($companyName !== '' ? $companyName : 'Company'),
+                $headers,
+                $excelRows,
+                $safeName . '-candidate-results'
+            );
+        } catch (\Throwable $e) {
+            Response::error('Could not create Excel export: ' . $e->getMessage(), 500);
+        }
+
+        $path = (string) ($file['path'] ?? '');
+        $filename = (string) ($file['filename'] ?? ($safeName . '-candidate-results.xlsx'));
+        $mime = (string) ($file['mime'] ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        if ($path === '' || !is_file($path)) {
+            Response::error('Excel export file missing.', 500);
+        }
+
+        if (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: ' . $mime);
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . (string) filesize($path));
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        header('Pragma: no-cache');
+        readfile($path);
+        @unlink($path);
         exit;
     }
 
