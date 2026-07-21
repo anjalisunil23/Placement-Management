@@ -26,6 +26,11 @@
   <div class="col-lg-9">
     <div class="tab-content">
       <div class="tab-pane fade show active" id="prof"><div class="card-surface p-4">
+        <div class="alert alert-warning d-none py-2 mb-3" id="missingFieldsBanner" role="alert">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          <strong>Incomplete profile:</strong> <span id="missingFieldsList"></span>
+          <span class="small d-block mt-1">Please fill the missing fields below and save.</span>
+        </div>
         <div class="settings-profile-head">
           <h5 class="settings-profile-title">Profile</h5>
           <div class="settings-profile-row">
@@ -765,26 +770,32 @@ function renderProfileQualifications(quals) {
 }
 
 function collectQualificationEdits() {
-  const patch = {};
+  const patchByIdx = {};
   document.querySelectorAll('.qual-edit-input').forEach(el => {
     const idx = el.getAttribute('data-qual-idx');
     const field = el.getAttribute('data-qual-field');
     if (idx == null || !field) return;
     const raw = String(el.value || '').trim();
     if (!raw) return;
-    if (!patch[idx]) patch[idx] = {};
+    const i = Number(idx);
+    if (!patchByIdx[i]) patchByIdx[i] = {};
     if (field === 'institution' || field === 'registerNumber' || field === 'monthYear') {
-      patch[idx][field] = raw;
+      patchByIdx[i][field] = raw;
     } else {
       const n = parseFloat(raw);
       if (!Number.isFinite(n) || n <= 0) return;
-      patch[idx][field] = n;
+      patchByIdx[i][field] = n;
     }
   });
-  return Object.keys(patch).length ? Object.keys(patch).sort((a, b) => Number(a) - Number(b)).reduce((acc, k) => {
-    acc[Number(k)] = patch[k];
-    return acc;
-  }, {}) : null;
+  const keys = Object.keys(patchByIdx);
+  if (!keys.length) return null;
+  // Dense array so PHP receives a list (index-aligned with existing rows).
+  const maxIdx = Math.max(...keys.map(Number));
+  const list = [];
+  for (let i = 0; i <= maxIdx; i++) {
+    list.push(patchByIdx[i] ? patchByIdx[i] : {});
+  }
+  return list;
 }
 
 function bindLockedFieldHint(inputId, hintId) {
@@ -806,13 +817,12 @@ function applyStudentFieldLocks(p) {
   const ac = p?.academic || {};
   const derived = deriveMarksFromQualifications(p?.qualifications || ac.qualifications || settingsQualRows);
 
-  const lockInput = (inputId, hintId, path, displayValue) => {
+  const lockInput = (inputId, hintId, path, displayValue, alwaysEditable) => {
     const el = document.getElementById(inputId);
     const hint = document.getElementById(hintId);
     if (!el) return;
     const hasValue = displayValue !== '' && displayValue != null;
-    // Empty fields are always editable for students; filled fields are locked.
-    const freeze = !!hasValue;
+    const freeze = hasValue && !alwaysEditable;
     el.readOnly = freeze;
     el.disabled = false;
     if (hint) hint.classList.add('d-none');
@@ -824,7 +834,7 @@ function applyStudentFieldLocks(p) {
       el.title = '';
       el.placeholder = el.placeholder || 'Enter if missing';
     }
-    bindLockedFieldHint(inputId, hintId);
+    if (freeze) bindLockedFieldHint(inputId, hintId);
   };
 
   const phone = String(personal.phone || p?.user?.phone || '').trim();
@@ -840,11 +850,25 @@ function applyStudentFieldLocks(p) {
   if (m12) m12.value = marks12 === '' ? '' : String(marks12);
   if (cg) cg.value = cgpa === '' ? '' : String(cgpa);
 
-  lockInput('profPhone', 'profPhoneHint', 'personal.phone', phone);
-  lockInput('profPersonalEmail', 'profPersonalEmailHint', 'personal.personalEmail', personalEmail);
-  lockInput('profMarks10', 'profMarks10Hint', 'academic.marks10th', marks10);
-  lockInput('profMarks12', 'profMarks12Hint', 'academic.marks12th', marks12);
-  lockInput('profCgpa', 'profCgpaHint', 'academic.cgpa', cgpa);
+  // Phone and personal email are always editable by the student.
+  lockInput('profPhone', 'profPhoneHint', 'personal.phone', phone, true);
+  lockInput('profPersonalEmail', 'profPersonalEmailHint', 'personal.personalEmail', personalEmail, true);
+  lockInput('profMarks10', 'profMarks10Hint', 'academic.marks10th', marks10, false);
+  lockInput('profMarks12', 'profMarks12Hint', 'academic.marks12th', marks12, false);
+  lockInput('profCgpa', 'profCgpaHint', 'academic.cgpa', cgpa, false);
+}
+
+function showMissingFieldsBanner(missingFields) {
+  const banner = document.getElementById('missingFieldsBanner');
+  const list = document.getElementById('missingFieldsList');
+  if (!banner || !list) return;
+  const fields = Array.isArray(missingFields) ? missingFields : [];
+  if (!fields.length) {
+    banner.classList.add('d-none');
+    return;
+  }
+  list.textContent = fields.join(', ');
+  banner.classList.remove('d-none');
 }
 
 function applyProfileEmails(merged) {
@@ -958,6 +982,7 @@ async function loadSettingsProfile() {
     else setAvatarInitials();
       document.getElementById('profPhone').value = apiPhone;
       applyStudentFieldLocks(p);
+      showMissingFieldsBanner(p.missingFields);
       user = {
         ...user,
         name: apiName || user.name,
@@ -1386,8 +1411,9 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
   if (role === 'student') {
     const phoneEl = document.getElementById('profPhone');
     const personalEl = document.getElementById('profPersonalEmail');
-    const phoneVal = phoneEl?.readOnly ? '' : (phoneEl?.value || '').trim();
-    const personalEmailVal = personalEl?.readOnly ? '' : (personalEl?.value || '').trim().toLowerCase();
+    // Phone and personal email are always student-editable.
+    const phoneVal = (phoneEl?.value || '').trim();
+    const personalEmailVal = (personalEl?.value || '').trim().toLowerCase();
     if (personalEmailVal && !personalEmailVal.includes('@')) {
       toast('Enter a valid personal email.', 'warn');
       return;
@@ -1422,14 +1448,15 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     }
     const qualEdits = collectQualificationEdits();
     if (qualEdits) academic.qualifications = qualEdits;
+    // Phone and personalEmail are always editable by the student.
     const personal = {};
-    if (phoneEl && !phoneEl.readOnly && phoneVal) personal.phone = phoneVal;
-    if (personalEl && !personalEl.readOnly && personalEmailVal) personal.personalEmail = personalEmailVal;
+    if (phoneVal !== undefined) personal.phone = phoneVal;
+    if (personalEmailVal !== undefined) personal.personalEmail = personalEmailVal;
     const payload = {};
     if (Object.keys(personal).length) payload.personal = personal;
     if (Object.keys(academic).length) payload.academic = academic;
     if (!Object.keys(payload).length) {
-      toast('No empty profile fields to update. Ask your class teacher to change existing values.', 'warn');
+      toast('Nothing to save.', 'warn');
       return;
     }
     if (Auth.hasRealAuth()) {

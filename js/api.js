@@ -899,6 +899,22 @@ const Auth = {
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
+      // Remind students once per session if profile has missing fields.
+      if (role === 'student' && Array.isArray(p.missingFields) && p.missingFields.length) {
+        const key = 'ph_missing_fields_reminded';
+        try {
+          if (!sessionStorage.getItem(key)) {
+            sessionStorage.setItem(key, '1');
+            const page = document.body?.dataset?.page || '';
+            const names = p.missingFields.slice(0, 5).join(', ');
+            const extra = p.missingFields.length > 5 ? ` and ${p.missingFields.length - 5} more` : '';
+            const msg = `Your profile has missing fields: ${names}${extra}. Please update them in Settings.`;
+            if (page !== 'settings.html') {
+              toast(msg, 'warn');
+            }
+          }
+        } catch (_) { /* sessionStorage blocked */ }
+      }
       return true;
     } catch {
       return false;

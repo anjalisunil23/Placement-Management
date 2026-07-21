@@ -36,11 +36,8 @@ final class StudentProfileEditService
         $editable = [];
         foreach (self::PERSONAL_KEYS as $key) {
             $path = 'personal.' . $key;
-            if ($this->isFieldLockedForStudent($profile, $path)) {
-                $locked[] = $path;
-            } else {
-                $editable[] = $path;
-            }
+            // Students may always edit their own phone and personal email.
+            $editable[] = $path;
         }
         foreach (self::ACADEMIC_KEYS as $key) {
             $path = 'academic.' . $key;
@@ -88,15 +85,16 @@ final class StudentProfileEditService
             if ($this->valuesEqual($path, $existingVal, $value)) {
                 continue;
             }
-            if ($this->isFieldLockedForStudent($profile, $path)) {
+            if (!in_array($key, self::PERSONAL_KEYS, true) && $this->isFieldLockedForStudent($profile, $path)) {
                 $rejected[] = $path;
                 continue;
             }
-            if ($this->isEmptyValue($path, $value)) {
-                continue;
-            }
             $personal[$key] = $value;
-            $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+            if ($this->isEmptyValue($path, $value)) {
+                unset($locks[$path]);
+            } else {
+                $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+            }
         }
 
         foreach ($academicPatch as $key => $value) {
@@ -121,6 +119,27 @@ final class StudentProfileEditService
             }
             $academic[$key] = $value;
             $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+            // Mirror CGPA into an empty "Current CGPA" qualification row mark.
+            if ($key === 'cgpa' && $this->isValidCgpa($value)) {
+                $rows = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+                foreach ($rows as $qi => $qrow) {
+                    if (!is_array($qrow)) {
+                        continue;
+                    }
+                    $label = strtoupper((string) ($qrow['qualification'] ?? ''));
+                    $mark = isset($qrow['mark']) && is_numeric($qrow['mark']) ? (float) $qrow['mark'] : 0.0;
+                    if ($mark > 0) {
+                        continue;
+                    }
+                    if (preg_match('/\b(CGPA|CURRENT)\b/', $label) !== 1) {
+                        continue;
+                    }
+                    $rows[$qi]['mark'] = (float) $value;
+                    $locks['academic.qualifications.' . $qi . '.mark'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+                    $academic['qualifications'] = $rows;
+                    break;
+                }
+            }
         }
 
         $qualPatch = is_array($input['academic']['qualifications'] ?? null)
@@ -136,6 +155,22 @@ final class StudentProfileEditService
             );
             $academic['qualifications'] = $mergedQuals['rows'];
             $locks = $mergedQuals['locks'];
+
+            // If student filled Current CGPA mark, mirror into academic.cgpa when empty.
+            if (!$this->isValidCgpa($academic['cgpa'] ?? null)) {
+                foreach ($mergedQuals['rows'] as $qrow) {
+                    if (!is_array($qrow)) {
+                        continue;
+                    }
+                    $label = strtoupper((string) ($qrow['qualification'] ?? ''));
+                    $mark = isset($qrow['mark']) && is_numeric($qrow['mark']) ? (float) $qrow['mark'] : 0.0;
+                    if ($mark > 0 && $mark <= 10 && preg_match('/\b(CGPA|CURRENT)\b/', $label) === 1) {
+                        $academic['cgpa'] = $mark;
+                        $locks['academic.cgpa'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+                        break;
+                    }
+                }
+            }
         }
 
         if ($rejected !== []) {
@@ -150,7 +185,11 @@ final class StudentProfileEditService
         if ($personal !== (is_array($profile['personal'] ?? null) ? $profile['personal'] : [])) {
             $update['personal'] = $personal;
         }
-        if ($academic !== (is_array($profile['academic'] ?? null) ? $profile['academic'] : [])) {
+        // Always persist academic when a qualifications patch was supplied (even if merge looks equal).
+        if (
+            is_array($qualPatch)
+            || $academic !== (is_array($profile['academic'] ?? null) ? $profile['academic'] : [])
+        ) {
             $update['academic'] = $academic;
         }
         if ($locks !== (is_array($profile['profileFieldLocks'] ?? null) ? $profile['profileFieldLocks'] : [])) {
@@ -289,6 +328,58 @@ final class StudentProfileEditService
         }
 
         return $profile;
+    }
+
+    /**
+     * @param array<string, mixed> $profile
+     * @return list<string>
+     */
+    public function missingFieldsForStudent(array $profile): array
+    {
+        $profile = $this->sanitizeProfileDocument($profile);
+        $personal = is_array($profile['personal'] ?? null) ? $profile['personal'] : [];
+        $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+        $missing = [];
+
+        if (trim((string) ($personal['phone'] ?? '')) === '') {
+            $missing[] = 'Phone number';
+        }
+        if (trim((string) ($personal['personalEmail'] ?? '')) === '') {
+            $missing[] = 'Personal email';
+        }
+        if (!$this->isValidCgpa($academic['cgpa'] ?? null)) {
+            $missing[] = 'CGPA';
+        }
+        if (!is_numeric($academic['marks10th'] ?? null) || (float) ($academic['marks10th'] ?? 0) <= 0) {
+            $missing[] = '10th marks';
+        }
+        if (!is_numeric($academic['marks12th'] ?? null) || (float) ($academic['marks12th'] ?? 0) <= 0) {
+            $missing[] = '12th marks';
+        }
+
+        $quals = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+        foreach ($quals as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $label = trim((string) ($row['qualification'] ?? 'Qualification'));
+            foreach (['institution' => 'institution', 'registerNumber' => 'register no.', 'monthYear' => 'month/year'] as $field => $suffix) {
+                $value = trim((string) ($row[$field] ?? ''));
+                if ($value === '') {
+                    $missing[] = $label . ' ' . $suffix;
+                }
+            }
+            $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : 0.0;
+            $maxMark = isset($row['maxMark']) && is_numeric($row['maxMark']) ? (float) $row['maxMark'] : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
+            if ($mark <= 0) {
+                $missing[] = $label . ' mark';
+            }
+            if ($maxMark <= 0) {
+                $missing[] = $label . ' max mark';
+            }
+        }
+
+        return array_values(array_unique($missing));
     }
 
     public function isValidCgpa(mixed $value): bool

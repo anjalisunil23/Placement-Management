@@ -351,6 +351,7 @@ final class StudentController
     $fieldState = $fieldSvc->fieldStateForStudent($profile);
     $out['lockedFields'] = $fieldState['lockedFields'];
     $out['editableFields'] = $fieldState['editableFields'];
+    $out['missingFields'] = $fieldSvc->missingFieldsForStudent($profile);
     // Ensure response CGPA is never an invalid admno-like value.
     $respCgpa = $out['cgpa'] ?? ($out['academic']['cgpa'] ?? null);
     if (!$fieldSvc->isValidCgpa($respCgpa)) {

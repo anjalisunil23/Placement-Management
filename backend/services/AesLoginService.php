@@ -808,11 +808,12 @@ final class AesLoginService
             ?? $emailScan['personalEmail']
             ?? ''
         )));
+        // Fill-if-empty only — never overwrite student/staff saved contact fields.
         if ($personalEmail !== '' && strtolower(trim((string) ($personal['personalEmail'] ?? ''))) === '') {
             $personalPatch['personalEmail'] = $personalEmail;
         }
         $phone = trim((string) ($placement['phone'] ?? $mapped['phone'] ?? ''));
-        if ($phone !== '' && trim((string) ($personal['phone'] ?? '')) !== $phone) {
+        if ($phone !== '' && trim((string) ($personal['phone'] ?? '')) === '') {
             $personalPatch['phone'] = $phone;
         }
         $gender = $this->normalizeGender((string) (
@@ -874,17 +875,18 @@ final class AesLoginService
     {
         $patch = [];
         $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+        $locks = is_array($profile['profileFieldLocks'] ?? null) ? $profile['profileFieldLocks'] : [];
 
-        if (isset($qual['cgpa']) && (float) $qual['cgpa'] > 0 && (float) $qual['cgpa'] <= 10) {
-            $apiCgpa = (float) $qual['cgpa'];
-            if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
-                $academic['cgpa'] = $apiCgpa;
+        $storedCgpa = (float) ($academic['cgpa'] ?? 0);
+        $storedCgpaValid = $storedCgpa > 0 && $storedCgpa <= 10;
+        $cgpaLocked = isset($locks['academic.cgpa']) && is_array($locks['academic.cgpa']);
+
+        if (!$storedCgpaValid && !$cgpaLocked) {
+            if (isset($qual['cgpa']) && (float) $qual['cgpa'] > 0 && (float) $qual['cgpa'] <= 10) {
+                $academic['cgpa'] = (float) $qual['cgpa'];
                 $patch['academic'] = $academic;
-            }
-        } elseif (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0 && (float) $qualMapped['cgpa'] <= 10) {
-            $apiCgpa = (float) $qualMapped['cgpa'];
-            if ((float) ($academic['cgpa'] ?? 0) !== $apiCgpa) {
-                $academic['cgpa'] = $apiCgpa;
+            } elseif (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0 && (float) $qualMapped['cgpa'] <= 10) {
+                $academic['cgpa'] = (float) $qualMapped['cgpa'];
                 $patch['academic'] = $academic;
             }
         }
@@ -898,6 +900,13 @@ final class AesLoginService
 
         $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
         foreach (['marks10th', 'marks12th'] as $markKey) {
+            $path = 'academic.' . $markKey;
+            $existing = (float) ($academic[$markKey] ?? 0);
+            $locked = isset($locks[$path]) && is_array($locks[$path]);
+            // Keep student/staff saved marks; AES only fills when empty.
+            if ($existing > 0 || $locked) {
+                continue;
+            }
             $apiMark = null;
             if (isset($qual[$markKey]) && is_numeric($qual[$markKey])) {
                 $apiMark = (float) $qual[$markKey];
@@ -907,13 +916,14 @@ final class AesLoginService
             if ($apiMark === null || $apiMark <= 0 || $apiMark > 100) {
                 continue;
             }
-            if ((float) ($academic[$markKey] ?? 0) !== $apiMark) {
-                $academic[$markKey] = $apiMark;
-                $patch['academic'] = $academic;
-            }
+            $academic[$markKey] = $apiMark;
+            $patch['academic'] = $academic;
         }
-        if (isset($patch['academic']['marks12th']) && (float) ($patch['academic']['ugMarks'] ?? $academic['ugMarks'] ?? 0) <= 0) {
-            $academic = $patch['academic'];
+        if (
+            isset($academic['marks12th'])
+            && (float) ($academic['marks12th'] ?? 0) > 0
+            && (float) ($academic['ugMarks'] ?? 0) <= 0
+        ) {
             $academic['ugMarks'] = (float) $academic['marks12th'];
             $patch['academic'] = $academic;
         }
@@ -921,15 +931,17 @@ final class AesLoginService
         $qualRows = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
         if ($qualRows !== []) {
             $academic = is_array($patch['academic'] ?? null) ? $patch['academic'] : $academic;
-            if (json_encode($academic['qualifications'] ?? []) !== json_encode($qualRows)) {
-                $academic['qualifications'] = $qualRows;
+            $existingRows = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+            $mergedRows = $this->mergeAesQualificationsPreservingFills($existingRows, $qualRows, $locks);
+            if (json_encode($existingRows) !== json_encode($mergedRows)) {
+                $academic['qualifications'] = $mergedRows;
                 $patch['academic'] = $academic;
             }
         }
 
         $hasQualData = $qualRows !== []
-            || (isset($qual['cgpa']) && (float) $qual['cgpa'] > 0)
-            || (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0)
+            || (isset($qual['cgpa']) && (float) $qual['cgpa'] > 0 && (float) $qual['cgpa'] <= 10)
+            || (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0 && (float) $qualMapped['cgpa'] <= 10)
             || (isset($qual['marks10th']) && (float) $qual['marks10th'] > 0)
             || (isset($qual['marks12th']) && (float) $qual['marks12th'] > 0);
         if ($hasQualData) {
@@ -939,6 +951,71 @@ final class AesLoginService
         }
 
         return $patch;
+    }
+
+    /**
+     * Merge AES qualification rows without wiping student/staff filled empty cells.
+     *
+     * @param list<mixed> $existing
+     * @param list<mixed> $aesRows
+     * @param array<string, mixed> $locks
+     * @return list<array<string, mixed>>
+     */
+    private function mergeAesQualificationsPreservingFills(array $existing, array $aesRows, array $locks): array
+    {
+        $out = [];
+        $count = max(count($existing), count($aesRows));
+        for ($i = 0; $i < $count; $i++) {
+            $aes = isset($aesRows[$i]) && is_array($aesRows[$i]) ? $aesRows[$i] : [];
+            $prev = isset($existing[$i]) && is_array($existing[$i]) ? $existing[$i] : [];
+            if ($aes === [] && $prev === []) {
+                continue;
+            }
+            $row = $aes !== [] ? $aes : $prev;
+            foreach (['mark', 'maxMark', 'percentage', 'institution', 'registerNumber', 'monthYear', 'qualification'] as $field) {
+                $path = 'academic.qualifications.' . $i . '.' . $field;
+                $locked = isset($locks[$path]) && is_array($locks[$path]);
+                $prevVal = $prev[$field] ?? ($field === 'maxMark' ? ($prev['maxmark'] ?? null) : null);
+                $aesVal = $row[$field] ?? ($field === 'maxMark' ? ($row['maxmark'] ?? null) : null);
+
+                $prevFilled = $this->qualificationCellFilled($field, $prevVal);
+                $aesFilled = $this->qualificationCellFilled($field, $aesVal);
+
+                if ($locked || $prevFilled) {
+                    if ($prevFilled) {
+                        $row[$field] = $prevVal;
+                        if ($field === 'maxMark') {
+                            $row['maxmark'] = is_numeric($prevVal) ? (float) $prevVal : $prevVal;
+                        }
+                    }
+                    continue;
+                }
+                if (!$aesFilled && $prevFilled) {
+                    $row[$field] = $prevVal;
+                }
+            }
+            // Keep alt keys used by some AES rows.
+            if (!isset($row['maxMark']) && isset($row['maxmark'])) {
+                $row['maxMark'] = $row['maxmark'];
+            }
+            if (!isset($row['institution']) && isset($prev['institution']) && trim((string) $prev['institution']) !== '') {
+                $row['institution'] = $prev['institution'];
+            }
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    private function qualificationCellFilled(string $field, mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+        if (in_array($field, ['institution', 'registerNumber', 'monthYear', 'qualification'], true)) {
+            return trim((string) $value) !== '';
+        }
+        return is_numeric($value) && (float) $value > 0;
     }
 
     /**
