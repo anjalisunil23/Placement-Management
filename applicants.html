@@ -27,7 +27,7 @@
         <select class="form-select form-select-sm" id="statusFilter">
           <option value="">All</option>
           <option value="applied">Applied</option>
-          <option value="under_review">Under review</option>
+          <option value="under_review">Waiting</option>
           <option value="shortlisted">Shortlisted</option>
           <option value="offered">Offered</option>
           <option value="rejected">Rejected</option>
@@ -45,15 +45,15 @@
       <div class="p-3 d-flex gap-2 align-items-center">
         <div class="search-with-icon flex-grow-1"><i class="bi bi-search"></i><input class="form-control" id="searchInput" placeholder="Search applicants…"/></div>
       </div>
-      <div class="table-wrap"><table class="table-modern"><thead><tr><th><input type="checkbox" id="selectAll"/></th><th>Candidate</th><th>Roll</th><th>Branch</th><th>CGPA</th><th>Status</th><th>Resume</th><th></th></tr></thead><tbody id="ar"></tbody></table></div>
+      <div class="table-wrap"><table class="table-modern"><thead><tr><th>Sl. No</th><th>Candidate</th><th>Roll</th><th>Branch</th><th>CGPA</th><th>Status</th><th>Resume</th><th></th></tr></thead><tbody id="ar"></tbody></table></div>
     </div>
   </div>
 </div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260721applicantactions"></script>
-<script src="js/app.js?v=20260721applicantactions"></script>
+<script src="js/api.js?v=20260721exportcsv"></script>
+<script src="js/app.js?v=20260721exportcsv"></script>
 <script>
 const user = Auth.user() || demoUserFor('company');
 const co = user.companyName || 'Acme Cloud';
@@ -81,10 +81,11 @@ function normalizeApplicant(a) {
       cgpa: a.student.cgpa,
       status: a.uiStatus || a.status,
       rawStatus: a.status,
+      companyViewStatus: a.companyViewStatus || '',
       hasResume: a.student.hasResume,
     };
   }
-  return { ...a, id: a.id || ('demo-' + a.roll), rawStatus: a.status };
+  return { ...a, id: a.id || ('demo-' + a.roll), rawStatus: a.status, companyViewStatus: a.companyViewStatus || '' };
 }
 
 function renderQuickStats(rows) {
@@ -112,27 +113,19 @@ function filteredRows() {
 }
 
 function applicantActionButtons(row) {
-  const status = String(row.rawStatus || row.status || 'applied');
-  if (['rejected', 'withdrawn'].includes(status)) {
-    return '<span class="text-muted-2 small">—</span>';
-  }
-  if (status === 'shortlisted') {
-    return `<div class="btn-group btn-group-sm">
-      <button type="button" class="btn btn-outline-success" data-action="result" data-id="${row.id}">Offer</button>
-    </div>`;
-  }
   return `<div class="btn-group btn-group-sm">
-    <button type="button" class="btn btn-outline-primary" data-action="review" data-id="${row.id}">Review</button>
-    <button type="button" class="btn btn-outline-success" data-action="shortlist" data-id="${row.id}">Shortlist</button>
+    <button type="button" class="btn btn-outline-warning" data-action="waiting" data-id="${row.id}">Waiting</button>
+    <button type="button" class="btn btn-outline-success" data-action="select" data-id="${row.id}">Select</button>
+    <button type="button" class="btn btn-outline-danger" data-action="reject" data-id="${row.id}">Reject</button>
   </div>`;
 }
 
 function renderTable() {
   const rows = filteredRows();
   renderQuickStats(applicantRows);
-  document.getElementById('ar').innerHTML = rows.length ? rows.map(r => `
+  document.getElementById('ar').innerHTML = rows.length ? rows.map((r, i) => `
     <tr>
-      <td><input type="checkbox" class="app-check" data-id="${r.id}"/></td>
+      <td>${i + 1}</td>
       <td><div class="d-flex align-items-center gap-2"><div class="avatar" style="width:32px;height:32px;font-size:.72rem">${(r.name||'?').split(' ').map(n=>n[0]).join('').slice(0,2)}</div><strong>${r.name}</strong></div></td>
       <td>${r.roll || '—'}</td><td>${r.dept || '—'}</td><td>${r.cgpa ?? '—'}</td>
       <td>${appStatusBadge(r.status)}</td>
@@ -173,10 +166,20 @@ async function loadApplicants() {
 
 async function appAction(id, action) {
   if (!useApi) { toast(`${action} recorded (demo).`, 'success'); return; }
-  const path = action === 'review' ? 'review' : action === 'shortlist' ? 'shortlist' : 'result';
-  const body = action === 'result' ? { status: 'selected' } : undefined;
+  let path = 'result';
+  let body;
+  if (action === 'waiting') {
+    path = 'review';
+  } else if (action === 'select') {
+    body = { status: 'selected' };
+  } else if (action === 'reject') {
+    body = { status: 'rejected' };
+  } else {
+    toast('Unknown action.', 'error');
+    return;
+  }
   const res = await api(`/company/applications/${encodeURIComponent(id)}/${path}`, { method: 'POST', body, noRedirectOn401: true });
-  if (res?.success) { toast('Updated.', 'success'); await loadApplicants(); }
+  if (res?.success) { toast(res.message || 'Updated.', 'success'); await loadApplicants(); }
   else toast(res?.message || 'Action failed.', 'error');
 }
 
@@ -201,10 +204,69 @@ document.getElementById('resetFilters').addEventListener('click', () => {
   loadApplicants();
 });
 
-document.getElementById('exportBtn').addEventListener('click', () => toast('Export started (demo).', 'info'));
-document.getElementById('selectAll').addEventListener('change', e => {
-  document.querySelectorAll('.app-check').forEach(cb => { cb.checked = e.target.checked; });
-});
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  if (!useApi && !Auth.hasRealAuth()) {
+    toast('Sign in to export candidate results.', 'warn');
+    return;
+  }
+  const btn = document.getElementById('exportBtn');
+  const prev = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Exporting…';
+  try {
+    const qs = new URLSearchParams();
+    const minCgpa = document.getElementById('cgpaRange').value;
+    const branch = document.getElementById('branchFilter').value;
+    const status = document.getElementById('statusFilter').value;
+    if (minCgpa) qs.set('minCgpa', minCgpa);
+    if (branch) qs.set('branch', branch);
+    if (status) qs.set('status', status);
 
+    const headers = { Accept: 'text/csv,*/*' };
+    const token = Auth.token();
+    if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const res = await fetch(`${API_BASE}/company/applications/export?${qs}`, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const buffer = await res.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (!res.ok) {
+      let message = `Export failed (${res.status}).`;
+      try {
+        const json = JSON.parse(new TextDecoder().decode(bytes));
+        if (json?.message) message = json.message;
+      } catch { /* not JSON */ }
+      throw new Error(message);
+    }
+    const type = String(res.headers.get('content-type') || '').toLowerCase();
+    if (type.includes('json')) {
+      const json = JSON.parse(new TextDecoder().decode(bytes));
+      throw new Error(json?.message || 'Export failed.');
+    }
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = /filename="?([^"]+)"?/i.exec(disposition);
+    const filename = match?.[1] || `${String(co || 'company').replace(/[^\w.\-]+/g, '_')}-candidate-results.csv`;
+    const blob = new Blob([buffer], { type: type || 'text/csv;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+    toast('Candidate results downloaded.', 'success');
+  } catch (err) {
+    toast(err?.message || 'Could not export candidate results.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = prev;
+  }
+});
 onAppReady(() => loadApplicants());
 </script></body></html>

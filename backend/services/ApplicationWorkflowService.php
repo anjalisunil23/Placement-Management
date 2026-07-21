@@ -15,11 +15,11 @@ final class ApplicationWorkflowService
 {
     /** @var array<string, string[]> */
     private const TRANSITIONS = [
-        'applied'          => ['resume_verified', 'officer_approved', 'company_review', 'shortlisted', 'rejected', 'withdrawn'],
-        'resume_pending'   => ['resume_verified', 'officer_approved', 'company_review', 'shortlisted', 'rejected', 'withdrawn'],
-        'resume_verified'  => ['officer_approved', 'company_review', 'shortlisted', 'rejected', 'withdrawn'],
-        'officer_approved' => ['company_review', 'shortlisted', 'rejected', 'withdrawn'],
-        'company_review'   => ['shortlisted', 'rejected', 'withdrawn'],
+        'applied'          => ['resume_verified', 'officer_approved', 'company_review', 'shortlisted', 'selected', 'rejected', 'withdrawn'],
+        'resume_pending'   => ['resume_verified', 'officer_approved', 'company_review', 'shortlisted', 'selected', 'rejected', 'withdrawn'],
+        'resume_verified'  => ['officer_approved', 'company_review', 'shortlisted', 'selected', 'rejected', 'withdrawn'],
+        'officer_approved' => ['company_review', 'shortlisted', 'selected', 'rejected', 'withdrawn'],
+        'company_review'   => ['shortlisted', 'selected', 'rejected', 'withdrawn'],
         'shortlisted'      => ['selected', 'rejected', 'withdrawn'],
         'selected'         => [],
         'rejected'         => [],

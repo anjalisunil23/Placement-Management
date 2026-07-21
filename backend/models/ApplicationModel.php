@@ -116,6 +116,25 @@ class ApplicationModel extends BaseModel
     }
 
     /**
+     * Company applicants page only — does not change global application workflow status.
+     */
+    public function updateCompanyViewStatus(string $id, string $companyViewStatus, string $by): bool
+    {
+        $companyViewStatus = strtolower(trim($companyViewStatus));
+        if (!in_array($companyViewStatus, ['waiting', 'selected', 'rejected'], true)) {
+            return false;
+        }
+        if (!$this->findById($id)) {
+            return false;
+        }
+        return $this->update($id, [
+            'companyViewStatus' => $companyViewStatus,
+            'companyViewUpdatedAt' => DocumentHelper::now(),
+            'companyViewUpdatedBy' => $by,
+        ]);
+    }
+
+    /**
      * Upsert a company selection-round outcome for an application.
      *
      * @return array{ok:bool,roundOutcomes:list<array<string,mixed>>,status:string}

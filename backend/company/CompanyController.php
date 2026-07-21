@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Company;
 
 use PMS\Middleware\RBACMiddleware;
+use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
@@ -12,13 +13,11 @@ use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
-use PMS\Services\ApplicationWorkflowService;
 use PMS\Services\CompanyApplicationService;
 use PMS\Services\EmailService;
 use PMS\Services\JobPostApprovalService;
 use PMS\Services\NotificationService;
 use PMS\Services\ObjectStorageService;
-use PMS\Services\PlacementChanceService;
 use PMS\Services\RecruitingService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\OwnershipHelper;
@@ -450,62 +449,127 @@ final class CompanyController
         Response::success($rows);
     }
 
+    /** GET /api/company/applications/export — download candidate results as CSV */
+    public function exportApplications(): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        $company = $this->getCompany($user);
+        $service = new CompanyApplicationService();
+        $filters = [
+            'status'  => $_GET['status'] ?? null,
+            'driveId' => $_GET['driveId'] ?? null,
+            'minCgpa' => $_GET['minCgpa'] ?? null,
+            'branch'  => $_GET['branch'] ?? null,
+        ];
+        $rows = $service->listEnriched((string) $company['_id'], $filters);
+
+        $companyName = trim((string) ($company['companyName'] ?? 'company'));
+        $safeName = preg_replace('/[^A-Za-z0-9._-]+/', '_', $companyName) ?: 'company';
+        $filename = $safeName . '-candidate-results-' . date('Ymd-His') . '.csv';
+
+        $headers = [
+            'Candidate',
+            'Register No',
+            'Branch',
+            'CGPA',
+            'Status',
+            'Shortlisted',
+            'Selected',
+            'Drive / Role',
+            'Applied On',
+            'Email',
+            'Phone',
+            'Resume',
+        ];
+
+        if (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        header('Pragma: no-cache');
+
+        $out = fopen('php://output', 'w');
+        if ($out === false) {
+            Response::error('Could not create export file.', 500);
+        }
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, $headers);
+
+        foreach ($rows as $row) {
+            $student = is_array($row['student'] ?? null) ? $row['student'] : [];
+            $drive = is_array($row['drive'] ?? null) ? $row['drive'] : [];
+            $job = is_array($row['job'] ?? null) ? $row['job'] : [];
+            $rawStatus = strtolower(trim((string) ($row['status'] ?? 'applied')));
+            $companyView = strtolower(trim((string) ($row['companyViewStatus'] ?? '')));
+            $uiStatus = (string) ($row['uiStatus'] ?? $service->displayStatus([
+                'status' => $rawStatus,
+                'companyViewStatus' => $companyView,
+            ]));
+            $isShortlisted = $companyView === 'waiting'
+                || in_array($rawStatus, ['shortlisted', 'officer_approved', 'company_review', 'selected'], true);
+            $isSelected = $companyView === 'selected' || in_array($rawStatus, ['selected', 'placed'], true);
+            $role = trim((string) ($drive['title'] ?? $job['title'] ?? ''));
+            $appliedAt = (string) ($row['appliedAt'] ?? $row['createdAt'] ?? '');
+            if ($appliedAt !== '' && preg_match('/^\d{4}-\d{2}-\d{2}/', $appliedAt, $m)) {
+                $appliedAt = substr($appliedAt, 0, 10);
+            }
+
+            fputcsv($out, [
+                (string) ($student['name'] ?? ''),
+                (string) ($student['registerNumber'] ?? ''),
+                (string) ($student['department'] ?? ''),
+                isset($student['cgpa']) ? (string) $student['cgpa'] : '',
+                $this->formatExportStatus($uiStatus, $rawStatus),
+                $isShortlisted ? 'Yes' : 'No',
+                $isSelected ? 'Yes' : 'No',
+                $role,
+                $appliedAt,
+                (string) ($row['email'] ?? $student['email'] ?? ''),
+                (string) ($row['phone'] ?? $student['phone'] ?? ''),
+                !empty($student['hasResume']) ? 'Yes' : 'No',
+            ]);
+        }
+
+        if ($rows === []) {
+            fputcsv($out, ['No applicants found for the current filters.', '', '', '', '', '', '', '', '', '', '', '']);
+        }
+
+        fclose($out);
+        exit;
+    }
+
+    private function formatExportStatus(string $uiStatus, string $rawStatus): string
+    {
+        return match ($uiStatus) {
+            'applied' => 'Applied',
+            'under_review' => 'Waiting',
+            'waiting' => 'Waiting',
+            'shortlisted' => 'Shortlisted',
+            'offered' => 'Offered',
+            'rejected' => 'Rejected',
+            'interview' => 'Interviewed',
+            default => $rawStatus !== '' ? ucfirst(str_replace('_', ' ', $rawStatus)) : 'Applied',
+        };
+    }
+
     /** GET /api/company/applications/filter */
     public function filterApplicants(): void
     {
         $this->applications();
     }
 
-    /** POST /api/company/applications/{id}/review */
+    /** POST /api/company/applications/{id}/review — company applicants page only */
     public function startReview(string $appId): void
     {
-        $user = RBACMiddleware::requireCompany();
-        $app = OwnershipHelper::requireCompanyApplication($appId, $user);
-        $company = $this->getCompany($user);
-        $current = (string) ($app['status'] ?? 'applied');
-        if (in_array($current, ['company_review', 'shortlisted', 'selected'], true)) {
-            Response::success(null, 'Application is already under review or processed.');
-            return;
-        }
-
-        (new ApplicationWorkflowService())->transition($appId, 'company_review', (string) $user['_id']);
-        $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
-        if ($student && !empty($student['userId'])) {
-            (new NotificationService())->notifyApplicationUpdate(
-                (string) $student['userId'],
-                'Application Under Review',
-                'Your application is now under review at ' . (string) ($company['companyName'] ?? 'the company') . '.'
-            );
-        }
-        Response::success(null, 'Application marked under company review.');
+        $this->setCompanyViewStatus($appId, 'waiting');
     }
 
-    /** POST /api/company/applications/{id}/shortlist */
+    /** POST /api/company/applications/{id}/shortlist — company applicants page only */
     public function shortlist(string $appId): void
     {
-        $user = RBACMiddleware::requireCompany();
-        $app = OwnershipHelper::requireCompanyApplication($appId, $user);
-        $company = $this->getCompany($user);
-        $current = (string) ($app['status'] ?? 'applied');
-        if ($current === 'shortlisted') {
-            Response::success(null, 'Already shortlisted.');
-            return;
-        }
-        if ($current === 'selected') {
-            Response::success(null, 'Applicant already offered.');
-            return;
-        }
-
-        (new ApplicationWorkflowService())->transition($appId, 'shortlisted', (string) $user['_id']);
-        $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
-        if ($student && !empty($student['userId'])) {
-            (new NotificationService())->notifyApplicationUpdate(
-                (string) $student['userId'],
-                'Shortlisted',
-                'Congratulations! You have been shortlisted by ' . (string) ($company['companyName'] ?? 'the company') . '.'
-            );
-        }
-        Response::success(null, 'Student shortlisted.');
+        $this->setCompanyViewStatus($appId, 'waiting');
     }
 
     /** POST /api/company/applications/upload-results */
@@ -600,47 +664,43 @@ final class CompanyController
         );
     }
 
-    /** POST /api/company/applications/{id}/result */
+    /** POST /api/company/applications/{id}/result — company applicants page only */
     public function updateResult(string $appId): void
     {
-        $user = RBACMiddleware::requireCompany();
-        $app = OwnershipHelper::requireCompanyApplication($appId, $user);
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-        $status = $input['status'] ?? 'rejected';
-        if (!in_array($status, ['selected', 'rejected'], true)) {
-            Response::error('Invalid status.', 400);
+        $status = strtolower(trim((string) ($input['status'] ?? 'rejected')));
+        if ($status === 'selected') {
+            $this->setCompanyViewStatus($appId, 'selected');
+            return;
         }
+        if ($status === 'rejected') {
+            $this->setCompanyViewStatus($appId, 'rejected');
+            return;
+        }
+        Response::error('Invalid status. Use selected or rejected.', 400);
+    }
 
-        (new ApplicationWorkflowService())->transition(
-            $appId,
-            $status,
-            (string) $user['_id'],
-            $input['remarks'] ?? ''
+    /**
+     * Updates company-module applicants status only (companyViewStatus).
+     * Does not change global application workflow used by other modules.
+     */
+    private function setCompanyViewStatus(string $appId, string $companyViewStatus): void
+    {
+        $user = RBACMiddleware::requireCompany();
+        OwnershipHelper::requireCompanyApplication($appId, $user);
+        if (!(new ApplicationModel())->updateCompanyViewStatus($appId, $companyViewStatus, (string) $user['_id'])) {
+            Response::error('Could not update company applicant status.', 422);
+        }
+        $label = match ($companyViewStatus) {
+            'waiting' => 'Waiting',
+            'selected' => 'Selected',
+            'rejected' => 'Rejected',
+            default => ucfirst($companyViewStatus),
+        };
+        Response::success(
+            ['companyViewStatus' => $companyViewStatus],
+            "Status updated to {$label} (company applicants only)."
         );
-
-        $student = (new StudentModel())->findById((string) $app['studentId']);
-        if ($student) {
-            $company = $this->getCompany($user);
-            $notifier = new NotificationService();
-            $notifier->notifySelectionUpdate(
-                (string) $student['userId'],
-                (string) ($company['companyName'] ?? 'Company'),
-                $status
-            );
-            if ($status === 'selected') {
-                (new PlacementChanceService())->consumeOnSelection(
-                    (string) $student['_id'],
-                    (string) $app['driveId'],
-                    [
-                        'companyId' => (string) $app['companyId'],
-                        'driveId'   => (string) $app['driveId'],
-                        'applicationId' => $appId,
-                    ]
-                );
-            }
-        }
-
-        Response::success(null, 'Result updated.');
     }
 
     /** GET /api/company/notifications */

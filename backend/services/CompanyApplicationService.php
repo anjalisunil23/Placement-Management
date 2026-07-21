@@ -26,7 +26,8 @@ final class CompanyApplicationService
             $wantedStatus = (string) $filters['status'];
             $apps = array_values(array_filter(
                 $apps,
-                fn (array $a): bool => (string) ($a['status'] ?? '') === $wantedStatus
+                fn (array $a): bool => $this->displayStatus($a) === $wantedStatus
+                    || (string) ($a['status'] ?? '') === $wantedStatus
                     || $this->uiStatus((string) ($a['status'] ?? 'applied')) === $wantedStatus
             ));
         }
@@ -90,7 +91,7 @@ final class CompanyApplicationService
             'rejected'     => 0,
         ];
         foreach ($apps as $app) {
-            $bucket = $this->uiStatus($app['status'] ?? 'applied');
+            $bucket = $this->displayStatus($app);
             if (isset($counts[$bucket])) {
                 $counts[$bucket]++;
             }
@@ -102,12 +103,26 @@ final class CompanyApplicationService
     {
         return match ($status) {
             'applied', 'resume_pending', 'resume_verified' => 'applied',
-            'officer_approved', 'company_review' => 'under_review',
+            'officer_approved', 'company_review', 'waiting' => 'under_review',
             'shortlisted' => 'shortlisted',
             'selected' => 'offered',
             'rejected', 'withdrawn' => 'rejected',
             default => 'applied',
         };
+    }
+
+    /**
+     * Company applicants display status (local companyViewStatus wins when set).
+     *
+     * @param array<string, mixed> $app
+     */
+    public function displayStatus(array $app): string
+    {
+        $companyView = strtolower(trim((string) ($app['companyViewStatus'] ?? '')));
+        if ($companyView !== '') {
+            return $this->uiStatus($companyView);
+        }
+        return $this->uiStatus((string) ($app['status'] ?? 'applied'));
     }
 
     /**
@@ -166,7 +181,8 @@ final class CompanyApplicationService
             'package' => $job['package'] ?? '',
             'location'=> $job['location'] ?? '',
         ] : null;
-        $serialized['uiStatus'] = $this->uiStatus($app['status'] ?? 'applied');
+        $serialized['uiStatus'] = $this->displayStatus($app);
+        $serialized['companyViewStatus'] = strtolower(trim((string) ($app['companyViewStatus'] ?? '')));
         return $serialized;
     }
 
