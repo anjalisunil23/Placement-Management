@@ -12,7 +12,6 @@
   <div><h1 class="page-title">Applicant Management</h1></div>
   <div class="d-flex gap-2">
     <button type="button" class="btn btn-outline-secondary" id="exportBtn"><i class="bi bi-download me-1"></i>Export</button>
-    <button type="button" class="btn btn-primary" id="shortlistBtn"><i class="bi bi-check2-square me-1"></i>Shortlist selected</button>
   </div>
 </div>
 
@@ -200,12 +199,6 @@ document.getElementById('resetFilters').addEventListener('click', () => {
   document.getElementById('branchFilter').value = '';
   document.getElementById('statusFilter').value = '';
   loadApplicants();
-});
-
-document.getElementById('shortlistBtn').addEventListener('click', async () => {
-  const ids = [...document.querySelectorAll('.app-check:checked')].map(cb => cb.dataset.id);
-  if (!ids.length) { toast('Select applicants first.', 'warn'); return; }
-  for (const id of ids) await appAction(id, 'shortlist');
 });
 
 document.getElementById('exportBtn').addEventListener('click', () => toast('Export started (demo).', 'info'));
