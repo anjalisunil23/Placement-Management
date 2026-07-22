@@ -7,13 +7,14 @@ namespace PMS\Services;
 /**
  * Object storage via the campus S3 Lambda (presigned URL API).
  *
- * Physical layout:
- *   bucket: ajce-placements
- *   key:    {folder}/{file}   e.g. resumes/abc.pdf
+ * Physical layout (iqac-docs bucket):
+ *   uploads:  {folder}/{file}           e.g. resumes/abc.pdf
+ *   legacy:   Docs/{folder}/{file}      e.g. Docs/resumes/abc.pdf
  *
- * Upload:  GET ?method=getPreSignedUrl&ext=&path={folder}
- *          then PUT body to uploadURL (with x-amz-acl: private)
- * Download: GET ?method=s3Download&object={folder}/{file}
+ * Upload:   GET ?method=getPreSignedUrl&ext=&path={folder}
+ *           then PUT body to uploadURL (with x-amz-acl: private)
+ * Download: GET ?method=s3Download&path={folder}&object={file}  (current uploads)
+ *           GET ?method=s3Download&object={folder}/{file}       (legacy Docs/* keys)
  * Delete:   GET ?method=s3Delete&object={folder}/{file}
  *
  * MariaDB paths use: s3://ajce-placements/{folder}/{filename}
@@ -186,16 +187,19 @@ final class ObjectStorageService
             }
             try {
                 $object = $this->lambdaObjectFromResolved($resolved);
-                $candidates = array_values(array_unique(array_filter([
-                    $object,
-                    $object !== '' ? 'ajce-placements/' . $object : '',
-                ])));
-                foreach ($candidates as $candidate) {
+                $folder = trim((string) ($resolved['folder'] ?? ''), '/');
+                $filename = trim((string) ($resolved['filename'] ?? ''), '/');
+                $candidates = [];
+                if ($folder !== '' && $filename !== '') {
+                    $candidates[] = ['method' => 's3Delete', 'path' => $folder, 'object' => $filename];
+                }
+                if ($object !== '') {
+                    $candidates[] = ['method' => 's3Delete', 'object' => $object];
+                    $candidates[] = ['method' => 's3Delete', 'object' => 'ajce-placements/' . $object];
+                }
+                foreach ($candidates as $query) {
                     try {
-                        $this->lambdaJson([
-                            'method' => 's3Delete',
-                            'object' => $candidate,
-                        ]);
+                        $this->lambdaJson($query);
                     } catch (\Throwable) {
                         // try next
                     }
@@ -228,26 +232,56 @@ final class ObjectStorageService
         if ($resolved['scheme'] === 's3') {
             $this->assertConfigured();
             $object = $this->lambdaObjectFromResolved($resolved);
-            $candidates = array_values(array_unique(array_filter([
-                $object,
-                // Legacy campus layout: Docs/{folder}/{file} or Docs/ajce-placements/{folder}/{file}
-                $object !== '' ? 'ajce-placements/' . $object : '',
-                $object !== '' ? 'Docs/' . $object : '',
-                $object !== '' ? 'Docs/ajce-placements/' . $object : '',
-            ])));
+            $folder = trim((string) ($resolved['folder'] ?? ''), '/');
+            $filename = trim((string) ($resolved['filename'] ?? ''), '/');
+            if ($filename === '' && $object !== '') {
+                $filename = basename($object);
+            }
+            if ($folder === '' && str_contains($object, '/')) {
+                $folder = trim(dirname($object), '.');
+            }
+
+            // Campus Lambda quirks:
+            // - Upload getPreSignedUrl(path=resumes) stores at iqac-docs/resumes/{file}
+            // - Download with only object=resumes/{file} signs Docs/resumes/{file} (wrong for new uploads)
+            // - Download with path={folder}&object={file} signs resumes/{file} (correct for new uploads)
+            // - Older files may still live under Docs/resumes/{file}
+            $queries = [];
+            if ($folder !== '' && $filename !== '') {
+                $queries[] = ['method' => 's3Download', 'path' => $folder, 'object' => $filename];
+            }
+            if ($object !== '') {
+                $queries[] = ['method' => 's3Download', 'object' => $object];
+                $queries[] = ['method' => 's3Download', 'object' => 'ajce-placements/' . $object];
+                // Legacy Docs layouts (only useful for pre-migration objects).
+                $queries[] = ['method' => 's3Download', 'object' => 'Docs/' . ltrim($object, '/')];
+            }
+            if ($folder !== '' && $filename !== '') {
+                $queries[] = ['method' => 's3Download', 'path' => 'Docs/' . $folder, 'object' => $filename];
+            }
 
             $lastError = null;
-            foreach ($candidates as $candidate) {
+            $seen = [];
+            foreach ($queries as $query) {
+                $sig = json_encode($query);
+                if ($sig === false || isset($seen[$sig])) {
+                    continue;
+                }
+                $seen[$sig] = true;
                 try {
-                    $meta = $this->lambdaJson([
-                        'method' => 's3Download',
-                        'object' => $candidate,
-                    ]);
+                    $meta = $this->lambdaJson($query);
                     $url = (string) ($meta['url'] ?? '');
                     if ($url === '') {
                         continue;
                     }
-                    return $this->httpGetBody($url);
+                    // Skip obviously broken signed URLs (…/undefined).
+                    if (str_contains($url, '/undefined') || str_ends_with(parse_url($url, PHP_URL_PATH) ?: '', '/')) {
+                        continue;
+                    }
+                    $body = $this->httpGetBody($url);
+                    if ($body !== '') {
+                        return $body;
+                    }
                 } catch (\Throwable $e) {
                     $lastError = $e;
                 }
