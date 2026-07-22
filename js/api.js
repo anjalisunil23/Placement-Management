@@ -587,9 +587,6 @@ const Auth = {
     if (r === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
     }
-    if (r === 'student' && this._profileIncomplete) {
-      return 'settings.html';
-    }
     if (u?.dashboard) {
       const page = String(u.dashboard).replace(/^\//, '').split('#')[0];
       if (page && this.isAllowed(page)) return page;
@@ -599,9 +596,6 @@ const Auth = {
   resolveRedirect(next) {
     if (this.role() === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
-    }
-    if (this.role() === 'student' && this._profileIncomplete) {
-      return 'settings.html';
     }
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
@@ -691,12 +685,16 @@ const Auth = {
   },
   clear() {
     this._sessionReady = false;
+    this._profileIncomplete = false;
     localStorage.removeItem('ph-user');
     localStorage.removeItem('ph-token');
     localStorage.removeItem('ph-role');
     try {
       Object.keys(sessionStorage)
-        .filter((k) => k.startsWith('ph-unread-') || k === 'ph_auth_boot_at')
+        .filter((k) => k.startsWith('ph-unread-')
+          || k === 'ph_auth_boot_at'
+          || k === 'ph_missing_fields_reminded'
+          || k === 'ph_incomplete_profile_nudged')
         .forEach((k) => sessionStorage.removeItem(k));
     } catch (_) { /* ignore */ }
   },
@@ -912,34 +910,39 @@ const Auth = {
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
-      // Track and remind students about missing profile fields.
-      // Never bounce unregistered students off the policy page (that caused
-      // placement-registration ↔ settings/dashboard redirect flicker).
+      // Incomplete profile: remind once and soft-nudge to Profile once per session.
+      // Never force-redirect on every page (that trapped students and caused blink).
       if (role === 'student' && Array.isArray(p.missingFields) && p.missingFields.length) {
         this._profileIncomplete = true;
         const page = (document.body?.dataset?.page || '').split('#')[0];
         const awaitingPolicy = typeof studentNeedsPlacementRegistration === 'function'
           && studentNeedsPlacementRegistration();
         const onPolicyPage = page === 'placement-registration.html';
-        const key = 'ph_missing_fields_reminded';
+        const onSettingsPage = page === 'settings.html';
         try {
-          if (!sessionStorage.getItem(key) && !onPolicyPage) {
-            sessionStorage.setItem(key, '1');
+          if (!sessionStorage.getItem('ph_missing_fields_reminded') && !onPolicyPage && !onSettingsPage) {
+            sessionStorage.setItem('ph_missing_fields_reminded', '1');
             const names = p.missingFields.slice(0, 5).join(', ');
             const extra = p.missingFields.length > 5 ? ` and ${p.missingFields.length - 5} more` : '';
-            const msg = `Your profile has missing fields: ${names}${extra}. Please update them in Settings.`;
-            if (page !== 'settings.html') {
-              toast(msg, 'warn');
-            }
+            toast(`Your profile has missing fields: ${names}${extra}. Please update them in Profile & Resumes.`, 'warn');
           }
         } catch (_) { /* sessionStorage blocked */ }
+
+        let canNudge = false;
+        try {
+          canNudge = !sessionStorage.getItem('ph_incomplete_profile_nudged');
+          if (canNudge) sessionStorage.setItem('ph_incomplete_profile_nudged', '1');
+        } catch (_) {
+          canNudge = false;
+        }
         if (!opts.skipIncompleteRedirect
+          && canNudge
           && !awaitingPolicy
           && !onPolicyPage
+          && !onSettingsPage
           && page
-          && page !== 'settings.html'
         ) {
-          window.location.href = '/settings.html';
+          window.location.href = 'settings.html';
           return true;
         }
       } else if (role === 'student') {
