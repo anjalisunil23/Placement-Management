@@ -352,7 +352,10 @@ final class OfficerDataService
                 'department'        => (string) ($dept['code'] ?? $dept['name'] ?? ''),
                 'cgpa'              => (float) ($academic['cgpa'] ?? 0),
                 'backlogs'          => (int) ($academic['backlogs'] ?? 0),
-                'hasResume'         => !empty($resume['path']) || !empty($resume['filename']),
+                'hasResume'         => $this->resumeFileForApplication([
+                    'studentId' => $sid,
+                    'resume' => [],
+                ]) !== null,
                 'placed'            => (bool) ($student['placed'] ?? false),
                 'chancesRemaining'  => (int) ($chances['remaining'] ?? 0),
                 'phone'             => (string) ($personal['phone'] ?? $row['phone'] ?? ''),
@@ -394,18 +397,36 @@ final class OfficerDataService
      */
     public function resumeFileCandidates(array $app): array
     {
-        $studentId = trim((string) ($app['studentId'] ?? ''));
-        $student = $studentId !== '' ? (new StudentModel())->findById($studentId) : null;
+        $ref = trim((string) ($app['studentId'] ?? ''));
+        $student = null;
+        if ($ref !== '') {
+            $student = $this->resolveStudentRef($ref);
+            if ($student === null) {
+                $student = (new StudentModel())->findById($ref);
+            }
+        }
+
+        $canonicalStudentId = is_array($student) ? trim((string) ($student['_id'] ?? '')) : '';
+        $userId = is_array($student) ? trim((string) ($student['userId'] ?? '')) : '';
         $studentResume = is_array($student['resume'] ?? null) ? $student['resume'] : [];
         $appResume = is_array($app['resume'] ?? null) ? $app['resume'] : [];
 
         $sources = [$appResume, $studentResume];
-        if ($studentId !== '') {
-            $library = (new ResumeModel())->findPreferredForStudent($studentId);
+        $ownerIds = array_values(array_unique(array_filter([$canonicalStudentId, $ref], static fn ($v) => $v !== '')));
+        $resumeModel = new ResumeModel();
+        foreach ($ownerIds as $ownerId) {
+            $library = $resumeModel->findPreferredForStudent($ownerId);
             if (is_array($library)) {
                 $sources[] = $library;
             }
-            foreach ((new ResumeModel())->findByStudent($studentId, 10) as $row) {
+            foreach ($resumeModel->findByStudent($ownerId, 10) as $row) {
+                if (is_array($row)) {
+                    $sources[] = $row;
+                }
+            }
+        }
+        if ($userId !== '') {
+            foreach ($resumeModel->findByUser($userId, 10) as $row) {
                 if (is_array($row)) {
                     $sources[] = $row;
                 }
@@ -431,22 +452,41 @@ final class OfficerDataService
             if ($path === '' && $storedName !== '') {
                 $path = $storage->uri(ObjectStorageService::FOLDER_RESUMES, $storedName);
             }
-            if ($path === '') {
-                continue;
+
+            // Expand alternate storage keys for the same logical file.
+            $pathVariants = [];
+            if ($path !== '') {
+                $pathVariants[] = $path;
+                if (str_starts_with($path, 'uploads://')) {
+                    $pathVariants[] = $storage->uri(ObjectStorageService::FOLDER_RESUMES, basename($path));
+                }
+                $normalized = str_replace('\\', '/', $path);
+                if (!str_starts_with($normalized, 's3://') && !str_starts_with($normalized, '/') && !str_contains($normalized, '://')) {
+                    // Bare key or filename saved without scheme.
+                    $base = basename($normalized);
+                    if ($base !== '') {
+                        $pathVariants[] = $storage->uri(ObjectStorageService::FOLDER_RESUMES, $base);
+                        if (str_contains($normalized, '/')) {
+                            $pathVariants[] = 's3://' . $storage->bucket() . '/' . ltrim($normalized, '/');
+                        }
+                    }
+                }
             }
-            if (str_starts_with($path, 'uploads://')) {
-                $path = $storage->uri(ObjectStorageService::FOLDER_RESUMES, basename($path));
+            if ($storedName !== '') {
+                $pathVariants[] = $storage->uri(ObjectStorageService::FOLDER_RESUMES, $storedName);
             }
 
-            $key = strtolower($path);
-            if (isset($seen[$key])) {
-                continue;
+            foreach (array_values(array_unique(array_filter($pathVariants))) as $candidatePath) {
+                $key = strtolower($candidatePath);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $out[] = [
+                    'path' => $candidatePath,
+                    'filename' => $filename !== '' ? $filename : 'resume.pdf',
+                ];
             }
-            $seen[$key] = true;
-            $out[] = [
-                'path' => $path,
-                'filename' => $filename !== '' ? $filename : 'resume.pdf',
-            ];
         }
 
         return $out;
@@ -3446,8 +3486,11 @@ final class OfficerDataService
                 continue;
             }
 
-            $resume = $student['resume'] ?? null;
-            if (!$resume || empty($resume['path']) || !empty($resume['verified'])) {
+            $resume = is_array($student['resume'] ?? null) ? $student['resume'] : [];
+            if (!$resume || ($this->resumeFileForApplication([
+                'studentId' => $studentId,
+                'resume' => [],
+            ]) === null) || !empty($resume['verified'])) {
                 continue;
             }
 
@@ -3495,22 +3538,29 @@ final class OfficerDataService
 
     public function streamStudentResume(string $studentId, array $ctx): void
     {
-        PlacementOfficerContext::assertStudentInDepartment($studentId, $ctx);
-        $this->streamResolvedStudentResume($studentId, false);
+        $student = $this->resolveStudentRef($studentId);
+        $canonicalId = is_array($student) ? (string) ($student['_id'] ?? $studentId) : $studentId;
+        PlacementOfficerContext::assertStudentInDepartment($canonicalId, $ctx);
+        $this->streamResolvedStudentResume($canonicalId, false);
     }
 
     /** Stream student resume without department scope (signed public report links). */
     public function streamStudentResumeSigned(string $studentId): void
     {
-        $this->streamResolvedStudentResume($studentId, true);
+        $student = $this->resolveStudentRef($studentId);
+        $canonicalId = is_array($student) ? (string) ($student['_id'] ?? $studentId) : $studentId;
+        $this->streamResolvedStudentResume($canonicalId, true);
     }
 
     private function streamResolvedStudentResume(string $studentId, bool $forceDownload = false): void
     {
+        $candidates = $this->resumeFileCandidates(['studentId' => $studentId, 'resume' => []]);
         $this->streamFirstAvailableResume(
-            $this->resumeFileCandidates(['studentId' => $studentId, 'resume' => []]),
+            $candidates,
             $forceDownload,
-            'Resume file not found for this student.'
+            $candidates === []
+                ? 'No resume is stored for this student.'
+                : 'Resume is on record but the file could not be loaded from storage.'
         );
     }
 
@@ -3529,6 +3579,9 @@ final class OfficerDataService
             $mime = $forceDownload
                 ? 'application/pdf'
                 : $storage->guessMime($filename);
+            if ($mime === 'application/octet-stream') {
+                $mime = 'application/pdf';
+            }
             try {
                 if (!headers_sent()) {
                     header_remove('Content-Type');

@@ -445,7 +445,17 @@ final class ObjectStorageService
     public function getContentsWithFallback(string $uriOrPath, ?string $folderHint = null): string
     {
         $resolved = $this->resolve($uriOrPath, $folderHint);
-        if ($resolved['scheme'] === 's3' && $this->isConfigured()) {
+
+        // Prefer the original URI first — rebuilt folder/filename can drop legacy key prefixes.
+        if ($this->isConfigured()) {
+            try {
+                return $this->getContents($uriOrPath);
+            } catch (\Throwable) {
+                // Try normalized / local fallbacks below.
+            }
+        }
+
+        if ($resolved['scheme'] === 's3' && $this->isConfigured() && $resolved['folder'] !== '' && $resolved['filename'] !== '') {
             try {
                 return $this->getContents($this->uri($resolved['folder'], $resolved['filename']));
             } catch (\Throwable) {
@@ -458,9 +468,16 @@ final class ObjectStorageService
             $localCandidates[] = $resolved['local'];
         }
         $folder = $resolved['folder'] !== '' ? $resolved['folder'] : (string) ($folderHint ?? '');
-        $filename = $resolved['filename'] !== '' ? $resolved['filename'] : basename($uriOrPath);
+        $filename = $resolved['filename'] !== '' ? $resolved['filename'] : basename(str_replace('\\', '/', $uriOrPath));
         if ($folder !== '' && $filename !== '') {
             $legacy = $this->legacyLocalPath($folder, $filename);
+            if ($legacy !== null) {
+                $localCandidates[] = $legacy;
+            }
+        }
+        // Also try basename under resumes when caller passed a bare stored name.
+        if ($filename !== '' && ($folderHint === self::FOLDER_RESUMES || $folder === self::FOLDER_RESUMES || $folder === '')) {
+            $legacy = $this->legacyLocalPath(self::FOLDER_RESUMES, $filename);
             if ($legacy !== null) {
                 $localCandidates[] = $legacy;
             }
@@ -471,7 +488,7 @@ final class ObjectStorageService
                 continue;
             }
             $body = file_get_contents($local);
-            if ($body !== false) {
+            if ($body !== false && $body !== '') {
                 return $body;
             }
         }

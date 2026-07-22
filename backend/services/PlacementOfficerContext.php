@@ -120,7 +120,10 @@ final class PlacementOfficerContext
         if ($ctx['isAdmin'] || empty($ctx['departmentId'])) {
             return;
         }
-        $student = (new StudentModel())->findById($studentId);
+        $studentModel = new StudentModel();
+        $student = $studentModel->findById($studentId)
+            ?? $studentModel->findByUserId($studentId)
+            ?? $studentModel->findByRegisterNumber(strtoupper(trim($studentId)));
         if (!$student || (string) ($student['departmentId'] ?? '') !== $ctx['departmentId']) {
             Response::forbidden('This student does not belong to your department.');
         }

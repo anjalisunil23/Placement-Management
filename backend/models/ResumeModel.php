@@ -27,6 +27,18 @@ final class ResumeModel extends BaseModel
         return $this->findAll(['studentId' => $id], $limit);
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function findByUser(string $userId, int $limit = 50): array
+    {
+        $id = Security::toObjectId($userId);
+        if ($id === null) {
+            return [];
+        }
+        return $this->findAll(['userId' => $id], $limit);
+    }
+
     public function setDefault(string $studentId, string $resumeId): void
     {
         $sId = Security::toObjectId($studentId);
