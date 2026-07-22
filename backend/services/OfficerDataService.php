@@ -710,31 +710,35 @@ final class OfficerDataService
             if ($row === null) {
                 continue;
             }
-            $rowBatch = trim((string) ($row['classBatch'] ?? ''));
+            $rowBatch = trim((string) ($row['classBatch'] ?? $record['stud_class'] ?? $record['classBatch'] ?? ''));
             if (!$this->classBatchMatchesSelection($rowBatch, $batch, $matchCohort, $wantCohort)) {
                 continue;
             }
-            $rowProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
-                $row['stud_course']
-                ?? $row['programme']
-                ?? ''
-            ));
-            $classProgramme = $this->placementProgrammeCode(trim(implode(' ', array_filter([
-                (string) ($row['classBatch'] ?? ''),
-                (string) ($row['stud_class'] ?? ''),
-                (string) ($row['stud_course'] ?? ''),
-                (string) ($row['programme'] ?? ''),
-            ]))));
-            $effectiveProgramme = $classProgramme !== '' ? $classProgramme : $rowProgramme;
-            $wantProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
-            if ($wantProgramme === '' || (
-                strcasecmp($effectiveProgramme, $wantProgramme) !== 0
-                && strcasecmp($rowProgramme, $wantProgramme) !== 0
-            )) {
-                continue;
+            // Placement class lists are cohort-scoped. Programme codes on AES can be
+            // blank/mislabelled for late-fee classmates — do not drop them here.
+            if (!$matchCohort) {
+                $rowProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+                    $row['stud_course']
+                    ?? $row['programme']
+                    ?? ''
+                ));
+                $classProgramme = $this->placementProgrammeCode(trim(implode(' ', array_filter([
+                    (string) ($row['classBatch'] ?? ''),
+                    (string) ($row['stud_class'] ?? ''),
+                    (string) ($row['stud_course'] ?? ''),
+                    (string) ($row['programme'] ?? ''),
+                ]))));
+                $effectiveProgramme = $classProgramme !== '' ? $classProgramme : $rowProgramme;
+                $wantProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+                if ($wantProgramme === '' || (
+                    strcasecmp($effectiveProgramme, $wantProgramme) !== 0
+                    && strcasecmp($rowProgramme, $wantProgramme) !== 0
+                )) {
+                    continue;
+                }
             }
 
-            $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+            $key = $this->normalizeStudentAdmnoKey((string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
             if ($key === '' || isset($seen[$key])) {
                 continue;
             }
@@ -750,7 +754,8 @@ final class OfficerDataService
             $dept,
             $deptCode,
             $deptName,
-            $localByKey
+            $localByKey,
+            $matchCohort
         );
     }
 
@@ -814,12 +819,13 @@ final class OfficerDataService
 
     /**
      * AES getAllStudInfo4Placement often omits a few classmates still marked on an
-     * earlier semester (e.g. INMCA strength 57 = 55×S9 + 2×S8). Fill small admno
-     * gaps with individual getStudInfo4Placement lookups for the same cohort.
+     * earlier semester (e.g. INMCA strength 57 = 55×S9 + 2×S8). Fill admno gaps
+     * with individual getStudInfo4Placement lookups for the same cohort.
      *
      * @param array<int, array<string, mixed>> $rows
      * @param array<string, true> $seen
      * @param array<string, mixed>|null $dept
+     * @param array<string, array<string, mixed>> $localByKey
      * @return array<int, array<string, mixed>>
      */
     private function supplementAesClassRosterGaps(
@@ -830,7 +836,8 @@ final class OfficerDataService
         ?array $dept,
         string $deptCode,
         string $deptName,
-        array $localByKey = []
+        array $localByKey = [],
+        bool $fillFullRange = false
     ): array {
         $cohort = $this->cohortPrefixFromBatch($batch);
         if ($cohort === '' || $rows === []) {
@@ -839,7 +846,7 @@ final class OfficerDataService
 
         $admnos = [];
         foreach ($rows as $row) {
-            $admno = (int) preg_replace('/\D+/', '', (string) ($row['admno'] ?? $row['registerNumber'] ?? '')) ;
+            $admno = (int) preg_replace('/\D+/', '', (string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
             if ($admno > 0) {
                 $admnos[$admno] = true;
             }
@@ -851,16 +858,31 @@ final class OfficerDataService
         $sorted = array_keys($admnos);
         sort($sorted, SORT_NUMERIC);
         $gapAdmnos = [];
-        for ($i = 0, $n = count($sorted); $i < $n - 1; $i++) {
-            $a = $sorted[$i];
-            $b = $sorted[$i + 1];
-            $gap = $b - $a;
-            // Skip large jumps (lateral/odd admnos like 14170 → 14998).
-            if ($gap <= 1 || $gap > 5) {
-                continue;
+        if ($fillFullRange) {
+            // Placement roster: pull every missing admno inside the class cluster
+            // so late-fee / omitted peers are included (validated by cohort below).
+            $min = $sorted[0];
+            $max = $sorted[count($sorted) - 1];
+            if (($max - $min) <= 120) {
+                for ($candidate = $min; $candidate <= $max; $candidate++) {
+                    if (!isset($admnos[$candidate])) {
+                        $gapAdmnos[] = (string) $candidate;
+                    }
+                }
             }
-            for ($candidate = $a + 1; $candidate < $b; $candidate++) {
-                $gapAdmnos[] = (string) $candidate;
+        }
+        if ($gapAdmnos === []) {
+            for ($i = 0, $n = count($sorted); $i < $n - 1; $i++) {
+                $a = $sorted[$i];
+                $b = $sorted[$i + 1];
+                $gap = $b - $a;
+                // Skip large jumps (lateral/odd admnos like 14170 → 14998).
+                if ($gap <= 1 || $gap > ($fillFullRange ? 20 : 5)) {
+                    continue;
+                }
+                for ($candidate = $a + 1; $candidate < $b; $candidate++) {
+                    $gapAdmnos[] = (string) $candidate;
+                }
             }
         }
         if ($gapAdmnos === []) {
@@ -870,8 +892,8 @@ final class OfficerDataService
         $wantProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
         $api = new AesApiService();
         foreach ($gapAdmnos as $admno) {
-            $key = strtoupper($admno);
-            if (isset($seen[$key])) {
+            $key = $this->normalizeStudentAdmnoKey($admno);
+            if ($key === '' || isset($seen[$key])) {
                 continue;
             }
             try {
@@ -901,7 +923,8 @@ final class OfficerDataService
             $resolvedCourse = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
                 $record['stud_course'] ?? $record['stud_cource_short'] ?? ''
             ));
-            if ($wantProgramme !== ''
+            // Cohort membership already validated; programme check is best-effort only.
+            if (!$fillFullRange && $wantProgramme !== ''
                 && strcasecmp($detected, $wantProgramme) !== 0
                 && strcasecmp($resolvedCourse, $wantProgramme) !== 0
                 && !($wantProgramme === 'INMCA' && strcasecmp((string) ($record['stud_branch'] ?? ''), 'Integrated') === 0)
@@ -917,7 +940,7 @@ final class OfficerDataService
                 $record['stud_admno'] = $admno;
             }
 
-            $local = $localByKey[$key] ?? null;
+            $local = $localByKey[$key] ?? $localByKey[strtoupper($admno)] ?? null;
             $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
             if ($local === null && $regNo !== '' && isset($localByKey[$regNo])) {
                 $local = $localByKey[$regNo];
@@ -934,6 +957,20 @@ final class OfficerDataService
         }
 
         return $rows;
+    }
+
+    /** Normalize admission keys so 014570 and 14570 collapse. */
+    private function normalizeStudentAdmnoKey(string $value): string
+    {
+        $value = strtoupper(trim($value));
+        if ($value === '') {
+            return '';
+        }
+        if (preg_match('/^\d+$/', $value) === 1) {
+            return ltrim($value, '0') ?: '0';
+        }
+
+        return $value;
     }
 
     /**
