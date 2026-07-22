@@ -164,6 +164,48 @@ final class PlacementCategoryService
     }
 
     /**
+     * Whether the student already has a Tier-3 (or Category C) placement —
+     * the cohort allowed to request an officer drive-open exception.
+     *
+     * @param array<string, mixed> $student
+     */
+    public function studentIsTier3Placed(array $student): bool
+    {
+        if (empty($student['placed'])) {
+            return false;
+        }
+
+        if ($this->studentPlacementCategory($student) === self::CATEGORY_C) {
+            return true;
+        }
+
+        $sources = [];
+        $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+        $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : [];
+        if ($placement !== []) {
+            $sources[] = $placement;
+        }
+        if ($self !== []) {
+            $sources[] = $self;
+        }
+        $history = is_array($student['placementHistory'] ?? null) ? $student['placementHistory'] : [];
+        foreach ($history as $entry) {
+            if (is_array($entry)) {
+                $sources[] = $entry;
+            }
+        }
+
+        foreach ($sources as $entry) {
+            $tier = $entry['tier'] ?? $entry['companyTier'] ?? null;
+            if ($this->normalizeTier($tier) === 'Tier 3') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Whether a placed student may still attempt this drive under A/B/C rules.
      *
      * @param array<string, mixed> $student

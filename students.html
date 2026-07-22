@@ -284,6 +284,7 @@
       <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppShortlisted" id="linkAppShortlisted">Company Shortlisted <span class="badge-soft success ms-1" id="shortlistedTabBadge">0</span></a></li>
       <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppResumes" id="linkAppResumes">Resume Checks <span class="badge-soft muted ms-1">Optional</span></a></li>
       <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppNonApplicants" id="linkAppNonApplicants">Eligible, Not Applied</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAppExceptions" id="linkAppExceptions">Open Drive (Tier 3)</a></li>
     </ul>
     <div class="tab-content">
       <div class="tab-pane fade show active" id="tabAppList">
@@ -410,6 +411,66 @@
                 <tr><td colspan="6" class="text-muted-2 p-4">Select a Drive to load students.</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="tabAppExceptions">
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <div class="card-surface p-4">
+              <h5 class="fw-bold mb-2">Open a Drive for a Student</h5>
+              <p class="small text-muted-2 mb-3">For students already placed in a Tier 3 / Category C company who want to apply to another drive (different role or company category). After you open the drive, they can apply in the portal.</p>
+              <form id="driveExceptionForm" class="row g-3">
+                <div class="col-12">
+                  <label class="form-label small fw-semibold">Drive</label>
+                  <select class="form-select" id="exDriveSelect" required>
+                    <option value="">Select a Drive…</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small fw-semibold">Register Number</label>
+                  <input class="form-control" id="exRegNo" required placeholder="e.g. AJC23MCA001" autocomplete="off"/>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small fw-semibold">Reason</label>
+                  <textarea class="form-control" id="exReason" rows="3" required placeholder="Student contacted placement cell for this drive (different role / category)…"></textarea>
+                </div>
+                <div class="col-12">
+                  <button type="submit" class="btn btn-primary w-100"><i class="bi bi-unlock me-1"></i>Open Drive for Student</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <div class="col-lg-8">
+            <div class="card-surface">
+              <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between p-3 border-bottom" style="border-color:var(--border)!important">
+                <div>
+                  <h5 class="fw-bold mb-0">Active Drive Exceptions</h5>
+                  <small class="text-muted-2">Students who may apply despite Tier 3 / category placement rules</small>
+                </div>
+                <select class="form-select form-select-sm" id="exListDriveSelect" style="min-width:min(100%,16rem)" aria-label="Filter by drive">
+                  <option value="">Select a Drive…</option>
+                </select>
+              </div>
+              <div class="table-wrap">
+                <table class="table-modern">
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Register No.</th>
+                      <th>Drive</th>
+                      <th>Reason</th>
+                      <th>Opened</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="exRows">
+                    <tr><td colspan="6" class="text-muted-2 p-4">Select a drive to view open exceptions.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -614,8 +675,8 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/staff-api.js?v=20260716prog"></script>
-<script src="js/admin-api.js?v=20260716prog"></script>
-<script src="js/officer-api.js?v=20260716prog"></script>
+<script src="js/admin-api.js?v=20260722ex"></script>
+<script src="js/officer-api.js?v=20260722ex"></script>
 <script src="js/api.js?v=20260716profilename"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
@@ -688,7 +749,7 @@ function activateTabFromHash() {
   const hash = (location.hash || '').replace('#', '');
   if (hash === 'blacklist' && canManageBlacklist) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkBlacklist')).show();
-  } else if ((hash === 'applications' || hash === 'resumes' || hash === 'resume' || hash === 'not-applied' || hash === 'non-applicants' || hash === 'shortlisted') && canManageApplications) {
+  } else if ((hash === 'applications' || hash === 'resumes' || hash === 'resume' || hash === 'not-applied' || hash === 'non-applicants' || hash === 'shortlisted' || hash === 'exceptions' || hash === 'open-drive') && canManageApplications) {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkApplications')).show();
     if (hash === 'resumes' || hash === 'resume') {
       bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppResumes')).show();
@@ -696,6 +757,8 @@ function activateTabFromHash() {
       bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppNonApplicants')).show();
     } else if (hash === 'shortlisted') {
       bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppShortlisted')).show();
+    } else if (hash === 'exceptions' || hash === 'open-drive') {
+      bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppExceptions')).show();
     } else {
       bootstrap.Tab.getOrCreateInstance(document.getElementById('linkAppApplications')).show();
     }
@@ -2583,6 +2646,116 @@ async function initNonApplicants() {
   }
 }
 
+/* —— Open drive for Tier-3 placed students —— */
+let driveExceptionsWired = false;
+
+async function loadOpenDrivesIntoSelect(selectEl) {
+  if (!selectEl) return [];
+  let drives = typeof OfficerApi !== 'undefined' && OfficerApi.fetchDrives
+    ? await OfficerApi.fetchDrives()
+    : null;
+  if (!drives && typeof AdminApi !== 'undefined' && AdminApi.fetchDrives) {
+    drives = await AdminApi.fetchDrives();
+  }
+  const open = (drives || []).filter((d) => {
+    const st = String(d.status || '').toLowerCase();
+    return st !== 'completed' && st !== 'closed';
+  });
+  selectEl.innerHTML = '<option value="">Select a Drive…</option>' + open.map((d) => {
+    const label = [d.company, d.role || d.title].filter(Boolean).join(' — ') || d.title || d.id;
+    return `<option value="${esc(d.id)}">${esc(label)}</option>`;
+  }).join('');
+  return open;
+}
+
+async function loadDriveExceptions(driveId) {
+  const rowsEl = document.getElementById('exRows');
+  if (!rowsEl) return;
+  if (!driveId) {
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Select a drive to view open exceptions.</td></tr>';
+    return;
+  }
+  rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Loading…</td></tr>';
+  const rows = typeof OfficerApi !== 'undefined' && OfficerApi.fetchDriveExceptions
+    ? await OfficerApi.fetchDriveExceptions(driveId)
+    : null;
+  if (!rows) {
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Could not load exceptions.</td></tr>';
+    return;
+  }
+  if (!rows.length) {
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">No active exceptions for this drive.</td></tr>';
+    return;
+  }
+  rowsEl.innerHTML = rows.map((r) => {
+    const opened = r.grantedAt ? String(r.grantedAt).slice(0, 10) : '—';
+    return `<tr>
+      <td><strong>${esc(r.studentName || '—')}</strong></td>
+      <td>${esc(r.registerNumber || '—')}</td>
+      <td>${esc(r.driveTitle || '—')}</td>
+      <td class="small">${esc(r.reason || '—')}</td>
+      <td class="small">${esc(opened)}</td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger ex-revoke" data-id="${esc(r.id)}">Revoke</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function initDriveExceptions() {
+  if (!canManageApplications) return;
+  const form = document.getElementById('driveExceptionForm');
+  const driveSelect = document.getElementById('exDriveSelect');
+  const listSelect = document.getElementById('exListDriveSelect');
+  const rowsEl = document.getElementById('exRows');
+  if (!form || !driveSelect || !listSelect || !rowsEl) return;
+
+  if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
+    driveSelect.innerHTML = '<option value="">Sign in to load drives</option>';
+    listSelect.innerHTML = '<option value="">Sign in to load drives</option>';
+    return;
+  }
+
+  const open = await loadOpenDrivesIntoSelect(driveSelect);
+  await loadOpenDrivesIntoSelect(listSelect);
+
+  if (!driveExceptionsWired) {
+    listSelect.addEventListener('change', () => loadDriveExceptions(listSelect.value));
+    rowsEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.ex-revoke');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      if (!id) return;
+      if (!(await confirmAction({ title: 'Revoke exception', message: 'Revoke this drive open? The student will no longer be able to apply under the exception.', confirmText: 'Revoke', variant: 'danger' }))) return;
+      const ok = await OfficerApi.revokeDriveException(id);
+      if (ok) await loadDriveExceptions(listSelect.value);
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const driveId = driveSelect.value;
+      const registerNumber = document.getElementById('exRegNo')?.value?.trim() || '';
+      const reason = document.getElementById('exReason')?.value?.trim() || '';
+      if (!driveId || !registerNumber || !reason) {
+        toast('Drive, register number, and reason are required.', 'warn');
+        return;
+      }
+      const row = await OfficerApi.grantDriveException(driveId, { registerNumber, reason });
+      if (!row) return;
+      form.reset();
+      driveSelect.value = driveId;
+      listSelect.value = driveId;
+      await loadDriveExceptions(driveId);
+    });
+    driveExceptionsWired = true;
+  }
+
+  if (open.length === 1) {
+    driveSelect.value = open[0].id;
+    listSelect.value = open[0].id;
+    await loadDriveExceptions(open[0].id);
+  } else {
+    await loadDriveExceptions('');
+  }
+}
+
 function renderResumeTable(id, list, showActions, showStatus) {
   const cols = showStatus ? 10 : 9;
   document.getElementById(id).innerHTML = list.length
@@ -2694,6 +2867,7 @@ onAppReady(async () => {
       renderApplications();
       renderResumes();
       await initNonApplicants().catch(() => {});
+      await initDriveExceptions().catch(() => {});
     });
   }
   if (canManageBlacklist) {

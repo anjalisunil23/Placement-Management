@@ -23,6 +23,7 @@ final class Collections
     public const REPORTS = 'reports';
     public const RULES = 'rules';
     public const BLACKLIST = 'blacklist';
+    public const DRIVE_APPLICATION_EXCEPTIONS = 'drive_application_exceptions';
     public const RECOMMENDATIONS = 'recommendations';
     public const ALUMNI_REFERRALS = 'alumni_referrals';
     public const ALUMNI_JOB_POSTS = 'alumni_job_posts';

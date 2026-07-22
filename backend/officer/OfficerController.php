@@ -315,6 +315,51 @@ final class OfficerController
         );
     }
 
+    /** GET /api/officer/drives/{id}/exceptions */
+    public function listDriveExceptions(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success(
+            (new \PMS\Services\DriveApplicationExceptionService())->listForDrive($id, $scope['ctx'])
+        );
+    }
+
+    /** POST /api/officer/drives/{id}/exceptions — open drive for a Tier-3 placed student */
+    public function grantDriveException(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            $input = $_POST;
+        }
+
+        $studentRef = trim((string) ($input['registerNumber'] ?? $input['studentId'] ?? $input['student'] ?? ''));
+        $reason = trim((string) ($input['reason'] ?? ''));
+        $expiresAt = isset($input['expiresAt']) ? (string) $input['expiresAt'] : null;
+
+        $row = (new \PMS\Services\DriveApplicationExceptionService())->grantForDrive(
+            $id,
+            $studentRef,
+            $reason,
+            $scope['ctx'],
+            (string) $scope['user']['_id'],
+            $expiresAt
+        );
+        Response::success($row, 'Drive opened for this student. They can now apply through the portal.', 201);
+    }
+
+    /** POST /api/officer/drive-exceptions/{id}/revoke */
+    public function revokeDriveException(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new \PMS\Services\DriveApplicationExceptionService())->revoke(
+            $id,
+            $scope['ctx'],
+            (string) $scope['user']['_id']
+        );
+        Response::success(null, 'Drive exception revoked.');
+    }
+
     /** POST /api/officer/drives/{id}/shortlist-upload */
     public function uploadDriveShortlist(string $id): void
     {

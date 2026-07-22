@@ -6,6 +6,7 @@ namespace PMS\Services;
 
 use PMS\Models\BlacklistModel;
 use PMS\Models\DepartmentModel;
+use PMS\Models\DriveApplicationExceptionModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\ResumeModel;
@@ -91,14 +92,21 @@ final class EligibilityEngine
         }
         $tier = (string) ($drive['tier'] ?? ($company['tier'] ?? 'Tier 2'));
 
-        $categoryGate = (new PlacementCategoryService())->mayAttemptDrive($student, $drive, is_array($company) ? $company : null);
-        if (!$categoryGate['allowed']) {
-            return [
-                'eligible' => false,
-                'reasons'  => [$categoryGate['reason'] !== ''
-                    ? $categoryGate['reason']
-                    : 'Not eligible for this drive under placement category rules.'],
-            ];
+        $studentId = (string) ($student['_id'] ?? '');
+        $driveId = (string) ($drive['_id'] ?? '');
+        $hasException = $studentId !== '' && $driveId !== ''
+            && (new DriveApplicationExceptionModel())->hasActive($studentId, $driveId);
+
+        if (!$hasException) {
+            $categoryGate = (new PlacementCategoryService())->mayAttemptDrive($student, $drive, is_array($company) ? $company : null);
+            if (!$categoryGate['allowed']) {
+                return [
+                    'eligible' => false,
+                    'reasons'  => [$categoryGate['reason'] !== ''
+                        ? $categoryGate['reason']
+                        : 'Not eligible for this drive under placement category rules.'],
+                ];
+            }
         }
 
         return $this->evaluate($student, $criteria, $branches, $tier, $resumeId);
@@ -288,6 +296,15 @@ final class EligibilityEngine
         if (!empty($drive['companyId'])) {
             $company = (new \PMS\Models\CompanyModel())->findById((string) $drive['companyId']);
         }
+
+        $studentId = (string) ($student['_id'] ?? '');
+        $driveId = (string) ($drive['_id'] ?? '');
+        if ($studentId !== '' && $driveId !== ''
+            && (new DriveApplicationExceptionModel())->hasActive($studentId, $driveId)
+        ) {
+            return true;
+        }
+
         $gate = (new PlacementCategoryService())->mayAttemptDrive($student, $drive, is_array($company) ? $company : null);
 
         return $gate['allowed'];

@@ -306,6 +306,45 @@ const OfficerApi = {
     return res.data;
   },
 
+  async fetchDriveExceptions(driveId) {
+    const id = encodeURIComponent(String(driveId || '').trim());
+    if (!id) return null;
+    const res = await api(`/officer/drives/${id}/exceptions`);
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data;
+  },
+
+  async grantDriveException(driveId, payload = {}) {
+    const id = encodeURIComponent(String(driveId || '').trim());
+    if (!id) return null;
+    const res = await api(`/officer/drives/${id}/exceptions`, {
+      method: 'POST',
+      body: JSON.stringify({
+        registerNumber: payload.registerNumber || payload.studentId || '',
+        reason: payload.reason || '',
+        expiresAt: payload.expiresAt || null,
+      }),
+    });
+    if (!res.success) {
+      toast(res.message || 'Could not open drive for this student.', 'error');
+      return null;
+    }
+    toast(res.message || 'Drive opened for student.', 'success');
+    return res.data || null;
+  },
+
+  async revokeDriveException(exceptionId) {
+    const id = encodeURIComponent(String(exceptionId || '').trim());
+    if (!id) return false;
+    const res = await api(`/officer/drive-exceptions/${id}/revoke`, { method: 'POST', body: '{}' });
+    if (!res.success) {
+      toast(res.message || 'Could not revoke exception.', 'error');
+      return false;
+    }
+    toast(res.message || 'Exception revoked.', 'success');
+    return true;
+  },
+
   shortlistUploadPath(driveId) {
     const id = encodeURIComponent(String(driveId || '').trim());
     const role = typeof Auth !== 'undefined' ? Auth.role() : '';

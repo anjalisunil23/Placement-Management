@@ -44,6 +44,7 @@ $required = [
     Collections::NOTIFICATIONS,
     Collections::RESUMES,
     Collections::BLACKLIST,
+    Collections::DRIVE_APPLICATION_EXCEPTIONS,
     Collections::RULES,
     Collections::REPORTS,
     Collections::RECOMMENDATIONS,

@@ -1095,6 +1095,9 @@ final class StudentController
     if ($certificates !== []) {
       $createData['certificates'] = $certificates;
     }
+    if ((new \PMS\Models\DriveApplicationExceptionModel())->hasActive($studentId, $driveId)) {
+      $createData['appliedViaException'] = true;
+    }
 
     $dob = trim((string) ($input['dob'] ?? ($profile['personal']['dob'] ?? '')));
     if ($dob !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
