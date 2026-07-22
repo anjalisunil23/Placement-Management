@@ -772,7 +772,11 @@ final class OfficerDataService
     }
 
     /**
-     * Faster AES directory fetch for a known programme (1–3 course calls, not full CA merge).
+     * AES directory for a programme: one dept (or campus) fetch, then PHP filter.
+     *
+     * AES getAllStudInfo4Placement does not reliably filter by stud_course — calling
+     * INMCA then MCAINT (etc.) re-downloads the same large payload. Reuse the shared
+     * dept cache from fetchAesDirectoryRecords() instead.
      *
      * @return list<array<string, mixed>>
      */
@@ -782,47 +786,69 @@ final class OfficerDataService
         bool $campusWide
     ): array {
         $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
-        if ($programme === '' || $campusWide) {
-            return $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        if ($programme === '' || $records === []) {
+            return $records;
         }
 
-        $cacheKey = 'dept:' . $deptAesId . ':prog:' . $programme;
+        $cacheKey = ($campusWide ? 'campus' : ('dept:' . $deptAesId)) . ':prog:' . $programme;
         if (isset(self::$aesDirectoryCache[$cacheKey])) {
             return self::$aesDirectoryCache[$cacheKey];
         }
 
-        $api = new AesApiService();
-        $params = [];
-        if ($deptAesId !== '') {
-            $params['stud_deptcode'] = $deptAesId;
-        }
-        $aliases = match ($programme) {
-            'INMCA' => ['INMCA', 'MCAINT'],
-            'MCA' => ['MCA'],
-            'BCA' => ['BCA'],
-            default => [$programme],
-        };
-
-        $records = [];
-        foreach ($aliases as $course) {
-            try {
-                $records = $this->mergeAesDirectoryRecords(
-                    $records,
-                    $api->fetchAllStudInfo4Placement($params + ['stud_course' => $course])
-                );
-            } catch (\Throwable) {
-                // Keep whatever we already have.
+        $filtered = [];
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
             }
-        }
-        if ($records === []) {
-            try {
-                $records = $api->fetchAllStudInfo4Placement($params);
-            } catch (\Throwable) {
-                $records = [];
+            if ($this->aesDirectoryRecordMatchesProgramme($record, $programme)) {
+                $filtered[] = $record;
             }
         }
 
-        return self::$aesDirectoryCache[$cacheKey] = $records;
+        // Odd AES labels: keep full dept roster so cohort/batch matching can still work.
+        return self::$aesDirectoryCache[$cacheKey] = ($filtered !== [] ? $filtered : $records);
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     */
+    private function aesDirectoryRecordMatchesProgramme(array $record, string $programme): bool
+    {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        if ($programme === '') {
+            return true;
+        }
+
+        $hint = trim(implode(' ', array_filter([
+            (string) ($record['stud_course'] ?? ''),
+            (string) ($record['stud_cource_short'] ?? ''),
+            (string) ($record['stud_class'] ?? ''),
+            (string) ($record['stud_branch'] ?? ''),
+            (string) ($record['programme'] ?? ''),
+        ])));
+        $detected = $this->placementProgrammeCode($hint);
+        if ($detected !== '' && strcasecmp($detected, $programme) === 0) {
+            return true;
+        }
+
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+            $record['stud_course'] ?? $record['stud_cource_short'] ?? ''
+        ));
+        if ($resolved !== '' && strcasecmp($resolved, $programme) === 0) {
+            // Regular MCA course label must not pull Integrated MCA classmates.
+            if ($programme === 'MCA' && $this->placementProgrammeCode($hint) === 'INMCA') {
+                return false;
+            }
+            return true;
+        }
+
+        $branch = strtoupper(trim((string) ($record['stud_branch'] ?? '')));
+        if ($programme === 'INMCA' && $branch === 'INTEGRATED') {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -1676,20 +1702,8 @@ final class OfficerDataService
             }
             try {
                 $records = $api->fetchAllStudInfo4Placement($params);
-                // Computer Applications directory often needs course-specific merges,
-                // but skip when the base fetch already returned a full roster.
-                if ($this->isComputerApplicationsDirectory($deptAesId, $records) && count($records) < 80) {
-                    foreach (['BCA', 'INMCA', 'MCAINT', 'MCA'] as $course) {
-                        try {
-                            $records = $this->mergeAesDirectoryRecords(
-                                $records,
-                                $api->fetchAllStudInfo4Placement($params + ['stud_course' => $course])
-                            );
-                        } catch (\Throwable) {
-                            // Keep already-fetched rows if a course-specific call fails.
-                        }
-                    }
-                }
+                // Do not loop stud_course aliases (BCA/INMCA/MCAINT/MCA): AES returns
+                // the same large directory for each, wasting several seconds per load.
 
                 return self::$aesDirectoryCache[$cacheKey] = $records;
             } catch (\Throwable) {
@@ -1725,81 +1739,20 @@ final class OfficerDataService
             // Fall through to per-department fetch.
         }
 
-        foreach ($this->campusParentDeptAesIds() as $aesId) {
-            try {
-                $departmentRecords = $api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId]);
-                $append($departmentRecords);
-                if ($this->isComputerApplicationsDirectory($aesId, $departmentRecords)) {
-                    foreach (['BCA', 'INMCA', 'MCAINT', 'MCA'] as $course) {
-                        try {
-                            $append($api->fetchAllStudInfo4Placement([
-                                'stud_deptcode' => $aesId,
-                                'stud_course'   => $course,
-                            ]));
-                        } catch (\Throwable) {
-                            continue;
-                        }
-                    }
+        // Campus-wide already has a full directory from the empty-params call above.
+        // Only fetch per-department when that returned nothing — never re-hit AES
+        // with stud_course aliases (same payload, wasted seconds).
+        if ($merged === []) {
+            foreach ($this->campusParentDeptAesIds() as $aesId) {
+                try {
+                    $append($api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId]));
+                } catch (\Throwable) {
+                    continue;
                 }
-            } catch (\Throwable) {
-                continue;
             }
         }
 
         return self::$aesDirectoryCache[$cacheKey] = $merged;
-    }
-
-    /**
-     * @param list<array<string, mixed>> $records
-     */
-    private function isComputerApplicationsDirectory(string $deptAesId, array $records): bool
-    {
-        // AES department 30 is Computer Applications. Record inspection keeps this
-        // working if the numeric department mapping changes in another environment.
-        if ($deptAesId === '30') {
-            return true;
-        }
-        foreach ($records as $record) {
-            $hint = trim(implode(' ', array_filter([
-                (string) ($record['stud_course'] ?? ''),
-                (string) ($record['stud_cource_short'] ?? ''),
-                (string) ($record['stud_branch'] ?? ''),
-                (string) ($record['programme'] ?? ''),
-                (string) ($record['stud_class'] ?? ''),
-            ])));
-            if (in_array($this->placementProgrammeCode($hint), ['BCA', 'MCA', 'INMCA'], true)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @param list<array<string, mixed>> $first
-     * @param list<array<string, mixed>> $second
-     * @return list<array<string, mixed>>
-     */
-    private function mergeAesDirectoryRecords(array $first, array $second): array
-    {
-        $merged = [];
-        $seen = [];
-        foreach (array_merge($first, $second) as $record) {
-            $key = strtoupper(trim((string) (
-                $record['admno']
-                ?? $record['stud_admno']
-                ?? $record['registerNumber']
-                ?? $record['registerno']
-                ?? ''
-            )));
-            if ($key === '' || isset($seen[$key])) {
-                continue;
-            }
-            $seen[$key] = true;
-            $merged[] = $record;
-        }
-
-        return $merged;
     }
 
     /**
