@@ -64,4 +64,12 @@ if (str_contains($body, '<html')
     exit;
 }
 
+// Browser cannot POST to login.aesajce.in (CORS/WAF). Route widget API calls
+// through our same-origin proxy so checkLogin / emailConnect can succeed.
+$body = str_replace(
+    'https://login.aesajce.in/api/public_api.php',
+    '/aes-public-api.php',
+    $body
+);
+
 echo $body;

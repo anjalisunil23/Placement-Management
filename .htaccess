@@ -16,6 +16,8 @@ RewriteRule ^api(?:/index\.php)?(/.*)?$ backend/api/index.php [L,QSA]
 
 # AES official login widget (proxied — direct login.aesajce.in/aes-login.js is blocked in browsers)
 RewriteRule ^aes-login\.js$ aes-login-proxy.php [L,QSA]
+# AES public API (proxied — browser cannot POST to login.aesajce.in)
+RewriteRule ^aes-public-api\.php$ aes-public-api-proxy.php [L,QSA]
 
 # AES login debug — dump POST body
 RewriteRule ^dologin/?$ dologin.php [L,QSA]
