@@ -333,7 +333,7 @@ final class OfficerController
             $input = $_POST;
         }
 
-        $studentRef = trim((string) ($input['registerNumber'] ?? $input['studentId'] ?? $input['student'] ?? ''));
+        $studentRef = trim((string) ($input['admissionNumber'] ?? $input['admno'] ?? $input['registerNumber'] ?? $input['studentId'] ?? $input['student'] ?? ''));
         $reason = trim((string) ($input['reason'] ?? ''));
         $expiresAt = isset($input['expiresAt']) ? (string) $input['expiresAt'] : null;
 

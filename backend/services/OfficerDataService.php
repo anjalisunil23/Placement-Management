@@ -1920,18 +1920,12 @@ final class OfficerDataService
     private function findLocalStudentByAesKeys(string $admno, string $regNo): ?array
     {
         $model = new StudentModel();
-        foreach ([$admno, $regNo] as $key) {
-            $key = strtoupper(trim($key));
-            if ($key === '') {
-                continue;
-            }
-            $found = $model->findByRegisterNumber($key);
-            if ($found) {
-                return $found;
-            }
-            $byAdmno = $model->findOne(['admno' => $key]);
-            if ($byAdmno) {
-                return $byAdmno;
+        foreach ([$admno, $regNo] as $raw) {
+            foreach ($this->studentRefLookupKeys($raw) as $key) {
+                $found = $this->findLocalStudentByLookupKey($model, $key);
+                if ($found) {
+                    return $found;
+                }
             }
         }
 
@@ -3844,6 +3838,7 @@ final class OfficerDataService
 
     /**
      * Resolve a student profile by MariaDB id, linked user id, or register number.
+     * Accepts AES admno, university register (with/without spaces or hyphens), and related keys.
      *
      * @return array<string, mixed>|null
      */
@@ -3864,14 +3859,74 @@ final class OfficerDataService
             return $student;
         }
 
-        $upper = strtoupper($ref);
-        $student = $studentModel->findByRegisterNumber($upper);
+        foreach ($this->studentRefLookupKeys($ref) as $key) {
+            $student = $this->findLocalStudentByLookupKey($studentModel, $key);
+            if ($student) {
+                return $student;
+            }
+        }
+
+        foreach ($this->studentRefLookupKeys($ref) as $key) {
+            if (preg_match('/^\d{4,12}$/', $key) !== 1
+                && preg_match('/^[A-Z0-9-]{5,30}$/', $key) !== 1
+            ) {
+                continue;
+            }
+            $fromAes = $this->syntheticStudentFromAes($key);
+            if ($fromAes) {
+                return $fromAes;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalised register / admno variants officers commonly type.
+     *
+     * @return list<string>
+     */
+    private function studentRefLookupKeys(string $ref): array
+    {
+        $upper = strtoupper(trim($ref));
+        $noSpace = preg_replace('/\s+/', '', $upper) ?? $upper;
+        $alnum = preg_replace('/[^A-Z0-9]/', '', $upper) ?? $upper;
+        $keys = [];
+        foreach ([$upper, $noSpace, $alnum] as $key) {
+            $key = trim($key);
+            if ($key !== '' && !in_array($key, $keys, true)) {
+                $keys[] = $key;
+            }
+        }
+        // AJC25MCA2017 → AJC25MCA-2017 (common university register shape)
+        if (preg_match('/^([A-Z]+\d+[A-Z]+)(\d{3,5})$/', $alnum, $m) === 1) {
+            $hyphenated = $m[1] . '-' . $m[2];
+            if (!in_array($hyphenated, $keys, true)) {
+                $keys[] = $hyphenated;
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function findLocalStudentByLookupKey(StudentModel $studentModel, string $key): ?array
+    {
+        $key = strtoupper(trim($key));
+        if ($key === '') {
+            return null;
+        }
+        $student = $studentModel->findByRegisterNumber($key);
         if ($student) {
             return $student;
         }
-
-        if (preg_match('/^\d{4,12}$/', $ref) === 1 || preg_match('/^[A-Z0-9]{5,20}$/', $upper) === 1) {
-            return $this->syntheticStudentFromAes($upper);
+        foreach (['admno', 'stud_admno', 'registerno'] as $field) {
+            $found = $studentModel->findOne([$field => $key]);
+            if ($found) {
+                return $found;
+            }
         }
 
         return null;
@@ -3879,6 +3934,7 @@ final class OfficerDataService
 
     /**
      * Build a minimal PlaceHub-shaped student when AES has the directory row but Mongo does not.
+     * Prefer an existing local profile when AES returns admno / university register.
      *
      * @return array<string, mixed>|null
      */
@@ -3886,6 +3942,12 @@ final class OfficerDataService
     {
         try {
             $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+            if ($placement === [] && preg_match('/^[A-Z]/', $register) === 1) {
+                $placement = (new AesApiService())->fetchStudentPlacementProfile([
+                    'registerno' => $register,
+                    'registerNumber' => $register,
+                ]);
+            }
         } catch (\Throwable) {
             return null;
         }
@@ -3899,6 +3961,16 @@ final class OfficerDataService
             ?? $placement['registerNumber']
             ?? $register
         )));
+        $regNo = strtoupper(trim((string) (
+            $placement['registerno']
+            ?? $placement['registerNumber']
+            ?? ''
+        )));
+        $local = $this->findLocalStudentByAesKeys($admno, $regNo !== '' ? $regNo : $register);
+        if ($local) {
+            return $local;
+        }
+
         $name = trim((string) ($placement['stud_name'] ?? $placement['name'] ?? ''));
         $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
         $cgpa = isset($placement['cgpa']) && is_numeric($placement['cgpa']) ? (float) $placement['cgpa'] : 0.0;
@@ -3909,6 +3981,8 @@ final class OfficerDataService
         return [
             '_id'            => $admno,
             'registerNumber' => $admno,
+            'admno'          => $admno,
+            'registerno'     => $regNo !== '' ? $regNo : $register,
             'classBatch'     => trim((string) ($placement['classBatch'] ?? $placement['stud_class'] ?? '')),
             'aesOnly'        => true,
             'personal'       => [

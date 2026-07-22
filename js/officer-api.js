@@ -320,7 +320,8 @@ const OfficerApi = {
     const res = await api(`/officer/drives/${id}/exceptions`, {
       method: 'POST',
       body: JSON.stringify({
-        registerNumber: payload.registerNumber || payload.studentId || '',
+        registerNumber: payload.admissionNumber || payload.registerNumber || payload.studentId || '',
+        admissionNumber: payload.admissionNumber || payload.registerNumber || payload.studentId || '',
         reason: payload.reason || '',
         expiresAt: payload.expiresAt || null,
       }),

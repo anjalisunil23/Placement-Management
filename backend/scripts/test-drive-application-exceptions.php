@@ -122,6 +122,11 @@ $assert(str_contains($svc, 'already placed'), 'Grant service still requires plac
 $html = (string) file_get_contents($root . '/students.html');
 $assert(str_contains($html, 'any tier / category'), 'UI copy mentions any tier / category');
 $assert(!str_contains($html, 'Open Drive (Tier 3)'), 'UI tab no longer limited to Tier 3 label');
+$assert(str_contains($html, 'driveExceptionModal'), 'Open-drive form is a modal');
+
+$ods = (string) file_get_contents($root . '/backend/services/OfficerDataService.php');
+$assert(str_contains($ods, 'studentRefLookupKeys'), 'Student ref lookup normalises register variants');
+$assert(str_contains($ods, 'registerno'), 'Student ref lookup checks university register field');
 
 $engineSrc = (string) file_get_contents($root . '/backend/services/EligibilityEngine.php');
 $assert(str_contains($engineSrc, 'DriveApplicationExceptionModel'), 'EligibilityEngine honors drive exceptions');

@@ -33,7 +33,7 @@ final class DriveApplicationExceptionService
         $studentRef = trim($studentRef);
         $reason = trim($reason);
         if ($driveId === '' || $studentRef === '' || $reason === '') {
-            Response::error('driveId, student (register number or id), and reason are required.', 422);
+            Response::error('driveId, admission number, and reason are required.', 422);
         }
 
         $drive = (new DriveModel())->findById($driveId);
@@ -50,10 +50,16 @@ final class DriveApplicationExceptionService
         $officer = new OfficerDataService();
         $student = $officer->resolveStudentRef($studentRef);
         if (!$student) {
-            Response::notFound('Student not found for that register number / id.');
+            Response::notFound('Student not found for that admission number. Use the AES admission number (e.g. 16777).');
+        }
+        if (!empty($student['aesOnly'])) {
+            Response::error(
+                'That student is in AES but has no PlaceHub profile yet. Ask them to log in to PlaceHub once, then try again.',
+                422
+            );
         }
         $studentId = (string) ($student['_id'] ?? '');
-        if ($studentId === '') {
+        if ($studentId === '' || !\PMS\Utils\Security::isValidId($studentId)) {
             Response::notFound('Student not found.');
         }
 
