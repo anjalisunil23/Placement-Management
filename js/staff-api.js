@@ -246,7 +246,7 @@ const StaffApi = {
       if (params[k]) qs.set(k, params[k]);
     });
     const q = qs.toString();
-    const cacheKey = 'ph_staff_placements_' + q;
+    const cacheKey = 'ph_staff_placements_v2_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
@@ -272,7 +272,7 @@ const StaffApi = {
       const keys = [];
       for (let i = 0; i < sessionStorage.length; i++) {
         const k = sessionStorage.key(i);
-        if (k && k.startsWith('ph_staff_placements_')) keys.push(k);
+        if (k && k.startsWith('ph_staff_placements')) keys.push(k);
       }
       keys.forEach(k => sessionStorage.removeItem(k));
     } catch (_) { /* ignore */ }

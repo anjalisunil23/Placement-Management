@@ -159,12 +159,42 @@ final class StaffPlacementRegistryService
             'displayName', 'classBatch', 'stud_class', 'stud_course', 'stud_branch',
             'programme', 'admno', 'collegeEmail', 'personalEmail', 'phone', 'photoUrl',
             'year', 'semester',
+            // AES course/branch numeric ids — local placement shells often omit these.
+            'courseId', 'course_id', 'stud_courseid', 'stud_course_id',
+            'branchId', 'branch_id', 'stud_branchid', 'stud_branch_id',
+            'stud_deptcode', 'parentDepartmentCode', 'deptCode',
         ] as $field) {
             $localVal = $local[$field] ?? null;
             $aesVal = $aes[$field] ?? null;
             $localEmpty = $localVal === null || $localVal === '' || $localVal === [];
             if ($localEmpty && $aesVal !== null && $aesVal !== '' && $aesVal !== []) {
                 $local[$field] = $aesVal;
+            }
+        }
+
+        // Prefer AES numeric course/branch ids when local values are blank or non-numeric.
+        foreach (['courseId' => ['courseId', 'course_id', 'stud_courseid'], 'branchId' => ['branchId', 'branch_id', 'stud_branchid']] as $canon => $aliases) {
+            $localId = '';
+            foreach ($aliases as $alias) {
+                $v = trim((string) ($local[$alias] ?? ''));
+                if ($v !== '') {
+                    $localId = $v;
+                    break;
+                }
+            }
+            $aesId = '';
+            foreach ($aliases as $alias) {
+                $v = trim((string) ($aes[$alias] ?? ''));
+                if ($v !== '') {
+                    $aesId = $v;
+                    break;
+                }
+            }
+            if ($aesId !== '' && ($localId === '' || !ctype_digit($localId))) {
+                $local[$canon] = $aesId;
+                foreach ($aliases as $alias) {
+                    $local[$alias] = $aesId;
+                }
             }
         }
 
@@ -911,9 +941,12 @@ final class StaffPlacementRegistryService
             'stud_deptcode', 'deptCode', 'dept_code', 'parentDepartmentCode',
         ] as $key) {
             $value = trim((string) ($row[$key] ?? ''));
-            if ($value !== '') {
+            if ($value !== '' && ctype_digit($value)) {
                 $courseId = $value;
                 break;
+            }
+            if ($courseId === '' && $value !== '') {
+                $courseId = $value;
             }
         }
 
@@ -923,18 +956,26 @@ final class StaffPlacementRegistryService
             'stud_branchid', 'stud_branch_id', 'stud_branchId',
         ] as $key) {
             $value = trim((string) ($row[$key] ?? ''));
-            if ($value !== '') {
+            if ($value !== '' && ctype_digit($value)) {
                 $branchId = $value;
                 break;
+            }
+            if ($branchId === '' && $value !== '') {
+                $branchId = $value;
             }
         }
 
         // Also inspect nested AES/local department payloads.
         $dept = is_array($row['department'] ?? null) ? $row['department'] : [];
-        if ($courseId === '') {
-            $courseId = trim((string) ($dept['aesId'] ?? $dept['code'] ?? ''));
-            if ($courseId !== '' && !ctype_digit($courseId)) {
-                $courseId = '';
+        if ($courseId === '' || !ctype_digit($courseId)) {
+            $fromDept = trim((string) ($dept['aesId'] ?? ''));
+            if ($fromDept !== '' && ctype_digit($fromDept)) {
+                $courseId = $fromDept;
+            } elseif ($courseId === '') {
+                $fromDept = trim((string) ($dept['code'] ?? ''));
+                if ($fromDept !== '' && ctype_digit($fromDept)) {
+                    $courseId = $fromDept;
+                }
             }
         }
 
