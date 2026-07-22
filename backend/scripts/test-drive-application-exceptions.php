@@ -128,6 +128,10 @@ $ods = (string) file_get_contents($root . '/backend/services/OfficerDataService.
 $assert(str_contains($ods, 'studentRefLookupKeys'), 'Student ref lookup normalises register variants');
 $assert(str_contains($ods, 'registerno'), 'Student ref lookup checks university register field');
 
+$modelSrc = (string) file_get_contents($root . '/backend/models/DriveApplicationExceptionModel.php');
+$assert(str_contains($modelSrc, 'CREATE TABLE IF NOT EXISTS'), 'Exception model auto-creates missing table');
+$assert(str_contains($modelSrc, 'drive_application_exceptions'), 'Exception model uses plural table name');
+
 $engineSrc = (string) file_get_contents($root . '/backend/services/EligibilityEngine.php');
 $assert(str_contains($engineSrc, 'DriveApplicationExceptionModel'), 'EligibilityEngine honors drive exceptions');
 $assert(str_contains($engineSrc, 'hasActive'), 'EligibilityEngine checks active exceptions');

@@ -13,9 +13,34 @@ use PMS\Utils\Security;
  */
 final class DriveApplicationExceptionModel extends BaseModel
 {
+    private static bool $tableReady = false;
+
     protected function collectionName(): string
     {
         return Collections::DRIVE_APPLICATION_EXCEPTIONS;
+    }
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->ensureTable();
+    }
+
+    /** Create table if production DB was set up before drive exceptions existed. */
+    private function ensureTable(): void
+    {
+        if (self::$tableReady) {
+            return;
+        }
+        $this->db->exec(
+            'CREATE TABLE IF NOT EXISTS `drive_application_exceptions` (
+              id CHAR(24) NOT NULL PRIMARY KEY,
+              payload JSON NOT NULL,
+              created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+              updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        self::$tableReady = true;
     }
 
     public function findActive(string $studentId, string $driveId): ?array
