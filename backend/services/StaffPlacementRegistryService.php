@@ -36,11 +36,13 @@ final class StaffPlacementRegistryService
         $batch = trim((string) ($filters['batch'] ?? ''));
 
         $registry = [];
-        // Fast path for a selected class: one AES directory pass for that batch only.
-        // Avoids loading the full department roster + a second AES directory fetch.
+        // Fast path for a selected class: one AES directory pass for that cohort,
+        // merged with local PlaceHub classmates (covers S8/S9 and AES gaps).
         if ($program !== '' && $batch !== '') {
-            $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch);
-            foreach ($aesClassRows as $row) {
+            $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch, true);
+            $localClassRows = $this->officerData->listLocalClassStudentsForBatch($officerCtx, $batch);
+            $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
+            foreach ($classRows as $row) {
                 foreach ($this->extractRegistryRows($row, false) as $entry) {
                     $registry[] = $entry;
                 }
@@ -644,7 +646,9 @@ final class StaffPlacementRegistryService
         $type = trim((string) ($filters['type'] ?? ''));
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
 
-        return array_values(array_filter($rows, static function (array $row) use ($program, $branch, $batch, $type, $q): bool {
+        $wantCohort = $batch !== '' ? ClassInchargeRegistry::cohortKey($batch) : '';
+
+        return array_values(array_filter($rows, static function (array $row) use ($program, $branch, $batch, $wantCohort, $type, $q): bool {
             if ($program !== '') {
                 $rowProgram = (string) ($row['program'] ?? '');
                 $match = strcasecmp($rowProgram, $program) === 0
@@ -663,8 +667,17 @@ final class StaffPlacementRegistryService
             if ($branch !== '' && strcasecmp((string) ($row['branch'] ?? ''), $branch) !== 0) {
                 return false;
             }
-            if ($batch !== '' && strcasecmp((string) ($row['batch'] ?? ''), $batch) !== 0) {
-                return false;
+            if ($batch !== '') {
+                $rowBatch = trim((string) ($row['batch'] ?? ''));
+                $batchOk = strcasecmp($rowBatch, $batch) === 0
+                    || strcasecmp(
+                        DepartmentProgrammeCatalog::normalizeCode($rowBatch),
+                        DepartmentProgrammeCatalog::normalizeCode($batch)
+                    ) === 0
+                    || ($wantCohort !== '' && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0);
+                if (!$batchOk) {
+                    return false;
+                }
             }
             if ($type !== '') {
                 $want = match ($type) {

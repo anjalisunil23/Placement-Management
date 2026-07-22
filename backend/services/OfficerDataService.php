@@ -633,11 +633,19 @@ final class OfficerDataService
      * Complete AES roster for one selected placement class, without requiring
      * an existing local student/profile record.
      *
+     * When $matchCohort is true, include all semester variants of the same class
+     * (e.g. MCAINT2022-27-S8 with MCAINT2022-27-S9) and skip the final-year-only
+     * gate so the full CT/CoCT roster is returned.
+     *
      * @param array<string, mixed> $ctx
      * @return array<int, array<string, mixed>>
      */
-    public function listAesClassStudents(array $ctx, string $programme, string $batch): array
-    {
+    public function listAesClassStudents(
+        array $ctx,
+        string $programme,
+        string $batch,
+        bool $matchCohort = false
+    ): array {
         $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
         $batch = trim($batch);
         if ($programme === '' || $batch === '') {
@@ -653,6 +661,7 @@ final class OfficerDataService
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
         $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
+        $wantCohort = ClassInchargeRegistry::cohortKey($batch);
         $rows = [];
         $seen = [];
 
@@ -665,7 +674,11 @@ final class OfficerDataService
             if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
                 continue;
             }
-            if (!$this->isAesStudyingStudent($record) || !$this->isAesFinalYearStudent($record)) {
+            if (!$this->isAesStudyingStudent($record)) {
+                continue;
+            }
+            // Cohort class lists need every classmate; final-year gate drops S8 peers.
+            if (!$matchCohort && !$this->isAesFinalYearStudent($record)) {
                 continue;
             }
 
@@ -694,7 +707,11 @@ final class OfficerDataService
             }
 
             $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
-            if ($row === null || strcasecmp((string) ($row['classBatch'] ?? ''), $batch) !== 0) {
+            if ($row === null) {
+                continue;
+            }
+            $rowBatch = trim((string) ($row['classBatch'] ?? ''));
+            if (!$this->classBatchMatchesSelection($rowBatch, $batch, $matchCohort, $wantCohort)) {
                 continue;
             }
             $rowProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
@@ -735,6 +752,64 @@ final class OfficerDataService
             $deptName,
             $localByKey
         );
+    }
+
+    /**
+     * PlaceHub students in the same class cohort as $batch (any semester suffix).
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listLocalClassStudentsForBatch(array $ctx, string $batch): array
+    {
+        $batch = trim($batch);
+        if ($batch === '') {
+            return [];
+        }
+        $wantCohort = ClassInchargeRegistry::cohortKey($batch);
+        $rows = [];
+        foreach ($this->listLocalStaffClassRosterRows($ctx) as $row) {
+            $rowBatch = StaffContext::studentClassBatch($row);
+            if ($this->classBatchMatchesSelection($rowBatch, $batch, true, $wantCohort)) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Exact batch, normalized code, or same cohort (MCAINT2022-27-S8 ↔ S9).
+     */
+    private function classBatchMatchesSelection(
+        string $rowBatch,
+        string $wantBatch,
+        bool $matchCohort,
+        string $wantCohort = ''
+    ): bool {
+        $rowBatch = trim($rowBatch);
+        $wantBatch = trim($wantBatch);
+        if ($rowBatch === '' || $wantBatch === '') {
+            return false;
+        }
+        if (strcasecmp($rowBatch, $wantBatch) === 0) {
+            return true;
+        }
+        if (strcasecmp(
+            DepartmentProgrammeCatalog::normalizeCode($rowBatch),
+            DepartmentProgrammeCatalog::normalizeCode($wantBatch)
+        ) === 0) {
+            return true;
+        }
+        if (!$matchCohort) {
+            return false;
+        }
+        if ($wantCohort === '') {
+            $wantCohort = ClassInchargeRegistry::cohortKey($wantBatch);
+        }
+
+        return $wantCohort !== ''
+            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0;
     }
 
     /**
@@ -896,7 +971,7 @@ final class OfficerDataService
                 continue;
             }
 
-            foreach ($this->listAesClassStudents($ctx, $programme, $semesterBatch) as $row) {
+            foreach ($this->listAesClassStudents($ctx, $programme, $semesterBatch, true) as $row) {
                 $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
                 if ($key === '') {
                     continue;
