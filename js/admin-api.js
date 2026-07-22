@@ -202,7 +202,6 @@ const AdminApi = {
     const resumeBase = (typeof Auth !== 'undefined' && Auth.role() === 'placement_officer')
       ? '/officer'
       : '/admin';
-    let resumeUrl = '';
     const hasResume = r.hasResume === true || !!(r.resumePath || r.fileName || r.resumeFileName);
     let resumeUrl = '';
     if (hasResume && (applicationId || studentId)) {
