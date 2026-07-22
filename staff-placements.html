@@ -769,8 +769,8 @@
       updateSortHeaders();
 
       document.getElementById('rowCount').textContent = total
-        ? `${total} record${total === 1 ? '' : 's'}`
-        : 'No records';
+        ? `${total} student${total === 1 ? '' : 's'}`
+        : 'No students';
       document.getElementById('pageInfo').textContent = total
         ? `Showing ${start + 1}–${Math.min(start + pageSize, total)} of ${total}`
         : 'No entries to show';

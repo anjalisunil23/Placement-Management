@@ -77,7 +77,13 @@ final class StaffPlacementRegistryService
         $placementCount = 0;
         $higherCount = 0;
         $researchCount = 0;
+        $filledCount = 0;
         foreach ($filtered as $row) {
+            $employer = trim((string) ($row['employer'] ?? ''));
+            if ($employer === '') {
+                continue;
+            }
+            $filledCount++;
             $rowType = (string) ($row['type'] ?? '');
             if ($rowType === 'Higher Education') {
                 $higherCount++;
@@ -95,6 +101,8 @@ final class StaffPlacementRegistryService
             'assignedClassBatches' => StaffContext::assignedClassBatches($staffCtx),
             'totals'  => [
                 'all'               => count($filtered),
+                'students'          => count($filtered),
+                'filled'            => $filledCount,
                 'placement'         => $placementCount,
                 'higher_education'  => $higherCount,
                 'research'          => $researchCount,
@@ -130,15 +138,52 @@ final class StaffPlacementRegistryService
                 $byKey[$key] = $row;
                 continue;
             }
-            // Prefer the row that already has placement / HE details filled in.
-            $existingEmployer = trim((string) ($byKey[$key]['employer'] ?? ''));
-            $newEmployer = trim((string) ($row['employer'] ?? ''));
-            if ($existingEmployer === '' && $newEmployer !== '') {
-                $byKey[$key] = $row;
-            }
+            // Keep PlaceHub identity/placement; fill AES class/programme gaps so
+            // program filters do not drop classmates after the merge.
+            $byKey[$key] = $this->mergeRosterStudentRows($byKey[$key], $row);
         }
 
         return array_merge(array_values($byKey), $unkeyed);
+    }
+
+    /**
+     * Local row wins for ids/placement; AES fills empty class/programme fields.
+     *
+     * @param array<string, mixed> $local
+     * @param array<string, mixed> $aes
+     * @return array<string, mixed>
+     */
+    private function mergeRosterStudentRows(array $local, array $aes): array
+    {
+        foreach ([
+            'displayName', 'classBatch', 'stud_class', 'stud_course', 'stud_branch',
+            'programme', 'admno', 'collegeEmail', 'personalEmail', 'phone', 'photoUrl',
+            'year', 'semester',
+        ] as $field) {
+            $localVal = $local[$field] ?? null;
+            $aesVal = $aes[$field] ?? null;
+            $localEmpty = $localVal === null || $localVal === '' || $localVal === [];
+            if ($localEmpty && $aesVal !== null && $aesVal !== '' && $aesVal !== []) {
+                $local[$field] = $aesVal;
+            }
+        }
+
+        $localBatch = trim((string) ($local['classBatch'] ?? $local['stud_class'] ?? ''));
+        $aesBatch = trim((string) ($aes['classBatch'] ?? $aes['stud_class'] ?? ''));
+        // Prefer the more specific semester label when both belong to the same cohort.
+        if ($aesBatch !== '' && (
+            $localBatch === ''
+            || (
+                strcasecmp(ClassInchargeRegistry::cohortKey($localBatch), ClassInchargeRegistry::cohortKey($aesBatch)) === 0
+                && preg_match('/-S\d+$/i', $aesBatch) === 1
+                && preg_match('/-S\d+$/i', $localBatch) !== 1
+            )
+        )) {
+            $local['classBatch'] = $aesBatch;
+            $local['stud_class'] = $aesBatch;
+        }
+
+        return $local;
     }
 
     /**
@@ -179,9 +224,15 @@ final class StaffPlacementRegistryService
     {
         foreach (['admissionNo', 'admno', 'registerNumber', 'studentId', 'id'] as $field) {
             $value = strtoupper(trim((string) ($row[$field] ?? '')));
-            if ($value !== '') {
-                return $value;
+            if ($value === '') {
+                continue;
             }
+            // Normalize numeric admission numbers so 014570 and 14570 collapse.
+            if (preg_match('/^\d+$/', $value) === 1) {
+                return ltrim($value, '0') ?: '0';
+            }
+
+            return $value;
         }
 
         return '';
@@ -647,26 +698,11 @@ final class StaffPlacementRegistryService
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
 
         $wantCohort = $batch !== '' ? ClassInchargeRegistry::cohortKey($batch) : '';
+        $wantProgram = $program !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
+            : '';
 
-        return array_values(array_filter($rows, static function (array $row) use ($program, $branch, $batch, $wantCohort, $type, $q): bool {
-            if ($program !== '') {
-                $rowProgram = (string) ($row['program'] ?? '');
-                $match = strcasecmp($rowProgram, $program) === 0
-                    || strcasecmp(
-                        DepartmentProgrammeCatalog::resolveProgrammeCode($rowProgram),
-                        DepartmentProgrammeCatalog::resolveProgrammeCode($program)
-                    ) === 0
-                    || strcasecmp(
-                        DepartmentProgrammeCatalog::normalizeCode($rowProgram),
-                        DepartmentProgrammeCatalog::normalizeCode($program)
-                    ) === 0;
-                if (!$match) {
-                    return false;
-                }
-            }
-            if ($branch !== '' && strcasecmp((string) ($row['branch'] ?? ''), $branch) !== 0) {
-                return false;
-            }
+        return array_values(array_filter($rows, static function (array $row) use ($program, $wantProgram, $branch, $batch, $wantCohort, $type, $q): bool {
             if ($batch !== '') {
                 $rowBatch = trim((string) ($row['batch'] ?? ''));
                 $batchOk = strcasecmp($rowBatch, $batch) === 0
@@ -678,6 +714,40 @@ final class StaffPlacementRegistryService
                 if (!$batchOk) {
                     return false;
                 }
+                // Class batch already scopes the roster; do not drop late-fee /
+                // local classmates whose programme label is blank or dept-coded.
+            } elseif ($program !== '') {
+                $rowProgram = (string) ($row['program'] ?? '');
+                $rowBatch = trim((string) ($row['batch'] ?? ''));
+                $fromBatch = $rowBatch !== ''
+                    ? DepartmentProgrammeCatalog::resolveProgrammeCode($rowBatch)
+                    : '';
+                if ($fromBatch === '' && $rowBatch !== '') {
+                    $norm = DepartmentProgrammeCatalog::normalizeCode($rowBatch);
+                    if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+                        $fromBatch = 'INMCA';
+                    } elseif (str_starts_with($norm, 'MCA')) {
+                        $fromBatch = 'MCA';
+                    } elseif (str_contains($norm, 'BCA')) {
+                        $fromBatch = 'BCA';
+                    }
+                }
+                $match = strcasecmp($rowProgram, $program) === 0
+                    || ($wantProgram !== '' && strcasecmp(
+                        DepartmentProgrammeCatalog::resolveProgrammeCode($rowProgram),
+                        $wantProgram
+                    ) === 0)
+                    || ($wantProgram !== '' && $fromBatch !== '' && strcasecmp($fromBatch, $wantProgram) === 0)
+                    || strcasecmp(
+                        DepartmentProgrammeCatalog::normalizeCode($rowProgram),
+                        DepartmentProgrammeCatalog::normalizeCode($program)
+                    ) === 0;
+                if (!$match) {
+                    return false;
+                }
+            }
+            if ($branch !== '' && strcasecmp((string) ($row['branch'] ?? ''), $branch) !== 0) {
+                return false;
             }
             if ($type !== '') {
                 $want = match ($type) {
@@ -724,6 +794,22 @@ final class StaffPlacementRegistryService
             ?? $row['course']
             ?? ''
         ));
+        if ($aesProgram === '') {
+            $batchHint = trim((string) ($row['classBatch'] ?? $row['stud_class'] ?? $row['batch'] ?? ''));
+            if ($batchHint !== '') {
+                $aesProgram = DepartmentProgrammeCatalog::resolveProgrammeCode($batchHint);
+                if ($aesProgram === '') {
+                    $norm = DepartmentProgrammeCatalog::normalizeCode($batchHint);
+                    if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+                        $aesProgram = 'INMCA';
+                    } elseif (str_starts_with($norm, 'MCA')) {
+                        $aesProgram = 'MCA';
+                    } elseif (str_contains($norm, 'BCA')) {
+                        $aesProgram = 'BCA';
+                    }
+                }
+            }
+        }
         $aesBranch = trim((string) (
             $row['stud_branch']
             ?? $row['branchName']
