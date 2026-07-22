@@ -18,6 +18,10 @@ deployment:
     - /bin/rm -rf $DEPLOYPATH/js
     - /bin/cp -Rf js $DEPLOYPATH/js
     - /bin/cp -f js/*.js $DEPLOYPATH/js/
+    # Reject UTF-16 JS (breaks browser parse: "Invalid regular expression" / "unexpected token")
+    - /bin/grep -qa $'\0' $DEPLOYPATH/js/aes-auth.js && (echo "DEPLOY FAILED - js/aes-auth.js contains NUL bytes (UTF-16). Re-save as UTF-8." >&2; exit 1) || true
+    - /bin/grep -qa $'\0' $DEPLOYPATH/js/aes-social.js && (echo "DEPLOY FAILED - js/aes-social.js contains NUL bytes (UTF-16). Re-save as UTF-8." >&2; exit 1) || true
+    - /bin/grep -q "openAesLoginModal" $DEPLOYPATH/js/aes-auth.js || (echo "DEPLOY FAILED - js/aes-auth.js missing openAesLoginModal." >&2; exit 1)
     - /bin/cp -f .htaccess $DEPLOYPATH/.htaccess
     - /bin/cp -f index.php $DEPLOYPATH/index.php
     - /bin/cp -f dologin.php $DEPLOYPATH/dologin.php
