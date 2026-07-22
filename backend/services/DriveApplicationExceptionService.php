@@ -13,7 +13,7 @@ use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 
 /**
- * Officer-granted exceptions so Tier-3 placed students can apply to a specific drive.
+ * Officer-granted exceptions so placed students (any tier / category) can apply to a specific drive.
  */
 final class DriveApplicationExceptionService
 {
@@ -60,17 +60,10 @@ final class DriveApplicationExceptionService
         PlacementOfficerContext::assertStudentInDepartment($studentId, $ctx);
 
         if (empty($student['placed'])) {
-            Response::error('This exception is only for students who are already placed (Tier 3 / Category C).', 422);
+            Response::error('This exception is only for students who are already placed.', 422);
         }
 
         $categories = new PlacementCategoryService();
-        if (!$categories->studentIsTier3Placed($student)) {
-            Response::error(
-                'This exception is only for students already placed in a Tier 3 (or Category C) company. Contact admin for other cases.',
-                422
-            );
-        }
-
         $company = null;
         if (!empty($drive['companyId'])) {
             $company = (new \PMS\Models\CompanyModel())->findById((string) $drive['companyId']);

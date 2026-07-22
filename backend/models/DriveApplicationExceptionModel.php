@@ -9,7 +9,7 @@ use PMS\Utils\DocumentHelper;
 use PMS\Utils\Security;
 
 /**
- * Per-student drive open exceptions (officer opens a drive for a Tier-3 placed student).
+ * Per-student drive open exceptions (officer opens a drive for an already-placed student).
  */
 final class DriveApplicationExceptionModel extends BaseModel
 {

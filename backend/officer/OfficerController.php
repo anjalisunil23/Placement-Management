@@ -324,7 +324,7 @@ final class OfficerController
         );
     }
 
-    /** POST /api/officer/drives/{id}/exceptions — open drive for a Tier-3 placed student */
+    /** POST /api/officer/drives/{id}/exceptions — open drive for an already-placed student */
     public function grantDriveException(string $id): void
     {
         $scope = (new OfficerDataService())->requireScope();
