@@ -40,4 +40,30 @@ final class ResumeModel extends BaseModel
             $this->update($rId, ['isDefault' => true, 'updatedAt' => DocumentHelper::now()]);
         }
     }
+
+    /**
+     * Prefer the default library resume, otherwise the newest upload.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findPreferredForStudent(string $studentId): ?array
+    {
+        $id = Security::toObjectId($studentId);
+        if ($id === null) {
+            return null;
+        }
+
+        $default = $this->findOne(
+            ['studentId' => $id, 'isDefault' => true],
+            ['sort' => ['updatedAt' => -1]]
+        );
+        if (is_array($default)) {
+            return $default;
+        }
+
+        return $this->findOne(
+            ['studentId' => $id],
+            ['sort' => ['uploadedAt' => -1, 'createdAt' => -1]]
+        );
+    }
 }

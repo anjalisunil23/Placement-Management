@@ -10,6 +10,7 @@ use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\RecruitmentResultModel;
+use PMS\Models\ResumeModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Services\AesApiService;
@@ -380,31 +381,75 @@ final class OfficerDataService
      */
     public function resumeFileForApplication(array $app): ?array
     {
-        $student = (new StudentModel())->findById((string) ($app['studentId'] ?? ''));
+        $candidates = $this->resumeFileCandidates($app);
+
+        return $candidates[0] ?? null;
+    }
+
+    /**
+     * Ordered resume locations: application snapshot → student profile → resume library.
+     *
+     * @param array<string, mixed> $app
+     * @return list<array{path: string, filename: string}>
+     */
+    public function resumeFileCandidates(array $app): array
+    {
+        $studentId = trim((string) ($app['studentId'] ?? ''));
+        $student = $studentId !== '' ? (new StudentModel())->findById($studentId) : null;
         $studentResume = is_array($student['resume'] ?? null) ? $student['resume'] : [];
         $appResume = is_array($app['resume'] ?? null) ? $app['resume'] : [];
 
-        $path = (string) ($appResume['path'] ?? $studentResume['path'] ?? '');
-        if ($path === '') {
-            $storedName = (string) ($studentResume['storedName'] ?? '');
-            if ($storedName !== '') {
-                $path = (new ObjectStorageService())->uri(ObjectStorageService::FOLDER_RESUMES, $storedName);
+        $sources = [$appResume, $studentResume];
+        if ($studentId !== '') {
+            $library = (new ResumeModel())->findPreferredForStudent($studentId);
+            if (is_array($library)) {
+                $sources[] = $library;
+            }
+            foreach ((new ResumeModel())->findByStudent($studentId, 10) as $row) {
+                if (is_array($row)) {
+                    $sources[] = $row;
+                }
             }
         }
-        if ($path === '') {
-            return null;
+
+        $out = [];
+        $seen = [];
+        $storage = new ObjectStorageService();
+
+        foreach ($sources as $src) {
+            if (!is_array($src)) {
+                continue;
+            }
+            $path = trim((string) ($src['path'] ?? ''));
+            $storedName = basename(str_replace('\\', '/', trim((string) ($src['storedName'] ?? ''))));
+            $filename = trim((string) (
+                $src['fileName']
+                ?? $src['filename']
+                ?? ($path !== '' ? basename(str_replace('\\', '/', $path)) : ($storedName !== '' ? $storedName : 'resume.pdf'))
+            ));
+
+            if ($path === '' && $storedName !== '') {
+                $path = $storage->uri(ObjectStorageService::FOLDER_RESUMES, $storedName);
+            }
+            if ($path === '') {
+                continue;
+            }
+            if (str_starts_with($path, 'uploads://')) {
+                $path = $storage->uri(ObjectStorageService::FOLDER_RESUMES, basename($path));
+            }
+
+            $key = strtolower($path);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = [
+                'path' => $path,
+                'filename' => $filename !== '' ? $filename : 'resume.pdf',
+            ];
         }
 
-        if (str_starts_with($path, 'uploads://')) {
-            $path = (new ObjectStorageService())->uri(
-                ObjectStorageService::FOLDER_RESUMES,
-                basename($path)
-            );
-        }
-
-        $filename = (string) ($appResume['fileName'] ?? $studentResume['filename'] ?? basename(str_replace('\\', '/', $path)));
-
-        return ['path' => $path, 'filename' => $filename];
+        return $out;
     }
 
     /**
@@ -444,27 +489,11 @@ final class OfficerDataService
      */
     private function streamResolvedApplicationResume(array $app, bool $forceDownload = false): void
     {
-        $file = $this->resumeFileForApplication($app);
-        if ($file === null) {
-            Response::notFound('Resume file not found for this application.');
-        }
-
-        $storage = new ObjectStorageService();
-        $filename = $this->resumeDownloadFilename((string) ($file['filename'] ?? 'resume.pdf'), $forceDownload);
-        $mime = $forceDownload
-            ? 'application/pdf'
-            : $storage->guessMime($filename);
-        try {
-            $storage->streamWithFallback(
-                $file['path'],
-                $filename,
-                $mime,
-                !$forceDownload,
-                ObjectStorageService::FOLDER_RESUMES
-            );
-        } catch (\Throwable) {
-            Response::notFound('Resume file not found for this application.');
-        }
+        $this->streamFirstAvailableResume(
+            $this->resumeFileCandidates($app),
+            $forceDownload,
+            'Resume file not found for this application.'
+        );
     }
 
     /**
@@ -3478,27 +3507,45 @@ final class OfficerDataService
 
     private function streamResolvedStudentResume(string $studentId, bool $forceDownload = false): void
     {
-        $file = $this->resumeFileForApplication(['studentId' => $studentId, 'resume' => []]);
-        if ($file === null) {
-            Response::notFound('Resume file not found for this student.');
+        $this->streamFirstAvailableResume(
+            $this->resumeFileCandidates(['studentId' => $studentId, 'resume' => []]),
+            $forceDownload,
+            'Resume file not found for this student.'
+        );
+    }
+
+    /**
+     * @param list<array{path: string, filename: string}> $candidates
+     */
+    private function streamFirstAvailableResume(array $candidates, bool $forceDownload, string $notFoundMessage): void
+    {
+        if ($candidates === []) {
+            Response::notFound($notFoundMessage);
         }
 
         $storage = new ObjectStorageService();
-        $filename = $this->resumeDownloadFilename((string) ($file['filename'] ?? 'resume.pdf'), $forceDownload);
-        $mime = $forceDownload
-            ? 'application/pdf'
-            : $storage->guessMime($filename);
-        try {
-            $storage->streamWithFallback(
-                $file['path'],
-                $filename,
-                $mime,
-                !$forceDownload,
-                ObjectStorageService::FOLDER_RESUMES
-            );
-        } catch (\Throwable) {
-            Response::notFound('Resume file not found for this student.');
+        foreach ($candidates as $file) {
+            $filename = $this->resumeDownloadFilename((string) ($file['filename'] ?? 'resume.pdf'), $forceDownload);
+            $mime = $forceDownload
+                ? 'application/pdf'
+                : $storage->guessMime($filename);
+            try {
+                if (!headers_sent()) {
+                    header_remove('Content-Type');
+                }
+                $storage->streamWithFallback(
+                    (string) $file['path'],
+                    $filename,
+                    $mime,
+                    !$forceDownload,
+                    ObjectStorageService::FOLDER_RESUMES
+                );
+            } catch (\Throwable) {
+                // Try the next stored location (profile vs library vs legacy path).
+            }
         }
+
+        Response::notFound($notFoundMessage);
     }
 
     private function resumeDownloadFilename(string $filename, bool $forcePdf): string

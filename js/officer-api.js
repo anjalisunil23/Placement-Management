@@ -127,8 +127,9 @@ const OfficerApi = {
     const id = OfficerApi.id(r);
     const applicationId = r.applicationId ?? null;
     const studentId = r.studentId || '';
+    const hasResume = r.hasResume === true || !!(r.resumePath || r.fileName || r.resumeFileName);
     let resumeUrl = '';
-    if (r.hasResume !== false && (applicationId || studentId)) {
+    if (hasResume && (applicationId || studentId)) {
       resumeUrl = applicationId
         ? `${API_BASE}/officer/applications/${encodeURIComponent(applicationId)}/resume`
         : `${API_BASE}/officer/students/${encodeURIComponent(studentId)}/resume`;
@@ -147,7 +148,7 @@ const OfficerApi = {
       status: r.status || 'pending',
       applicationStatus: r.applicationStatus || '',
       submittedAt: r.submittedAt || '',
-      hasResume: r.hasResume !== false,
+      hasResume,
       resumeUrl,
     };
   },

@@ -91,10 +91,11 @@ final class ReportService
                 ? $enriched['academic']
                 : (is_array($s['academic'] ?? null) ? $s['academic'] : []);
             $resume = is_array($s['resume'] ?? null) ? $s['resume'] : [];
-            $hasResume = !empty($resume['path'])
-                || !empty($resume['storedName'])
-                || !empty($resume['filename']);
             $studentId = (string) ($s['_id'] ?? $s['id'] ?? '');
+            $resolved = $studentId !== ''
+                ? (new OfficerDataService())->resumeFileForApplication(['studentId' => $studentId, 'resume' => []])
+                : null;
+            $hasResume = $resolved !== null;
             $resumeLink = ($hasResume && $studentId !== '')
                 ? $this->signedResumeUrl($appBase, 'student_resume', $studentId)
                 : '';

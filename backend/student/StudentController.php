@@ -751,6 +751,32 @@ final class StudentController
     }
 
     (new ResumeModel())->delete($resumeId);
+
+    $profileResume = is_array($profile['resume'] ?? null) ? $profile['resume'] : [];
+    $deletedPath = trim((string) ($resume['path'] ?? ''));
+    $deletedStored = basename((string) ($resume['storedName'] ?? ''));
+    $profilePath = trim((string) ($profileResume['path'] ?? ''));
+    $profileStored = basename((string) ($profileResume['storedName'] ?? ''));
+    $wasActive = ($deletedPath !== '' && $deletedPath === $profilePath)
+        || ($deletedStored !== '' && $deletedStored === $profileStored);
+
+    if ($wasActive) {
+        $preferred = (new ResumeModel())->findPreferredForStudent((string) $profile['_id']);
+        if (is_array($preferred)) {
+            $this->studentModel->update((string) $profile['_id'], [
+                'resume' => [
+                    'filename'   => (string) ($preferred['fileName'] ?? $preferred['filename'] ?? 'resume.pdf'),
+                    'path'       => (string) ($preferred['path'] ?? ''),
+                    'storedName' => basename((string) ($preferred['storedName'] ?? '')),
+                    'verified'   => (bool) ($preferred['verified'] ?? false),
+                    'uploadedAt' => $preferred['uploadedAt'] ?? DocumentHelper::now(),
+                ],
+            ]);
+        } else {
+            $this->studentModel->update((string) $profile['_id'], ['resume' => null]);
+        }
+    }
+
     Response::success(null, 'Resume deleted.');
   }
 
@@ -766,6 +792,23 @@ final class StudentController
     }
 
     (new ResumeModel())->setDefault((string) $profile['_id'], $resumeId);
+
+    $path = trim((string) ($resume['path'] ?? ''));
+    $storedName = basename((string) ($resume['storedName'] ?? ''));
+    if ($path === '' && $storedName !== '') {
+      $path = (new ObjectStorageService())->uri(ObjectStorageService::FOLDER_RESUMES, $storedName);
+    }
+
+    $this->studentModel->update((string) $profile['_id'], [
+      'resume' => [
+        'filename'   => (string) ($resume['fileName'] ?? $resume['filename'] ?? 'resume.pdf'),
+        'path'       => $path,
+        'storedName' => $storedName,
+        'verified'   => (bool) ($resume['verified'] ?? false),
+        'uploadedAt' => $resume['uploadedAt'] ?? DocumentHelper::now(),
+      ],
+    ]);
+
     Response::success(null, 'Default resume set.');
   }
 

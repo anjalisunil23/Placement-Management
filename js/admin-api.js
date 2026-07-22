@@ -203,7 +203,9 @@ const AdminApi = {
       ? '/officer'
       : '/admin';
     let resumeUrl = '';
-    if (r.hasResume !== false && (applicationId || studentId)) {
+    const hasResume = r.hasResume === true || !!(r.resumePath || r.fileName || r.resumeFileName);
+    let resumeUrl = '';
+    if (hasResume && (applicationId || studentId)) {
       resumeUrl = applicationId
         ? `${API_BASE}${resumeBase}/applications/${encodeURIComponent(applicationId)}/resume`
         : `${API_BASE}${resumeBase}/students/${encodeURIComponent(studentId)}/resume`;
@@ -222,7 +224,7 @@ const AdminApi = {
       status: r.status || 'pending',
       applicationStatus: r.applicationStatus || '',
       submittedAt: r.submittedAt || '',
-      hasResume: r.hasResume !== false,
+      hasResume,
       resumeUrl,
     };
   },
