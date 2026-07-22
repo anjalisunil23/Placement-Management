@@ -246,11 +246,40 @@ const StaffApi = {
       if (params[k]) qs.set(k, params[k]);
     });
     const q = qs.toString();
+    const cacheKey = 'ph_staff_placements_' + q;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed._at && (Date.now() - parsed._at) < 90000 && parsed.data) {
+          return parsed.data;
+        }
+      }
+    } catch (_) { /* ignore */ }
+
     const res = await api('/staff/placements-higher-education' + (q ? `?${q}` : ''));
-    return res.success ? res.data : null;
+    if (res.success && res.data) {
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data: res.data }));
+      } catch (_) { /* ignore quota */ }
+      return res.data;
+    }
+    return null;
+  },
+
+  clearPlacementsCache() {
+    try {
+      const keys = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith('ph_staff_placements_')) keys.push(k);
+      }
+      keys.forEach(k => sessionStorage.removeItem(k));
+    } catch (_) { /* ignore */ }
   },
 
   async updateStudentPlacement(studentId, body) {
+    if (typeof StaffApi.clearPlacementsCache === 'function') StaffApi.clearPlacementsCache();
     const res = await api(`/staff/students/${encodeURIComponent(studentId)}/placement`, {
       method: 'PUT',
       body,

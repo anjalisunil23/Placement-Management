@@ -743,7 +743,7 @@ const Auth = {
       const cached = this.user();
       // Trust a recently verified session across tabs so navigation does not
       // re-block on /auth/me (or silently re-fetch AES-heavy userResponse).
-      if (soft && cached?.role && this.token() && bootAt > 0 && (Date.now() - bootAt) < 120000) {
+      if (soft && cached?.role && this.token() && bootAt > 0 && (Date.now() - bootAt) < 300000) {
         const badStudentName = cached.role === 'student' && (
           !isUsableDisplayName(cached.name, cached)
         );

@@ -656,7 +656,10 @@ final class OfficerDataService
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
-        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        // Class lists know the programme — fetch that course only (avoids 5 AES directory calls).
+        $records = $matchCohort
+            ? $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide)
+            : $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
@@ -694,17 +697,13 @@ final class OfficerDataService
                     $local = $localByKey[$key];
                     break;
                 }
-            }
-            if ($local === null) {
-                $local = $this->findLocalStudentByAesKeys($admno, $regNo);
-                if (is_array($local)) {
-                    foreach ([$admno, $regNo] as $key) {
-                        if ($key !== '') {
-                            $localByKey[$key] = $local;
-                        }
-                    }
+                $normKey = $this->normalizeStudentAdmnoKey($key);
+                if ($normKey !== '' && isset($localByKey[$normKey])) {
+                    $local = $localByKey[$normKey];
+                    break;
                 }
             }
+            // Index already covers the department — skip per-row AES/DB lookups (slow).
 
             $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
             if ($row === null) {
@@ -746,6 +745,12 @@ final class OfficerDataService
             $rows[] = $row;
         }
 
+        // Cohort matching already includes S8/S9 peers from the directory.
+        // Skip per-admno AES profile round-trips — they make the page very slow.
+        if ($matchCohort) {
+            return $rows;
+        }
+
         return $this->supplementAesClassRosterGaps(
             $rows,
             $seen,
@@ -755,8 +760,62 @@ final class OfficerDataService
             $deptCode,
             $deptName,
             $localByKey,
-            $matchCohort
+            false
         );
+    }
+
+    /**
+     * Faster AES directory fetch for a known programme (1–3 course calls, not full CA merge).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function fetchAesDirectoryRecordsForProgramme(
+        string $deptAesId,
+        string $programme,
+        bool $campusWide
+    ): array {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        if ($programme === '' || $campusWide) {
+            return $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        }
+
+        $cacheKey = 'dept:' . $deptAesId . ':prog:' . $programme;
+        if (isset(self::$aesDirectoryCache[$cacheKey])) {
+            return self::$aesDirectoryCache[$cacheKey];
+        }
+
+        $api = new AesApiService();
+        $params = [];
+        if ($deptAesId !== '') {
+            $params['stud_deptcode'] = $deptAesId;
+        }
+        $aliases = match ($programme) {
+            'INMCA' => ['INMCA', 'MCAINT'],
+            'MCA' => ['MCA'],
+            'BCA' => ['BCA'],
+            default => [$programme],
+        };
+
+        $records = [];
+        foreach ($aliases as $course) {
+            try {
+                $records = $this->mergeAesDirectoryRecords(
+                    $records,
+                    $api->fetchAllStudInfo4Placement($params + ['stud_course' => $course])
+                );
+            } catch (\Throwable) {
+                // Keep whatever we already have.
+            }
+        }
+        if ($records === []) {
+            try {
+                $records = $api->fetchAllStudInfo4Placement($params);
+            } catch (\Throwable) {
+                $records = [];
+            }
+        }
+
+        return self::$aesDirectoryCache[$cacheKey] = $records;
     }
 
     /**
@@ -858,32 +917,21 @@ final class OfficerDataService
         $sorted = array_keys($admnos);
         sort($sorted, SORT_NUMERIC);
         $gapAdmnos = [];
-        if ($fillFullRange) {
-            // Placement roster: pull every missing admno inside the class cluster
-            // so late-fee / omitted peers are included (validated by cohort below).
-            $min = $sorted[0];
-            $max = $sorted[count($sorted) - 1];
-            if (($max - $min) <= 120) {
-                for ($candidate = $min; $candidate <= $max; $candidate++) {
-                    if (!isset($admnos[$candidate])) {
-                        $gapAdmnos[] = (string) $candidate;
-                    }
-                }
+        for ($i = 0, $n = count($sorted); $i < $n - 1; $i++) {
+            $a = $sorted[$i];
+            $b = $sorted[$i + 1];
+            $gap = $b - $a;
+            // Skip large jumps (lateral/odd admnos like 14170 → 14998).
+            if ($gap <= 1 || $gap > 5) {
+                continue;
+            }
+            for ($candidate = $a + 1; $candidate < $b; $candidate++) {
+                $gapAdmnos[] = (string) $candidate;
             }
         }
-        if ($gapAdmnos === []) {
-            for ($i = 0, $n = count($sorted); $i < $n - 1; $i++) {
-                $a = $sorted[$i];
-                $b = $sorted[$i + 1];
-                $gap = $b - $a;
-                // Skip large jumps (lateral/odd admnos like 14170 → 14998).
-                if ($gap <= 1 || $gap > ($fillFullRange ? 20 : 5)) {
-                    continue;
-                }
-                for ($candidate = $a + 1; $candidate < $b; $candidate++) {
-                    $gapAdmnos[] = (string) $candidate;
-                }
-            }
+        // Hard cap: never do more than a handful of individual AES lookups.
+        if (count($gapAdmnos) > 6) {
+            $gapAdmnos = array_slice($gapAdmnos, 0, 6);
         }
         if ($gapAdmnos === []) {
             return $rows;
@@ -1621,7 +1669,9 @@ final class OfficerDataService
             }
             try {
                 $records = $api->fetchAllStudInfo4Placement($params);
-                if ($this->isComputerApplicationsDirectory($deptAesId, $records)) {
+                // Computer Applications directory often needs course-specific merges,
+                // but skip when the base fetch already returned a full roster.
+                if ($this->isComputerApplicationsDirectory($deptAesId, $records) && count($records) < 80) {
                     foreach (['BCA', 'INMCA', 'MCAINT', 'MCA'] as $course) {
                         try {
                             $records = $this->mergeAesDirectoryRecords(

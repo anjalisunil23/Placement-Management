@@ -281,6 +281,13 @@ final class AesApiService
      */
     public function fetchAllStudInfo4Placement(array $params = []): array
     {
+        ksort($params);
+        $cacheKey = 'allstud_' . md5((string) json_encode($params));
+        $cached = $this->readSharedListCache($cacheKey, 180);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
         $result = $this->getAllStudInfo4Placement($params);
         $records = $this->extractStudInfoRecords($result);
         if ($records === []) {
@@ -348,7 +355,45 @@ final class AesApiService
             $out[] = $normalized;
         }
 
+        $this->writeSharedListCache($cacheKey, $out);
+
         return $out;
+    }
+
+    /**
+     * Short-lived shared cache for large AES directory payloads (cross-request).
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function readSharedListCache(string $key, int $ttlSeconds): ?array
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_aes_' . preg_replace('/[^a-zA-Z0-9_]/', '', $key) . '.json';
+        if (!is_file($path)) {
+            return null;
+        }
+        $mtime = @filemtime($path);
+        if ($mtime === false || (time() - $mtime) > $ttlSeconds) {
+            return null;
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return null;
+        }
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     */
+    private function writeSharedListCache(string $key, array $rows): void
+    {
+        if ($rows === []) {
+            return;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_aes_' . preg_replace('/[^a-zA-Z0-9_]/', '', $key) . '.json';
+        @file_put_contents($path, json_encode($rows), LOCK_EX);
     }
 
     /** Course-level AES shorts (B.Tech / M.Tech), not department codes. */
