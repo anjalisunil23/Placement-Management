@@ -325,7 +325,16 @@
 
     const shortlisted = applicants.filter(a => a.status === 'shortlisted' || a.status === 'under_review').length;
     const offers = applicants.filter(a => a.status === 'offered' || a.status === 'selected').length;
-    const hired = applicants.filter(a => a.status === 'placed').length;
+
+    // Hired = placed students (not offers). uiStatus maps selected→offered and never emits "placed".
+    let placements = Array.isArray(data.placements) ? data.placements.slice() : [];
+    if (deptCode) {
+      placements = placements.filter(p => this.deptMatchesFilter(p.dept, deptCode));
+    }
+    if (batchCode) {
+      placements = placements.filter(p => this.batchMatchesFilter(p.classBatch, batchCode));
+    }
+    const hired = placements.length;
 
     const companyMap = new Map();
     (data.activeCompanies || []).forEach(c => {
@@ -357,13 +366,13 @@
         applicants: applicants.length,
         shortlisted,
         offers,
-        hired: hired || offers,
+        hired,
       },
       pipeline: [
         { label: 'Applicants', value: applicants.length },
         { label: 'Shortlisted', value: shortlisted },
         { label: 'Offers', value: offers },
-        { label: 'Hired', value: hired || offers },
+        { label: 'Hired', value: hired },
       ],
       companies,
       candidates: applicants.map(a => ({
@@ -373,6 +382,7 @@
         company: a.company || '-',
         role: a.role,
         status: a.status,
+        classBatch: a.classBatch || '',
       })),
     };
   };

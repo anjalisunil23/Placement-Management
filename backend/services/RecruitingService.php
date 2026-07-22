@@ -65,11 +65,12 @@ final class RecruitingService
         $placements = $this->listCampusPlacements($departmentId);
 
         return [
-            'scope'            => 'campus',
+            'scope'            => ($departmentId !== null && $departmentId !== '') ? 'department' : 'campus',
             'stats'            => [
                 'activeCompanies' => count($activeCompanies),
                 'applicants'      => count($applicants),
                 'departments'     => count($byDept),
+                'placedStudents'  => count($placements),
             ],
             'activeCompanies'  => $activeCompanies,
             'applicantsByDept' => $byDept,
@@ -397,8 +398,24 @@ final class RecruitingService
             }
         }
 
+        $deptStudentOids = [];
+        if ($departmentId !== null && $departmentId !== '') {
+            $deptOidForApps = Security::toObjectId($departmentId);
+            if ($deptOidForApps !== null) {
+                foreach ((new StudentModel())->findAll(['departmentId' => $deptOidForApps], 5000) as $student) {
+                    if (isset($student['_id'])) {
+                        $deptStudentOids[] = $student['_id'];
+                    }
+                }
+            }
+        }
+
         foreach (array_keys($byCompany) as $companyId) {
-            $byCompany[$companyId]['applicants'] = $appModel->count(['companyId' => Security::toObjectId($companyId)]);
+            $appFilter = ['companyId' => Security::toObjectId($companyId)];
+            if ($departmentId !== null && $departmentId !== '') {
+                $appFilter['studentId'] = ['$in' => $deptStudentOids];
+            }
+            $byCompany[$companyId]['applicants'] = $appModel->count($appFilter);
         }
 
         return array_values($byCompany);

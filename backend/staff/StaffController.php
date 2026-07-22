@@ -365,13 +365,24 @@ final class StaffController
         ), 'Documents uploaded.');
     }
 
-    /** GET /api/staff/recruiting — campus snapshot; UI filters by department (same as placement officer). */
+    /** GET /api/staff/recruiting — department snapshot (same scope as placement officer). */
     public function recruitingOverview(): void
     {
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
-        Response::success(DocumentHelper::jsonSafe((new RecruitingService())->getCampusOverview(null)));
+        $deptId = trim((string) ($ctx['departmentId'] ?? ''));
+        $filterCtx = [
+            'profile'      => is_array($ctx['profile'] ?? null) ? $ctx['profile'] : [],
+            'departmentId' => $deptId,
+            'department'   => $ctx['department'] ?? null,
+        ];
+        Response::success(DocumentHelper::jsonSafe(
+            (new RecruitingService())->getCampusOverview(
+                $deptId !== '' ? $deptId : null,
+                $filterCtx
+            )
+        ));
     }
 
     /** GET /api/staff/dashboard-stats — department-scoped analytics (hiring trend, placement stats). */

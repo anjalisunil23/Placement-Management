@@ -127,7 +127,6 @@ final class StaffService
                 $pipeline[$bucket]++;
             }
         }
-        $pipeline['hired'] = $offered;
 
         $companies = [];
         foreach (array_keys($companyIds) as $companyId) {
@@ -248,13 +247,15 @@ final class StaffService
             ));
         }
 
+        $pipeline['hired'] = count($placements);
+
         return [
             'totals' => [
                 'companiesHiring' => count($companies),
                 'applicants'      => count($applications),
                 'shortlisted'     => $shortlisted,
                 'offers'          => $offered,
-                'hired'           => $offered,
+                'hired'           => count($placements),
             ],
             'pipeline' => [
                 ['label' => 'Applied', 'value' => $pipeline['applied']],

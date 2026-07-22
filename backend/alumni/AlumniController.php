@@ -192,13 +192,16 @@ final class AlumniController
     $userId = (string) $user['_id'];
     $jobModel = new AlumniJobPostModel();
     $refModel = new AlumniReferralModel();
+    $alumniOid = \PMS\Utils\Security::toObjectId($userId);
 
     Response::success([
       'totalPosts'       => count($jobModel->findByAlumni($userId)),
       'activePosts'      => $jobModel->countActiveByAlumni($userId),
       'viewsThisMonth'   => $jobModel->sumViewsByAlumni($userId),
       'referralsCount'   => $refModel->countByAlumni($userId),
-      'referralsPending' => $refModel->countByAlumni($userId),
+      'referralsPending' => $alumniOid
+        ? $refModel->count(['alumniUserId' => $alumniOid, 'status' => 'pending'])
+        : 0,
     ]);
   }
 

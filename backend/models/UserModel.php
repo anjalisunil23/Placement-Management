@@ -161,7 +161,7 @@ class UserModel extends BaseModel
             'placementPercentage' => $totalStudents > 0
                 ? round(($placedStudents / $totalStudents) * 100, 1)
                 : 0,
-            'pendingApprovals'    => $this->count(['approved' => false]),
+            'pendingApprovals'    => $this->count(['role' => 'student', 'approved' => false]),
             'blockedUsers'        => $this->count(['status' => 'blocked']),
             'totalStaff'          => $this->count(['role' => 'staff']),
             'totalAlumni'         => $this->count(['role' => 'alumni']),

@@ -96,6 +96,21 @@ final class AnalyticsService
             $appCountFilter['studentId'] = ['$in' => []];
         }
 
+        $companyCount = $companyModel->count([]);
+        if ($deptOid) {
+            // Department dashboards: companies that actually received applications from this dept.
+            $companyIds = [];
+            if ($studentIds !== []) {
+                foreach ($applicationModel->findAll(['studentId' => ['$in' => $studentIds]], 8000) as $app) {
+                    $cid = (string) ($app['companyId'] ?? '');
+                    if ($cid !== '') {
+                        $companyIds[$cid] = true;
+                    }
+                }
+            }
+            $companyCount = count($companyIds);
+        }
+
         $salaries = $this->extractSalariesFromSources(
             $jobModel->findAll([], 500),
             (new DriveModel())->findAll([], 500)
@@ -106,7 +121,7 @@ final class AnalyticsService
                 'students'            => $totalStudents,
                 'placedStudents'      => $placedStudents,
                 'placementPercentage' => $placementPct,
-                'companies'           => $companyModel->count([]),
+                'companies'           => $companyCount,
                 'applications'        => $applicationModel->count($appCountFilter),
             ],
             'branchStatistics'  => $branchStats,
