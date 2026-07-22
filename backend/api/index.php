@@ -412,6 +412,7 @@ $routes = [
     ['POST', '/officer/notifications/{id}/read',     [OfficerController::class, 'markNotificationRead']],
 
     // Health & public
+    ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],
     ['GET', '/health',                  [PublicController::class, 'health']],
     ['GET', '/media/{folder}/{file}',   [PublicController::class, 'serveMedia']],
     ['GET', '/public/report-resume/application/{id}/{exp}/{sig}', [PublicController::class, 'serveReportApplicationResume']],
