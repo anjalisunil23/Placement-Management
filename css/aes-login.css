@@ -1,4 +1,4 @@
-﻿/* AES login modal - keep in sync with inline block in public-stats.html */
+/* AES login modal - keep in sync with inline block in public-stats.html */
 #aesLoginModal.aes-login-modal{z-index:1060}
 #aesLoginModal.aes-login-modal .modal-backdrop.show{opacity:.45}
 #aesLoginModal .aes-login-dialog{
