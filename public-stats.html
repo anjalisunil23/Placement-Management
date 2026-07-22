@@ -412,23 +412,19 @@ async function renderPublicPage() {
 renderPublicPage();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<!-- Official AES widget (same-origin proxy — direct login.aesajce.in/aes-login.js is blocked in browsers) -->
-<script type="module" src="/aes-login.js?api=17f7e7bf8d3ecf54364107279801e88ee6509a09&v=20260722signin"></script>
 <script>
-(function watchAesWidget() {
-  const btn = document.querySelector('.aes-dologin');
-  if (!btn) return;
-  let tries = 0;
-  const timer = setInterval(() => {
-    tries += 1;
-    const wired = !!(window.jQuery && jQuery._data && jQuery._data(btn, 'events'));
-    if (wired || tries >= 20) {
-      clearInterval(timer);
-      if (!wired) {
-        console.error('Official AES login widget did not load. Deploy aes-login-proxy.php and hard-refresh.');
-      }
+/* AES blocks browser CORS to login.aesajce.in — always rewrite before the widget fires. */
+(function patchAesApiThroughProxy($) {
+  if (!$ || !$.ajaxPrefilter) return;
+  const AES_API = 'https://login.aesajce.in/api/public_api.php';
+  const LOCAL = '/aes-public-api.php';
+  $.ajaxPrefilter(function (options) {
+    if (typeof options.url === 'string' && options.url.indexOf(AES_API) === 0) {
+      options.url = LOCAL + options.url.slice(AES_API.length);
     }
-  }, 250);
-})();
+  });
+})(window.jQuery);
 </script>
+<!-- Official AES widget (same-origin proxy — direct login.aesajce.in/aes-login.js is blocked in browsers) -->
+<script type="module" src="/aes-login.js?api=17f7e7bf8d3ecf54364107279801e88ee6509a09&v=20260722cors2"></script>
 </body></html>

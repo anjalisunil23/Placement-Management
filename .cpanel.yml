@@ -29,6 +29,9 @@ deployment:
     - /bin/cp -f aes-callback.php $DEPLOYPATH/aes-callback.php
     - /bin/cp -f aes-login-proxy.php $DEPLOYPATH/aes-login-proxy.php
     - /bin/cp -f aes-public-api-proxy.php $DEPLOYPATH/aes-public-api-proxy.php
+    - /bin/cp -f aes-public-api-proxy.php $DEPLOYPATH/aes-public-api.php
+    - /bin/cp -f hero-bg.php $DEPLOYPATH/hero-bg.php
+    - /bin/cp -f logo.php $DEPLOYPATH/logo.php
     - /bin/cp -f composer.json $DEPLOYPATH/composer.json
     - /bin/cp -f composer.lock $DEPLOYPATH/composer.lock
     - /bin/cp -f .env.production.example $DEPLOYPATH/.env.production.example
@@ -48,5 +51,7 @@ deployment:
     - test -f $DEPLOYPATH/dologin.php || (echo "DEPLOY FAILED - dologin.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/aes-login-proxy.php || (echo "DEPLOY FAILED - aes-login-proxy.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/aes-public-api-proxy.php || (echo "DEPLOY FAILED - aes-public-api-proxy.php missing." >&2; exit 1)
+    - test -f $DEPLOYPATH/aes-public-api.php || (echo "DEPLOY FAILED - aes-public-api.php missing." >&2; exit 1)
+    - test -f $DEPLOYPATH/hero-bg.php || (echo "DEPLOY FAILED - hero-bg.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/backend/services/AesLoginService.php || (echo "DEPLOY FAILED - AesLoginService.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/.env || /bin/cp $DEPLOYPATH/.env.production.example $DEPLOYPATH/.env
