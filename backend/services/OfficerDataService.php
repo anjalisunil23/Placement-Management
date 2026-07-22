@@ -754,12 +754,10 @@ final class OfficerDataService
             $rows[] = $row;
         }
 
-        // Cohort matching already includes S8/S9 peers from the directory.
-        // Skip per-admno AES profile round-trips — they make the page very slow.
-        if ($matchCohort) {
-            return $rows;
-        }
-
+        // Cohort matching keeps S8/S9 peers already in the directory, but AES
+        // getAllStudInfo4Placement often omits late-fee classmates still on an
+        // earlier semester. Fill small admno gaps with individual lookups
+        // (capped) so class strength stays complete (e.g. INMCA 57 = 55 + 2).
         return $this->supplementAesClassRosterGaps(
             $rows,
             $seen,
@@ -769,7 +767,7 @@ final class OfficerDataService
             $deptCode,
             $deptName,
             $localByKey,
-            false
+            $matchCohort
         );
     }
 
