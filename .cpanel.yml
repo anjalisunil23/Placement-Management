@@ -48,6 +48,7 @@ deployment:
     - cd $DEPLOYPATH && (/usr/local/bin/composer dump-autoload -o || /opt/cpanel/composer/bin/composer dump-autoload -o)
     - cd $DEPLOYPATH && (/usr/local/bin/php backend/scripts/ensure-schema.php || /opt/cpanel/ea-php82/root/usr/bin/php backend/scripts/ensure-schema.php) || (echo "DEPLOY FAILED - ensure-schema.php did not complete. Check DB permissions." >&2; exit 1)
     - /bin/grep -q "inline API router" $DEPLOYPATH/backend/api/index.php || (echo "DEPLOY FAILED - backend/api/index.php is stale. Re-deploy from latest main." >&2; exit 1)
+    - /bin/grep -q "path={folder}&object={file}" $DEPLOYPATH/backend/services/ObjectStorageService.php || (echo "DEPLOY FAILED - ObjectStorageService.php is stale (missing S3 path+object download). Re-deploy from latest main." >&2; exit 1)
     - test -f $DEPLOYPATH/dologin.php || (echo "DEPLOY FAILED - dologin.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/aes-login-proxy.php || (echo "DEPLOY FAILED - aes-login-proxy.php missing." >&2; exit 1)
     - test -f $DEPLOYPATH/aes-public-api-proxy.php || (echo "DEPLOY FAILED - aes-public-api-proxy.php missing." >&2; exit 1)
