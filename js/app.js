@@ -746,14 +746,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
   } else if (pageBase === 'placement-registration.html' && Auth.role() === 'student') {
-    window.location.replace(Auth.homePage() || 'drives.html');
+    window.location.replace(Auth.homePage() || 'dashboard.html');
     return;
   }
 
   if (!enforcePageRole(pageBase)) return;
   paintShell();
 
-  if (Auth.hasRealAuth() && pageBase !== 'settings.html') {
+  if (Auth.hasRealAuth() && pageBase !== 'settings.html' && pageBase !== 'placement-registration.html') {
     const enrichOpts = {};
     if (Auth.role() === 'student' && typeof isUsableDisplayName === 'function'
       && !isUsableDisplayName(Auth.user()?.name, Auth.user() || {})) {
@@ -761,6 +761,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     Auth.enrichFromProfile(enrichOpts)
       .then(() => {
+        // Re-check after profile sync so a stale soft session cannot leave
+        // unregistered students on the dashboard.
+        if (typeof studentNeedsPlacementRegistration === 'function'
+          && studentNeedsPlacementRegistration()
+          && pageBase !== 'placement-registration.html') {
+          window.location.replace('placement-registration.html');
+          return;
+        }
         if (document.body?.dataset?.page) renderShell(shellActivePage());
       })
       .catch(() => { });

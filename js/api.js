@@ -460,7 +460,8 @@ const PLACEMENT_POLICY_VERSION = 'ajce-2026-v1';
 function studentNeedsPlacementRegistration() {
   if (Auth.role() !== 'student') return false;
   if (!Auth.hasRealAuth() || Auth.isDemo()) return false;
-  return !Auth.user()?.policyAccepted;
+  // Strict check: only an explicit true clears the gate (avoids truthy strings / stale merges).
+  return Auth.user()?.policyAccepted !== true;
 }
 
 /** Default landing page per role after sign-in */
@@ -647,7 +648,9 @@ const Auth = {
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || prev.photoUrl || '',
         photo: merged.photo || prev.photo || null,
         placed: merged.placed ?? prev.placed,
-        policyAccepted: merged.policyAccepted ?? prev.policyAccepted ?? false,
+        policyAccepted: Object.prototype.hasOwnProperty.call(merged, 'policyAccepted')
+          ? merged.policyAccepted === true || merged.policyAccepted === 1 || merged.policyAccepted === '1'
+          : (prev.policyAccepted === true),
         policyVersion: merged.policyVersion || prev.policyVersion || '',
         policyAcceptedAt: merged.policyAcceptedAt || prev.policyAcceptedAt || '',
         title: merged.title ?? prev.title ?? '',
@@ -875,7 +878,11 @@ const Auth = {
         departmentAesId: aesDeptId || prev.departmentAesId || '',
         branch: p.branch || p.programme || prev.branch || '',
         programme: p.programme || p.branch || prev.programme || '',
-        policyAccepted: p.policyAccepted ?? u.policyAccepted ?? prev.policyAccepted ?? false,
+        policyAccepted: Object.prototype.hasOwnProperty.call(p, 'policyAccepted')
+          ? (p.policyAccepted === true || p.policyAccepted === 1 || p.policyAccepted === '1')
+          : (Object.prototype.hasOwnProperty.call(u, 'policyAccepted')
+            ? (u.policyAccepted === true || u.policyAccepted === 1 || u.policyAccepted === '1')
+            : (prev.policyAccepted === true)),
         policyVersion: p.policyVersion || prev.policyVersion || '',
         policyAcceptedAt: p.policyAcceptedAt || prev.policyAcceptedAt || '',
         photoUrl: p.photoUrl || p.photo?.url || u.photoUrl || prev.photoUrl || '',
@@ -906,12 +913,17 @@ const Auth = {
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
       // Track and remind students about missing profile fields.
+      // Never bounce unregistered students off the policy page (that caused
+      // placement-registration ↔ settings/dashboard redirect flicker).
       if (role === 'student' && Array.isArray(p.missingFields) && p.missingFields.length) {
         this._profileIncomplete = true;
-        const page = document.body?.dataset?.page || '';
+        const page = (document.body?.dataset?.page || '').split('#')[0];
+        const awaitingPolicy = typeof studentNeedsPlacementRegistration === 'function'
+          && studentNeedsPlacementRegistration();
+        const onPolicyPage = page === 'placement-registration.html';
         const key = 'ph_missing_fields_reminded';
         try {
-          if (!sessionStorage.getItem(key)) {
+          if (!sessionStorage.getItem(key) && !onPolicyPage) {
             sessionStorage.setItem(key, '1');
             const names = p.missingFields.slice(0, 5).join(', ');
             const extra = p.missingFields.length > 5 ? ` and ${p.missingFields.length - 5} more` : '';
@@ -921,7 +933,12 @@ const Auth = {
             }
           }
         } catch (_) { /* sessionStorage blocked */ }
-        if (page && page !== 'settings.html') {
+        if (!opts.skipIncompleteRedirect
+          && !awaitingPolicy
+          && !onPolicyPage
+          && page
+          && page !== 'settings.html'
+        ) {
           window.location.href = '/settings.html';
           return true;
         }

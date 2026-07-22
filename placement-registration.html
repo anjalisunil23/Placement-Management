@@ -580,10 +580,10 @@ async function gate() {
     return;
   }
   if (Auth.hasRealAuth() && !Auth.isDemo()) {
-    await Auth.enrichFromProfile({ refresh: true });
+    await Auth.enrichFromProfile({ refresh: true, skipIncompleteRedirect: true });
   }
   const u = Auth.user() || {};
-  if (u.policyAccepted) {
+  if (u.policyAccepted === true) {
     window.location.replace('dashboard.html');
     return;
   }
