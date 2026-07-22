@@ -570,7 +570,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260722profilenav"></script>
+<script src="js/api.js?v=20260722regclosed"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1000,6 +1000,33 @@ function canApplyToDrives() {
   return isStudent || alumniSeeking;
 }
 
+/** YYYY-MM-DD registration deadline from drive payload (eligibility first). */
+function driveRegistrationDeadline(d) {
+  if (!d || typeof d !== 'object') return '';
+  const elig = d.eligibility && typeof d.eligibility === 'object' ? d.eligibility : {};
+  const raw = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
+  if (!raw || raw === '—' || raw.toUpperCase() === 'TBD') return '';
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const dmy = raw.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  return '';
+}
+
+function todayYmdLocal() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+}
+
+function isDriveRegistrationClosed(d) {
+  if (!d) return false;
+  const status = String(d.status || '').trim().toLowerCase();
+  if (status === 'closed' || status === 'completed') return true;
+  const deadline = driveRegistrationDeadline(d);
+  if (!deadline) return false;
+  return todayYmdLocal() > deadline;
+}
+
 function driveViewMode() {
   if (canManage) return 'manage';
   if (canApplyToDrives()) return 'apply';
@@ -1216,6 +1243,10 @@ function fillDriveDetailPanel(list, selectedId) {
   };
   const applied = active && driveAlreadyApplied(active);
   const pending = multi && !active;
+  if (active && isDriveRegistrationClosed(active)) {
+    display.status = 'Closed';
+    display.statusCls = driveStatusCls('Closed');
+  }
 
   const roleField = multi
     ? `<dd>
@@ -1267,6 +1298,11 @@ function fillDriveDetailPanel(list, selectedId) {
   if (applyBtn) {
     if (isStaff || applied || !canApplyToDrives()) {
       applyBtn.classList.add('d-none');
+    } else if (active && isDriveRegistrationClosed(active)) {
+      applyBtn.classList.remove('d-none');
+      applyBtn.disabled = true;
+      applyBtn.textContent = 'Registration closed';
+      applyBtn.title = 'Registration closed';
     } else if (active && active.eligible === false) {
       applyBtn.classList.remove('d-none');
       applyBtn.disabled = true;
@@ -1523,7 +1559,9 @@ function applyAction(d) {
     return appStatusBadge(app?.status || d.applicationStatus || 'applied');
   }
 
-  if (d.status === 'Closed') return '<span class="badge-soft muted">Closed</span>';
+  if (d.status === 'Closed' || isDriveRegistrationClosed(d)) {
+    return '<span class="badge-soft muted">Registration closed</span>';
+  }
 
   if ((isStudent || alumniSeeking) && d.eligible === false) {
     const why = (Array.isArray(d.eligibilityReasons) ? d.eligibilityReasons : []).join(' ') || 'Not eligible for this drive';
@@ -2582,6 +2620,11 @@ window.openApply = async driveId => {
     return;
   }
 
+  if (isDriveRegistrationClosed(pendingDrive)) {
+    toast('Registration closed', 'warn');
+    return;
+  }
+
   if (isStudent || alumniSeeking) {
     await ResumeBucket.fetchForApplicant();
     if (!ResumeBucket.all().length && Auth.isDemo()) ResumeBucket.seed();
@@ -2792,6 +2835,13 @@ document.getElementById('driveDetailApplyBtn')?.addEventListener('click', () => 
     toast('Select a role first.', 'warn');
     return;
   }
+  const drive = detailDriveGroup.find(d => String(d.id) === String(id))
+    || DriveStore.get(id)
+    || allDrives.find(d => String(d.id) === String(id));
+  if (drive && isDriveRegistrationClosed(drive)) {
+    toast('Registration closed', 'warn');
+    return;
+  }
   openApply(id);
 });
 
@@ -2842,6 +2892,10 @@ document.getElementById('applyCertificateFileInput')?.addEventListener('change',
 window.openAlumniApply = async driveId => {
   pendingDrive = DriveStore.get(driveId);
   if (!pendingDrive) return;
+  if (isDriveRegistrationClosed(pendingDrive)) {
+    toast('Registration closed', 'warn');
+    return;
+  }
   if (!(await confirmAction({
     title: 'Apply to drive',
     message: `Apply to ${pendingDrive.company} · ${pendingDrive.role}?`,
@@ -2856,6 +2910,11 @@ window.openAlumniApply = async driveId => {
 
 
 document.getElementById('confirmApply')?.addEventListener('click', async () => {
+
+  if (pendingDrive && isDriveRegistrationClosed(pendingDrive)) {
+    toast('Registration closed', 'warn');
+    return;
+  }
 
   const resumeId = document.getElementById('applyResumeSelect').value;
 

@@ -17,18 +17,33 @@ final class DriveLifecycle
     public static function registrationDeadline(array $drive): string
     {
         $eligibility = is_array($drive['eligibility'] ?? null) ? $drive['eligibility'] : [];
-        $deadline = trim((string) ($eligibility['deadline'] ?? ''));
-        if ($deadline === '') {
-            $deadline = trim((string) ($drive['registrationDeadline'] ?? ''));
+        foreach ([
+            $eligibility['deadline'] ?? '',
+            $drive['registrationDeadline'] ?? '',
+            // Top-level deadline when saved outside eligibility (not recruitment `date`).
+            $drive['deadline'] ?? '',
+        ] as $raw) {
+            $parsed = self::parseDeadlineDate(trim((string) $raw));
+            if ($parsed !== '') {
+                return $parsed;
+            }
         }
-        // Prefer nested eligibility; allow a distinct registrationDeadline field only.
-        // Do not use recruitment `date` here — that would close every drive on drive day.
+
+        return '';
+    }
+
+    private static function parseDeadlineDate(string $deadline): string
+    {
         if ($deadline === '' || $deadline === '—' || strtoupper($deadline) === 'TBD') {
             return '';
         }
-        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $deadline, $m)) {
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $deadline, $m) === 1) {
             return $m[1];
         }
+        if (preg_match('/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/', $deadline, $m) === 1) {
+            return $m[3] . '-' . $m[2] . '-' . $m[1];
+        }
+
         return '';
     }
 

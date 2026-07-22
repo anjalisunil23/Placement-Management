@@ -4405,7 +4405,7 @@ const DriveStore = {
     delete elig.reasons;
     const check = d.eligibilityCheck || (eligSrc.eligible !== undefined ? eligSrc : null);
     const pkg = String(d.package || elig.package || '').trim();
-    const regDeadline = String(elig.deadline || d.registrationDeadline || '').trim();
+    const regDeadline = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
     const displayDeadline = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
     const recruitmentDate = String(d.recruitmentDate || d.date || '').trim();
     const jobType = String(d.jobType || elig.jobType || '').trim();
@@ -4419,6 +4419,13 @@ const DriveStore = {
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       if (todayStr > regDeadline.slice(0, 10)) status = 'Closed';
     }
+    const closedByDeadline = status === 'Closed';
+    const eligible = closedByDeadline
+      ? false
+      : (check ? check.eligible !== false : true);
+    const eligibilityReasons = closedByDeadline
+      ? ['Registration closed.']
+      : (check?.reasons || []);
     return {
       id: d._id || d.id,
       companyId: d.companyId || '',
@@ -4440,9 +4447,10 @@ const DriveStore = {
       profile: d.profile || 'General',
       applied: d.applied ? 1 : 0,
       applicationStatus: d.applicationStatus || null,
-      eligible: check ? check.eligible !== false : true,
-      eligibilityReasons: check?.reasons || [],
+      eligible,
+      eligibilityReasons,
       applicationFields: Array.isArray(d.applicationFields) ? d.applicationFields : [],
+      eligibility: { ...elig, deadline: (regDeadline && regDeadline !== 'TBD') ? regDeadline.slice(0, 10) : (elig.deadline || '') },
       _fromApi: true,
     };
   },

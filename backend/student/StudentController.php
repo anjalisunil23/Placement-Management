@@ -1056,15 +1056,22 @@ final class StudentController
     $resumeId = (string) ($input['resumeId'] ?? '');
 
     $profile = $this->studentModel->findById($studentId) ?? $profile;
-    $engine = new EligibilityEngine();
-    $check = $engine->checkForDrive($studentId, $driveId, $resumeId !== '' ? $resumeId : null);
-    if (!$check['eligible']) {
-      Response::error('Not eligible: ' . implode(' ', $check['reasons']), 403);
-    }
-
     $drive = (new DriveModel())->findById($driveId);
     if (!$drive) {
       Response::notFound('Drive not found.');
+    }
+    if (!\PMS\Services\DriveLifecycle::isRegistrationOpen($drive)) {
+      Response::error('Registration closed.', 403);
+    }
+
+    $engine = new EligibilityEngine();
+    $check = $engine->checkForDrive($studentId, $driveId, $resumeId !== '' ? $resumeId : null);
+    if (!$check['eligible']) {
+      $reason = implode(' ', $check['reasons']);
+      if (stripos($reason, 'registration closed') !== false) {
+        Response::error('Registration closed.', 403);
+      }
+      Response::error('Not eligible: ' . $reason, 403);
     }
 
     $appModel = new ApplicationModel();

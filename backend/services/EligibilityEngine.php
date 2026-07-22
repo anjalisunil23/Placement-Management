@@ -74,7 +74,7 @@ final class EligibilityEngine
         if (!DriveLifecycle::isRegistrationOpen($drive)
             || DriveLifecycle::effectiveStatus($drive) === 'closed'
         ) {
-            return ['eligible' => false, 'reasons' => ['Registration for this drive is closed.']];
+            return ['eligible' => false, 'reasons' => ['Registration closed.']];
         }
 
         if ($enrich) {

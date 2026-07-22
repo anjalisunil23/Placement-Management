@@ -470,12 +470,19 @@ final class AlumniController
 
     $check = (new EligibilityEngine())->checkForDrive($studentId, $driveId, $resumeId !== '' ? $resumeId : null);
     if (!$check['eligible']) {
-      Response::error('Not eligible: ' . implode(' ', $check['reasons']), 403);
+      $reason = implode(' ', $check['reasons']);
+      if (stripos($reason, 'registration closed') !== false) {
+        Response::error('Registration closed.', 403);
+      }
+      Response::error('Not eligible: ' . $reason, 403);
     }
 
     $drive = (new DriveModel())->findById($driveId);
     if (!$drive) {
       Response::notFound('Drive not found.');
+    }
+    if (!\PMS\Services\DriveLifecycle::isRegistrationOpen($drive)) {
+      Response::error('Registration closed.', 403);
     }
 
     $appModel = new ApplicationModel();

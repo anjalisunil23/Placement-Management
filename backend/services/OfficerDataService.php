@@ -3844,10 +3844,8 @@ final class OfficerDataService
                 : trim((string) ($elig['deadline'] ?? $row['deadline'] ?? ''));
             $jobType = trim((string) ($elig['jobType'] ?? $row['jobType'] ?? ''));
             $mode = trim((string) ($elig['mode'] ?? $row['mode'] ?? ''));
-            // Display-only fallback for empty deadline column (does not affect Closed derivation).
-            if ($deadline === '' && !empty($row['date'])) {
-                $deadline = (string) $row['date'];
-            }
+            // Do not invent a registration deadline from recruitment date — that
+            // made past drive days look open while showing a false deadline.
             $row['package'] = $package;
             $row['deadline'] = $deadline;
             $row['jobType'] = $jobType;
