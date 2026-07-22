@@ -1970,9 +1970,13 @@ const StudentApps = {
       package: a.resultPackage || a.package || '',
       resumeLabel: a.resumeLabel || '—',
       status: a.status || 'applied',
+      stage: a.stage || '',
       resultStatus: a.resultStatus || '',
       resultJoiningDate: a.resultJoiningDate || '',
       resultId: a.resultId || '',
+      roundOutcomes: Array.isArray(a.roundOutcomes) ? a.roundOutcomes : [],
+      selectionRounds: Array.isArray(a.selectionRounds) ? a.selectionRounds : [],
+      timeline: Array.isArray(a.timeline) ? a.timeline : [],
       appliedAt: a.appliedAt || a.createdAt || '',
     }));
     this.save(mapped);
@@ -2336,6 +2340,61 @@ function appStatusBadge(status) {
   };
   const [cls, label] = map[status] || ['muted', String(status || '').replace(/_/g, ' ')];
   return `<span class="badge-soft ${cls}">${label}</span>`;
+}
+
+const ROUND_TYPE_LABELS = {
+  interview: 'Interview',
+  gd: 'GD',
+  coding: 'Coding',
+  aptitude: 'Aptitude',
+  technical: 'Technical Test',
+  hr: 'HR Round',
+  other: 'Other',
+};
+
+function roundOutcomeDisplay(outcome, selectionRounds = []) {
+  const order = Number(outcome?.order || 0);
+  const rounds = Array.isArray(selectionRounds) ? selectionRounds : [];
+  const configured = rounds.find(r => Number(r.order) === order);
+  const type = String(outcome?.type || configured?.type || '').toLowerCase();
+  const typeLabel = String(configured?.label || ROUND_TYPE_LABELS[type] || '').trim();
+  const name = typeLabel
+    ? `Round ${order || '—'} · ${typeLabel}`
+    : `Round ${order || '—'}`;
+  const status = String(outcome?.status || '').toLowerCase();
+  const statusMap = {
+    selected: ['success', 'Selected'],
+    rejected: ['danger', 'Not selected'],
+    waiting: ['warning', 'Waiting'],
+  };
+  const [cls, label] = statusMap[status] || ['muted', status ? status.replace(/_/g, ' ') : '—'];
+  return { name, cls, label, status };
+}
+
+/** Status badge plus per-round shortlist/select/wait chips for student views. */
+function appPlacementProgressHtml(app) {
+  const esc = (v) => String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
+  const status = String(app?.status || '').toLowerCase();
+  const statusHtml = appStatusBadge(status);
+  const outcomes = Array.isArray(app?.roundOutcomes) ? [...app.roundOutcomes] : [];
+  outcomes.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+  if (!outcomes.length) return statusHtml;
+
+  const chips = outcomes.map((o) => {
+    const { name, cls, label } = roundOutcomeDisplay(o, app?.selectionRounds);
+    return `<span class="badge-soft ${esc(cls)}">${esc(name)}: ${esc(label)}</span>`;
+  }).join('');
+
+  return `<div class="d-flex flex-column gap-1 align-items-start">${statusHtml}<div class="d-flex flex-wrap gap-1">${chips}</div></div>`;
+}
+
+function isCompanyRecruitmentProgressApp(app) {
+  const status = String(app?.status || '').toLowerCase();
+  if (['shortlisted', 'selected', 'rejected', 'offered'].includes(status)) return true;
+  return Array.isArray(app?.roundOutcomes) && app.roundOutcomes.length > 0;
 }
 
 function mapCompanyJobStatus(status) {

@@ -303,7 +303,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260722activedrives"></script>
+<script src="js/api.js?v=20260722placementprog"></script>
 <script src="js/app.js?v=20260722rmclassbtn"></script>
 <script>
 (function loadDashboardExtras() {
@@ -467,7 +467,7 @@ if (role === 'student') {
     animateCounters(document.querySelector('[data-roles="student"]'));
 
     document.getElementById('studentAppRows').innerHTML = apps.length ? apps.map(a => `
-      <tr><td><strong>${a.company || '—'}</strong></td><td>${a.role || '—'}</td><td>${a.resumeLabel || '—'}</td><td>${formatDate(a.appliedAt)}</td><td>${appStatusBadge(a.status)}</td></tr>`).join('')
+      <tr><td><strong>${a.company || '—'}</strong></td><td>${a.role || '—'}</td><td>${a.resumeLabel || '—'}</td><td>${formatDate(a.appliedAt)}</td><td>${typeof appPlacementProgressHtml === 'function' ? appPlacementProgressHtml(a) : appStatusBadge(a.status)}</td></tr>`).join('')
       : '<tr><td colspan="5" class="text-muted-2 p-4">No applications yet.</td></tr>';
   })();
 }

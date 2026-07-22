@@ -175,6 +175,15 @@ final class OfficerDataService
             $row['company'] = $companyName;
             $row['role'] = is_array($drive) ? (string) ($drive['title'] ?? '') : '';
             $row['stage'] = $stage;
+            $row['selectionRounds'] = is_array($drive)
+                ? DriveModel::normalizeSelectionRounds($drive['selectionRounds'] ?? [])
+                : [];
+            $row['roundOutcomes'] = is_array($app['roundOutcomes'] ?? null)
+                ? array_values($app['roundOutcomes'])
+                : [];
+            $row['timeline'] = is_array($app['timeline'] ?? null)
+                ? array_values($app['timeline'])
+                : [];
             $row['appliedAt'] = $row['createdAt'] ?? null;
             $row['resumeLabel'] = (string) ($appResume['label'] ?? '');
             $row['resumeFileName'] = $resumeFile;
