@@ -464,6 +464,22 @@ function studentNeedsPlacementRegistration() {
   return Auth.user()?.policyAccepted !== true;
 }
 
+/** Class teacher / co-class teacher batches from session (empty if not incharge). */
+function staffClassInchargeBatches() {
+  if (Auth.role() !== 'staff') return [];
+  const u = Auth.user() || {};
+  const fromUser = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+  const profile = u.profile && typeof u.profile === 'object' ? u.profile : {};
+  const fromProfile = Array.isArray(profile.assignedClassBatches) ? profile.assignedClassBatches : [];
+  const merged = [...new Set([...fromUser, ...fromProfile].map((v) => String(v || '').trim()).filter(Boolean))];
+  // Same guard as staff-placements: huge lists are stale department-wide backfill.
+  return merged.length > 12 ? [] : merged;
+}
+
+function staffIsClassIncharge() {
+  return staffClassInchargeBatches().length > 0;
+}
+
 /** Default landing page per role after sign-in */
 const ROLE_HOME = {
   admin: 'dashboard.html',

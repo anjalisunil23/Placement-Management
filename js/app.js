@@ -541,6 +541,14 @@ function renderShell(active) {
       : (role === 'company'
         ? (user.companyName || displayName || '')
         : (role === 'student' || role === 'staff' || role === 'alumni' || role === 'admin' || role === 'placement_officer' ? '' : `${ROLE_LABELS[role]} workspace`));
+    const classPlacementBtn = (role === 'staff'
+      && typeof staffIsClassIncharge === 'function'
+      && staffIsClassIncharge())
+      ? `<a class="btn btn-sm btn-outline-primary text-nowrap" href="staff-placements.html" title="View placement of your class">
+          <i class="bi bi-mortarboard me-1"></i><span class="d-none d-sm-inline">My Class Placement</span>
+        </a>`
+      : '';
+
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
       ${showTopbarTitle ? `<div class="d-none d-md-block">
@@ -550,6 +558,7 @@ function renderShell(active) {
       <div class="flex-grow-1"></div>
       <div class="ms-auto topbar-actions d-flex align-items-center gap-2">
         ${quickLinks}
+        ${classPlacementBtn}
         ${Auth.isDemo() ? `<div class="dropdown">
           <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Preview as role">
             <i class="bi bi-person-badge me-1"></i><span class="d-none d-sm-inline">${ROLE_LABELS[role]}</span>

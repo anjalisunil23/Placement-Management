@@ -32,49 +32,44 @@ final class StaffPlacementRegistryService
     {
         StaffContext::requireDepartmentScope($staffCtx);
         $officerCtx = StaffContext::officerCompatible($staffCtx);
-        $studentRows = $this->officerData->listStudents($officerCtx);
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
-        $aesClassRows = [];
-        if ($program !== '' && $batch !== '') {
-            $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch);
-        }
 
         $registry = [];
-        foreach ($studentRows as $row) {
-            foreach ($this->extractRegistryRows($row) as $entry) {
-                $registry[] = $entry;
-            }
-        }
-        $registry = $this->deduplicateStudentRows($registry);
-
-        usort($registry, static function (array $a, array $b): int {
-            $name = strcasecmp((string) ($a['studentName'] ?? ''), (string) ($b['studentName'] ?? ''));
-            if ($name !== 0) {
-                return $name;
-            }
-
-            return strcasecmp((string) ($a['employer'] ?? ''), (string) ($b['employer'] ?? ''));
-        });
-
-        $filterOptions = $this->buildFilterOptions($staffCtx, $filters);
-        $filtered = $this->applyFilters($registry, $filters);
-        if ($aesClassRows !== []) {
-            $aesRegistry = [];
+        // Fast path for a selected class: one AES directory pass for that batch only.
+        // Avoids loading the full department roster + a second AES directory fetch.
+        if ($program !== '' && $batch !== '') {
+            $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch);
             foreach ($aesClassRows as $row) {
                 foreach ($this->extractRegistryRows($row, false) as $entry) {
-                    $aesRegistry[] = $entry;
+                    $registry[] = $entry;
                 }
             }
-            $filtered = $this->mergeCompleteClassRoster(
-                $filtered,
-                $this->applyFilters($aesRegistry, $filters)
-            );
-            $filtered = $this->deduplicateStudentRows($filtered);
-            usort($filtered, static fn (array $a, array $b): int => strcasecmp(
+            $registry = $this->deduplicateStudentRows($registry);
+            usort($registry, static fn (array $a, array $b): int => strcasecmp(
                 (string) ($a['studentName'] ?? ''),
                 (string) ($b['studentName'] ?? '')
             ));
+            $filtered = $this->applyFilters($registry, $filters);
+            $filterOptions = $this->buildLiteFilterOptions($staffCtx, $filters, $filtered);
+        } else {
+            $studentRows = $this->officerData->listStudents($officerCtx);
+            foreach ($studentRows as $row) {
+                foreach ($this->extractRegistryRows($row, false) as $entry) {
+                    $registry[] = $entry;
+                }
+            }
+            $registry = $this->deduplicateStudentRows($registry);
+            usort($registry, static function (array $a, array $b): int {
+                $name = strcasecmp((string) ($a['studentName'] ?? ''), (string) ($b['studentName'] ?? ''));
+                if ($name !== 0) {
+                    return $name;
+                }
+
+                return strcasecmp((string) ($a['employer'] ?? ''), (string) ($b['employer'] ?? ''));
+            });
+            $filterOptions = $this->buildFilterOptions($staffCtx, $filters);
+            $filtered = $this->applyFilters($registry, $filters);
         }
 
         $placementCount = 0;
@@ -445,6 +440,74 @@ final class StaffPlacementRegistryService
         $data['includedvv'] = $this->normalizeVvValue($data['includedvv'] ?? '1');
 
         return array_merge($meta, $data);
+    }
+
+    /**
+     * Lightweight filter options for a selected class — no second AES directory scan.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
+     * @param array<int, array<string, mixed>> $rows
+     * @return array{programs: string[], branches: string[], batches: string[], departments: array<int, array{id:string,code:string,name:string}>}
+     */
+    private function buildLiteFilterOptions(array $staffCtx, array $filters, array $rows): array
+    {
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+        $programs = [];
+        $batches = [];
+
+        foreach (StaffContext::assignedClassBatches($staffCtx) as $assigned) {
+            $assigned = trim((string) $assigned);
+            if ($assigned === '') {
+                continue;
+            }
+            $batches[] = $assigned;
+            $hint = DepartmentProgrammeCatalog::resolveProgrammeCode($assigned);
+            if ($hint === '') {
+                $norm = DepartmentProgrammeCatalog::normalizeCode($assigned);
+                if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+                    $hint = 'INMCA';
+                } elseif (str_starts_with($norm, 'MCA')) {
+                    $hint = 'MCA';
+                } elseif (str_contains($norm, 'BCA')) {
+                    $hint = 'BCA';
+                }
+            }
+            if ($hint !== '') {
+                $programs[] = $hint;
+            }
+        }
+
+        foreach ($rows as $row) {
+            $p = trim((string) ($row['program'] ?? ''));
+            $b = trim((string) ($row['batch'] ?? ''));
+            if ($p !== '') {
+                $programs[] = $p;
+            }
+            if ($b !== '') {
+                $batches[] = $b;
+            }
+        }
+
+        if ($program !== '') {
+            $programs[] = $program;
+        }
+        if ($batch !== '') {
+            $batches[] = $batch;
+        }
+
+        $programs = array_values(array_unique(array_filter($programs)));
+        $batches = array_values(array_unique(array_filter($batches)));
+        sort($programs, SORT_STRING);
+        sort($batches, SORT_STRING);
+
+        return [
+            'programs'    => $programs,
+            'branches'    => [],
+            'batches'     => $batches,
+            'departments' => $this->loadScopedDepartments($staffCtx),
+        ];
     }
 
     /**

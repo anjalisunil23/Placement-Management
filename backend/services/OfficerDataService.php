@@ -30,6 +30,9 @@ final class OfficerDataService
     /** @var array<string, array<string, mixed>> */
     private static array $placementProfileCache = [];
 
+    /** @var array<string, list<array<string, mixed>>> */
+    private static array $aesDirectoryCache = [];
+
     /**
      * @return array{user: array<string, mixed>, ctx: array<string, mixed>}
      */
@@ -1493,6 +1496,11 @@ final class OfficerDataService
      */
     private function fetchAesDirectoryRecords(string $deptAesId, bool $campusWide): array
     {
+        $cacheKey = $campusWide ? 'campus' : ('dept:' . $deptAesId);
+        if (isset(self::$aesDirectoryCache[$cacheKey])) {
+            return self::$aesDirectoryCache[$cacheKey];
+        }
+
         $api = new AesApiService();
         if (!$campusWide) {
             $params = [];
@@ -1514,9 +1522,9 @@ final class OfficerDataService
                     }
                 }
 
-                return $records;
+                return self::$aesDirectoryCache[$cacheKey] = $records;
             } catch (\Throwable) {
-                return [];
+                return self::$aesDirectoryCache[$cacheKey] = [];
             }
         }
 
@@ -1569,7 +1577,7 @@ final class OfficerDataService
             }
         }
 
-        return $merged;
+        return self::$aesDirectoryCache[$cacheKey] = $merged;
     }
 
     /**

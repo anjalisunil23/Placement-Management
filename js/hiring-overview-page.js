@@ -306,12 +306,10 @@
 
   HiringOverviewPage.prototype.renderPipelineBreakdown = function (pipeline) {
     const rows = pipeline.length ? pipeline : EMPTY_PIPELINE.slice();
-    const maxPipeline = Math.max(...rows.map(p => p.value), 1);
     const el = this.$('pipelineRows');
     if (!el) return;
     el.innerHTML = rows.map(p => {
-      const share = ((p.value / maxPipeline) * 100).toFixed(1);
-      return `<tr><td><strong>${this.escHtml(p.label)}</strong></td><td>${p.value.toLocaleString('en-IN')}</td><td>${share}%</td></tr>`;
+      return `<tr><td><strong>${this.escHtml(p.label)}</strong></td><td>${p.value.toLocaleString('en-IN')}</td></tr>`;
     }).join('');
   };
 

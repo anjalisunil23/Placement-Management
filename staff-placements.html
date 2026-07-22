@@ -30,10 +30,9 @@
         <div class="card-surface p-3 p-md-4 mb-3">
           <div class="row g-2 align-items-end">
             <div class="col-6 col-md-3">
-              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterDepartment">Department</label>
-              <select class="form-select form-select-sm" id="filterDepartment">
-                <option value="">Select department</option>
-              </select>
+              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterDepartmentLabel">Department</label>
+              <input class="form-control form-control-sm" id="filterDepartmentLabel" readonly tabindex="-1" value=""/>
+              <input type="hidden" id="filterDepartment" value=""/>
             </div>
             <div class="col-6 col-md-3">
               <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterProgram">Branch</label>
@@ -446,9 +445,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20260720research"></script>
-  <script src="js/api.js?v=20260716profilename"></script>
-  <script src="js/app.js?v=20260716notifflat"></script>
+  <script src="js/staff-api.js?v=20260722classfast"></script>
+  <script src="js/api.js?v=20260722classfast"></script>
+  <script src="js/app.js?v=20260722classfast"></script>
   <script>
     if (Auth.role() !== 'staff') {
       toast('You do not have access to this page.', 'warn');
@@ -611,49 +610,59 @@
 
     function pickPreferredBatch(batches, program) {
       const list = (batches || []).map(v => String(v || '').trim()).filter(Boolean);
-      if (!list.length) return '';
-      const assigned = assignedBatches().filter(b => list.some(x => x.toLowerCase() === b.toLowerCase()));
+      const assigned = assignedBatches();
+      const pool = list.length
+        ? assigned.filter(b => list.some(x => x.toLowerCase() === b.toLowerCase()))
+        : assigned.slice();
       const assignedForProgram = program
-        ? assigned.filter(b => batchLooksLikeProgramme(b, program))
-        : assigned;
+        ? pool.filter(b => batchLooksLikeProgramme(b, program))
+        : pool;
       if (assignedForProgram.length) return assignedForProgram[0];
-      if (assigned.length) return assigned[0];
+      if (pool.length) return pool[0];
       if (list.length === 1) return list[0];
+      return '';
+    }
+
+    function programFromBatch(batch) {
+      const b = String(batch || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!b) return '';
+      if (b.includes('MCAINT') || b.includes('INMCA') || b.includes('INTMCA')) return 'INMCA';
+      if (b.startsWith('MCA')) return 'MCA';
+      if (b.includes('BCA')) return 'BCA';
       return '';
     }
 
     function pickPreferredProgram(programs) {
       const list = (programs || []).map(v => String(v || '').trim()).filter(Boolean);
-      if (!list.length) return '';
       const assigned = assignedBatches();
-      for (const batch of assigned) {
-        for (const program of list) {
-          if (batchLooksLikeProgramme(batch, program)) return program;
+      if (list.length) {
+        for (const batch of assigned) {
+          for (const program of list) {
+            if (batchLooksLikeProgramme(batch, program)) return program;
+          }
         }
+        if (list.length === 1) return list[0];
       }
-      if (list.length === 1) return list[0];
+      for (const batch of assigned) {
+        const inferred = programFromBatch(batch);
+        if (inferred) return inferred;
+      }
       return '';
     }
 
     async function loadPlacementFilters() {
       if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
 
-      const loadOnce = async () => StaffApi.fetchPlacementFilters({
+      // Department is fixed from the staff session — no select / no re-pick.
+      applyDefaultDepartment();
+
+      const data = await StaffApi.fetchPlacementFilters({
         departmentId: filterDepartmentId,
         program: filterProgram,
       });
-
-      let data = await loadOnce();
       if (!data) return;
 
-      fillDepartmentSelect('filterDepartment', data.departments || [], 'Select department');
-      const selectedDept = document.getElementById('filterDepartment')?.value || '';
-      if (selectedDept && selectedDept !== filterDepartmentId) {
-        filterDepartmentId = selectedDept;
-        data = await loadOnce() || data;
-      } else {
-        filterDepartmentId = selectedDept;
-      }
+      applyDefaultDepartment(data.departments || []);
 
       const programs = data.programs || [];
       if (!filterProgram) {
@@ -662,10 +671,13 @@
       fillSelect('filterProgram', programs, 'All branches', filterProgram, true);
       filterProgram = document.getElementById('filterProgram')?.value || '';
 
-      // Always reload batches after programme is known — dept-only fetch returns every class.
       let batches = data.batches || [];
-      if (filterProgram) {
-        const again = await loadOnce();
+      // Only re-fetch batches when programme just became known and first payload had none.
+      if (filterProgram && !batches.length) {
+        const again = await StaffApi.fetchPlacementFilters({
+          departmentId: filterDepartmentId,
+          program: filterProgram,
+        });
         batches = again?.batches || [];
       }
 
@@ -674,7 +686,6 @@
       }
       fillSelect('filterBatch', batches, 'All batches', filterBatch, true);
       filterBatch = document.getElementById('filterBatch')?.value || '';
-      // Server list response is authoritative for edit rights.
       canEditSelectedBatch = false;
       updateClassTeacherBanner();
 
@@ -684,20 +695,34 @@
       if (batchEl) batchEl.disabled = !filterProgram;
     }
 
-    function fillDepartmentSelect(id, departments, allLabel) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const current = filterDepartmentId || el.value;
-      const options = (departments || []).map(d => {
-        const id = String(d.id || '').trim();
-        const code = String(d.code || '').trim();
-        const name = String(d.name || '').trim();
-        return id ? { value: id, label: name || code || id } : null;
-      }).filter(Boolean);
-      el.innerHTML = `<option value="">${allLabel}</option>` + options.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
-      if (current && [...el.options].some(o => o.value === current)) el.value = current;
-      else if (options.length === 1) el.value = options[0].value;
-      else el.value = '';
+    function applyDefaultDepartment(departments = null) {
+      const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+      const deptId = String(u.departmentId || filterDepartmentId || '').trim();
+      const deptName = String(
+        u.departmentName || u.department || ''
+      ).trim();
+      let label = deptName;
+      let id = deptId;
+
+      if (Array.isArray(departments) && departments.length) {
+        const match = departments.find(d => String(d.id || '') === id)
+          || (departments.length === 1 ? departments[0] : null);
+        if (match) {
+          id = String(match.id || id).trim();
+          label = String(match.name || match.code || label).trim();
+        }
+      }
+
+      filterDepartmentId = id;
+      const hidden = document.getElementById('filterDepartment');
+      const shown = document.getElementById('filterDepartmentLabel');
+      if (hidden) hidden.value = filterDepartmentId;
+      if (shown) shown.value = label || (filterDepartmentId ? 'Your department' : '—');
+    }
+
+    function fillDepartmentSelect() {
+      // No-op: department is a fixed read-only field for staff.
+      applyDefaultDepartment();
     }
 
     function applyClientFilter() {
@@ -737,7 +762,7 @@
       if (!slice.length) {
         const needClass = !filterDepartmentId || !filterProgram || !filterBatch;
         tbody.innerHTML = needClass
-          ? '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>'
+          ? '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Select branch and batch to list all students in the class.</td></tr>'
           : '<tr><td colspan="14" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
         return;
       }
@@ -1074,18 +1099,19 @@
 
     async function loadRegistry() {
       const tbody = document.getElementById('registryRows');
+      applyDefaultDepartment();
       if (!filterDepartmentId || !filterProgram || !filterBatch) {
         allRows = [];
         filteredRows = [];
         document.getElementById('rowCount').textContent = '';
         document.getElementById('pageInfo').textContent = '';
-        tbody.innerHTML = '<tr><td colspan="12" class="text-muted-2 p-4 text-center">Select department, branch, and batch to list all students in the class.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Select branch and batch to list all students in the class.</td></tr>';
         return;
       }
-      tbody.innerHTML = '<tr><td colspan="12" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
-        tbody.innerHTML = '<tr><td colspan="12" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
         return;
       }
       allRows = Array.isArray(data.rows) ? data.rows : [];
@@ -1098,30 +1124,36 @@
           }
         } catch (_) { /* ignore */ }
       }
+      // Prefer filter options returned with the class list (avoids a second AES scan).
+      if (data.filters && typeof data.filters === 'object') {
+        applyDefaultDepartment(data.filters.departments || []);
+        const programs = data.filters.programs || [];
+        const batches = data.filters.batches || [];
+        if (programs.length) {
+          fillSelect('filterProgram', programs, 'All branches', filterProgram, true);
+          filterProgram = document.getElementById('filterProgram')?.value || filterProgram;
+        }
+        if (batches.length) {
+          fillSelect('filterBatch', batches, 'All batches', filterBatch, true);
+          filterBatch = document.getElementById('filterBatch')?.value || filterBatch;
+        }
+      }
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
       applyClientFilter();
     }
 
     async function onScopeFilterChange(changed) {
-      if (changed === 'filterDepartment') {
-        filterDepartmentId = document.getElementById('filterDepartment')?.value || '';
-        filterProgram = '';
-        filterBatch = '';
-        const programEl = document.getElementById('filterProgram');
-        const batchEl = document.getElementById('filterBatch');
-        if (programEl) programEl.value = '';
-        if (batchEl) batchEl.value = '';
-      } else if (changed === 'filterProgram') {
+      if (changed === 'filterProgram') {
         filterProgram = document.getElementById('filterProgram')?.value || '';
         filterBatch = '';
         const batchEl = document.getElementById('filterBatch');
         if (batchEl) batchEl.value = '';
+        await loadPlacementFilters();
       } else if (changed === 'filterBatch') {
         filterBatch = document.getElementById('filterBatch')?.value || '';
       }
 
-      await loadPlacementFilters();
       await loadRegistry();
     }
 
@@ -1142,7 +1174,7 @@
       }
     }
 
-    ['filterDepartment', 'filterProgram', 'filterBatch'].forEach(id => {
+    ['filterProgram', 'filterBatch'].forEach(id => {
       document.getElementById(id)?.addEventListener('change', () => {
         onScopeFilterChange(id).catch(() => loadRegistry());
       });
@@ -1179,12 +1211,29 @@
       });
     });
 
-    onAppReady(() => {
+    onAppReady(async () => {
       if (typeof wireFilePickers === 'function') {
         wireFilePickers('#editPlacementModal');
         wireFilePickers('#uploadPlacementModal');
       }
-      loadPlacementFilters().then(() => loadRegistry()).catch(() => loadRegistry());
+      applyDefaultDepartment();
+      // Prefer assigned class from session so the class list can load in one request.
+      if (typeof staffClassInchargeBatches === 'function') {
+        apiAssignedBatches = staffClassInchargeBatches();
+      } else {
+        const u = Auth.user() || {};
+        apiAssignedBatches = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+      }
+      if (!filterProgram) filterProgram = pickPreferredProgram([]);
+      if (!filterBatch) filterBatch = pickPreferredBatch([], filterProgram);
+      if (filterProgram && filterBatch && filterDepartmentId) {
+        await loadRegistry();
+        // Refresh branch/batch options in the background without blocking the table.
+        loadPlacementFilters().catch(() => {});
+      } else {
+        await loadPlacementFilters();
+        await loadRegistry();
+      }
     });
   </script>
 </body>
