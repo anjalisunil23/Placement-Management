@@ -899,20 +899,17 @@ final class StudentController
     $drives = array_values(array_filter(
       $allDrives,
       static function (array $drive): bool {
-        $status = \PMS\Services\DriveLifecycle::effectiveStatus($drive);
-        return !in_array($status, ['completed', 'closed'], true);
+        return \PMS\Services\DriveLifecycle::isRegistrationOpen($drive);
       }
     ));
 
     $engine = new EligibilityEngine();
     $studentId = (string) $profile['_id'];
     $appModel = new ApplicationModel();
+    // Active drives only — do not keep closed/past-deadline drives just because the student applied.
     $drives = array_values(array_filter(
       $drives,
-      static function (array $drive) use ($engine, $profile, $studentId, $appModel): bool {
-        if ($appModel->findByStudentAndDrive($studentId, (string) ($drive['_id'] ?? ''))) {
-          return true;
-        }
+      static function (array $drive) use ($engine, $profile): bool {
         return $engine->driveVisibleToStudent($profile, $drive);
       }
     ));
@@ -969,19 +966,12 @@ final class StudentController
     $drives = $driveModel->findAll([], 50);
     $drives = array_values(array_filter(
       $drives,
-      static fn (array $drive): bool => !in_array(
-        \PMS\Services\DriveLifecycle::effectiveStatus($drive),
-        ['completed', 'closed'],
-        true
-      )
+      static fn (array $drive): bool => \PMS\Services\DriveLifecycle::isRegistrationOpen($drive)
     ));
     $appModel = new ApplicationModel();
     $drives = array_values(array_filter(
       $drives,
-      static function (array $drive) use ($engine, $profile, $studentId, $appModel): bool {
-        if ($appModel->findByStudentAndDrive($studentId, (string) ($drive['_id'] ?? ''))) {
-          return true;
-        }
+      static function (array $drive) use ($engine, $profile): bool {
         return $engine->driveVisibleToStudent($profile, $drive);
       }
     ));
@@ -990,6 +980,7 @@ final class StudentController
     foreach ($drives as $drive) {
       $company = !empty($drive['companyId']) ? $companyModel->findById((string) $drive['companyId']) : null;
       $eligibility = $engine->checkForDrive($studentId, (string) $drive['_id']);
+      $status = \PMS\Services\DriveLifecycle::effectiveStatus($drive);
 
       $rows[] = [
         'driveId' => (string) $drive['_id'],
@@ -997,8 +988,8 @@ final class StudentController
         'role' => $drive['title'] ?? 'Role',
         'package' => $drive['eligibility']['package'] ?? ($company['package'] ?? null),
         'category' => $company['category'] ?? ($drive['eligibility']['category'] ?? null),
-        'deadline' => $drive['date'] ?? null,
-        'status' => $drive['status'] ?? 'scheduled',
+        'deadline' => \PMS\Services\DriveLifecycle::registrationDeadline($drive) ?: null,
+        'status' => $status,
         'eligible' => $eligibility['eligible'] ?? false,
         'reasons' => $eligibility['reasons'] ?? [],
       ];

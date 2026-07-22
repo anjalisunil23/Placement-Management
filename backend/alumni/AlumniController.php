@@ -367,11 +367,7 @@ final class AlumniController
     $allDrives = (new DriveModel())->findAll([], 50);
     $drives = array_values(array_filter(
       $allDrives,
-      static fn (array $drive): bool => !in_array(
-        \PMS\Services\DriveLifecycle::effectiveStatus($drive),
-        ['completed', 'closed'],
-        true
-      )
+      static fn (array $drive): bool => \PMS\Services\DriveLifecycle::isRegistrationOpen($drive)
     ));
     $engine = new EligibilityEngine();
     $studentId = (string) $student['_id'];
@@ -379,10 +375,7 @@ final class AlumniController
     $appModel = new ApplicationModel();
     $drives = array_values(array_filter(
       $drives,
-      static function (array $drive) use ($engine, $student, $studentId, $appModel): bool {
-        if ($appModel->findByStudentAndDrive($studentId, (string) ($drive['_id'] ?? ''))) {
-          return true;
-        }
+      static function (array $drive) use ($engine, $student): bool {
         return $engine->driveVisibleToStudent($student, $drive);
       }
     ));

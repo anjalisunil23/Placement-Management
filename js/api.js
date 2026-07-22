@@ -4455,8 +4455,25 @@ const DriveStore = {
     };
   },
   filterApplicantDrives(list) {
-    // Soft ineligibility must not hide drives; Apply uses eligible / eligibilityReasons.
-    return Array.isArray(list) ? list.filter(Boolean) : [];
+    // Students/alumni only see active drives (hide closed + past registration deadline).
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    return (Array.isArray(list) ? list : []).filter((d) => {
+      if (!d) return false;
+      const st = String(d.status || '').trim().toLowerCase();
+      if (st === 'closed' || st === 'completed') return false;
+      const elig = d.eligibility && typeof d.eligibility === 'object' ? d.eligibility : {};
+      const raw = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
+      if (!raw || raw === '—' || raw.toUpperCase() === 'TBD') return true;
+      const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (iso && todayStr > iso[1]) return false;
+      const dmy = raw.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+      if (dmy) {
+        const ymd = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+        if (todayStr > ymd) return false;
+      }
+      return true;
+    });
   },
   async fetchStudentDrives() {
     if (Auth.role() !== 'student' || Auth.isDemo()) return null;

@@ -570,7 +570,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260722regclosed"></script>
+<script src="js/api.js?v=20260722activedrives"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1461,7 +1461,9 @@ function filteredDrives() {
     if (q && !hay.includes(q)) return false;
 
     if (openOnly) {
+      if (typeof isDriveRegistrationClosed === 'function' && isDriveRegistrationClosed(d)) return false;
       const st = String(d.status || '').toLowerCase();
+      if (st === 'closed' || st === 'completed') return false;
       if (st !== 'open' && st !== 'ongoing') return false;
     } else if (status === 'Active' || status === '') {
       // Main drives list: hide completed (view them via Completed filter).
