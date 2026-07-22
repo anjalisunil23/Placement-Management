@@ -445,9 +445,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20260722classfast"></script>
-  <script src="js/api.js?v=20260722classfast"></script>
-  <script src="js/app.js?v=20260722classfast"></script>
+  <script src="js/staff-api.js?v=20260722coctedit"></script>
+  <script src="js/api.js?v=20260722coctedit"></script>
+  <script src="js/app.js?v=20260722coctedit"></script>
   <script>
     if (Auth.role() !== 'staff') {
       toast('You do not have access to this page.', 'warn');
@@ -592,10 +592,22 @@
       el.textContent = '';
     }
 
+    function cohortKey(batch) {
+      const b = String(batch || '').toUpperCase().replace(/\s+/g, '');
+      const m = b.match(/^(.*)-S\d+$/i);
+      return m ? m[1] : b;
+    }
+
     function batchIsAssigned(batch) {
       const b = String(batch || '').trim();
       if (!b) return false;
-      return assignedBatches().some(a => a.toLowerCase() === b.toLowerCase());
+      const want = cohortKey(b);
+      return assignedBatches().some((a) => {
+        const assigned = String(a || '').trim();
+        if (!assigned) return false;
+        return assigned.toLowerCase() === b.toLowerCase()
+          || cohortKey(assigned) === want;
+      });
     }
 
     function batchLooksLikeProgramme(batch, program) {
@@ -686,7 +698,11 @@
       }
       fillSelect('filterBatch', batches, 'All batches', filterBatch, true);
       filterBatch = document.getElementById('filterBatch')?.value || '';
-      canEditSelectedBatch = false;
+      // Do not clear canEditSelectedBatch here — loadRegistry() sets it from the
+      // server (CT/CoCT). Resetting it made co-class teachers look "view only".
+      if (!canEditSelectedBatch && filterBatch) {
+        canEditSelectedBatch = batchIsAssigned(filterBatch);
+      }
       updateClassTeacherBanner();
 
       const branchEl = document.getElementById('filterProgram');
