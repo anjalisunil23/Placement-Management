@@ -26,8 +26,8 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="js/api.js?v=20260716profilename"></script>
-<script src="js/app.js?v=20260716notifflat"></script><script src="js/charts.js?v=20260713p"></script>
+<script src="js/api.js?v=20260723livedata"></script>
+<script src="js/app.js?v=20260723livedata"></script><script src="js/charts.js?v=20260713p"></script>
 <script>
 function renderAnalyticsCharts(data) {
   const trend = data.hiringTrend || {};
@@ -52,20 +52,14 @@ function renderAnalyticsCharts(data) {
   Charts.bar(document.getElementById('c5'), top.labels || [], top.values || [], 'Offers');
 }
 
-function renderDemoAnalytics() {
+function renderEmptyAnalytics() {
   const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   renderAnalyticsCharts({
-    hiringTrend: { labels: m, series: [{ label: 'Offers', data: [42,58,71,90,120,165,210,245,210,180,150,130] }] },
-    branchPlacement: {
-      labels: DEPARTMENT_PLACEMENT.map(d => d.dept),
-      values: DEPARTMENT_PLACEMENT.map(d => d.placed),
-    },
-    packageBands: { labels: ['3-6','6-10','10-20','20-40','40+'], values: [820,640,320,140,28] },
-    jobTypeSplit: { labels: ['Full-time','Internship','Intern+PPO'], values: [1640,620,280] },
-    topCompanyOffers: {
-      labels: ['TCS','Infosys','Wipro','Deloitte','Amazon','Google','Microsoft','Adobe','Flipkart','Goldman'],
-      values: [210,180,160,95,42,28,35,52,68,24],
-    },
+    hiringTrend: { labels: m, series: [{ label: 'Offers', data: Array(12).fill(0) }] },
+    branchPlacement: { labels: [], values: [] },
+    packageBands: { labels: [], values: [] },
+    jobTypeSplit: { labels: [], values: [] },
+    topCompanyOffers: { labels: [], values: [] },
   });
 }
 
@@ -77,13 +71,18 @@ onAppReady(async () => {
       showPageAlert('analyticsAlert', 'hide');
       renderAnalyticsCharts(data);
     } else {
-      showPageAlert('analyticsAlert', 'hide');
-      renderDemoAnalytics();
-      if (Auth.hasRealAuth()) toast('Using demo analytics — API unavailable.', 'warn');
+      renderEmptyAnalytics();
+      showPageAlert(
+        'analyticsAlert',
+        Auth.hasRealAuth() ? 'danger' : 'warn',
+        Auth.hasRealAuth()
+          ? 'Could not load live analytics. Refresh and try again.'
+          : 'Sign in to view live analytics.'
+      );
     }
   } catch (e) {
-    showPageAlert('analyticsAlert', 'danger', 'Failed to load analytics. Showing demo charts.');
-    renderDemoAnalytics();
+    renderEmptyAnalytics();
+    showPageAlert('analyticsAlert', 'danger', 'Failed to load live analytics.');
   }
 });
 </script></body></html>

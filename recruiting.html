@@ -98,9 +98,9 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260716profilename"></script>
+<script src="js/api.js?v=20260723livedata"></script>
 <script src="js/charts.js?v=20260713p"></script>
-<script src="js/app.js?v=20260716notifflat"></script>
+<script src="js/app.js?v=20260723livedata"></script>
 <script>
 const role = Auth.role();
 const user = Auth.user() || demoUserFor('company');
@@ -111,16 +111,12 @@ let byDept = [];
 let totalApps = 0;
 let scopeLabel = companyName;
 
-function renderDemoRecruiting() {
+function renderEmptyRecruiting() {
   scopeLabel = companyName;
-  active = activeRecruitingCompanies();
-  apps = companyApplicants(companyName);
-  totalApps = apps.length;
-  byDept = applicantsByDepartment(companyName).map(d => ({
-    dept: d.dept,
-    count: d.count,
-    share: totalApps ? Math.round((d.count / totalApps) * 100) : 0,
-  }));
+  active = [];
+  apps = [];
+  byDept = [];
+  totalApps = 0;
   paintRecruiting();
 }
 
@@ -224,30 +220,24 @@ onAppReady(async () => {
       totalApps = stats.applicants ?? apps.length;
       paintRecruiting();
     } else {
-      if (Auth.hasRealAuth()) {
-        active = [];
-        apps = [];
-        byDept = [];
-        totalApps = 0;
-        paintRecruiting();
-        showPageAlert('recruitingAlert', 'danger', 'Could not load live recruitment data. Refresh the page to try again.');
-      } else {
-        showPageAlert('recruitingAlert', 'hide');
-        renderDemoRecruiting();
-      }
+      renderEmptyRecruiting();
+      showPageAlert(
+        'recruitingAlert',
+        Auth.hasRealAuth() ? 'danger' : 'warn',
+        Auth.hasRealAuth()
+          ? 'Could not load live recruitment data. Refresh the page to try again.'
+          : 'Sign in to view live recruitment data.'
+      );
     }
   } catch (e) {
-    if (Auth.hasRealAuth()) {
-      active = [];
-      apps = [];
-      byDept = [];
-      totalApps = 0;
-      paintRecruiting();
-      showPageAlert('recruitingAlert', 'danger', 'Failed to load live recruitment data.');
-    } else {
-      showPageAlert('recruitingAlert', 'danger', 'Failed to load recruitment data. Showing demo snapshot.');
-      renderDemoRecruiting();
-    }
+    renderEmptyRecruiting();
+    showPageAlert(
+      'recruitingAlert',
+      'danger',
+      Auth.hasRealAuth()
+        ? 'Failed to load live recruitment data.'
+        : 'Sign in to view live recruitment data.'
+    );
   }
 });
 </script></body></html>

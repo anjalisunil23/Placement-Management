@@ -2425,6 +2425,23 @@ function activeRecruitingCompanies() {
 }
 
 function campusRecruitmentStats() {
+  // Demo/catalog helper only — live pages must use RecruitingStore / API data.
+  if (typeof Auth !== 'undefined' && Auth.hasRealAuth() && !Auth.isDemo()) {
+    return {
+      companiesHiring: 0,
+      applicants: 0,
+      shortlisted: 0,
+      offers: 0,
+      hired: 0,
+      companies: [],
+      pipeline: [
+        { label: 'Applicants', value: 0 },
+        { label: 'Shortlisted', value: 0 },
+        { label: 'Offers', value: 0 },
+        { label: 'Hired', value: 0 },
+      ],
+    };
+  }
   const totals = placementDeptTotals();
   const companies = activeRecruitingCompanies();
   const offeredInPool = COMPANY_APPLICANT_POOL.filter(a => a.status === 'offered').length;
@@ -2681,6 +2698,18 @@ function deptHiringCompanies(deptCode) {
 }
 
 function departmentHiringOverview(deptCode) {
+  if (typeof Auth !== 'undefined' && Auth.hasRealAuth() && !Auth.isDemo()) {
+    return {
+      dept: deptCode || '',
+      officer: deptCode ? DeptPlacementOfficers.officerForDept(deptCode) : null,
+      applicants: 0,
+      shortlisted: 0,
+      offers: 0,
+      hired: 0,
+      companies: [],
+      candidates: [],
+    };
+  }
   const dept = deptCode || '';
   const row = DEPARTMENT_PLACEMENT.find(d => d.dept === dept);
   const companies = dept ? deptHiringCompanies(dept) : [];
@@ -2710,6 +2739,10 @@ const COMPANY_APPLICANT_POOL = [
 ];
 
 function companyApplicants(companyName) {
+  // Never return seeded fake applicants for live company sessions.
+  if (typeof Auth !== 'undefined' && Auth.hasRealAuth() && !Auth.isDemo()) {
+    return [];
+  }
   const co = companyName || Auth.user()?.companyName || '';
   return COMPANY_APPLICANT_POOL.filter(a => !co || a.company === co);
 }
@@ -4550,6 +4583,10 @@ const DriveStore = {
     if (this._studentCache?.length) return this._studentCache;
     if (this._alumniCache?.length) return this._alumniCache;
     if (this._apiCache) return this._apiCache;
+    // Live sessions: never inject demo catalog drives into placement views.
+    if (typeof Auth !== 'undefined' && Auth.hasRealAuth() && !Auth.isDemo()) {
+      return this.all();
+    }
     const hidden = new Set(this.hiddenIds());
     const overrides = this.overrides();
     const catalog = DRIVE_CATALOG

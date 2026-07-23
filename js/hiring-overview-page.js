@@ -632,17 +632,57 @@
     return y ? y[1] : '';
   };
 
+  /** Match backend OfficerDataService::looksLikeFinalYearClassBatch year-window rule. */
+  HiringOverviewPage.prototype.batchEndYear = function (batchLabel) {
+    const raw = String(batchLabel || '');
+    const m = raw.match(/20\d{2}\s*[-–]\s*(\d{2,4})/);
+    if (!m) return 0;
+    const endRaw = String(m[1] || '').trim();
+    if (!endRaw) return 0;
+    return endRaw.length === 2 ? (2000 + Number(endRaw)) : Number(endRaw);
+  };
+
+  HiringOverviewPage.prototype.isFinalYearBatchLabel = function (batchLabel, programmeCode) {
+    const batch = String(batchLabel || '').trim().toUpperCase();
+    if (!batch) return false;
+    if (/\b(FINAL|OUTGOING|PASS.?OUT|PLACEMENT)\b/.test(batch)) return true;
+
+    const hint = String(programmeCode || '').toUpperCase();
+    const blob = `${batch} ${hint}`;
+    const isPg = /(?:^|[^A-Z])(?:IN)?MCA(?:REG)?(?=\d|[^A-Z]|$)|(?:^|[^A-Z])(?:MBA|M\.?TECH|MTECH|MCAR|PG)(?=\d|[^A-Z]|$)/.test(blob);
+    let programme = '';
+    if (/MCAINT|INMCA|INTMCA|IMCA|DDMCA/.test(blob.replace(/[^A-Z0-9]/g, ''))) programme = 'INMCA';
+    else if (/BCA/.test(blob.replace(/[^A-Z0-9]/g, ''))) programme = 'BCA';
+    else if (/MCA/.test(blob.replace(/[^A-Z0-9]/g, ''))) programme = 'MCA';
+
+    const finalSemesterStart = programme === 'BCA' ? 5 : programme === 'MCA' ? 3 : programme === 'INMCA' ? 9 : (isPg ? 3 : 7);
+    const semMatch = batch.match(/(?:^|[^A-Z0-9])S(10|[1-9])(?:[^A-Z0-9]|$)/) || batch.match(/\bS(10|[1-9])\b/) || batch.match(/\bSEM(?:ESTER)?[\s\-]*(10|[1-9])\b/);
+    if (semMatch) {
+      return Number(semMatch[1]) >= finalSemesterStart;
+    }
+
+    const endYear = this.batchEndYear(batch);
+    if (endYear > 0) {
+      const nowYear = new Date().getFullYear();
+      return endYear >= nowYear && endYear <= (nowYear + 1);
+    }
+
+    return false;
+  };
+
   HiringOverviewPage.prototype.branchYearsForProgramme = function (programmeCode) {
     const years = [];
     const seen = new Set();
     this.allBatchOptions().forEach((batch) => {
       if (!this.batchMatchesBranch(batch, programmeCode)) return;
+      if (!this.isFinalYearBatchLabel(batch, programmeCode)) return;
       const year = this.batchYearLabel(batch);
-      const key = year || batch;
-      if (seen.has(key)) return;
-      seen.add(key);
-      years.push(year || batch);
+      if (!year) return;
+      if (seen.has(year)) return;
+      seen.add(year);
+      years.push(year);
     });
+    years.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return years;
   };
 
