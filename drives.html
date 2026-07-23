@@ -570,7 +570,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260722openonly"></script>
+<script src="js/api.js?v=20260723adminclosed"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1364,14 +1364,17 @@ function setupStatusFilter() {
     if (jobWrap) {
       jobWrap.className = 'col-12 col-md-7';
     }
-  } else if (isStaff) {
+  } else if (isStaff || role === 'placement_officer') {
+    // Closed drives are admin-only; officer/staff only browse open/ongoing.
     statusWrap?.classList.add('d-none');
-    exportWrap?.classList.add('d-none');
+    exportWrap?.classList.toggle('d-none', isStaff);
+    sel.innerHTML = '<option value="Active" selected>Active</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option>';
     sel.value = 'Active';
     const searchCol = document.getElementById('driveSearch')?.closest('[class*="col-"]');
-    if (searchCol) searchCol.className = 'col-md-8';
-    if (jobWrap) jobWrap.className = 'col-12 col-md-4';
+    if (searchCol) searchCol.className = isStaff ? 'col-md-8' : 'col-md-5';
+    if (jobWrap) jobWrap.className = isStaff ? 'col-12 col-md-4' : 'col-6 col-md-4';
   } else {
+    // Placement admin keeps Closed / Completed.
     statusWrap?.classList.remove('d-none');
     exportWrap?.classList.remove('d-none');
     if (jobWrap) jobWrap.className = 'col-6 col-md-4';
@@ -1452,7 +1455,8 @@ function filteredDrives() {
 
   const status = document.getElementById('driveStatusFilter')?.value || 'Active';
   const jobType = document.getElementById('driveJobTypeFilter')?.value || '';
-  const openOnly = isStudent || alumniSeeking;
+  const openOnly = isStudent || alumniSeeking || role === 'staff' || role === 'placement_officer' || role === 'company';
+  const adminSeesClosed = role === 'admin';
 
   return allDrives.filter(d => {
 
@@ -1460,13 +1464,13 @@ function filteredDrives() {
 
     if (q && !hay.includes(q)) return false;
 
-    if (openOnly) {
+    if (openOnly || !adminSeesClosed) {
       if (typeof isDriveRegistrationClosed === 'function' && isDriveRegistrationClosed(d)) return false;
       const st = String(d.status || '').toLowerCase();
       if (st === 'closed' || st === 'completed') return false;
-      if (st !== 'open' && st !== 'ongoing') return false;
+      if (openOnly && st !== 'open' && st !== 'ongoing') return false;
     } else if (status === 'Active' || status === '') {
-      // Main drives list: hide completed (view them via Completed filter).
+      // Admin main list: hide completed unless Completed filter selected.
       if (String(d.status || '') === 'Completed') return false;
     } else if (status && d.status !== status) {
       return false;

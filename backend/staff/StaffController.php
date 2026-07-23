@@ -173,6 +173,7 @@ final class StaffController
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
         $drives = (new StaffDataService())->listDrives($ctx);
+        $drives = \PMS\Services\DriveLifecycle::filterForRole($drives, 'staff');
         Response::success(DocumentHelper::jsonSafe(
             (new OfficerDataService())->enrichDrivesWithCompany($drives)
         ));

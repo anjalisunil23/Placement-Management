@@ -123,6 +123,37 @@ final class DriveLifecycle
     }
 
     /**
+     * Non-admin roles (officer, staff, company, student, alumni) only see open drives.
+     * Placement admin (`admin`) keeps closed/completed for oversight.
+     *
+     * @param array<string, mixed> $drive
+     */
+    public static function isVisibleToRole(array $drive, string $role): bool
+    {
+        if (strtolower(trim($role)) === 'admin') {
+            return true;
+        }
+
+        return self::isOpenForStudents($drive);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $drives
+     * @return list<array<string, mixed>>
+     */
+    public static function filterForRole(array $drives, string $role): array
+    {
+        if (strtolower(trim($role)) === 'admin') {
+            return array_values($drives);
+        }
+
+        return array_values(array_filter(
+            $drives,
+            static fn (array $drive): bool => self::isOpenForStudents($drive)
+        ));
+    }
+
+    /**
      * @param array<string, mixed> $drive
      */
     public static function isRegistrationOpen(array $drive): bool

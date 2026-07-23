@@ -299,7 +299,8 @@ final class OfficerController
 
         }
 
-
+        // Placement officers do not see closed / past-deadline drives (admin does via /admin/drives).
+        $drives = \PMS\Services\DriveLifecycle::filterForRole($drives, 'placement_officer');
 
         Response::success((new OfficerDataService())->enrichDrivesWithCompany($drives));
 

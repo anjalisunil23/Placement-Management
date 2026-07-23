@@ -176,6 +176,7 @@ final class CompanyController
         $user = RBACMiddleware::requireCompany();
         $company = $this->getCompany($user);
         $drives = (new DriveModel())->findByCompanyId((string) $company['_id']);
+        $drives = \PMS\Services\DriveLifecycle::filterForRole($drives, 'company');
         Response::success(DocumentHelper::serializeMany($drives));
     }
 
