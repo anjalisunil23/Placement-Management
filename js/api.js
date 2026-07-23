@@ -4564,19 +4564,28 @@ const DriveStore = {
       return true;
     });
   },
-  async fetchStudentDrives() {
+  async fetchStudentDrives(searchQ = '') {
     if (Auth.role() !== 'student' || Auth.isDemo()) return null;
     this._studentCache = null;
-    const res = await api('/student/drives', { skipAuthRedirect: true });
+    const q = String(searchQ || '').trim();
+    const path = q ? `/student/drives?q=${encodeURIComponent(q)}` : '/student/drives';
+    const res = await api(path, { skipAuthRedirect: true });
     if (!res.success || !Array.isArray(res.data)) return null;
-    this._studentCache = this.filterApplicantDrives(res.data.map(d => this.mapStudentDrive(d)));
+    const mapped = res.data.map(d => this.mapStudentDrive(d));
+    // Empty search: open drives only. With search: keep closed matches so status is visible.
+    this._studentCache = q
+      ? mapped
+      : this.filterApplicantDrives(mapped);
     return this._studentCache;
   },
-  async fetchAlumniDrives() {
+  async fetchAlumniDrives(searchQ = '') {
     if (Auth.role() !== 'alumni' || Auth.isDemo()) return null;
-    const res = await api('/alumni/drives');
+    const q = String(searchQ || '').trim();
+    const path = q ? `/alumni/drives?q=${encodeURIComponent(q)}` : '/alumni/drives';
+    const res = await api(path);
     if (!res.success || !Array.isArray(res.data)) return null;
-    this._alumniCache = this.filterApplicantDrives(res.data.map(d => this.mapStudentDrive(d)));
+    const mapped = res.data.map(d => this.mapStudentDrive(d));
+    this._alumniCache = q ? mapped : this.filterApplicantDrives(mapped);
     return this._alumniCache;
   },
   allWithCatalog() {

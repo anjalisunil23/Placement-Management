@@ -355,7 +355,7 @@ final class AlumniController
     Response::success(['id' => $id], 'Company recommended successfully.', 201);
   }
 
-  /** GET /api/alumni/drives */
+  /** GET /api/alumni/drives — open by default; ?q= includes closed matches for status. */
   public function listDrives(): void
   {
     $user = RBACMiddleware::requireAlumni();
@@ -364,19 +364,24 @@ final class AlumniController
       Response::success([], 'No linked student profile — drives unavailable.');
       return;
     }
-    $allDrives = (new DriveModel())->findAll([], 50);
-    $drives = array_values(array_filter(
-      $allDrives,
-      static fn (array $drive): bool => \PMS\Services\DriveLifecycle::isOpenForStudents($drive)
-    ));
+    $allDrives = (new DriveModel())->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
+    $searchQ = strtolower(trim((string) ($_GET['q'] ?? '')));
+    $statusLookup = $searchQ !== '' && strlen($searchQ) >= 2;
     $engine = new EligibilityEngine();
     $studentId = (string) $student['_id'];
     $companyModel = new CompanyModel();
     $appModel = new ApplicationModel();
+
     $drives = array_values(array_filter(
-      $drives,
-      static function (array $drive) use ($engine, $student): bool {
-        return $engine->driveVisibleToStudent($student, $drive);
+      $allDrives,
+      static function (array $drive) use ($engine, $student, $statusLookup): bool {
+        if (!$engine->driveVisibleToStudent($student, $drive)) {
+          return false;
+        }
+        if (!$statusLookup && !\PMS\Services\DriveLifecycle::isOpenForStudents($drive)) {
+          return false;
+        }
+        return true;
       }
     ));
 
@@ -389,10 +394,11 @@ final class AlumniController
       if ($companyName === '') {
         $title = (string) ($drive['title'] ?? '');
         if (str_contains($title, '—')) {
-          $companyName = trim((string) (explode('—', $title, 2)[1] ?? ''));
+          $companyName = trim((string) (explode('—', $title, 2)[0] ?? ''));
         }
       }
       $serialized['companyName'] = $companyName;
+      $serialized['status'] = \PMS\Services\DriveLifecycle::effectiveStatus($drive);
       $app = $appModel->findByStudentAndDrive($studentId, (string) $drive['_id']);
       $serialized['applied'] = (bool) $app;
       $serialized['applicationStatus'] = $app['status'] ?? null;
@@ -400,18 +406,34 @@ final class AlumniController
       return $serialized;
     }, $drives);
 
+    if ($statusLookup) {
+      $result = array_values(array_filter(
+        $result,
+        static function (array $row) use ($searchQ): bool {
+          $hay = strtolower(trim(implode(' ', array_filter([
+            (string) ($row['companyName'] ?? ''),
+            (string) ($row['title'] ?? ''),
+            (string) ($row['role'] ?? ''),
+          ]))));
+          return $hay !== '' && str_contains($hay, $searchQ);
+        }
+      ));
+    }
+
     $result = array_values(array_filter(
         $result,
-        static function (array $row): bool {
+        static function (array $row) use ($statusLookup): bool {
             if (!empty($row['applied'])) {
                 return true;
             }
-
-            return ($row['eligibility']['eligible'] ?? false) === true;
+            if ($statusLookup) {
+                return true;
+            }
+            return \PMS\Services\DriveLifecycle::isOpenForStudents($row);
         }
     ));
 
-    Response::success($result);
+    Response::success(DocumentHelper::jsonSafe($result));
   }
 
   /** GET /api/alumni/resumes */

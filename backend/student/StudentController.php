@@ -889,32 +889,53 @@ final class StudentController
     Response::success(DocumentHelper::serializeMany($jobs));
   }
 
-  /** GET /api/student/drives */
+  /** GET /api/student/drives
+   *  Default: open drives only.
+   *  With ?q=company|role: include matching closed drives so students can see status.
+   */
   public function listDrives(): void
   {
     $user = RBACMiddleware::requireStudent();
     $profile = $this->getStudentProfile($user);
     $driveModel = new DriveModel();
     $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
-    // Students only see open drives (hide closed, past registration deadline, past recruitment day).
-    $drives = array_values(array_filter(
-      $allDrives,
-      static function (array $drive): bool {
-        return \PMS\Services\DriveLifecycle::isOpenForStudents($drive);
-      }
-    ));
+    $searchQ = strtolower(trim((string) ($_GET['q'] ?? '')));
+    $statusLookup = $searchQ !== '' && strlen($searchQ) >= 2;
 
     $engine = new EligibilityEngine();
     $studentId = (string) $profile['_id'];
     $appModel = new ApplicationModel();
-    // Active drives only — do not keep closed/past-deadline drives just because the student applied.
+
     $drives = array_values(array_filter(
-      $drives,
-      static function (array $drive) use ($engine, $profile): bool {
-        return $engine->driveVisibleToStudent($profile, $drive);
+      $allDrives,
+      static function (array $drive) use ($engine, $profile, $statusLookup): bool {
+        if (!$engine->driveVisibleToStudent($profile, $drive)) {
+          return false;
+        }
+        // Browse: open only. Explicit search: allow closed so status is visible.
+        if (!$statusLookup && !\PMS\Services\DriveLifecycle::isOpenForStudents($drive)) {
+          return false;
+        }
+        return true;
       }
     ));
+
     $enriched = (new OfficerDataService())->enrichDrivesWithCompany($drives);
+
+    if ($statusLookup) {
+      $enriched = array_values(array_filter(
+        $enriched,
+        static function (array $row) use ($searchQ): bool {
+          $hay = strtolower(trim(implode(' ', array_filter([
+            (string) ($row['companyName'] ?? ''),
+            (string) ($row['company'] ?? ''),
+            (string) ($row['title'] ?? ''),
+            (string) ($row['role'] ?? ''),
+          ]))));
+          return $hay !== '' && str_contains($hay, $searchQ);
+        }
+      ));
+    }
 
     $result = array_map(function (array $row) use ($engine, $studentId, $appModel) {
       $driveId = (string) ($row['id'] ?? $row['_id'] ?? '');
@@ -923,6 +944,7 @@ final class StudentController
       $app = $appModel->findByStudentAndDrive($studentId, $driveId);
       $row['applied'] = (bool) $app;
       $row['applicationStatus'] = $app['status'] ?? null;
+      $row['statusLookup'] = !\PMS\Services\DriveLifecycle::isOpenForStudents($row);
 
       return $row;
     }, $enriched);
@@ -1009,16 +1031,13 @@ final class StudentController
     if (!$drive) {
       Response::notFound('Drive not found.');
     }
-    // Closed / past-deadline drives are hidden from students entirely.
-    if (!\PMS\Services\DriveLifecycle::isOpenForStudents($drive)) {
-      Response::notFound('Drive not found.');
-    }
 
     $studentId = (string) $profile['_id'];
     $appModel = new ApplicationModel();
     $engine = new EligibilityEngine();
     $eligibility = $engine->checkForDrive($studentId, $driveId);
     $alreadyApplied = (bool) $appModel->findByStudentAndDrive($studentId, $driveId);
+    // Allow closed drives for status lookup when the student is eligible to see the company/role.
     if (!$alreadyApplied && !$engine->driveVisibleToStudent($profile, $drive)) {
         Response::notFound('Drive not found.');
     }

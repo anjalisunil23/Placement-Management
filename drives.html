@@ -206,7 +206,7 @@
 
   <div class="row g-2">
 
-    <div class="col-md-5"><div class="search-with-icon"><i class="bi bi-search"></i><input class="form-control" id="driveSearch" placeholder="Search by company, role…"/></div></div>
+    <div class="col-md-5"><div class="search-with-icon"><i class="bi bi-search"></i><input class="form-control" id="driveSearch" placeholder="Search company or role (shows status)"/></div></div>
 
     <div class="col-6 col-md-3" id="driveStatusFilterWrap"><select class="form-select" id="driveStatusFilter"><option value="Active" selected>Active</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Closed">Closed</option><option value="Completed">Completed</option></select></div>
 
@@ -570,7 +570,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723nosearchclosed"></script>
+<script src="js/api.js?v=20260723statussearch"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1201,6 +1201,10 @@ function drivesFromCardIds(idsCsv) {
   const ids = String(idsCsv || '').split(',').map(s => s.trim()).filter(Boolean);
   const rows = ids.map(id => allDrives.find(d => String(d.id) === String(id))).filter(Boolean);
   if (role === 'admin') return rows;
+  const q = (document.getElementById('driveSearch')?.value || '').trim();
+  const statusLookup = (isStudent || alumniSeeking) && q.length >= 2;
+  // Status lookup search may include closed drives; browse must not.
+  if (statusLookup) return rows;
   return rows.filter(d => !isDriveHiddenFromNonAdmin(d));
 }
 
@@ -1216,7 +1220,8 @@ function driveAlreadyApplied(d) {
 
 function driveVisibleToApplicant(d) {
   if (!isStudent && !alumniSeeking) return true;
-  // Never surface closed / past-deadline drives to applicants (including search).
+  const q = (document.getElementById('driveSearch')?.value || '').trim();
+  if (q.length >= 2) return true; // allow closed matches for status visibility
   return !isDriveHiddenFromNonAdmin(d);
 }
 
@@ -1233,12 +1238,14 @@ function fillDriveDetailPanel(list, selectedId) {
   const panel = document.getElementById('driveDetailPanel') || document.getElementById('driveDetailBody');
   const applyBtn = document.getElementById('driveDetailApplyBtn');
   if (!panel) return;
+  const q = (document.getElementById('driveSearch')?.value || '').trim();
+  const statusLookup = (isStudent || alumniSeeking) && q.length >= 2;
   const visible = (Array.isArray(list) ? list : []).filter((d) => {
-    if (role === 'admin') return true;
+    if (role === 'admin' || statusLookup) return true;
     return !isDriveHiddenFromNonAdmin(d);
   });
   if (!visible.length) {
-    panel.innerHTML = '<p class="text-muted-2 mb-0">This drive is closed and is not available.</p>';
+    panel.innerHTML = '<p class="text-muted-2 mb-0">No matching drive found.</p>';
     if (applyBtn) {
       applyBtn.classList.add('d-none');
       applyBtn.disabled = true;
@@ -1490,6 +1497,7 @@ function setupDrivesChrome() {
 function filteredDrives() {
 
   const q = (document.getElementById('driveSearch')?.value || '').trim().toLowerCase();
+  const statusLookup = (isStudent || alumniSeeking) && q.length >= 2;
 
   const status = document.getElementById('driveStatusFilter')?.value || 'Active';
   const jobType = document.getElementById('driveJobTypeFilter')?.value || '';
@@ -1497,12 +1505,17 @@ function filteredDrives() {
   const adminSeesClosed = role === 'admin';
 
   return allDrives.filter(d => {
-    // Search never reveals closed drives to non-admin users.
-    if (!adminSeesClosed && isDriveHiddenFromNonAdmin(d)) return false;
-
     const hay = `${d.company} ${d.role} ${d.package} ${d.jobType || ''}`.toLowerCase();
-
     if (q && !hay.includes(q)) return false;
+
+    // Student/alumni explicit search: show matching drives including Closed (status check).
+    if (statusLookup) {
+      if (jobType && (d.jobType || '') !== jobType) return false;
+      return true;
+    }
+
+    // Browse (no search): hide closed from non-admin.
+    if (!adminSeesClosed && isDriveHiddenFromNonAdmin(d)) return false;
 
     if (openOnly) {
       const st = String(d.status || '').trim().toLowerCase();
@@ -2267,8 +2280,11 @@ async function loadLiveManageDrives() {
 
 async function loadDrives() {
   const live = Auth.hasRealAuth() && !Auth.isDemo();
+  const searchQ = (document.getElementById('driveSearch')?.value || '').trim();
+  const statusLookup = (isStudent || alumniSeeking) && searchQ.length >= 2;
+
   if (isStudent && live) {
-    const apiDrives = await DriveStore.fetchStudentDrives();
+    const apiDrives = await DriveStore.fetchStudentDrives(statusLookup ? searchQ : '');
     if (apiDrives === null) {
       toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
       allDrives = [];
@@ -2276,7 +2292,7 @@ async function loadDrives() {
       allDrives = apiDrives;
     }
   } else if (alumniSeeking && live) {
-    const apiDrives = await DriveStore.fetchAlumniDrives();
+    const apiDrives = await DriveStore.fetchAlumniDrives(statusLookup ? searchQ : '');
     allDrives = apiDrives ?? [];
   } else if (role === 'staff' && live && typeof StaffApi !== 'undefined') {
     const staffDrives = await StaffApi.fetchDrives();
@@ -2299,7 +2315,7 @@ async function loadDrives() {
   } else {
     if (canManage) await DriveStore.fetch();
     allDrives = DriveStore.allWithCatalog();
-    if (isStudent || alumniSeeking) {
+    if ((isStudent || alumniSeeking) && !statusLookup) {
       allDrives = DriveStore.filterApplicantDrives(allDrives);
     }
     if (canManage) {
@@ -2307,9 +2323,13 @@ async function loadDrives() {
       enrichDriveApplicantCounts(apps);
     }
   }
-  // Hard scrub: students/alumni/staff/officer never keep closed drives in memory (search-safe).
-  if (role !== 'admin') {
+  // Browse: scrub closed for non-admin. Status search may keep closed matches.
+  if (role !== 'admin' && !statusLookup) {
     allDrives = (Array.isArray(allDrives) ? allDrives : []).filter(d => !isDriveHiddenFromNonAdmin(d));
+  }
+  const listTitle = document.getElementById('drivesListTitle');
+  if (listTitle && (isStudent || alumniSeeking)) {
+    listTitle.textContent = statusLookup ? 'Search results' : 'Open Drives';
   }
   renderRows();
 }
@@ -3015,7 +3035,16 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
 
 
 
-document.getElementById('driveSearch')?.addEventListener('input', renderRows);
+document.getElementById('driveSearch')?.addEventListener('input', () => {
+  if (isStudent || alumniSeeking) {
+    clearTimeout(window.__phDriveSearchTimer);
+    window.__phDriveSearchTimer = setTimeout(() => {
+      loadDrives().catch(() => renderRows());
+    }, 350);
+    return;
+  }
+  renderRows();
+});
 
 document.getElementById('driveStatusFilter')?.addEventListener('change', renderRows);
 document.getElementById('btnMarkDriveCompleted')?.addEventListener('click', () => {
