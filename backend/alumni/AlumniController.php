@@ -374,32 +374,28 @@ final class AlumniController
 
     if ($statusLookup) {
       $byId = [];
-      foreach ($driveModel->searchByTitleContains($searchQ, 120) as $drive) {
+      foreach ($driveModel->searchByTitleContains($searchQ, 150) as $drive) {
         $id = (string) ($drive['_id'] ?? '');
         if ($id !== '') {
           $byId[$id] = $drive;
         }
       }
 
-      $matchingCompanyIds = [];
+      $matchedCompanies = 0;
       foreach ($companyModel->findAll([], 3000) as $company) {
         $name = strtolower(trim((string) ($company['companyName'] ?? '')));
         if ($name === '' || !str_contains($name, $searchQ)) {
           continue;
         }
         $cid = (string) ($company['_id'] ?? '');
-        if ($cid !== '') {
-          $matchingCompanyIds[] = $cid;
+        if ($cid === '') {
+          continue;
         }
-      }
-      $matchingCompanyIds = array_values(array_unique($matchingCompanyIds));
-      if ($matchingCompanyIds !== []) {
-        foreach ($driveModel->findAll(
-          ['companyId' => ['$in' => $matchingCompanyIds]],
-          150,
-          0,
-          ['date' => -1, 'createdAt' => -1]
-        ) as $drive) {
+        $matchedCompanies++;
+        if ($matchedCompanies > 40) {
+          break;
+        }
+        foreach ($driveModel->findByCompanyId($cid, 80) as $drive) {
           $id = (string) ($drive['_id'] ?? '');
           if ($id !== '') {
             $byId[$id] = $drive;
@@ -407,13 +403,7 @@ final class AlumniController
         }
       }
 
-      $drives = array_values(array_filter(
-        array_values($byId),
-        static function (array $drive) use ($engine, $student): bool {
-          return $engine->driveBranchVisibleToStudent($student, $drive);
-        }
-      ));
-      $drives = array_slice($drives, 0, 40);
+      $drives = array_slice(array_values($byId), 0, 50);
     } else {
       $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
       $drives = array_values(array_filter(
@@ -427,9 +417,14 @@ final class AlumniController
       ));
     }
 
-    $result = array_map(function ($drive) use ($engine, $studentId, $companyModel, $appModel) {
+    $result = array_map(function ($drive) use ($engine, $studentId, $companyModel, $appModel, $statusLookup) {
       $serialized = DocumentHelper::serialize($drive);
-      $serialized['eligibility'] = $engine->checkForDrive($studentId, (string) $drive['_id']);
+      $isOpen = \PMS\Services\DriveLifecycle::isOpenForStudents($drive);
+      if ($statusLookup && !$isOpen) {
+        $serialized['eligibility'] = ['eligible' => false, 'reasons' => ['Registration closed.']];
+      } else {
+        $serialized['eligibility'] = $engine->checkForDrive($studentId, (string) $drive['_id']);
+      }
 
       $company = $companyModel->findById((string) ($drive['companyId'] ?? ''));
       $companyName = (string) ($company['companyName'] ?? '');

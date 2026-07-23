@@ -906,35 +906,31 @@ final class StudentController
     $appModel = new ApplicationModel();
 
     if ($statusLookup) {
-      // Targeted search (incl. closed): match title/company first, then branch filter.
-      // Avoid scanning every drive through Category A/B/C (was timing out / empty).
+      // Targeted search (incl. closed): match title/company first.
+      // Skip Category A/B/C and branch gates so students can always see status.
       $byId = [];
-      foreach ($driveModel->searchByTitleContains($searchQ, 120) as $drive) {
+      foreach ($driveModel->searchByTitleContains($searchQ, 150) as $drive) {
         $id = (string) ($drive['_id'] ?? '');
         if ($id !== '') {
           $byId[$id] = $drive;
         }
       }
 
-      $matchingCompanyIds = [];
+      $matchedCompanies = 0;
       foreach ((new CompanyModel())->findAll([], 3000) as $company) {
         $name = strtolower(trim((string) ($company['companyName'] ?? '')));
         if ($name === '' || !str_contains($name, $searchQ)) {
           continue;
         }
         $cid = (string) ($company['_id'] ?? '');
-        if ($cid !== '') {
-          $matchingCompanyIds[] = $cid;
+        if ($cid === '') {
+          continue;
         }
-      }
-      $matchingCompanyIds = array_values(array_unique($matchingCompanyIds));
-      if ($matchingCompanyIds !== []) {
-        foreach ($driveModel->findAll(
-          ['companyId' => ['$in' => $matchingCompanyIds]],
-          150,
-          0,
-          ['date' => -1, 'createdAt' => -1]
-        ) as $drive) {
+        $matchedCompanies++;
+        if ($matchedCompanies > 40) {
+          break;
+        }
+        foreach ($driveModel->findByCompanyId($cid, 80) as $drive) {
           $id = (string) ($drive['_id'] ?? '');
           if ($id !== '') {
             $byId[$id] = $drive;
@@ -942,13 +938,7 @@ final class StudentController
         }
       }
 
-      $drives = array_values(array_filter(
-        array_values($byId),
-        static function (array $drive) use ($engine, $profile): bool {
-          return $engine->driveBranchVisibleToStudent($profile, $drive);
-        }
-      ));
-      $drives = array_slice($drives, 0, 40);
+      $drives = array_slice(array_values($byId), 0, 50);
     } else {
       $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
       $drives = array_values(array_filter(
@@ -966,12 +956,18 @@ final class StudentController
 
     $result = array_map(function (array $row) use ($engine, $studentId, $appModel, $statusLookup) {
       $driveId = (string) ($row['id'] ?? $row['_id'] ?? '');
-      $row['eligibilityCheck'] = $engine->checkForDrive($studentId, $driveId);
+      $isOpen = \PMS\Services\DriveLifecycle::isOpenForStudents($row);
+      // Status search: skip heavy eligibility for closed matches (Apply stays blocked).
+      if ($statusLookup && !$isOpen) {
+        $row['eligibilityCheck'] = ['eligible' => false, 'reasons' => ['Registration closed.']];
+      } else {
+        $row['eligibilityCheck'] = $engine->checkForDrive($studentId, $driveId);
+      }
 
       $app = $appModel->findByStudentAndDrive($studentId, $driveId);
       $row['applied'] = (bool) $app;
       $row['applicationStatus'] = $app['status'] ?? null;
-      $row['statusLookup'] = $statusLookup && !\PMS\Services\DriveLifecycle::isOpenForStudents($row);
+      $row['statusLookup'] = $statusLookup && !$isOpen;
 
       return $row;
     }, $enriched);
