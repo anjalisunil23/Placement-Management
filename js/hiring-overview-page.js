@@ -342,9 +342,10 @@
   HiringOverviewPage.prototype.placementPersonKey = function (row) {
     const roll = String(row?.roll || row?.registerNumber || '').trim().toUpperCase();
     if (roll) return 'roll:' + roll;
-    const name = String(row?.name || '').trim().toLowerCase();
+    const name = String(row?.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const dept = String(row?.dept || '').trim().toLowerCase();
-    return 'name:' + name + '|' + dept;
+    if (name) return 'name:' + name + (dept ? '|' + dept : '');
+    return '';
   };
 
   /** One row per person — a placed student counts as 1 even with multiple offers/companies. */
@@ -352,6 +353,21 @@
     const seen = new Map();
     (rows || []).forEach((row) => {
       const key = this.placementPersonKey(row);
+      if (!key || key === 'roll:' || key === 'name:|') return;
+      if (!seen.has(key)) seen.set(key, row);
+    });
+    return [...seen.values()];
+  };
+
+  /** Unique people among applicants (1 student with 3 company offers still counts as 1). */
+  HiringOverviewPage.prototype.uniqueApplicantsByPerson = function (rows) {
+    const seen = new Map();
+    (rows || []).forEach((row) => {
+      const key = this.placementPersonKey({
+        roll: row.roll || row.registerNumber || row.student?.registerNumber,
+        name: row.name || row.student?.name,
+        dept: row.dept || row.student?.department,
+      });
       if (!key || key === 'roll:' || key === 'name:|') return;
       if (!seen.has(key)) seen.set(key, row);
     });
@@ -368,10 +384,16 @@
       applicants = applicants.filter(a => this.batchMatchesFilter(a.classBatch, batchCode));
     }
 
-    const shortlisted = applicants.filter(a => a.status === 'shortlisted' || a.status === 'under_review').length;
-    const offers = applicants.filter(a => a.status === 'offered' || a.status === 'selected').length;
+    // People counts: one student selected at 3 companies still counts once for Offers.
+    const people = this.uniqueApplicantsByPerson(applicants);
+    const shortlisted = this.uniqueApplicantsByPerson(
+      applicants.filter(a => a.status === 'shortlisted' || a.status === 'under_review')
+    ).length;
+    const offers = this.uniqueApplicantsByPerson(
+      applicants.filter(a => a.status === 'offered' || a.status === 'selected')
+    ).length;
 
-    // Hired = unique live placements this calendar year only (no past years).
+    // Hired = unique people with a current live placement this year (not past companies).
     const year = new Date().getFullYear();
     const placements = this.livePlacementsForFilters(deptCode, batchCode, year, data.placements);
     const hired = placements.length;
@@ -403,13 +425,13 @@
     return {
       totals: {
         companiesHiring: companies.length,
-        applicants: applicants.length,
+        applicants: people.length,
         shortlisted,
         offers,
         hired,
       },
       pipeline: [
-        { label: 'Applicants', value: applicants.length },
+        { label: 'Applicants', value: people.length },
         { label: 'Shortlisted', value: shortlisted },
         { label: 'Offers', value: offers },
         { label: 'Hired', value: hired },

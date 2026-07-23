@@ -235,16 +235,29 @@ final class RecruitingService
         $aesLimit = 0;
 
         foreach ($studentModel->findAll($filter, 5000) as $student) {
+            $studentId = (string) ($student['_id'] ?? '');
             $roll = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-            // One placed person counts as 1 (skip duplicate student records).
-            if ($roll !== '') {
-                if (isset($seenRolls[$roll])) {
-                    continue;
-                }
-                $seenRolls[$roll] = true;
+            $userId = (string) ($student['userId'] ?? '');
+
+            // One person = 1 current placement (ignore past companies in history).
+            if ($userId !== '' && isset($seenRolls['u:' . $userId])) {
+                continue;
+            }
+            if ($roll !== '' && isset($seenRolls['r:' . $roll])) {
+                continue;
             }
 
-            $user = $userModel->findById((string) ($student['userId'] ?? ''));
+            // Current placement only — placementHistory / older offers do not count.
+            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+            $company = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
+            $role = trim((string) ($placement['role'] ?? ''));
+            $package = trim((string) ($placement['package'] ?? ''));
+            $joinDate = trim((string) ($placement['joinDate'] ?? ''));
+            if ($company === '') {
+                continue;
+            }
+
+            $user = $userModel->findById($userId);
             $deptId = (string) ($student['departmentId'] ?? '');
             if ($deptId !== '' && !isset($deptCache[$deptId])) {
                 $dept = $deptModel->findById($deptId);
@@ -254,15 +267,17 @@ final class RecruitingService
             }
             $deptCode = $deptCache[$deptId] ?? '';
             $classBatch = $this->resolveStudentStudClass($student, $studentModel, $aes, $aesCalls, $aesLimit);
-            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
-            $company = trim((string) ($placement['company'] ?? ''));
-            $role = trim((string) ($placement['role'] ?? ''));
-            $package = trim((string) ($placement['package'] ?? ''));
-            $joinDate = trim((string) ($placement['joinDate'] ?? ''));
 
+            // Date from current placement, or the selected app that matches this current company.
             $selectedAt = '';
-            foreach ($appModel->findByStudent((string) ($student['_id'] ?? '')) as $app) {
+            $companyNorm = strtolower($company);
+            foreach ($appModel->findByStudent($studentId) as $app) {
                 if (($app['status'] ?? '') !== 'selected') {
+                    continue;
+                }
+                $co = $companyModel->findById((string) ($app['companyId'] ?? ''));
+                $appCompany = is_array($co) ? strtolower(trim((string) ($co['companyName'] ?? ''))) : '';
+                if ($appCompany !== '' && $appCompany !== $companyNorm) {
                     continue;
                 }
                 $selectedAt = (string) ($app['updatedAt'] ?? $app['createdAt'] ?? '');
@@ -272,22 +287,23 @@ final class RecruitingService
                         break;
                     }
                 }
-                if ($company === '') {
-                    $co = $companyModel->findById((string) ($app['companyId'] ?? ''));
-                    $company = is_array($co) ? trim((string) ($co['companyName'] ?? '')) : '';
-                }
                 break;
             }
 
-            // Live placements only: require a real selection/join date (skip old placed flags).
-            $placedAt = $selectedAt !== '' ? $selectedAt : $joinDate;
+            $placedAt = $joinDate !== '' ? $joinDate : $selectedAt;
             if ($placedAt === '') {
                 continue;
             }
-            // Year from the live date only — never infer from historical classBatch labels.
             $year = $this->placementYear($selectedAt, $joinDate, '');
             if ($year <= 0) {
                 continue;
+            }
+
+            if ($userId !== '') {
+                $seenRolls['u:' . $userId] = true;
+            }
+            if ($roll !== '') {
+                $seenRolls['r:' . $roll] = true;
             }
 
             $rows[] = [
@@ -295,7 +311,7 @@ final class RecruitingService
                 'roll'       => (string) ($student['registerNumber'] ?? ''),
                 'dept'       => $deptCode,
                 'classBatch' => $classBatch,
-                'company'    => $company !== '' ? $company : '—',
+                'company'    => $company,
                 'role'       => $role !== '' ? $role : '—',
                 'package'    => $package !== '' ? $package : '—',
                 'year'       => $year,
