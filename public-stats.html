@@ -189,7 +189,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="/js/api.js?v=20260716profilename"></script>
+<script src="/js/api.js?v=20260723livedata2"></script>
 <script src="/js/app.js?v=20260716notifflat"></script>
 <script>
 function loadScriptOnce(src) {
@@ -336,7 +336,7 @@ async function renderPublicPage() {
 
   const sector = live.sectorDistribution || { labels: [], values: [] };
   const sectorLabels = sector.labels?.length ? sector.labels : ['No placements yet'];
-  const sectorValues = sector.values?.length ? sector.values : [1];
+  const sectorValues = sector.values?.length ? sector.values : [0];
   if (pubPieChart) pubPieChart.destroy();
   pubPieChart = Charts.doughnut(document.getElementById('pubPie'), sectorLabels, sectorValues);
 

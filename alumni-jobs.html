@@ -45,7 +45,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260720jobcards"></script>
+<script src="js/api.js?v=20260723livedata2"></script>
 <script src="js/app.js?v=20260720jobcards"></script>
 <script>
 const user = Auth.user() || demoUserFor('alumni');
@@ -174,7 +174,10 @@ async function loadJobPosts() {
       renderStats(stats);
       return;
     }
-    jobsUseApi = false;
+    jobRows = [];
+    renderStats({ activePosts: 0, viewsThisMonth: 0, referralsCount: 0, totalPosts: 0 });
+    toast('Could not load live job posts.', 'error');
+    return;
   }
   jobRows = AlumniJobPosts.mine().map(normalizeJobPost);
   renderStats({ ...AlumniJobPosts.stats(), totalPosts: jobRows.length });

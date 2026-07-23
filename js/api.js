@@ -1,5 +1,5 @@
 /* PlaceHub — API client, auth state, role permissions, mock fallback */
-const APP_SCRIPT_VERSION = '20260716fast';
+const APP_SCRIPT_VERSION = '20260723livedata2';
 
 const BRAND = {
   logoSrc: '/css/ajce-logo.png?v=20260624s',
@@ -1066,6 +1066,16 @@ const UserPrefs = {
   isCompact() { return this.density() === 'compact'; },
 };
 
+/** Signed-in with a real session (not demo-token). */
+function isLiveAuth() {
+  return typeof Auth !== 'undefined' && Auth.hasRealAuth() && !Auth.isDemo();
+}
+
+/** Demo catalog/seeds only for explicit demo-token sessions. */
+function allowDemoSeed() {
+  return typeof Auth !== 'undefined' && Auth.isDemo();
+}
+
 if (typeof document !== 'undefined') {
   UserPrefs.apply();
 }
@@ -1094,6 +1104,7 @@ const STAFF_REC_KEY = 'ph-staff-recommendations';
 const REG_COMPANIES_KEY = 'ph-registered-companies';
 
 function seedStaffRecommendations() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(STAFF_REC_KEY)) return;
   const seed = [
     { id:'rec-demo-1', companyName:'Brillio', hrName:'Anita Desai', hrEmail:'anita.desai@brillio.com', contactNumber:'+91 98765 43210', staffName:'Prof. Ravi Iyer', staffEmail:'ravi.iyer@college.edu', submittedAt:'2025-11-14T10:00:00.000Z', status:'registered' },
@@ -1127,6 +1138,11 @@ const StaffRecs = {
         localStorage.setItem(STAFF_REC_KEY, JSON.stringify(list));
         return list;
       }
+    }
+    if (isLiveAuth()) {
+      this._cache = [];
+      localStorage.setItem(STAFF_REC_KEY, JSON.stringify([]));
+      return [];
     }
     return this.all();
   },
@@ -1237,6 +1253,11 @@ const RegisteredCompanies = {
   async fetch() {
     const list = await AdminApi.fetchCompanies();
     if (list) { this._cache = list; localStorage.setItem(REG_COMPANIES_KEY, JSON.stringify(list)); return list; }
+    if (isLiveAuth()) {
+      this._cache = [];
+      localStorage.setItem(REG_COMPANIES_KEY, JSON.stringify([]));
+      return [];
+    }
     return this.all();
   },
   async register(payload) {
@@ -1320,6 +1341,7 @@ const RegisteredCompanies = {
 const ALUMNI_JOBS_KEY = 'ph-alumni-job-posts';
 
 function seedAlumniJobPosts() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(ALUMNI_JOBS_KEY)) return;
   localStorage.setItem(ALUMNI_JOBS_KEY, JSON.stringify([
     { id:'aj-1', title:'Senior SDE', company:'Google', type:'Full-time', package:'₹38 LPA', location:'Bengaluru', description:'Backend role in Ads infra.', status:'open', statusLabel:'Open', statusCls:'success', views:120, createdAt:'2025-12-12T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
@@ -1395,6 +1417,7 @@ function mapApiJobPostStatus(status) {
 const ALUMNI_REF_KEY = 'ph-alumni-referrals';
 
 function seedAlumniReferrals() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(ALUMNI_REF_KEY)) return;
   localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify([
     { id:'ar-1', companyName:'Google', companyWebsite:'https://careers.google.com', hrName:'Priya Menon', hrEmail:'priya.menon@google.com', contactNumber:'+91 98765 43210', status:'pending', submittedAt:'2025-12-14T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu', alumniName:'Rohan Verma' },
@@ -1445,6 +1468,11 @@ const AlumniReferrals = {
         localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify(this._cache));
         return this._cache;
       }
+    }
+    if (isLiveAuth()) {
+      this._cache = [];
+      localStorage.setItem(ALUMNI_REF_KEY, JSON.stringify([]));
+      return [];
     }
     return this.all();
   },
@@ -1515,6 +1543,7 @@ const AlumniReferrals = {
 const ALUMNI_STORIES_KEY = 'ph-alumni-success-stories';
 
 function seedAlumniSuccessStories() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(ALUMNI_STORIES_KEY)) return;
   localStorage.setItem(ALUMNI_STORIES_KEY, JSON.stringify([
     { id:'as-1', name:'Rohan Verma', company:'Google', role:'SWE II', package:'₹38 LPA', quote:'PlaceHub connected me with mentors and mock interviews that made the Google process feel achievable.', status:'published', createdAt:'2025-12-01T10:00:00.000Z', alumniEmail:'rohan.v@alumni.edu' },
@@ -1624,6 +1653,7 @@ const AlumniSuccessStories = {
 const STAFF_REGISTRY_KEY = 'ph-staff-registry';
 
 function seedStaffRegistry() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(STAFF_REGISTRY_KEY)) return;
   const seed = [
     { id:'st-1', name:'Prof. Ravi Iyer', email:'ravi.iyer@college.edu', department:'CSE', designation:'Associate Professor', phone:'+91 98765 11101', addedAt:'2025-08-01T10:00:00.000Z' },
@@ -1783,6 +1813,7 @@ const ResumeBucket = {
   save(list) { localStorage.setItem(studentKey('resumes'), JSON.stringify(list)); },
   seed() {
     if ((Auth.hasSession() && !Auth.isDemo()) || this.all().length) return;
+    if (!allowDemoSeed()) return;
     const u = Auth.user() || demoUserFor('student');
     const reg = u.registerNumber || 'student';
     const now = new Date().toISOString();
@@ -1841,6 +1872,7 @@ const ResumeBucket = {
       return fromLibrary;
     }
 
+    if (isLiveAuth()) return [];
     return this.all();
   },
   async fetch() {
@@ -1865,7 +1897,10 @@ const ResumeBucket = {
     }
 
     const res = await apiFetch('/student/profile', { skipAuthRedirect: true });
-    if (!res.success || !res.data) return this.all();
+    if (!res.success || !res.data) {
+      if (isLiveAuth()) return [];
+      return this.all();
+    }
     const profile = res.data;
     if (profile.registerNumber) {
       const u = Auth.user();
@@ -1961,7 +1996,10 @@ const StudentApps = {
   async fetch() {
     if (Auth.role() !== 'student' || Auth.isDemo()) return this.all();
     const res = await api('/student/applications');
-    if (!res.success || !Array.isArray(res.data)) return this.all();
+    if (!res.success || !Array.isArray(res.data)) {
+      if (isLiveAuth()) { this.save([]); return []; }
+      return this.all();
+    }
     const mapped = res.data.map(a => ({
       id: a.id || a._id,
       driveId: a.driveId || '',
@@ -2097,7 +2135,10 @@ const AlumniApps = {
   async fetch() {
     if (Auth.role() !== 'alumni' || Auth.isDemo()) return this.all();
     const res = await api('/alumni/applications');
-    if (!res.success || !Array.isArray(res.data)) return this.all();
+    if (!res.success || !Array.isArray(res.data)) {
+      if (isLiveAuth()) { this.save([]); return []; }
+      return this.all();
+    }
     const mapped = res.data.map(a => ({
       id: a.id || a._id,
       driveId: a.driveId || '',
@@ -2168,7 +2209,7 @@ const StudentNotifs = {
   },
   save(list) { localStorage.setItem(studentKey('notifications'), JSON.stringify(list)); },
   seed() {
-    if (this.all().length) return;
+    if (!allowDemoSeed() || this.all().length) return;
     const seed = [
       { id:'n1', type:'job_poster', title:'New drive: Google SDE-1', body:'Registration is open. Package ₹42 LPA. Deadline Dec 28.', driveId:'google-sde-1', read:false, createdAt: new Date(Date.now()-120000).toISOString() },
       { id:'n2', type:'job_poster', title:'New drive: Amazon SDE Intern', body:'Internship drive posted. Package ₹18 LPA.', driveId:'amazon-intern', read:false, createdAt: new Date(Date.now()-3600000).toISOString() },
@@ -2204,7 +2245,7 @@ const AlumniNotifs = {
   },
   save(list) { localStorage.setItem(userKey('notifications'), JSON.stringify(list)); },
   seed() {
-    if (this.all().length) return;
+    if (!allowDemoSeed() || this.all().length) return;
     this.save([
       { id:'an1', type:'referral', title:'Referral received', body:'Your SDE-2 referral at Google was submitted successfully.', read:false, createdAt: new Date(Date.now()-1800000).toISOString() },
       { id:'an2', type:'job_post', title:'Job post live', body:'Your Senior SDE posting is now visible to the alumni network.', read:false, createdAt: new Date(Date.now()-7200000).toISOString() },
@@ -2221,7 +2262,7 @@ const StaffNotifs = {
   },
   save(list) { localStorage.setItem(userKey('staff-notifications'), JSON.stringify(list)); },
   seed() {
-    if (this.all().length) return;
+    if (!allowDemoSeed() || this.all().length) return;
     this.save([
       { id:'sn1', type:'recommendation_update', title:'Recommendation under review', body:'Your Brillio referral is being reviewed by the placement cell.', read:false, createdAt: new Date(Date.now()-120000).toISOString() },
       { id:'sn2', type:'drive_announcement', title:'New drive: Google SDE-1', body:'CSE students can register for the Google SDE-1 drive.', read:false, createdAt: new Date(Date.now()-3600000).toISOString() },
@@ -2238,7 +2279,7 @@ const AdminNotifs = {
   },
   save(list) { localStorage.setItem(userKey('admin-notifications'), JSON.stringify(list)); },
   seed() {
-    if (this.all().length) return;
+    if (!allowDemoSeed() || this.all().length) return;
     this.save([
       { id:'adm1', type:'drive_announcement', title:'New drive published', body:'Google SDE-1 is now open for registrations.', read:false, createdAt: new Date(Date.now()-120000).toISOString() },
       { id:'adm2', type:'offer', title:'Offer accepted', body:'Kabir Singh accepted Amazon SDE Intern offer.', read:false, createdAt: new Date(Date.now()-720000).toISOString() },
@@ -2255,7 +2296,7 @@ const CompanyNotifs = {
   },
   save(list) { localStorage.setItem(userKey('company-notifications'), JSON.stringify(list)); },
   seed() {
-    if (this.all().length) return;
+    if (!allowDemoSeed() || this.all().length) return;
     this.save([
       { id:'cn1', type:'application_update', title:'New application received', body:'A student applied to your SDE drive.', read:false, createdAt: new Date(Date.now()-1800000).toISOString() },
       { id:'cn2', type:'application_update', title:'Resume verified', body:'Placement cell verified a candidate resume for review.', read:false, createdAt: new Date(Date.now()-7200000).toISOString() },
@@ -2467,6 +2508,9 @@ function canViewCampusHiring() {
 }
 
 function companyHiringCounts(companyName) {
+  if (isLiveAuth()) {
+    return { applicants: 0, shortlisted: 0, selected: 0, hired: 0 };
+  }
   const company = companyName || '';
   const drives = DriveStore.allWithCatalog().filter(d => (d.company || '') === company && d.status !== 'Closed');
   const driveApplicants = drives.reduce((t, d) => t + (parseInt(d.applied, 10) || 0), 0);
@@ -3373,7 +3417,7 @@ const CompanyEligibility = {
   },
   save(list) { localStorage.setItem(companyEligibilityKey(), JSON.stringify(list)); },
   seed() {
-    if (this.all().length) return;
+    if (!allowDemoSeed() || this.all().length) return;
     const co = Auth.user()?.companyName || 'Acme Cloud';
     if (co !== 'Acme Cloud') return;
     this.save([
@@ -3382,6 +3426,7 @@ const CompanyEligibility = {
     ]);
   },
   companyDrives() {
+    if (isLiveAuth()) return [];
     const co = Auth.user()?.companyName || '';
     return DRIVE_CATALOG.filter(d => d.company === co);
   },
@@ -3454,6 +3499,7 @@ const DRIVE_TYPES = ['Exclusive', 'Pooled', 'Company Direct'];
 const RESUME_NAME_PATTERN = /^[A-Za-z]+_\d{2}[A-Z]{2,4}\d{2,3}_[A-Za-z0-9_]+\.pdf$/i;
 
 function seedDepartments() {
+  if (!allowDemoSeed()) return;
   try {
     const raw = localStorage.getItem(DEPTS_KEY);
     if (raw) {
@@ -3585,6 +3631,7 @@ const DepartmentStore = {
 };
 
 function seedDeptOfficers() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(DEPT_OFFICER_KEY)) return;
   // Map dept code -> placement officer email (demo defaults)
   localStorage.setItem(DEPT_OFFICER_KEY, JSON.stringify({
@@ -3614,6 +3661,7 @@ const DeptPlacementOfficers = {
 };
 
 function seedUsers() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(USERS_KEY)) return;
   localStorage.setItem(USERS_KEY, JSON.stringify([
     { id:'u-s1', role:'student', name:'Karthik Subramanian', email:'karthik.s@college.edu', registerNumber:'22MCA047', department:'MCA', classBatch:'MCA2025-2027', cgpa:8.7, ugMarks:78, mcaMarks:82, certifications:'AWS Cloud', status:'approved', blocked:false, blacklisted:false, placementStatus:'applied', chancesUsed:2, chancesMax:5, resumeStatus:'pending' },
@@ -3645,19 +3693,31 @@ const UserRegistry = {
   async fetch() {
     if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
       const students = await OfficerApi.fetchStudents();
-      if (!students) return this.all();
-      const kept = this.all().filter(u => u.role !== 'student');
-      const list = [...students, ...kept];
-      this._cache = list;
-      localStorage.setItem(USERS_KEY, JSON.stringify(list));
-      return list;
+      if (!students) {
+        if (isLiveAuth()) {
+          this._cache = [];
+          localStorage.setItem(USERS_KEY, JSON.stringify([]));
+          return [];
+        }
+        return this.all();
+      }
+      this._cache = students;
+      localStorage.setItem(USERS_KEY, JSON.stringify(students));
+      return students;
     }
     const [users, students, companies] = await Promise.all([
       AdminApi.fetchUsers(),
       AdminApi.fetchStudents(),
       AdminApi.fetchCompanies(),
     ]);
-    if (!users && !students && !companies) return this.all();
+    if (!users && !students && !companies) {
+      if (isLiveAuth()) {
+        this._cache = [];
+        localStorage.setItem(USERS_KEY, JSON.stringify([]));
+        return [];
+      }
+      return this.all();
+    }
     const list = [];
     if (students) list.push(...students);
     const studentIds = new Set(students?.map(s => s.id) || []);
@@ -3813,6 +3873,7 @@ const PlacementRules = {
   async fetch() {
     const rule = await AdminApi.fetchActiveRule();
     if (rule) { this._cache = rule; localStorage.setItem(RULES_KEY, JSON.stringify(rule)); return rule; }
+    if (isLiveAuth()) return this._cache || {};
     return this.get();
   },
   async save(p) {
@@ -3830,6 +3891,7 @@ const PlacementRules = {
 };
 
 function seedApplications() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(APPS_KEY)) return;
   localStorage.setItem(APPS_KEY, JSON.stringify([
     { id:'app-1', studentName:'Karthik Subramanian', registerNumber:'22MCA047', department:'MCA', company:'Google', role:'SDE-1', stage:'resume_verification', status:'pending', appliedAt:'2026-01-14T09:00:00.000Z' },
@@ -3852,6 +3914,11 @@ const ApplicationPipeline = {
       ? await OfficerApi.fetchApplications()
       : await AdminApi.fetchApplications();
     if (list) { this._cache = list; localStorage.setItem(APPS_KEY, JSON.stringify(list)); return list; }
+    if (isLiveAuth()) {
+      this._cache = [];
+      localStorage.setItem(APPS_KEY, JSON.stringify([]));
+      return [];
+    }
     return this.all();
   },
   async fetchByDrive(driveId) {
@@ -3926,6 +3993,7 @@ const ApplicationPipeline = {
 };
 
 function seedBlacklist() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(BLACKLIST_KEY)) return;
   localStorage.setItem(BLACKLIST_KEY, JSON.stringify([
     { id:'bl-1', studentName:'Vikram Das', registerNumber:'21ME055', reason:'Unauthorized absence from Google drive', addedAt:'2025-11-20T10:00:00.000Z', active:true },
@@ -3943,6 +4011,11 @@ const BlacklistStore = {
   async fetch() {
     const list = await AdminApi.fetchBlacklist();
     if (list) { this._cache = list; localStorage.setItem(BLACKLIST_KEY, JSON.stringify(list)); return list; }
+    if (isLiveAuth()) {
+      this._cache = [];
+      localStorage.setItem(BLACKLIST_KEY, JSON.stringify([]));
+      return [];
+    }
     return this.all();
   },
   async add(p) {
@@ -3964,6 +4037,7 @@ const BlacklistStore = {
 };
 
 function seedResults() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(RESULTS_KEY)) return;
   localStorage.setItem(RESULTS_KEY, JSON.stringify([
     { id:'res-1', studentName:'Rahul Verma', registerNumber:'21IT012', company:'Microsoft', role:'SWE', package:'₹52 LPA', status:'selected', joiningDate:'2026-07-15' },
@@ -4011,6 +4085,11 @@ const RecruitmentResults = {
       ? await OfficerApi.fetchResults()
       : await AdminApi.fetchResults();
     if (list) { this._cache = list; localStorage.setItem(RESULTS_KEY, JSON.stringify(list)); return list; }
+    if (isLiveAuth()) {
+      this._cache = [];
+      localStorage.setItem(RESULTS_KEY, JSON.stringify([]));
+      return [];
+    }
     return this.all();
   },
   async fetchByDrive(driveId, meta = {}) {
@@ -4020,6 +4099,7 @@ const RecruitmentResults = {
       ? await OfficerApi.fetchResults({ driveId, company, role })
       : await AdminApi.fetchResults({ driveId, company, role });
     const fromApi = list || [];
+    if (isLiveAuth()) return fromApi;
     const matchesDrive = r => {
       if (r.driveId && r.driveId === driveId) return true;
       if (!company || !role) return false;
@@ -4054,6 +4134,7 @@ const RecruitmentResults = {
 };
 
 function seedResumeQueue() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(RESUME_QUEUE_KEY)) return;
   localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify([
     { id:'rq-1', studentName:'Ananya Reddy', registerNumber:'21CSE018', department:'CSE', fileName:'Ananya_21CSE018_Developer.pdf', validFormat:true, status:'pending', submittedAt:'2026-01-15T08:00:00.000Z' },
@@ -4075,6 +4156,11 @@ const ResumeQueue = {
       ? await OfficerApi.fetchResumeQueue()
       : await AdminApi.fetchResumeQueue();
     if (list) { this._cache = list; localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify(list)); return list; }
+    if (isLiveAuth()) {
+      this._cache = [];
+      localStorage.setItem(RESUME_QUEUE_KEY, JSON.stringify([]));
+      return [];
+    }
     return this.all();
   },
   async approve(id) {
@@ -4200,6 +4286,7 @@ const PublicPageContent = {
 };
 
 function seedPlacementNews() {
+  if (!allowDemoSeed()) return;
   if (localStorage.getItem(PLACEMENT_NEWS_KEY)) return;
   localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify([
     { id:'news-1', title:'Record-breaking season kicks off', summary:'Over 142 companies have already confirmed campus visits for 2025–26.', date:'2025-11-12', link:'' },
@@ -4229,6 +4316,9 @@ const PlacementNewsStore = {
   },
   all() {
     if (this._cache) return this._cache.map(n => this.normalizeItem(n));
+    if (!allowDemoSeed()) {
+      try { return JSON.parse(localStorage.getItem(PLACEMENT_NEWS_KEY) || '[]'); } catch { return []; }
+    }
     seedPlacementNews();
     try { return JSON.parse(localStorage.getItem(PLACEMENT_NEWS_KEY) || '[]'); } catch { return []; }
   },
@@ -4242,6 +4332,11 @@ const PlacementNewsStore = {
       this._cache = res.data.map(n => this.normalizeItem(n));
       localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify(this._cache));
       return this._cache;
+    }
+    if (isLiveAuth()) {
+      this._cache = [];
+      localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify([]));
+      return [];
     }
     return this.all();
   },
@@ -4261,6 +4356,8 @@ const PlacementNewsStore = {
       localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify(this._cache));
       return res.data;
     }
+    // Public landing: never fall back to demo news.
+    this._cache = [];
     return null;
   },
   async add(payload) {

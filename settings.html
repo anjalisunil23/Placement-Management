@@ -148,7 +148,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260722profilenav"></script>
+<script src="js/api.js?v=20260723livedata2"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
@@ -1206,7 +1206,9 @@ async function loadResumes() {
       resumeRows = res.data || [];
       return;
     }
-    resumeUseApi = false;
+    resumeRows = [];
+    toast(res?.message || 'Could not load live resumes.', 'error');
+    return;
   }
   ResumeBucket.seed();
   resumeRows = ResumeBucket.all().map(normalizeLocalResume);

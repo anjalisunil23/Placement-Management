@@ -83,7 +83,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260716profilename"></script>
+<script src="js/api.js?v=20260723livedata2"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
 const user = Auth.user() || demoUserFor('company');
@@ -263,7 +263,8 @@ async function renderPreview(rule) {
 
 async function renderRuleDetail(driveId) {
   const drives = driveList();
-  const drive = drives.find(d => d.id === driveId) || DRIVE_CATALOG.find(d => d.id === driveId);
+  const drive = drives.find(d => d.id === driveId)
+    || (!Auth.hasRealAuth() || Auth.isDemo() ? DRIVE_CATALOG.find(d => d.id === driveId) : null);
   const rule = ruleForDrive(driveId);
   const detail = document.getElementById('ruleDetail');
   if (!drive) return;
@@ -307,7 +308,8 @@ window.selectRole = async driveId => {
 
 window.openEditRule = driveId => {
   const drives = driveList();
-  const drive = drives.find(d => d.id === driveId) || DRIVE_CATALOG.find(d => d.id === driveId);
+  const drive = drives.find(d => d.id === driveId)
+    || (!Auth.hasRealAuth() || Auth.isDemo() ? DRIVE_CATALOG.find(d => d.id === driveId) : null);
   const rule = ruleForDrive(driveId);
   document.getElementById('ruleModalTitle').textContent = rule ? 'Edit eligibility criteria' : 'Add eligibility criteria';
   document.getElementById('ruleId').value = rule?.id || '';
@@ -380,7 +382,8 @@ document.getElementById('ruleForm').addEventListener('submit', async e => {
   const driveId = fd.get('driveId');
   if (!driveId) { toast('Select a job role or drive.', 'warn'); return; }
   const drives = driveList();
-  const drive = drives.find(d => d.id === driveId) || DRIVE_CATALOG.find(d => d.id === driveId);
+  const drive = drives.find(d => d.id === driveId)
+    || (!Auth.hasRealAuth() || Auth.isDemo() ? DRIVE_CATALOG.find(d => d.id === driveId) : null);
   const branches = readCheckedBranchCodes(document.getElementById('branchChecks'));
   if (!branches.length) { toast('Select at least one branch.', 'warn'); return; }
   if (!(await confirmAction({
