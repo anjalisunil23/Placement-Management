@@ -77,14 +77,34 @@ try {
         }
     }
 
+    // Only allow same-site app pages (no open redirect).
+    $next = preg_replace('/[#?].*$/', '', $next) ?? '';
+    $next = ltrim(str_replace('\\', '/', $next), '/');
+    if ($next === '' || str_contains($next, '..') || str_contains($next, '://')) {
+        $next = ltrim($target, '/');
+    }
+    if (!preg_match('/^[A-Za-z0-9._\/-]+\.html?$/i', $next) && !preg_match('/^[A-Za-z0-9._\/-]+$/i', $next)) {
+        $next = 'dashboard.html';
+    }
+
     // First /auth/me after AES login stays local-only (no placement API round-trips).
     $_SESSION['ph_auth_fast_boot'] = 1;
+
+    // Tell the destination page to clear stale localStorage and hard-bootstrap from the cookie session.
+    setcookie('ph_aes_login', '1', [
+        'expires'  => time() + 180,
+        'path'     => '/',
+        'secure'   => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+        'httponly' => false,
+        'samesite' => 'Lax',
+    ]);
 
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
     }
 
-    header('Location: /aes-complete.html?next=' . rawurlencode($next));
+    // Go straight to the portal — no intermediate "Signing you in" page.
+    header('Location: /' . $next);
     exit;
 } catch (Throwable $e) {
     $fail($e->getMessage());

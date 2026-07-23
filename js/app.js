@@ -719,10 +719,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     paintShell();
   }
 
-  let hasSession = await Auth.bootstrap();
+  // Fresh AES login lands on the destination page directly (no aes-complete interstitial).
+  let freshAesLogin = false;
+  try {
+    if (/(?:^|;\s*)ph_aes_login=1(?:;|$)/.test(document.cookie || '')) {
+      freshAesLogin = true;
+      document.cookie = 'ph_aes_login=; path=/; max-age=0; SameSite=Lax';
+      Auth.clear();
+      Auth._sessionReady = false;
+      try { localStorage.setItem('ph-token', 'session'); } catch (_) {}
+    }
+  } catch (_) { /* ignore */ }
+
+  let hasSession = await Auth.bootstrap(
+    freshAesLogin ? { soft: false, fast: true } : undefined
+  );
   // Only retry once if we had a cached role but the first /auth/me failed (cookie race).
-  if (!hasSession && (Auth.role() || Auth.user())) {
-    hasSession = await Auth.bootstrap();
+  if (!hasSession && (Auth.role() || Auth.user() || freshAesLogin)) {
+    hasSession = await Auth.bootstrap(
+      freshAesLogin ? { soft: false, fast: true } : undefined
+    );
   }
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(pageBase)) {
     window.location.replace(`public-stats.html?next=${encodeURIComponent(pageBase)}`);

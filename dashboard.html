@@ -298,11 +298,10 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723boot"></script>
-<script src="js/app.js?v=20260723boot"></script>
+<script src="js/api.js?v=20260723direct"></script>
+<script src="js/app.js?v=20260723direct"></script>
 <script>
-(function loadDashboardExtras() {
-  const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
+window.__phLoadDashExtras = function loadDashboardExtras(role) {
   const needCharts = role === 'admin' || role === 'placement_officer' || role === 'staff' || role === 'company';
   const needManage = role === 'admin' || role === 'placement_officer' || role === 'staff';
   const needHiring = role === 'placement_officer' || role === 'staff';
@@ -325,22 +324,28 @@
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
     chartScripts.push('js/charts.js?v=20260713p');
   }
-  window.__phDashApis = Promise.all(apiScripts.map(load));
-  window.__phDashCharts = Promise.all(chartScripts.map(load));
-  window.__phDashExtras = Promise.all([window.__phDashApis, window.__phDashCharts]);
-})();
+  const apis = Promise.all(apiScripts.map(load));
+  const charts = Promise.all(chartScripts.map(load));
+  window.__phDashApis = apis;
+  window.__phDashCharts = charts;
+  window.__phDashExtras = Promise.all([apis, charts]);
+  return { apis, charts };
+};
 </script>
 <script>
 onAppReady(async () => {
-// Paint shell first — do not block on Chart.js CDN.
-const apisReady = window.__phDashApis || Promise.resolve();
-const chartsReady = window.__phDashCharts || Promise.resolve();
 const user = Auth.user() || demoUserFor(Auth.role());
 const role = Auth.role();
 if (!role || !ROLE_HOME[role]) {
   window.location.replace(Auth.homePage() || 'public-stats.html');
   return;
 }
+// Load role scripts after Auth bootstrap (AES login has no localStorage role yet on first paint).
+const extras = (typeof window.__phLoadDashExtras === 'function')
+  ? window.__phLoadDashExtras(role)
+  : { apis: Promise.resolve(), charts: Promise.resolve() };
+const apisReady = extras.apis || Promise.resolve();
+const chartsReady = extras.charts || Promise.resolve();
 const titles = {
   admin: ['Dashboard', ''],
   placement_officer: ['Dashboard', ''],
