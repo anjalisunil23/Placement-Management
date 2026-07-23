@@ -73,19 +73,64 @@ final class OfficerDataService
      */
     public function enrichApplications(array $apps): array
     {
-        $studentModel = new StudentModel();
-        $userModel = new UserModel();
-        $companyModel = new CompanyModel();
-        $deptModel = new DepartmentModel();
-        $driveModel = new DriveModel();
+        if ($apps === []) {
+            return [];
+        }
+
+        $studentIds = [];
+        $companyIds = [];
+        $driveIds = [];
+        foreach ($apps as $app) {
+            $sid = trim((string) ($app['studentId'] ?? ''));
+            $cid = trim((string) ($app['companyId'] ?? ''));
+            $did = trim((string) ($app['driveId'] ?? ''));
+            if ($sid !== '') {
+                $studentIds[$sid] = true;
+            }
+            if ($cid !== '') {
+                $companyIds[$cid] = true;
+            }
+            if ($did !== '') {
+                $driveIds[$did] = true;
+            }
+        }
+
+        $students = (new StudentModel())->findByIds(array_keys($studentIds));
+        $userIds = [];
+        $deptIds = [];
+        foreach ($students as $student) {
+            $uid = trim((string) ($student['userId'] ?? ''));
+            $did = trim((string) ($student['departmentId'] ?? ''));
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+            if ($did !== '') {
+                $deptIds[$did] = true;
+            }
+        }
+        $users = (new UserModel())->findByIds(array_keys($userIds));
+        $companies = (new CompanyModel())->findByIds(array_keys($companyIds));
+        $drives = (new DriveModel())->findByIds(array_keys($driveIds));
+        $departments = (new DepartmentModel())->findByIds(array_keys($deptIds));
 
         $rows = [];
         foreach ($apps as $app) {
-            $student = $studentModel->findById((string) ($app['studentId'] ?? ''));
-            $user = $student ? $userModel->findById((string) ($student['userId'] ?? '')) : null;
-            $company = $companyModel->findById((string) ($app['companyId'] ?? ''));
-            $drive = $driveModel->findById((string) ($app['driveId'] ?? ''));
-            $dept = $student ? $deptModel->findById((string) ($student['departmentId'] ?? '')) : null;
+            $studentId = trim((string) ($app['studentId'] ?? ''));
+            $student = $studentId !== '' ? ($students[$studentId] ?? null) : null;
+            $user = null;
+            if (is_array($student)) {
+                $uid = trim((string) ($student['userId'] ?? ''));
+                $user = $uid !== '' ? ($users[$uid] ?? null) : null;
+            }
+            $companyId = trim((string) ($app['companyId'] ?? ''));
+            $driveId = trim((string) ($app['driveId'] ?? ''));
+            $company = $companyId !== '' ? ($companies[$companyId] ?? null) : null;
+            $drive = $driveId !== '' ? ($drives[$driveId] ?? null) : null;
+            $dept = null;
+            if (is_array($student)) {
+                $deptId = trim((string) ($student['departmentId'] ?? ''));
+                $dept = $deptId !== '' ? ($departments[$deptId] ?? null) : null;
+            }
 
             $status = $app['status'] ?? 'applied';
             $stage = match ($status) {
@@ -101,9 +146,10 @@ final class OfficerDataService
 
             $studentArr = is_array($student) ? $student : [];
             $appResume = is_array($app['resume'] ?? null) ? $app['resume'] : [];
-            $resumeFileMeta = $this->resumeFileForApplication($app);
-            $resumePath = is_array($resumeFileMeta) ? (string) ($resumeFileMeta['path'] ?? '') : '';
-            $resumeFile = is_array($resumeFileMeta) ? (string) ($resumeFileMeta['filename'] ?? '') : '';
+            // List views: local snapshots only — never scan resume library / AES per row.
+            $resumeFileMeta = $this->resumeMetaFromLocalSnapshots($app, $studentArr !== [] ? $studentArr : null);
+            $resumePath = (string) ($resumeFileMeta['path'] ?? '');
+            $resumeFile = (string) ($resumeFileMeta['filename'] ?? '');
             if ($resumeFile === '' && $resumePath !== '') {
                 $resumeFile = basename(str_replace('\\', '/', $resumePath));
             }
@@ -127,39 +173,8 @@ final class OfficerDataService
             $cgpa = (float) ($academic['cgpa'] ?? 0);
 
             $studentName = $studentArr !== []
-                ? $this->studentDisplayName($studentArr, is_array($user) ? $user : null)
+                ? $this->localStudentDisplayName($studentArr, is_array($user) ? $user : null)
                 : '';
-
-            // Backfill contact/CGPA from AES when local profile fields are thin.
-            if ($studentArr !== [] && ($email === '' || $phone === '' || $cgpa <= 0)) {
-                $aesRow = $this->applyAesPlacementFieldsToRow([
-                    'academic' => $academic,
-                    'personal' => $personal,
-                    'collegeEmail' => $collegeEmail,
-                    'personalEmail' => $personalEmail,
-                    'phone' => $phone,
-                ], $studentArr);
-                $aesAcademic = is_array($aesRow['academic'] ?? null) ? $aesRow['academic'] : $academic;
-                $aesPersonal = is_array($aesRow['personal'] ?? null) ? $aesRow['personal'] : $personal;
-                if ($cgpa <= 0) {
-                    $cgpa = (float) ($aesAcademic['cgpa'] ?? 0);
-                }
-                if ($phone === '') {
-                    $phone = trim((string) ($aesRow['phone'] ?? $aesPersonal['phone'] ?? ''));
-                }
-                if ($collegeEmail === '') {
-                    $collegeEmail = trim((string) ($aesRow['collegeEmail'] ?? ''));
-                }
-                if ($personalEmail === '') {
-                    $personalEmail = trim((string) ($aesRow['personalEmail'] ?? ''));
-                }
-                if ($email === '') {
-                    $email = $collegeEmail !== '' ? $collegeEmail : $personalEmail;
-                }
-                if ($studentName === '') {
-                    $studentName = trim((string) ($aesRow['displayName'] ?? ''));
-                }
-            }
 
             $row = DocumentHelper::serialize($app) ?? [];
             $row['driveId'] = (string) ($app['driveId'] ?? '');
@@ -235,6 +250,50 @@ final class OfficerDataService
         }
 
         return $rows;
+    }
+
+    /**
+     * Fast resume meta for application list rows (no library / AES lookups).
+     *
+     * @param array<string, mixed> $app
+     * @param array<string, mixed>|null $student
+     * @return array{path: string, filename: string}
+     */
+    private function resumeMetaFromLocalSnapshots(array $app, ?array $student): array
+    {
+        $sources = [];
+        if (is_array($app['resume'] ?? null)) {
+            $sources[] = $app['resume'];
+        }
+        if (is_array($student) && is_array($student['resume'] ?? null)) {
+            $sources[] = $student['resume'];
+        }
+        foreach ($sources as $src) {
+            if (!is_array($src)) {
+                continue;
+            }
+            $path = trim((string) ($src['path'] ?? ''));
+            $storedName = basename(str_replace('\\', '/', trim((string) ($src['storedName'] ?? ''))));
+            if ($path === '' && $storedName !== '') {
+                try {
+                    $path = (new ObjectStorageService())->uri(ObjectStorageService::FOLDER_RESUMES, $storedName);
+                } catch (\Throwable) {
+                    $path = '';
+                }
+            }
+            if ($path === '') {
+                continue;
+            }
+            $filename = trim((string) (
+                $src['fileName']
+                ?? $src['filename']
+                ?? basename(str_replace('\\', '/', $path))
+            ));
+
+            return ['path' => $path, 'filename' => $filename !== '' ? $filename : 'resume.pdf'];
+        }
+
+        return ['path' => '', 'filename' => ''];
     }
 
     /**
@@ -611,14 +670,24 @@ final class OfficerDataService
         }
 
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
+        $students = $studentModel->findAll($filter, 500);
+        $userIds = [];
+        foreach ($students as $s) {
+            $uid = trim((string) ($s['userId'] ?? ''));
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+        }
+        $usersById = $userModel->findByIds(array_keys($userIds));
+
         $rows = [];
-        foreach ($studentModel->findAll($filter, 500) as $s) {
+        foreach ($students as $s) {
             if (!empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($s, $ctx)) {
                 continue;
             }
             $userId = (string) ($s['userId'] ?? '');
             $deptId = (string) ($s['departmentId'] ?? '');
-            $u = $userId ? $userModel->findById($userId) : null;
+            $u = $userId !== '' ? ($usersById[$userId] ?? null) : null;
             $dept = $departments[$deptId] ?? null;
 
             $row = DocumentHelper::serialize($s) ?? [];
@@ -658,14 +727,24 @@ final class OfficerDataService
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $filter['placed'] = true;
 
+        $students = $studentModel->findAll($filter, 5000);
+        $userIds = [];
+        foreach ($students as $s) {
+            $uid = trim((string) ($s['userId'] ?? ''));
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+        }
+        $usersById = $userModel->findByIds(array_keys($userIds));
+
         $rows = [];
-        foreach ($studentModel->findAll($filter, 5000) as $s) {
+        foreach ($students as $s) {
             if (!empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($s, $ctx)) {
                 continue;
             }
             $userId = (string) ($s['userId'] ?? '');
             $deptId = (string) ($s['departmentId'] ?? '');
-            $u = $userId ? $userModel->findById($userId) : null;
+            $u = $userId !== '' ? ($usersById[$userId] ?? null) : null;
             $dept = $departments[$deptId] ?? null;
 
             $row = DocumentHelper::serialize($s) ?? [];
@@ -1442,8 +1521,18 @@ final class OfficerDataService
             ? []
             : PlacementOfficerContext::studentCollectionFilter($ctx ?? []);
 
+        $students = $studentModel->findAll($filter, 10000);
+        $userIds = [];
+        foreach ($students as $student) {
+            $uid = trim((string) ($student['userId'] ?? ''));
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+        }
+        $usersById = $userModel->findByIds(array_keys($userIds));
+
         $rows = [];
-        foreach ($studentModel->findAll($filter, 10000) as $student) {
+        foreach ($students as $student) {
             if (!$campusWide && !empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($student, $ctx)) {
                 continue;
             }
@@ -1457,7 +1546,7 @@ final class OfficerDataService
             }
 
             $userId = (string) ($student['userId'] ?? '');
-            $user = $userId !== '' ? $userModel->findById($userId) : null;
+            $user = $userId !== '' ? ($usersById[$userId] ?? null) : null;
             if (is_array($user)) {
                 $role = (string) ($user['role'] ?? '');
                 if ($role !== '' && $role !== 'student') {

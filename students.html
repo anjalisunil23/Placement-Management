@@ -723,10 +723,10 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/staff-api.js?v=20260723placed"></script>
-<script src="js/admin-api.js?v=20260723placed"></script>
-<script src="js/officer-api.js?v=20260723placed"></script>
-<script src="js/api.js?v=20260723livedata2"></script>
+<script src="js/staff-api.js?v=20260723perf"></script>
+<script src="js/admin-api.js?v=20260723perf"></script>
+<script src="js/officer-api.js?v=20260723perf"></script>
+<script src="js/api.js?v=20260723perf"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
 const role = Auth.role();
@@ -3008,23 +3008,97 @@ onAppReady(async () => {
     document.getElementById('btnAddSelfPlacement')?.addEventListener('click', () => openAddSelfPlacementModal());
     document.getElementById('addSelfPlacementForm')?.addEventListener('submit', e => submitAddSelfPlacement(e).catch(() => {}));
   }
-  // Portal registration tab removed for admin — Registered / Non-registered use allfinal-year.
-  if (canManageRegistrations && Auth.hasRealAuth() && !Auth.isDemo()) {
-    await UserRegistry.fetch().catch(() => {});
+
+  const hash = (location.hash || '').replace('#', '').toLowerCase();
+  const wantApps = /^(applications|resumes|resume|not-applied|non-applicants|shortlisted|exceptions|open-drive)$/.test(hash);
+  const wantPlaced = hash === 'placed' || hash === 'placements';
+  const wantPending = /^(non-registered|pending|final-year-pending)$/.test(hash);
+  const wantBlacklist = hash === 'blacklist';
+  const live = Auth.hasRealAuth() && !Auth.isDemo();
+
+  // Load only what the active tab needs first; hydrate the rest in the background.
+  const bootTasks = [];
+  if (canManageRegistrations && live) {
+    bootTasks.push(UserRegistry.fetch().catch(() => {}));
   }
-  await initOverview();
-  if (canViewFinalYear && Auth.hasRealAuth() && !Auth.isDemo()) {
-    await loadFinalYearStudents().catch(() => {});
+  if (canUseFindStudent) {
+    bootTasks.push(initOverview().catch(() => {}));
   }
-  if (canViewPlaced && Auth.hasRealAuth() && !Auth.isDemo()) {
-    await loadPlacedStudents().catch(() => {});
+
+  if (live && canViewPlaced && wantPlaced) {
+    bootTasks.push(loadPlacedStudents().catch(() => {}));
+  } else if (live && canViewFinalYear) {
+    bootTasks.push(loadFinalYearStudents().catch(() => {}));
   }
+
+  if (live && canManageApplications && wantApps) {
+    bootTasks.push((async () => {
+      await Promise.all([
+        ApplicationPipeline.fetch().catch(() => null),
+        ResumeQueue.fetch().catch(() => null),
+        initShortlistTools().catch(() => {}),
+      ]);
+      renderApplications();
+      renderResumes();
+      await initNonApplicants().catch(() => {});
+      await initDriveExceptions().catch(() => {});
+    })());
+  }
+
+  if (live && canManageBlacklist && wantBlacklist) {
+    bootTasks.push(BlacklistStore.fetch().then(() => renderBlacklist()).catch(() => {}));
+  }
+
+  await Promise.all(bootTasks);
+  renderRegistrations();
+
   const verifyId = new URLSearchParams(location.search).get('verify');
   if (verifyId && canVerifySelfPlacement) {
     await openVerifyPlacementModal(verifyId);
   }
-  renderRegistrations();
-  if (canManageApplications) {
+
+  // Background hydrate inactive tabs so switching feels instant.
+  if (live) {
+    const bg = [];
+    if (canViewFinalYear && wantPlaced) {
+      bg.push(loadFinalYearStudents().catch(() => {}));
+    }
+    if (canViewPlaced && !wantPlaced) {
+      bg.push(loadPlacedStudents().catch(() => {}));
+    }
+    if (canManageApplications && !wantApps) {
+      bg.push((async () => {
+        await Promise.all([
+          ApplicationPipeline.fetch().catch(() => null),
+          ResumeQueue.fetch().catch(() => null),
+          initShortlistTools().catch(() => {}),
+        ]);
+        renderApplications();
+        renderResumes();
+        await initNonApplicants().catch(() => {});
+        await initDriveExceptions().catch(() => {});
+      })());
+    }
+    if (canManageBlacklist && !wantBlacklist) {
+      bg.push(BlacklistStore.fetch().then(() => renderBlacklist()).catch(() => {}));
+    }
+    if (bg.length) {
+      setTimeout(() => { Promise.all(bg).catch(() => {}); }, 50);
+    }
+  }
+
+  // Lazy-load on tab click if background has not finished yet.
+  document.getElementById('linkPlaced')?.addEventListener('shown.bs.tab', () => {
+    if (canViewPlaced && live) loadPlacedStudents().catch(() => {});
+  });
+  document.getElementById('linkFinalYearRegistered')?.addEventListener('shown.bs.tab', () => {
+    if (canViewFinalYear && live) loadFinalYearStudents().catch(() => {});
+  });
+  document.getElementById('linkFinalYearPending')?.addEventListener('shown.bs.tab', () => {
+    if (canViewFinalYear && live) loadFinalYearStudents().catch(() => {});
+  });
+  document.getElementById('linkApplications')?.addEventListener('shown.bs.tab', () => {
+    if (!canManageApplications || !live) return;
     Promise.all([
       ApplicationPipeline.fetch().catch(() => null),
       ResumeQueue.fetch().catch(() => null),
@@ -3035,10 +3109,11 @@ onAppReady(async () => {
       await initNonApplicants().catch(() => {});
       await initDriveExceptions().catch(() => {});
     });
-  }
-  if (canManageBlacklist) {
-    await BlacklistStore.fetch().catch(() => {});
-    renderBlacklist();
-  }
+  });
+  document.getElementById('linkBlacklist')?.addEventListener('shown.bs.tab', () => {
+    if (canManageBlacklist && live) {
+      BlacklistStore.fetch().then(() => renderBlacklist()).catch(() => {});
+    }
+  });
 });
 </script></body></html>

@@ -589,14 +589,17 @@ final class AesLoginService
             }
             if ($name === '') {
                 try {
-                    foreach ((new AesApiService())->listDepartments() as $row) {
-                        if (strcasecmp($row['code'], $code) === 0) {
-                            $name = $row['name'];
+                    // Prefer local catalog only on /auth/me — AES listDepartments is too slow here.
+                    $local = (new DepartmentModel())->findAll([], 400);
+                    foreach ($local as $row) {
+                        if (strcasecmp((string) ($row['code'] ?? ''), $code) === 0
+                            || strcasecmp((string) ($row['aesId'] ?? ''), $code) === 0) {
+                            $name = trim((string) ($row['name'] ?? ''));
                             break;
                         }
                     }
                 } catch (\Throwable) {
-                    // Optional AES department lookup.
+                    // Optional local department lookup.
                 }
             }
         }
@@ -4158,8 +4161,7 @@ final class AesLoginService
         }
 
         try {
-            $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
-            $name = trim((string) ($placement['stud_name'] ?? $placement['name'] ?? ''));
+            $name = trim((new AesApiService())->fetchStudentDisplayNameFromInfo($register));
             if ($name !== '' && $this->isRealPersonName($name) && !$this->isPlaceholderName($name, $register)) {
                 return $name;
             }

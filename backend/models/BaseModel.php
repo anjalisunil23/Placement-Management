@@ -38,6 +38,42 @@ abstract class BaseModel
     }
 
     /**
+     * Bulk load by primary key — avoids N+1 findById loops on list endpoints.
+     *
+     * @param array<int, string> $ids
+     * @return array<string, array<string, mixed>> keyed by id
+     */
+    public function findByIds(array $ids): array
+    {
+        $clean = [];
+        foreach ($ids as $id) {
+            $id = trim((string) $id);
+            if ($id !== '' && Security::isValidId($id)) {
+                $clean[$id] = true;
+            }
+        }
+        $ids = array_keys($clean);
+        if ($ids === []) {
+            return [];
+        }
+
+        $map = [];
+        foreach (array_chunk($ids, 400) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+            $stmt = $this->db->prepare(
+                "SELECT id, payload, created_at, updated_at FROM `{$this->table}` WHERE id IN ({$placeholders})"
+            );
+            $stmt->execute($chunk);
+            while ($row = $stmt->fetch()) {
+                $doc = $this->rowToDoc($row);
+                $map[(string) ($doc['_id'] ?? $row['id'])] = $doc;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
      * @param array<string, mixed> $filter
      */
     public function findOne(array $filter, array $options = []): ?array

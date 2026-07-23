@@ -283,7 +283,7 @@ final class AesApiService
     {
         ksort($params);
         $cacheKey = 'allstud_' . md5((string) json_encode($params));
-        $cached = $this->readSharedListCache($cacheKey, 180);
+        $cached = $this->readSharedListCache($cacheKey, 1800);
         if (is_array($cached)) {
             return $cached;
         }
@@ -628,6 +628,41 @@ final class AesApiService
         }
 
         return $this->pickStudInfoFilterFields($record);
+    }
+
+    /**
+     * Display name from getStudInfo4Placement only (no qualification / multi-transport).
+     */
+    public function fetchStudentDisplayNameFromInfo(string $register): string
+    {
+        $register = strtoupper(trim($register));
+        if ($register === '') {
+            return '';
+        }
+
+        $cached = self::$studInfoRecordCache[$register] ?? null;
+        if (!is_array($cached) || $cached === []) {
+            $numeric = $this->resolveQualificationAdmissionNumber(['admno' => $register], $register);
+            if ($numeric !== '' && isset(self::$studInfoRecordCache[$numeric])) {
+                $cached = self::$studInfoRecordCache[$numeric];
+            }
+        }
+        if (!is_array($cached) || $cached === []) {
+            $record = $this->normalizePlacementStudentRecord(
+                $this->extractRecord($this->postStudInfo4Placement(['admno' => $register], $register))
+            );
+            if ($record === []) {
+                return '';
+            }
+            $infoAdmno = trim((string) ($record['stud_admno'] ?? $record['admno'] ?? ''));
+            if ($infoAdmno !== '') {
+                self::$studInfoRecordCache[$infoAdmno] = $record;
+            }
+            self::$studInfoRecordCache[$register] = $record;
+            $cached = $record;
+        }
+
+        return trim((string) ($cached['stud_name'] ?? $cached['name'] ?? ''));
     }
 
     /**
