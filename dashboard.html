@@ -298,8 +298,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723dashfast"></script>
-<script src="js/app.js?v=20260723direct"></script>
+<script src="js/api.js?v=20260723fetch2"></script>
+<script src="js/app.js?v=20260723fetch2"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -317,11 +317,11 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
   });
   const apiScripts = [];
   if (needManage) {
-    apiScripts.push('js/admin-api.js?v=20260723dashfast');
-    apiScripts.push('js/officer-api.js?v=20260723dashfast');
-    apiScripts.push('js/staff-api.js?v=20260723dashfast');
+    apiScripts.push('js/admin-api.js?v=20260723fetch2');
+    apiScripts.push('js/officer-api.js?v=20260723fetch2');
+    apiScripts.push('js/staff-api.js?v=20260723fetch2');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260723dashfast');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260723fetch2');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
@@ -444,13 +444,20 @@ if (role === 'admin') {
       if (Auth.hasRealAuth() && !Auth.isDemo()) {
         const lite = await dashboardStats({ lite: true });
         paintAdminStats(lite);
-        // Full analytics + charts — do not block the lite paint path.
-        Promise.all([dashboardStats(), chartsReady]).then(([full]) => {
-          if (full) {
-            paintAdminStats(full);
-            paintAdminCharts(full);
-          }
-        }).catch(() => {});
+        // Full analytics + charts — deferred so lite counts paint first.
+        const runFull = () => {
+          Promise.all([dashboardStats(), chartsReady]).then(([full]) => {
+            if (full) {
+              paintAdminStats(full);
+              paintAdminCharts(full);
+            }
+          }).catch(() => {});
+        };
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(runFull, { timeout: 3000 });
+        } else {
+          setTimeout(runFull, 1500);
+        }
       } else {
         await Promise.all([apisReady, chartsReady]);
         const s = await dashboardStats();

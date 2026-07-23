@@ -130,6 +130,64 @@ abstract class BaseModel
     }
 
     /**
+     * Pluck a top-level JSON string field without decoding full payloads.
+     *
+     * @param array<string, mixed> $filter
+     * @return list<string>
+     */
+    public function pluckField(string $field, array $filter = [], int $limit = 5000): array
+    {
+        $field = preg_replace('/[^a-zA-Z0-9_]/', '', $field) ?? '';
+        if ($field === '') {
+            return [];
+        }
+        [$where, $params] = QueryHelper::buildWhere($filter);
+        $sql = "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.{$field}')) AS v
+                FROM `{$this->table}` WHERE {$where} LIMIT " . (int) $limit;
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $values = [];
+        while ($row = $stmt->fetch()) {
+            $v = trim((string) ($row['v'] ?? ''));
+            if ($v !== '' && strcasecmp($v, 'null') !== 0) {
+                $values[] = $v;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * GROUP BY a top-level JSON field using SQL (no full payload decode).
+     *
+     * @param array<string, mixed> $filter
+     * @return array<string, int> value => count
+     */
+    public function countByField(string $field, array $filter = []): array
+    {
+        $field = preg_replace('/[^a-zA-Z0-9_]/', '', $field) ?? '';
+        if ($field === '') {
+            return [];
+        }
+        [$where, $params] = QueryHelper::buildWhere($filter);
+        $sql = "SELECT COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.{$field}')), '') AS grp, COUNT(*) AS cnt
+                FROM `{$this->table}` WHERE {$where}
+                GROUP BY grp";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $out = [];
+        while ($row = $stmt->fetch()) {
+            $grp = trim((string) ($row['grp'] ?? ''));
+            if ($grp === '' || strcasecmp($grp, 'null') === 0) {
+                $grp = '';
+            }
+            $out[$grp] = (int) ($row['cnt'] ?? 0);
+        }
+
+        return $out;
+    }
+
+    /**
      * @param array<string, mixed> $filter
      */
     public function count(array $filter = []): int

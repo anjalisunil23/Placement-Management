@@ -66,10 +66,11 @@ final class RecruitingService
                 return $cached;
             }
 
-            // Ultra-lite: company list + headline counts only (no by-dept scan, no batch scan, no per-company counts).
+            // Ultra-lite: company list + headline/status counts (SQL aggregates, no row enrich).
             $activeCompanies = $this->activeRecruitingCompanies($departmentId, false);
             $applicantCount = $this->countCampusApplicants($departmentId);
             $placedCount = $this->countCampusPlacements($departmentId);
+            $statusCounts = $this->applicationStatusCounts($departmentId);
             $out = [
                 'scope'            => ($departmentId !== null && $departmentId !== '') ? 'department' : 'campus',
                 'stats'            => [
@@ -78,6 +79,7 @@ final class RecruitingService
                     'departments'     => 0,
                     'placedStudents'  => $placedCount,
                 ],
+                'statusCounts'     => $statusCounts,
                 'activeCompanies'  => $activeCompanies,
                 'applicantsByDept' => [],
                 'applicants'       => [],
@@ -90,6 +92,12 @@ final class RecruitingService
             return $out;
         }
 
+        $fullCacheKey = 'recruiting_full_' . md5((string) ($departmentId ?? ''));
+        $fullCached = $this->readOverviewCache($fullCacheKey, 90);
+        if ($fullCached !== null) {
+            return $fullCached;
+        }
+
         $activeCompanies = $this->activeRecruitingCompanies($departmentId, true);
         $applicants = $this->campusApplicants($departmentId);
         $byDept = $this->applicantsByDepartment($applicants);
@@ -97,7 +105,7 @@ final class RecruitingService
         $batchOptions = $this->campusBatchOptionsLocal($departmentId);
         $placements = $this->listCampusPlacements($departmentId);
 
-        return [
+        $out = [
             'scope'            => ($departmentId !== null && $departmentId !== '') ? 'department' : 'campus',
             'stats'            => [
                 'activeCompanies' => count($activeCompanies),
@@ -105,6 +113,7 @@ final class RecruitingService
                 'departments'     => count($byDept),
                 'placedStudents'  => count($placements),
             ],
+            'statusCounts'     => $this->statusCountsFromApplicants($applicants),
             'activeCompanies'  => $activeCompanies,
             'applicantsByDept' => $byDept,
             'applicants'       => $applicants,
@@ -112,6 +121,40 @@ final class RecruitingService
             'placements'       => $placements,
             'lite'             => false,
         ];
+        $this->writeOverviewCache($fullCacheKey, $out);
+
+        return $out;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function applicationStatusCounts(?string $departmentId): array
+    {
+        $filter = $this->campusApplicantFilter($departmentId);
+        if ($filter === null) {
+            return [];
+        }
+
+        return (new ApplicationModel())->countByField('status', $filter);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $applicants
+     * @return array<string, int>
+     */
+    private function statusCountsFromApplicants(array $applicants): array
+    {
+        $counts = [];
+        foreach ($applicants as $row) {
+            $status = trim((string) ($row['uiStatus'] ?? $row['status'] ?? ''));
+            if ($status === '') {
+                continue;
+            }
+            $counts[$status] = ($counts[$status] ?? 0) + 1;
+        }
+
+        return $counts;
     }
 
     /**
@@ -624,20 +667,17 @@ final class RecruitingService
         unset($row);
 
         if ($withApplicantCounts) {
-            $deptStudentOids = [];
+            $appFilter = [];
             if ($departmentId !== null && $departmentId !== '') {
                 $deptOidForApps = Security::toObjectId($departmentId);
                 if ($deptOidForApps !== null) {
                     $deptStudentOids = (new StudentModel())->findIds(['departmentId' => $deptOidForApps], 5000);
-                }
-            }
-
-            foreach (array_keys($byCompany) as $companyId) {
-                $appFilter = ['companyId' => Security::toObjectId($companyId)];
-                if ($departmentId !== null && $departmentId !== '') {
                     $appFilter['studentId'] = ['$in' => $deptStudentOids];
                 }
-                $byCompany[$companyId]['applicants'] = $appModel->count($appFilter);
+            }
+            $countsByCompany = $appModel->countByField('companyId', $appFilter);
+            foreach (array_keys($byCompany) as $companyId) {
+                $byCompany[$companyId]['applicants'] = (int) ($countsByCompany[$companyId] ?? 0);
             }
         }
 

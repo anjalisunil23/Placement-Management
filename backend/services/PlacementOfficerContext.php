@@ -88,19 +88,17 @@ final class PlacementOfficerContext
     /**
      * @return string[]
      */
-    public static function studentIdsInDepartment(array $ctx): array
+    public static function userIdsInDepartment(array $ctx): array
     {
-        $students = (new StudentModel())->findAll(self::studentCollectionFilter($ctx), 5000);
-        return array_map(fn ($s) => (string) $s['_id'], $students);
+        return (new StudentModel())->pluckField('userId', self::studentCollectionFilter($ctx), 5000);
     }
 
     /**
      * @return string[]
      */
-    public static function userIdsInDepartment(array $ctx): array
+    public static function studentIdsInDepartment(array $ctx): array
     {
-        $students = (new StudentModel())->findAll(self::studentCollectionFilter($ctx), 5000);
-        return array_map(fn ($s) => (string) $s['userId'], $students);
+        return (new StudentModel())->findIds(self::studentCollectionFilter($ctx), 5000);
     }
 
     /**

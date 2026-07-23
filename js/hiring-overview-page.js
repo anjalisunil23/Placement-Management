@@ -376,6 +376,44 @@
 
   HiringOverviewPage.prototype.recruitingViewForDept = function (data, deptCode, batchCode) {
     if (!data) return null;
+
+    // Lite payload: headline stats + SQL status counts — no per-row applicants yet.
+    if (data.lite) {
+      const stats = data.stats || {};
+      const sc = data.statusCounts || {};
+      const shortlisted = (Number(sc.shortlisted) || 0) + (Number(sc.under_review) || 0);
+      const offers = (Number(sc.offered) || 0) + (Number(sc.selected) || 0);
+      const applicants = Number(stats.applicants) || Object.values(sc).reduce((n, v) => n + (Number(v) || 0), 0);
+      const hired = Number(stats.placedStudents) || 0;
+      const companies = (data.activeCompanies || []).map(c => ({
+        company: c.company,
+        roles: c.openRoles ? [`${c.openRoles} open role${c.openRoles === 1 ? '' : 's'}`] : [],
+        applicants: Number(c.applicants) || 0,
+        shortlisted: 0,
+        selected: 0,
+        status: c.status || 'Active',
+        statusCls: { scheduled: 'info', open: 'success', ongoing: 'info', reviewing: 'warning' }[String(c.status || '').toLowerCase()] || 'success',
+      }));
+      return {
+        totals: {
+          companiesHiring: companies.length || Number(stats.activeCompanies) || 0,
+          applicants,
+          shortlisted,
+          offers,
+          hired,
+        },
+        pipeline: [
+          { label: 'Applicants', value: applicants },
+          { label: 'Shortlisted', value: shortlisted },
+          { label: 'Offers', value: offers },
+          { label: 'Hired', value: hired },
+        ],
+        companies,
+        candidates: [],
+        lite: true,
+      };
+    }
+
     let applicants = (data.applicants || []).map(RecruitingStore.mapApplicant);
     if (deptCode) {
       applicants = applicants.filter(a => this.deptMatchesFilter(a.dept, deptCode));
@@ -1128,9 +1166,11 @@
       this.candidateMatchesFilter(s.status, status)
       && this.batchMatchesFilter(s.classBatch, batchFilter)
     );
-    const emptyCandidatesMsg = this.staffLive || this.officerLive
+    const emptyCandidatesMsg = view?.lite
+      ? 'Candidate list loads when you filter by status or batch.'
+      : (this.staffLive || this.officerLive
       ? 'No students from your department are in the hiring pipeline yet.'
-      : (this.campusLive ? 'No candidates match this filter.' : 'Sign in to view live hiring data.');
+      : (this.campusLive ? 'No candidates match this filter.' : 'Sign in to view live hiring data.'));
     const candidateRows = this.$('candidateRows');
     if (candidateRows) {
       candidateRows.innerHTML = list.length
@@ -1150,6 +1190,21 @@
     this.renderPlacementList();
   };
 
+  HiringOverviewPage.prototype.ensureFullRecruiting = function () {
+    if (!this.campusLive) return Promise.resolve(null);
+    if (this.campusRecruitingData && !this.campusRecruitingData.lite) {
+      return Promise.resolve(this.campusRecruitingData);
+    }
+    if (this._fullRecruitingPromise) return this._fullRecruitingPromise;
+    this._fullRecruitingPromise = RecruitingStore.fetch()
+      .then((data) => {
+        if (data) this.applyRecruitingData(data, null);
+        return data;
+      })
+      .catch(() => null);
+    return this._fullRecruitingPromise;
+  };
+
   HiringOverviewPage.prototype.bindEvents = function () {
     if (this._bound) return;
     this._bound = true;
@@ -1161,9 +1216,13 @@
 
     deptSelect?.addEventListener('change', () => self.onDepartmentDropdownChange());
     branchSelect?.addEventListener('change', () => self.onBranchDropdownChange());
-    self.$('batchSelect')?.addEventListener('change', () => { self.onBatchDropdownChange(); });
+    self.$('batchSelect')?.addEventListener('change', () => {
+      self.ensureFullRecruiting().finally(() => self.onBatchDropdownChange());
+    });
     self.$('trendYearSelect')?.addEventListener('change', () => { self.applyTrendYearMode(); });
-    statusFilter?.addEventListener('change', () => self.renderForDept(self.selectedDept()));
+    statusFilter?.addEventListener('change', () => {
+      self.ensureFullRecruiting().finally(() => self.renderForDept(self.selectedDept()));
+    });
 
     const goToCompanies = () => {
       self.$('companiesSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1251,8 +1310,14 @@
         this.renderForDept(this.selectedDept());
       }
 
-      // Background full hydrate — deferred so first paint stays snappy.
+      // Background: trends always; full applicant enrich only off the dashboard critical path.
       if (this.campusLive) {
+        const isDashboard = (document.body?.dataset?.page || '') === 'dashboard.html';
+        const hydrateTrends = () => {
+          dashboardStats().then((stats) => {
+            if (stats) this.applyRecruitingData(this.campusRecruitingData, stats);
+          }).catch(() => {});
+        };
         const hydrateFull = () => {
           Promise.all([
             RecruitingStore.fetch().catch(() => null),
@@ -1268,10 +1333,18 @@
             this.applyRecruitingData(data || this.campusRecruitingData, stats);
           }).catch(() => {});
         };
-        if (typeof requestIdleCallback === 'function') {
-          requestIdleCallback(hydrateFull, { timeout: 2500 });
+        const schedule = (fn, delay) => {
+          if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(fn, { timeout: delay });
+          } else {
+            setTimeout(fn, Math.min(delay, 1500));
+          }
+        };
+        if (isDashboard) {
+          // Dashboard: lite KPIs are enough; warm trends without 5k-row enrich.
+          schedule(hydrateTrends, 2500);
         } else {
-          setTimeout(hydrateFull, 1200);
+          schedule(hydrateFull, 2500);
         }
       }
     } catch (err) {

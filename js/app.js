@@ -732,12 +732,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) { /* ignore */ }
 
   let hasSession = await Auth.bootstrap(
-    freshAesLogin ? { soft: false, fast: true } : undefined
+    freshAesLogin ? { soft: false, fast: true } : { fast: true }
   );
   // Only retry once if we had a cached role but the first /auth/me failed (cookie race).
   if (!hasSession && (Auth.role() || Auth.user() || freshAesLogin)) {
     hasSession = await Auth.bootstrap(
-      freshAesLogin ? { soft: false, fast: true } : undefined
+      freshAesLogin ? { soft: false, fast: true } : { fast: true }
     );
   }
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(pageBase)) {

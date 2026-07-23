@@ -47,26 +47,19 @@ final class AnalyticsService
             ? array_filter([$departmentModel->findById($departmentId)])
             : $departmentModel->findAll([], 50);
 
-        // One student scan for branch totals instead of 2 count() queries per department.
-        $branchTotals = [];
-        $branchPlaced = [];
-        foreach ($studentModel->findAll($studentFilter, 10000) as $s) {
-            $did = (string) ($s['departmentId'] ?? '');
-            if ($did === '') {
-                continue;
-            }
-            $branchTotals[$did] = ($branchTotals[$did] ?? 0) + 1;
-            if (($s['placed'] ?? false) === true) {
-                $branchPlaced[$did] = ($branchPlaced[$did] ?? 0) + 1;
-            }
-        }
+        // SQL group-by — avoid decoding up to 10k student payloads.
+        $branchTotals = $studentModel->countByField('departmentId', $studentFilter);
+        $placedByDept = $studentModel->countByField(
+            'departmentId',
+            array_merge($studentFilter, ['placed' => true])
+        );
         foreach ($departments as $dept) {
             if (!$dept) {
                 continue;
             }
             $deptId = (string) $dept['_id'];
             $total = (int) ($branchTotals[$deptId] ?? 0);
-            $placed = (int) ($branchPlaced[$deptId] ?? 0);
+            $placed = (int) ($placedByDept[$deptId] ?? 0);
             $branchStats[] = [
                 'department' => $dept['name'],
                 'code'       => $dept['code'],
@@ -78,9 +71,7 @@ final class AnalyticsService
 
         $studentIds = [];
         if ($deptOid) {
-            foreach ($studentModel->findAll($studentFilter, 5000) as $s) {
-                $studentIds[] = $s['_id'];
-            }
+            $studentIds = $studentModel->findIds($studentFilter, 5000);
         }
 
         $companies = $companyModel->findAll([], 100);
@@ -104,34 +95,26 @@ final class AnalyticsService
         } elseif ($deptOid) {
             $appScanFilter['studentId'] = ['$in' => []];
         }
-        // One pass over applications instead of 2 count() queries per company.
-        foreach ($applicationModel->findAll($appScanFilter, 8000) as $app) {
-            $cid = (string) ($app['companyId'] ?? '');
-            if ($cid === '' || !isset($companyStatsMap[$cid])) {
-                continue;
-            }
-            $companyStatsMap[$cid]['applications']++;
-            if (($app['status'] ?? '') === 'selected') {
-                $companyStatsMap[$cid]['selected']++;
-            }
+        $appsByCompany = $applicationModel->countByField('companyId', $appScanFilter);
+        $selectedByCompany = $applicationModel->countByField(
+            'companyId',
+            array_merge($appScanFilter, ['status' => 'selected'])
+        );
+        foreach ($companyStatsMap as $cid => &$row) {
+            $row['applications'] = (int) ($appsByCompany[$cid] ?? 0);
+            $row['selected'] = (int) ($selectedByCompany[$cid] ?? 0);
         }
+        unset($row);
         $companyStats = array_values($companyStatsMap);
 
         $appCountFilter = $appScanFilter;
 
         $companyCount = $companyModel->count([]);
         if ($deptOid) {
-            // Department dashboards: companies that actually received applications from this dept.
-            $companyIds = [];
-            if ($studentIds !== []) {
-                foreach ($applicationModel->findAll(['studentId' => ['$in' => $studentIds]], 8000) as $app) {
-                    $cid = (string) ($app['companyId'] ?? '');
-                    if ($cid !== '') {
-                        $companyIds[$cid] = true;
-                    }
-                }
-            }
-            $companyCount = count($companyIds);
+            $companyCount = count(array_filter(
+                $appsByCompany,
+                static fn (int $n): bool => $n > 0
+            ));
         }
 
         $salaries = $this->extractSalariesFromSources(
@@ -525,6 +508,19 @@ final class AnalyticsService
      */
     public function getExtendedAnalytics(?string $departmentId = null): array
     {
+        $cacheKey = 'analytics_ext_' . md5((string) ($departmentId ?? ''));
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_' . preg_replace('/[^a-zA-Z0-9_]/', '', $cacheKey) . '.json';
+        if (is_file($path)) {
+            $mtime = @filemtime($path);
+            if ($mtime !== false && (time() - $mtime) <= 90) {
+                $raw = @file_get_contents($path);
+                $decoded = is_string($raw) ? json_decode($raw, true) : null;
+                if (is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+        }
+
         $base = $this->getDashboardAnalytics($departmentId);
         $jobModel = new JobModel();
         $jobs = $jobModel->findAll([], 500);
@@ -533,7 +529,7 @@ final class AnalyticsService
         $selectedApps = (new ApplicationModel())->findAll(['status' => 'selected'], 5000);
         $studentIds = $this->studentIdsForDepartment($departmentId);
 
-        return [
+        $out = [
             'totals'           => $base['totals'],
             'branchStatistics' => $base['branchStatistics'],
             'companyStatistics'=> $base['companyStatistics'],
@@ -554,6 +550,9 @@ final class AnalyticsService
             'jobTypeSplit'     => $this->getJobTypeSplit($jobs),
             'topCompanyOffers' => $this->getTopCompanyOffers($base['companyStatistics']),
         ];
+        @file_put_contents($path, json_encode($out), LOCK_EX);
+
+        return $out;
     }
 
     /**
@@ -848,8 +847,8 @@ final class AnalyticsService
             return [];
         }
         $map = [];
-        foreach ((new StudentModel())->findAll(['departmentId' => $deptOid], 5000) as $student) {
-            $map[(string) $student['_id']] = true;
+        foreach ((new StudentModel())->findIds(['departmentId' => $deptOid], 5000) as $id) {
+            $map[$id] = true;
         }
         return $map;
     }
