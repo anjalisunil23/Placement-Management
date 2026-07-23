@@ -298,9 +298,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723dashlite"></script>
+<script src="js/api.js?v=20260723dashfast"></script>
 <script src="js/app.js?v=20260723direct"></script>
 <script>
+window.__phCachedRole = (function () {
+  try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
+})();
 window.__phLoadDashExtras = function loadDashboardExtras(role) {
   const needCharts = role === 'admin' || role === 'placement_officer' || role === 'staff' || role === 'company';
   const needManage = role === 'admin' || role === 'placement_officer' || role === 'staff';
@@ -314,11 +317,11 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
   });
   const apiScripts = [];
   if (needManage) {
-    apiScripts.push('js/admin-api.js?v=20260723dashlite');
-    apiScripts.push('js/officer-api.js?v=20260723dashlite');
-    apiScripts.push('js/staff-api.js?v=20260723dashlite');
+    apiScripts.push('js/admin-api.js?v=20260723dashfast');
+    apiScripts.push('js/officer-api.js?v=20260723dashfast');
+    apiScripts.push('js/staff-api.js?v=20260723dashfast');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260723dashlite');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260723dashfast');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
@@ -329,8 +332,13 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
   window.__phDashApis = apis;
   window.__phDashCharts = charts;
   window.__phDashExtras = Promise.all([apis, charts]);
+  window.__phDashExtrasRole = role;
   return { apis, charts };
 };
+// Prefetch role scripts from cached session before /auth/me finishes.
+if (window.__phCachedRole && typeof window.__phLoadDashExtras === 'function') {
+  window.__phLoadDashExtras(window.__phCachedRole);
+}
 </script>
 <script>
 onAppReady(async () => {
@@ -340,10 +348,12 @@ if (!role || !ROLE_HOME[role]) {
   window.location.replace(Auth.homePage() || 'public-stats.html');
   return;
 }
-// Load role scripts after Auth bootstrap (AES login has no localStorage role yet on first paint).
-const extras = (typeof window.__phLoadDashExtras === 'function')
-  ? window.__phLoadDashExtras(role)
-  : { apis: Promise.resolve(), charts: Promise.resolve() };
+// Reuse prefetch when role matches; otherwise load for the authenticated role.
+const extras = (window.__phDashExtrasRole === role && window.__phDashApis)
+  ? { apis: window.__phDashApis, charts: window.__phDashCharts }
+  : (typeof window.__phLoadDashExtras === 'function'
+    ? window.__phLoadDashExtras(role)
+    : { apis: Promise.resolve(), charts: Promise.resolve() });
 const apisReady = extras.apis || Promise.resolve();
 const chartsReady = extras.charts || Promise.resolve();
 const titles = {
@@ -426,7 +436,7 @@ function paintAdminCharts(s) {
   }
 }
 
-/* Admin — lite counts first, then full analytics/charts */
+/* Admin — lite counts first, then full analytics/charts in background */
 if (role === 'admin') {
   (async () => {
     try {
@@ -434,10 +444,13 @@ if (role === 'admin') {
       if (Auth.hasRealAuth() && !Auth.isDemo()) {
         const lite = await dashboardStats({ lite: true });
         paintAdminStats(lite);
-        const full = await dashboardStats();
-        paintAdminStats(full);
-        await chartsReady;
-        paintAdminCharts(full);
+        // Full analytics + charts — do not block the lite paint path.
+        Promise.all([dashboardStats(), chartsReady]).then(([full]) => {
+          if (full) {
+            paintAdminStats(full);
+            paintAdminCharts(full);
+          }
+        }).catch(() => {});
       } else {
         await Promise.all([apisReady, chartsReady]);
         const s = await dashboardStats();

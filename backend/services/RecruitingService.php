@@ -59,30 +59,38 @@ final class RecruitingService
      */
     public function getCampusOverview(?string $departmentId = null, ?array $filterCtx = null, bool $lite = false): array
     {
-        $activeCompanies = $this->activeRecruitingCompanies($departmentId);
-
         if ($lite) {
-            $applicantCount = $this->countCampusApplicants($departmentId);
-            $byDept = $this->applicantsByDepartmentCounts($departmentId);
-            $placedCount = $this->countCampusPlacements($departmentId);
+            $cacheKey = 'recruiting_lite_' . md5((string) ($departmentId ?? ''));
+            $cached = $this->readOverviewCache($cacheKey, 60);
+            if ($cached !== null) {
+                return $cached;
+            }
 
-            return [
+            // Ultra-lite: company list + headline counts only (no by-dept scan, no batch scan, no per-company counts).
+            $activeCompanies = $this->activeRecruitingCompanies($departmentId, false);
+            $applicantCount = $this->countCampusApplicants($departmentId);
+            $placedCount = $this->countCampusPlacements($departmentId);
+            $out = [
                 'scope'            => ($departmentId !== null && $departmentId !== '') ? 'department' : 'campus',
                 'stats'            => [
                     'activeCompanies' => count($activeCompanies),
                     'applicants'      => $applicantCount,
-                    'departments'     => count($byDept),
+                    'departments'     => 0,
                     'placedStudents'  => $placedCount,
                 ],
                 'activeCompanies'  => $activeCompanies,
-                'applicantsByDept' => $byDept,
+                'applicantsByDept' => [],
                 'applicants'       => [],
-                'batchOptions'     => $this->campusBatchOptionsLocal($departmentId),
+                'batchOptions'     => [],
                 'placements'       => [],
                 'lite'             => true,
             ];
+            $this->writeOverviewCache($cacheKey, $out);
+
+            return $out;
         }
 
+        $activeCompanies = $this->activeRecruitingCompanies($departmentId, true);
         $applicants = $this->campusApplicants($departmentId);
         $byDept = $this->applicantsByDepartment($applicants);
         // Local classBatch only — AES directory fetch is too slow for dashboard hydrate.
@@ -104,6 +112,37 @@ final class RecruitingService
             'placements'       => $placements,
             'lite'             => false,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function readOverviewCache(string $key, int $ttlSeconds): ?array
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_' . preg_replace('/[^a-zA-Z0-9_]/', '', $key) . '.json';
+        if (!is_file($path)) {
+            return null;
+        }
+        $mtime = @filemtime($path);
+        if ($mtime === false || (time() - $mtime) > $ttlSeconds) {
+            return null;
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return null;
+        }
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function writeOverviewCache(string $key, array $payload): void
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_' . preg_replace('/[^a-zA-Z0-9_]/', '', $key) . '.json';
+        @file_put_contents($path, json_encode($payload), LOCK_EX);
     }
 
     /**
@@ -307,10 +346,7 @@ final class RecruitingService
             if ($deptOid === null) {
                 return null;
             }
-            $studentIds = [];
-            foreach ((new StudentModel())->findAll(['departmentId' => $deptOid], 5000) as $student) {
-                $studentIds[] = $student['_id'];
-            }
+            $studentIds = (new StudentModel())->findIds(['departmentId' => $deptOid], 5000);
             if ($studentIds === []) {
                 return null;
             }
@@ -505,7 +541,7 @@ final class RecruitingService
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function activeRecruitingCompanies(?string $departmentId): array
+    private function activeRecruitingCompanies(?string $departmentId, bool $withApplicantCounts = true): array
     {
         $driveModel = new DriveModel();
         $jobModel = new JobModel();
@@ -533,20 +569,21 @@ final class RecruitingService
         }
 
         $byCompany = [];
+        $companyIds = [];
         foreach ($drives as $drive) {
             $companyId = (string) ($drive['companyId'] ?? '');
             if ($companyId === '') {
                 continue;
             }
+            $companyIds[$companyId] = true;
             if (!isset($byCompany[$companyId])) {
-                $company = $companyModel->findById($companyId);
                 $byCompany[$companyId] = [
-                    'companyId'    => $companyId,
-                    'company'      => (string) ($company['companyName'] ?? 'Company'),
-                    'openRoles'    => 0,
-                    'package'      => (string) ($drive['eligibility']['package'] ?? $drive['tier'] ?? ''),
-                    'applicants'   => 0,
-                    'status'       => (string) ($drive['status'] ?? 'open'),
+                    'companyId'  => $companyId,
+                    'company'    => 'Company',
+                    'openRoles'  => 0,
+                    'package'    => (string) ($drive['eligibility']['package'] ?? $drive['tier'] ?? ''),
+                    'applicants' => 0,
+                    'status'     => (string) ($drive['status'] ?? 'open'),
                 ];
             }
             $byCompany[$companyId]['openRoles']++;
@@ -560,11 +597,11 @@ final class RecruitingService
             if ($companyId === '') {
                 continue;
             }
+            $companyIds[$companyId] = true;
             if (!isset($byCompany[$companyId])) {
-                $company = $companyModel->findById($companyId);
                 $byCompany[$companyId] = [
                     'companyId'  => $companyId,
-                    'company'    => (string) ($company['companyName'] ?? 'Company'),
+                    'company'    => 'Company',
                     'openRoles'  => 0,
                     'package'    => (string) ($job['package'] ?? ''),
                     'applicants' => 0,
@@ -577,24 +614,31 @@ final class RecruitingService
             }
         }
 
-        $deptStudentOids = [];
-        if ($departmentId !== null && $departmentId !== '') {
-            $deptOidForApps = Security::toObjectId($departmentId);
-            if ($deptOidForApps !== null) {
-                foreach ((new StudentModel())->findAll(['departmentId' => $deptOidForApps], 5000) as $student) {
-                    if (isset($student['_id'])) {
-                        $deptStudentOids[] = $student['_id'];
-                    }
-                }
+        $companies = $companyModel->findByIds(array_keys($companyIds));
+        foreach ($byCompany as $companyId => &$row) {
+            $company = $companies[$companyId] ?? null;
+            if (is_array($company)) {
+                $row['company'] = (string) ($company['companyName'] ?? 'Company');
             }
         }
+        unset($row);
 
-        foreach (array_keys($byCompany) as $companyId) {
-            $appFilter = ['companyId' => Security::toObjectId($companyId)];
+        if ($withApplicantCounts) {
+            $deptStudentOids = [];
             if ($departmentId !== null && $departmentId !== '') {
-                $appFilter['studentId'] = ['$in' => $deptStudentOids];
+                $deptOidForApps = Security::toObjectId($departmentId);
+                if ($deptOidForApps !== null) {
+                    $deptStudentOids = (new StudentModel())->findIds(['departmentId' => $deptOidForApps], 5000);
+                }
             }
-            $byCompany[$companyId]['applicants'] = $appModel->count($appFilter);
+
+            foreach (array_keys($byCompany) as $companyId) {
+                $appFilter = ['companyId' => Security::toObjectId($companyId)];
+                if ($departmentId !== null && $departmentId !== '') {
+                    $appFilter['studentId'] = ['$in' => $deptStudentOids];
+                }
+                $byCompany[$companyId]['applicants'] = $appModel->count($appFilter);
+            }
         }
 
         return array_values($byCompany);

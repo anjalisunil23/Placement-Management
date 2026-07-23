@@ -1208,7 +1208,7 @@
     this.renderForDept(this.selectedDept());
   };
 
-  HiringOverviewPage.prototype.init = async function (opts) {
+    HiringOverviewPage.prototype.init = async function (opts) {
     opts = opts || {};
     if (opts.root) {
       this.root = typeof opts.root === 'string' ? document.querySelector(opts.root) : opts.root;
@@ -1226,18 +1226,16 @@
       this.refreshLiveFlags();
       const role = this.currentRole();
 
-      // First paint: lite recruiting + lite stats (no enriched applicants / extended analytics).
-      const liteTasks = [DepartmentStore.fetch()];
-      if (this.campusLive) {
-        liteTasks.push(RecruitingStore.fetch({ lite: true }));
-        liteTasks.push(dashboardStats({ lite: true }).catch(() => null));
-      }
-      const liteResults = await Promise.all(liteTasks);
+      // Use cached departments immediately; refresh in background (do not block first paint).
       this.populateDeptSelect();
+      DepartmentStore.fetch().then(() => this.populateDeptSelect()).catch(() => {});
 
+      // First paint: ultra-lite recruiting + lite stats only.
       if (this.campusLive) {
-        const liteData = liteResults[1];
-        const liteStats = liteResults[2];
+        const [liteData, liteStats] = await Promise.all([
+          RecruitingStore.fetch({ lite: true }).catch(() => null),
+          dashboardStats({ lite: true }).catch(() => null),
+        ]);
         if (liteData) {
           this.applyRecruitingData(liteData, liteStats);
         } else {
@@ -1253,21 +1251,28 @@
         this.renderForDept(this.selectedDept());
       }
 
-      // Background: full recruiting + trends (does not block first paint).
+      // Background full hydrate — deferred so first paint stays snappy.
       if (this.campusLive) {
-        Promise.all([
-          RecruitingStore.fetch().catch(() => null),
-          dashboardStats().catch(() => null),
-        ]).then(([data, stats]) => {
-          if (!data && !stats) {
-            if (!this.campusRecruitingData) {
-              toast('Could not load live recruiting data. Refresh or sign in again.', 'warn');
-              document.getElementById('dashLiveBadge')?.classList.add('d-none');
+        const hydrateFull = () => {
+          Promise.all([
+            RecruitingStore.fetch().catch(() => null),
+            dashboardStats().catch(() => null),
+          ]).then(([data, stats]) => {
+            if (!data && !stats) {
+              if (!this.campusRecruitingData) {
+                toast('Could not load live recruiting data. Refresh or sign in again.', 'warn');
+                document.getElementById('dashLiveBadge')?.classList.add('d-none');
+              }
+              return;
             }
-            return;
-          }
-          this.applyRecruitingData(data || this.campusRecruitingData, stats);
-        }).catch(() => {});
+            this.applyRecruitingData(data || this.campusRecruitingData, stats);
+          }).catch(() => {});
+        };
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(hydrateFull, { timeout: 2500 });
+        } else {
+          setTimeout(hydrateFull, 1200);
+        }
       }
     } catch (err) {
       console.error('Hiring overview init failed', err);

@@ -110,6 +110,26 @@ abstract class BaseModel
     }
 
     /**
+     * Id-only lookup — avoids decoding large JSON payloads for filter/$in builds.
+     *
+     * @param array<string, mixed> $filter
+     * @return list<string>
+     */
+    public function findIds(array $filter = [], int $limit = 5000): array
+    {
+        [$where, $params] = QueryHelper::buildWhere($filter);
+        $sql = "SELECT id FROM `{$this->table}` WHERE {$where} LIMIT " . (int) $limit;
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $ids = [];
+        while ($row = $stmt->fetch()) {
+            $ids[] = (string) $row['id'];
+        }
+
+        return $ids;
+    }
+
+    /**
      * @param array<string, mixed> $filter
      */
     public function count(array $filter = []): int
