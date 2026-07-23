@@ -50,6 +50,10 @@ const OfficerApi = {
       placed: isPlaced,
       selfPlacement,
       placementStatus,
+      placementCompany: row.placementCompany || row.placement?.company || row.placement?.companyName || '',
+      placementRole: row.placementRole || row.placement?.role || row.placement?.jobRole || '',
+      placementPackage: row.placementPackage || row.placement?.package || row.placement?.ctc || row.placement?.salary || '',
+      placedAt: row.placedAt || row.placement?.placedAt || row.placement?.date || '',
       photo: row.photo || u.photo || null,
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
@@ -217,6 +221,15 @@ const OfficerApi = {
     if (params.q) qs.set('q', params.q);
     const q = qs.toString();
     const res = await api('/officer/students/final-year' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(s => OfficerApi.mapStudentRow(s));
+  },
+
+  async fetchPlacedStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/officer/students/placed' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => OfficerApi.mapStudentRow(s));
   },

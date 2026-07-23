@@ -203,6 +203,24 @@ const StaffApi = {
     }
   },
 
+  async fetchPlacedStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    StaffApi._lastFetchError = '';
+    const res = await api('/staff/students/placed' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) {
+      StaffApi._lastFetchError = res.message || 'Request failed';
+      return null;
+    }
+    try {
+      return res.data.map(s => StaffApi.mapStudentRow(s));
+    } catch (e) {
+      StaffApi._lastFetchError = e?.message || 'Could not parse student data';
+      return null;
+    }
+  },
+
   async fetchStudentPipeline(studentId) {
     const res = await api(`/staff/students/${encodeURIComponent(studentId)}/pipeline`);
     if (!res.success || !Array.isArray(res.data)) return null;

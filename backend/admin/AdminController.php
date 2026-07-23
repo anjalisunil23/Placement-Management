@@ -1045,6 +1045,16 @@ final class AdminController
         );
     }
 
+    /** GET /api/admin/students/placed — campus-wide placed students */
+    public function listPlacedStudents(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        Response::success(
+            (new OfficerDataService())->listPlacedStudents($scope['ctx'], $query !== '' ? $query : null)
+        );
+    }
+
     /** GET /api/admin/students/{id}/profile */
     public function studentProfile(string $studentId): void
     {

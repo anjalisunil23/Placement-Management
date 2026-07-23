@@ -639,6 +639,74 @@ final class OfficerDataService
     }
 
     /**
+     * Students marked placed=true in the local registry (current placement only).
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listPlacedStudents(array $ctx, ?string $query = null): array
+    {
+        $studentModel = new StudentModel();
+        $deptModel = new DepartmentModel();
+        $userModel = new UserModel();
+
+        $departments = [];
+        foreach ($deptModel->findAll([], 200) as $d) {
+            $departments[(string) $d['_id']] = $d;
+        }
+
+        $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
+        $filter['placed'] = true;
+
+        $rows = [];
+        foreach ($studentModel->findAll($filter, 5000) as $s) {
+            if (!empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($s, $ctx)) {
+                continue;
+            }
+            $userId = (string) ($s['userId'] ?? '');
+            $deptId = (string) ($s['departmentId'] ?? '');
+            $u = $userId ? $userModel->findById($userId) : null;
+            $dept = $departments[$deptId] ?? null;
+
+            $row = DocumentHelper::serialize($s) ?? [];
+            $row = $this->enrichStudentListRow($row, $s, $u, false);
+            $row['department'] = $dept ? [
+                'id'   => (string) $dept['_id'],
+                'name' => $dept['name'] ?? '',
+                'code' => $dept['code'] ?? '',
+            ] : null;
+
+            $placement = is_array($s['placement'] ?? null) ? $s['placement'] : [];
+            $company = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
+            $role = trim((string) ($placement['role'] ?? $placement['jobRole'] ?? ''));
+            $package = trim((string) ($placement['package'] ?? $placement['ctc'] ?? $placement['salary'] ?? ''));
+            $placedAt = trim((string) ($placement['placedAt'] ?? $placement['date'] ?? $s['placedAt'] ?? ''));
+            $row['placed'] = true;
+            $row['placement'] = [
+                'company'  => $company,
+                'role'     => $role,
+                'package'  => $package,
+                'placedAt' => $placedAt,
+            ];
+            $row['placementCompany'] = $company;
+            $row['placementRole'] = $role;
+            $row['placementPackage'] = $package;
+            $row['placedAt'] = $placedAt;
+
+            $rows[] = $row;
+        }
+
+        usort($rows, static function (array $a, array $b): int {
+            $an = (string) ($a['displayName'] ?? $a['user']['name'] ?? '');
+            $bn = (string) ($b['displayName'] ?? $b['user']['name'] ?? '');
+
+            return strcasecmp($an, $bn);
+        });
+
+        return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
      * Complete AES roster for one selected placement class, without requiring
      * an existing local student/profile record.
      *
@@ -3497,6 +3565,9 @@ final class OfficerDataService
             (string) ($dept['code'] ?? ''),
             (string) ($dept['name'] ?? ''),
             (string) ($row['classBatch'] ?? ''),
+            (string) ($row['placementCompany'] ?? ''),
+            (string) ($row['placementRole'] ?? ''),
+            (string) ((is_array($row['placement'] ?? null) ? ($row['placement']['company'] ?? '') : '')),
         ], static fn (string $v): bool => $v !== '')));
 
         foreach ($tokens as $token) {

@@ -225,6 +225,29 @@ final class StaffController
         }
     }
 
+    /** GET /api/staff/students/placed — department placed students */
+    public function listPlacedStudents(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        try {
+            $ctx = StaffContext::resolve($user);
+            StaffContext::requireDepartmentScope($ctx);
+            $officerCtx = StaffContext::officerCompatible($ctx);
+            $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+            $rows = (new OfficerDataService())->listPlacedStudents(
+                $officerCtx,
+                $query !== '' ? $query : null
+            );
+            Response::success(DocumentHelper::jsonSafe($rows));
+        } catch (\Throwable $e) {
+            $message = 'Could not load placed students.';
+            if (($_ENV['APP_DEBUG'] ?? 'false') === 'true') {
+                $message = $e->getMessage();
+            }
+            Response::error($message, 500);
+        }
+    }
+
     /** GET /api/staff/students/{id}/pipeline */
     public function studentPipeline(string $studentId): void
     {

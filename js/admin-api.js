@@ -83,6 +83,10 @@ const AdminApi = {
       placed: isPlaced,
       selfPlacement,
       placementStatus,
+      placementCompany: row.placementCompany || row.placement?.company || row.placement?.companyName || '',
+      placementRole: row.placementRole || row.placement?.role || row.placement?.jobRole || '',
+      placementPackage: row.placementPackage || row.placement?.package || row.placement?.ctc || row.placement?.salary || '',
+      placedAt: row.placedAt || row.placement?.placedAt || row.placement?.date || '',
       chancesUsed: chances.used ?? 0,
       chancesMax: (chances.used ?? 0) + (chances.remaining ?? 0),
       resumeStatus: resume.verified ? 'approved' : (resume.path ? 'pending' : 'none'),
@@ -316,6 +320,15 @@ const AdminApi = {
     if (params.q) qs.set('q', params.q);
     const q = qs.toString();
     const res = await api('/admin/students/allfinal-year' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(s => this.mapStudentRow(s));
+  },
+
+  async fetchPlacedStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/admin/students/placed' + (q ? `?${q}` : ''));
     if (!res.success || !Array.isArray(res.data)) return null;
     return res.data.map(s => this.mapStudentRow(s));
   },
