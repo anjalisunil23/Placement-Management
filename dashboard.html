@@ -298,7 +298,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723direct"></script>
+<script src="js/api.js?v=20260723dashlite"></script>
 <script src="js/app.js?v=20260723direct"></script>
 <script>
 window.__phLoadDashExtras = function loadDashboardExtras(role) {
@@ -314,11 +314,11 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
   });
   const apiScripts = [];
   if (needManage) {
-    apiScripts.push('js/admin-api.js?v=20260723boot');
-    apiScripts.push('js/officer-api.js?v=20260714e');
-    apiScripts.push('js/staff-api.js?v=20260714e');
+    apiScripts.push('js/admin-api.js?v=20260723dashlite');
+    apiScripts.push('js/officer-api.js?v=20260723dashlite');
+    apiScripts.push('js/staff-api.js?v=20260723dashlite');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260723onecurrent');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260723dashlite');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
@@ -434,10 +434,7 @@ if (role === 'admin') {
       if (Auth.hasRealAuth() && !Auth.isDemo()) {
         const lite = await dashboardStats({ lite: true });
         paintAdminStats(lite);
-        const [full] = await Promise.all([
-          dashboardStats(),
-          DriveStore.fetch().catch(() => null),
-        ]);
+        const full = await dashboardStats();
         paintAdminStats(full);
         await chartsReady;
         paintAdminCharts(full);
@@ -463,37 +460,34 @@ if (role === 'placement_officer' || role === 'staff') {
 if (role === 'student') {
   (async () => {
     if (Auth.isDemo()) ResumeBucket.seed();
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      // Shell already kicked off lite enrich; only wait for apps here.
-      await StudentApps.fetch();
-    }
-    const liveUser = Auth.user() || user || {};
-    const apps = StudentApps.all();
-    const resumes = ResumeBucket.all();
-    const cgpaRaw = typeof resolveSessionCgpa === 'function'
-      ? resolveSessionCgpa(liveUser)
-      : (liveUser.cgpa ?? liveUser.academic?.cgpa);
-    const cgpaNum = Number(cgpaRaw);
-    const cgpaLabel = Number.isFinite(cgpaNum) && cgpaNum > 0
-      ? (Math.round(cgpaNum * 100) / 100).toFixed(cgpaNum % 1 ? 2 : 1)
-      : '—';
+    const paintStudent = () => {
+      const liveUser = Auth.user() || user || {};
+      const apps = StudentApps.all();
+      const resumes = ResumeBucket.all();
+      const cgpaRaw = typeof resolveSessionCgpa === 'function'
+        ? resolveSessionCgpa(liveUser)
+        : (liveUser.cgpa ?? liveUser.academic?.cgpa);
+      const cgpaNum = Number(cgpaRaw);
+      const cgpaLabel = Number.isFinite(cgpaNum) && cgpaNum > 0
+        ? (Math.round(cgpaNum * 100) / 100).toFixed(cgpaNum % 1 ? 2 : 1)
+        : '—';
 
-    const titleEl = document.getElementById('dashTitle');
-    if (titleEl && liveUser.name) titleEl.textContent = liveUser.name;
+      const titleEl = document.getElementById('dashTitle');
+      if (titleEl && liveUser.name) titleEl.textContent = liveUser.name;
 
-    const cgpaStat = document.getElementById('studentCgpa');
-    if (cgpaStat) cgpaStat.textContent = cgpaLabel;
+      const cgpaStat = document.getElementById('studentCgpa');
+      if (cgpaStat) cgpaStat.textContent = cgpaLabel;
 
-    document.getElementById('studentApps').dataset.target = apps.length;
-    document.getElementById('studentResumes').dataset.target = resumes.length;
-    document.getElementById('studentResumeCount').textContent = resumes.length + ' file' + (resumes.length === 1 ? '' : 's');
-    ['studentApps', 'studentResumes'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.dataset.animated = '0';
-    });
-    animateCounters(document.querySelector('[data-roles="student"]'));
+      document.getElementById('studentApps').dataset.target = apps.length;
+      document.getElementById('studentResumes').dataset.target = resumes.length;
+      document.getElementById('studentResumeCount').textContent = resumes.length + ' file' + (resumes.length === 1 ? '' : 's');
+      ['studentApps', 'studentResumes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.dataset.animated = '0';
+      });
+      animateCounters(document.querySelector('[data-roles="student"]'));
 
-    document.getElementById('studentAppRows').innerHTML = apps.length ? `<div class="row g-3">${apps.map(a => `
+      document.getElementById('studentAppRows').innerHTML = apps.length ? `<div class="row g-3">${apps.map(a => `
       <div class="col-md-6 col-xl-4">
         <div class="border rounded-3 p-3 h-100" style="border-color:var(--border)!important;background:var(--surface-2,transparent)">
           <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
@@ -507,7 +501,15 @@ if (role === 'student') {
           <div class="small text-muted-2">Applied · ${formatDate(a.appliedAt)}</div>
         </div>
       </div>`).join('')}</div>`
-      : '<p class="text-muted-2 mb-0">No applications yet.</p>';
+        : '<p class="text-muted-2 mb-0">No applications yet.</p>';
+    };
+
+    // Paint from cache immediately, then refresh live apps.
+    paintStudent();
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      await StudentApps.fetch().catch(() => null);
+      paintStudent();
+    }
   })();
 }
 

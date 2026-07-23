@@ -138,8 +138,9 @@ const StaffApi = {
     return res.success ? res.data : null;
   },
 
-  async fetchDashboardStats() {
-    const res = await api('/staff/dashboard-stats');
+  async fetchDashboardStats(opts = {}) {
+    const qs = opts.lite ? '?lite=1' : '';
+    const res = await api('/staff/dashboard-stats' + qs);
     return res.success ? res.data : null;
   },
 

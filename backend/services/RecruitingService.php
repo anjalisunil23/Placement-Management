@@ -54,11 +54,35 @@ final class RecruitingService
     /**
      * Admin/officer campus recruiting overview.
      *
+     * @param array<string, mixed>|null $filterCtx
      * @return array<string, mixed>
      */
-    public function getCampusOverview(?string $departmentId = null, ?array $filterCtx = null): array
+    public function getCampusOverview(?string $departmentId = null, ?array $filterCtx = null, bool $lite = false): array
     {
         $activeCompanies = $this->activeRecruitingCompanies($departmentId);
+
+        if ($lite) {
+            $applicantCount = $this->countCampusApplicants($departmentId);
+            $byDept = $this->applicantsByDepartmentCounts($departmentId);
+            $placedCount = $this->countCampusPlacements($departmentId);
+
+            return [
+                'scope'            => ($departmentId !== null && $departmentId !== '') ? 'department' : 'campus',
+                'stats'            => [
+                    'activeCompanies' => count($activeCompanies),
+                    'applicants'      => $applicantCount,
+                    'departments'     => count($byDept),
+                    'placedStudents'  => $placedCount,
+                ],
+                'activeCompanies'  => $activeCompanies,
+                'applicantsByDept' => $byDept,
+                'applicants'       => [],
+                'batchOptions'     => $this->campusBatchOptionsLocal($departmentId),
+                'placements'       => [],
+                'lite'             => true,
+            ];
+        }
+
         $applicants = $this->campusApplicants($departmentId);
         $byDept = $this->applicantsByDepartment($applicants);
         $batchOptions = $this->campusBatchOptions($departmentId, $filterCtx);
@@ -77,6 +101,7 @@ final class RecruitingService
             'applicants'       => $applicants,
             'batchOptions'     => $batchOptions,
             'placements'       => $placements,
+            'lite'             => false,
         ];
     }
 
@@ -160,6 +185,138 @@ final class RecruitingService
         sort($list, SORT_NATURAL | SORT_FLAG_CASE);
 
         return $list;
+    }
+
+    /**
+     * Local classBatch labels only (no AES directory) — for dashboard first paint.
+     *
+     * @return list<string>
+     */
+    private function campusBatchOptionsLocal(?string $departmentId): array
+    {
+        $filter = [];
+        if ($departmentId !== null && $departmentId !== '') {
+            $deptOid = Security::toObjectId($departmentId);
+            if ($deptOid === null) {
+                return [];
+            }
+            $filter['departmentId'] = $deptOid;
+        }
+
+        $batches = [];
+        foreach ((new StudentModel())->findAll($filter, 8000) as $student) {
+            $batch = trim((string) ($student['classBatch'] ?? ''));
+            if ($batch !== '') {
+                $batches[$batch] = true;
+            }
+        }
+        $list = array_keys($batches);
+        sort($list, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $list;
+    }
+
+    private function countCampusApplicants(?string $departmentId): int
+    {
+        $filter = $this->campusApplicantFilter($departmentId);
+        if ($filter === null) {
+            return 0;
+        }
+
+        return (new ApplicationModel())->count($filter);
+    }
+
+    private function countCampusPlacements(?string $departmentId): int
+    {
+        $filter = ['placed' => true];
+        if ($departmentId !== null && $departmentId !== '') {
+            $deptOid = Security::toObjectId($departmentId);
+            if ($deptOid === null) {
+                return 0;
+            }
+            $filter['departmentId'] = $deptOid;
+        }
+
+        return (new StudentModel())->count($filter);
+    }
+
+    /**
+     * Dept applicant counts without per-row enrichment (dashboard lite).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function applicantsByDepartmentCounts(?string $departmentId): array
+    {
+        $filter = $this->campusApplicantFilter($departmentId);
+        if ($filter === null) {
+            return [];
+        }
+
+        $apps = (new ApplicationModel())->findAll($filter, 5000);
+        $studentIds = [];
+        foreach ($apps as $app) {
+            $sid = trim((string) ($app['studentId'] ?? ''));
+            if ($sid !== '') {
+                $studentIds[$sid] = true;
+            }
+        }
+        $students = (new StudentModel())->findByIds(array_keys($studentIds));
+        $deptModel = new DepartmentModel();
+        $deptCache = [];
+        $totals = [];
+        foreach ($apps as $app) {
+            $sid = trim((string) ($app['studentId'] ?? ''));
+            $student = $sid !== '' ? ($students[$sid] ?? null) : null;
+            $deptId = is_array($student) ? trim((string) ($student['departmentId'] ?? '')) : '';
+            $dept = 'Unknown';
+            if ($deptId !== '') {
+                if (!isset($deptCache[$deptId])) {
+                    $row = $deptModel->findById($deptId);
+                    $deptCache[$deptId] = is_array($row)
+                        ? trim((string) ($row['code'] ?? $row['name'] ?? ''))
+                        : '';
+                }
+                $dept = $deptCache[$deptId] !== '' ? $deptCache[$deptId] : 'Unknown';
+            }
+            $totals[$dept] = ($totals[$dept] ?? 0) + 1;
+        }
+
+        $grand = array_sum($totals) ?: 1;
+        $result = [];
+        foreach ($totals as $dept => $count) {
+            $result[] = [
+                'department' => $dept,
+                'applicants' => $count,
+                'share'      => round(($count / $grand) * 100, 1),
+            ];
+        }
+        usort($result, static fn (array $a, array $b): int => ($b['applicants'] <=> $a['applicants']));
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, mixed>|null null when department filter is invalid
+     */
+    private function campusApplicantFilter(?string $departmentId): ?array
+    {
+        $filter = [];
+        if ($departmentId !== null && $departmentId !== '') {
+            $deptOid = Security::toObjectId($departmentId);
+            if ($deptOid === null) {
+                return null;
+            }
+            $studentIds = [];
+            foreach ((new StudentModel())->findAll(['departmentId' => $deptOid], 5000) as $student) {
+                $studentIds[] = $student['_id'];
+            }
+            if ($studentIds === []) {
+                return null;
+            }
+            $filter['studentId'] = ['$in' => $studentIds];
+        }
+
+        return $filter;
     }
 
     /**
@@ -463,20 +620,9 @@ final class RecruitingService
      */
     private function campusApplicants(?string $departmentId): array
     {
-        $filter = [];
-        if ($departmentId !== null && $departmentId !== '') {
-            $deptOid = Security::toObjectId($departmentId);
-            if ($deptOid === null) {
-                return [];
-            }
-            $studentIds = [];
-            foreach ((new StudentModel())->findAll(['departmentId' => $deptOid], 5000) as $student) {
-                $studentIds[] = $student['_id'];
-            }
-            if ($studentIds === []) {
-                return [];
-            }
-            $filter['studentId'] = ['$in' => $studentIds];
+        $filter = $this->campusApplicantFilter($departmentId);
+        if ($filter === null) {
+            return [];
         }
 
         $apps = (new ApplicationModel())->findAll($filter, 5000);

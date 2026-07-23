@@ -42,9 +42,16 @@ final class StaffDataService
      * @param array<string, mixed> $officerCtx
      * @return array<string, mixed>
      */
-    public function dashboardStats(array $officerCtx, string $staffUserId): array
+    public function dashboardStats(array $officerCtx, string $staffUserId, bool $includeExtended = true): array
     {
-        $stats = (new OfficerDataService())->dashboardStats($officerCtx);
+        $stats = (new OfficerDataService())->dashboardStats($officerCtx, $includeExtended);
+        if (!$includeExtended) {
+            return array_merge($stats, [
+                'recommendationCount' => 0,
+                'pendingRecommendations' => 0,
+                'registeredRecommendations' => 0,
+            ]);
+        }
         $recs = $this->listMyRecommendations($staffUserId);
 
         return array_merge($stats, [

@@ -2001,7 +2001,8 @@ final class AdminController
     public function recruitingOverview(): void
     {
         RBACMiddleware::requireAdmin();
-        Response::success((new RecruitingService())->getCampusOverview(null));
+        $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
+        Response::success((new RecruitingService())->getCampusOverview(null, null, $lite));
     }
 
     /**

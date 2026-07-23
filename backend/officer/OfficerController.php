@@ -598,11 +598,12 @@ final class OfficerController
 
 
 
-    /** GET /api/officer/dashboard */
+    /** GET /api/officer/dashboard — ?lite=1 skips extended analytics */
     public function dashboard(): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        Response::success((new OfficerDataService())->dashboardStats($scope['ctx']));
+        $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
+        Response::success((new OfficerDataService())->dashboardStats($scope['ctx'], !$lite));
     }
 
     /** GET /api/officer/students */
@@ -1198,7 +1199,8 @@ final class OfficerController
                 'department'   => $ctx['department'] ?? null,
             ];
         }
-        Response::success((new RecruitingService())->getCampusOverview($deptId, $filterCtx));
+        $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
+        Response::success((new RecruitingService())->getCampusOverview($deptId, $filterCtx, $lite));
     }
 
     /** GET /api/officer/placement-filters — AES program / branch / stud_class batches (current + previous) */

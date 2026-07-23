@@ -5013,11 +5013,11 @@ async function dashboardStats(opts = {}) {
 
   if (Auth.hasRealAuth() && !Auth.isDemo()) {
     if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
-      const stats = await OfficerApi.fetchDashboard();
+      const stats = await OfficerApi.fetchDashboard(opts);
       return mapLiveDashboard(stats);
     }
     if (Auth.role() === 'staff' && typeof StaffApi !== 'undefined') {
-      const stats = await StaffApi.fetchDashboardStats();
+      const stats = await StaffApi.fetchDashboardStats(opts);
       return mapLiveDashboard(stats);
     }
     if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
@@ -5049,7 +5049,7 @@ const TrackingStore = {
 };
 
 const RecruitingStore = {
-  async fetch() {
+  async fetch(opts = {}) {
     if (!Auth.hasRealAuth()) return null;
     const paths = {
       company: '/company/recruiting',
@@ -5059,7 +5059,8 @@ const RecruitingStore = {
     };
     const path = paths[Auth.role()];
     if (!path) return null;
-    const res = await api(path);
+    const qs = opts.lite ? '?lite=1' : '';
+    const res = await api(path + qs);
     return res.success ? res.data : null;
   },
 

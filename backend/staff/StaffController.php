@@ -401,10 +401,12 @@ final class StaffController
             'departmentId' => $deptId,
             'department'   => $ctx['department'] ?? null,
         ];
+        $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
         Response::success(DocumentHelper::jsonSafe(
             (new RecruitingService())->getCampusOverview(
                 $deptId !== '' ? $deptId : null,
-                $filterCtx
+                $filterCtx,
+                $lite
             )
         ));
     }
@@ -413,8 +415,9 @@ final class StaffController
     public function dashboardStats(): void
     {
         $scope = (new StaffDataService())->requireScope();
+        $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
         Response::success(DocumentHelper::jsonSafe(
-            (new StaffDataService())->dashboardStats($scope['officerCtx'], (string) $scope['user']['_id'])
+            (new StaffDataService())->dashboardStats($scope['officerCtx'], (string) $scope['user']['_id'], !$lite)
         ));
     }
 

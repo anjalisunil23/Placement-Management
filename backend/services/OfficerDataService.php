@@ -4025,11 +4025,12 @@ final class OfficerDataService
      * @param array<string, mixed> $ctx
      * @return array<string, mixed>
      */
-    public function dashboardStats(array $ctx): array
+    public function dashboardStats(array $ctx, bool $includeExtended = true): array
     {
         $studentModel = new StudentModel();
         $applicationModel = new ApplicationModel();
         $driveModel = new DriveModel();
+        $userModel = new UserModel();
 
         $studentFilter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $totalStudents = $studentModel->count($studentFilter);
@@ -4037,7 +4038,7 @@ final class OfficerDataService
         $pendingStudents = 0;
 
         if ($ctx['isAdmin']) {
-            $pendingStudents = (new UserModel())->count(['role' => 'student', 'approved' => false]);
+            $pendingStudents = $userModel->count(['role' => 'student', 'approved' => false]);
         } else {
             $userIds = PlacementOfficerContext::userIdsInDepartment($ctx);
             if ($userIds !== []) {
@@ -4045,7 +4046,7 @@ final class OfficerDataService
                     fn (string $id) => Security::toObjectId($id),
                     $userIds
                 )));
-                $pendingStudents = (new UserModel())->count([
+                $pendingStudents = $userModel->count([
                     'role'     => 'student',
                     'approved' => false,
                     '_id'      => ['$in' => $oids],
@@ -4060,7 +4061,13 @@ final class OfficerDataService
             ? 0
             : $applicationModel->count($appFilter);
 
-        $pendingResumes = count($this->listPendingResumes($ctx));
+        // Count only — never materialize the full resume queue on dashboard boot.
+        $resumeFilter = $this->applicationFilter($ctx, [
+            'status' => ['$in' => ['applied', 'resume_pending']],
+        ]);
+        $pendingResumes = isset($resumeFilter['studentId']['$in']) && $resumeFilter['studentId']['$in'] === []
+            ? 0
+            : $applicationModel->count($resumeFilter);
 
         if ($ctx['isAdmin']) {
             $activeDrives = $driveModel->count(['status' => ['$ne' => 'closed']]);
@@ -4073,12 +4080,7 @@ final class OfficerDataService
             ));
         }
 
-        $deptId = $ctx['isAdmin'] ? null : ($ctx['departmentId'] ?? null);
-        // getExtendedAnalytics already includes getDashboardAnalytics — call once.
-        $extended = (new AnalyticsService())->getExtendedAnalytics($deptId);
-        $userModel = new UserModel();
-
-        return [
+        $base = [
             'totalStudents'       => $totalStudents,
             'placedStudents'      => $placedStudents,
             'placementPercentage' => $totalStudents > 0
@@ -4089,18 +4091,34 @@ final class OfficerDataService
             'pendingApplications' => $pendingApplications,
             'pendingResumes'      => $pendingResumes,
             'activeDrives'        => $activeDrives,
-            'totalCompanies'      => $extended['totals']['companies'] ?? (new CompanyModel())->count([]),
+            'totalCompanies'      => (new CompanyModel())->count([]),
             'totalStaff'          => $userModel->count(['role' => 'staff']),
             'totalAlumni'         => $userModel->count(['role' => 'alumni']),
-            'salaryAnalytics'     => $extended['salaryAnalytics'],
-            'branchStatistics'    => $extended['branchStatistics'],
-            'companyStatistics'   => $extended['companyStatistics'],
-            'hiringTrend'         => $extended['hiringTrend'],
-            'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
+            'salaryAnalytics'     => ['highest' => 0, 'lowest' => 0, 'average' => 0, 'median' => 0],
+            'branchStatistics'    => [],
+            'companyStatistics'   => [],
+            'hiringTrend'         => null,
+            'hiringTrendLastYear' => null,
             'department'          => $ctx['department']
                 ? DocumentHelper::serialize($ctx['department'])
                 : null,
         ];
+
+        if (!$includeExtended) {
+            return $base;
+        }
+
+        $deptId = $ctx['isAdmin'] ? null : ($ctx['departmentId'] ?? null);
+        $extended = (new AnalyticsService())->getExtendedAnalytics($deptId);
+
+        return array_merge($base, [
+            'totalCompanies'      => $extended['totals']['companies'] ?? $base['totalCompanies'],
+            'salaryAnalytics'     => $extended['salaryAnalytics'] ?? $base['salaryAnalytics'],
+            'branchStatistics'    => $extended['branchStatistics'] ?? [],
+            'companyStatistics'   => $extended['companyStatistics'] ?? [],
+            'hiringTrend'         => $extended['hiringTrend'] ?? null,
+            'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
+        ]);
     }
 
     public function assertApplicationInScope(string $appId, array $ctx): array

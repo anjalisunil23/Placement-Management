@@ -1180,6 +1180,34 @@
     });
   };
 
+  HiringOverviewPage.prototype.applyRecruitingData = function (data, stats) {
+    if (data) {
+      this.campusRecruitingData = data;
+      if (Array.isArray(data.placements)) this.placementRows = data.placements;
+      const fromLive = [
+        ...(Array.isArray(data.applicantsByDept) ? data.applicantsByDept.map(d => ({
+          code: d.department || d.dept || d.code,
+          name: d.department || d.dept || d.name || d.code,
+        })) : []),
+        ...(Array.isArray(data.applicants) ? data.applicants.map(a => ({
+          code: a.dept || a.department || a.student?.department,
+          name: a.dept || a.department || a.student?.department,
+        })) : []),
+      ];
+      this.populateDeptSelect(fromLive);
+      this.populateBatchSelect();
+    }
+    if (stats) {
+      this.hiringTrendThisYear = stats?.hiringTrend || this.hiringTrendThisYear;
+      this.hiringTrendLastYear = stats?.hiringTrendLastYear || this.hiringTrendLastYear;
+    }
+    this.applyTrendYearMode();
+    this.updateLiveBadge();
+    this.configurePageForRole(this.currentRole());
+    this.setDeptUI(this.selectedDept());
+    this.renderForDept(this.selectedDept());
+  };
+
   HiringOverviewPage.prototype.init = async function (opts) {
     opts = opts || {};
     if (opts.root) {
@@ -1191,53 +1219,56 @@
     this._els = {};
     this.bindEvents();
 
-      try {
-        if (!Auth.isDemo() && !Auth.hasLiveSession()) {
-          await Auth.ensureSession();
-        }
+    try {
+      if (!Auth.isDemo() && !Auth.hasLiveSession()) {
+        await Auth.ensureSession();
+      }
       this.refreshLiveFlags();
       const role = this.currentRole();
 
-      const tasks = [DepartmentStore.fetch()];
+      // First paint: lite recruiting + lite stats (no enriched applicants / extended analytics).
+      const liteTasks = [DepartmentStore.fetch()];
       if (this.campusLive) {
-        tasks.push(RecruitingStore.fetch());
-        tasks.push(dashboardStats().catch(() => null));
+        liteTasks.push(RecruitingStore.fetch({ lite: true }));
+        liteTasks.push(dashboardStats({ lite: true }).catch(() => null));
       }
-      const results = await Promise.all(tasks);
+      const liteResults = await Promise.all(liteTasks);
       this.populateDeptSelect();
 
       if (this.campusLive) {
-        const data = results[1];
-        const stats = results[2];
-        if (data) {
-          this.campusRecruitingData = data;
-          if (Array.isArray(data.placements)) this.placementRows = data.placements;
-          const fromLive = [
-            ...(Array.isArray(data.applicantsByDept) ? data.applicantsByDept.map(d => ({
-              code: d.department || d.dept || d.code,
-              name: d.department || d.dept || d.name || d.code,
-            })) : []),
-            ...(Array.isArray(data.applicants) ? data.applicants.map(a => ({
-              code: a.dept || a.department || a.student?.department,
-              name: a.dept || a.department || a.student?.department,
-            })) : []),
-          ];
-          this.populateDeptSelect(fromLive);
-          this.populateBatchSelect();
+        const liteData = liteResults[1];
+        const liteStats = liteResults[2];
+        if (liteData) {
+          this.applyRecruitingData(liteData, liteStats);
         } else {
-          toast('Could not load live recruiting data. Refresh or sign in again.', 'warn');
-          document.getElementById('dashLiveBadge')?.classList.add('d-none');
+          this.updateLiveBadge();
+          this.configurePageForRole(role);
+          this.setDeptUI(this.selectedDept());
+          this.renderForDept(this.selectedDept());
         }
-        if (stats) {
-          this.hiringTrendThisYear = stats?.hiringTrend || this.hiringTrendThisYear;
-          this.hiringTrendLastYear = stats?.hiringTrendLastYear || this.hiringTrendLastYear;
-        }
+      } else {
+        this.updateLiveBadge();
+        this.configurePageForRole(role);
+        this.setDeptUI(this.selectedDept());
+        this.renderForDept(this.selectedDept());
       }
-      this.applyTrendYearMode();
-      this.updateLiveBadge();
-      this.configurePageForRole(role);
-      this.setDeptUI(this.selectedDept());
-      this.renderForDept(this.selectedDept());
+
+      // Background: full recruiting + trends (does not block first paint).
+      if (this.campusLive) {
+        Promise.all([
+          RecruitingStore.fetch().catch(() => null),
+          dashboardStats().catch(() => null),
+        ]).then(([data, stats]) => {
+          if (!data && !stats) {
+            if (!this.campusRecruitingData) {
+              toast('Could not load live recruiting data. Refresh or sign in again.', 'warn');
+              document.getElementById('dashLiveBadge')?.classList.add('d-none');
+            }
+            return;
+          }
+          this.applyRecruitingData(data || this.campusRecruitingData, stats);
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error('Hiring overview init failed', err);
       this.populateDeptSelect();

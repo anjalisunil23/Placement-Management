@@ -202,8 +202,9 @@ const OfficerApi = {
     return res.success ? res.data : null;
   },
 
-  async fetchDashboard() {
-    const res = await api('/officer/dashboard');
+  async fetchDashboard(opts = {}) {
+    const qs = opts.lite ? '?lite=1' : '';
+    const res = await api('/officer/dashboard' + qs);
     return res.success ? res.data : null;
   },
 
