@@ -367,7 +367,7 @@ final class AlumniController
     $allDrives = (new DriveModel())->findAll([], 50);
     $drives = array_values(array_filter(
       $allDrives,
-      static fn (array $drive): bool => \PMS\Services\DriveLifecycle::isRegistrationOpen($drive)
+      static fn (array $drive): bool => \PMS\Services\DriveLifecycle::isOpenForStudents($drive)
     ));
     $engine = new EligibilityEngine();
     $studentId = (string) $student['_id'];
@@ -474,7 +474,7 @@ final class AlumniController
     if (!$drive) {
       Response::notFound('Drive not found.');
     }
-    if (!\PMS\Services\DriveLifecycle::isRegistrationOpen($drive)) {
+    if (!\PMS\Services\DriveLifecycle::isOpenForStudents($drive)) {
       Response::error('Registration closed.', 403);
     }
 

@@ -570,7 +570,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260722activedrives"></script>
+<script src="js/api.js?v=20260722openonly"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -2256,6 +2256,9 @@ async function loadDrives() {
   } else {
     if (canManage) await DriveStore.fetch();
     allDrives = DriveStore.allWithCatalog();
+    if (isStudent || alumniSeeking) {
+      allDrives = DriveStore.filterApplicantDrives(allDrives);
+    }
     if (canManage) {
       const apps = await ApplicationPipeline.fetch();
       enrichDriveApplicantCounts(apps);

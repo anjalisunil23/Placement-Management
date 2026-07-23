@@ -9,6 +9,18 @@ namespace PMS\Services;
  */
 final class DriveLifecycle
 {
+    /** College timezone for deadline / recruitment day comparisons. */
+    private const TZ = 'Asia/Kolkata';
+
+    public static function todayYmd(): string
+    {
+        try {
+            return (new \DateTimeImmutable('now', new \DateTimeZone(self::TZ)))->format('Y-m-d');
+        } catch (\Throwable) {
+            return date('Y-m-d');
+        }
+    }
+
     /**
      * Explicit registration deadline only (do not fall back to recruitment date).
      *
@@ -22,6 +34,26 @@ final class DriveLifecycle
             $drive['registrationDeadline'] ?? '',
             // Top-level deadline when saved outside eligibility (not recruitment `date`).
             $drive['deadline'] ?? '',
+        ] as $raw) {
+            $parsed = self::parseDeadlineDate(trim((string) $raw));
+            if ($parsed !== '') {
+                return $parsed;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Company recruitment / drive day (drive.date), not the apply deadline.
+     *
+     * @param array<string, mixed> $drive
+     */
+    public static function recruitmentDate(array $drive): string
+    {
+        foreach ([
+            $drive['date'] ?? '',
+            $drive['recruitmentDate'] ?? '',
         ] as $raw) {
             $parsed = self::parseDeadlineDate(trim((string) $raw));
             if ($parsed !== '') {
@@ -63,12 +95,31 @@ final class DriveLifecycle
             return 'closed';
         }
 
+        $today = self::todayYmd();
+
         $deadline = self::registrationDeadline($drive);
-        if ($deadline !== '' && date('Y-m-d') > $deadline) {
+        if ($deadline !== '' && $today > $deadline) {
+            return 'closed';
+        }
+
+        // After the recruitment day, hide from students even when no separate
+        // registration deadline was set (status may still be scheduled/open in DB).
+        $recruitment = self::recruitmentDate($drive);
+        if ($recruitment !== '' && $today > $recruitment) {
             return 'closed';
         }
 
         return in_array($raw, ['scheduled', 'ongoing'], true) ? $raw : 'scheduled';
+    }
+
+    /**
+     * Students/alumni may only see drives that are still open for registration.
+     *
+     * @param array<string, mixed> $drive
+     */
+    public static function isOpenForStudents(array $drive): bool
+    {
+        return self::isRegistrationOpen($drive);
     }
 
     /**

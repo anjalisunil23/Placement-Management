@@ -4478,6 +4478,11 @@ const DriveStore = {
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       if (todayStr > regDeadline.slice(0, 10)) status = 'Closed';
     }
+    if (status !== 'Completed' && status !== 'Closed' && /^\d{4}-\d{2}-\d{2}/.test(recruitmentDate)) {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      if (todayStr > recruitmentDate.slice(0, 10)) status = 'Closed';
+    }
     const closedByDeadline = status === 'Closed';
     const eligible = closedByDeadline
       ? false
@@ -4514,23 +4519,30 @@ const DriveStore = {
     };
   },
   filterApplicantDrives(list) {
-    // Students/alumni only see active drives (hide closed + past registration deadline).
+    // Students/alumni: only open/ongoing drives. Hide closed, completed,
+    // past registration deadline, and past recruitment date.
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const ymdPast = (raw) => {
+      const value = String(raw || '').trim();
+      if (!value || value === '—' || value.toUpperCase() === 'TBD') return false;
+      const iso = value.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (iso && todayStr > iso[1]) return true;
+      const dmy = value.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+      if (dmy) {
+        const ymd = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+        if (todayStr > ymd) return true;
+      }
+      return false;
+    };
     return (Array.isArray(list) ? list : []).filter((d) => {
       if (!d) return false;
       const st = String(d.status || '').trim().toLowerCase();
       if (st === 'closed' || st === 'completed') return false;
+      if (st !== '' && st !== 'open' && st !== 'ongoing' && st !== 'scheduled') return false;
       const elig = d.eligibility && typeof d.eligibility === 'object' ? d.eligibility : {};
-      const raw = String(elig.deadline || d.registrationDeadline || d.deadline || '').trim();
-      if (!raw || raw === '—' || raw.toUpperCase() === 'TBD') return true;
-      const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-      if (iso && todayStr > iso[1]) return false;
-      const dmy = raw.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
-      if (dmy) {
-        const ymd = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
-        if (todayStr > ymd) return false;
-      }
+      if (ymdPast(elig.deadline || d.registrationDeadline || d.deadline || '')) return false;
+      if (ymdPast(d.recruitmentDate || d.date || '')) return false;
       return true;
     });
   },

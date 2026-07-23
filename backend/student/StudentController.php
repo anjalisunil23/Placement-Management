@@ -896,10 +896,11 @@ final class StudentController
     $profile = $this->getStudentProfile($user);
     $driveModel = new DriveModel();
     $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
+    // Students only see open drives (hide closed, past registration deadline, past recruitment day).
     $drives = array_values(array_filter(
       $allDrives,
       static function (array $drive): bool {
-        return \PMS\Services\DriveLifecycle::isRegistrationOpen($drive);
+        return \PMS\Services\DriveLifecycle::isOpenForStudents($drive);
       }
     ));
 
@@ -966,7 +967,7 @@ final class StudentController
     $drives = $driveModel->findAll([], 50);
     $drives = array_values(array_filter(
       $drives,
-      static fn (array $drive): bool => \PMS\Services\DriveLifecycle::isRegistrationOpen($drive)
+      static fn (array $drive): bool => \PMS\Services\DriveLifecycle::isOpenForStudents($drive)
     ));
     $appModel = new ApplicationModel();
     $drives = array_values(array_filter(
@@ -1006,6 +1007,10 @@ final class StudentController
 
     $drive = (new DriveModel())->findById($driveId);
     if (!$drive) {
+      Response::notFound('Drive not found.');
+    }
+    // Closed / past-deadline drives are hidden from students entirely.
+    if (!\PMS\Services\DriveLifecycle::isOpenForStudents($drive)) {
       Response::notFound('Drive not found.');
     }
 
@@ -1051,7 +1056,7 @@ final class StudentController
     if (!$drive) {
       Response::notFound('Drive not found.');
     }
-    if (!\PMS\Services\DriveLifecycle::isRegistrationOpen($drive)) {
+    if (!\PMS\Services\DriveLifecycle::isOpenForStudents($drive)) {
       Response::error('Registration closed.', 403);
     }
 
