@@ -279,7 +279,17 @@ final class RecruitingService
                 break;
             }
 
-            $year = $this->placementYear($selectedAt, $joinDate, $classBatch);
+            // Live placements only: require a real selection/join date (skip old placed flags).
+            $placedAt = $selectedAt !== '' ? $selectedAt : $joinDate;
+            if ($placedAt === '') {
+                continue;
+            }
+            // Year from the live date only — never infer from historical classBatch labels.
+            $year = $this->placementYear($selectedAt, $joinDate, '');
+            if ($year <= 0) {
+                continue;
+            }
+
             $rows[] = [
                 'name'       => (string) ($user['name'] ?? 'Student'),
                 'roll'       => (string) ($student['registerNumber'] ?? ''),
@@ -289,7 +299,7 @@ final class RecruitingService
                 'role'       => $role !== '' ? $role : '—',
                 'package'    => $package !== '' ? $package : '—',
                 'year'       => $year,
-                'placedAt'   => $selectedAt !== '' ? $selectedAt : $joinDate,
+                'placedAt'   => $placedAt,
             ];
         }
 

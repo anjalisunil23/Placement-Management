@@ -316,7 +316,7 @@
     scripts.push('js/officer-api.js?v=20260714e');
     scripts.push('js/staff-api.js?v=20260714e');
   }
-  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260723uniqueplaced');
+  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260723liveplaced');
   // Sync append so onAppReady below still sees them after parse (scripts without defer/async run immediately when inserted... actually dynamically inserted scripts are async by default)
   // Load synchronously via document.write is bad; instead gate page init on Promise.
   window.__phDashExtras = Promise.all(scripts.map((src) => new Promise((resolve, reject) => {

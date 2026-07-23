@@ -265,6 +265,34 @@
     return this.placementRows || [];
   };
 
+  /** Live placements only: real placedAt/join date in the target year (no historical batch guesses). */
+  HiringOverviewPage.prototype.isLivePlacement = function (row, year) {
+    if (Number(row?.year) !== year) return false;
+    const co = String(row?.company || '').trim();
+    if (!co || co === '—') return false;
+    const at = String(row?.placedAt || row?.joinDate || '').trim();
+    if (!at) return false;
+    const ts = Date.parse(at);
+    if (Number.isNaN(ts)) return false;
+    return new Date(ts).getFullYear() === year;
+  };
+
+  HiringOverviewPage.prototype.livePlacementsForFilters = function (deptCode, batchCode, year, sourceRows) {
+    let placements = Array.isArray(sourceRows)
+      ? sourceRows.slice()
+      : (Array.isArray(this.campusRecruitingData?.placements)
+        ? this.campusRecruitingData.placements.slice()
+        : this.placementSourceRows().slice());
+    placements = placements.filter((p) => this.isLivePlacement(p, year));
+    if (deptCode) {
+      placements = placements.filter(p => this.deptMatchesFilter(p.dept, deptCode));
+    }
+    if (batchCode) {
+      placements = placements.filter(p => this.batchMatchesFilter(p.classBatch, batchCode));
+    }
+    return this.uniquePlacementsByPerson(placements);
+  };
+
   HiringOverviewPage.prototype.renderPlacementList = function () {
     const rowsEl = this.$('placementListRows');
     const countEl = this.$('placementListCount');
@@ -272,21 +300,14 @@
     const subEl = this.$('placementListSub');
     if (!rowsEl) return;
 
-    const year = this.selectedTrendYear();
+    // Placement list / Hired always use the current year for live counts (no past years).
+    const year = new Date().getFullYear();
     const dept = this.selectedDept();
     const batch = this.selectedBatch();
-    let rows = this.placementSourceRows().filter((row) => {
-      if (Number(row.year) !== year) return false;
-      const co = String(row.company || '').trim();
-      return co && co !== '—';
-    });
-    rows = this.filterRowsByDeptAndBatch(rows, dept, batch);
-    rows = this.uniquePlacementsByPerson(rows);
+    const rows = this.livePlacementsForFilters(dept, batch, year);
 
     if (titleEl) {
-      titleEl.textContent = this.trendYearMode === 'last'
-        ? `Previous year placement list (${year})`
-        : `Placement list (${year})`;
+      titleEl.textContent = `Live placement list (${year})`;
     }
     if (subEl) {
       subEl.textContent = '';
@@ -306,7 +327,7 @@
           <td>${this.escHtml(s.package || '—')}</td>
         </tr>`;
       }).join('')
-      : `<tr><td colspan="6" class="text-muted-2 p-4">No placements for ${year}.</td></tr>`;
+      : `<tr><td colspan="6" class="text-muted-2 p-4">No live placements for ${year}.</td></tr>`;
   };
 
   HiringOverviewPage.prototype.renderPipelineBreakdown = function (pipeline) {
@@ -350,21 +371,9 @@
     const shortlisted = applicants.filter(a => a.status === 'shortlisted' || a.status === 'under_review').length;
     const offers = applicants.filter(a => a.status === 'offered' || a.status === 'selected').length;
 
-    // Hired = unique placed people for the selected year (1 person = 1).
-    const year = this.selectedTrendYear();
-    let placements = Array.isArray(data.placements) ? data.placements.slice() : [];
-    placements = placements.filter(p => {
-      if (Number(p.year) !== year) return false;
-      const co = String(p.company || '').trim();
-      return co && co !== '—';
-    });
-    if (deptCode) {
-      placements = placements.filter(p => this.deptMatchesFilter(p.dept, deptCode));
-    }
-    if (batchCode) {
-      placements = placements.filter(p => this.batchMatchesFilter(p.classBatch, batchCode));
-    }
-    placements = this.uniquePlacementsByPerson(placements);
+    // Hired = unique live placements this calendar year only (no past years).
+    const year = new Date().getFullYear();
+    const placements = this.livePlacementsForFilters(deptCode, batchCode, year, data.placements);
     const hired = placements.length;
 
     const companyMap = new Map();
