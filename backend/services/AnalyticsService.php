@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Config\Database;
+use PMS\Models\AlumniModel;
 use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
@@ -178,10 +179,77 @@ final class AnalyticsService
             'branchStats'         => $branchStats,
             'offersByBranch'      => $offersByBranch,
             'sectorDistribution'  => $this->getSectorDistribution(),
-            // Include all current placed students (not only the first few selected apps).
-            'successStories'      => $this->getSuccessStories(max(12, (int) ($analytics['totals']['placedStudents'] ?? 0))),
+            'successStories'      => $this->getSuccessStories(6),
             'topOffers'           => $topOffers,
+            'placedMembers'       => $this->listPlacedMembers(),
         ];
+    }
+
+    /**
+     * Unique currently placed students + working alumni (for public/admin name lists).
+     *
+     * @return list<array{name: string, type: string, roll: string, company: string, role: string}>
+     */
+    public function listPlacedMembers(): array
+    {
+        $userModel = new UserModel();
+        $rows = [];
+        $seen = [];
+
+        foreach ((new StudentModel())->findAll(['placed' => true], 5000) as $student) {
+            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+            $company = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
+            $user = $userModel->findById((string) ($student['userId'] ?? ''));
+            $name = trim((string) ($user['name'] ?? 'Student'));
+            $roll = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            $key = $roll !== '' ? 's:' . $roll : 's:' . strtolower($name) . '|' . (string) ($student['_id'] ?? '');
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = [
+                'name'    => $name !== '' ? $name : 'Student',
+                'type'    => 'student',
+                'roll'    => $roll,
+                'company' => $company !== '' ? $company : '—',
+                'role'    => trim((string) ($placement['role'] ?? '')),
+            ];
+        }
+
+        try {
+            foreach ((new AlumniModel())->findAll(['isWorking' => true], 5000) as $alumni) {
+                $company = trim((string) ($alumni['company'] ?? ''));
+                if ($company === '') {
+                    continue;
+                }
+                $user = $userModel->findById((string) ($alumni['userId'] ?? ''));
+                $name = trim((string) ($user['name'] ?? $alumni['name'] ?? 'Alumni'));
+                $email = strtolower(trim((string) ($user['email'] ?? '')));
+                $key = $email !== '' ? 'a:' . $email : 'a:' . strtolower($name) . '|' . strtolower($company);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                // Also skip if same person already listed as placed student (by name).
+                $nameKey = 's:' . strtolower($name);
+                if (isset($seen[$nameKey])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = [
+                    'name'    => $name !== '' ? $name : 'Alumni',
+                    'type'    => 'alumni',
+                    'roll'    => '',
+                    'company' => $company,
+                    'role'    => trim((string) ($alumni['role'] ?? $alumni['jobRole'] ?? $alumni['alumniRole'] ?? '')),
+                ];
+            }
+        } catch (\Throwable) {
+            // Alumni table may be empty / unavailable.
+        }
+
+        usort($rows, static fn (array $a, array $b): int => strcasecmp((string) $a['name'], (string) $b['name']));
+
+        return $rows;
     }
 
     /**
@@ -261,82 +329,44 @@ final class AnalyticsService
         $jobModel = new JobModel();
         $driveModel = new DriveModel();
 
-        // Prefer selected applications, then fill remaining from placed students
-        // (previously, any selected apps blocked the placed=true fallback entirely).
-        $apps = $applicationModel->findAll(['status' => 'selected'], max($limit * 3, 50), 0, ['updatedAt' => -1]);
-        $seenStudentIds = [];
-        foreach ($apps as $app) {
-            $sid = (string) ($app['studentId'] ?? '');
-            if ($sid !== '') {
-                $seenStudentIds[$sid] = true;
+        $apps = $applicationModel->findAll(['status' => 'selected'], $limit, 0, ['updatedAt' => -1]);
+        if ($apps === []) {
+            foreach ($studentModel->findAll(['placed' => true], $limit) as $student) {
+                $user = $userModel->findById((string) ($student['userId'] ?? ''));
+                if (!$user) {
+                    continue;
+                }
+                $apps[] = ['studentId' => $student['_id'], 'companyId' => null, 'jobId' => null, 'driveId' => null];
             }
-        }
-
-        foreach ($studentModel->findAll(['placed' => true], 500) as $student) {
-            $sid = (string) ($student['_id'] ?? '');
-            if ($sid === '' || isset($seenStudentIds[$sid])) {
-                continue;
-            }
-            $seenStudentIds[$sid] = true;
-            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
-            $apps[] = [
-                'studentId' => $student['_id'],
-                'companyId' => $placement['companyId'] ?? null,
-                'jobId'     => null,
-                'driveId'   => null,
-                '_placement'=> $placement,
-            ];
         }
 
         $stories = [];
-        $listed = [];
         foreach ($apps as $app) {
             $student = $studentModel->findById((string) ($app['studentId'] ?? ''));
             if (!$student) {
                 continue;
             }
-            $sid = (string) ($student['_id'] ?? '');
-            if ($sid !== '' && isset($listed[$sid])) {
-                continue; // one person = one story (current placement only)
-            }
             $user = $userModel->findById((string) ($student['userId'] ?? ''));
             $name = (string) ($user['name'] ?? 'Student');
-            if (trim($name) === '') {
-                continue;
-            }
 
-            $placement = is_array($app['_placement'] ?? null)
-                ? $app['_placement']
-                : (is_array($student['placement'] ?? null) ? $student['placement'] : []);
-
-            $companyName = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
-            if ($companyName === '' && !empty($app['companyId'])) {
+            $companyName = 'Campus recruiter';
+            if (!empty($app['companyId'])) {
                 $company = $companyModel->findById((string) $app['companyId']);
-                $companyName = (string) ($company['companyName'] ?? '');
-            }
-            if ($companyName === '') {
-                $companyName = 'Campus recruiter';
+                $companyName = (string) ($company['companyName'] ?? $companyName);
             }
 
-            $roleTitle = trim((string) ($placement['role'] ?? ''));
-            $package = trim((string) ($placement['package'] ?? ''));
-            if ($roleTitle === '' && !empty($app['jobId'])) {
+            $roleTitle = '';
+            $package = '';
+            if (!empty($app['jobId'])) {
                 $job = $jobModel->findById((string) $app['jobId']);
                 $roleTitle = (string) ($job['title'] ?? '');
-                if ($package === '') {
-                    $package = (string) ($job['package'] ?? '');
-                }
-            } elseif ($roleTitle === '' && !empty($app['driveId'])) {
+                $package = (string) ($job['package'] ?? '');
+            } elseif (!empty($app['driveId'])) {
                 $drive = $driveModel->findById((string) $app['driveId']);
                 $roleTitle = (string) ($drive['title'] ?? '');
-                if ($package === '') {
-                    $package = (string) ($drive['tier'] ?? '');
-                }
+                $package = (string) ($drive['tier'] ?? '');
             }
 
-            if ($sid !== '') {
-                $listed[$sid] = true;
-            }
             $stories[] = [
                 'name'    => $name,
                 'role'    => $roleTitle !== '' ? "{$companyName} · {$roleTitle}" : $companyName,
