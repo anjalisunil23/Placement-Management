@@ -2371,24 +2371,9 @@ function roundOutcomeDisplay(outcome, selectionRounds = []) {
   return { name, cls, label, status };
 }
 
-/** Status badge plus per-round shortlist/select/wait chips for student views. */
+/** Live application status only (no per-round history chips). */
 function appPlacementProgressHtml(app) {
-  const esc = (v) => String(v ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/"/g, '&quot;');
-  const status = String(app?.status || '').toLowerCase();
-  const statusHtml = appStatusBadge(status);
-  const outcomes = Array.isArray(app?.roundOutcomes) ? [...app.roundOutcomes] : [];
-  outcomes.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-  if (!outcomes.length) return statusHtml;
-
-  const chips = outcomes.map((o) => {
-    const { name, cls, label } = roundOutcomeDisplay(o, app?.selectionRounds);
-    return `<span class="badge-soft ${esc(cls)}">${esc(name)}: ${esc(label)}</span>`;
-  }).join('');
-
-  return `<div class="d-flex flex-column gap-1 align-items-start">${statusHtml}<div class="d-flex flex-wrap gap-1">${chips}</div></div>`;
+  return appStatusBadge(String(app?.status || '').toLowerCase());
 }
 
 function isCompanyRecruitmentProgressApp(app) {
