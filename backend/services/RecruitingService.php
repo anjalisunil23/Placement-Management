@@ -85,7 +85,8 @@ final class RecruitingService
 
         $applicants = $this->campusApplicants($departmentId);
         $byDept = $this->applicantsByDepartment($applicants);
-        $batchOptions = $this->campusBatchOptions($departmentId, $filterCtx);
+        // Local classBatch only — AES directory fetch is too slow for dashboard hydrate.
+        $batchOptions = $this->campusBatchOptionsLocal($departmentId);
         $placements = $this->listCampusPlacements($departmentId);
 
         return [
@@ -378,25 +379,33 @@ final class RecruitingService
             $filter['departmentId'] = $deptOid;
         }
 
-        $userModel = new UserModel();
-        $deptModel = new DepartmentModel();
-        $appModel = new ApplicationModel();
-        $companyModel = new CompanyModel();
-        $studentModel = new StudentModel();
-        $aes = new AesApiService();
-        $deptCache = [];
+        $students = (new StudentModel())->findAll($filter, 5000);
+        if ($students === []) {
+            return [];
+        }
+
+        $userIds = [];
+        $deptIds = [];
+        foreach ($students as $student) {
+            $uid = trim((string) ($student['userId'] ?? ''));
+            $did = trim((string) ($student['departmentId'] ?? ''));
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+            if ($did !== '') {
+                $deptIds[$did] = true;
+            }
+        }
+        $users = (new UserModel())->findByIds(array_keys($userIds));
+        $departments = (new DepartmentModel())->findByIds(array_keys($deptIds));
+
         $rows = [];
         $seenRolls = [];
-        $aesCalls = 0;
-        // Dashboard overview must stay fast — never fan out to AES for missing classBatch.
-        $aesLimit = 0;
 
-        foreach ($studentModel->findAll($filter, 5000) as $student) {
-            $studentId = (string) ($student['_id'] ?? '');
+        foreach ($students as $student) {
             $roll = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
             $userId = (string) ($student['userId'] ?? '');
 
-            // One person = 1 current placement (ignore past companies in history).
             if ($userId !== '' && isset($seenRolls['u:' . $userId])) {
                 continue;
             }
@@ -404,57 +413,33 @@ final class RecruitingService
                 continue;
             }
 
-            // Current placement only — placementHistory / older offers do not count.
             $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
             $company = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
             $role = trim((string) ($placement['role'] ?? ''));
             $package = trim((string) ($placement['package'] ?? ''));
-            $joinDate = trim((string) ($placement['joinDate'] ?? ''));
+            $joinDate = trim((string) ($placement['joinDate'] ?? $placement['placedAt'] ?? $placement['date'] ?? ''));
             if ($company === '') {
                 continue;
             }
 
-            $user = $userModel->findById($userId);
-            $deptId = (string) ($student['departmentId'] ?? '');
-            if ($deptId !== '' && !isset($deptCache[$deptId])) {
-                $dept = $deptModel->findById($deptId);
-                $deptCache[$deptId] = $dept
-                    ? (string) ($dept['code'] ?? $dept['name'] ?? '')
-                    : '';
+            // Prefer dates on the current placement — skip per-student application scans.
+            $placedAt = $joinDate;
+            if ($placedAt === '') {
+                $placedAt = trim((string) ($student['placedAt'] ?? $student['updatedAt'] ?? $student['createdAt'] ?? ''));
             }
-            $deptCode = $deptCache[$deptId] ?? '';
-            $classBatch = $this->resolveStudentStudClass($student, $studentModel, $aes, $aesCalls, $aesLimit);
-
-            // Date from current placement, or the selected app that matches this current company.
-            $selectedAt = '';
-            $companyNorm = strtolower($company);
-            foreach ($appModel->findByStudent($studentId) as $app) {
-                if (($app['status'] ?? '') !== 'selected') {
-                    continue;
-                }
-                $co = $companyModel->findById((string) ($app['companyId'] ?? ''));
-                $appCompany = is_array($co) ? strtolower(trim((string) ($co['companyName'] ?? ''))) : '';
-                if ($appCompany !== '' && $appCompany !== $companyNorm) {
-                    continue;
-                }
-                $selectedAt = (string) ($app['updatedAt'] ?? $app['createdAt'] ?? '');
-                foreach (($app['timeline'] ?? []) as $entry) {
-                    if (($entry['status'] ?? '') === 'selected' && !empty($entry['at'])) {
-                        $selectedAt = (string) $entry['at'];
-                        break;
-                    }
-                }
-                break;
-            }
-
-            $placedAt = $joinDate !== '' ? $joinDate : $selectedAt;
             if ($placedAt === '') {
                 continue;
             }
-            $year = $this->placementYear($selectedAt, $joinDate, '');
+            $year = $this->placementYear($placedAt, $joinDate, '');
             if ($year <= 0) {
                 continue;
             }
+
+            $user = $userId !== '' ? ($users[$userId] ?? null) : null;
+            $deptId = (string) ($student['departmentId'] ?? '');
+            $dept = $deptId !== '' ? ($departments[$deptId] ?? null) : null;
+            $deptCode = is_array($dept) ? (string) ($dept['code'] ?? $dept['name'] ?? '') : '';
+            $classBatch = trim((string) ($student['classBatch'] ?? ''));
 
             if ($userId !== '') {
                 $seenRolls['u:' . $userId] = true;
@@ -626,30 +611,29 @@ final class RecruitingService
         }
 
         $apps = (new ApplicationModel())->findAll($filter, 5000);
-        $byCompany = [];
-        foreach ($apps as $app) {
-            $companyId = (string) ($app['companyId'] ?? '');
-            if ($companyId === '') {
-                continue;
-            }
-            $byCompany[$companyId][] = (string) ($app['_id'] ?? '');
+        if ($apps === []) {
+            return [];
         }
 
-        $appService = new CompanyApplicationService();
-        $companyModel = new CompanyModel();
-        $rows = [];
-        foreach ($byCompany as $companyId => $appIds) {
-            $company = $companyModel->findById($companyId);
-            $companyName = (string) ($company['companyName'] ?? 'Company');
-            $lookup = array_flip($appIds);
-            foreach ($appService->listEnriched($companyId) as $row) {
-                $id = (string) ($row['id'] ?? $row['_id'] ?? '');
-                if ($id !== '' && isset($lookup[$id])) {
-                    $row['companyName'] = $companyName;
-                    $rows[] = $row;
-                }
+        $companyIds = [];
+        foreach ($apps as $app) {
+            $cid = trim((string) ($app['companyId'] ?? ''));
+            if ($cid !== '') {
+                $companyIds[$cid] = true;
             }
         }
+        $companies = (new CompanyModel())->findByIds(array_keys($companyIds));
+
+        // One batched enrich for all apps — never call listEnriched per company.
+        $rows = (new CompanyApplicationService())->enrichApplicationRows($apps, null, '', false);
+        foreach ($rows as &$row) {
+            $cid = trim((string) ($row['companyId'] ?? ''));
+            $company = $cid !== '' ? ($companies[$cid] ?? null) : null;
+            $row['companyName'] = is_array($company)
+                ? (string) ($company['companyName'] ?? 'Company')
+                : (string) ($row['companyName'] ?? 'Company');
+        }
+        unset($row);
 
         return $rows;
     }

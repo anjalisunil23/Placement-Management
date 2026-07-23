@@ -39,18 +39,72 @@ final class CompanyApplicationService
             ));
         }
 
-        $studentModel = new StudentModel();
-        $userModel = new UserModel();
-        $driveModel = new DriveModel();
-        $jobModel = new JobModel();
-        $deptModel = new DepartmentModel();
-        $deptCache = [];
-
         $minCgpa = isset($filters['minCgpa']) ? (float) $filters['minCgpa'] : null;
+        $branch = isset($filters['branch']) ? (string) $filters['branch'] : '';
+
+        return $this->enrichApplicationRows($apps, $minCgpa, $branch, true);
+    }
+
+    /**
+     * Bulk-enrich application rows (one batched load) — used by campus recruiting overview.
+     *
+     * @param array<int, array<string, mixed>> $apps
+     * @return array<int, array<string, mixed>>
+     */
+    public function enrichApplicationRows(
+        array $apps,
+        ?float $minCgpa = null,
+        string $branch = '',
+        bool $includeResumeMeta = true
+    ): array {
+        if ($apps === []) {
+            return [];
+        }
+
+        $studentIds = [];
+        $driveIds = [];
+        $jobIds = [];
+        foreach ($apps as $app) {
+            $sid = trim((string) ($app['studentId'] ?? ''));
+            $did = trim((string) ($app['driveId'] ?? ''));
+            $jid = trim((string) ($app['jobId'] ?? ''));
+            if ($sid !== '') {
+                $studentIds[$sid] = true;
+            }
+            if ($did !== '') {
+                $driveIds[$did] = true;
+            }
+            if ($jid !== '') {
+                $jobIds[$jid] = true;
+            }
+        }
+
+        $students = (new StudentModel())->findByIds(array_keys($studentIds));
+        $userIds = [];
+        $deptIds = [];
+        foreach ($students as $student) {
+            $uid = trim((string) ($student['userId'] ?? ''));
+            $did = trim((string) ($student['departmentId'] ?? ''));
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+            if ($did !== '') {
+                $deptIds[$did] = true;
+            }
+        }
+        $users = (new UserModel())->findByIds(array_keys($userIds));
+        $drives = (new DriveModel())->findByIds(array_keys($driveIds));
+        $jobs = (new JobModel())->findByIds(array_keys($jobIds));
+        $departments = (new DepartmentModel())->findByIds(array_keys($deptIds));
+        $deptCache = [];
+        foreach ($departments as $id => $dept) {
+            $deptCache[$id] = (string) ($dept['code'] ?? $dept['name'] ?? '');
+        }
 
         $rows = [];
         foreach ($apps as $app) {
-            $student = $studentModel->findById((string) $app['studentId']);
+            $studentId = trim((string) ($app['studentId'] ?? ''));
+            $student = $studentId !== '' ? ($students[$studentId] ?? null) : null;
             if (!$student) {
                 continue;
             }
@@ -58,18 +112,27 @@ final class CompanyApplicationService
             if ($minCgpa !== null && $cgpa < $minCgpa) {
                 continue;
             }
-            if (!empty($filters['branch'])) {
-                $deptCode = $this->departmentCode($student, $deptModel, $deptCache);
-                if (strcasecmp($deptCode, (string) $filters['branch']) !== 0) {
-                    continue;
-                }
+            $deptCode = $this->departmentCodeFromCache($student, $deptCache);
+            if ($branch !== '' && strcasecmp($deptCode, $branch) !== 0) {
+                continue;
             }
 
-            $user = $userModel->findById((string) $student['userId']);
-            $drive = $driveModel->findById((string) $app['driveId']);
-            $job = !empty($app['jobId']) ? $jobModel->findById((string) $app['jobId']) : null;
+            $uid = trim((string) ($student['userId'] ?? ''));
+            $did = trim((string) ($app['driveId'] ?? ''));
+            $jid = trim((string) ($app['jobId'] ?? ''));
+            $user = $uid !== '' ? ($users[$uid] ?? null) : null;
+            $drive = $did !== '' ? ($drives[$did] ?? null) : null;
+            $job = $jid !== '' ? ($jobs[$jid] ?? null) : null;
 
-            $rows[] = $this->serializeRow($app, $student, $user, $drive, $job, $deptModel, $deptCache);
+            $rows[] = $this->serializeRow(
+                $app,
+                $student,
+                $user,
+                $drive,
+                $job,
+                $deptCache,
+                $includeResumeMeta
+            );
         }
 
         return $rows;
@@ -143,6 +206,17 @@ final class CompanyApplicationService
     }
 
     /**
+     * @param array<string, mixed> $student
+     * @param array<string, string> $deptCache
+     */
+    private function departmentCodeFromCache(array $student, array $deptCache): string
+    {
+        $deptId = (string) ($student['departmentId'] ?? '');
+
+        return $deptId !== '' ? (string) ($deptCache[$deptId] ?? '') : '';
+    }
+
+    /**
      * @param array<string, mixed> $app
      * @param array<string, mixed>|null $student
      * @param array<string, mixed>|null $user
@@ -157,13 +231,23 @@ final class CompanyApplicationService
         ?array $user,
         ?array $drive,
         ?array $job,
-        DepartmentModel $deptModel,
-        array &$deptCache
+        array $deptCache,
+        bool $includeResumeMeta = true
     ): array {
         $serialized = DocumentHelper::serialize($app);
-        $dept = $student ? $this->departmentCode($student, $deptModel, $deptCache) : '';
+        $dept = $student ? $this->departmentCodeFromCache($student, $deptCache) : '';
         $appId = (string) ($serialized['id'] ?? $serialized['_id'] ?? $app['_id'] ?? '');
-        $hasResume = (new OfficerDataService())->resumeFileForApplication($app) !== null;
+
+        $hasResume = false;
+        if ($includeResumeMeta) {
+            $hasResume = $this->hasLocalResumeSnapshot($app, $student);
+        } else {
+            $appResume = is_array($app['resume'] ?? null) ? $app['resume'] : [];
+            $studentResume = is_array($student['resume'] ?? null) ? $student['resume'] : [];
+            $hasResume = trim((string) ($appResume['path'] ?? '')) !== ''
+                || trim((string) ($studentResume['path'] ?? '')) !== '';
+        }
+
         $serialized['student'] = [
             'name'           => $user['name'] ?? 'Student',
             'registerNumber' => $student['registerNumber'] ?? '',
@@ -189,6 +273,27 @@ final class CompanyApplicationService
             ? '/backend/api/company/applications/' . rawurlencode($appId) . '/resume'
             : '';
         return $serialized;
+    }
+
+    /**
+     * @param array<string, mixed> $app
+     * @param array<string, mixed>|null $student
+     */
+    private function hasLocalResumeSnapshot(array $app, ?array $student): bool
+    {
+        foreach ([
+            is_array($app['resume'] ?? null) ? $app['resume'] : null,
+            is_array($student['resume'] ?? null) ? $student['resume'] : null,
+        ] as $src) {
+            if (!is_array($src)) {
+                continue;
+            }
+            if (trim((string) ($src['path'] ?? '')) !== '' || trim((string) ($src['storedName'] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

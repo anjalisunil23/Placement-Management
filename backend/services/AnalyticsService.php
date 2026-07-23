@@ -46,13 +46,27 @@ final class AnalyticsService
         $departments = $departmentId
             ? array_filter([$departmentModel->findById($departmentId)])
             : $departmentModel->findAll([], 50);
+
+        // One student scan for branch totals instead of 2 count() queries per department.
+        $branchTotals = [];
+        $branchPlaced = [];
+        foreach ($studentModel->findAll($studentFilter, 10000) as $s) {
+            $did = (string) ($s['departmentId'] ?? '');
+            if ($did === '') {
+                continue;
+            }
+            $branchTotals[$did] = ($branchTotals[$did] ?? 0) + 1;
+            if (($s['placed'] ?? false) === true) {
+                $branchPlaced[$did] = ($branchPlaced[$did] ?? 0) + 1;
+            }
+        }
         foreach ($departments as $dept) {
             if (!$dept) {
                 continue;
             }
             $deptId = (string) $dept['_id'];
-            $total = $studentModel->count(['departmentId' => $dept['_id']]);
-            $placed = $studentModel->count(['departmentId' => $dept['_id'], 'placed' => true]);
+            $total = (int) ($branchTotals[$deptId] ?? 0);
+            $placed = (int) ($branchPlaced[$deptId] ?? 0);
             $branchStats[] = [
                 'department' => $dept['name'],
                 'code'       => $dept['code'],
@@ -70,32 +84,40 @@ final class AnalyticsService
         }
 
         $companies = $companyModel->findAll([], 100);
-        $companyStats = array_map(function ($c) use ($applicationModel, $studentIds, $deptOid) {
-            $appFilter = ['companyId' => $c['_id']];
-            if ($deptOid && $studentIds !== []) {
-                $appFilter['studentId'] = ['$in' => $studentIds];
-            } elseif ($deptOid) {
-                return [
-                    'name'         => $c['companyName'],
-                    'tier'         => $c['tier'],
-                    'applications' => 0,
-                    'selected'     => 0,
-                ];
+        $companyStatsMap = [];
+        foreach ($companies as $c) {
+            $cid = (string) ($c['_id'] ?? '');
+            if ($cid === '') {
+                continue;
             }
-            return [
+            $companyStatsMap[$cid] = [
                 'name'         => $c['companyName'],
                 'tier'         => $c['tier'],
-                'applications' => $applicationModel->count($appFilter),
-                'selected'     => $applicationModel->count(array_merge($appFilter, ['status' => 'selected'])),
+                'applications' => 0,
+                'selected'     => 0,
             ];
-        }, $companies);
-
-        $appCountFilter = [];
-        if ($deptOid && $studentIds !== []) {
-            $appCountFilter['studentId'] = ['$in' => $studentIds];
-        } elseif ($deptOid) {
-            $appCountFilter['studentId'] = ['$in' => []];
         }
+
+        $appScanFilter = [];
+        if ($deptOid && $studentIds !== []) {
+            $appScanFilter['studentId'] = ['$in' => $studentIds];
+        } elseif ($deptOid) {
+            $appScanFilter['studentId'] = ['$in' => []];
+        }
+        // One pass over applications instead of 2 count() queries per company.
+        foreach ($applicationModel->findAll($appScanFilter, 8000) as $app) {
+            $cid = (string) ($app['companyId'] ?? '');
+            if ($cid === '' || !isset($companyStatsMap[$cid])) {
+                continue;
+            }
+            $companyStatsMap[$cid]['applications']++;
+            if (($app['status'] ?? '') === 'selected') {
+                $companyStatsMap[$cid]['selected']++;
+            }
+        }
+        $companyStats = array_values($companyStatsMap);
+
+        $appCountFilter = $appScanFilter;
 
         $companyCount = $companyModel->count([]);
         if ($deptOid) {
@@ -507,13 +529,17 @@ final class AnalyticsService
         $jobModel = new JobModel();
         $jobs = $jobModel->findAll([], 500);
 
+        // Load selected apps once for both this-year and last-year trends.
+        $selectedApps = (new ApplicationModel())->findAll(['status' => 'selected'], 5000);
+        $studentIds = $this->studentIdsForDepartment($departmentId);
+
         return [
             'totals'           => $base['totals'],
             'branchStatistics' => $base['branchStatistics'],
             'companyStatistics'=> $base['companyStatistics'],
             'salaryAnalytics'  => $base['salaryAnalytics'],
-            'hiringTrend'      => $this->getHiringTrend($departmentId, 'this'),
-            'hiringTrendLastYear' => $this->getHiringTrend($departmentId, 'last'),
+            'hiringTrend'      => $this->getHiringTrendFromApps($selectedApps, $studentIds, 'this'),
+            'hiringTrendLastYear' => $this->getHiringTrendFromApps($selectedApps, $studentIds, 'last'),
             'branchPlacement'  => [
                 'labels' => array_map(
                     static fn (array $b): string => (string) ($b['code'] ?: $b['department']),
@@ -565,6 +591,20 @@ final class AnalyticsService
      */
     private function getHiringTrend(?string $departmentId, ?string $yearMode = 'rolling'): array
     {
+        $apps = (new ApplicationModel())->findAll(['status' => 'selected'], 5000);
+        $studentIds = $this->studentIdsForDepartment($departmentId);
+
+        return $this->getHiringTrendFromApps($apps, $studentIds, $yearMode);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $apps
+     * @param array<string, true>|null $studentIds
+     * @param 'rolling'|'this'|'last'|null $yearMode
+     * @return array{labels: array<int, string>, series: array<int, array{label: string, data: array<int, int>}> , year?: int}
+     */
+    private function getHiringTrendFromApps(array $apps, ?array $studentIds, ?string $yearMode = 'rolling'): array
+    {
         $yearMode = $yearMode === null || $yearMode === '' ? 'rolling' : $yearMode;
         $months = [];
         $year = null;
@@ -584,8 +624,6 @@ final class AnalyticsService
         }
 
         $counts = array_fill_keys($months, 0);
-        $studentIds = $this->studentIdsForDepartment($departmentId);
-        $apps = (new ApplicationModel())->findAll(['status' => 'selected'], 5000);
 
         foreach ($apps as $app) {
             if ($studentIds !== null) {
