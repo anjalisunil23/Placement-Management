@@ -254,8 +254,8 @@
       if (match) select.value = match.value || match.textContent;
     }
     this.hiringTrendData = this.resolvedHiringTrend();
-    this.renderHiringTrend(this.hiringTrendData);
-    this.renderPlacementList();
+    // Re-render stats so Hired / placed matches the selected year + placement list.
+    this.renderForDept(this.selectedDept());
   };
 
   HiringOverviewPage.prototype.placementSourceRows = function () {
@@ -275,8 +275,13 @@
     const year = this.selectedTrendYear();
     const dept = this.selectedDept();
     const batch = this.selectedBatch();
-    let rows = this.placementSourceRows().filter((row) => Number(row.year) === year);
+    let rows = this.placementSourceRows().filter((row) => {
+      if (Number(row.year) !== year) return false;
+      const co = String(row.company || '').trim();
+      return co && co !== '—';
+    });
     rows = this.filterRowsByDeptAndBatch(rows, dept, batch);
+    rows = this.uniquePlacementsByPerson(rows);
 
     if (titleEl) {
       titleEl.textContent = this.trendYearMode === 'last'
@@ -313,6 +318,25 @@
     }).join('');
   };
 
+  HiringOverviewPage.prototype.placementPersonKey = function (row) {
+    const roll = String(row?.roll || row?.registerNumber || '').trim().toUpperCase();
+    if (roll) return 'roll:' + roll;
+    const name = String(row?.name || '').trim().toLowerCase();
+    const dept = String(row?.dept || '').trim().toLowerCase();
+    return 'name:' + name + '|' + dept;
+  };
+
+  /** One row per person — a placed student counts as 1 even with multiple offers/companies. */
+  HiringOverviewPage.prototype.uniquePlacementsByPerson = function (rows) {
+    const seen = new Map();
+    (rows || []).forEach((row) => {
+      const key = this.placementPersonKey(row);
+      if (!key || key === 'roll:' || key === 'name:|') return;
+      if (!seen.has(key)) seen.set(key, row);
+    });
+    return [...seen.values()];
+  };
+
   HiringOverviewPage.prototype.recruitingViewForDept = function (data, deptCode, batchCode) {
     if (!data) return null;
     let applicants = (data.applicants || []).map(RecruitingStore.mapApplicant);
@@ -326,14 +350,21 @@
     const shortlisted = applicants.filter(a => a.status === 'shortlisted' || a.status === 'under_review').length;
     const offers = applicants.filter(a => a.status === 'offered' || a.status === 'selected').length;
 
-    // Hired = placed students (not offers). uiStatus maps selected→offered and never emits "placed".
+    // Hired = unique placed people for the selected year (1 person = 1).
+    const year = this.selectedTrendYear();
     let placements = Array.isArray(data.placements) ? data.placements.slice() : [];
+    placements = placements.filter(p => {
+      if (Number(p.year) !== year) return false;
+      const co = String(p.company || '').trim();
+      return co && co !== '—';
+    });
     if (deptCode) {
       placements = placements.filter(p => this.deptMatchesFilter(p.dept, deptCode));
     }
     if (batchCode) {
       placements = placements.filter(p => this.batchMatchesFilter(p.classBatch, batchCode));
     }
+    placements = this.uniquePlacementsByPerson(placements);
     const hired = placements.length;
 
     const companyMap = new Map();

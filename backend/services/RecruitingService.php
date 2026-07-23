@@ -229,11 +229,21 @@ final class RecruitingService
         $aes = new AesApiService();
         $deptCache = [];
         $rows = [];
+        $seenRolls = [];
         $aesCalls = 0;
         // Dashboard overview must stay fast — never fan out to AES for missing classBatch.
         $aesLimit = 0;
 
         foreach ($studentModel->findAll($filter, 5000) as $student) {
+            $roll = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+            // One placed person counts as 1 (skip duplicate student records).
+            if ($roll !== '') {
+                if (isset($seenRolls[$roll])) {
+                    continue;
+                }
+                $seenRolls[$roll] = true;
+            }
+
             $user = $userModel->findById((string) ($student['userId'] ?? ''));
             $deptId = (string) ($student['departmentId'] ?? '');
             if ($deptId !== '' && !isset($deptCache[$deptId])) {
@@ -320,7 +330,8 @@ final class RecruitingService
             return (int) $m[1];
         }
 
-        return (int) date('Y');
+        // Unknown year — exclude from year-scoped Hired totals (don't invent "this year").
+        return 0;
     }
 
     /**
