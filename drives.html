@@ -570,7 +570,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723adminclosed"></script>
+<script src="js/api.js?v=20260723nosearchclosed"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1013,6 +1013,17 @@ function driveRegistrationDeadline(d) {
   return '';
 }
 
+function driveRecruitmentYmd(d) {
+  if (!d || typeof d !== 'object') return '';
+  const raw = String(d.recruitmentDate || d.date || '').trim();
+  if (!raw || raw === '—' || raw.toUpperCase() === 'TBD') return '';
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const dmy = raw.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  return '';
+}
+
 function todayYmdLocal() {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -1022,9 +1033,20 @@ function isDriveRegistrationClosed(d) {
   if (!d) return false;
   const status = String(d.status || '').trim().toLowerCase();
   if (status === 'closed' || status === 'completed') return true;
+  const today = todayYmdLocal();
   const deadline = driveRegistrationDeadline(d);
-  if (!deadline) return false;
-  return todayYmdLocal() > deadline;
+  if (deadline && today > deadline) return true;
+  const recruitment = driveRecruitmentYmd(d);
+  if (recruitment && today > recruitment) return true;
+  return false;
+}
+
+/** Students/alumni/staff/officer must never see closed or past-deadline drives. */
+function isDriveHiddenFromNonAdmin(d) {
+  if (!d) return true;
+  if (isDriveRegistrationClosed(d)) return true;
+  const st = String(d.status || '').trim().toLowerCase();
+  return st === 'closed' || st === 'completed';
 }
 
 function driveViewMode() {
@@ -1177,7 +1199,9 @@ function companyDriveCardHtml(drives) {
 
 function drivesFromCardIds(idsCsv) {
   const ids = String(idsCsv || '').split(',').map(s => s.trim()).filter(Boolean);
-  return ids.map(id => allDrives.find(d => String(d.id) === String(id))).filter(Boolean);
+  const rows = ids.map(id => allDrives.find(d => String(d.id) === String(id))).filter(Boolean);
+  if (role === 'admin') return rows;
+  return rows.filter(d => !isDriveHiddenFromNonAdmin(d));
 }
 
 function driveAlreadyApplied(d) {
@@ -1191,9 +1215,9 @@ function driveAlreadyApplied(d) {
 }
 
 function driveVisibleToApplicant(d) {
-  // Soft ineligibility (resume/CGPA/chances) must not hide the drive — only Apply is blocked.
   if (!isStudent && !alumniSeeking) return true;
-  return true;
+  // Never surface closed / past-deadline drives to applicants (including search).
+  return !isDriveHiddenFromNonAdmin(d);
 }
 
 function driveDetailValue(v) {
@@ -1208,7 +1232,21 @@ function driveDetailValue(v) {
 function fillDriveDetailPanel(list, selectedId) {
   const panel = document.getElementById('driveDetailPanel') || document.getElementById('driveDetailBody');
   const applyBtn = document.getElementById('driveDetailApplyBtn');
-  if (!panel || !list?.length) return;
+  if (!panel) return;
+  const visible = (Array.isArray(list) ? list : []).filter((d) => {
+    if (role === 'admin') return true;
+    return !isDriveHiddenFromNonAdmin(d);
+  });
+  if (!visible.length) {
+    panel.innerHTML = '<p class="text-muted-2 mb-0">This drive is closed and is not available.</p>';
+    if (applyBtn) {
+      applyBtn.classList.add('d-none');
+      applyBtn.disabled = true;
+    }
+    return;
+  }
+  list = visible;
+  if (!list?.length) return;
   const multi = list.length > 1;
   const preferred = selectedId
     ? list.find(d => String(d.id) === String(selectedId))
@@ -1459,21 +1497,22 @@ function filteredDrives() {
   const adminSeesClosed = role === 'admin';
 
   return allDrives.filter(d => {
+    // Search never reveals closed drives to non-admin users.
+    if (!adminSeesClosed && isDriveHiddenFromNonAdmin(d)) return false;
 
     const hay = `${d.company} ${d.role} ${d.package} ${d.jobType || ''}`.toLowerCase();
 
     if (q && !hay.includes(q)) return false;
 
-    if (openOnly || !adminSeesClosed) {
-      if (typeof isDriveRegistrationClosed === 'function' && isDriveRegistrationClosed(d)) return false;
-      const st = String(d.status || '').toLowerCase();
-      if (st === 'closed' || st === 'completed') return false;
-      if (openOnly && st !== 'open' && st !== 'ongoing') return false;
-    } else if (status === 'Active' || status === '') {
-      // Admin main list: hide completed unless Completed filter selected.
-      if (String(d.status || '') === 'Completed') return false;
-    } else if (status && d.status !== status) {
-      return false;
+    if (openOnly) {
+      const st = String(d.status || '').trim().toLowerCase();
+      if (st !== 'open' && st !== 'ongoing') return false;
+    } else if (adminSeesClosed) {
+      if (status === 'Active' || status === '') {
+        if (String(d.status || '') === 'Completed') return false;
+      } else if (status && d.status !== status) {
+        return false;
+      }
     }
 
     if (jobType && (d.jobType || '') !== jobType) return false;
@@ -2267,6 +2306,10 @@ async function loadDrives() {
       const apps = await ApplicationPipeline.fetch();
       enrichDriveApplicantCounts(apps);
     }
+  }
+  // Hard scrub: students/alumni/staff/officer never keep closed drives in memory (search-safe).
+  if (role !== 'admin') {
+    allDrives = (Array.isArray(allDrives) ? allDrives : []).filter(d => !isDriveHiddenFromNonAdmin(d));
   }
   renderRows();
 }
