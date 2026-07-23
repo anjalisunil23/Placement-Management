@@ -26,6 +26,36 @@ class DriveModel extends BaseModel
     }
 
     /**
+     * Status-lookup search: match title (and raw payload) without loading every drive.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function searchByTitleContains(string $needle, int $limit = 100): array
+    {
+        $needle = strtolower(trim($needle));
+        if (strlen($needle) < 2) {
+            return [];
+        }
+        $limit = max(1, min(200, $limit));
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $needle) . '%';
+
+        $sql = "SELECT id, payload, created_at, updated_at FROM `{$this->table}`
+            WHERE LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.title')), '')) LIKE ?
+               OR LOWER(payload) LIKE ?
+            ORDER BY created_at DESC
+            LIMIT {$limit}";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([$like, $like]);
+
+        $results = [];
+        while ($row = $stmt->fetch()) {
+            $results[] = $this->rowToDoc($row);
+        }
+
+        return $results;
+    }
+
+    /**
      * Find a drive with the same company, title, date, and department scope.
      *
      * @return array<string, mixed>|null

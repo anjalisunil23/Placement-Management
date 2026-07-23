@@ -570,7 +570,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723livedata2"></script>
+<script src="js/api.js?v=20260723statussearch2"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1658,9 +1658,14 @@ function renderRows() {
 
   if (useCards) {
     const groups = groupDrivesByCompany(list);
+    const q = (document.getElementById('driveSearch')?.value || '').trim();
+    const statusLookup = (isStudent || alumniSeeking) && q.length >= 2;
+    const emptyCardsMsg = statusLookup
+      ? 'No drives match that company or role.'
+      : 'No open drives right now.';
     cards.innerHTML = groups.length
       ? groups.map(companyDriveCardHtml).join('')
-      : '<div class="text-muted-2 p-4 text-center" style="grid-column:1/-1">No open drives right now.</div>';
+      : `<div class="text-muted-2 p-4 text-center" style="grid-column:1/-1">${emptyCardsMsg}</div>`;
     wireCompanyDriveCards(cards);
     document.getElementById('driveCount').textContent = groups.length;
     document.getElementById('driveShowing').textContent = groups.length
@@ -2280,13 +2285,17 @@ async function loadLiveManageDrives() {
   return DriveStore._apiCache ?? null;
 }
 
+let __driveLoadGen = 0;
+
 async function loadDrives() {
   const live = Auth.hasRealAuth() && !Auth.isDemo();
   const searchQ = (document.getElementById('driveSearch')?.value || '').trim();
   const statusLookup = (isStudent || alumniSeeking) && searchQ.length >= 2;
+  const loadGen = ++__driveLoadGen;
 
   if (isStudent && live) {
     const apiDrives = await DriveStore.fetchStudentDrives(statusLookup ? searchQ : '');
+    if (loadGen !== __driveLoadGen) return;
     if (apiDrives === null) {
       toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
       allDrives = [];
@@ -2295,9 +2304,11 @@ async function loadDrives() {
     }
   } else if (alumniSeeking && live) {
     const apiDrives = await DriveStore.fetchAlumniDrives(statusLookup ? searchQ : '');
+    if (loadGen !== __driveLoadGen) return;
     allDrives = apiDrives ?? [];
   } else if (role === 'staff' && live && typeof StaffApi !== 'undefined') {
     const staffDrives = await StaffApi.fetchDrives();
+    if (loadGen !== __driveLoadGen) return;
     if (staffDrives === null) {
       toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
       allDrives = [];
@@ -2306,22 +2317,26 @@ async function loadDrives() {
     }
   } else if (canManage && live) {
     const apiDrives = await loadLiveManageDrives();
+    if (loadGen !== __driveLoadGen) return;
     if (apiDrives === null) {
       toast('Could not load placement drives from the server. Refresh the page or sign in again.', 'warn');
       allDrives = [];
     } else {
       allDrives = apiDrives;
       const apps = await ApplicationPipeline.fetch();
+      if (loadGen !== __driveLoadGen) return;
       enrichDriveApplicantCounts(apps);
     }
   } else {
     if (canManage) await DriveStore.fetch();
+    if (loadGen !== __driveLoadGen) return;
     allDrives = DriveStore.allWithCatalog();
     if ((isStudent || alumniSeeking) && !statusLookup) {
       allDrives = DriveStore.filterApplicantDrives(allDrives);
     }
     if (canManage) {
       const apps = await ApplicationPipeline.fetch();
+      if (loadGen !== __driveLoadGen) return;
       enrichDriveApplicantCounts(apps);
     }
   }

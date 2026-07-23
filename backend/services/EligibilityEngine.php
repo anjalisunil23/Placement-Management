@@ -259,13 +259,13 @@ final class EligibilityEngine
     }
 
     /**
-     * Whether a drive should appear in a student's browse list.
-     * Branch targeting + post-placement Category A/B/C visibility.
+     * Branch targeting only (no Category A/B/C gate). Used for status-lookup search
+     * so students can see Closed/Open for drives aimed at their programme.
      *
      * @param array<string, mixed> $student
      * @param array<string, mixed> $drive
      */
-    public function driveVisibleToStudent(array $student, array $drive): bool
+    public function driveBranchVisibleToStudent(array $student, array $drive): bool
     {
         $criteria = $this->toPlainArray($drive['eligibility'] ?? []);
         $targetBranches = $this->toPlainArray($criteria['branches'] ?? []);
@@ -276,20 +276,35 @@ final class EligibilityEngine
             static fn ($b) => strtoupper(trim((string) $b)),
             $targetBranches
         )));
-        if ($branches !== []) {
-            $studentCodes = $this->studentDepartmentCodes($student);
-            if ($studentCodes !== []) {
-                $okBranch = false;
-                foreach ($studentCodes as $code) {
-                    if ($this->branchCodesMatch((string) $code, $branches)) {
-                        $okBranch = true;
-                        break;
-                    }
-                }
-                if (!$okBranch) {
-                    return false;
-                }
+        if ($branches === []) {
+            return true;
+        }
+
+        $studentCodes = $this->studentDepartmentCodes($student);
+        if ($studentCodes === []) {
+            return true;
+        }
+
+        foreach ($studentCodes as $code) {
+            if ($this->branchCodesMatch((string) $code, $branches)) {
+                return true;
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a drive should appear in a student's browse list.
+     * Branch targeting + post-placement Category A/B/C visibility.
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $drive
+     */
+    public function driveVisibleToStudent(array $student, array $drive): bool
+    {
+        if (!$this->driveBranchVisibleToStudent($student, $drive)) {
+            return false;
         }
 
         $company = null;

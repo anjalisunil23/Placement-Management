@@ -364,26 +364,68 @@ final class AlumniController
       Response::success([], 'No linked student profile — drives unavailable.');
       return;
     }
-    $allDrives = (new DriveModel())->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
     $searchQ = strtolower(trim((string) ($_GET['q'] ?? '')));
     $statusLookup = $searchQ !== '' && strlen($searchQ) >= 2;
     $engine = new EligibilityEngine();
     $studentId = (string) $student['_id'];
     $companyModel = new CompanyModel();
     $appModel = new ApplicationModel();
+    $driveModel = new DriveModel();
 
-    $drives = array_values(array_filter(
-      $allDrives,
-      static function (array $drive) use ($engine, $student, $statusLookup): bool {
-        if (!$engine->driveVisibleToStudent($student, $drive)) {
-          return false;
+    if ($statusLookup) {
+      $byId = [];
+      foreach ($driveModel->searchByTitleContains($searchQ, 120) as $drive) {
+        $id = (string) ($drive['_id'] ?? '');
+        if ($id !== '') {
+          $byId[$id] = $drive;
         }
-        if (!$statusLookup && !\PMS\Services\DriveLifecycle::isOpenForStudents($drive)) {
-          return false;
-        }
-        return true;
       }
-    ));
+
+      $matchingCompanyIds = [];
+      foreach ($companyModel->findAll([], 3000) as $company) {
+        $name = strtolower(trim((string) ($company['companyName'] ?? '')));
+        if ($name === '' || !str_contains($name, $searchQ)) {
+          continue;
+        }
+        $cid = (string) ($company['_id'] ?? '');
+        if ($cid !== '') {
+          $matchingCompanyIds[] = $cid;
+        }
+      }
+      $matchingCompanyIds = array_values(array_unique($matchingCompanyIds));
+      if ($matchingCompanyIds !== []) {
+        foreach ($driveModel->findAll(
+          ['companyId' => ['$in' => $matchingCompanyIds]],
+          150,
+          0,
+          ['date' => -1, 'createdAt' => -1]
+        ) as $drive) {
+          $id = (string) ($drive['_id'] ?? '');
+          if ($id !== '') {
+            $byId[$id] = $drive;
+          }
+        }
+      }
+
+      $drives = array_values(array_filter(
+        array_values($byId),
+        static function (array $drive) use ($engine, $student): bool {
+          return $engine->driveBranchVisibleToStudent($student, $drive);
+        }
+      ));
+      $drives = array_slice($drives, 0, 40);
+    } else {
+      $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
+      $drives = array_values(array_filter(
+        $allDrives,
+        static function (array $drive) use ($engine, $student): bool {
+          if (!$engine->driveVisibleToStudent($student, $drive)) {
+            return false;
+          }
+          return \PMS\Services\DriveLifecycle::isOpenForStudents($drive);
+        }
+      ));
+    }
 
     $result = array_map(function ($drive) use ($engine, $studentId, $companyModel, $appModel) {
       $serialized = DocumentHelper::serialize($drive);
@@ -405,20 +447,6 @@ final class AlumniController
 
       return $serialized;
     }, $drives);
-
-    if ($statusLookup) {
-      $result = array_values(array_filter(
-        $result,
-        static function (array $row) use ($searchQ): bool {
-          $hay = strtolower(trim(implode(' ', array_filter([
-            (string) ($row['companyName'] ?? ''),
-            (string) ($row['title'] ?? ''),
-            (string) ($row['role'] ?? ''),
-          ]))));
-          return $hay !== '' && str_contains($hay, $searchQ);
-        }
-      ));
-    }
 
     $result = array_values(array_filter(
         $result,
