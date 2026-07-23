@@ -135,11 +135,16 @@ final class AuthController
         Response::success(null, 'Logged out successfully.');
     }
 
-    /** GET /api/auth/me */
+    /** GET /api/auth/me — ?fast=1 skips AES name/dept enrichment (post-login boot) */
     public function me(): void
     {
         $user = AuthMiddleware::authenticate();
-        Response::success(AuthMiddleware::userResponse($user));
+        $fast = isset($_GET['fast']) && (string) $_GET['fast'] !== '0' && (string) $_GET['fast'] !== '';
+        if (!$fast && !empty($_SESSION['ph_auth_fast_boot'])) {
+            $fast = true;
+            unset($_SESSION['ph_auth_fast_boot']);
+        }
+        Response::success(AuthMiddleware::userResponse($user, null, ['fast' => $fast]));
     }
 
     /** POST /api/auth/change-password */

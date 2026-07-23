@@ -298,39 +298,43 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723perf"></script>
-<script src="js/app.js?v=20260723appcards"></script>
+<script src="js/api.js?v=20260723boot"></script>
+<script src="js/app.js?v=20260723boot"></script>
 <script>
 (function loadDashboardExtras() {
   const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
   const needCharts = role === 'admin' || role === 'placement_officer' || role === 'staff' || role === 'company';
   const needManage = role === 'admin' || role === 'placement_officer' || role === 'staff';
   const needHiring = role === 'placement_officer' || role === 'staff';
-  const scripts = [];
-  if (needCharts) {
-    scripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
-    scripts.push('js/charts.js?v=20260713p');
-  }
-  if (needManage) {
-    scripts.push('js/admin-api.js?v=20260713p');
-    scripts.push('js/officer-api.js?v=20260714e');
-    scripts.push('js/staff-api.js?v=20260714e');
-  }
-  if (needHiring) scripts.push('js/hiring-overview-page.js?v=20260723onecurrent');
-  // Sync append so onAppReady below still sees them after parse (scripts without defer/async run immediately when inserted... actually dynamically inserted scripts are async by default)
-  // Load synchronously via document.write is bad; instead gate page init on Promise.
-  window.__phDashExtras = Promise.all(scripts.map((src) => new Promise((resolve, reject) => {
+  const load = (src) => new Promise((resolve) => {
     const s = document.createElement('script');
     s.src = src;
     s.onload = resolve;
     s.onerror = () => resolve();
     document.head.appendChild(s);
-  })));
+  });
+  const apiScripts = [];
+  if (needManage) {
+    apiScripts.push('js/admin-api.js?v=20260723boot');
+    apiScripts.push('js/officer-api.js?v=20260714e');
+    apiScripts.push('js/staff-api.js?v=20260714e');
+  }
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260723onecurrent');
+  const chartScripts = [];
+  if (needCharts) {
+    chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
+    chartScripts.push('js/charts.js?v=20260713p');
+  }
+  window.__phDashApis = Promise.all(apiScripts.map(load));
+  window.__phDashCharts = Promise.all(chartScripts.map(load));
+  window.__phDashExtras = Promise.all([window.__phDashApis, window.__phDashCharts]);
 })();
 </script>
 <script>
 onAppReady(async () => {
-await (window.__phDashExtras || Promise.resolve());
+// Paint shell first — do not block on Chart.js CDN.
+const apisReady = window.__phDashApis || Promise.resolve();
+const chartsReady = window.__phDashCharts || Promise.resolve();
 const user = Auth.user() || demoUserFor(Auth.role());
 const role = Auth.role();
 if (!role || !ROLE_HOME[role]) {
@@ -370,61 +374,84 @@ const   actions = {
 };
 document.getElementById('dashActions').innerHTML = actions[role] || '';
 
-/* Admin dashboard stats */
+function paintAdminStats(s) {
+  if (!s) return;
+  if (dashLive && (s.totalStudents > 0 || s.totalCompanies > 0 || s.totalDrives > 0 || s.placedStudents > 0)) {
+    showDashLiveBadge(true);
+  } else if (dashLive && s.totalStudents === 0 && s.totalDrives === 0) {
+    showDashLiveBadge(false);
+  }
+  const setStat = (id, val) => { const el = document.getElementById(id); if (el) { el.dataset.target = val; el.dataset.animated = '0'; } };
+  setStat('statStudents', s.totalStudents);
+  setStat('statDrives', s.totalDrives);
+  setStat('statPlaced', s.placedStudents);
+  setStat('statPct', s.placementPct);
+  setStat('statPending', s.pendingApprovals);
+  setStat('statCompanies', s.totalCompanies);
+  setStat('statStaff', s.totalStaff);
+  setStat('statAlumni', s.totalAlumni);
+  setStat('statHighest', s.salary?.highest ?? 0);
+  setStat('statAvg', s.salary?.average ?? 0);
+  setStat('statMedian', s.salary?.median ?? 0);
+  setStat('statLowest', s.salary?.lowest ?? 0);
+  animateCounters(document.querySelector('[data-roles="admin"]'));
+}
+
+function paintAdminCharts(s) {
+  if (!s || typeof Charts === 'undefined') return;
+  const trend = s.hiringTrend;
+  if (trend?.labels?.length && document.getElementById('trendChart')) {
+    Charts.line(
+      document.getElementById('trendChart'),
+      trend.labels,
+      trend.series?.length ? trend.series : [{ label: 'Offers', data: trend.values || [] }]
+    );
+  }
+  if (s.branchStats?.length && document.getElementById('branchChart')) {
+    Charts.bar(
+      document.getElementById('branchChart'),
+      s.branchStats.map(d => d.dept),
+      s.branchStats.map(d => d.placed),
+      'Students placed'
+    );
+  }
+  const cos = s.companyStats || [];
+  if (document.getElementById('companyChart') && cos.length) {
+    Charts.bar(document.getElementById('companyChart'), cos.map(c => c.company), cos.map(c => c.applicants), 'Applicants');
+  }
+}
+
+/* Admin — lite counts first, then full analytics/charts */
 if (role === 'admin') {
   (async () => {
-    let s;
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      if (!Auth.hasLiveSession()) await Auth.ensureSession();
-      [s] = await Promise.all([dashboardStats(), DriveStore.fetch()]);
-    } else {
-      s = await dashboardStats();
-    }
-    if (dashLive && s && (s.totalStudents > 0 || s.totalCompanies > 0 || s.totalDrives > 0 || s.placedStudents > 0)) {
-      showDashLiveBadge(true);
-    } else if (dashLive && s.totalStudents === 0 && s.totalDrives === 0) {
-      showDashLiveBadge(false);
-    }
-    const setStat = (id, val) => { const el = document.getElementById(id); if (el) { el.dataset.target = val; el.dataset.animated = '0'; } };
-    setStat('statStudents', s.totalStudents);
-    setStat('statDrives', s.totalDrives);
-    setStat('statPlaced', s.placedStudents);
-    setStat('statPct', s.placementPct);
-    setStat('statPending', s.pendingApprovals);
-    setStat('statCompanies', s.totalCompanies);
-    setStat('statStaff', s.totalStaff);
-    setStat('statAlumni', s.totalAlumni);
-    setStat('statHighest', s.salary.highest);
-    setStat('statAvg', s.salary.average);
-    setStat('statMedian', s.salary.median);
-    setStat('statLowest', s.salary.lowest);
-    animateCounters(document.querySelector('[data-roles="admin"]'));
-
-    const trend = s.hiringTrend;
-    if (trend?.labels?.length && document.getElementById('trendChart')) {
-      Charts.line(
-        document.getElementById('trendChart'),
-        trend.labels,
-        trend.series?.length ? trend.series : [{ label: 'Offers', data: trend.values || [] }]
-      );
-    }
-    if (s.branchStats.length && document.getElementById('branchChart')) {
-      Charts.bar(
-        document.getElementById('branchChart'),
-        s.branchStats.map(d => d.dept),
-        s.branchStats.map(d => d.placed),
-        'Students placed'
-      );
-    }
-    const cos = s.companyStats;
-    if (document.getElementById('companyChart') && cos.length) {
-      Charts.bar(document.getElementById('companyChart'), cos.map(c => c.company), cos.map(c => c.applicants), 'Applicants');
-    }
+    try {
+      await apisReady;
+      if (Auth.hasRealAuth() && !Auth.isDemo()) {
+        const lite = await dashboardStats({ lite: true });
+        paintAdminStats(lite);
+        const [full] = await Promise.all([
+          dashboardStats(),
+          DriveStore.fetch().catch(() => null),
+        ]);
+        paintAdminStats(full);
+        await chartsReady;
+        paintAdminCharts(full);
+      } else {
+        await Promise.all([apisReady, chartsReady]);
+        const s = await dashboardStats();
+        paintAdminStats(s);
+        paintAdminCharts(s);
+      }
+    } catch (_) { /* keep zeros */ }
   })();
 }
 
 if (role === 'placement_officer' || role === 'staff') {
-  HiringOverviewPage.init({ root: '#hiringOverviewRoot' });
+  apisReady.then(() => {
+    if (typeof HiringOverviewPage !== 'undefined') {
+      HiringOverviewPage.init({ root: '#hiringOverviewRoot' });
+    }
+  });
 }
 
 /* Student content */

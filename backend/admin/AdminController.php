@@ -60,7 +60,8 @@ final class AdminController
 
     {
         RBACMiddleware::requireAdmin();
-        Response::success($this->userModel->getDashboardStats());
+        $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
+        Response::success($this->userModel->getDashboardStats(!$lite));
     }
 
     // --- Drives (Admin manages all drives) ---

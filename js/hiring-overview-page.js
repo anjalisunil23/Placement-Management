@@ -1191,10 +1191,10 @@
     this._els = {};
     this.bindEvents();
 
-    try {
-      if (!Auth.isDemo()) {
-        await Auth.ensureSession();
-      }
+      try {
+        if (!Auth.isDemo() && !Auth.hasLiveSession()) {
+          await Auth.ensureSession();
+        }
       this.refreshLiveFlags();
       const role = this.currentRole();
 

@@ -523,8 +523,9 @@ const AdminApi = {
     };
   },
 
-  async fetchDashboard() {
-    const res = await api('/admin/dashboard');
+  async fetchDashboard(opts = {}) {
+    const qs = opts.lite ? '?lite=1' : '';
+    const res = await api('/admin/dashboard' + qs);
     return res.success ? res.data : null;
   },
 

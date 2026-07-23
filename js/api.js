@@ -754,7 +754,8 @@ const Auth = {
       }
     } catch (_) { /* sessionStorage may be blocked */ }
 
-    const res = await apiFetch('/auth/me', { skipAuthRedirect: true, skipAuthRetry: true });
+    const qs = opts.fast ? '?fast=1' : '';
+    const res = await apiFetch('/auth/me' + qs, { skipAuthRedirect: true, skipAuthRetry: true });
     if (!res.success || !res.data || !res.data.role) {
       this._sessionReady = false;
       return false;
@@ -4950,7 +4951,7 @@ function clearRoleScopedCaches() {
   DriveStore._alumniCache = null;
 }
 
-async function dashboardStats() {
+async function dashboardStats(opts = {}) {
   const empty = {
     totalStudents: 0,
     totalCompanies: 0,
@@ -5007,6 +5008,8 @@ async function dashboardStats() {
         department: stats.department || null,
       };
   };
+  // Expose for dashboard lite-first paint
+  if (typeof window !== 'undefined') window.__phMapDashStats = mapLiveDashboard;
 
   if (Auth.hasRealAuth() && !Auth.isDemo()) {
     if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
@@ -5018,7 +5021,7 @@ async function dashboardStats() {
       return mapLiveDashboard(stats);
     }
     if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
-      const stats = await AdminApi.fetchDashboard();
+      const stats = await AdminApi.fetchDashboard(opts);
       return mapLiveDashboard(stats, stats?.activeDrives ?? 0);
     }
   }

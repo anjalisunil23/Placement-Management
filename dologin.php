@@ -77,6 +77,9 @@ try {
         }
     }
 
+    // First /auth/me after AES login stays local-only (no placement API round-trips).
+    $_SESSION['ph_auth_fast_boot'] = 1;
+
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
     }

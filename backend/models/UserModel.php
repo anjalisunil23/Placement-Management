@@ -144,17 +144,15 @@ class UserModel extends BaseModel
         return $this->findAll(['role' => $role], $limit, $skip);
     }
 
-    public function getDashboardStats(): array
+    public function getDashboardStats(bool $includeExtended = true): array
     {
         $studentModel = new StudentModel();
         $companyModel = new CompanyModel();
         $driveModel = new DriveModel();
         $totalStudents = $studentModel->count([]);
         $placedStudents = $studentModel->count(['placed' => true]);
-        // getExtendedAnalytics already includes getDashboardAnalytics — call once.
-        $extended = (new AnalyticsService())->getExtendedAnalytics(null);
 
-        return [
+        $base = [
             'totalStudents'       => $totalStudents,
             'totalCompanies'      => $companyModel->count([]),
             'placedStudents'      => $placedStudents,
@@ -166,12 +164,27 @@ class UserModel extends BaseModel
             'totalStaff'          => $this->count(['role' => 'staff']),
             'totalAlumni'         => $this->count(['role' => 'alumni']),
             'activeDrives'        => $driveModel->count(['status' => ['$ne' => 'closed']]),
-            'salaryAnalytics'     => $extended['salaryAnalytics'],
-            'branchStatistics'    => $extended['branchStatistics'],
-            'companyStatistics'   => $extended['companyStatistics'],
-            'hiringTrend'         => $extended['hiringTrend'],
-            'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
+            'salaryAnalytics'     => ['highest' => 0, 'lowest' => 0, 'average' => 0, 'median' => 0],
+            'branchStatistics'    => [],
+            'companyStatistics'   => [],
+            'hiringTrend'         => null,
+            'hiringTrendLastYear' => null,
         ];
+
+        if (!$includeExtended) {
+            return $base;
+        }
+
+        // getExtendedAnalytics already includes getDashboardAnalytics — call once.
+        $extended = (new AnalyticsService())->getExtendedAnalytics(null);
+
+        return array_merge($base, [
+            'salaryAnalytics'     => $extended['salaryAnalytics'] ?? $base['salaryAnalytics'],
+            'branchStatistics'    => $extended['branchStatistics'] ?? [],
+            'companyStatistics'   => $extended['companyStatistics'] ?? [],
+            'hiringTrend'         => $extended['hiringTrend'] ?? null,
+            'hiringTrendLastYear' => $extended['hiringTrendLastYear'] ?? null,
+        ]);
     }
 
     /**

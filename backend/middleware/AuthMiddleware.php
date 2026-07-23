@@ -126,8 +126,14 @@ final class AuthMiddleware
   /**
    * @return array<string, mixed>
    */
-  public static function userResponse(array $user, ?string $token = null): array
+  /**
+   * @param array<string, mixed> $user
+   * @param array{fast?:bool}|null $opts fast=true skips AES name/dept enrichment (post-login boot)
+   * @return array<string, mixed>
+   */
+  public static function userResponse(array $user, ?string $token = null, ?array $opts = null): array
   {
+    $fast = !empty($opts['fast']);
     $config = require dirname(__DIR__) . '/config/app.php';
     $data = DocumentHelper::serialize($user);
     $aesService = new \PMS\Services\AesLoginService();
@@ -153,28 +159,38 @@ final class AuthMiddleware
       }
     }
     if (($user['role'] ?? '') === 'staff') {
-      $profile = \PMS\Services\StaffContext::ensureProfile($user);
-      $dept = !empty($profile['departmentId'])
-        ? (new DepartmentModel())->findById((string) $profile['departmentId'])
-        : null;
-      $data = array_merge($data, StaffModel::profileToUserFields($profile, $dept));
-      $assigned = \PMS\Services\StaffContext::assignedClassBatches([
-        'profile' => $profile,
-        'departmentId' => (string) ($profile['departmentId'] ?? ''),
-      ]);
-      if ($assigned !== []) {
-        $data['assignedClassBatches'] = $assigned;
-      }
-      $photo = (new \PMS\Services\AesLoginService())->resolveProfilePhoto($profile, $user);
-      if (($photo['photoUrl'] ?? '') !== '') {
-        $data['photoUrl'] = $photo['photoUrl'];
-        $data['photo'] = $photo['photo'];
+      $profile = $fast
+        ? (new StaffModel())->findByUserId((string) $user['_id'])
+        : \PMS\Services\StaffContext::ensureProfile($user);
+      if ($profile) {
+        $dept = !empty($profile['departmentId'])
+          ? (new DepartmentModel())->findById((string) $profile['departmentId'])
+          : null;
+        $data = array_merge($data, StaffModel::profileToUserFields($profile, $dept));
+        if (!$fast) {
+          $assigned = \PMS\Services\StaffContext::assignedClassBatches([
+            'profile' => $profile,
+            'departmentId' => (string) ($profile['departmentId'] ?? ''),
+          ]);
+          if ($assigned !== []) {
+            $data['assignedClassBatches'] = $assigned;
+          }
+        } elseif (!empty($profile['assignedClassBatches']) && is_array($profile['assignedClassBatches'])) {
+          $data['assignedClassBatches'] = array_values($profile['assignedClassBatches']);
+        }
+        $photo = $aesService->resolveProfilePhoto($profile, $user);
+        if (($photo['photoUrl'] ?? '') !== '') {
+          $data['photoUrl'] = $photo['photoUrl'];
+          $data['photo'] = $photo['photo'];
+        }
       }
     }
     if ($effectiveRole === 'placement_officer') {
       $profile = (new PlacementOfficerModel())->findByUserId((string) $user['_id']);
       if (!$profile && ($user['role'] ?? '') === 'staff') {
-        $profile = \PMS\Services\StaffContext::ensureProfile($user);
+        $profile = $fast
+          ? (new StaffModel())->findByUserId((string) $user['_id'])
+          : \PMS\Services\StaffContext::ensureProfile($user);
       }
       if ($profile) {
         $dept = !empty($profile['departmentId'])
@@ -183,7 +199,6 @@ final class AuthMiddleware
         $deptCode = trim((string) ($dept['code'] ?? ''));
         $deptName = trim((string) ($dept['name'] ?? ''));
         $aesDeptId = trim((string) ($dept['aesId'] ?? ''));
-        // Prefer readable code/name over numeric AES ids in the session.
         if ($deptCode !== '' && !ctype_digit($deptCode)) {
           $data['department'] = $deptCode;
         } elseif ($deptName !== '' && !ctype_digit($deptName)) {
@@ -199,7 +214,7 @@ final class AuthMiddleware
         }
       }
       $staffProfile = (new StaffModel())->findByUserId((string) $user['_id']);
-      $photo = (new \PMS\Services\AesLoginService())->resolveProfilePhoto($staffProfile ?? $profile, $user);
+      $photo = $aesService->resolveProfilePhoto($staffProfile ?? $profile, $user);
       if (($photo['photoUrl'] ?? '') !== '') {
         $data['photoUrl'] = $photo['photoUrl'];
         $data['photo'] = $photo['photo'];
@@ -212,38 +227,21 @@ final class AuthMiddleware
           ? (new DepartmentModel())->findById((string) $profile['departmentId'])
           : null;
         $data = array_merge($data, StudentModel::profileToUserFields($profile, $dept));
-        $aesDept = (new \PMS\Services\AesLoginService())->resolveStudentDepartmentFields(
-            $dept ? [
-                'id'   => (string) ($dept['_id'] ?? ''),
-                'code' => (string) ($dept['code'] ?? ''),
-                'name' => (string) ($dept['name'] ?? ''),
-            ] : null,
-            (string) ($profile['registerNumber'] ?? '')
-        );
-        if ($aesDept['code'] !== '' || $aesDept['name'] !== '') {
-          $data['department'] = $aesDept['code'];
-          $data['departmentName'] = $aesDept['name'];
+        if (!$fast) {
+          $aesDept = $aesService->resolveStudentDepartmentFields(
+              $dept ? [
+                  'id'   => (string) ($dept['_id'] ?? ''),
+                  'code' => (string) ($dept['code'] ?? ''),
+                  'name' => (string) ($dept['name'] ?? ''),
+              ] : null,
+              (string) ($profile['registerNumber'] ?? '')
+          );
+          if ($aesDept['code'] !== '' || $aesDept['name'] !== '') {
+            $data['department'] = $aesDept['code'];
+            $data['departmentName'] = $aesDept['name'];
+          }
         }
-      }
-    }
-    if ($token !== null) {
-      $data['token'] = $token;
-    }
-
-    $aesProfile = Security::getSessionAesProfile();
-    $service = new \PMS\Services\AesLoginService();
-    $data = $service->applyAesSessionToUserFields($data);
-    if ($effectiveRole === 'student') {
-      $syncedName = $service->syncStudentNameFromPlacement(
-          array_merge($user, $data),
-          (string) ($data['registerNumber'] ?? '')
-      );
-      if ($syncedName !== '') {
-        $data['name'] = $syncedName;
-      }
-      $studentProfile = (new StudentModel())->findByUserId((string) $user['_id']);
-      if ($studentProfile) {
-        $photo = is_array($studentProfile['photo'] ?? null) ? $studentProfile['photo'] : null;
+        $photo = is_array($profile['photo'] ?? null) ? $profile['photo'] : null;
         $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
           $data['photoUrl'] = $photoUrl;
@@ -254,8 +252,23 @@ final class AuthMiddleware
         }
       }
     }
+    if ($token !== null) {
+      $data['token'] = $token;
+    }
+
+    $aesProfile = Security::getSessionAesProfile();
+    $data = $aesService->applyAesSessionToUserFields($data);
+    if ($effectiveRole === 'student' && !$fast) {
+      $syncedName = $aesService->syncStudentNameFromPlacement(
+          array_merge($user, $data),
+          (string) ($data['registerNumber'] ?? '')
+      );
+      if ($syncedName !== '') {
+        $data['name'] = $syncedName;
+      }
+    }
     if ($aesProfile !== []) {
-      $aesProfile = DocumentHelper::jsonSafe($service->sanitizeAesProfileForClient($aesProfile));
+      $aesProfile = DocumentHelper::jsonSafe($aesService->sanitizeAesProfileForClient($aesProfile));
       if (is_array($aesProfile)) {
         $data['aesProfile'] = $aesProfile;
       }
