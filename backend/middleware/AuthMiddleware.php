@@ -32,14 +32,18 @@ final class AuthMiddleware
     }
 
     $role = trim((string) ($user['role'] ?? ''));
-    if ($role === 'staff' && self::isHodStaff($user)) {
+    if ($role === 'staff' && self::isHod($user)) {
       return 'placement_officer';
     }
 
     return $role;
   }
 
-  private static function isHodStaff(array $user): bool
+  /**
+   * Staff whose designation is Head of Department (HOD).
+   * They get placement_officer dashboard access without a placement_officers row.
+   */
+  public static function isHod(array $user): bool
   {
     if (trim((string) ($user['role'] ?? '')) !== 'staff') {
       return false;
@@ -60,6 +64,12 @@ final class AuthMiddleware
       '/\bHOD\b|\bHEAD\s+OF\s+DEPARTMENT\b|\bDEPARTMENT\s+HEAD\b|\bPROFESSOR\s*&\s*HEAD\b/',
       $designation
     ) === 1;
+  }
+
+  /** @deprecated Use isHod() */
+  private static function isHodStaff(array $user): bool
+  {
+    return self::isHod($user);
   }
 
   /**
@@ -276,6 +286,7 @@ final class AuthMiddleware
 
     $data['role'] = self::resolvedRole(array_merge($user, $data));
     $data['dashboard'] = $config['role_dashboards'][$data['role']] ?? '/public-stats.html';
+    $data['isHod'] = self::isHod($user);
 
     $safe = DocumentHelper::jsonSafe($data);
     return is_array($safe) ? $safe : $data;

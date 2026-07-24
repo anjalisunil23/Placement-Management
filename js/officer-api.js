@@ -478,4 +478,27 @@ const OfficerApi = {
     const res = await api('/analytics/extended');
     return res.success ? res.data : null;
   },
+
+  async fetchDepartmentStaffForPo() {
+    const res = await api('/officer/department-staff');
+    return res.success ? res.data : null;
+  },
+
+  async fetchDepartmentPlacementOfficer() {
+    const res = await api('/officer/department-placement-officer');
+    return res.success ? res.data : null;
+  },
+
+  async assignDepartmentPlacementOfficer(userId) {
+    const res = await api('/officer/department-placement-officer', {
+      method: 'PUT',
+      body: { userId },
+    });
+    return res;
+  },
+
+  async unassignDepartmentPlacementOfficer() {
+    const res = await api('/officer/department-placement-officer', { method: 'DELETE' });
+    return res;
+  },
 };

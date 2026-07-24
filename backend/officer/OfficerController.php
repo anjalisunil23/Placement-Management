@@ -1308,6 +1308,111 @@ final class OfficerController
         );
     }
 
+    /**
+     * GET /api/officer/department-staff
+     * HOD only — staff in their department who can be assigned as placement officer.
+     */
+    public function listDepartmentStaff(): void
+    {
+        $user = $this->requireHod();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $deptId = (string) ($ctx['departmentId'] ?? '');
+        if ($deptId === '') {
+            Response::error('Your department is not set. Contact admin.', 422);
+        }
+        $svc = new \PMS\Services\DepartmentPoAssignmentService();
+        Response::success([
+            'department' => $svc->currentForDepartment($deptId),
+            'staff'      => $svc->listAssignableStaff($deptId, (string) ($user['_id'] ?? '')),
+        ]);
+    }
+
+    /**
+     * GET /api/officer/department-placement-officer
+     * HOD only — current assigned PO for their department.
+     */
+    public function getDepartmentPlacementOfficer(): void
+    {
+        $user = $this->requireHod();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $deptId = (string) ($ctx['departmentId'] ?? '');
+        if ($deptId === '') {
+            Response::error('Your department is not set. Contact admin.', 422);
+        }
+        Response::success((new \PMS\Services\DepartmentPoAssignmentService())->currentForDepartment($deptId));
+    }
+
+    /**
+     * PUT /api/officer/department-placement-officer
+     * HOD only — assign another staff member as placement officer for their department.
+     * Body: { userId }
+     */
+    public function assignDepartmentPlacementOfficer(): void
+    {
+        $user = $this->requireHod();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $deptId = (string) ($ctx['departmentId'] ?? '');
+        if ($deptId === '') {
+            Response::error('Your department is not set. Contact admin.', 422);
+        }
+
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $userId = trim((string) ($input['userId'] ?? ''));
+        if ($userId === '') {
+            Response::error('userId is required.', 422);
+        }
+        if ((string) Security::toObjectId($userId) === (string) Security::toObjectId((string) ($user['_id'] ?? ''))) {
+            Response::error('You already have placement officer access as HOD. Assign another staff member.', 422);
+        }
+
+        try {
+            (new \PMS\Services\DepartmentPoAssignmentService())->assign(
+                $deptId,
+                $userId,
+                isset($input['designation']) ? (string) $input['designation'] : null
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 409);
+        }
+
+        Response::success(
+            (new \PMS\Services\DepartmentPoAssignmentService())->currentForDepartment($deptId),
+            'Placement officer assigned. They will see the placement officer dashboard after signing in again.'
+        );
+    }
+
+    /**
+     * DELETE /api/officer/department-placement-officer
+     * HOD only — remove the assigned department placement officer (HOD keeps PO access).
+     */
+    public function unassignDepartmentPlacementOfficer(): void
+    {
+        $user = $this->requireHod();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $deptId = (string) ($ctx['departmentId'] ?? '');
+        if ($deptId === '') {
+            Response::error('Your department is not set. Contact admin.', 422);
+        }
+
+        (new \PMS\Services\DepartmentPoAssignmentService())->unassign($deptId);
+        Response::success(
+            (new \PMS\Services\DepartmentPoAssignmentService())->currentForDepartment($deptId),
+            'Placement officer unassigned. You retain placement officer access as HOD.'
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function requireHod(): array
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        if (!\PMS\Middleware\AuthMiddleware::isHod($user)) {
+            Response::forbidden('Only the Head of Department can assign a department placement officer.');
+        }
+        return $user;
+    }
+
     private function isLiteProfileRequest(): bool
     {
         $lite = $_GET['lite'] ?? $_SERVER['HTTP_X_PROFILE_LITE'] ?? '';

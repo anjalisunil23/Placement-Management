@@ -416,6 +416,10 @@ $routes = [
     ['POST', '/officer/notifications/delete-selected', [OfficerController::class, 'deleteSelectedNotifications']],
     ['POST', '/officer/notifications/delete-all',    [OfficerController::class, 'deleteAllNotifications']],
     ['POST', '/officer/notifications/{id}/read',     [OfficerController::class, 'markNotificationRead']],
+    ['GET',  '/officer/department-staff',            [OfficerController::class, 'listDepartmentStaff']],
+    ['GET',  '/officer/department-placement-officer', [OfficerController::class, 'getDepartmentPlacementOfficer']],
+    ['PUT',  '/officer/department-placement-officer', [OfficerController::class, 'assignDepartmentPlacementOfficer']],
+    ['DELETE','/officer/department-placement-officer', [OfficerController::class, 'unassignDepartmentPlacementOfficer']],
 
     // Health & public
     ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],

@@ -597,6 +597,13 @@ const Auth = {
     if (u && u.role) return u.role;
     return localStorage.getItem('ph-role') || '';
   },
+  /** Head of Department — elevated to placement_officer dashboard via designation. */
+  isHod() {
+    const u = this.user() || {};
+    if (u.isHod === true) return true;
+    const d = String(u.designation || '').toUpperCase();
+    return /\bHOD\b|\bHEAD\s+OF\s+DEPARTMENT\b|\bDEPARTMENT\s+HEAD\b|\bPROFESSOR\s*&\s*HEAD\b/.test(d);
+  },
   homePage(role) {
     const u = this.user();
     const r = role || this.role();
@@ -644,6 +651,7 @@ const Auth = {
         departmentId: merged.departmentId || prev.departmentId || '',
         departmentName: resolveSessionDepartmentName(merged) || merged.departmentName || prev.departmentName || '',
         designation: merged.designation || prev.designation || '',
+        isHod: merged.isHod === true,
         company: merged.company ?? prev.company ?? '',
         companyName: merged.companyName ?? prev.companyName ?? '',
         companyId: merged.companyId || prev.companyId || '',
