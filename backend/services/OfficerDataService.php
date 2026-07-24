@@ -609,7 +609,7 @@ final class OfficerDataService
 
     /**
      * Stream application resume without officer-scope check (signed public report links).
-     * Forces PDF download (attachment) for Excel "Open resume" clicks.
+     * Opens PDF inline in the browser when clicked from Excel.
      */
     public function streamApplicationResumeSigned(string $appId): void
     {
@@ -618,7 +618,7 @@ final class OfficerDataService
         if (!$app) {
             Response::notFound('Application not found for this resume link. Generate the report again.');
         }
-        $this->streamResolvedApplicationResume($app, true);
+        $this->streamResolvedApplicationResume($app, false);
     }
 
     /**
@@ -3929,12 +3929,12 @@ final class OfficerDataService
         $this->streamResolvedStudentResume($canonicalId, false);
     }
 
-    /** Stream student resume without department scope (signed public report links). */
+    /** Stream student resume without department scope (signed public report links). Opens PDF inline. */
     public function streamStudentResumeSigned(string $studentId): void
     {
         $student = $this->resolveStudentRef($studentId);
         $canonicalId = is_array($student) ? (string) ($student['_id'] ?? $studentId) : $studentId;
-        $this->streamResolvedStudentResume($canonicalId, true);
+        $this->streamResolvedStudentResume($canonicalId, false);
     }
 
     private function streamResolvedStudentResume(string $studentId, bool $forceDownload = false): void

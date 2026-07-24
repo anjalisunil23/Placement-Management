@@ -759,7 +759,7 @@ final class ReportService
         }
 
         $sheetName = $this->sanitizeSheetName($title !== '' ? $title : 'Report');
-        $sheetXml = $this->buildXlsxSheetWithLinks($headers, $rows);
+        [$sheetXml, $sheetRelsXml] = $this->buildXlsxSheetWithLinks($headers, $rows);
 
         $contentTypes = <<<'XML'
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -825,6 +825,9 @@ XML;
         $zip->addFromString('xl/_rels/workbook.xml.rels', $workbookRels);
         $zip->addFromString('xl/styles.xml', $styles);
         $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+        if ($sheetRelsXml !== '') {
+            $zip->addFromString('xl/worksheets/_rels/sheet1.xml.rels', $sheetRelsXml);
+        }
         $zip->close();
     }
 
@@ -903,16 +906,23 @@ XML;
     }
 
     /**
+     * Build sheet XML plus optional worksheet relationships for external hyperlinks.
+     *
      * @param string[] $headers
      * @param array<int, string[]> $rows
+     * @return array{0: string, 1: string} [sheetXml, sheetRelsXml]
      */
-    private function buildXlsxSheetWithLinks(array $headers, array $rows): string
+    private function buildXlsxSheetWithLinks(array $headers, array $rows): array
     {
         $xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+            . ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
             . '<sheetData>';
 
         $xml .= $this->xlsxRowXml(1, $headers, true, []);
+        /** @var list<array{ref: string, rid: string, url: string}> $hyperlinks */
+        $hyperlinks = [];
+        $relSeq = 1;
         $rowNum = 2;
         foreach ($rows as $row) {
             $cells = [];
@@ -921,21 +931,50 @@ XML;
                 $value = (string) ($row[$i] ?? '');
                 $cells[] = $value;
                 if ($this->isHttpUrl($value)) {
-                    $linkCols[$i] = $value;
+                    $col = $this->xlsxColumnLetter($i + 1);
+                    $rid = 'rId' . $relSeq++;
+                    $linkCols[$i] = true;
+                    $hyperlinks[] = [
+                        'ref' => $col . $rowNum,
+                        'rid' => $rid,
+                        'url' => trim($value),
+                    ];
                 }
             }
             $xml .= $this->xlsxRowXml($rowNum, $cells, false, $linkCols);
             $rowNum++;
         }
 
-        $xml .= '</sheetData></worksheet>';
+        $xml .= '</sheetData>';
+        if ($hyperlinks !== []) {
+            $xml .= '<hyperlinks>';
+            foreach ($hyperlinks as $link) {
+                $xml .= '<hyperlink ref="' . htmlspecialchars($link['ref'], ENT_XML1 | ENT_QUOTES, 'UTF-8')
+                    . '" r:id="' . htmlspecialchars($link['rid'], ENT_XML1 | ENT_QUOTES, 'UTF-8') . '"/>';
+            }
+            $xml .= '</hyperlinks>';
+        }
+        $xml .= '</worksheet>';
 
-        return $xml;
+        $relsXml = '';
+        if ($hyperlinks !== []) {
+            $relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+            foreach ($hyperlinks as $link) {
+                $relsXml .= '<Relationship Id="' . htmlspecialchars($link['rid'], ENT_XML1 | ENT_QUOTES, 'UTF-8') . '"'
+                    . ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"'
+                    . ' Target="' . htmlspecialchars($link['url'], ENT_XML1 | ENT_QUOTES, 'UTF-8') . '"'
+                    . ' TargetMode="External"/>';
+            }
+            $relsXml .= '</Relationships>';
+        }
+
+        return [$xml, $relsXml];
     }
 
     /**
      * @param list<string> $values
-     * @param array<int, string> $linkCols col index => url
+     * @param array<int, true> $linkCols col indexes that are hyperlinks
      */
     private function xlsxRowXml(int $rowNum, array $values, bool $header, array $linkCols = []): string
     {
@@ -945,16 +984,11 @@ XML;
             $ref = $col . $rowNum;
             $isLink = !$header && isset($linkCols[$i]);
             if ($isLink) {
-                $url = (string) $value;
-                $display = $this->hyperlinkDisplayText($url);
-                $urlEsc = htmlspecialchars(str_replace('"', '""', $url), ENT_XML1 | ENT_QUOTES, 'UTF-8');
-                $labelEsc = htmlspecialchars(str_replace('"', '""', $display), ENT_XML1 | ENT_QUOTES, 'UTF-8');
+                $display = $this->hyperlinkDisplayText((string) $value);
                 $displayEsc = htmlspecialchars($display, ENT_XML1 | ENT_QUOTES, 'UTF-8');
-                // HYPERLINK() formula is more reliable in Excel than relationship hyperlinks.
-                $xml .= '<c r="' . $ref . '" s="2">'
-                    . '<f>HYPERLINK("' . $urlEsc . '","' . $labelEsc . '")</f>'
-                    . '<v>' . $displayEsc . '</v>'
-                    . '</c>';
+                // Plain string cell + OOXML relationship hyperlink (avoids HYPERLINK() #VALUE!).
+                $xml .= '<c r="' . $ref . '" t="inlineStr" s="2"><is><t xml:space="preserve">'
+                    . $displayEsc . '</t></is></c>';
                 continue;
             }
             $text = htmlspecialchars(
@@ -981,7 +1015,7 @@ XML;
     private function hyperlinkDisplayText(string $url): string
     {
         if (stripos($url, '/resume') !== false || stripos($url, 'report-resume') !== false) {
-            return 'Download resume';
+            return 'Open resume';
         }
 
         return 'Open link';
