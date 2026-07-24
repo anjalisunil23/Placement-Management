@@ -1361,6 +1361,8 @@ function buildDisplayProfile(listRow, api) {
 function formatQualMark(val) {
   if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
   const n = Number(val);
+  // AES often sends 0 for unknown max/mark — show as missing, not "0".
+  if (!(n > 0)) return '—';
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 

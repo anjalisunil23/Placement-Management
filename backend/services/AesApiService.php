@@ -1505,7 +1505,11 @@ final class AesApiService
 
             $mark = null;
             if (isset($row['mark']) && $row['mark'] !== '' && is_numeric($row['mark'])) {
-                $mark = (float) $row['mark'];
+                $candidateMark = (float) $row['mark'];
+                // AES often sends 0 when mark is unknown — treat as missing.
+                if ($candidateMark > 0) {
+                    $mark = $candidateMark;
+                }
             }
             $maxMark = null;
             foreach (['maxmark', 'max_mark', 'maxMark', 'MaxMark', 'maximummark', 'maximum_mark'] as $maxKey) {
@@ -1565,18 +1569,17 @@ final class AesApiService
             // only (no maxmark). Treat those as out-of-100 so MCA UG max mark displays.
             $isCgpaLabel = preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $qualification) === 1
                 || ($maxMark !== null && $maxMark > 0 && $maxMark <= 10.0);
-            if ($percentage !== null && !$isCgpaLabel) {
-                if ($maxMark === null) {
-                    if ($mark === null) {
-                        $mark = $percentage;
-                    }
-                    if ($mark !== null && $mark > 0 && $mark <= 100 && abs($mark - $percentage) < 0.51) {
-                        $maxMark = 100.0;
-                    } elseif ($mark === null || ($mark > 0 && $mark <= 100)) {
-                        $maxMark = 100.0;
-                        if ($mark === null) {
-                            $mark = $percentage;
-                        }
+            if ($percentage !== null && !$isCgpaLabel && $maxMark === null) {
+                if ($mark === null) {
+                    $mark = $percentage;
+                    $maxMark = 100.0;
+                } elseif ($mark > 0 && $mark <= 100) {
+                    $maxMark = 100.0;
+                } elseif ($mark > 100 && $percentage > 0) {
+                    // Absolute totals (e.g. 1850 with 74%) → infer max mark.
+                    $inferred = round(($mark / $percentage) * 100, 2);
+                    if ($inferred > 0) {
+                        $maxMark = $inferred;
                     }
                 }
             }
