@@ -2845,8 +2845,7 @@ final class OfficerDataService
     }
 
     /**
-     * AES Degree/BCA rows often send maxmark: 0 for absolute totals. Infer max so
-     * Students / Settings profiles do not treat max as missing (edit prompt).
+     * When AES omits maxmark (or sends 0): mark ≤ 10 → max 10 + %; else max 100.
      *
      * @param array<string, mixed> $q
      * @return array<string, mixed>
@@ -2857,26 +2856,38 @@ final class OfficerDataService
         $maxMark = is_numeric($maxRaw) ? (float) $maxRaw : 0.0;
         if ($maxMark > 0) {
             $q['maxMark'] = $maxMark;
+            if (
+                (!isset($q['percentage']) || !is_numeric($q['percentage']) || (float) $q['percentage'] <= 0)
+                && isset($q['mark']) && is_numeric($q['mark']) && (float) $q['mark'] > 0
+            ) {
+                $pct = round(((float) $q['mark'] / $maxMark) * 100, 2);
+                if ($pct > 0 && $pct <= 100) {
+                    $q['percentage'] = $pct;
+                }
+            }
             return $q;
         }
 
         $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
         $percentage = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
-        $label = trim((string) ($q['qualification'] ?? ''));
-        if ($percentage === null || $percentage <= 0 || preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $label) === 1) {
-            return $q;
-        }
 
-        if ($mark === null || $mark <= 0) {
+        if ($mark !== null && $mark > 0) {
+            if ($mark <= 10.0) {
+                $q['maxMark'] = 10.0;
+                if ($percentage === null || $percentage <= 0) {
+                    $q['percentage'] = round(($mark / 10.0) * 100, 2);
+                }
+            } else {
+                $q['maxMark'] = 100.0;
+                if ($mark > 100.0 && $percentage !== null && $percentage > 0) {
+                    $q['mark'] = $percentage;
+                } elseif (($percentage === null || $percentage <= 0) && $mark <= 100.0) {
+                    $q['percentage'] = $mark;
+                }
+            }
+        } elseif ($percentage !== null && $percentage > 0) {
             $q['mark'] = $percentage;
             $q['maxMark'] = 100.0;
-        } elseif ($mark <= 100) {
-            $q['maxMark'] = 100.0;
-        } else {
-            $inferred = round(($mark / $percentage) * 100, 2);
-            if ($inferred > 0) {
-                $q['maxMark'] = $inferred;
-            }
         }
 
         return $q;

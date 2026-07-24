@@ -1540,15 +1540,31 @@ final class AesApiService
                     $percentage = $pctFromMark;
                 }
             }
-            if ($percentage === null && $mark !== null && $maxMark !== null && $maxMark > 0) {
-                // Do not invent a percentage for CGPA-scale rows (maxmark ≤ 10).
-                $isCgpaScale = $maxMark <= 10.0
-                    || preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $qualification) === 1;
-                if (!$isCgpaScale) {
-                    $pct = round(($mark / $maxMark) * 100, 2);
-                    if ($pct > 0 && $pct <= 100) {
-                        $percentage = $pct;
+            // When AES omits maxmark (or sends 0): mark ≤ 10 → out of 10 + %; else out of 100.
+            if ($maxMark === null && $mark !== null && $mark > 0) {
+                if ($mark <= 10.0) {
+                    $maxMark = 10.0;
+                    if ($percentage === null) {
+                        $percentage = round(($mark / 10.0) * 100, 2);
                     }
+                } else {
+                    $maxMark = 100.0;
+                    if ($mark > 100.0 && $percentage !== null && $percentage > 0) {
+                        // Absolute totals → display as percentage out of 100.
+                        $mark = $percentage;
+                    } elseif ($percentage === null && $mark <= 100.0) {
+                        $percentage = $mark;
+                    }
+                }
+            } elseif ($maxMark === null && $percentage !== null && $percentage > 0) {
+                $mark = $percentage;
+                $maxMark = 100.0;
+            }
+
+            if ($percentage === null && $mark !== null && $maxMark !== null && $maxMark > 0) {
+                $pct = round(($mark / $maxMark) * 100, 2);
+                if ($pct > 0 && $pct <= 100) {
+                    $percentage = $pct;
                 }
             }
 
@@ -1563,25 +1579,6 @@ final class AesApiService
                 $qualification = 'SSLC / 10th';
             } elseif ($qualification !== '' && preg_match('/^plus\s*two$/i', $qualification) === 1) {
                 $qualification = 'Plus Two / 12th';
-            }
-
-            // Degree / school / UG rows from getStudQual4Placement often omit maxmark (or send 0).
-            // Infer max so MCA UG Degree/BCA rows display correctly in Students profiles.
-            $isCgpaLabel = preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $qualification) === 1
-                || ($maxMark !== null && $maxMark > 0 && $maxMark <= 10.0);
-            if ($percentage !== null && !$isCgpaLabel && $maxMark === null) {
-                if ($mark === null) {
-                    $mark = $percentage;
-                    $maxMark = 100.0;
-                } elseif ($mark > 0 && $mark <= 100) {
-                    $maxMark = 100.0;
-                } elseif ($mark > 100 && $percentage > 0) {
-                    // Absolute totals (e.g. 1850 with 74%) → infer max mark.
-                    $inferred = round(($mark / $percentage) * 100, 2);
-                    if ($inferred > 0) {
-                        $maxMark = $inferred;
-                    }
-                }
             }
 
             $out[] = [
