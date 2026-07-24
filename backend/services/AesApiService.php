@@ -1508,10 +1508,11 @@ final class AesApiService
                 $mark = (float) $row['mark'];
             }
             $maxMark = null;
-            if (isset($row['maxmark']) && $row['maxmark'] !== '' && is_numeric($row['maxmark'])) {
-                $maxMark = (float) $row['maxmark'];
-            } elseif (isset($row['max_mark']) && $row['max_mark'] !== '' && is_numeric($row['max_mark'])) {
-                $maxMark = (float) $row['max_mark'];
+            foreach (['maxmark', 'max_mark', 'maxMark', 'MaxMark', 'maximummark', 'maximum_mark'] as $maxKey) {
+                if (isset($row[$maxKey]) && $row[$maxKey] !== '' && is_numeric($row[$maxKey])) {
+                    $maxMark = (float) $row[$maxKey];
+                    break;
+                }
             }
 
             $percentage = null;
@@ -1556,16 +1557,24 @@ final class AesApiService
                 $qualification = 'Plus Two / 12th';
             }
 
-            // Degree / school rows with percentage but no maxmark — treat as out-of-100.
-            if (
-                $percentage !== null
-                && $maxMark === null
-                && $mark !== null
-                && $mark > 0
-                && $mark <= 100
-                && abs($mark - $percentage) < 0.51
-            ) {
-                $maxMark = 100.0;
+            // Degree / school / UG rows from getStudQual4Placement often have percentage
+            // only (no maxmark). Treat those as out-of-100 so MCA UG max mark displays.
+            $isCgpaLabel = preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $qualification) === 1
+                || ($maxMark !== null && $maxMark > 0 && $maxMark <= 10.0);
+            if ($percentage !== null && !$isCgpaLabel) {
+                if ($maxMark === null) {
+                    if ($mark === null) {
+                        $mark = $percentage;
+                    }
+                    if ($mark !== null && $mark > 0 && $mark <= 100 && abs($mark - $percentage) < 0.51) {
+                        $maxMark = 100.0;
+                    } elseif ($mark === null || ($mark > 0 && $mark <= 100)) {
+                        $maxMark = 100.0;
+                        if ($mark === null) {
+                            $mark = $percentage;
+                        }
+                    }
+                }
             }
 
             $out[] = [
