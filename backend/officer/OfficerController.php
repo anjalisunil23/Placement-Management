@@ -1406,7 +1406,7 @@ final class OfficerController
     /** @return array<string, mixed> */
     private function requireHod(): array
     {
-        $user = RBACMiddleware::requirePlacementOfficer();
+        $user = \PMS\Middleware\AuthMiddleware::authenticate();
         if (!\PMS\Middleware\AuthMiddleware::isHod($user)) {
             Response::forbidden('Only the Head of Department can assign a department placement officer.');
         }
