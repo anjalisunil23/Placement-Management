@@ -1583,8 +1583,8 @@ final class AesApiService
                 'monthYear'      => $monthYear,
                 'mark'           => $mark,
                 'maxMark'        => $maxMark,
-                // Only expose percentage when max mark is known (> 0).
-                'percentage'     => ($maxMark !== null && $maxMark > 0) ? $percentage : null,
+                // Percentage from AES is shown even when maxmark is 0/missing.
+                'percentage'     => $percentage,
             ];
         }
 

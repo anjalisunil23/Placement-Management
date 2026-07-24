@@ -102,7 +102,7 @@
               <div class="small fw-semibold text-muted-2 mb-2">Education Qualifications</div>
               <div class="table-wrap">
                 <table class="table-modern table-sm mb-0">
-                  <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. No.</th><th>Month / Year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
+                  <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. No.</th><th>Month / Year</th><th>Mark</th><th>%</th></tr></thead>
                   <tbody id="spQualificationsBody"></tbody>
                 </table>
               </div>
@@ -605,7 +605,7 @@
             <div class="small fw-semibold text-muted-2 mb-2">Education qualifications</div>
             <div class="table-wrap">
               <table class="table-modern table-sm mb-0">
-                <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
+                <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>%</th></tr></thead>
                 <tbody id="fySpQualificationsBody"></tbody>
               </table>
             </div>
@@ -1361,7 +1361,6 @@ function buildDisplayProfile(listRow, api) {
 function formatQualMark(val) {
   if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
   const n = Number(val);
-  // AES often sends 0 for unknown max mark — show as missing, not "0".
   if (!(n > 0)) return '—';
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
@@ -1386,46 +1385,18 @@ function renderQualificationsTable(quals, bodyId, wrapId, opts = {}) {
     const markNum = Number(q.mark);
     const maxNum = Number(q.maxMark ?? q.maxmark);
     const markEmpty = !(Number.isFinite(markNum) && markNum > 0);
-    const maxEmpty = !(Number.isFinite(maxNum) && maxNum > 0);
     const mark = editable && markEmpty
       ? `<input type="number" min="0" max="1000" step="0.01" class="form-control form-control-sm fy-qual-edit" data-qual-idx="${i}" data-qual-field="mark" placeholder="Enter mark"/>`
       : esc(formatQualMark(q.mark));
-    const max = editable && maxEmpty
-      ? `<input type="number" min="0" max="1000" step="0.01" class="form-control form-control-sm fy-qual-edit" data-qual-idx="${i}" data-qual-field="maxMark" placeholder="Enter max"/>`
-      : esc(formatQualMark(q.maxMark ?? q.maxmark));
-    // Percentage only after a valid max mark exists.
     let pct = '—';
-    if (Number.isFinite(maxNum) && maxNum > 0) {
-      if (q.percentage != null && Number(q.percentage) > 0) {
-        pct = esc(`${Number(q.percentage)}%`);
-      } else if (Number.isFinite(markNum) && markNum > 0 && maxNum > 10) {
-        const computed = Math.round((markNum / maxNum) * 10000) / 100;
-        if (computed > 0 && computed <= 100) pct = esc(`${computed}%`);
-      }
+    if (q.percentage != null && Number(q.percentage) > 0) {
+      pct = esc(`${Number(q.percentage)}%`);
+    } else if (Number.isFinite(markNum) && markNum > 0 && Number.isFinite(maxNum) && maxNum > 10) {
+      const computed = Math.round((markNum / maxNum) * 10000) / 100;
+      if (computed > 0 && computed <= 100) pct = esc(`${computed}%`);
     }
-    return `<tr><td>${qual}</td><td>${inst}</td><td>${reg}</td><td>${my}</td><td>${mark}</td><td>${max}</td><td class="fy-qual-pct" data-qual-idx="${i}">${pct}</td></tr>`;
+    return `<tr><td>${qual}</td><td>${inst}</td><td>${reg}</td><td>${my}</td><td>${mark}</td><td>${pct}</td></tr>`;
   }).join('');
-
-  if (editable) {
-    body.querySelectorAll('.fy-qual-edit').forEach(el => {
-      el.addEventListener('input', () => {
-        const idx = Number(el.getAttribute('data-qual-idx'));
-        const markEl = body.querySelector(`.fy-qual-edit[data-qual-idx="${idx}"][data-qual-field="mark"]`);
-        const maxEl = body.querySelector(`.fy-qual-edit[data-qual-idx="${idx}"][data-qual-field="maxMark"]`);
-        const pctCell = body.querySelector(`.fy-qual-pct[data-qual-idx="${idx}"]`);
-        if (!pctCell) return;
-        const row = rows[idx] || {};
-        const mark = Number(markEl?.value || row.mark || 0);
-        const max = Number(maxEl?.value || row.maxMark || row.maxmark || 0);
-        if (!(max > 0) || !(mark > 0) || max <= 10) {
-          pctCell.textContent = '—';
-          return;
-        }
-        const computed = Math.round((mark / max) * 10000) / 100;
-        pctCell.textContent = (computed > 0 && computed <= 100) ? `${computed}%` : '—';
-      });
-    });
-  }
 }
 
 function clearProfilePanelFields(placeholder = '—') {
@@ -2173,7 +2144,7 @@ function fillFinalYearProfileFields(s) {
   const backlogs = s.backlogs ?? s.academic?.backlogs;
   set('fySpBacklogs', backlogs != null && backlogs !== '' ? String(backlogs) : '—');
   syncFinalYearProfileEditMode(s);
-  // Qualifications from getStudQual4Placement; CT/CoCT can edit zero/missing max mark (MCA UG).
+  // Qualifications from getStudQual4Placement (max mark column removed).
   const editOn = role === 'staff' && !document.getElementById('fyProfileEditWrap')?.classList.contains('d-none');
   renderQualificationsTable(
     pickProfileQualifications(s.qualifications, s.academic?.qualifications),
@@ -2211,13 +2182,13 @@ async function saveFinalYearStudentProfile() {
   if (cgpa !== '' && cgpa != null) payload.academic.cgpa = parseFloat(cgpa);
   if (backlogs !== '' && backlogs != null) payload.academic.backlogs = parseInt(backlogs, 10);
 
-  // Collect UG max-mark (and mark) edits from qualifications table.
+  // Collect mark edits from qualifications table (max mark is not shown/edited).
   const qualPatchByIdx = {};
   document.querySelectorAll('.fy-qual-edit').forEach(el => {
     const idx = el.getAttribute('data-qual-idx');
     const field = el.getAttribute('data-qual-field');
     const raw = String(el.value || '').trim();
-    if (idx == null || !field || !raw) return;
+    if (idx == null || !field || field === 'maxMark' || !raw) return;
     const n = parseFloat(raw);
     if (!Number.isFinite(n) || n <= 0) return;
     const i = Number(idx);
