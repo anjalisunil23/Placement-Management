@@ -66,7 +66,7 @@
             <label class="form-label small fw-semibold">Education qualifications</label>
             <div class="table-wrap">
               <table class="table-modern table-sm mb-0">
-                <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>%</th></tr></thead>
+                <thead><tr><th>Qualification</th><th>Institution</th><th>Reg. no.</th><th>Month / year</th><th>Mark</th><th>Max</th><th>%</th></tr></thead>
                 <tbody id="profQualificationsBody"></tbody>
               </table>
             </div>
@@ -686,7 +686,6 @@ function escHtml(text) {
 function formatQualMark(val) {
   if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
   const n = Number(val);
-  if (!(n > 0)) return '—';
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
@@ -732,23 +731,6 @@ function qualCellEmpty(val) {
   return String(val).trim() === '' || String(val).trim() === '—';
 }
 
-function qualMarkValue(q) {
-  const n = Number(q?.mark);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-function qualPercentageDisplay(q) {
-  const pct = Number(q?.percentage);
-  if (Number.isFinite(pct) && pct > 0) return `${pct}%`;
-  const mark = qualMarkValue(q);
-  const max = Number(q?.maxMark ?? q?.maxmark);
-  if (mark > 0 && Number.isFinite(max) && max > 10) {
-    const computed = Math.round((mark / max) * 10000) / 100;
-    if (computed > 0 && computed <= 100) return `${computed}%`;
-  }
-  return '—';
-}
-
 let settingsQualRows = [];
 
 function renderProfileQualifications(quals) {
@@ -766,11 +748,7 @@ function renderProfileQualifications(quals) {
   body.innerHTML = settingsQualRows.map((q, i) => {
     const qual = escHtml(q.qualification || '—');
     const cell = (field, display, opts = {}) => {
-      const raw = q[field];
-      const empty = qualCellEmpty(raw);
-      if (field === 'percentage') {
-        return `<td>${escHtml(display)}</td>`;
-      }
+      const empty = qualCellEmpty(q[field] ?? q[field === 'maxMark' ? 'maxmark' : field]);
       if (!canEdit || !empty) {
         return `<td>${escHtml(display)}</td>`;
       }
@@ -791,11 +769,13 @@ function renderProfileQualifications(quals) {
     const my = (!canEdit || !myEmpty)
       ? `<td>${escHtml(q.monthYear || q.monthyear || '—')}</td>`
       : `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="monthYear" placeholder="Enter" aria-label="monthYear"/></td>`;
+    const pctDisplay = q.percentage != null && Number(q.percentage) > 0 ? `${Number(q.percentage)}%` : '—';
     return `<tr>
       <td>${qual}</td>
       ${inst}${reg}${my}
-      ${cell('mark', formatQualMark(q.mark), { max: 1000 })}
-      ${cell('percentage', qualPercentageDisplay(q))}
+      ${cell('mark', formatQualMark(q.mark), { max: 10000 })}
+      ${cell('maxMark', formatQualMark(q.maxMark ?? q.maxmark), { max: 10000 })}
+      ${cell('percentage', pctDisplay === '—' ? '—' : String(Number(q.percentage)), { max: 100 })}
     </tr>`;
   }).join('');
 }

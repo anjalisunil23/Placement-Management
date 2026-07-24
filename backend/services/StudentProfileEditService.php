@@ -371,10 +371,12 @@ final class StudentProfileEditService
                 }
             }
             $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : 0.0;
-            $percentage = isset($row['percentage']) && is_numeric($row['percentage']) ? (float) $row['percentage'] : 0.0;
-            // Max mark is not collected/shown — accept mark or percentage.
-            if ($mark <= 0 && !($percentage > 0 && $percentage <= 100)) {
+            $maxMark = isset($row['maxMark']) && is_numeric($row['maxMark']) ? (float) $row['maxMark'] : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
+            if ($mark <= 0) {
                 $missing[] = $label . ' mark';
+            }
+            if ($maxMark <= 0) {
+                $missing[] = $label . ' max mark';
             }
         }
 
@@ -522,10 +524,13 @@ final class StudentProfileEditService
                 if ($num <= 0) {
                     continue;
                 }
-                if ($field === 'mark' && $num > 1000) {
+                if ($field === 'mark' && $num > 10000) {
                     continue;
                 }
-                if (($field === 'maxMark' || $field === 'percentage') && $num > 1000) {
+                if ($field === 'percentage' && $num > 100) {
+                    continue;
+                }
+                if ($field === 'maxMark' && $num > 10000) {
                     continue;
                 }
                 $existingNum = isset($row[$field]) && is_numeric($row[$field]) ? (float) $row[$field] : 0.0;
@@ -546,19 +551,15 @@ final class StudentProfileEditService
                 }
                 $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
             }
-            // Auto % when mark + max present and percentage still empty (max kept internally only).
+            // Auto % when mark + max present and percentage still empty.
             $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : 0.0;
             $max = isset($row['maxMark']) && is_numeric($row['maxMark'])
                 ? (float) $row['maxMark']
                 : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
             $pct = isset($row['percentage']) && is_numeric($row['percentage']) ? (float) $row['percentage'] : 0.0;
             if ($pct <= 0 && $mark > 0 && $max > 0) {
-                $isCgpa = $max <= 10.0
-                    || preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', (string) ($row['qualification'] ?? '')) === 1;
-                if (!$isCgpa) {
-                    $row['percentage'] = round(($mark / $max) * 100, 2);
-                    $locks['academic.qualifications.' . $i . '.percentage'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
-                }
+                $row['percentage'] = round(($mark / $max) * 100, 2);
+                $locks['academic.qualifications.' . $i . '.percentage'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
             }
             $rows[$i] = $row;
         }
@@ -599,20 +600,6 @@ final class StudentProfileEditService
                     continue;
                 }
                 $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'staff'];
-            }
-            // Auto % when mark + max present (same as student self-edit).
-            $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : 0.0;
-            $max = isset($row['maxMark']) && is_numeric($row['maxMark'])
-                ? (float) $row['maxMark']
-                : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
-            $pct = isset($row['percentage']) && is_numeric($row['percentage']) ? (float) $row['percentage'] : 0.0;
-            if ($pct <= 0 && $mark > 0 && $max > 0) {
-                $isCgpa = $max <= 10.0
-                    || preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', (string) ($row['qualification'] ?? '')) === 1;
-                if (!$isCgpa) {
-                    $row['percentage'] = round(($mark / $max) * 100, 2);
-                    $locks['academic.qualifications.' . $i . '.percentage'] = ['lockedAt' => $now, 'lockedBy' => 'staff'];
-                }
             }
             $rows[$i] = $row;
         }

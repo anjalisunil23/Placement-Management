@@ -1505,7 +1505,11 @@ final class AesApiService
 
             $mark = null;
             if (isset($row['mark']) && $row['mark'] !== '' && is_numeric($row['mark'])) {
-                $mark = (float) $row['mark'];
+                $candidateMark = (float) $row['mark'];
+                // AES often sends 0 when mark is unknown — treat as missing.
+                if ($candidateMark > 0) {
+                    $mark = $candidateMark;
+                }
             }
             $maxMark = null;
             foreach (['maxmark', 'max_mark', 'maxMark', 'MaxMark', 'maximummark', 'maximum_mark'] as $maxKey) {
@@ -1561,19 +1565,23 @@ final class AesApiService
                 $qualification = 'Plus Two / 12th';
             }
 
-            // Degree / school rows with percentage only (no maxmark): invent max=100
-            // only when mark looks like an out-of-100 score matching the percentage.
-            // AES often sends maxmark=0 for MCA UG — leave max empty so the student/staff can edit.
+            // Degree / school / UG rows from getStudQual4Placement often omit maxmark (or send 0).
+            // Infer max so MCA UG Degree/BCA rows display correctly in Students profiles.
             $isCgpaLabel = preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $qualification) === 1
                 || ($maxMark !== null && $maxMark > 0 && $maxMark <= 10.0);
             if ($percentage !== null && !$isCgpaLabel && $maxMark === null) {
                 if ($mark === null) {
                     $mark = $percentage;
                     $maxMark = 100.0;
-                } elseif ($mark > 0 && $mark <= 100 && abs($mark - $percentage) < 0.51) {
+                } elseif ($mark > 0 && $mark <= 100) {
                     $maxMark = 100.0;
+                } elseif ($mark > 100 && $percentage > 0) {
+                    // Absolute totals (e.g. 1850 with 74%) → infer max mark.
+                    $inferred = round(($mark / $percentage) * 100, 2);
+                    if ($inferred > 0) {
+                        $maxMark = $inferred;
+                    }
                 }
-                // Absolute marks with maxmark=0 stay editable (maxMark remains null).
             }
 
             $out[] = [
@@ -1583,7 +1591,6 @@ final class AesApiService
                 'monthYear'      => $monthYear,
                 'mark'           => $mark,
                 'maxMark'        => $maxMark,
-                // Percentage from AES is shown even when maxmark is 0/missing.
                 'percentage'     => $percentage,
             ];
         }
