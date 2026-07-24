@@ -58,11 +58,7 @@ try {
 
     // Fast redirect: do not run full AuthMiddleware::userResponse (profile joins + AES) here.
     $config = require __DIR__ . '/backend/config/app.php';
-    $role = (string) ($user['role'] ?? '');
-    $email = strtolower(trim((string) ($user['email'] ?? '')));
-    if ($service->isSuperAdminEmail($email)) {
-        $role = 'admin';
-    }
+    $role = \PMS\Middleware\AuthMiddleware::resolvedRole($user);
     $target = (string) ($config['role_dashboards'][$role] ?? '/dashboard.html');
     if ($target === '' || $target[0] !== '/') {
         $target = '/' . ltrim($target, '/');

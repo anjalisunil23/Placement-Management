@@ -594,15 +594,24 @@ const Auth = {
   token() { return localStorage.getItem('ph-token') || ''; },
   role() {
     const u = this.user();
+    // HOD stays DB role=staff but uses placement_officer UI.
+    if (u && (u.role === 'staff' || !u.role) && this.isHod()) {
+      return 'placement_officer';
+    }
     if (u && u.role) return u.role;
     return localStorage.getItem('ph-role') || '';
   },
-  /** Head of Department — elevated to placement_officer dashboard via designation. */
+  /** Head of Department — AES often stores "HOD,Associate Professor". */
   isHod() {
     const u = this.user() || {};
-    if (u.isHod === true) return true;
-    const d = String(u.designation || '').toUpperCase();
+    if (u.isHod === true || u.isHod === 1 || u.isHod === '1') return true;
+    const d = String(u.designation || '')
+      .toUpperCase()
+      .replace(/[,/;|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (/\bH\.?\s*O\.?\s*D\.?\b/.test(d)) return true;
+    if (/^HOD\b/.test(d)) return true;
     if (/\bHEAD\s+OF\s+(THE\s+)?(DEPT\.?|DEPARTMENT)\b/.test(d)) return true;
     if (/\b(DEPT\.?|DEPARTMENT)\s+HEAD\b/.test(d)) return true;
     if (/\bPROFESSOR\s*&\s*HEAD\b/.test(d)) return true;
@@ -642,8 +651,19 @@ const Auth = {
     const merged = { ...prev, ...u, ...aes };
     const reg = merged.registerNumber || prev.registerNumber || '';
     const emails = resolveSessionEmails(merged, reg);
-    const role = u.role || prev.role || '';
-    const dashboard = u.dashboard || prev.dashboard || '';
+    const designation = String(u.designation || merged.designation || prev.designation || '').trim();
+    const isHod = u.isHod === true || u.isHod === 1 || u.isHod === '1'
+      || (function looksHod(raw) {
+        const d = String(raw || '').toUpperCase().replace(/[,/;|]+/g, ' ').replace(/\s+/g, ' ').trim();
+        return /\bH\.?\s*O\.?\s*D\.?\b/.test(d) || /^HOD\b/.test(d);
+      })(designation);
+    let role = u.role || prev.role || '';
+    if ((role === 'staff' || !role) && isHod) {
+      role = 'placement_officer';
+    }
+    const dashboard = (isHod && role === 'placement_officer')
+      ? (u.dashboard || prev.dashboard || 'dashboard.html')
+      : (u.dashboard || prev.dashboard || '');
     this.set(
       {
         ...prev,
@@ -656,8 +676,8 @@ const Auth = {
         department: resolveSessionDepartment(merged) || merged.department || prev.department || '',
         departmentId: merged.departmentId || prev.departmentId || '',
         departmentName: resolveSessionDepartmentName(merged) || merged.departmentName || prev.departmentName || '',
-        designation: merged.designation || prev.designation || '',
-        isHod: merged.isHod === true,
+        designation,
+        isHod,
         company: merged.company ?? prev.company ?? '',
         companyName: merged.companyName ?? prev.companyName ?? '',
         companyId: merged.companyId || prev.companyId || '',

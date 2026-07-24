@@ -482,6 +482,7 @@ function renderNavEntry(n, active, role) {
 function renderShell(active) {
   const user = Auth.user() || demoUserFor(Auth.role());
   const role = Auth.role();
+  const roleLabel = (typeof Auth.isHod === 'function' && Auth.isHod()) ? 'HOD' : (ROLE_LABELS[role] || role);
   const displayName = shellDisplayName(user);
   const sidebar = document.getElementById("sidebar");
   const topbar = document.getElementById("topbar");
@@ -508,7 +509,7 @@ function renderShell(active) {
           <span class="sidebar-avatar-wrap" style="${SHELL_SIDEBAR_WRAP_STYLE}">${shellPhotoCircleHtml(user, 36, '.85rem')}</span>
           <div style="min-width:0;flex:1">
             <div style="font-size:.85rem;font-weight:600" class="text-truncate" title="${escapeAttr(sidebarName)}">${escapeAttr(sidebarName)}</div>
-            <div style="font-size:.72rem;color:var(--muted)">${ROLE_LABELS[role]}</div>
+            <div style="font-size:.72rem;color:var(--muted)">${roleLabel}</div>
           </div>
           <button class="icon-btn" id="logoutBtn" title="Log out" style="width:32px;height:32px"><i class="bi bi-box-arrow-right"></i></button>
         </div>
@@ -558,7 +559,7 @@ function renderShell(active) {
             <li><h6 class="dropdown-header">Preview as role</h6></li>
             ${ROLES.map(r => `<li><a class="dropdown-item ${r === role ? 'active' : ''}" href="#" data-role="${r}">${ROLE_LABELS[r]}</a></li>`).join('')}
           </ul>
-        </div>` : `<span class="badge badge-soft ${ROLE_BADGES[role] || 'muted'} d-none d-sm-inline-flex align-items-center gap-1 px-2 py-1"><i class="bi bi-person-badge"></i>${ROLE_LABELS[role]}</span>`}
+        </div>` : `<span class="badge badge-soft ${ROLE_BADGES[role] || 'muted'} d-none d-sm-inline-flex align-items-center gap-1 px-2 py-1"><i class="bi bi-person-badge"></i>${roleLabel}</span>`}
         ${'<a href="notifications.html" class="icon-btn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></a>'}
         ${topbarProfileMenuHtml(user, role)}
       </div>`;

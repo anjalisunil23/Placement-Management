@@ -45,6 +45,7 @@ class StaffModel extends BaseModel
             'departmentId' => isset($data['departmentId']) ? Security::toObjectId($data['departmentId']) : null,
             'designation'  => $data['designation'] ?? 'Staff',
             'phone'        => $data['phone'] ?? '',
+            'isHod'        => filter_var($data['isHod'] ?? false, FILTER_VALIDATE_BOOL),
         ];
         return $this->insert($doc);
     }
@@ -54,10 +55,13 @@ class StaffModel extends BaseModel
      */
     public function updateProfile(string $id, array $data): bool
     {
-        $allowed = ['departmentId', 'designation', 'phone', 'photo', 'assignedClassBatches'];
+        $allowed = ['departmentId', 'designation', 'phone', 'photo', 'assignedClassBatches', 'isHod'];
         $update = array_intersect_key($data, array_flip($allowed));
         if (isset($update['departmentId'])) {
             $update['departmentId'] = Security::toObjectId((string) $update['departmentId']);
+        }
+        if (array_key_exists('isHod', $update)) {
+            $update['isHod'] = filter_var($update['isHod'], FILTER_VALIDATE_BOOL);
         }
         if (isset($update['assignedClassBatches'])) {
             $raw = $update['assignedClassBatches'];
@@ -108,6 +112,7 @@ class StaffModel extends BaseModel
             'department'   => (string) ($department['code'] ?? ''),
             'departmentId' => (string) ($profile['departmentId'] ?? ''),
             'designation'  => (string) ($profile['designation'] ?? ''),
+            'isHod'        => filter_var($profile['isHod'] ?? false, FILTER_VALIDATE_BOOL),
             'photoUrl'     => is_array($profile['photo'] ?? null)
                 ? (string) (($profile['photo']['url'] ?? '') ?: '')
                 : '',

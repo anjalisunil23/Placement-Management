@@ -1554,14 +1554,7 @@ final class AesLoginService
             'course'         => $this->pick($aesDetails, ['stud_course', 'stud_cource_short', 'course', 'program', 'programme', 'degree', 'stream']),
             'year'           => $this->pick($aesDetails, ['year', 'academic_year', 'academicYear', 'batch_year']),
             'semester'       => $this->pick($aesDetails, ['semester', 'sem', 'current_semester']),
-            'designation'    => $this->pick($aesDetails, [
-                'designation', 'title', 'job_title', 'jobTitle', 'desig', 'Desig',
-                'staff_desig', 'staffDesig', 'staff_designation', 'staffDesignation',
-                'emp_desig', 'empDesig', 'emp_designation', 'empDesignation',
-                'faculty_desig', 'facultyDesig', 'faculty_designation', 'facultyDesignation',
-                'post', 'post_name', 'postName', 'position', 'staff_post', 'staffPost',
-                'role_name', 'roleName', 'official_designation', 'officialDesignation',
-            ]) ?: HodDetection::pickDesignation($aesDetails),
+            'designation'    => HodDetection::pickDesignation($aesDetails),
             'gender'         => $this->normalizeGender($this->pickInsensitive($aesDetails, [
                 'stud_gender', 'gender', 'sex', 'stud_sex', 'Gender', 'SEX',
             ])),
@@ -1941,6 +1934,7 @@ final class AesLoginService
                 'departmentId' => $this->resolveDepartmentId($profile['departmentCode'] !== '' ? $profile['departmentCode'] : (string) ($extras['department'] ?? '')),
                 'designation'  => $designation !== '' ? $designation : 'Faculty',
                 'phone'        => (string) ($extras['phone'] ?? ''),
+                'isHod'        => $isHod,
             ]);
 
             return;
@@ -1953,6 +1947,7 @@ final class AesLoginService
         } elseif ($isHod) {
             $patch['designation'] = 'HOD';
         }
+        $patch['isHod'] = $isHod;
         if (!empty($extras['phone'])) {
             $patch['phone'] = (string) $extras['phone'];
         }
@@ -2875,8 +2870,14 @@ final class AesLoginService
         $deptId = $this->resolveDepartmentId($profile['departmentCode']);
         $designation = trim((string) ($mapped['designation'] ?? ''));
         if ($designation === '') {
-            $designation = 'Faculty';
+            $designation = HodDetection::pickDesignation($mapped);
         }
+        $isHod = HodDetection::designationLooksLikeHod($designation)
+            || HodDetection::payloadIndicatesHod($mapped);
+        $designation = HodDetection::normalizeDesignationForHod(
+            $designation !== '' ? $designation : 'Faculty',
+            $isHod
+        );
 
         $userId = $userModel->createUser([
             'name'     => $name,
@@ -2891,6 +2892,7 @@ final class AesLoginService
             'departmentId' => $deptId,
             'designation'  => $designation,
             'phone'        => (string) ($mapped['phone'] ?? ''),
+            'isHod'        => $isHod,
         ]);
 
         $user = $userModel->findById($userId);
@@ -2920,13 +2922,20 @@ final class AesLoginService
 
         $designation = trim((string) ($mapped['designation'] ?? ''));
         if ($designation === '') {
-            $designation = 'Faculty';
+            $designation = HodDetection::pickDesignation($mapped);
         }
+        $isHod = HodDetection::designationLooksLikeHod($designation)
+            || HodDetection::payloadIndicatesHod($mapped);
+        $designation = HodDetection::normalizeDesignationForHod(
+            $designation !== '' ? $designation : 'Faculty',
+            $isHod
+        );
 
         $staffModel->createProfile((string) $user['_id'], [
             'departmentId' => $this->resolveDepartmentId($profile['departmentCode']),
             'designation'  => $designation,
             'phone'        => (string) ($mapped['phone'] ?? ''),
+            'isHod'        => $isHod,
         ]);
 
         return $user;

@@ -51,7 +51,13 @@ final class AuthMiddleware
       return false;
     }
 
-    $designation = strtoupper(trim((string) ($user['designation'] ?? '')));
+    if (($user['isHod'] ?? false) === true
+      || ($user['isHod'] ?? null) === 1
+      || ($user['isHod'] ?? null) === '1') {
+      return true;
+    }
+
+    $designation = trim((string) ($user['designation'] ?? ''));
     if (\PMS\Services\HodDetection::designationLooksLikeHod($designation)) {
       return true;
     }
@@ -60,6 +66,10 @@ final class AuthMiddleware
       $profile = \PMS\Services\StaffContext::ensureProfile($user);
     } catch (\Throwable) {
       $profile = [];
+    }
+
+    if (($profile['isHod'] ?? false) === true || ($profile['isHod'] ?? null) === 1 || ($profile['isHod'] ?? null) === '1') {
+      return true;
     }
 
     $profileDesig = (string) ($profile['designation'] ?? '');
@@ -295,20 +305,28 @@ final class AuthMiddleware
 
     $data['role'] = self::resolvedRole(array_merge($user, $data));
     $data['dashboard'] = $config['role_dashboards'][$data['role']] ?? '/public-stats.html';
-    $data['isHod'] = self::isHod($user);
+    $data['isHod'] = self::isHod(array_merge($user, $data));
     if ($data['isHod']) {
+      $data['role'] = 'placement_officer';
+      $data['dashboard'] = $config['role_dashboards']['placement_officer'] ?? $data['dashboard'];
       $data['designation'] = \PMS\Services\HodDetection::normalizeDesignationForHod(
         (string) ($data['designation'] ?? ''),
         true
       );
-      // Self-heal stale Faculty designation so elevation works without AES session.
+      // Persist HOD flag + designation so elevation works without AES session next time.
       try {
         $staffModel = new StaffModel();
         $staff = $staffModel->findByUserId((string) ($user['_id'] ?? ''));
-        if ($staff && !\PMS\Services\HodDetection::designationLooksLikeHod((string) ($staff['designation'] ?? ''))) {
-          $staffModel->updateProfile((string) $staff['_id'], [
-            'designation' => (string) $data['designation'],
-          ]);
+        if ($staff) {
+          $needsDesig = !\PMS\Services\HodDetection::designationLooksLikeHod((string) ($staff['designation'] ?? ''));
+          $needsFlag = empty($staff['isHod']);
+          if ($needsDesig || $needsFlag) {
+            $patch = ['isHod' => true];
+            if ($needsDesig) {
+              $patch['designation'] = (string) $data['designation'];
+            }
+            $staffModel->updateProfile((string) $staff['_id'], $patch);
+          }
         }
       } catch (\Throwable) {
         // Non-fatal — role elevation still applies for this request.

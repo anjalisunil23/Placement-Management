@@ -16,13 +16,15 @@ final class HodDetection
     public static function pickDesignation(array $source): string
     {
         $keys = [
-            'designation', 'title', 'job_title', 'jobTitle', 'desig', 'Desig',
+            // Prefer real AES staff role fields before generic "title" (often "Dr.").
             'staff_desig', 'staffDesig', 'staff_designation', 'staffDesignation',
             'emp_desig', 'empDesig', 'emp_designation', 'empDesignation',
             'faculty_desig', 'facultyDesig', 'faculty_designation', 'facultyDesignation',
+            'designation', 'desig', 'Desig', 'official_designation', 'officialDesignation',
             'post', 'post_name', 'postName', 'position', 'staff_post', 'staffPost',
-            'role_name', 'roleName', 'official_designation', 'officialDesignation',
+            'role_name', 'roleName', 'job_title', 'jobTitle', 'title',
         ];
+        $candidates = [];
         foreach ($keys as $key) {
             if (!array_key_exists($key, $source)) {
                 continue;
@@ -32,12 +34,37 @@ final class HodDetection
                 continue;
             }
             $text = trim((string) $value);
+            if ($text === '') {
+                continue;
+            }
+            $candidates[] = $text;
+        }
+        // Also accept any key that looks like a designation field.
+        foreach ($source as $key => $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $lower = strtolower((string) $key);
+            if (!str_contains($lower, 'desig') && !str_contains($lower, 'designation') && $lower !== 'post') {
+                continue;
+            }
+            $text = trim((string) $value);
             if ($text !== '') {
+                $candidates[] = $text;
+            }
+        }
+
+        $candidates = array_values(array_unique($candidates));
+        if ($candidates === []) {
+            return '';
+        }
+        foreach ($candidates as $text) {
+            if (self::designationLooksLikeHod($text)) {
                 return $text;
             }
         }
 
-        return '';
+        return $candidates[0];
     }
 
     public static function designationLooksLikeHod(string $designation): bool
@@ -46,6 +73,9 @@ final class HodDetection
         if ($d === '') {
             return false;
         }
+        // AES often stores "HOD,Professor" / "HOD,Associate Professor"
+        $d = str_replace([',', '/', '|', ';'], ' ', $d);
+        $d = preg_replace('/\s+/', ' ', $d) ?? $d;
 
         // HOD / H.O.D / H O D
         if (preg_match('/\bH\.?\s*O\.?\s*D\.?\b/', $d) === 1) {
@@ -63,7 +93,6 @@ final class HodDetection
         if (preg_match('/\bAND\s+HEAD\b/', $d) === 1) {
             return true;
         }
-        // "Head - CSE", "Head, Department of ..."
         if (preg_match('/\bHEAD\b/', $d) === 1
             && preg_match('/\b(DEPT\.?|DEPARTMENT|BRANCH)\b/', $d) === 1) {
             return true;
@@ -115,13 +144,34 @@ final class HodDetection
             }
         }
 
-        // Shallow scan nested "data" / "user" / "staff" bags common in AES payloads.
-        foreach (['data', 'user', 'staff', 'employee', 'faculty', 'profile', 'details'] as $bag) {
-            if (!isset($payload[$bag]) || !is_array($payload[$bag])) {
+        // Scan all scalar strings — AES may bury "HOD,Professor" under odd keys.
+        $stack = [$payload];
+        $seen = 0;
+        while ($stack !== [] && $seen < 400) {
+            $node = array_pop($stack);
+            if (!is_array($node)) {
                 continue;
             }
-            if (self::payloadIndicatesHod($payload[$bag])) {
-                return true;
+            foreach ($node as $value) {
+                $seen++;
+                if (is_array($value)) {
+                    $stack[] = $value;
+                    continue;
+                }
+                if (!is_scalar($value)) {
+                    continue;
+                }
+                $text = trim((string) $value);
+                if ($text === '' || strlen($text) > 120) {
+                    continue;
+                }
+                if (self::designationLooksLikeHod($text)) {
+                    return true;
+                }
+                $lower = strtolower($text);
+                if ($lower === 'hod' || str_starts_with($lower, 'hod,') || str_starts_with($lower, 'hod ')) {
+                    return true;
+                }
             }
         }
 

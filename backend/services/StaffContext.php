@@ -225,6 +225,7 @@ final class StaffContext
             'departmentId' => $deptId,
             'designation'  => $designation !== '' ? $designation : 'Faculty',
             'phone'        => trim((string) ($merged['phone'] ?? '')),
+            'isHod'        => $isHod,
         ]);
 
         $profile = $staffModel->findByUserId($userId);
