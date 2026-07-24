@@ -117,14 +117,6 @@ final class AuthMiddleware
       return \PMS\Services\StaffRank::UNKNOWN;
     }
 
-    $stored = $user['staffRank'] ?? $user['rank'] ?? null;
-    if (is_numeric($stored)) {
-      $n = (int) $stored;
-      if ($n >= 1 && $n <= 50) {
-        return $n;
-      }
-    }
-
     $designation = trim((string) ($user['designation'] ?? ''));
     $aes = [];
     try {
@@ -145,19 +137,29 @@ final class AuthMiddleware
         if ($designation === '') {
           $designation = trim((string) ($profile['designation'] ?? ''));
         }
-        if (isset($profile['staffRank']) && is_numeric($profile['staffRank'])) {
-          $n = (int) $profile['staffRank'];
-          if ($n >= 1 && $n <= 50) {
-            return $n;
-          }
-        }
         $aes = array_merge($aes, $profile);
       }
     } catch (\Throwable) {
       // Profile optional for rank resolution.
     }
 
-    return \PMS\Services\StaffRank::resolve($aes, $designation);
+    // Prefer a fresh resolve so stale pay-level ranks (10+) are corrected.
+    $resolved = \PMS\Services\StaffRank::resolve($aes, $designation);
+
+    $stored = $user['staffRank'] ?? $user['rank'] ?? null;
+    if (is_numeric($stored)) {
+      $n = (int) $stored;
+      // Trust only explicit seniority ranks 1–9 (never 7th-CPC pay levels 10+).
+      if ($n >= 1 && $n < 10) {
+        // If designation says senior but stored says junior, prefer designation/AES resolve.
+        if ($resolved >= 1 && $resolved < 6 && $n >= 6) {
+          return $resolved;
+        }
+        return $n;
+      }
+    }
+
+    return $resolved;
   }
 
   public static function canViewPlacementAdminData(array $user): bool

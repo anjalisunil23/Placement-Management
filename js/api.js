@@ -462,15 +462,17 @@ function staffRankFromDesignation(designation) {
     .replace(/[,/;|]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!d) return 99;
+  // Empty / generic teaching → rank 5 (eligible for placement-admin view).
+  if (!d || /^(FACULTY|STAFF|TEACHER|TEACHING\s*STAFF|MEMBER)$/.test(d)) return 5;
   if (/\b(PRINCIPAL|DIRECTOR|VICE\s*PRINCIPAL|DEAN)\b/.test(d)) return 1;
   if (/\bH\.?\s*O\.?\s*D\.?\b/.test(d) || /\bHEAD\s+OF\s+(THE\s+)?(DEPT\.?|DEPARTMENT)\b/.test(d)
     || /\b(DEPT\.?|DEPARTMENT)\s+HEAD\b/.test(d) || /^HOD\b/.test(d)) return 2;
   if (/\bPROFESSOR\b/.test(d) && !/\b(ASSOCIATE|ASSISTANT|ADJUNCT)\b/.test(d) && !/\bOF\s+PRACTICE\b/.test(d)) return 3;
   if (/\bASSOCIATE\s+PROFESSOR\b/.test(d)) return 4;
   if (/\bASSISTANT\s+PROFESSOR\b/.test(d)) return 5;
-  if (/\b(LECTURER|INSTRUCTOR|DEMONSTRATOR|TECHNICAL|LAB\s*ASSISTANT|ADJUNCT|PROFESSOR\s+OF\s+PRACTICE)\b/.test(d)) return 6;
-  return 99;
+  if (/\b(LECTURER|INSTRUCTOR|DEMONSTRATOR|TECHNICAL|LAB\s*ASSISTANT|ADJUNCT|PROFESSOR\s+OF\s+PRACTICE|ATTENDER|CLERK|OFFICE\s*ASSISTANT|ACCOUNTANT)\b/.test(d)) return 6;
+  if (/\b(PROF|FACULTY|LECTUR|TEACH|DEPARTMENT)\b/.test(d)) return 5;
+  return 5;
 }
 
 /** Placement Cell guidelines version students must accept on first login. */
@@ -647,8 +649,8 @@ const Auth = {
     const fromDesig = staffRankFromDesignation(u.designation || '');
     const raw = u.staffRank ?? u.rank;
     const n = Number(raw);
-    if (Number.isFinite(n) && n >= 1 && n < 99) {
-      // Prefer a known designation rank when stored value looks junior but designation is senior.
+    // Ignore pay levels (10+) and unknown (99); prefer designation when stored looks wrong.
+    if (Number.isFinite(n) && n >= 1 && n < 10) {
       if (fromDesig >= 1 && fromDesig < 6 && n >= 6) return fromDesig;
       return n;
     }
@@ -658,10 +660,13 @@ const Auth = {
   canViewPlacementAdminData() {
     if (this.role() !== 'staff') return false;
     if (this.isHod()) return false;
+    if (this.user()?.canViewPlacementAdminData === true
+      || this.user()?.canViewPlacementAdminData === 1
+      || this.user()?.canViewPlacementAdminData === '1') {
+      return true;
+    }
     const rank = this.staffRank();
-    if (rank >= 1 && rank < 6) return true;
-    const flag = this.user()?.canViewPlacementAdminData;
-    return flag === true || flag === 1 || flag === '1';
+    return rank >= 1 && rank < 6;
   },
   homePage(role) {
     const u = this.user();
@@ -724,17 +729,16 @@ const Auth = {
         isHod,
         staffRank: (() => {
           const n = Number(u.staffRank ?? merged.staffRank ?? prev.staffRank);
-          if (Number.isFinite(n) && n >= 1 && n < 99) return n;
+          if (Number.isFinite(n) && n >= 1 && n < 10) return n;
           return staffRankFromDesignation(designation);
         })(),
         canViewPlacementAdminData: (() => {
           if (isHod) return false;
-          const dbRole = String(u.role || merged.role || prev.role || role || '');
-          // HOD elevation may set role=placement_officer; only true staff accounts qualify.
+          const dbRole = String(u.role || merged.role || prev.role || '');
           if (dbRole !== 'staff' && role !== 'staff') return false;
           if (role === 'placement_officer' && isHod) return false;
           const n = Number(u.staffRank ?? merged.staffRank ?? prev.staffRank);
-          const rank = (Number.isFinite(n) && n >= 1 && n < 99)
+          const rank = (Number.isFinite(n) && n >= 1 && n < 10)
             ? n
             : staffRankFromDesignation(designation);
           if (rank >= 1 && rank < 6) return true;

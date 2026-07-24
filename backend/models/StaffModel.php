@@ -66,7 +66,8 @@ class StaffModel extends BaseModel
         }
         if (array_key_exists('staffRank', $update)) {
             $rank = (int) $update['staffRank'];
-            $update['staffRank'] = ($rank >= 1 && $rank <= 50) ? $rank : null;
+            // Store seniority ranks only (1–9). Pay levels (10+) are not ranks.
+            $update['staffRank'] = ($rank >= 1 && $rank < 10) ? $rank : null;
         }
         if (isset($update['assignedClassBatches'])) {
             $raw = $update['assignedClassBatches'];

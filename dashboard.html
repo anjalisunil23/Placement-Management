@@ -358,8 +358,8 @@
   </div>
 </div>
 
-<script src="js/api.js?v=20260724campusview"></script>
-<script src="js/app.js?v=20260724campusview"></script>
+<script src="js/api.js?v=20260724staffview2"></script>
+<script src="js/app.js?v=20260724staffview2"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -423,7 +423,7 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
     apiScripts.push('js/officer-api.js?v=20260724hodassign');
     apiScripts.push('js/staff-api.js?v=20260724one');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724campusview');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724staffview2');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
@@ -452,6 +452,10 @@ if (window.__phCachedRole && typeof window.__phLoadDashExtras === 'function') {
 onAppReady(async () => {
 const user = Auth.user() || demoUserFor(Auth.role());
 const role = Auth.role();
+// Recompute after session so stale staffRank (pay level / 99) does not hide admin view.
+if (role === 'staff' && Auth.hasRealAuth?.() && !Auth.isDemo?.()) {
+  try { await Auth.ensureSession(); } catch (_) { /* continue */ }
+}
 const staffAdminView = role === 'staff' && typeof Auth.canViewPlacementAdminData === 'function' && Auth.canViewPlacementAdminData();
 if (!role || !ROLE_HOME[role]) {
   window.location.replace(Auth.homePage() || 'public-stats.html');
@@ -536,7 +540,7 @@ function paintAdminStats(s) {
   setStat('statAvg', s.salary?.average ?? 0);
   setStat('statMedian', s.salary?.median ?? 0);
   setStat('statLowest', s.salary?.lowest ?? 0);
-  animateCounters(document.querySelector('[data-roles="admin"]'));
+  animateCounters(document.getElementById('adminDashPanel') || document.querySelector('[data-roles="admin"]'));
 }
 
 function paintAdminCharts(s) {
