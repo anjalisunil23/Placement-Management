@@ -28,7 +28,7 @@
     <h1 class="page-title">Reports Center</h1>
     <p class="page-sub" id="repSub">Generate and download placement reports as Excel from live database records.</p>
   </div>
-  <div class="d-flex gap-2 flex-wrap align-items-center">
+  <div class="d-flex gap-2 flex-wrap align-items-center" id="reportFilterBar">
     <input type="month" class="form-control" id="filterMonth" style="width:auto" title="Month for monthly reports"/>
     <input type="number" class="form-control" id="filterYear" style="width:110px" min="2020" max="2035" title="Year for annual reports"/>
     <button class="btn btn-primary" id="applyBtn" type="button"><i class="bi bi-funnel me-1"></i>Apply</button>
@@ -144,6 +144,7 @@ function showReportsHome() {
   companyFolderOpen = false;
   document.getElementById('reportsHome')?.classList.remove('d-none');
   document.getElementById('companyApplicantsFolder')?.classList.add('d-none');
+  document.getElementById('reportFilterBar')?.classList.remove('d-none');
 }
 
 async function openCompanyApplicantsFolder() {
@@ -156,6 +157,7 @@ async function openCompanyApplicantsFolder() {
   companyFolderOpen = true;
   document.getElementById('reportsHome')?.classList.add('d-none');
   document.getElementById('companyApplicantsFolder')?.classList.remove('d-none');
+  document.getElementById('reportFilterBar')?.classList.add('d-none');
   document.getElementById('companyReportSearch').value = '';
   await loadCompanyFolder();
 }
