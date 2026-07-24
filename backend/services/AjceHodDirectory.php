@@ -18,39 +18,114 @@ final class AjceHodDirectory
      */
     public static function matchUser(array $user): ?array
     {
-        $email = strtolower(trim((string) ($user['email'] ?? '')));
+        $emails = self::collectUserEmails($user);
         $name = self::normalizeName((string) ($user['name'] ?? ''));
-        $candidates = self::allHodRecords();
+        $nameCompact = self::compactName((string) ($user['name'] ?? ''));
 
-        foreach ($candidates as $row) {
+        // Seed first (no network) so known HODs elevate even if directory fetch fails.
+        $hit = self::matchAgainst(self::seedRecords(), $emails, $name, $nameCompact);
+        if ($hit !== null) {
+            return $hit;
+        }
+
+        return self::matchAgainst(self::cachedDirectoryHods(), $emails, $name, $nameCompact);
+    }
+
+    /**
+     * @param list<array{designation:string,name:string,emails:list<string>}> $candidateSet
+     * @param list<string> $emails
+     * @return array{designation:string,name:string,emails:list<string>}|null
+     */
+    private static function matchAgainst(array $candidateSet, array $emails, string $name, string $nameCompact): ?array
+    {
+        foreach ($candidateSet as $row) {
             foreach ($row['emails'] as $candidateEmail) {
-                if ($email !== '' && $email === $candidateEmail) {
+                if (self::emailsMatch($emails, $candidateEmail)) {
                     return $row;
                 }
             }
         }
-
-        if ($name === '') {
+        if ($name === '' && $nameCompact === '') {
             return null;
         }
-
-        foreach ($candidates as $row) {
-            $rowName = self::normalizeName($row['name']);
-            if ($rowName === '') {
-                continue;
-            }
-            if ($name === $rowName || str_contains($name, $rowName) || str_contains($rowName, $name)) {
-                return $row;
-            }
-            // "Dr Juby Mathew" vs "Juby Mathew"
-            $nameCore = self::stripTitles($name);
-            $rowCore = self::stripTitles($rowName);
-            if ($nameCore !== '' && $rowCore !== '' && ($nameCore === $rowCore || str_contains($nameCore, $rowCore) || str_contains($rowCore, $nameCore))) {
+        foreach ($candidateSet as $row) {
+            if (self::namesMatch($name, $nameCompact, $row['name'])) {
                 return $row;
             }
         }
 
         return null;
+    }
+
+    /**
+     * @param list<string> $emails
+     */
+    private static function emailsMatch(array $emails, string $candidateEmail): bool
+    {
+        $candidateEmail = strtolower(trim($candidateEmail));
+        if ($candidateEmail === '' || $emails === []) {
+            return false;
+        }
+        $candidateLocal = explode('@', $candidateEmail)[0] ?? '';
+        foreach ($emails as $email) {
+            if ($email === $candidateEmail) {
+                return true;
+            }
+            $local = explode('@', $email)[0] ?? '';
+            if ($local !== '' && $candidateLocal !== '' && $local === $candidateLocal) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function namesMatch(string $name, string $nameCompact, string $rowName): bool
+    {
+        $rowNorm = self::normalizeName($rowName);
+        $rowCompact = self::compactName($rowName);
+        if ($rowNorm === '' && $rowCompact === '') {
+            return false;
+        }
+        if ($name !== '' && ($name === $rowNorm || str_contains($name, $rowNorm) || str_contains($rowNorm, $name))) {
+            return true;
+        }
+        $nameCore = self::stripTitles($name);
+        $rowCore = self::stripTitles($rowNorm);
+        if ($nameCore !== '' && $rowCore !== '' && ($nameCore === $rowCore || str_contains($nameCore, $rowCore) || str_contains($rowCore, $nameCore))) {
+            return true;
+        }
+        // "BIJIMOL T K" vs "BIJIMOL TK" / "JUBY MATHEW"
+        if ($nameCompact !== '' && $rowCompact !== '' && ($nameCompact === $rowCompact || str_contains($nameCompact, $rowCompact) || str_contains($rowCompact, $nameCompact))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function collectUserEmails(array $user): array
+    {
+        $out = [];
+        foreach (['email', 'collegeEmail', 'personalEmail', 'officialEmail', 'staffEmail'] as $key) {
+            $email = strtolower(trim((string) ($user[$key] ?? '')));
+            if ($email !== '' && str_contains($email, '@')) {
+                $out[] = $email;
+            }
+        }
+        $aes = $user['aesProfile'] ?? null;
+        if (is_array($aes)) {
+            foreach (['email', 'collegeEmail', 'personalEmail', 'staff_email', 'staffEmail', 'official_email'] as $key) {
+                $email = strtolower(trim((string) ($aes[$key] ?? '')));
+                if ($email !== '' && str_contains($email, '@')) {
+                    $out[] = $email;
+                }
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 
     public static function userIsHod(array $user): bool
@@ -63,10 +138,7 @@ final class AjceHodDirectory
      */
     public static function allHodRecords(): array
     {
-        $rows = self::seedRecords();
-        foreach (self::cachedDirectoryHods() as $row) {
-            $rows[] = $row;
-        }
+        $rows = array_merge(self::seedRecords(), self::cachedDirectoryHods());
 
         // Dedupe by normalized name + designation.
         $seen = [];
@@ -284,6 +356,11 @@ final class AjceHodDirectory
         $name = preg_replace('/\s+/', ' ', $name) ?? $name;
 
         return trim($name);
+    }
+
+    private static function compactName(string $name): string
+    {
+        return str_replace(' ', '', self::stripTitles(self::normalizeName($name)));
     }
 
     private static function stripTitles(string $normalizedName): string

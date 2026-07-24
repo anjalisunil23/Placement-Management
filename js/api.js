@@ -777,15 +777,13 @@ const Auth = {
       const cached = this.user();
       // Trust a recently verified session across tabs so navigation does not
       // re-block on /auth/me (or silently re-fetch AES-heavy userResponse).
-      if (soft && cached?.role && this.token() && bootAt > 0 && (Date.now() - bootAt) < 1800000) {
+      // Never soft-skip staff: HOD elevation depends on a fresh /auth/me
+      // (AES often omits designation; stale cache would keep showing Faculty/Staff).
+      if (soft && cached?.role && cached.role !== 'staff' && this.token() && bootAt > 0 && (Date.now() - bootAt) < 1800000) {
         const badStudentName = cached.role === 'student' && (
           !isUsableDisplayName(cached.name, cached)
         );
         if (!badStudentName) {
-          // Soft cache may still say staff for HOD — elevate before painting.
-          if ((cached.role === 'staff' || !cached.role) && this.isHod()) {
-            this.applySessionUser({ ...cached, role: 'placement_officer', isHod: true });
-          }
           this._sessionReady = true;
           return true;
         }
