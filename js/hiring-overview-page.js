@@ -9,7 +9,7 @@
     'viewFilterCard', 'deptSelect', 'branchSelect', 'batchSelect', 'viewHint', 'liveDataBadge',
     'pageTitleText', 'pageSub', 'companiesCard', 'companiesSection', 'activeCount',
     'companyRows', 'candidateRows', 'pipelineRows', 'statusFilter', 'trendChart',
-    'statCompanies', 'statApplicants', 'statShortlisted', 'statOffers', 'statHired',
+    'statCompanies', 'statApplicants', 'statShortlisted', 'statHired',
     'trendYearSelect', 'placementListCard', 'placementListTitle', 'placementListSub',
     'placementListCount', 'placementListRows',
   ];
@@ -1150,7 +1150,6 @@
     this.setStat('statCompanies', totals.companiesHiring ?? 0);
     this.setStat('statApplicants', totals.applicants ?? 0);
     this.setStat('statShortlisted', totals.shortlisted ?? 0);
-    this.setStat('statOffers', totals.offers ?? 0);
     this.setStat('statHired', totals.hired ?? 0);
     animateCounters(this.root === document ? document : this.root);
 

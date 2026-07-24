@@ -146,13 +146,6 @@
           </div>
           <div class="col-6 col-lg">
             <div class="card-surface stat-card h-100">
-              <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-envelope-check-fill"></i></div><span class="badge-soft warning">Offers</span></div>
-              <div class="val"><span class="counter" id="statOffers" data-target="0">0</span></div>
-              <div class="lbl">Offers released</div>
-            </div>
-          </div>
-          <div class="col-6 col-lg">
-            <div class="card-surface stat-card h-100">
               <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-patch-check-fill"></i></div><span class="badge-soft success">Joined</span></div>
               <div class="val"><span class="counter" id="statHired" data-target="0">0</span></div>
               <div class="lbl">Hired / placed</div>
@@ -364,7 +357,7 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
     apiScripts.push('js/officer-api.js?v=20260724one');
     apiScripts.push('js/staff-api.js?v=20260724one');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724one');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724nooffers');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
