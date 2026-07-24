@@ -752,12 +752,12 @@ function refreshDepartmentOptions(role) {
 }
 
 async function loadDepartments() {
-  const list = await DepartmentStore.fetch({ includeAll: true });
+  const list = await DepartmentStore.fetch({ includeAll: true, force: true });
   departments = (Array.isArray(list) ? list : []).map(d => ({
     id: d.id,
     name: d.name,
     code: d.code,
-    hasOfficer: !!d.hasOfficer,
+    hasOfficer: !!(d.hasOfficer || d.placementOfficer),
     placementOfficer: d.placementOfficer || null,
   })).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   renderDepartments();

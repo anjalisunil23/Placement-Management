@@ -940,12 +940,17 @@ final class AdminController
         $userModel = $this->userModel;
 
         $assigned = [];
-        foreach ($officerModel->findAll([], 200) as $profile) {
-            $deptId = (string) ($profile['departmentId'] ?? '');
+        foreach ($officerModel->findAll([], 500) as $profile) {
+            $rawDeptId = $profile['departmentId'] ?? '';
+            $deptOid = Security::toObjectId((string) $rawDeptId);
+            $deptId = $deptOid !== null ? (string) $deptOid : trim((string) $rawDeptId);
             if ($deptId === '') {
                 continue;
             }
             $user = $userModel->findById((string) ($profile['userId'] ?? ''));
+            if ($user === null || (string) ($user['role'] ?? '') !== 'placement_officer') {
+                continue;
+            }
             $assigned[$deptId] = [
                 'userId' => (string) ($profile['userId'] ?? ''),
                 'name'   => $user['name'] ?? '',
@@ -954,10 +959,12 @@ final class AdminController
         }
 
         $departments = array_map(function (array $dept) use ($assigned) {
-            $id = (string) $dept['_id'];
+            $oid = Security::toObjectId((string) ($dept['_id'] ?? ''));
+            $id = $oid !== null ? (string) $oid : (string) ($dept['_id'] ?? '');
             $serialized = DocumentHelper::serialize($dept);
-            $serialized['placementOfficer'] = $assigned[$id] ?? null;
-            $serialized['hasOfficer'] = isset($assigned[$id]);
+            $po = $assigned[$id] ?? null;
+            $serialized['placementOfficer'] = $po;
+            $serialized['hasOfficer'] = $po !== null;
             return $serialized;
         }, $model->findAll([], 500));
 

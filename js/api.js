@@ -3616,23 +3616,31 @@ const DepartmentStore = {
     try { fetchedAt = Number(localStorage.getItem(DEPTS_KEY + '-at') || 0); } catch { /* ignore */ }
     const cached = this.all();
     if (!force && cached.length && fetchedAt > 0 && (Date.now() - fetchedAt) < TTL_MS) {
-      return includeAll ? (this._allCache || cached) : cached;
+      // Admin User Management needs placementOfficer details — don't reuse a public cache miss.
+      if (includeAll && Auth.role() === 'admin' && !(this._allCache || []).some(d => d.placementOfficer || d.hasOfficer)) {
+        // fall through to refresh
+      } else {
+        return includeAll ? (this._allCache || cached) : cached;
+      }
     }
 
     let list = null;
-    // Public list syncs AES → local and returns academic departments for all roles.
-    const publicRes = await apiFetch('/public/departments', { skipAuthRedirect: true });
-    if (publicRes.success && Array.isArray(publicRes.data) && publicRes.data.length) {
-      list = publicRes.data.map(d => ({
-        id: d.id || d._id,
-        name: d.name || '',
-        code: d.code || '',
-        aesId: d.aesId || '',
-        hasOfficer: !!d.hasOfficer,
-      }));
-    }
-    if ((!Array.isArray(list) || !list.length) && Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
+    // Admin endpoint includes placementOfficer name/email; public list does not.
+    if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
       list = await AdminApi.fetchDepartments();
+    }
+    if (!Array.isArray(list) || !list.length) {
+      const publicRes = await apiFetch('/public/departments', { skipAuthRedirect: true });
+      if (publicRes.success && Array.isArray(publicRes.data) && publicRes.data.length) {
+        list = publicRes.data.map(d => ({
+          id: d.id || d._id,
+          name: d.name || '',
+          code: d.code || '',
+          aesId: d.aesId || '',
+          hasOfficer: !!d.hasOfficer,
+          placementOfficer: d.placementOfficer || null,
+        }));
+      }
     }
     if (Array.isArray(list) && list.length) {
       const normalized = list
@@ -3641,13 +3649,15 @@ const DepartmentStore = {
           name: String(d.name || '').trim(),
           code: String(d.code || '').trim().toUpperCase(),
           aesId: String(d.aesId || '').trim(),
-          hasOfficer: !!d.hasOfficer,
+          hasOfficer: !!(d.hasOfficer || d.placementOfficer),
           placementOfficer: d.placementOfficer || null,
         }))
         .filter(d => d.name && d.code && !/^\d+$/.test(d.code));
 
       if (includeAll) {
         this._allCache = normalized;
+        // Also refresh academic cache TTL so admin PO details stay available.
+        try { localStorage.setItem(DEPTS_KEY + '-at', String(Date.now())); } catch { /* ignore */ }
         return normalized;
       }
 
