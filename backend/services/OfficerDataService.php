@@ -2726,11 +2726,19 @@ final class OfficerDataService
                 $qualifications = $this->realEducationQualificationRows($academic['qualifications']);
             }
         }
+        // Always normalize max/percentage (same rule as student Settings profile).
+        $qualifications = $this->realEducationQualificationRows(
+            is_array($qualifications) ? $qualifications : []
+        );
         $qualifications = $this->backfillAcademicQualificationRows(
             $qualifications,
             $cgpa > 0 ? $cgpa : null,
             $marks10 > 0 ? $marks10 : null,
             $marks12 > 0 ? $marks12 : null
+        );
+        $qualifications = array_map(
+            fn ($q) => is_array($q) ? $this->inferMissingQualificationMaxMark($q) : $q,
+            $qualifications
         );
 
         $aesDeptName = trim((string) (
@@ -2845,49 +2853,39 @@ final class OfficerDataService
     }
 
     /**
-     * When AES omits maxmark (or sends 0): mark ≤ 10 → max 10 + %; else max 100.
+     * Display rule (same as student Settings profile): mark ≤ 10 → max 10 + %; else max 100.
      *
      * @param array<string, mixed> $q
      * @return array<string, mixed>
      */
     private function inferMissingQualificationMaxMark(array $q): array
     {
-        $maxRaw = $q['maxMark'] ?? $q['maxmark'] ?? null;
-        $maxMark = is_numeric($maxRaw) ? (float) $maxRaw : 0.0;
-        if ($maxMark > 0) {
-            $q['maxMark'] = $maxMark;
-            if (
-                (!isset($q['percentage']) || !is_numeric($q['percentage']) || (float) $q['percentage'] <= 0)
-                && isset($q['mark']) && is_numeric($q['mark']) && (float) $q['mark'] > 0
-            ) {
-                $pct = round(((float) $q['mark'] / $maxMark) * 100, 2);
-                if ($pct > 0 && $pct <= 100) {
-                    $q['percentage'] = $pct;
-                }
-            }
-            return $q;
-        }
-
         $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
         $percentage = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
+        if ($percentage !== null && $percentage <= 0) {
+            $percentage = null;
+        }
 
         if ($mark !== null && $mark > 0) {
             if ($mark <= 10.0) {
                 $q['maxMark'] = 10.0;
-                if ($percentage === null || $percentage <= 0) {
+                $q['maxmark'] = 10.0;
+                if ($percentage === null) {
                     $q['percentage'] = round(($mark / 10.0) * 100, 2);
                 }
             } else {
                 $q['maxMark'] = 100.0;
-                if ($mark > 100.0 && $percentage !== null && $percentage > 0) {
+                $q['maxmark'] = 100.0;
+                if ($mark > 100.0 && $percentage !== null) {
                     $q['mark'] = $percentage;
-                } elseif (($percentage === null || $percentage <= 0) && $mark <= 100.0) {
+                } elseif ($percentage === null && $mark <= 100.0) {
                     $q['percentage'] = $mark;
                 }
             }
-        } elseif ($percentage !== null && $percentage > 0) {
+        } elseif ($percentage !== null) {
             $q['mark'] = $percentage;
             $q['maxMark'] = 100.0;
+            $q['maxmark'] = 100.0;
         }
 
         return $q;
@@ -3085,6 +3083,10 @@ final class OfficerDataService
         $marks10th = (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) ? (float) $qual['marks10th'] : $empty['marks10th'];
         $marks12th = (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) ? (float) $qual['marks12th'] : $empty['marks12th'];
         $tableRows = $this->backfillAcademicQualificationRows($tableRows, $cgpa, $marks10th, $marks12th);
+        $tableRows = array_map(
+            fn ($q) => is_array($q) ? $this->inferMissingQualificationMaxMark($q) : $q,
+            $tableRows
+        );
 
         return [
             'cgpa' => $cgpa,

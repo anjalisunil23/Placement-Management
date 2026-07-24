@@ -330,40 +330,31 @@ final class StudentController
           if (!is_array($q)) {
             return $q;
           }
-          $maxRaw = $q['maxMark'] ?? $q['maxmark'] ?? null;
-          $maxMark = is_numeric($maxRaw) ? (float) $maxRaw : 0.0;
-          if ($maxMark > 0) {
-            $q['maxMark'] = $maxMark;
-            if (
-              (!isset($q['percentage']) || !is_numeric($q['percentage']) || (float) $q['percentage'] <= 0)
-              && isset($q['mark']) && is_numeric($q['mark']) && (float) $q['mark'] > 0
-            ) {
-              $pct = round(((float) $q['mark'] / $maxMark) * 100, 2);
-              if ($pct > 0 && $pct <= 100) {
-                $q['percentage'] = $pct;
-              }
-            }
-            return $q;
-          }
           $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
           $percentage = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
+          if ($percentage !== null && $percentage <= 0) {
+            $percentage = null;
+          }
           if ($mark !== null && $mark > 0) {
             if ($mark <= 10.0) {
               $q['maxMark'] = 10.0;
-              if ($percentage === null || $percentage <= 0) {
+              $q['maxmark'] = 10.0;
+              if ($percentage === null) {
                 $q['percentage'] = round(($mark / 10.0) * 100, 2);
               }
             } else {
               $q['maxMark'] = 100.0;
-              if ($mark > 100.0 && $percentage !== null && $percentage > 0) {
+              $q['maxmark'] = 100.0;
+              if ($mark > 100.0 && $percentage !== null) {
                 $q['mark'] = $percentage;
-              } elseif (($percentage === null || $percentage <= 0) && $mark <= 100.0) {
+              } elseif ($percentage === null && $mark <= 100.0) {
                 $q['percentage'] = $mark;
               }
             }
-          } elseif ($percentage !== null && $percentage > 0) {
+          } elseif ($percentage !== null) {
             $q['mark'] = $percentage;
             $q['maxMark'] = 100.0;
+            $q['maxmark'] = 100.0;
           }
           return $q;
         },

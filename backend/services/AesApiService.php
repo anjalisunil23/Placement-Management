@@ -1540,8 +1540,8 @@ final class AesApiService
                     $percentage = $pctFromMark;
                 }
             }
-            // When AES omits maxmark (or sends 0): mark ≤ 10 → out of 10 + %; else out of 100.
-            if ($maxMark === null && $mark !== null && $mark > 0) {
+            // Display rule: mark ≤ 10 → max 10 + %; else max 100 (ignore AES maxmark:0 / absolute totals).
+            if ($mark !== null && $mark > 0) {
                 if ($mark <= 10.0) {
                     $maxMark = 10.0;
                     if ($percentage === null) {
@@ -1550,13 +1550,12 @@ final class AesApiService
                 } else {
                     $maxMark = 100.0;
                     if ($mark > 100.0 && $percentage !== null && $percentage > 0) {
-                        // Absolute totals → display as percentage out of 100.
                         $mark = $percentage;
                     } elseif ($percentage === null && $mark <= 100.0) {
                         $percentage = $mark;
                     }
                 }
-            } elseif ($maxMark === null && $percentage !== null && $percentage > 0) {
+            } elseif ($percentage !== null && $percentage > 0) {
                 $mark = $percentage;
                 $maxMark = 100.0;
             }

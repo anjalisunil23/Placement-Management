@@ -1311,12 +1311,12 @@ function pickProfileQualifications(...sources) {
 
 function buildDisplayProfile(listRow, api) {
   const reg = String(api.registerNumber || listRow?.registerNumber || selectedReg || '').trim();
-  const qualifications = pickProfileQualifications(
+  const qualifications = normalizeQualificationRows(pickProfileQualifications(
     api?.qualifications,
     api?.academic?.qualifications,
     listRow?.qualifications,
     listRow?.academic?.qualifications
-  );
+  ));
   return {
     ...(listRow || {}),
     ...api,
@@ -1361,14 +1361,49 @@ function buildDisplayProfile(listRow, api) {
 function formatQualMark(val) {
   if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
   const n = Number(val);
+  if (!(n > 0)) return '—';
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+/** Same mark-scale rule as student Settings profile: ≤10 → max 10 + %; else max 100. */
+function normalizeQualificationRow(q) {
+  if (!q || typeof q !== 'object') return q;
+  const out = { ...q };
+  let mark = Number(out.mark);
+  let pct = Number(out.percentage);
+  if (!(mark > 0)) mark = NaN;
+  if (!(pct > 0)) pct = NaN;
+  if (mark > 0) {
+    if (mark <= 10) {
+      out.maxMark = 10;
+      out.maxmark = 10;
+      if (!(pct > 0)) out.percentage = Math.round((mark / 10) * 10000) / 100;
+    } else {
+      out.maxMark = 100;
+      out.maxmark = 100;
+      if (mark > 100 && pct > 0) {
+        out.mark = pct;
+      } else if (!(pct > 0) && mark <= 100) {
+        out.percentage = mark;
+      }
+    }
+  } else if (pct > 0) {
+    out.mark = pct;
+    out.maxMark = 100;
+    out.maxmark = 100;
+  }
+  return out;
+}
+
+function normalizeQualificationRows(quals) {
+  return (Array.isArray(quals) ? quals : []).map(normalizeQualificationRow);
 }
 
 function renderQualificationsTable(quals, bodyId, wrapId) {
   const body = document.getElementById(bodyId);
   const wrap = document.getElementById(wrapId);
   if (!body || !wrap) return;
-  const rows = Array.isArray(quals) ? quals : [];
+  const rows = normalizeQualificationRows(quals);
   if (!rows.length) {
     wrap.style.display = 'none';
     body.innerHTML = '';
@@ -2131,7 +2166,7 @@ function fillFinalYearProfileFields(s) {
   set('fySpMarks12', formatMarkPct(s.marks12th ?? s.ugMarks ?? s.academic?.marks12th));
   const backlogs = s.backlogs ?? s.academic?.backlogs;
   set('fySpBacklogs', backlogs != null && backlogs !== '' ? String(backlogs) : '—');
-  // Same education table as the student Profile page (academic.qualifications).
+  // Same education table / max-mark rule as the student Profile page.
   renderQualificationsTable(
     pickProfileQualifications(s.qualifications, s.academic?.qualifications),
     'fySpQualificationsBody',
@@ -2224,14 +2259,14 @@ async function openFinalYearStudent(reg) {
 
   document.getElementById('fyProfileLoading')?.classList.add('d-none');
   const qualPayload = quals && typeof quals === 'object' && !Array.isArray(quals) ? quals : { qualifications: quals };
-  // Prefer the student's profile education table (same as Settings → Profile).
-  const mergedQuals = pickProfileQualifications(
+  // Prefer live AES education table (normalized), then profile — same max/% rule as Settings.
+  const mergedQuals = normalizeQualificationRows(pickProfileQualifications(
+    qualPayload.qualifications,
     full?.qualifications,
     full?.academic?.qualifications,
     listRow?.qualifications,
-    listRow?.academic?.qualifications,
-    qualPayload.qualifications
-  );
+    listRow?.academic?.qualifications
+  ));
   const markOverlay = {
     cgpa: qualPayload.cgpa ?? full?.cgpa ?? null,
     marks10th: qualPayload.marks10th ?? full?.marks10th ?? null,
