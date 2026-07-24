@@ -186,8 +186,7 @@
       filtered = filtered.filter((row) => {
         const classBatch = row.classBatch || row.student?.classBatch || '';
         const applicantDept = row.dept || row.student?.department || row.department || '';
-        if (this.batchMatchesBranch(classBatch, dept)) return true;
-        return this.deptMatchesFilter(applicantDept, dept);
+        return this.rowMatchesDeptFilter(applicantDept, classBatch, dept);
       });
     }
     if (batch) {
@@ -295,7 +294,7 @@
         : this.placementSourceRows().slice());
     placements = placements.filter((p) => this.isLivePlacement(p, year));
     if (deptCode) {
-      placements = placements.filter(p => this.deptMatchesFilter(p.dept, deptCode));
+      placements = placements.filter(p => this.rowMatchesDeptFilter(p.dept, p.classBatch, deptCode));
     }
     if (batchCode) {
       placements = placements.filter(p => this.batchMatchesFilter(p.classBatch, batchCode));
@@ -388,7 +387,23 @@
     if (!data) return null;
 
     // Lite payload: headline stats + SQL status counts — no per-row applicants yet.
+    // Cannot scope by department/branch — return empty while full data loads.
     if (data.lite) {
+      if (deptCode || batchCode) {
+        return {
+          totals: { companiesHiring: 0, applicants: 0, shortlisted: 0, offers: 0, hired: 0 },
+          pipeline: [
+            { label: 'Applicants', value: 0 },
+            { label: 'Shortlisted', value: 0 },
+            { label: 'Offers', value: 0 },
+            { label: 'Hired', value: 0 },
+          ],
+          companies: [],
+          candidates: [],
+          lite: true,
+          loading: true,
+        };
+      }
       const stats = data.stats || {};
       const sc = data.statusCounts || {};
       const shortlisted = (Number(sc.shortlisted) || 0) + (Number(sc.under_review) || 0);
@@ -426,7 +441,7 @@
 
     let applicants = (data.applicants || []).map(RecruitingStore.mapApplicant);
     if (deptCode) {
-      applicants = applicants.filter(a => this.deptMatchesFilter(a.dept, deptCode));
+      applicants = applicants.filter(a => this.rowMatchesDeptFilter(a.dept, a.classBatch, deptCode));
     }
     if (batchCode) {
       applicants = applicants.filter(a => this.batchMatchesFilter(a.classBatch, batchCode));
@@ -1072,23 +1087,31 @@
     const deptSelect = this.$('deptSelect');
     const value = (deptSelect && deptSelect.value) || '';
 
-    if (!value) {
-      this.applyViewFilter('', { parentKey: '' });
+    const apply = () => {
+      if (!value) {
+        this.applyViewFilter('', { parentKey: '' });
+        return;
+      }
+
+      if (value.startsWith('prog:')) {
+        this.applyViewFilter(value.slice(5), { parentKey: '' });
+        return;
+      }
+
+      const group = this.findGroupByParent(value);
+      if (!group) {
+        this.applyViewFilter('', { parentKey: '' });
+        return;
+      }
+
+      this.applyViewFilter(group.allValue || group.programmes[0]?.code || '', { parentKey: group.parent });
+    };
+
+    if (this.isCampusWideViewer() && value) {
+      this.ensureFullRecruiting().finally(apply);
       return;
     }
-
-    if (value.startsWith('prog:')) {
-      this.applyViewFilter(value.slice(5), { parentKey: '' });
-      return;
-    }
-
-    const group = this.findGroupByParent(value);
-    if (!group) {
-      this.applyViewFilter('', { parentKey: '' });
-      return;
-    }
-
-    this.applyViewFilter(group.allValue || group.programmes[0]?.code || '', { parentKey: group.parent });
+    apply();
   };
 
   HiringOverviewPage.prototype.onBranchDropdownChange = async function () {
@@ -1101,6 +1124,9 @@
     if (batchSelect) batchSelect.value = '';
     this.populateBatchSelect();
     this.setDeptUI(this.selectedDept());
+    if (this.isCampusWideViewer() && this.activeDeptFilter) {
+      await this.ensureFullRecruiting();
+    }
     this.renderForDept(this.selectedDept());
   };
 
@@ -1113,21 +1139,91 @@
       const resolved = typeof resolveCollegeProgrammeCode === 'function'
         ? resolveCollegeProgrammeCode(c)
         : c;
-      return departmentCanonicalCode(resolved || c).toUpperCase();
+      return (typeof normalizeProgrammeCode === 'function'
+        ? normalizeProgrammeCode(resolved || c)
+        : String(resolved || c || '').trim().toUpperCase());
     }).filter(Boolean);
     if (!targets.length) return true;
-    const raw = String(applicantDept || '').trim().toUpperCase();
-    const canon = departmentCanonicalCode(applicantDept || '').toUpperCase();
+
+    const raw = String(applicantDept || '').trim();
+    if (!raw) return false;
+    const rawNorm = typeof normalizeProgrammeCode === 'function' ? normalizeProgrammeCode(raw) : raw.toUpperCase();
+    const canon = typeof departmentCanonicalCode === 'function'
+      ? departmentCanonicalCode(raw)
+      : raw;
+    const canonNorm = typeof normalizeProgrammeCode === 'function' ? normalizeProgrammeCode(canon) : String(canon || '').toUpperCase();
     const resolvedApplicant = typeof resolveCollegeProgrammeCode === 'function'
-      ? resolveCollegeProgrammeCode(applicantDept || '')
+      ? resolveCollegeProgrammeCode(raw)
       : '';
-    return targets.some(target =>
-      raw === target
-      || canon === target
-      || resolvedApplicant === target
-      || raw.includes(target)
-      || canon.includes(target)
-    );
+    const resolvedNorm = typeof normalizeProgrammeCode === 'function'
+      ? normalizeProgrammeCode(resolvedApplicant)
+      : String(resolvedApplicant || '').toUpperCase();
+
+    if (targets.some(target =>
+      rawNorm === target
+      || canonNorm === target
+      || resolvedNorm === target
+      || rawNorm.includes(target)
+      || canonNorm.includes(target)
+    )) {
+      return true;
+    }
+
+    // Parent department match only for multi-programme filters (All branches → MCA|BCA|…).
+    // A single branch like MCA must not also match parent code CA / Computer Applications.
+    if (!String(deptCode || '').includes('|')) {
+      return false;
+    }
+
+    const groups = (typeof DEPARTMENT_PROGRAMME_GROUPS !== 'undefined') ? DEPARTMENT_PROGRAMME_GROUPS : [];
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      const groupCodes = [];
+      (group.programmes || []).forEach((p) => {
+        groupCodes.push(typeof normalizeProgrammeCode === 'function' ? normalizeProgrammeCode(p.code) : String(p.code || '').toUpperCase());
+        (p.aliases || []).forEach((a) => {
+          groupCodes.push(typeof normalizeProgrammeCode === 'function' ? normalizeProgrammeCode(a) : String(a || '').toUpperCase());
+        });
+      });
+      const filterInGroup = targets.some(t => groupCodes.includes(t));
+      if (!filterInGroup) continue;
+
+      if (typeof departmentNamesMatch === 'function' && departmentNamesMatch(raw, group.parent)) {
+        return true;
+      }
+      const parentNorm = typeof normalizeProgrammeCode === 'function'
+        ? normalizeProgrammeCode(group.parent)
+        : String(group.parent || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (parentNorm && (rawNorm === parentNorm || canonNorm === parentNorm)) {
+        return true;
+      }
+
+      // PlaceHub parent row (e.g. code CA named Computer Applications)
+      const storeDepts = (typeof DepartmentStore !== 'undefined' && DepartmentStore.all)
+        ? DepartmentStore.all()
+        : [];
+      for (let j = 0; j < storeDepts.length; j++) {
+        const d = storeDepts[j];
+        const dCode = typeof normalizeProgrammeCode === 'function'
+          ? normalizeProgrammeCode(d.code)
+          : String(d.code || '').toUpperCase();
+        const codeHit = dCode && (dCode === rawNorm || dCode === canonNorm);
+        const nameHit = typeof departmentNamesMatch === 'function'
+          && (departmentNamesMatch(d.name, raw) || departmentNamesMatch(d.code, raw));
+        if (!(codeHit || nameHit)) continue;
+        if (typeof departmentNamesMatch === 'function' && departmentNamesMatch(d.name, group.parent)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  /** Match applicant/placement row to View dept/branch (programme code, parent dept, or class batch). */
+  HiringOverviewPage.prototype.rowMatchesDeptFilter = function (dept, classBatch, deptFilter) {
+    if (!deptFilter) return true;
+    if (this.batchMatchesBranch(classBatch, deptFilter)) return true;
+    return this.deptMatchesFilter(dept, deptFilter);
   };
 
   HiringOverviewPage.prototype.renderCompanyRows = function (companies, emptyMsg) {
@@ -1157,6 +1253,28 @@
   HiringOverviewPage.prototype.$id = function (id) { return this.$(id); };
 
   HiringOverviewPage.prototype.renderForDept = function (dept) {
+    // Lite campus payload ignores department filters — load full rows when a scope is selected.
+    if (dept && this.campusRecruitingData?.lite && this.isCampusWideViewer()) {
+      this.setStat('statCompanies', 0);
+      this.setStat('statApplicants', 0);
+      this.setStat('statShortlisted', 0);
+      this.setStat('statHired', 0);
+      animateCounters(this.root === document ? document : this.root);
+      this.renderCompanyRows([], 'Loading department data…');
+      const pipelineRows = this.$('pipelineRows');
+      if (pipelineRows) {
+        pipelineRows.innerHTML = '<tr><td colspan="2" class="text-muted-2 p-3">Loading filtered pipeline…</td></tr>';
+      }
+      if (!this._awaitingFullForFilter) {
+        this._awaitingFullForFilter = true;
+        this.ensureFullRecruiting().finally(() => {
+          this._awaitingFullForFilter = false;
+          this.renderForDept(this.selectedDept());
+        });
+      }
+      return;
+    }
+
     const view = this.liveHiringView(dept);
     const totals = view?.totals || {};
     const companies = view?.companies || [];
@@ -1181,11 +1299,13 @@
       this.candidateMatchesFilter(s.status, status)
       && this.batchMatchesFilter(s.classBatch, batchFilter)
     );
-    const emptyCandidatesMsg = view?.lite
+    const emptyCandidatesMsg = view?.loading
+      ? 'Loading applicants for the selected department…'
+      : (view?.lite
       ? 'Candidate list loads when you filter by status or batch.'
       : (this.staffLive || this.officerLive
       ? 'No students from your department are in the hiring pipeline yet.'
-      : (this.campusLive ? 'No candidates match this filter.' : 'Sign in to view live hiring data.'));
+      : (this.campusLive ? 'No candidates match this filter.' : 'Sign in to view live hiring data.')));
     const candidateRows = this.$('candidateRows');
     if (candidateRows) {
       candidateRows.innerHTML = list.length
@@ -1200,9 +1320,21 @@
         : `<tr><td colspan="6" class="text-muted-2 p-4">${emptyCandidatesMsg}</td></tr>`;
     }
 
-    this.renderHiringTrend(this.resolvedHiringTrend());
+    const hiringTrend = this.resolvedHiringTrend();
+    this.renderHiringTrend(hiringTrend);
     this.renderPipelineBreakdown(pipeline);
     this.renderPlacementList();
+
+    try {
+      document.dispatchEvent(new CustomEvent('ph-hiring-view-change', {
+        detail: {
+          dept: dept || '',
+          batch: batchFilter || '',
+          hiringTrend,
+          totals,
+        },
+      }));
+    } catch (_) { /* ignore */ }
   };
 
   HiringOverviewPage.prototype.ensureFullRecruiting = function () {
@@ -1213,10 +1345,18 @@
     if (this._fullRecruitingPromise) return this._fullRecruitingPromise;
     this._fullRecruitingPromise = RecruitingStore.fetch()
       .then((data) => {
-        if (data) this.applyRecruitingData(data, null);
-        return data;
+        if (data && !data.lite) {
+          this.applyRecruitingData(data, null);
+          return data;
+        }
+        // Allow retry if the response was empty or still lite.
+        this._fullRecruitingPromise = null;
+        return null;
       })
-      .catch(() => null);
+      .catch(() => {
+        this._fullRecruitingPromise = null;
+        return null;
+      });
     return this._fullRecruitingPromise;
   };
 
@@ -1313,14 +1453,16 @@
 
       // First paint / revalidate: ultra-lite recruiting + lite stats only.
       if (this.campusLive) {
+        const staffCampus = this.isCampusWideViewer() && role === 'staff';
+        const dashOpts = staffCampus ? { lite: true, adminView: true } : { lite: true };
         const [liteData, liteStats] = await Promise.all([
           RecruitingStore.fetch({ lite: true }).catch(() => null),
-          dashboardStats({ lite: true }).catch(() => null),
+          dashboardStats(dashOpts).catch(() => null),
         ]);
         if (liteData) {
           this.applyRecruitingData(liteData, liteStats);
           try {
-            window.__phWriteDashKpi?.(role, { recruiting: liteData, stats: liteStats });
+            window.__phWriteDashKpi?.(staffCampus ? 'admin' : role, { recruiting: liteData, stats: liteStats });
           } catch (_) { /* ignore */ }
         } else if (!seed?.recruiting) {
           this.updateLiveBadge();
@@ -1335,18 +1477,20 @@
         this.renderForDept(this.selectedDept());
       }
 
-      // Background: trends always; full applicant enrich only off the dashboard critical path.
+      // Background: trends always; full applicant enrich for campus-wide View filters.
       if (this.campusLive) {
         const isDashboard = (document.body?.dataset?.page || '') === 'dashboard.html';
+        const staffCampus = this.isCampusWideViewer() && role === 'staff';
+        const fullDashOpts = staffCampus ? { adminView: true } : {};
         const hydrateTrends = () => {
-          dashboardStats().then((stats) => {
+          dashboardStats(fullDashOpts).then((stats) => {
             if (stats) this.applyRecruitingData(this.campusRecruitingData, stats);
           }).catch(() => {});
         };
         const hydrateFull = () => {
           Promise.all([
             RecruitingStore.fetch().catch(() => null),
-            dashboardStats().catch(() => null),
+            dashboardStats(fullDashOpts).catch(() => null),
           ]).then(([data, stats]) => {
             if (!data && !stats) {
               if (!this.campusRecruitingData) {
@@ -1365,11 +1509,11 @@
             setTimeout(fn, Math.min(delay, 1500));
           }
         };
-        if (isDashboard) {
-          // Dashboard: lite KPIs are enough; warm trends without 5k-row enrich.
+        // Campus-wide View (senior staff / admin hiring page) needs full rows to filter by dept/branch.
+        if (isDashboard && !this.isCampusWideViewer()) {
           schedule(hydrateTrends, 2500);
         } else {
-          schedule(hydrateFull, 2500);
+          schedule(hydrateFull, this.isCampusWideViewer() ? 800 : 2500);
         }
       }
     } catch (err) {
@@ -1383,6 +1527,10 @@
   global.HiringOverviewPage = {
     init(opts) {
       const page = new HiringOverviewPage();
+      // Expose matcher for dashboard admin panel filtering.
+      global.__phHiringMatchDept = function (dept, classBatch, filter) {
+        return page.rowMatchesDeptFilter(dept, classBatch, filter);
+      };
       return page.init(opts);
     },
   };
