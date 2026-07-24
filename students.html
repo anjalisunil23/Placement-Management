@@ -1361,32 +1361,71 @@ function buildDisplayProfile(listRow, api) {
 function formatQualMark(val) {
   if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
   const n = Number(val);
-  // AES often sends 0 for unknown max/mark — show as missing, not "0".
+  // AES often sends 0 for unknown max mark — show as missing, not "0".
   if (!(n > 0)) return '—';
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-function renderQualificationsTable(quals, bodyId, wrapId) {
+function renderQualificationsTable(quals, bodyId, wrapId, opts = {}) {
   const body = document.getElementById(bodyId);
   const wrap = document.getElementById(wrapId);
   if (!body || !wrap) return;
   const rows = Array.isArray(quals) ? quals : [];
+  const editable = !!opts.editable;
   if (!rows.length) {
     wrap.style.display = 'none';
     body.innerHTML = '';
     return;
   }
   wrap.style.display = '';
-  body.innerHTML = rows.map(q => {
+  body.innerHTML = rows.map((q, i) => {
     const qual = esc(q.qualification || '—');
     const inst = esc(q.institution || q.instname || '—');
     const reg = esc(q.registerNumber || q.regno || '—');
     const my = esc(q.monthYear || q.monthyear || '—');
-    const mark = esc(formatQualMark(q.mark));
-    const max = esc(formatQualMark(q.maxMark ?? q.maxmark));
-    const pct = q.percentage != null && Number(q.percentage) > 0 ? esc(`${Number(q.percentage)}%`) : '—';
-    return `<tr><td>${qual}</td><td>${inst}</td><td>${reg}</td><td>${my}</td><td>${mark}</td><td>${max}</td><td>${pct}</td></tr>`;
+    const markNum = Number(q.mark);
+    const maxNum = Number(q.maxMark ?? q.maxmark);
+    const markEmpty = !(Number.isFinite(markNum) && markNum > 0);
+    const maxEmpty = !(Number.isFinite(maxNum) && maxNum > 0);
+    const mark = editable && markEmpty
+      ? `<input type="number" min="0" max="1000" step="0.01" class="form-control form-control-sm fy-qual-edit" data-qual-idx="${i}" data-qual-field="mark" placeholder="Enter mark"/>`
+      : esc(formatQualMark(q.mark));
+    const max = editable && maxEmpty
+      ? `<input type="number" min="0" max="1000" step="0.01" class="form-control form-control-sm fy-qual-edit" data-qual-idx="${i}" data-qual-field="maxMark" placeholder="Enter max"/>`
+      : esc(formatQualMark(q.maxMark ?? q.maxmark));
+    // Percentage only after a valid max mark exists.
+    let pct = '—';
+    if (Number.isFinite(maxNum) && maxNum > 0) {
+      if (q.percentage != null && Number(q.percentage) > 0) {
+        pct = esc(`${Number(q.percentage)}%`);
+      } else if (Number.isFinite(markNum) && markNum > 0 && maxNum > 10) {
+        const computed = Math.round((markNum / maxNum) * 10000) / 100;
+        if (computed > 0 && computed <= 100) pct = esc(`${computed}%`);
+      }
+    }
+    return `<tr><td>${qual}</td><td>${inst}</td><td>${reg}</td><td>${my}</td><td>${mark}</td><td>${max}</td><td class="fy-qual-pct" data-qual-idx="${i}">${pct}</td></tr>`;
   }).join('');
+
+  if (editable) {
+    body.querySelectorAll('.fy-qual-edit').forEach(el => {
+      el.addEventListener('input', () => {
+        const idx = Number(el.getAttribute('data-qual-idx'));
+        const markEl = body.querySelector(`.fy-qual-edit[data-qual-idx="${idx}"][data-qual-field="mark"]`);
+        const maxEl = body.querySelector(`.fy-qual-edit[data-qual-idx="${idx}"][data-qual-field="maxMark"]`);
+        const pctCell = body.querySelector(`.fy-qual-pct[data-qual-idx="${idx}"]`);
+        if (!pctCell) return;
+        const row = rows[idx] || {};
+        const mark = Number(markEl?.value || row.mark || 0);
+        const max = Number(maxEl?.value || row.maxMark || row.maxmark || 0);
+        if (!(max > 0) || !(mark > 0) || max <= 10) {
+          pctCell.textContent = '—';
+          return;
+        }
+        const computed = Math.round((mark / max) * 10000) / 100;
+        pctCell.textContent = (computed > 0 && computed <= 100) ? `${computed}%` : '—';
+      });
+    });
+  }
 }
 
 function clearProfilePanelFields(placeholder = '—') {
@@ -2133,13 +2172,15 @@ function fillFinalYearProfileFields(s) {
   set('fySpMarks12', formatMarkPct(s.marks12th ?? s.ugMarks ?? s.academic?.marks12th));
   const backlogs = s.backlogs ?? s.academic?.backlogs;
   set('fySpBacklogs', backlogs != null && backlogs !== '' ? String(backlogs) : '—');
-  // Same education table as the student Profile page (academic.qualifications).
+  syncFinalYearProfileEditMode(s);
+  // Qualifications from getStudQual4Placement; CT/CoCT can edit zero/missing max mark (MCA UG).
+  const editOn = role === 'staff' && !document.getElementById('fyProfileEditWrap')?.classList.contains('d-none');
   renderQualificationsTable(
     pickProfileQualifications(s.qualifications, s.academic?.qualifications),
     'fySpQualificationsBody',
-    'fySpQualificationsWrap'
+    'fySpQualificationsWrap',
+    { editable: editOn }
   );
-  syncFinalYearProfileEditMode(s);
 }
 
 async function saveFinalYearStudentProfile() {
@@ -2170,6 +2211,27 @@ async function saveFinalYearStudentProfile() {
   if (cgpa !== '' && cgpa != null) payload.academic.cgpa = parseFloat(cgpa);
   if (backlogs !== '' && backlogs != null) payload.academic.backlogs = parseInt(backlogs, 10);
 
+  // Collect UG max-mark (and mark) edits from qualifications table.
+  const qualPatchByIdx = {};
+  document.querySelectorAll('.fy-qual-edit').forEach(el => {
+    const idx = el.getAttribute('data-qual-idx');
+    const field = el.getAttribute('data-qual-field');
+    const raw = String(el.value || '').trim();
+    if (idx == null || !field || !raw) return;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n <= 0) return;
+    const i = Number(idx);
+    if (!qualPatchByIdx[i]) qualPatchByIdx[i] = {};
+    qualPatchByIdx[i][field] = n;
+  });
+  const qualKeys = Object.keys(qualPatchByIdx);
+  if (qualKeys.length) {
+    const maxIdx = Math.max(...qualKeys.map(Number));
+    const list = [];
+    for (let i = 0; i <= maxIdx; i++) list.push(qualPatchByIdx[i] || {});
+    payload.academic.qualifications = list;
+  }
+
   const btn = document.getElementById('fyProfileSaveBtn');
   if (btn) btn.disabled = true;
   try {
@@ -2191,6 +2253,9 @@ async function saveFinalYearStudentProfile() {
       cgpa: academic.cgpa ?? finalYearEditStudent.cgpa,
       backlogs: academic.backlogs ?? finalYearEditStudent.backlogs,
       canEditProfile: true,
+      qualifications: Array.isArray(academic.qualifications)
+        ? academic.qualifications
+        : (finalYearEditStudent.qualifications || []),
       academic: { ...(finalYearEditStudent.academic || {}), ...academic },
     };
     fillFinalYearProfileFields(finalYearEditStudent);

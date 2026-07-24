@@ -686,7 +686,7 @@ function escHtml(text) {
 function formatQualMark(val) {
   if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
   const n = Number(val);
-  // Never show 0 as a real max/mark — treat as missing so students can fill it.
+  // AES often sends 0 for unknown max mark — show as missing.
   if (!(n > 0)) return '—';
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
@@ -733,6 +733,30 @@ function qualCellEmpty(val) {
   return String(val).trim() === '' || String(val).trim() === '—';
 }
 
+function qualMaxMark(q) {
+  const n = Number(q?.maxMark ?? q?.maxmark);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function qualMarkValue(q) {
+  const n = Number(q?.mark);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Percentage is shown only after a valid max mark exists. */
+function qualPercentageDisplay(q) {
+  const max = qualMaxMark(q);
+  if (!(max > 0)) return '—';
+  const pct = Number(q?.percentage);
+  if (Number.isFinite(pct) && pct > 0) return `${pct}%`;
+  const mark = qualMarkValue(q);
+  if (mark > 0 && max > 10) {
+    const computed = Math.round((mark / max) * 10000) / 100;
+    if (computed > 0 && computed <= 100) return `${computed}%`;
+  }
+  return '—';
+}
+
 let settingsQualRows = [];
 
 function renderProfileQualifications(quals) {
@@ -749,18 +773,22 @@ function renderProfileQualifications(quals) {
   const canEdit = role === 'student';
   body.innerHTML = settingsQualRows.map((q, i) => {
     const qual = escHtml(q.qualification || '—');
+    const maxValid = qualMaxMark(q) > 0;
     const cell = (field, display, opts = {}) => {
-      const rawVal = q[field] ?? q[field === 'maxMark' ? 'maxmark' : field];
-      const empty = qualCellEmpty(rawVal);
-      // Students may fill empty / zero mark & maxMark at login (AES often sends 0).
+      const raw = q[field] ?? q[field === 'maxMark' ? 'maxmark' : field];
+      const empty = qualCellEmpty(raw);
+      // Max mark: always editable when zero/missing. Percentage: never edit until max is set.
+      if (field === 'percentage') {
+        if (!maxValid) return `<td class="text-muted-2" id="qualPctCell-${i}">—</td>`;
+        return `<td id="qualPctCell-${i}">${escHtml(display)}</td>`;
+      }
       if (!canEdit || !empty) {
         return `<td>${escHtml(display)}</td>`;
       }
       const step = opts.step || '0.01';
       const max = opts.max != null ? ` max="${opts.max}"` : '';
       const type = opts.type || 'number';
-      const label = field === 'maxMark' ? 'Max mark' : field;
-      return `<td><input type="${type}" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="${field}" step="${step}"${max} min="0" placeholder="Enter ${label}" aria-label="${label}"/></td>`;
+      return `<td><input type="${type}" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="${field}" step="${step}"${max} min="0" placeholder="${field === 'maxMark' ? 'Enter max' : 'Enter'}" aria-label="${field}"/></td>`;
     };
     const instEmpty = qualCellEmpty(q.institution || q.instname);
     const regEmpty = qualCellEmpty(q.registerNumber || q.regno);
@@ -774,15 +802,36 @@ function renderProfileQualifications(quals) {
     const my = (!canEdit || !myEmpty)
       ? `<td>${escHtml(q.monthYear || q.monthyear || '—')}</td>`
       : `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="monthYear" placeholder="Enter" aria-label="monthYear"/></td>`;
-    const pctDisplay = q.percentage != null && Number(q.percentage) > 0 ? `${Number(q.percentage)}%` : '—';
     return `<tr>
       <td>${qual}</td>
       ${inst}${reg}${my}
-      ${cell('mark', formatQualMark(q.mark), { max: 10000 })}
-      ${cell('maxMark', formatQualMark(q.maxMark ?? q.maxmark), { max: 10000 })}
-      ${cell('percentage', pctDisplay === '—' ? '—' : String(Number(q.percentage)), { max: 100 })}
+      ${cell('mark', formatQualMark(q.mark), { max: 1000 })}
+      ${cell('maxMark', formatQualMark(q.maxMark ?? q.maxmark), { max: 1000 })}
+      ${cell('percentage', qualPercentageDisplay(q))}
     </tr>`;
   }).join('');
+
+  // Live percentage preview after max mark is entered.
+  body.querySelectorAll('.qual-edit-input[data-qual-field="maxMark"], .qual-edit-input[data-qual-field="mark"]').forEach(el => {
+    el.addEventListener('input', () => {
+      const idx = Number(el.getAttribute('data-qual-idx'));
+      const markEl = body.querySelector(`.qual-edit-input[data-qual-idx="${idx}"][data-qual-field="mark"]`);
+      const maxEl = body.querySelector(`.qual-edit-input[data-qual-idx="${idx}"][data-qual-field="maxMark"]`);
+      const pctCell = document.getElementById(`qualPctCell-${idx}`);
+      if (!pctCell) return;
+      const row = settingsQualRows[idx] || {};
+      const mark = Number(markEl?.value || row.mark || 0);
+      const max = Number(maxEl?.value || row.maxMark || row.maxmark || 0);
+      if (!(max > 0) || !(mark > 0) || max <= 10) {
+        pctCell.textContent = '—';
+        pctCell.classList.add('text-muted-2');
+        return;
+      }
+      const pct = Math.round((mark / max) * 10000) / 100;
+      pctCell.textContent = (pct > 0 && pct <= 100) ? `${pct}%` : '—';
+      pctCell.classList.toggle('text-muted-2', !(pct > 0 && pct <= 100));
+    });
+  });
 }
 
 function collectQualificationEdits() {

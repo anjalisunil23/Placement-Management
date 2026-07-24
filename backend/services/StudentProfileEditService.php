@@ -364,37 +364,14 @@ final class StudentProfileEditService
                 continue;
             }
             $label = trim((string) ($row['qualification'] ?? 'Qualification'));
-            $isCgpaRow = $this->isCgpaQualificationRow($row);
-
-            // Current CGPA rows from AES usually lack institution / register / month-year.
-            if (!$isCgpaRow) {
-                foreach (['institution' => 'institution', 'registerNumber' => 'register no.', 'monthYear' => 'month/year'] as $field => $suffix) {
-                    $value = trim((string) ($row[$field] ?? ''));
-                    if ($value === '') {
-                        $missing[] = $label . ' ' . $suffix;
-                    }
+            foreach (['institution' => 'institution', 'registerNumber' => 'register no.', 'monthYear' => 'month/year'] as $field => $suffix) {
+                $value = trim((string) ($row[$field] ?? ''));
+                if ($value === '') {
+                    $missing[] = $label . ' ' . $suffix;
                 }
             }
-
             $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : 0.0;
-            $maxMark = isset($row['maxMark']) && is_numeric($row['maxMark'])
-                ? (float) $row['maxMark']
-                : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
-            $percentage = isset($row['percentage']) && is_numeric($row['percentage']) ? (float) $row['percentage'] : 0.0;
-            $hasPercentage = $percentage > 0 && $percentage <= 100;
-
-            if ($isCgpaRow) {
-                if ($mark <= 0 || $mark > 10) {
-                    $missing[] = $label . ' mark';
-                }
-                // maxMark defaults to 10 for CGPA — do not flag empty max mark.
-                continue;
-            }
-
-            // Degree / school rows often arrive from AES with percentage only (no maxmark).
-            if ($hasPercentage) {
-                continue;
-            }
+            $maxMark = isset($row['maxMark']) && is_numeric($row['maxMark']) ? (float) $row['maxMark'] : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
             if ($mark <= 0) {
                 $missing[] = $label . ' mark';
             }
@@ -404,22 +381,6 @@ final class StudentProfileEditService
         }
 
         return array_values(array_unique($missing));
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function isCgpaQualificationRow(array $row): bool
-    {
-        $label = strtoupper(trim((string) ($row['qualification'] ?? '')));
-        $maxMark = isset($row['maxMark']) && is_numeric($row['maxMark'])
-            ? (float) $row['maxMark']
-            : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : null);
-        if (preg_match('/\b(CGPA|CURRENT)\b/', $label) === 1) {
-            return true;
-        }
-
-        return $label === '' && $maxMark !== null && $maxMark > 0 && $maxMark <= 10;
     }
 
     public function isValidCgpa(mixed $value): bool
@@ -563,14 +524,10 @@ final class StudentProfileEditService
                 if ($num <= 0) {
                     continue;
                 }
-                // Absolute board/degree totals can exceed 1000 (e.g. 1054/1200).
-                if ($field === 'mark' && $num > 10000) {
+                if ($field === 'mark' && $num > 1000) {
                     continue;
                 }
-                if ($field === 'maxMark' && $num > 10000) {
-                    continue;
-                }
-                if ($field === 'percentage' && $num > 100) {
+                if (($field === 'maxMark' || $field === 'percentage') && $num > 1000) {
                     continue;
                 }
                 $existingNum = isset($row[$field]) && is_numeric($row[$field]) ? (float) $row[$field] : 0.0;
@@ -591,16 +548,22 @@ final class StudentProfileEditService
                 }
                 $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
             }
-            // Auto % when mark + max present and percentage still empty (not for CGPA scale).
+            // Auto % when mark + max present and percentage still empty.
             $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : 0.0;
             $max = isset($row['maxMark']) && is_numeric($row['maxMark'])
                 ? (float) $row['maxMark']
                 : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
             $pct = isset($row['percentage']) && is_numeric($row['percentage']) ? (float) $row['percentage'] : 0.0;
-            $isCgpa = $this->isCgpaQualificationRow($row) || ($max > 0 && $max <= 10);
-            if ($pct <= 0 && $mark > 0 && $max > 0 && !$isCgpa) {
-                $row['percentage'] = round(($mark / $max) * 100, 2);
-                $locks['academic.qualifications.' . $i . '.percentage'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+            if ($mark > 0 && $max > 0) {
+                $isCgpa = $max <= 10.0
+                    || preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', (string) ($row['qualification'] ?? '')) === 1;
+                if (!$isCgpa && $pct <= 0) {
+                    $row['percentage'] = round(($mark / $max) * 100, 2);
+                    $locks['academic.qualifications.' . $i . '.percentage'] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+                }
+            } else {
+                // Do not keep a stale percentage when max mark is still missing/zero.
+                $row['percentage'] = null;
             }
             $rows[$i] = $row;
         }
@@ -641,6 +604,22 @@ final class StudentProfileEditService
                     continue;
                 }
                 $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'staff'];
+            }
+            // Auto % when mark + max present (same as student self-edit).
+            $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : 0.0;
+            $max = isset($row['maxMark']) && is_numeric($row['maxMark'])
+                ? (float) $row['maxMark']
+                : (isset($row['maxmark']) && is_numeric($row['maxmark']) ? (float) $row['maxmark'] : 0.0);
+            $pct = isset($row['percentage']) && is_numeric($row['percentage']) ? (float) $row['percentage'] : 0.0;
+            if ($mark > 0 && $max > 0) {
+                $isCgpa = $max <= 10.0
+                    || preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', (string) ($row['qualification'] ?? '')) === 1;
+                if (!$isCgpa && $pct <= 0) {
+                    $row['percentage'] = round(($mark / $max) * 100, 2);
+                    $locks['academic.qualifications.' . $i . '.percentage'] = ['lockedAt' => $now, 'lockedBy' => 'staff'];
+                }
+            } else {
+                $row['percentage'] = null;
             }
             $rows[$i] = $row;
         }

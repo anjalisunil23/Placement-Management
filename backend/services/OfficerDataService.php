@@ -2838,68 +2838,10 @@ final class OfficerDataService
             if ($isSynthetic) {
                 continue;
             }
-            $out[] = $this->normalizeQualificationMaxMarkRow($q);
+            $out[] = $q;
         }
 
         return $out;
-    }
-
-    /**
-     * Fill missing / zero maxMark for percentage-only Degree/BCA/UG rows from AES.
-     *
-     * @param array<string, mixed> $q
-     * @return array<string, mixed>
-     */
-    private function normalizeQualificationMaxMarkRow(array $q): array
-    {
-        $label = (string) ($q['qualification'] ?? '');
-        $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
-        if ($mark !== null && $mark <= 0) {
-            $mark = null;
-        }
-        $maxMark = null;
-        foreach (['maxMark', 'maxmark'] as $key) {
-            if (isset($q[$key]) && is_numeric($q[$key]) && (float) $q[$key] > 0) {
-                $maxMark = (float) $q[$key];
-                break;
-            }
-        }
-        $percentage = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
-        if ($percentage !== null && ($percentage <= 0 || $percentage > 100)) {
-            $percentage = null;
-        }
-
-        $isCgpa = preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $label) === 1
-            || ($maxMark !== null && $maxMark > 0 && $maxMark <= 10.0);
-
-        if ($percentage !== null && !$isCgpa && $maxMark === null) {
-            if ($mark === null) {
-                $mark = $percentage;
-                $maxMark = 100.0;
-            } elseif ($mark > 0 && $mark <= 100) {
-                $maxMark = 100.0;
-            } elseif ($mark > 100 && $percentage > 0) {
-                $inferred = round(($mark / $percentage) * 100, 2);
-                if ($inferred > 0) {
-                    $maxMark = $inferred;
-                }
-            }
-        }
-
-        if ($mark !== null) {
-            $q['mark'] = $mark;
-        }
-        if ($maxMark !== null) {
-            $q['maxMark'] = $maxMark;
-            $q['maxmark'] = $maxMark;
-        } else {
-            unset($q['maxMark'], $q['maxmark']);
-        }
-        if ($percentage !== null) {
-            $q['percentage'] = $percentage;
-        }
-
-        return $q;
     }
 
     /**
