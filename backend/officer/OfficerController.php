@@ -630,7 +630,7 @@ final class OfficerController
         );
     }
 
-    /** GET /api/officer/students/placed — department placed students */
+    /** GET /api/officer/students/placed — department placed students (current year) */
     public function listPlacedStudents(): void
     {
         $scope = (new OfficerDataService())->requireScope();

@@ -724,6 +724,7 @@ final class OfficerDataService
             $departments[(string) $d['_id']] = $d;
         }
 
+        // Admin: campus-wide. Officer/staff: department only (not CT/CoCT class batches).
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $filter['placed'] = true;
 
@@ -737,15 +738,29 @@ final class OfficerDataService
         }
         $usersById = $userModel->findByIds(array_keys($userIds));
 
+        $currentYear = (int) date('Y');
         $rows = [];
         foreach ($students as $s) {
-            if (!empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($s, $ctx)) {
-                continue;
-            }
             $userId = (string) ($s['userId'] ?? '');
             $deptId = (string) ($s['departmentId'] ?? '');
             $u = $userId !== '' ? ($usersById[$userId] ?? null) : null;
             $dept = $departments[$deptId] ?? null;
+
+            $placement = is_array($s['placement'] ?? null) ? $s['placement'] : [];
+            $company = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
+            $role = trim((string) ($placement['role'] ?? $placement['jobRole'] ?? ''));
+            $package = trim((string) ($placement['package'] ?? $placement['ctc'] ?? $placement['salary'] ?? ''));
+            // Prefer dates on the current placement — current calendar year only.
+            $placedAt = trim((string) (
+                $placement['joinDate']
+                ?? $placement['placedAt']
+                ?? $placement['date']
+                ?? $s['placedAt']
+                ?? ''
+            ));
+            if ($placedAt === '' || !$this->isPlacementInYear($placedAt, $currentYear)) {
+                continue;
+            }
 
             $row = DocumentHelper::serialize($s) ?? [];
             $row = $this->enrichStudentListRow($row, $s, $u, false);
@@ -755,11 +770,6 @@ final class OfficerDataService
                 'code' => $dept['code'] ?? '',
             ] : null;
 
-            $placement = is_array($s['placement'] ?? null) ? $s['placement'] : [];
-            $company = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
-            $role = trim((string) ($placement['role'] ?? $placement['jobRole'] ?? ''));
-            $package = trim((string) ($placement['package'] ?? $placement['ctc'] ?? $placement['salary'] ?? ''));
-            $placedAt = trim((string) ($placement['placedAt'] ?? $placement['date'] ?? $s['placedAt'] ?? ''));
             $row['placed'] = true;
             $row['placement'] = [
                 'company'  => $company,
@@ -771,6 +781,7 @@ final class OfficerDataService
             $row['placementRole'] = $role;
             $row['placementPackage'] = $package;
             $row['placedAt'] = $placedAt;
+            $row['placementYear'] = $currentYear;
 
             $rows[] = $row;
         }
@@ -783,6 +794,23 @@ final class OfficerDataService
         });
 
         return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * True when $placedAt parses to a real date in the given calendar year.
+     */
+    private function isPlacementInYear(string $placedAt, int $year): bool
+    {
+        $placedAt = trim($placedAt);
+        if ($placedAt === '') {
+            return false;
+        }
+        $ts = strtotime($placedAt);
+        if ($ts === false) {
+            return false;
+        }
+
+        return (int) date('Y', $ts) === $year;
     }
 
     /**

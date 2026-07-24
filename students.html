@@ -254,7 +254,7 @@
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
           <h6 class="fw-bold mb-0">Placed Students</h6>
-          <p class="small text-muted-2 mb-0 mt-1">Students marked as placed (current company only).</p>
+          <p class="small text-muted-2 mb-0 mt-1" id="placedTabSub">Students marked as placed (current year only).</p>
         </div>
         <span class="badge-soft success" id="placedCount">0</span>
       </div>
@@ -753,17 +753,29 @@ if (isAdminRole) {
   }
   document.getElementById('overviewTabItem')?.remove();
   document.getElementById('tabRegistrations')?.remove();
+  const placedSub = document.getElementById('placedTabSub');
+  if (placedSub) {
+    placedSub.textContent = 'All placed students across departments (current year only).';
+  }
 } else if (role === 'staff') {
   const pageSub = document.getElementById('pageSub');
   if (pageSub) {
     pageSub.textContent = '';
     pageSub.hidden = true;
   }
+  const placedSub = document.getElementById('placedTabSub');
+  if (placedSub) {
+    placedSub.textContent = 'Placed students in your department (current year only).';
+  }
 } else if (canViewFinalYear) {
   const pageSub = document.getElementById('pageSub');
   if (pageSub) {
     pageSub.textContent = '';
     pageSub.hidden = true;
+  }
+  const placedSub = document.getElementById('placedTabSub');
+  if (placedSub) {
+    placedSub.textContent = 'Placed students in your department (current year only).';
   }
 }
 if (!canUseFindStudent) {
@@ -1977,10 +1989,8 @@ function placedMatchesQuery(s, q) {
 
 function filteredPlacedStudents() {
   const q = document.getElementById('searchPlaced')?.value.trim() || '';
-  return placedStudentsAll.filter(s => {
-    if (role === 'staff' && !studentInStaffScope(s)) return false;
-    return placedMatchesQuery(s, q);
-  });
+  // Staff: full department list from API (not CT/CoCT class-batch scope).
+  return placedStudentsAll.filter(s => placedMatchesQuery(s, q));
 }
 
 function placedRowHtml(s) {

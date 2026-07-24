@@ -1046,7 +1046,7 @@ final class AdminController
         );
     }
 
-    /** GET /api/admin/students/placed — campus-wide placed students */
+    /** GET /api/admin/students/placed — campus-wide placed students (current year) */
     public function listPlacedStudents(): void
     {
         $scope = (new OfficerDataService())->requireScope();

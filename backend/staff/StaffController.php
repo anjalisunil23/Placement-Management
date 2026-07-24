@@ -225,7 +225,7 @@ final class StaffController
         }
     }
 
-    /** GET /api/staff/students/placed — department placed students */
+    /** GET /api/staff/students/placed — department-wide placed students (current year) */
     public function listPlacedStudents(): void
     {
         $user = RBACMiddleware::requireStaff();
