@@ -2661,7 +2661,7 @@ final class OfficerDataService
         $phone = $contact['phone'];
 
         $gender = trim((string) ($personal['gender'] ?? $mapped['gender'] ?? ''));
-        $maritalStatus = trim((string) ($mapped['maritalStatus'] ?? $personal['maritalStatus'] ?? ''));
+        $maritalStatus = trim((string) ($personal['maritalStatus'] ?? $mapped['maritalStatus'] ?? ''));
         if ($maritalStatus === '') {
             $maritalStatus = (new AesLoginService())->normalizeMaritalStatus(trim((string) (
                 $placement['stud_marital']
@@ -3593,7 +3593,7 @@ final class OfficerDataService
             $row['personal'] = $personal;
             $row['gender'] = $gender;
         }
-        $maritalStatus = trim((string) ($mapped['maritalStatus'] ?? $personal['maritalStatus'] ?? ''));
+        $maritalStatus = trim((string) ($personal['maritalStatus'] ?? $mapped['maritalStatus'] ?? ''));
         if ($maritalStatus === '') {
             $maritalStatus = (new AesLoginService())->normalizeMaritalStatus(trim((string) (
                 $placement['stud_marital']
@@ -3605,9 +3605,12 @@ final class OfficerDataService
             )));
         }
         if ($maritalStatus !== '') {
-            $personal['maritalStatus'] = $maritalStatus;
-            $row['personal'] = $personal;
-            $row['maritalStatus'] = $maritalStatus;
+            // Prefer already-saved student value; only fill AES when personal is empty.
+            if (trim((string) ($personal['maritalStatus'] ?? '')) === '') {
+                $personal['maritalStatus'] = $maritalStatus;
+                $row['personal'] = $personal;
+            }
+            $row['maritalStatus'] = trim((string) ($personal['maritalStatus'] ?? $maritalStatus));
         }
         if ($contact['collegeEmail'] !== '') {
             $row['collegeEmail'] = $contact['collegeEmail'];

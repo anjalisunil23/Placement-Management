@@ -263,7 +263,8 @@ final class StudentController
       'personalEmail' => $personalEmail,
       'phone'         => $phone,
       'gender'        => (string) ($merged['gender'] ?? $personal['gender'] ?? ''),
-      'maritalStatus' => (string) ($merged['maritalStatus'] ?? $personal['maritalStatus'] ?? ''),
+      // Prefer student-saved marital status over AES.
+      'maritalStatus' => (string) ($personal['maritalStatus'] ?? $merged['maritalStatus'] ?? ''),
     ];
     $out['stud_name'] = (string) ($out['user']['stud_name'] ?? '');
     $out['displayName'] = (string) ($out['user']['name'] ?? '');
@@ -287,10 +288,12 @@ final class StudentController
     $out['programme'] = $resolvedDept['name'];
     $out['branch'] = $resolvedDept['name'];
     $out['gender'] = (string) ($merged['gender'] ?? $personal['gender'] ?? '');
-    $out['maritalStatus'] = (string) ($merged['maritalStatus'] ?? $personal['maritalStatus'] ?? '');
+    $out['maritalStatus'] = (string) ($personal['maritalStatus'] ?? $merged['maritalStatus'] ?? '');
     if (!empty($merged['maritalStatus']) && empty($personal['maritalStatus'])) {
       $personal['maritalStatus'] = (string) $merged['maritalStatus'];
       $out['personal'] = $personal;
+      $out['maritalStatus'] = (string) $personal['maritalStatus'];
+      $out['user']['maritalStatus'] = $out['maritalStatus'];
     }
     if (!empty($academic['cgpa']) && (float) $academic['cgpa'] > 0 && (float) $academic['cgpa'] <= 10) {
       $out['academic'] = $academic;

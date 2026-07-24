@@ -52,7 +52,12 @@
           <div class="col-md-6 role-field-student"><label class="form-label small fw-semibold">Gender</label><input class="form-control" id="profGender" disabled placeholder="Synced from college records"/></div>
           <div class="col-md-6 role-field-student">
             <label class="form-label small fw-semibold">Marital status</label>
-            <input class="form-control" id="profMaritalStatus" disabled placeholder="Synced from college records"/>
+            <select class="form-select" id="profMaritalStatus">
+              <option value="">Select…</option>
+              <option value="Single">Single</option>
+              <option value="Married">Married</option>
+              <option value="Other">Other</option>
+            </select>
           </div>
           <div class="col-md-4 role-field-student" id="profMarks10Wrap"><label class="form-label small fw-semibold">10th marks (%)</label><input type="number" step="0.01" min="0" max="100" class="form-control" id="profMarks10" placeholder="If missing"/><div class="form-text d-none" id="profMarks10Hint">Contact your class teacher to change this.</div></div>
           <div class="col-md-4 role-field-student" id="profMarks12Wrap"><label class="form-label small fw-semibold">12th marks (%)</label><input type="number" step="0.01" min="0" max="100" class="form-control" id="profMarks12" placeholder="If missing"/><div class="form-text d-none" id="profMarks12Hint">Contact your class teacher to change this.</div></div>
@@ -1497,10 +1502,12 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     }
     const qualEdits = collectQualificationEdits();
     if (qualEdits) academic.qualifications = qualEdits;
-    // Phone and personalEmail are always editable by the student.
+    // Phone, personal email, and marital status are always editable by the student.
     const personal = {};
     if (phoneVal !== undefined) personal.phone = phoneVal;
     if (personalEmailVal !== undefined) personal.personalEmail = personalEmailVal;
+    const maritalEl = document.getElementById('profMaritalStatus');
+    if (maritalEl) personal.maritalStatus = (maritalEl.value || '').trim();
     const payload = {};
     if (Object.keys(personal).length) payload.personal = personal;
     if (Object.keys(academic).length) payload.academic = academic;
@@ -1524,7 +1531,7 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
       name: user.name,
       phone: personal.phone !== undefined ? personal.phone : user.phone,
       personalEmail: personal.personalEmail !== undefined ? personal.personalEmail : user.personalEmail,
-      maritalStatus: document.getElementById('profMaritalStatus')?.value || user.maritalStatus || '',
+      maritalStatus: personal.maritalStatus !== undefined ? personal.maritalStatus : (user.maritalStatus || ''),
       registerNumber: document.getElementById('profRegNo').value,
       cgpa: academic.cgpa !== undefined ? academic.cgpa : user.cgpa,
     }, Auth.token());

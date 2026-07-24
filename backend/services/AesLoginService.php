@@ -873,7 +873,8 @@ final class AesLoginService
             ?? $placement['marital']
             ?? ''
         ));
-        if ($maritalStatus !== '' && trim((string) ($personal['maritalStatus'] ?? '')) !== $maritalStatus) {
+        // Fill-if-empty only — students own marital status once they set it.
+        if ($maritalStatus !== '' && trim((string) ($personal['maritalStatus'] ?? '')) === '') {
             $personalPatch['maritalStatus'] = $maritalStatus;
         }
         if ($personalPatch !== []) {

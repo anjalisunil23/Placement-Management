@@ -14,8 +14,9 @@ use PMS\Utils\Security;
  */
 final class StudentProfileEditService
 {
-    public const PERSONAL_KEYS = ['phone', 'personalEmail'];
+    public const PERSONAL_KEYS = ['phone', 'personalEmail', 'maritalStatus'];
     public const ACADEMIC_KEYS = ['cgpa', 'backlogs', 'marks10th', 'marks12th', 'ugMarks', 'mcaMarks'];
+    public const MARITAL_STATUSES = ['Single', 'Married', 'Other'];
 
     private StudentModel $students;
     private OfficerDataService $officerData;
@@ -36,7 +37,7 @@ final class StudentProfileEditService
         $editable = [];
         foreach (self::PERSONAL_KEYS as $key) {
             $path = 'personal.' . $key;
-            // Students may always edit their own phone and personal email.
+            // Students may always edit phone, personal email, and marital status.
             $editable[] = $path;
         }
         foreach (self::ACADEMIC_KEYS as $key) {
@@ -401,6 +402,17 @@ final class StudentProfileEditService
             $email = strtolower(trim((string) $personal['personalEmail']));
             if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $out['personalEmail'] = $email;
+            }
+        }
+        if (array_key_exists('maritalStatus', $personal)) {
+            $raw = trim((string) $personal['maritalStatus']);
+            if ($raw === '') {
+                $out['maritalStatus'] = '';
+            } else {
+                $normalized = (new AesLoginService())->normalizeMaritalStatus($raw);
+                if (in_array($normalized, self::MARITAL_STATUSES, true)) {
+                    $out['maritalStatus'] = $normalized;
+                }
             }
         }
 
