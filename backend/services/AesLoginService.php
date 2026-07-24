@@ -1980,6 +1980,16 @@ final class AesLoginService
             || HodDetection::payloadIndicatesHod($aesDetails)
             || HodDetection::payloadIndicatesHod($extras)
             || $existingIsHod;
+        $directoryHod = AjceHodDirectory::matchUser([
+            'name' => (string) ($user['name'] ?? $profile['name'] ?? ''),
+            'email' => (string) ($user['email'] ?? $profile['email'] ?? $extras['email'] ?? ''),
+        ]);
+        if ($directoryHod !== null) {
+            $isHod = true;
+            if (!HodDetection::designationLooksLikeHod($designation)) {
+                $designation = (string) $directoryHod['designation'];
+            }
+        }
         // Never let a weak AES title (Dr. / Faculty) erase a known HOD designation.
         if ($isHod && !HodDetection::designationLooksLikeHod($designation) && HodDetection::designationLooksLikeHod($existingDesig)) {
             $designation = $existingDesig;

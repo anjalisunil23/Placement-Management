@@ -6,7 +6,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
 <link href="css/style.css?v=20260724boot" rel="stylesheet"/>
-<script src="js/ph-role-guard.js?v=20260724hod2"></script></head>
+<script src="js/ph-role-guard.js?v=20260724hod3"></script></head>
 <body data-page="settings.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -148,8 +148,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260724hod2"></script>
-<script src="js/app.js?v=20260724hod2"></script>
+<script src="js/api.js?v=20260724hod3"></script>
+<script src="js/app.js?v=20260724hod3"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -891,7 +891,11 @@ function applyProfileFromUser(u, activeRole) {
   if (nameEl) nameEl.value = displayName;
   applyProfileEmails(merged);
   if (phoneEl) phoneEl.value = pickPhone(merged);
-  if (roleEl) roleEl.value = ROLE_LABELS[r] || r || '';
+  if (roleEl) {
+    const isHod = (typeof Auth !== 'undefined' && Auth.isHod?.())
+      || /\bH\.?\s*O\.?\s*D\.?\b/i.test(String(merged.designation || '').replace(/[,/;|]+/g, ' '));
+    roleEl.value = isHod ? 'HOD' : (ROLE_LABELS[r] || r || '');
+  }
     if (r === 'student') {
     document.getElementById('profRegNo').value = merged.registerNumber || merged.admission_no || merged.username || '';
     const genderEl = document.getElementById('profGender');

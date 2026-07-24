@@ -93,6 +93,10 @@ final class AuthMiddleware
       }
     }
 
+    if (\PMS\Services\AjceHodDirectory::userIsHod($user)) {
+      return true;
+    }
+
     return false;
   }
 
@@ -320,10 +324,12 @@ final class AuthMiddleware
     if ($data['isHod']) {
       $data['role'] = 'placement_officer';
       $data['dashboard'] = $config['role_dashboards']['placement_officer'] ?? $data['dashboard'];
-      $data['designation'] = \PMS\Services\HodDetection::normalizeDesignationForHod(
-        (string) ($data['designation'] ?? ''),
-        true
-      );
+      $directoryHod = \PMS\Services\AjceHodDirectory::matchUser(array_merge($user, $data));
+      $desig = (string) ($data['designation'] ?? '');
+      if (!\PMS\Services\HodDetection::designationLooksLikeHod($desig) && $directoryHod !== null) {
+        $desig = (string) $directoryHod['designation'];
+      }
+      $data['designation'] = \PMS\Services\HodDetection::normalizeDesignationForHod($desig, true);
       // Persist HOD flag + designation so elevation works without AES session next time.
       try {
         $staffModel = new StaffModel();

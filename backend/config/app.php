@@ -114,4 +114,17 @@ return [
         static fn (string $email): string => strtolower(trim($email)),
         explode(',', $_ENV['SUPER_ADMIN_EMAILS'] ?? 'placements@amaljyothi.ac.in')
     ))),
+    // Known HODs (AES login often omits designation). Matched by email and/or name.
+    'hod_accounts' => [
+        [
+            'name' => 'Dr. Bijimol T K',
+            'designation' => 'HOD,Associate Professor',
+            'emails' => ['tkbijimol@amaljyothi.ac.in', 'bijimoltk@amaljyothi.ac.in'],
+        ],
+        [
+            'name' => 'Dr. Juby Mathew',
+            'designation' => 'HOD,Professor',
+            'emails' => ['jubymathew@amaljyothi.ac.in', 'juby.mathew@amaljyothi.ac.in', 'jubym@amaljyothi.ac.in'],
+        ],
+    ],
 ];
