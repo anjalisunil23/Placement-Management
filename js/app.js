@@ -67,7 +67,7 @@ const NAV = [
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
   { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Placement details", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
-  { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'] },
+  { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'], hideForStaffViewer: true },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
   { href: "job-posts.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['admin'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin', 'placement_officer'] },
@@ -342,6 +342,13 @@ function navItemVisible(n, role) {
     if (role === 'staff') return typeof Auth !== 'undefined' && Auth.canViewPlacementAdminData();
     // Admin/PO entries that also list staff still show for admin/PO.
     if (role !== 'admin' && role !== 'placement_officer') return false;
+  }
+  // Senior staff (rank < 6): hide Students — they use campus View on the dashboard instead.
+  if (n.hideForStaffViewer && role === 'staff'
+    && typeof Auth !== 'undefined'
+    && typeof Auth.canViewPlacementAdminData === 'function'
+    && Auth.canViewPlacementAdminData()) {
+    return false;
   }
   if (role !== 'alumni') return true;
   if (n.alumniEmployed) return alumniIsWorking();
