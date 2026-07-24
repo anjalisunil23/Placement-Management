@@ -456,13 +456,23 @@ const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html'];
 
 /** Derive staff seniority rank from designation when AES rank is absent (1=senior … 6+=junior). */
+/** PlaceHub designation→rank map (not an AES-exported master list). */
+const STAFF_RANKS = {
+  1: 'Principal / Director / Vice Principal / Dean',
+  2: 'HOD / Head of Department',
+  3: 'Professor',
+  4: 'Associate Professor',
+  5: 'Assistant Professor',
+  6: 'Lecturer / Instructor / Demonstrator / Technical / Adjunct / Professor of Practice / Attender / Clerk / Office Assistant / Accountant',
+};
+
 function staffRankFromDesignation(designation) {
   const d = String(designation || '')
     .toUpperCase()
     .replace(/[,/;|]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  // Empty / generic teaching → rank 5 (eligible for placement-admin view).
+  // Map designation onto PlaceHub STAFF_RANKS (1–6).
   if (!d || /^(FACULTY|STAFF|TEACHER|TEACHING\s*STAFF|MEMBER)$/.test(d)) return 5;
   if (/\b(PRINCIPAL|DIRECTOR|VICE\s*PRINCIPAL|DEAN)\b/.test(d)) return 1;
   if (/\bH\.?\s*O\.?\s*D\.?\b/.test(d) || /\bHEAD\s+OF\s+(THE\s+)?(DEPT\.?|DEPARTMENT)\b/.test(d)

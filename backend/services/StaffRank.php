@@ -8,8 +8,11 @@ namespace PMS\Services;
  * Numeric staff seniority rank for PlaceHub access rules.
  * Lower number = more senior. Ranks below 6 may view placement-admin data (read-only).
  *
- * Prefer an AES numeric seniority field when present (1–9). Ignore 7th-CPC pay levels (10+).
- * Otherwise derive from designation. Generic teaching titles default to rank 5 (eligible).
+ * Prefer a numeric AES field when present (staff_rank / similar, 1-9).
+ * Ignore 7th-CPC pay levels (10+). Otherwise map from designation text.
+ *
+ * Note: AES placement API has no staff_ranks master endpoint. The designation
+ * map below is PlaceHub's own convention until an AES-sourced list is provided.
  */
 final class StaffRank
 {
@@ -21,6 +24,33 @@ final class StaffRank
 
     /** Explicitly unknown non-teaching / unsupported */
     public const UNKNOWN = 99;
+
+    /**
+     * PlaceHub designation -> rank map (not an AES-exported master list).
+     *
+     * @var array<int, string>
+     */
+    public const STAFF_RANKS = [
+        1 => 'Principal / Director / Vice Principal / Dean',
+        2 => 'HOD / Head of Department',
+        3 => 'Professor',
+        4 => 'Associate Professor',
+        5 => 'Assistant Professor',
+        6 => 'Lecturer / Instructor / Demonstrator / Technical / Adjunct / Professor of Practice / Attender / Clerk / Office Assistant / Accountant',
+    ];
+
+    /**
+     * @return array<int, string>
+     */
+    public static function all(): array
+    {
+        return self::STAFF_RANKS;
+    }
+
+    public static function label(int $rank): string
+    {
+        return self::STAFF_RANKS[$rank] ?? ('Rank ' . $rank);
+    }
 
     /**
      * @param array<string, mixed> $source AES payload and/or staff profile fields
@@ -51,7 +81,7 @@ final class StaffRank
      */
     public static function pickNumeric(array $source): ?int
     {
-        // Do NOT include staff_level / pay Level 10–14 — those are 7th CPC grades, not ranks.
+        // Do NOT include staff_level / pay Level 10-14 - those are 7th CPC grades, not ranks.
         $keys = [
             'staff_rank', 'staffRank', 'staf_rank', 'stafRank',
             'emp_rank', 'empRank', 'employee_rank', 'employeeRank',
@@ -67,7 +97,7 @@ final class StaffRank
             if ($parsed === null) {
                 continue;
             }
-            // Pay levels are typically 10–14; never treat them as seniority ranks.
+            // Pay levels are typically 10-14; never treat them as seniority ranks.
             if ($parsed >= 10) {
                 continue;
             }
@@ -96,7 +126,7 @@ final class StaffRank
         $d = preg_replace('/\s+/', ' ', $d) ?? $d;
         $d = trim($d);
 
-        // Empty / generic teaching labels → eligible (rank 5).
+        // Empty / generic teaching labels -> rank 5 (Assistant Professor band).
         if ($d === '' || preg_match('/^(FACULTY|STAFF|TEACHER|TEACHING\s*STAFF|MEMBER)$/', $d)) {
             return self::DEFAULT_TEACHING_RANK;
         }
@@ -121,7 +151,7 @@ final class StaffRank
         if (preg_match('/\bASSISTANT\s+PROFESSOR\b/', $d)) {
             return 5;
         }
-        // Junior / non-teaching — not eligible for placement-admin view.
+        // Junior / non-teaching - rank 6 (not eligible for placement-admin view).
         if (preg_match('/\b(LECTURER|INSTRUCTOR|DEMONSTRATOR|TECHNICAL|LAB\s*ASSISTANT|ADJUNCT|PROFESSOR\s+OF\s+PRACTICE|ATTENDER|CLERK|OFFICE\s*ASSISTANT|ACCOUNTANT)\b/', $d)) {
             return 6;
         }
