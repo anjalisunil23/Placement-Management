@@ -146,6 +146,21 @@ class UserModel extends BaseModel
 
     public function getDashboardStats(bool $includeExtended = true): array
     {
+        if (!$includeExtended) {
+            $cacheKey = 'admin_dash_lite';
+            $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_' . $cacheKey . '.json';
+            if (is_file($path)) {
+                $mtime = @filemtime($path);
+                if ($mtime !== false && (time() - $mtime) <= 45) {
+                    $raw = @file_get_contents($path);
+                    $decoded = is_string($raw) ? json_decode($raw, true) : null;
+                    if (is_array($decoded)) {
+                        return $decoded;
+                    }
+                }
+            }
+        }
+
         $studentModel = new StudentModel();
         $companyModel = new CompanyModel();
         $driveModel = new DriveModel();
@@ -172,6 +187,8 @@ class UserModel extends BaseModel
         ];
 
         if (!$includeExtended) {
+            $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_admin_dash_lite.json';
+            @file_put_contents($path, json_encode($base), LOCK_EX);
             return $base;
         }
 

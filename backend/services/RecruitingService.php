@@ -66,21 +66,21 @@ final class RecruitingService
                 return $cached;
             }
 
-            // Ultra-lite: company list + headline/status counts (SQL aggregates, no row enrich).
-            $activeCompanies = $this->activeRecruitingCompanies($departmentId, false);
+            // KPI-only: SQL counts — no drive/job payload scan, no company name hydrate.
+            $activeCount = $this->countActiveCompaniesFast($departmentId);
             $applicantCount = $this->countCampusApplicants($departmentId);
             $placedCount = $this->countCampusPlacements($departmentId);
             $statusCounts = $this->applicationStatusCounts($departmentId);
             $out = [
                 'scope'            => ($departmentId !== null && $departmentId !== '') ? 'department' : 'campus',
                 'stats'            => [
-                    'activeCompanies' => count($activeCompanies),
+                    'activeCompanies' => $activeCount,
                     'applicants'      => $applicantCount,
                     'departments'     => 0,
                     'placedStudents'  => $placedCount,
                 ],
                 'statusCounts'     => $statusCounts,
-                'activeCompanies'  => $activeCompanies,
+                'activeCompanies'  => [],
                 'applicantsByDept' => [],
                 'applicants'       => [],
                 'batchOptions'     => [],
@@ -124,6 +124,38 @@ final class RecruitingService
         $this->writeOverviewCache($fullCacheKey, $out);
 
         return $out;
+    }
+
+    /**
+     * Unique active recruiting companies via SQL GROUP BY (no payload decode).
+     */
+    private function countActiveCompaniesFast(?string $departmentId): int
+    {
+        $activeStatuses = ['scheduled', 'open', 'ongoing', 'reviewing'];
+        $statusFilter = ['status' => ['$in' => $activeStatuses]];
+
+        // Department scope still needs branch matching — fall back to light company list.
+        if ($departmentId !== null && $departmentId !== '') {
+            return count($this->activeRecruitingCompanies($departmentId, false));
+        }
+
+        $fromDrives = (new DriveModel())->countByField('companyId', $statusFilter);
+        $fromJobs = (new JobModel())->countByField('companyId', [
+            'status' => ['$in' => ['open', 'ongoing', 'reviewing']],
+        ]);
+        $ids = [];
+        foreach (array_keys($fromDrives) as $id) {
+            if ($id !== '') {
+                $ids[$id] = true;
+            }
+        }
+        foreach (array_keys($fromJobs) as $id) {
+            if ($id !== '') {
+                $ids[$id] = true;
+            }
+        }
+
+        return count($ids);
     }
 
     /**

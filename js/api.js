@@ -4951,7 +4951,7 @@ function clearRoleScopedCaches() {
   DriveStore._alumniCache = null;
 }
 
-async function dashboardStats(opts = {}) {
+function mapLiveDashboardStats(stats, activeDrives = null) {
   const empty = {
     totalStudents: 0,
     totalCompanies: 0,
@@ -4967,62 +4967,62 @@ async function dashboardStats(opts = {}) {
     hiringTrend: null,
     hiringTrendLastYear: null,
   };
+  if (!stats) return empty;
+  const salary = stats.salaryAnalytics || stats.salary || {};
+  const branchStats = (stats.branchStatistics || []).map(b => ({
+    dept: b.code || b.department || '',
+    placed: b.placed ?? 0,
+  }));
+  const companyStats = (stats.companyStatistics || [])
+    .map(c => ({
+      company: c.name || c.companyName || '',
+      applicants: c.applications ?? c.applicants ?? 0,
+    }))
+    .filter(c => c.company)
+    .sort((a, b) => b.applicants - a.applicants)
+    .slice(0, 8);
+  const totalStudents = stats.totalStudents ?? 0;
+  const placedStudents = stats.placedStudents ?? 0;
 
-  const mapLiveDashboard = (stats, activeDrives = null) => {
-    if (!stats) return empty;
-    const salary = stats.salaryAnalytics || stats.salary || {};
-    const branchStats = (stats.branchStatistics || []).map(b => ({
-      dept: b.code || b.department || '',
-      placed: b.placed ?? 0,
-    }));
-    const companyStats = (stats.companyStatistics || [])
-      .map(c => ({
-        company: c.name || c.companyName || '',
-        applicants: c.applications ?? c.applicants ?? 0,
-      }))
-      .filter(c => c.company)
-      .sort((a, b) => b.applicants - a.applicants)
-      .slice(0, 8);
-    const totalStudents = stats.totalStudents ?? 0;
-    const placedStudents = stats.placedStudents ?? 0;
-
-      return {
-      totalStudents,
-      totalCompanies: stats.totalCompanies ?? stats.totals?.companies ?? 0,
-      totalStaff: stats.totalStaff ?? 0,
-      totalAlumni: stats.totalAlumni ?? 0,
-      totalDrives: activeDrives ?? stats.activeDrives ?? 0,
-      placedStudents,
-        pendingApprovals: stats.pendingApprovals ?? 0,
-      placementPct: stats.placementPercentage ?? (totalStudents > 0 ? ((placedStudents / totalStudents) * 100).toFixed(1) : 0),
-      salary: {
-        highest: salary.highest ?? 0,
-        lowest: salary.lowest ?? 0,
-        average: salary.average ?? 0,
-        median: salary.median ?? 0,
-      },
-      branchStats,
-      companyStats,
-      hiringTrend: stats.hiringTrend || null,
-      hiringTrendLastYear: stats.hiringTrendLastYear || null,
-        department: stats.department || null,
-      };
+  return {
+    totalStudents,
+    totalCompanies: stats.totalCompanies ?? stats.totals?.companies ?? 0,
+    totalStaff: stats.totalStaff ?? 0,
+    totalAlumni: stats.totalAlumni ?? 0,
+    totalDrives: activeDrives ?? stats.activeDrives ?? 0,
+    placedStudents,
+    pendingApprovals: stats.pendingApprovals ?? 0,
+    placementPct: stats.placementPercentage ?? (totalStudents > 0 ? ((placedStudents / totalStudents) * 100).toFixed(1) : 0),
+    salary: {
+      highest: salary.highest ?? 0,
+      lowest: salary.lowest ?? 0,
+      average: salary.average ?? 0,
+      median: salary.median ?? 0,
+    },
+    branchStats,
+    companyStats,
+    hiringTrend: stats.hiringTrend || null,
+    hiringTrendLastYear: stats.hiringTrendLastYear || null,
+    department: stats.department || null,
   };
-  // Expose for dashboard lite-first paint
-  if (typeof window !== 'undefined') window.__phMapDashStats = mapLiveDashboard;
+}
+if (typeof window !== 'undefined') window.__phMapDashStats = mapLiveDashboardStats;
+
+async function dashboardStats(opts = {}) {
+  const empty = mapLiveDashboardStats(null);
 
   if (Auth.hasRealAuth() && !Auth.isDemo()) {
     if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
       const stats = await OfficerApi.fetchDashboard(opts);
-      return mapLiveDashboard(stats);
+      return mapLiveDashboardStats(stats);
     }
     if (Auth.role() === 'staff' && typeof StaffApi !== 'undefined') {
       const stats = await StaffApi.fetchDashboardStats(opts);
-      return mapLiveDashboard(stats);
+      return mapLiveDashboardStats(stats);
     }
     if (Auth.role() === 'admin' && typeof AdminApi !== 'undefined') {
       const stats = await AdminApi.fetchDashboard(opts);
-      return mapLiveDashboard(stats, stats?.activeDrives ?? 0);
+      return mapLiveDashboardStats(stats, stats?.activeDrives ?? 0);
     }
   }
 

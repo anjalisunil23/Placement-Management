@@ -732,13 +732,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   } catch (_) { /* ignore */ }
 
+  // Warm visit: paint shell + body immediately from cache (target <1s), verify session after.
+  const canInstantReveal = !freshAesLogin && !!(Auth.role() && Auth.user() && Auth.token());
+  if (canInstantReveal) {
+    paintShell();
+    revealApp();
+  }
+
   let hasSession = await Auth.bootstrap(
-    freshAesLogin ? { soft: false, fast: true } : { fast: true }
+    freshAesLogin ? { soft: false, fast: true } : { soft: true, fast: true }
   );
   // Only retry once if we had a cached role but the first /auth/me failed (cookie race).
   if (!hasSession && (Auth.role() || Auth.user() || freshAesLogin)) {
     hasSession = await Auth.bootstrap(
-      freshAesLogin ? { soft: false, fast: true } : { fast: true }
+      freshAesLogin ? { soft: false, fast: true } : { soft: false, fast: true }
     );
   }
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(pageBase)) {
@@ -776,7 +783,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  // Single paint: sidebar, topbar, and role body reveal together.
+  // Cold path: first paint here. Warm path: refresh shell after /auth/me or soft boot.
   paintShell();
   revealApp();
 

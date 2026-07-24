@@ -4035,6 +4035,41 @@ final class OfficerDataService
         $studentFilter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $totalStudents = $studentModel->count($studentFilter);
         $placedStudents = $studentModel->count(array_merge($studentFilter, ['placed' => true]));
+
+        // Lite dashboard: headline counts only — skip pending user scans and drive payload loops.
+        if (!$includeExtended) {
+            if ($ctx['isAdmin']) {
+                $activeDrives = $driveModel->count(['status' => ['$ne' => 'closed']]);
+            } else {
+                $filter = PlacementOfficerContext::driveCollectionFilter($ctx) ?? [];
+                $activeDrives = $driveModel->count(array_merge($filter, ['status' => ['$ne' => 'closed']]));
+            }
+
+            return [
+                'totalStudents'       => $totalStudents,
+                'placedStudents'      => $placedStudents,
+                'placementPercentage' => $totalStudents > 0
+                    ? round(($placedStudents / $totalStudents) * 100, 1)
+                    : 0,
+                'pendingApprovals'    => 0,
+                'pendingStudents'     => 0,
+                'pendingApplications' => 0,
+                'pendingResumes'      => 0,
+                'activeDrives'        => $activeDrives,
+                'totalCompanies'      => (new CompanyModel())->count([]),
+                'totalStaff'          => $userModel->count(['role' => 'staff']),
+                'totalAlumni'         => $userModel->count(['role' => 'alumni']),
+                'salaryAnalytics'     => ['highest' => 0, 'lowest' => 0, 'average' => 0, 'median' => 0],
+                'branchStatistics'    => [],
+                'companyStatistics'   => [],
+                'hiringTrend'         => null,
+                'hiringTrendLastYear' => null,
+                'department'          => $ctx['department']
+                    ? DocumentHelper::serialize($ctx['department'])
+                    : null,
+            ];
+        }
+
         $pendingStudents = 0;
 
         if ($ctx['isAdmin']) {

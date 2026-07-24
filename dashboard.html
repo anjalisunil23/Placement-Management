@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Dashboard · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" media="print" onload="this.media='all'" />
+<noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" /></noscript>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-<link href="css/style.css?v=20260724boot" rel="stylesheet" />
-<script src="js/ph-role-guard.js?v=20260724boot"></script>
+<link href="css/style.css?v=20260724one" rel="stylesheet" />
+<script src="js/ph-role-guard.js?v=20260724one"></script>
 </head>
 <body data-page="dashboard.html">
 <div class="app">
@@ -298,12 +299,53 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260724boot"></script>
-<script src="js/app.js?v=20260724boot"></script>
+<script src="js/api.js?v=20260724one"></script>
+<script src="js/app.js?v=20260724one"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
+})();
+window.__phApiBase = (typeof API_BASE !== 'undefined' && API_BASE)
+  || localStorage.getItem('ph-api-base')
+  || '/backend/api';
+window.__phDashKpiKey = function (role) { return 'ph-dash-kpi-' + (role || ''); };
+window.__phReadDashKpi = function (role) {
+  try {
+    const raw = sessionStorage.getItem(window.__phDashKpiKey(role));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.at || (Date.now() - parsed.at) > 300000) return null;
+    return parsed;
+  } catch (_) { return null; }
+};
+window.__phWriteDashKpi = function (role, payload) {
+  try {
+    sessionStorage.setItem(window.__phDashKpiKey(role), JSON.stringify({ at: Date.now(), ...payload }));
+  } catch (_) { /* ignore */ }
+};
+// Fire lite API prefetch immediately (parallel with shell boot).
+window.__phPrefetchDashLite = (function prefetchDashLite() {
+  const role = window.__phCachedRole;
+  if (!role) return Promise.resolve(null);
+  const base = window.__phApiBase;
+  const opts = { credentials: 'include', headers: { Accept: 'application/json' } };
+  const get = (path) => fetch(base + path, opts).then((r) => r.json()).catch(() => null);
+  if (role === 'admin') {
+    return get('/admin/dashboard?lite=1').then((dash) => ({ dash, recruiting: null }));
+  }
+  if (role === 'placement_officer') {
+    return Promise.all([
+      get('/officer/dashboard?lite=1'),
+      get('/officer/recruiting?lite=1'),
+    ]).then(([dash, recruiting]) => ({ dash, recruiting }));
+  }
+  if (role === 'staff') {
+    return Promise.all([
+      get('/staff/dashboard?lite=1'),
+      get('/staff/recruiting?lite=1'),
+    ]).then(([dash, recruiting]) => ({ dash, recruiting }));
+  }
+  return Promise.resolve(null);
 })();
 window.__phLoadDashExtras = function loadDashboardExtras(role) {
   const needCharts = role === 'admin' || role === 'placement_officer' || role === 'staff' || role === 'company';
@@ -318,11 +360,11 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
   });
   const apiScripts = [];
   if (needManage) {
-    apiScripts.push('js/admin-api.js?v=20260723fetch2');
-    apiScripts.push('js/officer-api.js?v=20260723fetch2');
-    apiScripts.push('js/staff-api.js?v=20260723fetch2');
+    apiScripts.push('js/admin-api.js?v=20260724one');
+    apiScripts.push('js/officer-api.js?v=20260724one');
+    apiScripts.push('js/staff-api.js?v=20260724one');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260723fetch2');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724one');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
@@ -336,10 +378,16 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
   window.__phDashExtrasRole = role;
   return { apis, charts };
 };
-// Prefetch role scripts from cached session before /auth/me finishes.
 if (window.__phCachedRole && typeof window.__phLoadDashExtras === 'function') {
   window.__phLoadDashExtras(window.__phCachedRole);
 }
+// Bootstrap JS is not needed for first paint — load after shell.
+(function loadBootstrapLater() {
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js';
+  s.async = true;
+  document.head.appendChild(s);
+})();
 </script>
 <script>
 onAppReady(async () => {
@@ -437,27 +485,42 @@ function paintAdminCharts(s) {
   }
 }
 
-/* Admin — lite counts first, then full analytics/charts in background */
+/* Admin — paint cached KPIs instantly, then confirm with lite prefetch / API */
 if (role === 'admin') {
   (async () => {
     try {
-      await apisReady;
-      if (Auth.hasRealAuth() && !Auth.isDemo()) {
-        const lite = await dashboardStats({ lite: true });
+      const cached = window.__phReadDashKpi?.(role);
+      if (cached?.stats) paintAdminStats(cached.stats);
+
+      const pref = await (window.__phPrefetchDashLite || Promise.resolve(null));
+      const map = typeof window.__phMapDashStats === 'function' ? window.__phMapDashStats : null;
+      if (pref?.dash?.success && pref.dash.data && map) {
+        const lite = map(pref.dash.data, pref.dash.data.activeDrives ?? 0);
         paintAdminStats(lite);
-        // Full analytics + charts — deferred so lite counts paint first.
+        window.__phWriteDashKpi?.(role, { stats: lite });
+      } else {
+        await apisReady;
+        if (Auth.hasRealAuth() && !Auth.isDemo()) {
+          const lite = await dashboardStats({ lite: true });
+          paintAdminStats(lite);
+          window.__phWriteDashKpi?.(role, { stats: lite });
+        }
+      }
+
+      if (Auth.hasRealAuth() && !Auth.isDemo()) {
         const runFull = () => {
-          Promise.all([dashboardStats(), chartsReady]).then(([full]) => {
+          Promise.all([apisReady, chartsReady, dashboardStats()]).then(([, , full]) => {
             if (full) {
               paintAdminStats(full);
               paintAdminCharts(full);
+              window.__phWriteDashKpi?.(role, { stats: full });
             }
           }).catch(() => {});
         };
         if (typeof requestIdleCallback === 'function') {
-          requestIdleCallback(runFull, { timeout: 3000 });
+          requestIdleCallback(runFull, { timeout: 4000 });
         } else {
-          setTimeout(runFull, 1500);
+          setTimeout(runFull, 2000);
         }
       } else {
         await Promise.all([apisReady, chartsReady]);
@@ -470,10 +533,29 @@ if (role === 'admin') {
 }
 
 if (role === 'placement_officer' || role === 'staff') {
-  apisReady.then(() => {
-    if (typeof HiringOverviewPage !== 'undefined') {
-      HiringOverviewPage.init({ root: '#hiringOverviewRoot' });
+  // Seed hiring KPIs from session cache before scripts finish.
+  const cached = window.__phReadDashKpi?.(role);
+  if (cached?.recruiting && typeof HiringOverviewPage !== 'undefined') {
+    // hiring script may not be ready yet — stash for init
+  }
+  window.__phCachedHiringSeed = cached || null;
+
+  apisReady.then(async () => {
+    if (typeof HiringOverviewPage === 'undefined') return;
+    const pref = await (window.__phPrefetchDashLite || Promise.resolve(null)).catch(() => null);
+    if (pref?.recruiting?.success && pref.recruiting.data) {
+      window.__phCachedHiringSeed = {
+        recruiting: pref.recruiting.data,
+        stats: (typeof window.__phMapDashStats === 'function' && pref.dash?.success)
+          ? window.__phMapDashStats(pref.dash.data)
+          : null,
+      };
+      window.__phWriteDashKpi?.(role, {
+        recruiting: pref.recruiting.data,
+        stats: window.__phCachedHiringSeed.stats,
+      });
     }
+    HiringOverviewPage.init({ root: '#hiringOverviewRoot' });
   });
 }
 

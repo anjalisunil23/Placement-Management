@@ -1289,7 +1289,14 @@
       this.populateDeptSelect();
       DepartmentStore.fetch().then(() => this.populateDeptSelect()).catch(() => {});
 
-      // First paint: ultra-lite recruiting + lite stats only.
+      // Instant seed from session/prefetch (sub-1s KPI paint).
+      const seed = window.__phCachedHiringSeed || window.__phReadDashKpi?.(role);
+      if (seed?.recruiting) {
+        const seedStats = seed.stats || null;
+        this.applyRecruitingData(seed.recruiting, seedStats);
+      }
+
+      // First paint / revalidate: ultra-lite recruiting + lite stats only.
       if (this.campusLive) {
         const [liteData, liteStats] = await Promise.all([
           RecruitingStore.fetch({ lite: true }).catch(() => null),
@@ -1297,7 +1304,10 @@
         ]);
         if (liteData) {
           this.applyRecruitingData(liteData, liteStats);
-        } else {
+          try {
+            window.__phWriteDashKpi?.(role, { recruiting: liteData, stats: liteStats });
+          } catch (_) { /* ignore */ }
+        } else if (!seed?.recruiting) {
           this.updateLiveBadge();
           this.configurePageForRole(role);
           this.setDeptUI(this.selectedDept());
