@@ -58,12 +58,10 @@ const Charts = {
       data: s.data || [],
       backgroundColor: s.color || CLUSTER[i % CLUSTER.length],
       borderWidth: 0,
-      borderRadius: { topLeft: 6, topRight: 6, bottomLeft: 0, bottomRight: 0 },
+      borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
       borderSkipped: false,
-      // Fill the full slot so Total + Placed touch (no gap between them).
-      barPercentage: 1,
-      // Leave space between department groups only.
-      categoryPercentage: 0.45,
+      // Fixed narrow width keeps Total+Placed adjacent and fits many departments.
+      barThickness: 12,
     }));
     return this._mount(ctx, {
       type: 'bar',
@@ -74,8 +72,7 @@ const Charts = {
         interaction: { mode: 'index', intersect: false },
         datasets: {
           bar: {
-            barPercentage: 1,
-            categoryPercentage: 0.45,
+            barThickness: 12,
           },
         },
         plugins: {
