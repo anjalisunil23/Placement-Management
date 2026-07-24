@@ -325,6 +325,40 @@ final class StudentController
     }
     $qualifications = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
     if ($qualifications !== []) {
+      $qualifications = array_map(
+        static function ($q) {
+          if (!is_array($q)) {
+            return $q;
+          }
+          $maxRaw = $q['maxMark'] ?? $q['maxmark'] ?? null;
+          $maxMark = is_numeric($maxRaw) ? (float) $maxRaw : 0.0;
+          if ($maxMark > 0) {
+            $q['maxMark'] = $maxMark;
+            return $q;
+          }
+          $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
+          $percentage = isset($q['percentage']) && is_numeric($q['percentage']) ? (float) $q['percentage'] : null;
+          $label = trim((string) ($q['qualification'] ?? ''));
+          if ($percentage === null || $percentage <= 0 || preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $label) === 1) {
+            return $q;
+          }
+          if ($mark === null || $mark <= 0) {
+            $q['mark'] = $percentage;
+            $q['maxMark'] = 100.0;
+          } elseif ($mark <= 100) {
+            $q['maxMark'] = 100.0;
+          } else {
+            // Absolute totals (AES maxmark: 0) → infer from mark ÷ percentage.
+            $inferred = round(($mark / $percentage) * 100, 2);
+            if ($inferred > 0) {
+              $q['maxMark'] = $inferred;
+            }
+          }
+          return $q;
+        },
+        $qualifications
+      );
+      $academic['qualifications'] = $qualifications;
       $out['academic'] = $academic;
       $out['qualifications'] = $qualifications;
     } else {
@@ -356,6 +390,9 @@ final class StudentController
 
     $fieldSvc = new StudentProfileEditService();
     $profile = $fieldSvc->sanitizeProfileDocument($profile);
+    if (!empty($out['academic']) && is_array($out['academic'])) {
+      $profile['academic'] = $out['academic'];
+    }
     $fieldState = $fieldSvc->fieldStateForStudent($profile);
     $out['lockedFields'] = $fieldState['lockedFields'];
     $out['editableFields'] = $fieldState['editableFields'];

@@ -527,10 +527,10 @@ final class StudentProfileEditService
                 if ($field === 'mark' && $num > 10000) {
                     continue;
                 }
-                if ($field === 'percentage' && $num > 100) {
+                if ($field === 'maxMark' && $num > 10000) {
                     continue;
                 }
-                if ($field === 'maxMark' && $num > 10000) {
+                if ($field === 'percentage' && $num > 100) {
                     continue;
                 }
                 $existingNum = isset($row[$field]) && is_numeric($row[$field]) ? (float) $row[$field] : 0.0;
