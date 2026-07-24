@@ -460,7 +460,7 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
-    chartScripts.push('js/charts.js?v=20260724deptchart');
+    chartScripts.push('js/charts.js?v=20260724cluster');
   }
   const apis = Promise.all(apiScripts.map(load));
   const charts = Promise.all(chartScripts.map(load));
@@ -585,8 +585,8 @@ function paintAdminCharts(s) {
       document.getElementById('deptPlacementChart'),
       deptRows.map(d => d.dept || d.name || ''),
       [
-        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#0ea5e9' },
-        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#16a34a' },
+        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#4472C4' },
+        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#ED7D31' },
       ]
     );
   }
@@ -636,8 +636,8 @@ function paintStaffAdminView(stats) {
       document.getElementById('pavDeptPlacementChart'),
       deptRows.map(d => d.dept || d.name || ''),
       [
-        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#0ea5e9' },
-        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#16a34a' },
+        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#4472C4' },
+        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#ED7D31' },
       ]
     );
   }

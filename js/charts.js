@@ -44,25 +44,55 @@ const Charts = {
       options: baseOpts(),
     });
   },
-  /** Grouped bars — e.g. Total vs Placed per department. */
+  /** Clustered (grouped) bars — Excel-style comparison, legend at bottom. */
   groupedBar(ctx, labels, series) {
+    const CLUSTER = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5'];
+    const c = themeColors();
     const datasets = (series || []).map((s, i) => ({
       label: s.label || `Series ${i + 1}`,
       data: s.data || [],
-      backgroundColor: s.color || PALETTE[i % PALETTE.length],
-      borderRadius: 8,
+      backgroundColor: s.color || CLUSTER[i % CLUSTER.length],
+      borderColor: s.color || CLUSTER[i % CLUSTER.length],
+      borderWidth: 0,
+      borderRadius: 2,
       borderSkipped: false,
-      maxBarThickness: 28,
+      maxBarThickness: 36,
+      categoryPercentage: 0.7,
+      barPercentage: 0.9,
     }));
     return this._mount(ctx, {
-      type: "bar",
+      type: 'bar',
       data: { labels, datasets },
       options: {
-        ...baseOpts(),
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              color: c.text,
+              boxWidth: 12,
+              boxHeight: 12,
+              usePointStyle: false,
+              padding: 16,
+              font: { family: 'Inter', size: 12 },
+            },
+          },
+          tooltip: { mode: 'index', intersect: false },
+        },
         scales: {
-          ...baseOpts().scales,
-          x: { ...baseOpts().scales.x, stacked: false },
-          y: { ...baseOpts().scales.y, beginAtZero: true, ticks: { ...baseOpts().scales.y.ticks, precision: 0 } },
+          x: {
+            stacked: false,
+            ticks: { color: c.text, maxRotation: 45, minRotation: 0 },
+            grid: { display: false, drawBorder: false },
+          },
+          y: {
+            stacked: false,
+            beginAtZero: true,
+            ticks: { color: c.text, precision: 0 },
+            grid: { color: c.grid, drawBorder: false },
+          },
         },
       },
     });
