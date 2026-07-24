@@ -1510,7 +1510,11 @@ final class AesApiService
             $maxMark = null;
             foreach (['maxmark', 'max_mark', 'maxMark', 'MaxMark', 'maximummark', 'maximum_mark'] as $maxKey) {
                 if (isset($row[$maxKey]) && $row[$maxKey] !== '' && is_numeric($row[$maxKey])) {
-                    $maxMark = (float) $row[$maxKey];
+                    $candidate = (float) $row[$maxKey];
+                    // AES often sends 0 when maxmark is unknown — treat as missing.
+                    if ($candidate > 0) {
+                        $maxMark = $candidate;
+                    }
                     break;
                 }
             }

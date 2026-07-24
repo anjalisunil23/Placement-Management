@@ -686,6 +686,8 @@ function escHtml(text) {
 function formatQualMark(val) {
   if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
   const n = Number(val);
+  // Never show 0 as a real max/mark — treat as missing so students can fill it.
+  if (!(n > 0)) return '—';
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
@@ -748,14 +750,17 @@ function renderProfileQualifications(quals) {
   body.innerHTML = settingsQualRows.map((q, i) => {
     const qual = escHtml(q.qualification || '—');
     const cell = (field, display, opts = {}) => {
-      const empty = qualCellEmpty(q[field] ?? q[field === 'maxMark' ? 'maxmark' : field]);
+      const rawVal = q[field] ?? q[field === 'maxMark' ? 'maxmark' : field];
+      const empty = qualCellEmpty(rawVal);
+      // Students may fill empty / zero mark & maxMark at login (AES often sends 0).
       if (!canEdit || !empty) {
         return `<td>${escHtml(display)}</td>`;
       }
       const step = opts.step || '0.01';
       const max = opts.max != null ? ` max="${opts.max}"` : '';
       const type = opts.type || 'number';
-      return `<td><input type="${type}" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="${field}" step="${step}"${max} min="0" placeholder="Enter" aria-label="${field}"/></td>`;
+      const label = field === 'maxMark' ? 'Max mark' : field;
+      return `<td><input type="${type}" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="${field}" step="${step}"${max} min="0" placeholder="Enter ${label}" aria-label="${label}"/></td>`;
     };
     const instEmpty = qualCellEmpty(q.institution || q.instname);
     const regEmpty = qualCellEmpty(q.registerNumber || q.regno);
