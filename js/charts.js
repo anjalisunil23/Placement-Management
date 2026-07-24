@@ -60,9 +60,10 @@ const Charts = {
       borderWidth: 0,
       borderRadius: { topLeft: 6, topRight: 6, bottomLeft: 0, bottomRight: 0 },
       borderSkipped: false,
-      maxBarThickness: 34,
+      // Fill the full slot so Total + Placed touch (no gap between them).
       barPercentage: 1,
-      categoryPercentage: 0.42,
+      // Leave space between department groups only.
+      categoryPercentage: 0.45,
     }));
     return this._mount(ctx, {
       type: 'bar',
@@ -74,7 +75,7 @@ const Charts = {
         datasets: {
           bar: {
             barPercentage: 1,
-            categoryPercentage: 0.42,
+            categoryPercentage: 0.45,
           },
         },
         plugins: {
