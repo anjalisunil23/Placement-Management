@@ -56,9 +56,11 @@ const Charts = {
       borderWidth: 0,
       borderRadius: 2,
       borderSkipped: false,
-      maxBarThickness: 36,
-      categoryPercentage: 0.7,
-      barPercentage: 0.9,
+      maxBarThickness: 40,
+      // Keep Total + Placed bars touching within a department.
+      barPercentage: 1,
+      // Leave a small gap between department groups.
+      categoryPercentage: 0.55,
     }));
     return this._mount(ctx, {
       type: 'bar',
@@ -67,6 +69,12 @@ const Charts = {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
+        datasets: {
+          bar: {
+            barPercentage: 1,
+            categoryPercentage: 0.55,
+          },
+        },
         plugins: {
           legend: {
             position: 'bottom',
