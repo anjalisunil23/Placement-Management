@@ -83,7 +83,6 @@ const NAV = [
   { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
   { href: "staff-jobs.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
-  { href: "dashboard.html#placement-admin-view", icon: "bi-bar-chart-line-fill", label: "Placement Admin (view)", roles: ['staff'], staffViewerOnly: true },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['staff'], staffViewerOnly: true },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['staff'], staffViewerOnly: true },
 

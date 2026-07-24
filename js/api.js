@@ -5080,6 +5080,7 @@ function mapLiveDashboardStats(stats, activeDrives = null) {
     placementPct: 0,
     salary: { highest: 0, lowest: 0, average: 0, median: 0 },
     branchStats: [],
+    deptStats: [],
     companyStats: [],
     hiringTrend: null,
     hiringTrendLastYear: null,
@@ -5088,8 +5089,12 @@ function mapLiveDashboardStats(stats, activeDrives = null) {
   const salary = stats.salaryAnalytics || stats.salary || {};
   const branchStats = (stats.branchStatistics || []).map(b => ({
     dept: b.code || b.department || '',
-    placed: b.placed ?? 0,
-  }));
+    name: b.department || b.code || '',
+    placed: Number(b.placed ?? 0) || 0,
+    total: Number(b.total ?? 0) || 0,
+    percentage: Number(b.percentage ?? 0) || 0,
+  })).filter(b => b.dept);
+  const deptStats = branchStats.slice().sort((a, b) => b.placed - a.placed);
   const companyStats = (stats.companyStatistics || [])
     .map(c => ({
       company: c.name || c.companyName || '',
@@ -5117,6 +5122,7 @@ function mapLiveDashboardStats(stats, activeDrives = null) {
       median: salary.median ?? 0,
     },
     branchStats,
+    deptStats,
     companyStats,
     hiringTrend: stats.hiringTrend || null,
     hiringTrendLastYear: stats.hiringTrendLastYear || null,
@@ -5176,13 +5182,15 @@ const RecruitingStore = {
   async fetch(opts = {}) {
     if (!Auth.hasRealAuth()) return null;
     const role = Auth.role();
-    // Staff recruiting is always department-scoped (old staff dashboard).
-    // Rank < 6 staff open campus admin KPIs via dashboard.html#placement-admin-view.
+    // AES staff_rank < 6: campus recruiting so View can switch department/branch.
+    const campusViewer = role === 'staff'
+      && typeof Auth.canViewPlacementAdminData === 'function'
+      && Auth.canViewPlacementAdminData();
     const paths = {
       company: '/company/recruiting',
       admin: '/admin/recruiting',
       placement_officer: '/officer/recruiting',
-      staff: '/staff/recruiting',
+      staff: campusViewer ? '/admin/recruiting' : '/staff/recruiting',
     };
     const path = paths[role];
     if (!path) return null;

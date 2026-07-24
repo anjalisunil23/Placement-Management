@@ -23,8 +23,15 @@ function baseOpts() {
 const PALETTE = ["#5b5bd6", "#7c5cff", "#ec4899", "#f59e0b", "#16a34a", "#0ea5e9", "#ef4444", "#14b8a6"];
 
 const Charts = {
+  _mount(ctx, config) {
+    const canvas = typeof ctx === 'string' ? document.getElementById(ctx) : ctx;
+    if (!canvas) return null;
+    const existing = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+    if (existing) existing.destroy();
+    return new Chart(canvas, config);
+  },
   bar(ctx, labels, data, label = "Value") {
-    return new Chart(ctx, {
+    return this._mount(ctx, {
       type: "bar",
       data: {
         labels,
@@ -37,8 +44,31 @@ const Charts = {
       options: baseOpts(),
     });
   },
+  /** Grouped bars — e.g. Total vs Placed per department. */
+  groupedBar(ctx, labels, series) {
+    const datasets = (series || []).map((s, i) => ({
+      label: s.label || `Series ${i + 1}`,
+      data: s.data || [],
+      backgroundColor: s.color || PALETTE[i % PALETTE.length],
+      borderRadius: 8,
+      borderSkipped: false,
+      maxBarThickness: 28,
+    }));
+    return this._mount(ctx, {
+      type: "bar",
+      data: { labels, datasets },
+      options: {
+        ...baseOpts(),
+        scales: {
+          ...baseOpts().scales,
+          x: { ...baseOpts().scales.x, stacked: false },
+          y: { ...baseOpts().scales.y, beginAtZero: true, ticks: { ...baseOpts().scales.y.ticks, precision: 0 } },
+        },
+      },
+    });
+  },
   line(ctx, labels, datasets) {
-    return new Chart(ctx, {
+    return this._mount(ctx, {
       type: "line",
       data: {
         labels,
@@ -53,14 +83,14 @@ const Charts = {
     });
   },
   pie(ctx, labels, data) {
-    return new Chart(ctx, {
+    return this._mount(ctx, {
       type: "pie",
       data: { labels, datasets: [{ data, backgroundColor: PALETTE }] },
       options: { ...baseOpts(), scales: {} },
     });
   },
   doughnut(ctx, labels, data) {
-    return new Chart(ctx, {
+    return this._mount(ctx, {
       type: "doughnut",
       data: { labels, datasets: [{ data, backgroundColor: PALETTE, borderWidth: 0 }] },
       options: { ...baseOpts(), cutout: "70%", scales: {} },

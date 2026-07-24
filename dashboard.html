@@ -29,11 +29,6 @@
 
       <!-- ===== ADMIN DASHBOARD ===== -->
       <div data-roles="admin" id="adminDashPanel">
-        <div id="placement-admin-view" class="d-none mb-3" data-staff-admin-view-banner>
-          <div class="alert alert-info py-2 px-3 mb-0 small">
-            <i class="bi bi-eye me-1"></i>Placement admin dashboard — <strong>view only</strong>. You can browse campus placement stats; editing stays with the placement cell.
-          </div>
-        </div>
         <div class="row g-3">
           <div class="col-6 col-lg-3"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-people-fill"></i></div><span class="badge-soft success">Students</span></div>
@@ -98,8 +93,9 @@
             <div style="height:300px" class="mt-2"><canvas id="branchChart"></canvas></div>
           </div></div>
           <div class="col-12"><div class="card-surface p-3 p-md-4">
-            <h6 class="fw-bold mb-2">Company-wise Recruitment</h6>
-            <div style="height:260px" class="mt-2"><canvas id="companyChart"></canvas></div>
+            <h6 class="fw-bold mb-2">Department-wise Placement</h6>
+            <div class="small text-muted-2 mb-2">Students and placements by department</div>
+            <div style="height:280px" class="mt-2"><canvas id="deptPlacementChart"></canvas></div>
           </div></div>
         </div>
 
@@ -107,28 +103,6 @@
 
       <!-- ===== PLACEMENT OFFICER / STAFF: department hiring overview ===== -->
       <div data-roles="placement_officer,staff" id="hiringOverviewRoot">
-
-        <div class="row g-3 mb-3 d-none" id="staffPlacementAdminLinks">
-          <div class="col-12"><div class="small fw-semibold text-muted-2 mb-1">Placement admin (view only)</div></div>
-          <div class="col-md-4">
-            <a class="card-surface p-3 d-block text-decoration-none h-100" href="dashboard.html#placement-admin-view">
-              <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-bar-chart-line-fill text-primary"></i><strong>Admin dashboard</strong></div>
-              <div class="small text-muted-2 mb-0">Campus placement KPIs and charts</div>
-            </a>
-          </div>
-          <div class="col-md-4">
-            <a class="card-surface p-3 d-block text-decoration-none h-100" href="admin-companies.html">
-              <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-building-check text-primary"></i><strong>Companies &amp; Referrals</strong></div>
-              <div class="small text-muted-2 mb-0">Browse recommendations and companies</div>
-            </a>
-          </div>
-          <div class="col-md-4">
-            <a class="card-surface p-3 d-block text-decoration-none h-100" href="reports.html">
-              <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-file-earmark-bar-graph text-primary"></i><strong>Reports</strong></div>
-              <div class="small text-muted-2 mb-0">View and download placement reports</div>
-            </a>
-          </div>
-        </div>
 
         <!-- HOD: assign / change department placement officer -->
         <div class="card-surface p-3 p-md-4 mb-3 d-none border border-primary border-opacity-25" id="hodAssignPoCard" style="background:color-mix(in srgb,var(--primary) 4%,transparent)">
@@ -358,8 +332,8 @@
   </div>
 </div>
 
-<script src="js/api.js?v=20260724aesrank"></script>
-<script src="js/app.js?v=20260724aesrank"></script>
+<script src="js/api.js?v=20260724deptchart"></script>
+<script src="js/app.js?v=20260724nopa"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -423,11 +397,11 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
     apiScripts.push('js/officer-api.js?v=20260724hodassign');
     apiScripts.push('js/staff-api.js?v=20260724one');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724staffhome');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724viewdept');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
-    chartScripts.push('js/charts.js?v=20260713p');
+    chartScripts.push('js/charts.js?v=20260724deptchart');
   }
   const apis = Promise.all(apiScripts.map(load));
   const charts = Promise.all(chartScripts.map(load));
@@ -457,49 +431,6 @@ if (role === 'staff' && Auth.hasRealAuth?.() && !Auth.isDemo?.()) {
   try { await Auth.ensureSession(); } catch (_) { /* continue */ }
 }
 const staffAdminView = role === 'staff' && typeof Auth.canViewPlacementAdminData === 'function' && Auth.canViewPlacementAdminData();
-const staffWantsAdminStats = () => staffAdminView && location.hash === '#placement-admin-view';
-
-function setStaffAdminDashboardVisible(show) {
-  const adminPanel = document.getElementById('adminDashPanel');
-  if (!adminPanel || !staffAdminView) return;
-  if (show) {
-    adminPanel.style.setProperty('display', 'block', 'important');
-    document.querySelectorAll('[data-staff-admin-view-banner]').forEach(el => el.classList.remove('d-none'));
-    document.querySelector('.page-header')?.classList.remove('d-none');
-    document.getElementById('dashTitle').textContent = 'Placement Admin (view only)';
-    document.getElementById('dashSub').textContent = 'Campus placement KPIs and charts — view only';
-    document.getElementById('dashSub').hidden = false;
-  } else {
-    adminPanel.style.setProperty('display', 'none', 'important');
-    document.querySelectorAll('[data-staff-admin-view-banner]').forEach(el => el.classList.add('d-none'));
-    document.querySelector('.page-header')?.classList.add('d-none');
-    document.getElementById('dashTitle').textContent = '';
-    document.getElementById('dashSub').textContent = '';
-    document.getElementById('dashSub').hidden = true;
-  }
-}
-
-async function loadStaffAdminStats() {
-  if (!staffAdminView) return;
-  try {
-    await apisReady;
-    if (!(Auth.hasRealAuth() && !Auth.isDemo())) return;
-    const lite = await dashboardStats({ lite: true, adminView: true });
-    paintAdminStats(lite);
-    window.__phWriteDashKpi?.('admin', { stats: lite });
-    const runFull = () => {
-      Promise.all([apisReady, chartsReady, dashboardStats({ adminView: true })]).then(([, , full]) => {
-        if (full) {
-          paintAdminStats(full);
-          paintAdminCharts(full);
-          window.__phWriteDashKpi?.('admin', { stats: full });
-        }
-      }).catch(() => {});
-    };
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(runFull, { timeout: 4000 });
-    else setTimeout(runFull, 800);
-  } catch (_) { /* ignore */ }
-}
 if (!role || !ROLE_HOME[role]) {
   window.location.replace(Auth.homePage() || 'public-stats.html');
   return;
@@ -545,24 +476,6 @@ const   actions = {
 };
 document.getElementById('dashActions').innerHTML = actions[role] || '';
 
-// All staff keep the department hiring dashboard. Rank < 6 get links to view-only admin stats.
-if (staffAdminView) {
-  document.getElementById('staffPlacementAdminLinks')?.classList.remove('d-none');
-  if (staffWantsAdminStats()) {
-    setStaffAdminDashboardVisible(true);
-  }
-  window.addEventListener('hashchange', () => {
-    if (!staffAdminView) return;
-    if (staffWantsAdminStats()) {
-      setStaffAdminDashboardVisible(true);
-      loadStaffAdminStats();
-      document.getElementById('placement-admin-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      setStaffAdminDashboardVisible(false);
-    }
-  });
-}
-
 function paintAdminStats(s) {
   if (!s) return;
   if (dashLive && (s.totalStudents > 0 || s.totalCompanies > 0 || s.totalDrives > 0 || s.placedStudents > 0)) {
@@ -604,9 +517,19 @@ function paintAdminCharts(s) {
       'Students placed'
     );
   }
-  const cos = s.companyStats || [];
-  if (document.getElementById('companyChart') && cos.length) {
-    Charts.bar(document.getElementById('companyChart'), cos.map(c => c.company), cos.map(c => c.applicants), 'Applicants');
+  const deptRows = (s.deptStats || s.branchStats || [])
+    .filter(d => (Number(d.total) || 0) > 0 || (Number(d.placed) || 0) > 0)
+    .slice()
+    .sort((a, b) => (Number(b.placed) || 0) - (Number(a.placed) || 0));
+  if (document.getElementById('deptPlacementChart') && deptRows.length) {
+    Charts.groupedBar(
+      document.getElementById('deptPlacementChart'),
+      deptRows.map(d => d.dept || d.name || ''),
+      [
+        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#0ea5e9' },
+        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#16a34a' },
+      ]
+    );
   }
 }
 
@@ -650,15 +573,11 @@ if (role === 'admin') {
       }
     } catch (_) { /* ignore */ }
   })();
-} else if (staffWantsAdminStats()) {
-  loadStaffAdminStats().then(() => {
-    document.getElementById('placement-admin-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
 }
 
 if (role === 'placement_officer' || role === 'staff') {
   // Seed hiring KPIs from session cache before scripts finish.
-  const cached = window.__phReadDashKpi?.(role);
+  const cached = window.__phReadDashKpi?.(staffAdminView ? 'admin' : role);
   if (cached?.recruiting && typeof HiringOverviewPage !== 'undefined') {
     // hiring script may not be ready yet — stash for init
   }
@@ -666,23 +585,30 @@ if (role === 'placement_officer' || role === 'staff') {
 
   apisReady.then(async () => {
     if (typeof HiringOverviewPage === 'undefined') return;
-    const pref = await (window.__phPrefetchDashLite || Promise.resolve(null)).catch(() => null);
-    if (pref?.recruiting?.success && pref.recruiting.data) {
-      window.__phCachedHiringSeed = {
-        recruiting: pref.recruiting.data,
-        stats: (typeof window.__phMapDashStats === 'function' && pref.dash?.success)
-          ? window.__phMapDashStats(pref.dash.data)
-          : null,
-      };
-      window.__phWriteDashKpi?.(role, {
-        recruiting: pref.recruiting.data,
-        stats: window.__phCachedHiringSeed.stats,
-      });
+    if (staffAdminView && typeof RecruitingStore !== 'undefined') {
+      try {
+        const liteRecruiting = await RecruitingStore.fetch({ lite: true }).catch(() => null);
+        if (liteRecruiting) {
+          window.__phCachedHiringSeed = { recruiting: liteRecruiting };
+          window.__phWriteDashKpi?.('admin', { recruiting: liteRecruiting });
+        }
+      } catch (_) { /* fall through */ }
+    } else {
+      const pref = await (window.__phPrefetchDashLite || Promise.resolve(null)).catch(() => null);
+      if (pref?.recruiting?.success && pref.recruiting.data) {
+        window.__phCachedHiringSeed = {
+          recruiting: pref.recruiting.data,
+          stats: (typeof window.__phMapDashStats === 'function' && pref.dash?.success)
+            ? window.__phMapDashStats(pref.dash.data)
+            : null,
+        };
+        window.__phWriteDashKpi?.(role, {
+          recruiting: pref.recruiting.data,
+          stats: window.__phCachedHiringSeed.stats,
+        });
+      }
     }
     HiringOverviewPage.init({ root: '#hiringOverviewRoot' });
-    if (staffWantsAdminStats()) {
-      setStaffAdminDashboardVisible(true);
-    }
     // HOD can assign/change department PO (works even if role elevation is delayed).
     if (typeof Auth !== 'undefined' && Auth.isHod?.()) {
       initHodAssignPo().catch(() => {});

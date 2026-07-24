@@ -48,9 +48,14 @@
 
   HiringOverviewPage.prototype.currentRole = function () { return Auth.role(); };
 
-  /** Campus-wide filters/data: admin only. Staff always use the department hiring dashboard. */
+  /** Admin, or AES staff_rank &lt; 6: pick any department/branch and view live hiring data. */
   HiringOverviewPage.prototype.isCampusWideViewer = function () {
-    return this.currentRole() === 'admin';
+    const role = this.currentRole();
+    if (role === 'admin') return true;
+    return role === 'staff'
+      && typeof Auth !== 'undefined'
+      && typeof Auth.canViewPlacementAdminData === 'function'
+      && Auth.canViewPlacementAdminData();
   };
 
   HiringOverviewPage.prototype.escHtml = function (s) {
@@ -973,8 +978,10 @@
     }
 
     if (hintEl) {
-      hintEl.textContent = '';
-      hintEl.hidden = true;
+      hintEl.textContent = this.isCampusWideViewer() && role === 'staff'
+        ? 'Select a department and branch to view live placement data (view only).'
+        : '';
+      hintEl.hidden = !hintEl.textContent;
     }
   };
 
