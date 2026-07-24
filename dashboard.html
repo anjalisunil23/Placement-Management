@@ -120,31 +120,11 @@
           <div class="mt-3 small" id="hodCurrentPo">Loading…</div>
         </div>
 
-        <div class="card-surface p-3 p-md-4 mb-3" id="viewFilterCard">
-          <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
-            <div class="flex-grow-1" style="min-width:min(100%,18rem)">
-              <div class="small fw-semibold text-muted-2 mb-2">View</div>
-              <div class="d-flex flex-wrap gap-2 align-items-center">
-                <select class="form-select form-select-sm w-auto" id="deptSelect" aria-label="Department">
-                  <option value="">All departments</option>
-                </select>
-                <select class="form-select form-select-sm w-auto" id="branchSelect" aria-label="Branch" disabled>
-                  <option value="">All branches</option>
-                </select>
-                <select class="form-select form-select-sm w-auto d-none" id="batchSelect" aria-label="Batch year">
-                  <option value="">All batches</option>
-                </select>
-              </div>
-            </div>
-            <div class="small text-muted-2" id="viewHint" hidden></div>
-          </div>
-        </div>
-
-        <!-- Placement admin (view only) — above hiring overview; filtered by View dept/branch -->
+        <!-- Placement admin (view only) — campus-wide college totals (not filtered) -->
         <div class="d-none mb-3" id="staffAdminViewPanel">
           <div id="placement-admin-view" class="mb-3" data-staff-admin-view-banner>
             <div class="alert alert-info py-2 px-3 mb-0 small">
-              <i class="bi bi-eye me-1"></i>Placement admin — <strong>view only</strong>. Stats below follow the department and branch selected in View.
+              <i class="bi bi-eye me-1"></i>Placement admin — <strong>view only</strong>. Top cards and charts show <strong>college-wide</strong> placement totals.
             </div>
           </div>
           <div class="row g-3">
@@ -192,11 +172,31 @@
             </div></div>
             <div class="col-12"><div class="card-surface p-3 p-md-4">
               <h6 class="fw-bold mb-2">Department-wise Placement</h6>
-              <div class="small text-muted-2 mb-2">Students and placements for the selected view</div>
+              <div class="small text-muted-2 mb-2">College-wide students and placements by department</div>
               <div style="height:260px" class="mt-2"><canvas id="pavDeptPlacementChart"></canvas></div>
             </div></div>
           </div>
-          <div class="small text-muted-2 mt-2 mb-1">Hiring pipeline for the same View selection</div>
+        </div>
+
+        <!-- View filters sit below college-wide department stats; scope the hiring pipeline below -->
+        <div class="card-surface p-3 p-md-4 mb-3" id="viewFilterCard">
+          <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
+            <div class="flex-grow-1" style="min-width:min(100%,18rem)">
+              <div class="small fw-semibold text-muted-2 mb-2">View</div>
+              <div class="d-flex flex-wrap gap-2 align-items-center">
+                <select class="form-select form-select-sm w-auto" id="deptSelect" aria-label="Department">
+                  <option value="">All departments</option>
+                </select>
+                <select class="form-select form-select-sm w-auto" id="branchSelect" aria-label="Branch" disabled>
+                  <option value="">All branches</option>
+                </select>
+                <select class="form-select form-select-sm w-auto d-none" id="batchSelect" aria-label="Batch year">
+                  <option value="">All batches</option>
+                </select>
+              </div>
+            </div>
+            <div class="small text-muted-2" id="viewHint" hidden></div>
+          </div>
         </div>
 
         <div class="row g-3 mb-3">
@@ -391,7 +391,7 @@
   </div>
 </div>
 
-<script src="js/api.js?v=20260724filters2"></script>
+<script src="js/api.js?v=20260724layout2"></script>
 <script src="js/app.js?v=20260724nopa"></script>
 <script>
 window.__phCachedRole = (function () {
@@ -456,7 +456,7 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
     apiScripts.push('js/officer-api.js?v=20260724hodassign');
     apiScripts.push('js/staff-api.js?v=20260724one');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724filters2');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260724layout2');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
@@ -592,75 +592,14 @@ function paintAdminCharts(s) {
   }
 }
 
-/** Match branch/dept rows to View filter codes (e.g. MCA|BCA), including parent dept codes. */
-function branchMatchesViewFilter(row, deptFilter) {
-  if (!deptFilter) return true;
-  const dept = String(row.dept || row.code || '').trim();
-  const name = String(row.name || row.department || '').trim();
-  // Prefer the same matching used by the hiring View filters.
-  if (window.__phHiringMatchDept) {
-    return window.__phHiringMatchDept(dept, '', deptFilter)
-      || (name && window.__phHiringMatchDept(name, '', deptFilter));
-  }
-  const codes = (typeof splitDepartmentFilterValue === 'function'
-    ? splitDepartmentFilterValue(deptFilter)
-    : String(deptFilter).split('|')
-  ).map(c => {
-    const resolved = typeof resolveCollegeProgrammeCode === 'function' ? resolveCollegeProgrammeCode(c) : c;
-    return typeof normalizeProgrammeCode === 'function'
-      ? normalizeProgrammeCode(resolved || c)
-      : String(resolved || c || '').trim().toUpperCase();
-  }).filter(Boolean);
-  if (!codes.length) return true;
-  const deptU = dept.toUpperCase();
-  const nameU = name.toUpperCase();
-  const canon = typeof departmentCanonicalCode === 'function'
-    ? String(departmentCanonicalCode(dept) || '').toUpperCase()
-    : deptU;
-  if (codes.some(code =>
-    deptU === code || canon === code || nameU === code
-    || deptU.includes(code) || canon.includes(code) || nameU.includes(code)
-  )) {
-    return true;
-  }
-  // Parent match only for all-branches filters (MCA|BCA|…).
-  if (!String(deptFilter || '').includes('|')) return false;
-  const groups = (typeof DEPARTMENT_PROGRAMME_GROUPS !== 'undefined') ? DEPARTMENT_PROGRAMME_GROUPS : [];
-  for (const group of groups) {
-    const groupCodes = (group.programmes || []).flatMap(p => [p.code, ...(p.aliases || [])])
-      .map(c => (typeof normalizeProgrammeCode === 'function' ? normalizeProgrammeCode(c) : String(c || '').toUpperCase()));
-    if (!codes.some(t => groupCodes.includes(t))) continue;
-    if (typeof departmentNamesMatch === 'function' && (departmentNamesMatch(dept, group.parent) || departmentNamesMatch(name, group.parent))) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function filterAdminStatsForView(stats, deptFilter) {
-  if (!stats) return null;
-  if (!deptFilter) return stats;
-  const branchStats = (stats.branchStats || []).filter(b => branchMatchesViewFilter(b, deptFilter));
-  const deptStats = (stats.deptStats || branchStats).filter(b => branchMatchesViewFilter(b, deptFilter));
-  const totalStudents = branchStats.reduce((n, b) => n + (Number(b.total) || 0), 0);
-  const placedStudents = branchStats.reduce((n, b) => n + (Number(b.placed) || 0), 0);
-  return {
-    ...stats,
-    totalStudents,
-    placedStudents,
-    placementPct: totalStudents > 0 ? ((placedStudents / totalStudents) * 100).toFixed(1) : 0,
-    branchStats,
-    deptStats,
-  };
-}
-
-function paintStaffAdminView(stats, hiringTrend) {
+function paintStaffAdminView(stats) {
   const panel = document.getElementById('staffAdminViewPanel');
   if (!panel || !stats) return;
   const setStat = (id, val) => {
     const el = document.getElementById(id);
     if (el) { el.dataset.target = val; el.dataset.animated = '0'; }
   };
+  // Always college-wide admin dashboard totals (not filtered by View).
   setStat('pavStatStudents', stats.totalStudents);
   setStat('pavStatDrives', stats.totalDrives);
   setStat('pavStatPlaced', stats.placedStudents);
@@ -672,7 +611,7 @@ function paintStaffAdminView(stats, hiringTrend) {
   animateCounters(panel);
 
   if (typeof Charts === 'undefined') return;
-  const trend = hiringTrend || stats.hiringTrend;
+  const trend = stats.hiringTrend;
   if (trend?.labels?.length && document.getElementById('pavTrendChart')) {
     Charts.line(
       document.getElementById('pavTrendChart'),
@@ -706,11 +645,9 @@ function paintStaffAdminView(stats, hiringTrend) {
 
 let __phCampusAdminStats = null;
 
-function refreshStaffAdminView(detail) {
+function refreshStaffAdminView() {
   if (!staffAdminView || !__phCampusAdminStats) return;
-  const dept = detail?.dept || '';
-  const filtered = filterAdminStatsForView(__phCampusAdminStats, dept);
-  paintStaffAdminView(filtered, detail?.hiringTrend || null);
+  paintStaffAdminView(__phCampusAdminStats);
 }
 
 /* Admin — paint cached KPIs instantly, then confirm with lite prefetch / API */
@@ -766,7 +703,6 @@ if (role === 'placement_officer' || role === 'staff') {
   if (staffAdminView) {
     const panel = document.getElementById('staffAdminViewPanel');
     if (panel) panel.classList.remove('d-none');
-    document.addEventListener('ph-hiring-view-change', (ev) => refreshStaffAdminView(ev.detail || {}));
   }
 
   apisReady.then(async () => {
@@ -779,7 +715,7 @@ if (role === 'placement_officer' || role === 'staff') {
           window.__phWriteDashKpi?.('admin', { recruiting: liteRecruiting });
         }
       } catch (_) { /* fall through */ }
-      // Load campus admin KPIs for the view-only panel (filter client-side by View).
+      // Load campus admin KPIs — college-wide totals for the top cards/charts.
       Promise.all([chartsReady, dashboardStats({ adminView: true })]).then(([, full]) => {
         if (full) {
           __phCampusAdminStats = full;
@@ -787,7 +723,7 @@ if (role === 'placement_officer' || role === 'staff') {
             ...(window.__phReadDashKpi?.('admin') || {}),
             stats: full,
           });
-          refreshStaffAdminView({ dept: document.getElementById('branchSelect')?.value || document.getElementById('deptSelect')?.value || '' });
+          refreshStaffAdminView();
         }
       }).catch(() => {});
     } else {

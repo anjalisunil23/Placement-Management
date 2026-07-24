@@ -994,7 +994,7 @@
 
     if (hintEl) {
       hintEl.textContent = this.isCampusWideViewer() && role === 'staff'
-        ? 'Select a department and branch to view live placement data (view only).'
+        ? 'Select a department and branch to filter the hiring pipeline below (view only).'
         : '';
       hintEl.hidden = !hintEl.textContent;
     }
