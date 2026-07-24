@@ -2113,7 +2113,7 @@ final class AdminController
     /** GET /api/admin/recruiting */
     public function recruitingOverview(): void
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementDataViewer();
         $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
         Response::success((new RecruitingService())->getCampusOverview(null, null, $lite));
     }

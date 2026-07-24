@@ -48,6 +48,16 @@
 
   HiringOverviewPage.prototype.currentRole = function () { return Auth.role(); };
 
+  /** Senior staff (rank &lt; 6) get campus-wide admin hiring view (read-only). */
+  HiringOverviewPage.prototype.isCampusWideViewer = function () {
+    const role = this.currentRole();
+    if (role === 'admin') return true;
+    return role === 'staff'
+      && typeof Auth !== 'undefined'
+      && typeof Auth.canViewPlacementAdminData === 'function'
+      && Auth.canViewPlacementAdminData();
+  };
+
   HiringOverviewPage.prototype.escHtml = function (s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   };
@@ -836,6 +846,9 @@
 
   HiringOverviewPage.prototype.selectedDept = function () {
     const role = this.currentRole();
+    if (this.isCampusWideViewer()) {
+      return this.activeDeptFilter || '';
+    }
     if (role === 'staff' || role === 'placement_officer') {
       if (this.activeDeptFilter) return this.activeDeptFilter;
       const meta = this.ownDepartmentMeta();
@@ -874,8 +887,9 @@
     const role = this.currentRole();
     const escLabel = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
-    // Placement officers and staff only see their own department (no campus-wide "All departments").
-    if (role === 'placement_officer' || role === 'staff') {
+    // Placement officers and normal staff only see their own department.
+    // Senior staff (rank < 6) get campus-wide "All departments" like admin.
+    if ((role === 'placement_officer' || role === 'staff') && !this.isCampusWideViewer()) {
       const meta = this.ownDepartmentMeta();
       const ownGroup = this.findOwnDepartmentGroup();
       this.viewDeptGroups = ownGroup ? [ownGroup] : [];
@@ -955,7 +969,7 @@
     this.syncBranchSelect();
     this.populateBatchSelect();
 
-    if (role === 'staff' || role === 'placement_officer') {
+    if ((role === 'staff' || role === 'placement_officer') && !this.isCampusWideViewer()) {
       if (hintEl) {
         hintEl.textContent = '';
         hintEl.hidden = true;
@@ -964,14 +978,25 @@
     }
 
     if (hintEl) {
-      hintEl.textContent = '';
-      hintEl.hidden = true;
+      hintEl.textContent = this.isCampusWideViewer() && role === 'staff'
+        ? 'View-only campus placement statistics. Choose All departments or a department.'
+        : '';
+      hintEl.hidden = !hintEl.textContent;
     }
   };
 
   HiringOverviewPage.prototype.configurePageForRole = function (role) {
     const title = this.$('pageTitleText') || document.getElementById('dashTitle');
     const sub = this.$('pageSub') || document.getElementById('dashSub') || this.root.querySelector('.page-sub');
+    if (role === 'staff' && this.isCampusWideViewer()) {
+      if (title) title.textContent = 'Dashboard';
+      if (sub) {
+        sub.textContent = 'Campus placement overview (view only)';
+        sub.hidden = false;
+      }
+      document.querySelector('.page-header')?.classList.remove('d-none');
+      return;
+    }
     if (role === 'staff') {
       // Staff dashboard: username in topbar; no Department Hiring Overview banner.
       if (title) title.textContent = '';

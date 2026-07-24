@@ -639,25 +639,29 @@ const Auth = {
     return false;
   },
   /**
-   * Staff seniority rank (lower = more senior). Prefer session staffRank from /auth/me;
-   * otherwise derive from designation. Ranks below 6 may view placement-admin data.
+   * Staff seniority rank (lower = more senior). Prefer a real AES/session rank when
+   * present; otherwise derive from designation. Ignore stored 99 (unknown).
    */
   staffRank() {
     const u = this.user() || {};
+    const fromDesig = staffRankFromDesignation(u.designation || '');
     const raw = u.staffRank ?? u.rank;
     const n = Number(raw);
-    if (Number.isFinite(n) && n >= 1 && n <= 50) return n;
-    return staffRankFromDesignation(u.designation || '');
+    if (Number.isFinite(n) && n >= 1 && n < 99) {
+      // Prefer a known designation rank when stored value looks junior but designation is senior.
+      if (fromDesig >= 1 && fromDesig < 6 && n >= 6) return fromDesig;
+      return n;
+    }
+    return fromDesig;
   },
   /** Senior staff (rank &lt; 6), not HOD — view-only placement admin surfaces. */
   canViewPlacementAdminData() {
     if (this.role() !== 'staff') return false;
     if (this.isHod()) return false;
-    const flag = this.user()?.canViewPlacementAdminData;
-    if (flag === true || flag === 1 || flag === '1') return true;
-    if (flag === false || flag === 0 || flag === '0') return false;
     const rank = this.staffRank();
-    return rank >= 1 && rank < 6;
+    if (rank >= 1 && rank < 6) return true;
+    const flag = this.user()?.canViewPlacementAdminData;
+    return flag === true || flag === 1 || flag === '1';
   },
   homePage(role) {
     const u = this.user();
@@ -718,6 +722,26 @@ const Auth = {
         departmentName: resolveSessionDepartmentName(merged) || merged.departmentName || prev.departmentName || '',
         designation,
         isHod,
+        staffRank: (() => {
+          const n = Number(u.staffRank ?? merged.staffRank ?? prev.staffRank);
+          if (Number.isFinite(n) && n >= 1 && n < 99) return n;
+          return staffRankFromDesignation(designation);
+        })(),
+        canViewPlacementAdminData: (() => {
+          if (isHod) return false;
+          const dbRole = String(u.role || merged.role || prev.role || role || '');
+          // HOD elevation may set role=placement_officer; only true staff accounts qualify.
+          if (dbRole !== 'staff' && role !== 'staff') return false;
+          if (role === 'placement_officer' && isHod) return false;
+          const n = Number(u.staffRank ?? merged.staffRank ?? prev.staffRank);
+          const rank = (Number.isFinite(n) && n >= 1 && n < 99)
+            ? n
+            : staffRankFromDesignation(designation);
+          if (rank >= 1 && rank < 6) return true;
+          return u.canViewPlacementAdminData === true
+            || merged.canViewPlacementAdminData === true
+            || prev.canViewPlacementAdminData === true;
+        })(),
         company: merged.company ?? prev.company ?? '',
         companyName: merged.companyName ?? prev.companyName ?? '',
         companyId: merged.companyId || prev.companyId || '',
@@ -5130,9 +5154,9 @@ async function dashboardStats(opts = {}) {
       const stats = await OfficerApi.fetchDashboard(opts);
       return mapLiveDashboardStats(stats);
     }
-    // Senior staff viewing placement-admin KPIs use the admin dashboard API.
+    // Senior staff viewing placement-admin data always use campus admin KPIs.
     if (Auth.role() === 'staff' && typeof Auth.canViewPlacementAdminData === 'function'
-      && Auth.canViewPlacementAdminData() && opts.adminView && typeof AdminApi !== 'undefined') {
+      && Auth.canViewPlacementAdminData() && typeof AdminApi !== 'undefined') {
       const stats = await AdminApi.fetchDashboard(opts);
       return mapLiveDashboardStats(stats, stats?.activeDrives ?? 0);
     }
@@ -5171,13 +5195,18 @@ const TrackingStore = {
 const RecruitingStore = {
   async fetch(opts = {}) {
     if (!Auth.hasRealAuth()) return null;
+    const role = Auth.role();
+    // Senior staff (rank < 6) use campus-wide admin recruiting (view only).
+    const campusViewer = role === 'staff'
+      && typeof Auth.canViewPlacementAdminData === 'function'
+      && Auth.canViewPlacementAdminData();
     const paths = {
       company: '/company/recruiting',
       admin: '/admin/recruiting',
       placement_officer: '/officer/recruiting',
-      staff: '/staff/recruiting',
+      staff: campusViewer ? '/admin/recruiting' : '/staff/recruiting',
     };
-    const path = paths[Auth.role()];
+    const path = paths[role];
     if (!path) return null;
     const qs = opts.lite ? '?lite=1' : '';
     const res = await api(path + qs);
