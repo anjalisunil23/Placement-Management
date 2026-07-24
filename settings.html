@@ -432,7 +432,8 @@ function pickCollegeEmail(u) {
 function pickPersonalEmail(u) {
   const merged = mergeProfileUser(u);
   const personal = (merged.personal && typeof merged.personal === 'object') ? merged.personal : {};
-  const sources = [merged, personal, merged.aesProfile || {}];
+  // Prefer saved personal.* over AES/session merge so Settings Save sticks.
+  const sources = [personal, merged, merged.aesProfile || {}];
   for (const src of sources) {
     if (src.personalEmail && !isCollegeEmail(src.personalEmail)) {
       return String(src.personalEmail).trim().toLowerCase();
@@ -480,6 +481,9 @@ function pickPhone(u) {
     'guardian_mobile', 'guardianMobile', 'alternate_mobile', 'alternateMobile',
     'stu_phone', 'stuPhone', 'personal_mobile', 'personalMobile',
   ];
+  // Prefer saved personal.phone first so Settings Save is not overwritten by AES.
+  const savedPhone = String(personal.phone || '').trim();
+  if (savedPhone && !isPlaceholderPhone(savedPhone)) return savedPhone;
   for (const key of keys) {
     const val = String(merged[key] || personal[key] || '').trim();
     if (val && !isPlaceholderPhone(val)) return val;

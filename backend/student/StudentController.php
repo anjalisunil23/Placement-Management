@@ -243,12 +243,17 @@ final class StudentController
 
     $reg = (string) ($out['registerNumber'] ?? $merged['registerNumber'] ?? '');
     $collegeEmail = $aes->excludeSyntheticCollegeEmail((string) ($merged['collegeEmail'] ?? ''), $reg);
-    // Prefer user-saved personal email over AES session values.
+    // Prefer user-saved personal contact over AES session values.
     $personalEmail = strtolower(trim((string) (
       $personal['personalEmail']
       ?? $merged['personalEmail']
       ?? ''
     )));
+    $phone = trim((string) (
+      $personal['phone']
+      ?? $merged['phone']
+      ?? ''
+    ));
 
     $out['user'] = [
       'name'          => (string) ($merged['name'] ?? $user['name'] ?? ''),
@@ -256,7 +261,7 @@ final class StudentController
       'email'         => $collegeEmail !== '' ? $collegeEmail : ($personalEmail !== '' ? $personalEmail : (string) ($user['email'] ?? '')),
       'collegeEmail'  => $collegeEmail,
       'personalEmail' => $personalEmail,
-      'phone'         => (string) ($merged['phone'] ?? $personal['phone'] ?? ''),
+      'phone'         => $phone,
       'gender'        => (string) ($merged['gender'] ?? $personal['gender'] ?? ''),
       'maritalStatus' => (string) ($merged['maritalStatus'] ?? $personal['maritalStatus'] ?? ''),
     ];

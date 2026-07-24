@@ -496,7 +496,8 @@ final class AesLoginService
         if ($aesPhone === '' && !empty($mapped['phone'])) {
             $aesPhone = trim((string) $mapped['phone']);
         }
-        if ($aesPhone !== '' && $this->isValidPhone($aesPhone)) {
+        // Fill-if-empty only — never overwrite a student-saved phone.
+        if (empty($data['phone']) && $aesPhone !== '' && $this->isValidPhone($aesPhone)) {
             $data['phone'] = $aesPhone;
         }
 
@@ -510,7 +511,8 @@ final class AesLoginService
         }
 
         $resolvedEmails = $this->resolveAesEmails($aesProfile, $mapped, $register, $aesEmail);
-        if ($resolvedEmails['personalEmail'] !== '') {
+        // Fill-if-empty for personal email so Settings Save is not undone by AES merge.
+        if ($resolvedEmails['personalEmail'] !== '' && empty($data['personalEmail'])) {
             $data['personalEmail'] = $resolvedEmails['personalEmail'];
         }
         if ($resolvedEmails['collegeEmail'] !== '') {
@@ -1922,11 +1924,17 @@ final class AesLoginService
 
         $personal = is_array($existing['personal'] ?? null) ? $existing['personal'] : [];
         $personalPatch = [];
-        if (!empty($extras['personalEmail'])) {
+        // Fill-if-empty only — never overwrite student-saved contact fields on AES sync.
+        $existingPersonalEmail = strtolower(trim((string) ($personal['personalEmail'] ?? '')));
+        if (!empty($extras['personalEmail']) && $existingPersonalEmail === '') {
             $personalPatch['personalEmail'] = strtolower(trim((string) $extras['personalEmail']));
         }
-        foreach (['phone', 'gender', 'maritalStatus', 'bloodGroup', 'address', 'parentName', 'dob', 'aadhar', 'course', 'year', 'semester'] as $field) {
-            if (!empty($extras[$field])) {
+        $existingPhone = trim((string) ($personal['phone'] ?? ''));
+        if (!empty($extras['phone']) && $existingPhone === '') {
+            $personalPatch['phone'] = $extras['phone'];
+        }
+        foreach (['gender', 'maritalStatus', 'bloodGroup', 'address', 'parentName', 'dob', 'aadhar', 'course', 'year', 'semester'] as $field) {
+            if (!empty($extras[$field]) && empty($personal[$field])) {
                 $personalPatch[$field] = $extras[$field];
             }
         }

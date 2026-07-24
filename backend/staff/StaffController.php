@@ -65,7 +65,11 @@ final class StaffController
         $data['user'] = [
             'name'        => (string) ($merged['name'] ?? $user['name'] ?? ''),
             'email'       => (string) ($merged['email'] ?? $user['email'] ?? ''),
-            'phone'       => (string) ($merged['phone'] ?? $profile['phone'] ?? ''),
+            'phone'       => (string) (
+                trim((string) ($profile['phone'] ?? '')) !== ''
+                    ? $profile['phone']
+                    : ($merged['phone'] ?? '')
+            ),
             'designation' => (string) ($merged['designation'] ?? $profile['designation'] ?? ''),
             'isHod'       => !empty($profile['isHod'])
                 || \PMS\Services\HodDetection::designationLooksLikeHod((string) ($profile['designation'] ?? ''))
@@ -88,9 +92,11 @@ final class StaffController
         if (!empty($merged['designation'])) {
             $data['designation'] = (string) $merged['designation'];
         }
-        if (!empty($merged['phone'])) {
-            $data['phone'] = (string) $merged['phone'];
-        }
+        $savedPhone = trim((string) ($profile['phone'] ?? ''));
+        $data['phone'] = $savedPhone !== ''
+            ? $savedPhone
+            : (string) ($merged['phone'] ?? $data['user']['phone'] ?? '');
+        $data['user']['phone'] = $data['phone'];
         $departmentId = (string) ($profile['departmentId'] ?? '');
         $staffCtx = [
             'profile' => $profile,

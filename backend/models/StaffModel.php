@@ -112,6 +112,7 @@ class StaffModel extends BaseModel
             'department'   => (string) ($department['code'] ?? ''),
             'departmentId' => (string) ($profile['departmentId'] ?? ''),
             'designation'  => (string) ($profile['designation'] ?? ''),
+            'phone'        => (string) ($profile['phone'] ?? ''),
             'isHod'        => filter_var($profile['isHod'] ?? false, FILTER_VALIDATE_BOOL),
             'photoUrl'     => is_array($profile['photo'] ?? null)
                 ? (string) (($profile['photo']['url'] ?? '') ?: '')

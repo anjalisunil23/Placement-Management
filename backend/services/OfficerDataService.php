@@ -3114,9 +3114,17 @@ final class OfficerDataService
      */
     private function contactFieldsFromSources(?array $user, array $personal, array $placement, array $mapped): array
     {
+        // Prefer student-saved personal contact when present; AES/placement fill gaps only.
+        $savedPersonalEmail = trim((string) ($personal['personalEmail'] ?? $personal['email'] ?? ''));
+        $savedPhone = trim((string) ($personal['phone'] ?? ''));
+
         $collegeEmail = strtolower(trim((string) ($mapped['collegeEmail'] ?? $placement['collegeEmail'] ?? '')));
-        $personalEmail = trim((string) ($mapped['personalEmail'] ?? $placement['personalEmail'] ?? ''));
-        $phone = trim((string) ($mapped['phone'] ?? $placement['phone'] ?? $placement['stud_mobiles'] ?? ''));
+        $personalEmail = $savedPersonalEmail !== ''
+            ? $savedPersonalEmail
+            : trim((string) ($mapped['personalEmail'] ?? $placement['personalEmail'] ?? ''));
+        $phone = $savedPhone !== ''
+            ? $savedPhone
+            : trim((string) ($mapped['phone'] ?? $placement['phone'] ?? $placement['stud_mobiles'] ?? ''));
 
         $mappedEmail = strtolower(trim((string) ($mapped['email'] ?? '')));
         if ($collegeEmail === '' && $mappedEmail !== '' && $this->isCollegeEmailAddress($mappedEmail)) {
@@ -3135,12 +3143,6 @@ final class OfficerDataService
 
         if ($collegeEmail === '') {
             $collegeEmail = strtolower(trim((string) ($personal['collegeEmail'] ?? '')));
-        }
-        if ($personalEmail === '') {
-            $personalEmail = trim((string) ($personal['personalEmail'] ?? $personal['email'] ?? ''));
-        }
-        if ($phone === '') {
-            $phone = trim((string) ($personal['phone'] ?? ''));
         }
 
         return [
