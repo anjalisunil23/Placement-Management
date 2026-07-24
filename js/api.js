@@ -782,6 +782,10 @@ const Auth = {
           !isUsableDisplayName(cached.name, cached)
         );
         if (!badStudentName) {
+          // Soft cache may still say staff for HOD — elevate before painting.
+          if ((cached.role === 'staff' || !cached.role) && this.isHod()) {
+            this.applySessionUser({ ...cached, role: 'placement_officer', isHod: true });
+          }
           this._sessionReady = true;
           return true;
         }

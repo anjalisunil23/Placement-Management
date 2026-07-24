@@ -246,7 +246,23 @@ final class AesLoginService
         $this->syncRoleProfileFromAes($user, $profile, $aesDetails);
         $user = $this->ensurePlacementOfficerProfile($user, $profile, $mapped);
         $user = $this->normalizeSuperAdminUser($user);
-        Security::setSessionUser($user, $this->sanitizeAesProfileForClient($aesDetails));
+        $sanitized = $this->sanitizeAesProfileForClient($aesDetails);
+        Security::setSessionUser($user, $sanitized);
+        // Sticky HOD flag for /auth/me even if designation fields were sparse.
+        if (($user['role'] ?? '') === 'staff') {
+            $isHod = !empty($sanitized['isHod'])
+                || HodDetection::payloadIndicatesHod($aesDetails)
+                || HodDetection::designationLooksLikeHod((string) ($sanitized['designation'] ?? ''));
+            if ($isHod) {
+                Security::startSession();
+                $_SESSION['ph_is_hod'] = true;
+                if (empty($sanitized['designation'])) {
+                    $sanitized['designation'] = 'HOD';
+                    $sanitized['isHod'] = true;
+                    Security::setSessionAesProfile($sanitized);
+                }
+            }
+        }
         return $user;
     }
 
@@ -258,6 +274,12 @@ final class AesLoginService
      */
     public function sanitizeAesProfileForClient(array $aesProfile): array
     {
+        // Capture HOD/designation BEFORE stripping nested staff bags / role keys.
+        $designation = HodDetection::pickDesignation($aesProfile);
+        $isHod = HodDetection::designationLooksLikeHod($designation)
+            || HodDetection::payloadIndicatesHod($aesProfile);
+        $designation = HodDetection::normalizeDesignationForHod($designation, $isHod);
+
         $strip = [
             'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
             'login_type', 'logintype', 'account_type', 'accounttype', 'designation_type', 'portal', 'module',
@@ -265,6 +287,16 @@ final class AesLoginService
         ];
         foreach ($strip as $key) {
             unset($aesProfile[$key]);
+        }
+
+        if ($designation !== '') {
+            $aesProfile['designation'] = $designation;
+        }
+        if ($isHod) {
+            $aesProfile['isHod'] = true;
+            if (($aesProfile['designation'] ?? '') === '') {
+                $aesProfile['designation'] = 'HOD';
+            }
         }
 
         return $aesProfile;
@@ -1436,6 +1468,20 @@ final class AesLoginService
                 }
 
                 if (
+                    str_contains($lower, 'desig')
+                    || $lower === 'post'
+                    || $lower === 'position'
+                    || $lower === 'staff_post'
+                    || $lower === 'staffpost'
+                ) {
+                    if (strlen($text) >= 2 && strlen($text) <= 120) {
+                        if (empty($found['designation']) || \PMS\Services\HodDetection::designationLooksLikeHod($text)) {
+                            $found['designation'] = $text;
+                        }
+                    }
+                }
+
+                if (
                     $lower === 'cgpa'
                     || $lower === 'gpa'
                     || str_contains($lower, 'cgpa')
@@ -1924,9 +1970,20 @@ final class AesLoginService
         if ($designation === '') {
             $designation = HodDetection::pickDesignation($aesDetails);
         }
+        $existingDesig = is_array($existing) ? trim((string) ($existing['designation'] ?? '')) : '';
+        $existingIsHod = is_array($existing) && (
+            !empty($existing['isHod'])
+            || HodDetection::designationLooksLikeHod($existingDesig)
+        );
+
         $isHod = HodDetection::designationLooksLikeHod($designation)
             || HodDetection::payloadIndicatesHod($aesDetails)
-            || HodDetection::payloadIndicatesHod($extras);
+            || HodDetection::payloadIndicatesHod($extras)
+            || $existingIsHod;
+        // Never let a weak AES title (Dr. / Faculty) erase a known HOD designation.
+        if ($isHod && !HodDetection::designationLooksLikeHod($designation) && HodDetection::designationLooksLikeHod($existingDesig)) {
+            $designation = $existingDesig;
+        }
         $designation = HodDetection::normalizeDesignationForHod($designation, $isHod);
 
         if (!$existing) {
@@ -1942,12 +1999,17 @@ final class AesLoginService
 
         $patch = [];
 
-        if ($designation !== '') {
+        if ($isHod) {
+            $patch['isHod'] = true;
+            if (HodDetection::designationLooksLikeHod($designation)) {
+                $patch['designation'] = $designation;
+            } elseif (!HodDetection::designationLooksLikeHod($existingDesig)) {
+                $patch['designation'] = $designation !== '' ? $designation : 'HOD';
+            }
+        } elseif ($designation !== '' && !$existingIsHod) {
             $patch['designation'] = $designation;
-        } elseif ($isHod) {
-            $patch['designation'] = 'HOD';
+            $patch['isHod'] = false;
         }
-        $patch['isHod'] = $isHod;
         if (!empty($extras['phone'])) {
             $patch['phone'] = (string) $extras['phone'];
         }

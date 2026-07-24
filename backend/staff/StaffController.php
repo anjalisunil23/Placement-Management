@@ -67,9 +67,16 @@ final class StaffController
             'email'       => (string) ($merged['email'] ?? $user['email'] ?? ''),
             'phone'       => (string) ($merged['phone'] ?? $profile['phone'] ?? ''),
             'designation' => (string) ($merged['designation'] ?? $profile['designation'] ?? ''),
+            'isHod'       => !empty($profile['isHod'])
+                || \PMS\Services\HodDetection::designationLooksLikeHod((string) ($profile['designation'] ?? ''))
+                || \PMS\Middleware\AuthMiddleware::isHod($user),
             'photoUrl'    => (string) ($photo['photoUrl'] ?? ''),
             'photo'       => $photo['photo'],
         ];
+        $data['isHod'] = $data['user']['isHod'];
+        if (!empty($data['user']['designation'])) {
+            $data['designation'] = $data['user']['designation'];
+        }
         if (!empty($photo['photoUrl'])) {
             $data['photoUrl'] = (string) $photo['photoUrl'];
             $data['photo'] = $photo['photo'];
@@ -108,6 +115,14 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         $profile = $this->getProfile($user);
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (isset($input['designation'])) {
+            $desig = trim((string) $input['designation']);
+            $input['designation'] = $desig;
+            if (\PMS\Services\HodDetection::designationLooksLikeHod($desig)) {
+                $input['isHod'] = true;
+                $input['designation'] = \PMS\Services\HodDetection::normalizeDesignationForHod($desig, true);
+            }
+        }
         if (!$this->staffModel->updateProfile((string) $profile['_id'], $input)) {
             Response::error('No valid fields to update.', 422);
         }

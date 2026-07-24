@@ -57,6 +57,15 @@ final class AuthMiddleware
       return true;
     }
 
+    try {
+      Security::startSession();
+      if (!empty($_SESSION['ph_is_hod'])) {
+        return true;
+      }
+    } catch (\Throwable) {
+      // Session may be unavailable on CLI.
+    }
+
     $designation = trim((string) ($user['designation'] ?? ''));
     if (\PMS\Services\HodDetection::designationLooksLikeHod($designation)) {
       return true;
@@ -78,8 +87,10 @@ final class AuthMiddleware
     }
 
     $aes = Security::getSessionAesProfile();
-    if (is_array($aes) && $aes !== [] && \PMS\Services\HodDetection::payloadIndicatesHod($aes)) {
-      return true;
+    if (is_array($aes) && $aes !== []) {
+      if (!empty($aes['isHod']) || \PMS\Services\HodDetection::payloadIndicatesHod($aes)) {
+        return true;
+      }
     }
 
     return false;

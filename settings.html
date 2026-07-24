@@ -6,7 +6,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
 <link href="css/style.css?v=20260724boot" rel="stylesheet"/>
-<script src="js/ph-role-guard.js?v=20260724boot"></script></head>
+<script src="js/ph-role-guard.js?v=20260724hod2"></script></head>
 <body data-page="settings.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -67,7 +67,7 @@
             </div>
           </div>
           <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profStaffDept" disabled/></div>
-          <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Designation</label><input class="form-control" id="profStaffDesig" disabled/></div>
+          <div class="col-md-6 role-field-staff"><label class="form-label small fw-semibold">Designation</label><input class="form-control" id="profStaffDesig" placeholder="e.g. HOD,Associate Professor"/></div>
           <div class="col-md-6 role-field-officer"><label class="form-label small fw-semibold">Department</label><input class="form-control" id="profOfficerDept" disabled/></div>
         </div>
         <div class="row g-3 mt-2" data-roles="alumni">
@@ -148,8 +148,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723perf"></script>
-<script src="js/app.js?v=20260724boot"></script>
+<script src="js/api.js?v=20260724hod2"></script>
+<script src="js/app.js?v=20260724hod2"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -627,7 +627,9 @@ function syncRoleFieldsVisibility(activeRole) {
     el.style.display = activeRole === 'student' ? '' : 'none';
   });
   document.querySelectorAll('.role-field-staff').forEach((el) => {
-    el.style.display = activeRole === 'staff' ? '' : 'none';
+    const showStaff = activeRole === 'staff'
+      || (activeRole === 'placement_officer' && typeof Auth !== 'undefined' && Auth.isHod?.());
+    el.style.display = showStaff ? '' : 'none';
   });
   document.querySelectorAll('.role-field-officer').forEach((el) => {
     el.style.display = activeRole === 'placement_officer' ? '' : 'none';
@@ -899,7 +901,7 @@ function applyProfileFromUser(u, activeRole) {
       maritalEl.value = String(merged.maritalStatus || merged.personal?.maritalStatus || '').trim();
     }
   }
-  if (r === 'staff') {
+  if (r === 'staff' || (r === 'placement_officer' && typeof Auth !== 'undefined' && Auth.isHod?.())) {
     document.getElementById('profStaffDept').value = pickDepartmentDisplay(merged) || merged.department || merged.departmentName || '';
     document.getElementById('profStaffDesig').value = merged.designation || '';
   }
@@ -1001,7 +1003,7 @@ async function loadSettingsProfile() {
       };
       Auth.set(user, Auth.token());
     }
-  } else if (role === 'staff' && Auth.hasRealAuth()) {
+  } else if ((role === 'staff' || (role === 'placement_officer' && Auth.isHod?.())) && Auth.hasRealAuth()) {
     const res = await api('/staff/profile', { skipAuthRedirect: true });
     if (res?.success && res.data) {
       const p = res.data;
@@ -1017,8 +1019,10 @@ async function loadSettingsProfile() {
       document.getElementById('profPhone').value = apiPhone;
       document.getElementById('profStaffDept').value = pickDepartmentDisplay(profileCtx) || p.department || p.departmentName || '';
       document.getElementById('profStaffDesig').value = p.designation || u.designation || '';
-      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone || p.phone, department: pickDepartmentDisplay(profileCtx) || p.department || p.departmentName, departmentName: p.departmentName || pickDepartmentDisplay(profileCtx), designation: p.designation || u.designation, photoUrl: pickPhotoUrl(profileCtx) || p.photoUrl || u.photoUrl || user.photoUrl || '', photo: p.photo || u.photo || user.photo };
-      Auth.set(user, Auth.token());
+      const nextDesig = p.designation || u.designation || user.designation || '';
+      const isHod = !!(p.isHod || u.isHod || Auth.isHod?.() || /\bH\.?\s*O\.?\s*D\.?\b/i.test(String(nextDesig).replace(/[,/;|]+/g, ' ')));
+      user = { ...user, name: apiName || user.name, email: apiCollegeEmail || user.email, collegeEmail: apiCollegeEmail, personalEmail: apiPersonalEmail, phone: apiPhone || p.phone, department: pickDepartmentDisplay(profileCtx) || p.department || p.departmentName, departmentName: p.departmentName || pickDepartmentDisplay(profileCtx), designation: nextDesig, isHod, photoUrl: pickPhotoUrl(profileCtx) || p.photoUrl || u.photoUrl || user.photoUrl || '', photo: p.photo || u.photo || user.photo };
+      Auth.applySessionUser(user);
       setAvatarPhoto(pickPhotoUrl(profileCtx) || p.photoUrl || u.photoUrl || user.photoUrl || '');
       if (!profAvatarEl?.classList.contains('has-photo')) setAvatarInitials();
     }
@@ -1325,6 +1329,41 @@ async function refreshResumes() {
 
 document.getElementById('saveSettings').addEventListener('click', async () => {
   saveNotificationPrefs();
+
+  if (role === 'staff' || (role === 'placement_officer' && Auth.isHod?.())) {
+    const designation = (document.getElementById('profStaffDesig')?.value || '').trim();
+    const phoneVal = (document.getElementById('profPhone')?.value || '').trim();
+    if (Auth.hasRealAuth()) {
+      const res = await api('/staff/profile', {
+        method: 'PUT',
+        body: { designation, phone: phoneVal },
+        noRedirectOn401: true,
+        skipAuthRedirect: true,
+      });
+      if (!res?.success) {
+        toast(res?.message || 'Could not update staff profile.', 'error');
+        return;
+      }
+      const p = res.data || {};
+      const nextDesig = p.designation || designation;
+      const isHod = Auth.isHod() || /\bH\.?\s*O\.?\s*D\.?\b/i.test(nextDesig.replace(/[,/;|]+/g, ' '));
+      Auth.applySessionUser({
+        ...user,
+        designation: nextDesig,
+        phone: p.phone || phoneVal || user.phone,
+        isHod: isHod || user.isHod === true,
+        role: isHod ? 'placement_officer' : (user.role || role),
+      });
+      toast('Profile updated.', 'success');
+      if (isHod) {
+        setTimeout(() => { window.location.href = 'dashboard.html'; }, 600);
+      }
+      return;
+    }
+    Auth.applySessionUser({ ...user, designation, phone: phoneVal || user.phone });
+    toast('Settings saved.', 'success');
+    return;
+  }
 
   if (role === 'alumni') {
     const working = document.getElementById('alumniWorking').checked;

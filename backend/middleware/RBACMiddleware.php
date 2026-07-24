@@ -38,7 +38,14 @@ final class RBACMiddleware
 
     public static function requireStaff(): array
     {
-        return self::requireRoles(['staff']);
+        $user = AuthMiddleware::authenticate();
+        // HOD stays DB role=staff but resolvedRole elevates to placement_officer.
+        // Staff APIs must still accept the DB staff account.
+        $dbRole = trim((string) ($user['role'] ?? ''));
+        if ($dbRole === 'staff' || AuthMiddleware::resolvedRole($user) === 'staff') {
+            return $user;
+        }
+        Response::forbidden('You do not have permission to access this resource.');
     }
 
     public static function requireCompany(): array
