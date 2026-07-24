@@ -60,7 +60,7 @@ final class AdminController
     public function dashboard(): void
 
     {
-        RBACMiddleware::requireAdmin();
+        RBACMiddleware::requirePlacementDataViewer();
         $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
         Response::success($this->userModel->getDashboardStats(!$lite));
     }
@@ -1102,7 +1102,7 @@ final class AdminController
     /** GET /api/admin/reports */
     public function listReports(): void
     {
-        $scope = (new OfficerDataService())->requireScope();
+        $scope = (new OfficerDataService())->requireScopeOrViewer();
         $deptId = $scope['ctx']['isAdmin'] ? ($_GET['departmentId'] ?? null) : $scope['ctx']['departmentId'];
         $service = new ReportService();
         Response::success($service->listHistory($deptId ? (string) $deptId : null));
@@ -1111,7 +1111,7 @@ final class AdminController
     /** POST /api/admin/reports/{type} */
     public function generateReport(string $type): void
     {
-        $scope = (new OfficerDataService())->requireScope();
+        $scope = (new OfficerDataService())->requireScopeOrViewer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
 
         $forcedDept = $scope['ctx']['isAdmin'] ? null : $scope['ctx']['departmentId'];
@@ -1380,7 +1380,7 @@ final class AdminController
     /** GET /api/admin/companies */
     public function listCompanies(): void
     {
-        RBACMiddleware::requirePlacementOfficer();
+        RBACMiddleware::requirePlacementDataViewer();
         Response::success(DocumentHelper::serializeMany((new CompanyModel())->listEnriched(200)));
     }
 
@@ -1586,7 +1586,7 @@ final class AdminController
     /** GET /api/admin/recommendations */
     public function listRecommendations(): void
     {
-        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        RBACMiddleware::requirePlacementDataViewer();
         Response::success((new RecommendationModel())->listEnriched());
     }
 
@@ -1719,7 +1719,7 @@ final class AdminController
     /** GET /api/admin/alumni-referrals */
     public function listAlumniReferrals(): void
     {
-        RBACMiddleware::requireRoles(['admin', 'placement_officer']);
+        RBACMiddleware::requirePlacementDataViewer();
         Response::success((new AlumniReferralModel())->listEnriched());
     }
 
@@ -1808,7 +1808,7 @@ final class AdminController
     /** GET /api/admin/reports/download/{filename} */
     public function downloadReport(string $filename): void
     {
-        (new OfficerDataService())->requireScope();
+        (new OfficerDataService())->requireScopeOrViewer();
         $filename = basename(rawurldecode($filename));
         if (!preg_match('/^[a-z0-9._\-]+\.(pdf|csv|xlsx|xls)$/i', $filename)) {
             Response::error('Invalid filename.', 400);

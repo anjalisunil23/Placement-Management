@@ -422,7 +422,7 @@ const PAGE_PERMS = {
   'eligibility.html':   [],
   'company.html':       ['company'],
   'applicants.html':    ['company'],
-  'reports.html':       ['admin','placement_officer'],
+  'reports.html':       ['admin','placement_officer','staff'],
   'notifications.html': ['admin','placement_officer','student','staff','alumni','company'],
   'public-stats.html':  ROLES,
   'settings.html':      ['admin','placement_officer','student','staff','alumni','company'],
@@ -434,7 +434,7 @@ const PAGE_PERMS = {
   'staff-jobs.html':        ['staff'],
   'staff-recommend.html':   ['staff'],
   'staff-placements.html':  ['staff'],
-  'admin-companies.html':   ['admin','placement_officer'],
+  'admin-companies.html':   ['admin','placement_officer','staff'],
   'placement-console.html': [],
   'recruiting.html':        ['admin','placement_officer'],
   'student-overview.html':  ['admin','placement_officer','staff'],
@@ -452,7 +452,26 @@ const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-ref
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html'];
+
+/** Derive staff seniority rank from designation when AES rank is absent (1=senior … 6+=junior). */
+function staffRankFromDesignation(designation) {
+  const d = String(designation || '')
+    .toUpperCase()
+    .replace(/[,/;|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!d) return 99;
+  if (/\b(PRINCIPAL|DIRECTOR|VICE\s*PRINCIPAL|DEAN)\b/.test(d)) return 1;
+  if (/\bH\.?\s*O\.?\s*D\.?\b/.test(d) || /\bHEAD\s+OF\s+(THE\s+)?(DEPT\.?|DEPARTMENT)\b/.test(d)
+    || /\b(DEPT\.?|DEPARTMENT)\s+HEAD\b/.test(d) || /^HOD\b/.test(d)) return 2;
+  if (/\bPROFESSOR\b/.test(d) && !/\b(ASSOCIATE|ASSISTANT|ADJUNCT)\b/.test(d) && !/\bOF\s+PRACTICE\b/.test(d)) return 3;
+  if (/\bASSOCIATE\s+PROFESSOR\b/.test(d)) return 4;
+  if (/\bASSISTANT\s+PROFESSOR\b/.test(d)) return 5;
+  if (/\b(LECTURER|INSTRUCTOR|DEMONSTRATOR|TECHNICAL|LAB\s*ASSISTANT|ADJUNCT|PROFESSOR\s+OF\s+PRACTICE)\b/.test(d)) return 6;
+  return 99;
+}
 
 /** Placement Cell guidelines version students must accept on first login. */
 const PLACEMENT_POLICY_VERSION = 'ajce-2026-v1';
@@ -618,6 +637,27 @@ const Auth = {
     if (/\bAND\s+HEAD\b/.test(d)) return true;
     if (/\bHEAD\b/.test(d) && /\b(DEPT\.?|DEPARTMENT|BRANCH)\b/.test(d)) return true;
     return false;
+  },
+  /**
+   * Staff seniority rank (lower = more senior). Prefer session staffRank from /auth/me;
+   * otherwise derive from designation. Ranks below 6 may view placement-admin data.
+   */
+  staffRank() {
+    const u = this.user() || {};
+    const raw = u.staffRank ?? u.rank;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 1 && n <= 50) return n;
+    return staffRankFromDesignation(u.designation || '');
+  },
+  /** Senior staff (rank &lt; 6), not HOD — view-only placement admin surfaces. */
+  canViewPlacementAdminData() {
+    if (this.role() !== 'staff') return false;
+    if (this.isHod()) return false;
+    const flag = this.user()?.canViewPlacementAdminData;
+    if (flag === true || flag === 1 || flag === '1') return true;
+    if (flag === false || flag === 0 || flag === '0') return false;
+    const rank = this.staffRank();
+    return rank >= 1 && rank < 6;
   },
   homePage(role) {
     const u = this.user();
@@ -825,7 +865,10 @@ const Auth = {
     if (role === 'staff' && ADMIN_ONLY_PAGES.includes(base)) return false;
     if (role === 'alumni') return alumniPageAllowed(base);
     if (role === 'company') return COMPANY_PAGES.includes(base);
-    if (role === 'staff') return STAFF_PAGES.includes(base);
+    if (role === 'staff') {
+      if (STAFF_VIEW_ONLY_PAGES.includes(base)) return this.canViewPlacementAdminData();
+      return STAFF_PAGES.includes(base);
+    }
     if (role === 'student') {
       if (studentNeedsPlacementRegistration()) {
         return base === 'placement-registration.html';
@@ -5076,6 +5119,12 @@ async function dashboardStats(opts = {}) {
     if (Auth.role() === 'placement_officer' && typeof OfficerApi !== 'undefined') {
       const stats = await OfficerApi.fetchDashboard(opts);
       return mapLiveDashboardStats(stats);
+    }
+    // Senior staff viewing placement-admin KPIs use the admin dashboard API.
+    if (Auth.role() === 'staff' && typeof Auth.canViewPlacementAdminData === 'function'
+      && Auth.canViewPlacementAdminData() && opts.adminView && typeof AdminApi !== 'undefined') {
+      const stats = await AdminApi.fetchDashboard(opts);
+      return mapLiveDashboardStats(stats, stats?.activeDrives ?? 0);
     }
     if (Auth.role() === 'staff' && typeof StaffApi !== 'undefined') {
       const stats = await StaffApi.fetchDashboardStats(opts);

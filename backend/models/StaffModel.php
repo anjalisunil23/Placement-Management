@@ -46,6 +46,7 @@ class StaffModel extends BaseModel
             'designation'  => $data['designation'] ?? 'Staff',
             'phone'        => $data['phone'] ?? '',
             'isHod'        => filter_var($data['isHod'] ?? false, FILTER_VALIDATE_BOOL),
+            'staffRank'    => isset($data['staffRank']) ? (int) $data['staffRank'] : null,
         ];
         return $this->insert($doc);
     }
@@ -55,13 +56,17 @@ class StaffModel extends BaseModel
      */
     public function updateProfile(string $id, array $data): bool
     {
-        $allowed = ['departmentId', 'designation', 'phone', 'photo', 'assignedClassBatches', 'isHod'];
+        $allowed = ['departmentId', 'designation', 'phone', 'photo', 'assignedClassBatches', 'isHod', 'staffRank'];
         $update = array_intersect_key($data, array_flip($allowed));
         if (isset($update['departmentId'])) {
             $update['departmentId'] = Security::toObjectId((string) $update['departmentId']);
         }
         if (array_key_exists('isHod', $update)) {
             $update['isHod'] = filter_var($update['isHod'], FILTER_VALIDATE_BOOL);
+        }
+        if (array_key_exists('staffRank', $update)) {
+            $rank = (int) $update['staffRank'];
+            $update['staffRank'] = ($rank >= 1 && $rank <= 50) ? $rank : null;
         }
         if (isset($update['assignedClassBatches'])) {
             $raw = $update['assignedClassBatches'];
@@ -114,6 +119,9 @@ class StaffModel extends BaseModel
             'designation'  => (string) ($profile['designation'] ?? ''),
             'phone'        => (string) ($profile['phone'] ?? ''),
             'isHod'        => filter_var($profile['isHod'] ?? false, FILTER_VALIDATE_BOOL),
+            'staffRank'    => isset($profile['staffRank']) && is_numeric($profile['staffRank'])
+                ? (int) $profile['staffRank']
+                : null,
             'photoUrl'     => is_array($profile['photo'] ?? null)
                 ? (string) (($profile['photo']['url'] ?? '') ?: '')
                 : '',

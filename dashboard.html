@@ -28,7 +28,12 @@
       </div>
 
       <!-- ===== ADMIN DASHBOARD ===== -->
-      <div data-roles="admin">
+      <div data-roles="admin" id="adminDashPanel">
+        <div id="placement-admin-view" class="d-none mb-3" data-staff-admin-view-banner>
+          <div class="alert alert-info py-2 px-3 mb-0 small">
+            <i class="bi bi-eye me-1"></i>Placement admin dashboard — <strong>view only</strong>. You can browse campus placement stats; editing stays with the placement cell.
+          </div>
+        </div>
         <div class="row g-3">
           <div class="col-6 col-lg-3"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-people-fill"></i></div><span class="badge-soft success">Students</span></div>
@@ -102,6 +107,28 @@
 
       <!-- ===== PLACEMENT OFFICER / STAFF: department hiring overview ===== -->
       <div data-roles="placement_officer,staff" id="hiringOverviewRoot">
+
+        <div class="row g-3 mb-3 d-none" id="staffPlacementAdminLinks">
+          <div class="col-12"><div class="small fw-semibold text-muted-2 mb-1">Placement admin (view only)</div></div>
+          <div class="col-md-4">
+            <a class="card-surface p-3 d-block text-decoration-none h-100" href="dashboard.html#placement-admin-view">
+              <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-bar-chart-line-fill text-primary"></i><strong>Admin dashboard</strong></div>
+              <div class="small text-muted-2 mb-0">Campus placement KPIs and charts</div>
+            </a>
+          </div>
+          <div class="col-md-4">
+            <a class="card-surface p-3 d-block text-decoration-none h-100" href="admin-companies.html">
+              <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-building-check text-primary"></i><strong>Companies &amp; Referrals</strong></div>
+              <div class="small text-muted-2 mb-0">Browse recommendations and companies</div>
+            </a>
+          </div>
+          <div class="col-md-4">
+            <a class="card-surface p-3 d-block text-decoration-none h-100" href="reports.html">
+              <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-file-earmark-bar-graph text-primary"></i><strong>Reports</strong></div>
+              <div class="small text-muted-2 mb-0">View and download placement reports</div>
+            </a>
+          </div>
+        </div>
 
         <!-- HOD: assign / change department placement officer -->
         <div class="card-surface p-3 p-md-4 mb-3 d-none border border-primary border-opacity-25" id="hodAssignPoCard" style="background:color-mix(in srgb,var(--primary) 4%,transparent)">
@@ -331,8 +358,8 @@
   </div>
 </div>
 
-<script src="js/api.js?v=20260724hod4"></script>
-<script src="js/app.js?v=20260724hod4"></script>
+<script src="js/api.js?v=20260724staffrank"></script>
+<script src="js/app.js?v=20260724staffrank"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -425,6 +452,7 @@ if (window.__phCachedRole && typeof window.__phLoadDashExtras === 'function') {
 onAppReady(async () => {
 const user = Auth.user() || demoUserFor(Auth.role());
 const role = Auth.role();
+const staffAdminView = role === 'staff' && typeof Auth.canViewPlacementAdminData === 'function' && Auth.canViewPlacementAdminData();
 if (!role || !ROLE_HOME[role]) {
   window.location.replace(Auth.homePage() || 'public-stats.html');
   return;
@@ -469,6 +497,17 @@ const   actions = {
   alumni: '',
 };
 document.getElementById('dashActions').innerHTML = actions[role] || '';
+
+if (staffAdminView) {
+  const adminPanel = document.getElementById('adminDashPanel');
+  if (adminPanel) adminPanel.style.setProperty('display', 'block', 'important');
+  document.querySelectorAll('[data-staff-admin-view-banner]').forEach(el => el.classList.remove('d-none'));
+  document.getElementById('staffPlacementAdminLinks')?.classList.remove('d-none');
+  document.querySelector('.page-header')?.classList.remove('d-none');
+  document.getElementById('dashTitle').textContent = 'Dashboard';
+  document.getElementById('dashSub').textContent = 'Campus placement overview (view only)';
+  document.getElementById('dashSub').hidden = false;
+}
 
 function paintAdminStats(s) {
   if (!s) return;
@@ -518,13 +557,13 @@ function paintAdminCharts(s) {
 }
 
 /* Admin — paint cached KPIs instantly, then confirm with lite prefetch / API */
-if (role === 'admin') {
+if (role === 'admin' || staffAdminView) {
   (async () => {
     try {
-      const cached = window.__phReadDashKpi?.(role);
+      const cached = window.__phReadDashKpi?.(staffAdminView ? 'admin' : role);
       if (cached?.stats) paintAdminStats(cached.stats);
 
-      const pref = await (window.__phPrefetchDashLite || Promise.resolve(null));
+      const pref = staffAdminView ? null : await (window.__phPrefetchDashLite || Promise.resolve(null));
       const map = typeof window.__phMapDashStats === 'function' ? window.__phMapDashStats : null;
       if (pref?.dash?.success && pref.dash.data && map) {
         const lite = map(pref.dash.data, pref.dash.data.activeDrives ?? 0);
@@ -533,34 +572,32 @@ if (role === 'admin') {
       } else {
         await apisReady;
         if (Auth.hasRealAuth() && !Auth.isDemo()) {
-          const lite = await dashboardStats({ lite: true });
+          const lite = await dashboardStats(staffAdminView ? { lite: true, adminView: true } : { lite: true });
           paintAdminStats(lite);
-          window.__phWriteDashKpi?.(role, { stats: lite });
+          window.__phWriteDashKpi?.(staffAdminView ? 'admin' : role, { stats: lite });
         }
       }
 
       if (Auth.hasRealAuth() && !Auth.isDemo()) {
         const runFull = () => {
-          Promise.all([apisReady, chartsReady, dashboardStats()]).then(([, , full]) => {
+          Promise.all([apisReady, chartsReady, dashboardStats(staffAdminView ? { adminView: true } : {})]).then(([, , full]) => {
             if (full) {
               paintAdminStats(full);
               paintAdminCharts(full);
-              window.__phWriteDashKpi?.(role, { stats: full });
+              window.__phWriteDashKpi?.(staffAdminView ? 'admin' : role, { stats: full });
             }
           }).catch(() => {});
         };
         if (typeof requestIdleCallback === 'function') {
           requestIdleCallback(runFull, { timeout: 4000 });
         } else {
-          setTimeout(runFull, 2000);
+          setTimeout(runFull, 800);
         }
-      } else {
-        await Promise.all([apisReady, chartsReady]);
-        const s = await dashboardStats();
-        paintAdminStats(s);
-        paintAdminCharts(s);
       }
-    } catch (_) { /* keep zeros */ }
+      if (staffAdminView && location.hash === '#placement-admin-view') {
+        document.getElementById('placement-admin-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    } catch (_) { /* ignore */ }
   })();
 }
 

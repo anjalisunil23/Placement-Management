@@ -23,6 +23,16 @@
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Registered</div><div class="val" id="statRegistered">0</div></div></div>
 </div>
 
+<div class="card-surface p-3 mb-3">
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <div class="search-with-icon flex-grow-1" style="min-width:min(100%,16rem)">
+      <i class="bi bi-search"></i>
+      <input class="form-control" id="companiesSearch" type="search" placeholder="Search companies, roles, contacts, email, category…" autocomplete="off" aria-label="Search companies and referrals"/>
+    </div>
+    <span class="small text-muted-2" id="companiesSearchHint"></span>
+  </div>
+</div>
+
 <ul class="nav nav-tabs mb-3" role="tablist">
   <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabRecs">Recommendations</a></li>
   <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabRegistered">Registered Companies</a></li>
@@ -154,18 +164,20 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/admin-api.js?v=20260715companylogin"></script>
-<script src="js/api.js?v=20260723perf"></script>
-<script src="js/app.js?v=20260716notifflat"></script>
+<script src="js/api.js?v=20260724staffrank"></script>
+<script src="js/app.js?v=20260724staffrank"></script>
 <script>
 const registerModal = () => bootstrap.Modal.getInstance(document.getElementById('registerModal')) || new bootstrap.Modal(document.getElementById('registerModal'));
 const isAdmin = () => Auth.role() === 'admin';
-const canViewCompaniesPage = () => ['admin', 'placement_officer'].includes(Auth.role());
+const canViewCompaniesPage = () => ['admin', 'placement_officer'].includes(Auth.role())
+  || (typeof Auth.canViewPlacementAdminData === 'function' && Auth.canViewPlacementAdminData());
 /** Officers and admins may update existing registered company details. */
 const canUpdateCompanyDetails = () => ['admin', 'placement_officer'].includes(Auth.role());
 /** Officers and admins may add/register companies. Delete remains admin-only. */
 const canEditCompanies = () => ['admin', 'placement_officer'].includes(Auth.role());
 const canManageRecommendations = () => ['admin', 'placement_officer'].includes(Auth.role());
 const canMutateCompanies = () => ['admin', 'placement_officer'].includes(Auth.role());
+const isStaffViewer = () => typeof Auth.canViewPlacementAdminData === 'function' && Auth.canViewPlacementAdminData();
 
 function recommendationViewActions(r) {
   return `<div class="d-flex flex-wrap gap-1 align-items-center">
@@ -245,6 +257,54 @@ function findRecommendation(id, source) {
   return allRecommendations().find(r => r.id === id && r.source === source);
 }
 
+function searchQuery() {
+  return String(document.getElementById('companiesSearch')?.value || '').trim().toLowerCase();
+}
+
+function haystack(...parts) {
+  return parts.map(p => String(p || '').toLowerCase()).join(' ');
+}
+
+function matchesQuery(q, ...parts) {
+  if (!q) return true;
+  return haystack(...parts).includes(q);
+}
+
+function filteredRecommendations() {
+  const q = searchQuery();
+  return allRecommendations().filter(r => matchesQuery(
+    q,
+    r.companyName,
+    r.companyWebsite,
+    r.hrName,
+    r.contactRole,
+    r.hrEmail,
+    r.contactNumber,
+    r.recommenderName,
+    r.recommenderEmail,
+    r.source,
+    r.status,
+    r.reason,
+    r.adminComments
+  ));
+}
+
+function filteredRegisteredCompanies() {
+  const q = searchQuery();
+  return RegisteredCompanies.all().filter(c => matchesQuery(
+    q,
+    c.companyName,
+    c.companyWebsite,
+    c.hrName,
+    c.hrEmail,
+    c.contactNumber,
+    c.category,
+    c.tier,
+    c.loginEmail,
+    c.hasLogin ? 'active login' : 'not created'
+  ));
+}
+
 window.openRegisterFromRec = rec => {
   if (!canMutateCompanies()) return;
   if (!rec) return;
@@ -263,16 +323,25 @@ window.openRegisterFromRec = rec => {
 };
 
 function render() {
-  const recs = allRecommendations();
-  const regs = RegisteredCompanies.all();
+  const allRecs = allRecommendations();
+  const recs = filteredRecommendations();
+  const regs = filteredRegisteredCompanies();
+  const q = searchQuery();
   const showActions = canUpdateCompanyDetails();
   document.getElementById('regActionsHead')?.classList.toggle('d-none', !showActions);
   const recActionsHead = document.getElementById('recActionsHead');
   if (recActionsHead) recActionsHead.textContent = isAdmin() ? 'Actions' : 'Contact';
-  document.getElementById('statRecs').textContent = recs.length;
-  document.getElementById('statPending').textContent = recs.filter(r => r.status === 'pending').length;
-  document.getElementById('statContacted').textContent = recs.filter(r => r.status === 'contacted').length;
-  document.getElementById('statRegistered').textContent = recs.filter(r => r.status === 'registered').length;
+  document.getElementById('statRecs').textContent = allRecs.length;
+  document.getElementById('statPending').textContent = allRecs.filter(r => r.status === 'pending').length;
+  document.getElementById('statContacted').textContent = allRecs.filter(r => r.status === 'contacted').length;
+  document.getElementById('statRegistered').textContent = allRecs.filter(r => r.status === 'registered').length;
+
+  const hint = document.getElementById('companiesSearchHint');
+  if (hint) {
+    hint.textContent = q
+      ? `${recs.length} referral${recs.length === 1 ? '' : 's'} · ${regs.length} compan${regs.length === 1 ? 'y' : 'ies'}`
+      : '';
+  }
 
   document.getElementById('recRows').innerHTML = recs.length ? recs.map(r => `
     <tr>
@@ -290,7 +359,7 @@ function render() {
       <td>${recStatusBadge(r.status)}</td>
       <td>${commentPreview(r.adminComments)}</td>
       <td>${recommendationAdminActions(r)}</td>
-    </tr>`).join('') : '<tr><td colspan="10" class="text-muted-2 p-4">No recommendations yet.</td></tr>';
+    </tr>`).join('') : `<tr><td colspan="10" class="text-muted-2 p-4">${q ? 'No recommendations match your search.' : 'No recommendations yet.'}</td></tr>`;
 
   document.getElementById('regRows').innerHTML = regs.length ? regs.map(c => `
     <tr>
@@ -304,7 +373,7 @@ function render() {
       <td>${c.hasLogin ? `<span class="badge-soft success">Active</span><div class="small text-muted-2 mt-1">${c.loginEmail || ''}</div>` : '<span class="badge-soft muted">Not created</span>'}</td>
       <td>${formatDate(c.registeredAt)}</td>
       ${showActions ? `<td>${companyActions(c)}</td>` : ''}
-    </tr>`).join('') : `<tr><td colspan="${showActions ? 10 : 9}" class="text-muted-2 p-4">No registered companies yet.</td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="${showActions ? 10 : 9}" class="text-muted-2 p-4">${q ? 'No registered companies match your search.' : 'No registered companies yet.'}</td></tr>`;
 }
 
 window.markContacted = (id, source) => {
@@ -546,6 +615,8 @@ async function initCompaniesPage() {
       sub.textContent = '';
       sub.hidden = true;
     }
+  } else if (isStaffViewer()) {
+    if (sub) sub.textContent = 'View-only access to recommendations and registered companies. Editing is limited to placement admin / officers.';
   } else if (!isAdmin()) {
     if (sub) sub.textContent = 'View staff and alumni recommendations and registered companies. Contact the admin to register or update records.';
   }
@@ -557,6 +628,8 @@ document.addEventListener('ph-staff-recommend-added', async () => {
   render();
 });
 onAppReady(() => initCompaniesPage());
+
+document.getElementById('companiesSearch')?.addEventListener('input', () => render());
 
 document.getElementById('regHrEmail')?.addEventListener('input', e => {
   const loginEmail = document.getElementById('regLoginEmail');

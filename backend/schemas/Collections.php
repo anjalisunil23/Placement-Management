@@ -157,6 +157,8 @@ final class Collections
                 'userId'    => 'ObjectId',
                 'departmentId' => 'ObjectId|null',
                 'designation' => 'string',
+                'staffRank' => 'int|null',
+                'isHod'     => 'bool',
                 'createdAt' => 'UTCDateTime',
             ],
             self::PLACEMENT_OFFICERS => [

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Middleware\AuthMiddleware;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\ApplicationModel;
 use PMS\Models\CompanyModel;
@@ -41,6 +42,31 @@ final class OfficerDataService
         $user = RBACMiddleware::requirePlacementOfficer();
         $ctx = PlacementOfficerContext::resolve($user);
         return ['user' => $user, 'ctx' => $ctx];
+    }
+
+    /**
+     * Placement officer/admin scope, or senior staff (rank &lt; 6) as campus-wide read-only viewer.
+     *
+     * @return array{user: array<string, mixed>, ctx: array<string, mixed>}
+     */
+    public function requireScopeOrViewer(): array
+    {
+        $user = AuthMiddleware::authenticate();
+        $resolved = AuthMiddleware::resolvedRole($user);
+        if (in_array($resolved, ['admin', 'placement_officer'], true)) {
+            return [
+                'user' => $user,
+                'ctx'  => PlacementOfficerContext::resolve($user),
+            ];
+        }
+        if (($user['role'] ?? '') === 'staff' && AuthMiddleware::canViewPlacementAdminData($user)) {
+            $ctx = PlacementOfficerContext::resolve($user);
+            // Campus-wide read access for reports (same breadth as admin list).
+            $ctx['isAdmin'] = true;
+            $ctx['readOnlyViewer'] = true;
+            return ['user' => $user, 'ctx' => $ctx];
+        }
+        \PMS\Utils\Response::forbidden('You do not have permission to access this resource.');
     }
 
     /**

@@ -64,6 +64,24 @@ final class RBACMiddleware
     }
 
     /**
+     * Admin, placement officer, or senior staff (rank &lt; 6) with read-only placement-admin access.
+     *
+     * @return array<string, mixed>
+     */
+    public static function requirePlacementDataViewer(): array
+    {
+        $user = AuthMiddleware::authenticate();
+        $resolved = AuthMiddleware::resolvedRole($user);
+        if (in_array($resolved, ['admin', 'placement_officer'], true)) {
+            return $user;
+        }
+        if (($user['role'] ?? '') === 'staff' && AuthMiddleware::canViewPlacementAdminData($user)) {
+            return $user;
+        }
+        Response::forbidden('You do not have permission to access this resource.');
+    }
+
+    /**
      * @param string[] $roles
      */
     public static function canAccess(array $user, array $roles): bool

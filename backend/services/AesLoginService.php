@@ -2003,6 +2003,10 @@ final class AesLoginService
             $designation = $existingDesig;
         }
         $designation = HodDetection::normalizeDesignationForHod($designation, $isHod);
+        $staffRank = \PMS\Services\StaffRank::resolve(
+            array_merge($aesDetails, $extras, is_array($existing) ? $existing : []),
+            $designation
+        );
 
         if (!$existing) {
             $staffModel->createProfile((string) $user['_id'], [
@@ -2010,6 +2014,7 @@ final class AesLoginService
                 'designation'  => $designation !== '' ? $designation : 'Faculty',
                 'phone'        => (string) ($extras['phone'] ?? ''),
                 'isHod'        => $isHod,
+                'staffRank'    => $staffRank,
             ]);
 
             return;
@@ -2028,6 +2033,7 @@ final class AesLoginService
             $patch['designation'] = $designation;
             $patch['isHod'] = false;
         }
+        $patch['staffRank'] = $staffRank;
         if (!empty($extras['phone'])) {
             $patch['phone'] = (string) $extras['phone'];
         }
@@ -2958,6 +2964,7 @@ final class AesLoginService
             $designation !== '' ? $designation : 'Faculty',
             $isHod
         );
+        $staffRank = StaffRank::resolve($mapped, $designation);
 
         $userId = $userModel->createUser([
             'name'     => $name,
@@ -2973,6 +2980,7 @@ final class AesLoginService
             'designation'  => $designation,
             'phone'        => (string) ($mapped['phone'] ?? ''),
             'isHod'        => $isHod,
+            'staffRank'    => $staffRank,
         ]);
 
         $user = $userModel->findById($userId);
@@ -3016,6 +3024,7 @@ final class AesLoginService
             'designation'  => $designation,
             'phone'        => (string) ($mapped['phone'] ?? ''),
             'isHod'        => $isHod,
+            'staffRank'    => StaffRank::resolve($mapped, $designation),
         ]);
 
         return $user;

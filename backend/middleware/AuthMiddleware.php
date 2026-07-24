@@ -107,6 +107,73 @@ final class AuthMiddleware
   }
 
   /**
+   * Senior staff (AES/designation rank &lt; 6) may view placement-admin data read-only.
+   * HOD accounts are elevated to placement_officer and already have full PO access.
+   */
+  public static function staffRank(array $user): int
+  {
+    $role = trim((string) ($user['role'] ?? ''));
+    if ($role !== 'staff') {
+      return \PMS\Services\StaffRank::UNKNOWN;
+    }
+
+    $stored = $user['staffRank'] ?? $user['rank'] ?? null;
+    if (is_numeric($stored)) {
+      $n = (int) $stored;
+      if ($n >= 1 && $n <= 50) {
+        return $n;
+      }
+    }
+
+    $designation = trim((string) ($user['designation'] ?? ''));
+    $aes = [];
+    try {
+      $sessionAes = Security::getSessionAesProfile();
+      if (is_array($sessionAes)) {
+        $aes = $sessionAes;
+      }
+    } catch (\Throwable) {
+      $aes = [];
+    }
+    if (isset($user['aesProfile']) && is_array($user['aesProfile'])) {
+      $aes = array_merge($aes, $user['aesProfile']);
+    }
+
+    try {
+      $profile = \PMS\Services\StaffContext::ensureProfile($user);
+      if (is_array($profile)) {
+        if ($designation === '') {
+          $designation = trim((string) ($profile['designation'] ?? ''));
+        }
+        if (isset($profile['staffRank']) && is_numeric($profile['staffRank'])) {
+          $n = (int) $profile['staffRank'];
+          if ($n >= 1 && $n <= 50) {
+            return $n;
+          }
+        }
+        $aes = array_merge($aes, $profile);
+      }
+    } catch (\Throwable) {
+      // Profile optional for rank resolution.
+    }
+
+    return \PMS\Services\StaffRank::resolve($aes, $designation);
+  }
+
+  public static function canViewPlacementAdminData(array $user): bool
+  {
+    $role = trim((string) ($user['role'] ?? ''));
+    if ($role !== 'staff') {
+      return false;
+    }
+    // HODs already get full placement_officer access via resolvedRole().
+    if (self::isHod($user)) {
+      return false;
+    }
+    return \PMS\Services\StaffRank::canViewPlacementAdminData(self::staffRank($user));
+  }
+
+  /**
    * Authenticate request; returns user document or sends 401.
    *
    * @return array<string, mixed>
@@ -321,9 +388,27 @@ final class AuthMiddleware
     $data['role'] = self::resolvedRole(array_merge($user, $data));
     $data['dashboard'] = $config['role_dashboards'][$data['role']] ?? '/public-stats.html';
     $data['isHod'] = self::isHod(array_merge($user, $data));
+    if (($user['role'] ?? '') === 'staff') {
+      $mergedForRank = array_merge($user, $data);
+      $rank = self::staffRank($mergedForRank);
+      $data['staffRank'] = $rank;
+      $data['canViewPlacementAdminData'] = !$data['isHod']
+        && \PMS\Services\StaffRank::canViewPlacementAdminData($rank);
+      // Persist resolved rank when missing/stale so later soft boots stay consistent.
+      try {
+        $staffModel = new StaffModel();
+        $staff = $staffModel->findByUserId((string) ($user['_id'] ?? ''));
+        if ($staff && (int) ($staff['staffRank'] ?? 0) !== $rank) {
+          $staffModel->updateProfile((string) $staff['_id'], ['staffRank' => $rank]);
+        }
+      } catch (\Throwable) {
+        // Non-fatal.
+      }
+    }
     if ($data['isHod']) {
       $data['role'] = 'placement_officer';
       $data['dashboard'] = $config['role_dashboards']['placement_officer'] ?? $data['dashboard'];
+      $data['canViewPlacementAdminData'] = false;
       $directoryHod = \PMS\Services\AjceHodDirectory::matchUser(array_merge($user, $data));
       $desig = (string) ($data['designation'] ?? '');
       if (!\PMS\Services\HodDetection::designationLooksLikeHod($desig) && $directoryHod !== null) {

@@ -83,6 +83,9 @@ const NAV = [
   { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
   { href: "staff-jobs.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
+  { href: "dashboard.html#placement-admin-view", icon: "bi-bar-chart-line-fill", label: "Placement Admin (view)", roles: ['staff'], staffViewerOnly: true },
+  { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['staff'], staffViewerOnly: true },
+  { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['staff'], staffViewerOnly: true },
 
   { section: "Company", roles: ['company'] },
   { href: "company.html", icon: "bi-building", label: "Job Portal", roles: ['company'] },
@@ -336,6 +339,11 @@ function navItemVisible(n, role) {
   if (navItemHidden(n)) return false;
   if (n.studentOnly && role !== 'student') return false;
   if (!n.roles.includes(role)) return false;
+  if (n.staffViewerOnly) {
+    if (role === 'staff') return typeof Auth !== 'undefined' && Auth.canViewPlacementAdminData();
+    // Admin/PO entries that also list staff still show for admin/PO.
+    if (role !== 'admin' && role !== 'placement_officer') return false;
+  }
   if (role !== 'alumni') return true;
   if (n.alumniEmployed) return alumniIsWorking();
   if (n.alumniSeeking) return !alumniIsWorking();
