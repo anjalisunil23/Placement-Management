@@ -339,22 +339,23 @@ final class StudentController
             if ($mark <= 10.0) {
               $q['maxMark'] = 10.0;
               $q['maxmark'] = 10.0;
-              if ($percentage === null) {
-                $q['percentage'] = round(($mark / 10.0) * 100, 2);
-              }
             } else {
               $q['maxMark'] = 100.0;
               $q['maxmark'] = 100.0;
               if ($mark > 100.0 && $percentage !== null) {
                 $q['mark'] = $percentage;
-              } elseif ($percentage === null && $mark <= 100.0) {
-                $q['percentage'] = $mark;
+                $mark = $percentage;
               }
             }
           } elseif ($percentage !== null) {
             $q['mark'] = $percentage;
             $q['maxMark'] = 100.0;
             $q['maxmark'] = 100.0;
+            $mark = $percentage;
+          }
+          $maxMark = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : 0.0;
+          if ($mark !== null && $mark > 0 && $maxMark > 0) {
+            $q['percentage'] = round(($mark / $maxMark) * 100, 2);
           }
           return $q;
         },

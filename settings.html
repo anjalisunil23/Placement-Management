@@ -686,7 +686,41 @@ function escHtml(text) {
 function formatQualMark(val) {
   if (val == null || val === '' || Number.isNaN(Number(val))) return '—';
   const n = Number(val);
+  if (!(n > 0)) return '—';
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+/** mark ≤ 10 → max 10; else max 100. Percentage = mark / max × 100. */
+function normalizeQualificationRow(q) {
+  if (!q || typeof q !== 'object') return q;
+  const out = { ...q };
+  let mark = Number(out.mark);
+  let pct = Number(out.percentage);
+  if (!(mark > 0)) mark = NaN;
+  if (!(pct > 0)) pct = NaN;
+  if (mark > 0) {
+    if (mark <= 10) {
+      out.maxMark = 10;
+      out.maxmark = 10;
+    } else {
+      out.maxMark = 100;
+      out.maxmark = 100;
+      if (mark > 100 && pct > 0) {
+        out.mark = pct;
+        mark = pct;
+      }
+    }
+  } else if (pct > 0) {
+    out.mark = pct;
+    out.maxMark = 100;
+    out.maxmark = 100;
+    mark = pct;
+  }
+  const max = Number(out.maxMark ?? out.maxmark);
+  if (mark > 0 && max > 0) {
+    out.percentage = Math.round((mark / max) * 10000) / 100;
+  }
+  return out;
 }
 
 function validCgpa(val) {
@@ -737,7 +771,7 @@ function renderProfileQualifications(quals) {
   const body = document.getElementById('profQualificationsBody');
   const wrap = document.getElementById('profQualificationsWrap');
   if (!body || !wrap) return;
-  settingsQualRows = Array.isArray(quals) ? quals.map(q => ({ ...(q || {}) })) : [];
+  settingsQualRows = Array.isArray(quals) ? quals.map(q => normalizeQualificationRow({ ...(q || {}) })) : [];
   if (!settingsQualRows.length) {
     wrap.style.display = 'none';
     body.innerHTML = '';
@@ -773,8 +807,8 @@ function renderProfileQualifications(quals) {
     return `<tr>
       <td>${qual}</td>
       ${inst}${reg}${my}
-      ${cell('mark', formatQualMark(q.mark), { max: 10000 })}
-      ${cell('maxMark', formatQualMark(q.maxMark ?? q.maxmark), { max: 10000 })}
+      ${cell('mark', formatQualMark(q.mark), { max: 1000 })}
+      ${cell('maxMark', formatQualMark(q.maxMark ?? q.maxmark), { max: 1000 })}
       ${cell('percentage', pctDisplay === '—' ? '—' : String(Number(q.percentage)), { max: 100 })}
     </tr>`;
   }).join('');

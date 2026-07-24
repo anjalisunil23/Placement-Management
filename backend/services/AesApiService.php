@@ -1540,19 +1540,15 @@ final class AesApiService
                     $percentage = $pctFromMark;
                 }
             }
-            // Display rule: mark ≤ 10 → max 10 + %; else max 100 (ignore AES maxmark:0 / absolute totals).
+            // Display rule: mark ≤ 10 → max 10; else max 100. Percentage = mark/max × 100.
             if ($mark !== null && $mark > 0) {
                 if ($mark <= 10.0) {
                     $maxMark = 10.0;
-                    if ($percentage === null) {
-                        $percentage = round(($mark / 10.0) * 100, 2);
-                    }
                 } else {
                     $maxMark = 100.0;
+                    // Absolute totals → use AES % as the mark out of 100.
                     if ($mark > 100.0 && $percentage !== null && $percentage > 0) {
                         $mark = $percentage;
-                    } elseif ($percentage === null && $mark <= 100.0) {
-                        $percentage = $mark;
                     }
                 }
             } elseif ($percentage !== null && $percentage > 0) {
@@ -1560,11 +1556,8 @@ final class AesApiService
                 $maxMark = 100.0;
             }
 
-            if ($percentage === null && $mark !== null && $maxMark !== null && $maxMark > 0) {
-                $pct = round(($mark / $maxMark) * 100, 2);
-                if ($pct > 0 && $pct <= 100) {
-                    $percentage = $pct;
-                }
+            if ($mark !== null && $mark > 0 && $maxMark !== null && $maxMark > 0) {
+                $percentage = round(($mark / $maxMark) * 100, 2);
             }
 
             if ($qualification === '' && $institution === '' && $registerNumber === '' && $monthYear === '' && $mark === null && $percentage === null) {

@@ -1365,7 +1365,7 @@ function formatQualMark(val) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-/** Same mark-scale rule as student Settings profile: ≤10 → max 10 + %; else max 100. */
+/** Same mark-scale rule as student Settings: ≤10 → max 10; else max 100. % = mark/max×100. */
 function normalizeQualificationRow(q) {
   if (!q || typeof q !== 'object') return q;
   const out = { ...q };
@@ -1377,20 +1377,23 @@ function normalizeQualificationRow(q) {
     if (mark <= 10) {
       out.maxMark = 10;
       out.maxmark = 10;
-      if (!(pct > 0)) out.percentage = Math.round((mark / 10) * 10000) / 100;
     } else {
       out.maxMark = 100;
       out.maxmark = 100;
       if (mark > 100 && pct > 0) {
         out.mark = pct;
-      } else if (!(pct > 0) && mark <= 100) {
-        out.percentage = mark;
+        mark = pct;
       }
     }
   } else if (pct > 0) {
     out.mark = pct;
     out.maxMark = 100;
     out.maxmark = 100;
+    mark = pct;
+  }
+  const max = Number(out.maxMark ?? out.maxmark);
+  if (mark > 0 && max > 0) {
+    out.percentage = Math.round((mark / max) * 10000) / 100;
   }
   return out;
 }
