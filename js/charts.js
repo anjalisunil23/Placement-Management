@@ -45,14 +45,14 @@ const Charts = {
     });
   },
   /**
-   * Dashboard clustered bars (Weekly Attendance style):
-   * dark panel, blue + orange adjacent bars, gaps between categories, dotted grid.
+   * Clustered dashboard bars: blue + orange adjacent, gaps between departments.
+   * Designed for a white panel background.
    */
   groupedBar(ctx, labels, series) {
     const CLUSTER = ['#4C8DFF', '#FF9F43', '#A5A5A5', '#FFC000', '#5B9BD5'];
-    const text = '#E8EEF9';
-    const muted = 'rgba(232,238,249,.55)';
-    const grid = 'rgba(232,238,249,.12)';
+    const text = '#475569';
+    const muted = '#64748b';
+    const grid = 'rgba(15,23,42,.08)';
     const datasets = (series || []).map((s, i) => ({
       label: s.label || `Series ${i + 1}`,
       data: s.data || [],
@@ -92,11 +92,10 @@ const Charts = {
           tooltip: {
             mode: 'index',
             intersect: false,
-            backgroundColor: 'rgba(15,22,40,.92)',
-            titleColor: text,
-            bodyColor: muted,
-            borderColor: 'rgba(232,238,249,.12)',
-            borderWidth: 1,
+            backgroundColor: 'rgba(15,23,42,.92)',
+            titleColor: '#fff',
+            bodyColor: '#e2e8f0',
+            borderWidth: 0,
             padding: 10,
           },
         },
