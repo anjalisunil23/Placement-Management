@@ -164,7 +164,14 @@ class UserModel extends BaseModel
         $studentModel = new StudentModel();
         $companyModel = new CompanyModel();
         $driveModel = new DriveModel();
-        $totalStudents = $studentModel->count([]);
+        // Total Students KPI = campus final-year cohort, not all PlaceHub login accounts.
+        $totalStudents = (new \PMS\Services\OfficerDataService())->countFinalYearStudentsForScope([
+            'isAdmin'      => true,
+            'campusWide'   => true,
+            'departmentId' => null,
+            'department'   => null,
+            'profile'      => null,
+        ]);
         $placedStudents = $studentModel->count(['placed' => true]);
 
         $base = [

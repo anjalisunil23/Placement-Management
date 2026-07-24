@@ -1557,6 +1557,45 @@ final class OfficerDataService
     }
 
     /**
+     * Count final-year students for a scope (same AES+local merge as the Students page).
+     * Cached briefly so dashboard lite paints stay fast.
+     *
+     * @param array<string, mixed> $ctx
+     */
+    public function countFinalYearStudentsForScope(array $ctx): int
+    {
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        $deptKey = $campusWide
+            ? 'campus'
+            : ('dept:' . trim((string) ($ctx['departmentId'] ?? '')));
+        if (!empty($ctx['staffScope'])) {
+            $batches = StaffContext::assignedClassBatches($ctx);
+            sort($batches);
+            $deptKey .= ':staff:' . md5(implode('|', $batches));
+        }
+
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_fy_count_' . md5($deptKey) . '.json';
+        $ttlSeconds = 300;
+        if (is_file($path)) {
+            $age = time() - (int) @filemtime($path);
+            if ($age >= 0 && $age < $ttlSeconds) {
+                $raw = @file_get_contents($path);
+                $decoded = is_string($raw) ? json_decode($raw, true) : null;
+                if (is_array($decoded) && isset($decoded['count'])) {
+                    return max(0, (int) $decoded['count']);
+                }
+            }
+        }
+
+        $count = count($this->listFinalYearStudentsForScope($ctx));
+        @file_put_contents($path, json_encode(['count' => $count, 'at' => time()]), LOCK_EX);
+
+        return $count;
+    }
+
+    /**
      * PlaceHub students with admno that look like currently studying final-year.
      * When $ctx is department-scoped, only that department (and staff class batches if set).
      *
@@ -4094,8 +4133,9 @@ final class OfficerDataService
         $driveModel = new DriveModel();
         $userModel = new UserModel();
 
+        // Total Students KPI = final-year cohort (AES + local), not PlaceHub login accounts.
+        $totalStudents = $this->countFinalYearStudentsForScope($ctx);
         $studentFilter = PlacementOfficerContext::studentCollectionFilter($ctx);
-        $totalStudents = $studentModel->count($studentFilter);
         $placedStudents = $studentModel->count(array_merge($studentFilter, ['placed' => true]));
 
         // Lite dashboard: headline counts only — skip pending user scans and drive payload loops.

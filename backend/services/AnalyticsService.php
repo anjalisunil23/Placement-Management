@@ -36,7 +36,22 @@ final class AnalyticsService
             $studentFilter['departmentId'] = $deptOid;
         }
 
-        $totalStudents = $studentModel->count($studentFilter);
+        $totalStudents = (new OfficerDataService())->countFinalYearStudentsForScope(
+            $departmentId
+                ? [
+                    'isAdmin'      => false,
+                    'departmentId' => (string) $departmentId,
+                    'department'   => $departmentModel->findById($departmentId),
+                    'profile'      => null,
+                ]
+                : [
+                    'isAdmin'      => true,
+                    'campusWide'   => true,
+                    'departmentId' => null,
+                    'department'   => null,
+                    'profile'      => null,
+                ]
+        );
         $placedStudents = $studentModel->count(array_merge($studentFilter, ['placed' => true]));
         $placementPct = $totalStudents > 0
             ? round(($placedStudents / $totalStudents) * 100, 2)
