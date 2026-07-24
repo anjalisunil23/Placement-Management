@@ -107,8 +107,7 @@ final class AuthMiddleware
   }
 
   /**
-   * Senior staff (AES/designation rank &lt; 6) may view placement-admin data read-only.
-   * HOD accounts are elevated to placement_officer and already have full PO access.
+   * AES staff_rank only. Never invent from designation.
    */
   public static function staffRank(array $user): int
   {
@@ -117,7 +116,6 @@ final class AuthMiddleware
       return \PMS\Services\StaffRank::UNKNOWN;
     }
 
-    $designation = trim((string) ($user['designation'] ?? ''));
     $aes = [];
     try {
       $sessionAes = Security::getSessionAesProfile();
@@ -131,35 +129,39 @@ final class AuthMiddleware
       $aes = array_merge($aes, $user['aesProfile']);
     }
 
-    try {
-      $profile = \PMS\Services\StaffContext::ensureProfile($user);
-      if (is_array($profile)) {
-        if ($designation === '') {
-          $designation = trim((string) ($profile['designation'] ?? ''));
-        }
-        $aes = array_merge($aes, $profile);
-      }
-    } catch (\Throwable) {
-      // Profile optional for rank resolution.
+    // Live AES payload first (never designation).
+    $fromAes = \PMS\Services\StaffRank::pickAesStaffRank($aes);
+    if ($fromAes !== null) {
+      return $fromAes;
     }
 
-    // Prefer a fresh resolve so stale pay-level ranks (10+) are corrected.
-    $resolved = \PMS\Services\StaffRank::resolve($aes, $designation);
-
-    $stored = $user['staffRank'] ?? $user['rank'] ?? null;
-    if (is_numeric($stored)) {
-      $n = (int) $stored;
-      // Trust only explicit seniority ranks 1–9 (never 7th-CPC pay levels 10+).
-      if ($n >= 1 && $n < 10) {
-        // If designation says senior but stored says junior, prefer designation/AES resolve.
-        if ($resolved >= 1 && $resolved < 6 && $n >= 6) {
-          return $resolved;
-        }
+    // Previously synced AES staff_rank on the user / staff profile (1–9 only).
+    foreach ([$user] as $bag) {
+      $n = \PMS\Services\StaffRank::pickAesStaffRank([
+        'staff_rank' => $bag['staff_rank'] ?? null,
+        'staffRank' => $bag['staffRank'] ?? null,
+      ]);
+      if ($n !== null) {
         return $n;
       }
     }
 
-    return $resolved;
+    try {
+      $profile = \PMS\Services\StaffContext::ensureProfile($user);
+      if (is_array($profile)) {
+        $n = \PMS\Services\StaffRank::pickAesStaffRank([
+          'staff_rank' => $profile['staff_rank'] ?? null,
+          'staffRank' => $profile['staffRank'] ?? null,
+        ]);
+        if ($n !== null) {
+          return $n;
+        }
+      }
+    } catch (\Throwable) {
+      // Profile optional.
+    }
+
+    return \PMS\Services\StaffRank::UNKNOWN;
   }
 
   public static function canViewPlacementAdminData(array $user): bool

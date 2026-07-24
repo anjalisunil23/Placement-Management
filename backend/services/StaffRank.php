@@ -5,70 +5,43 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 /**
- * Numeric staff seniority rank for PlaceHub access rules.
- * Lower number = more senior. Ranks below 6 may view placement-admin data (read-only).
+ * AES staff_rank for PlaceHub access rules.
  *
- * Prefer a numeric AES field when present (staff_rank / similar, 1-9).
- * Ignore 7th-CPC pay levels (10+). Otherwise map from designation text.
- *
- * Note: AES placement API has no staff_ranks master endpoint. The designation
- * map below is PlaceHub's own convention until an AES-sourced list is provided.
+ * Admin view-only access requires a real AES staff_rank in 1..5 (rank < 6).
+ * Never invent a rank from designation text.
  */
 final class StaffRank
 {
-    /** Exclusive upper bound: eligible when 1 <= rank < MAX_VIEW_RANK */
+    /** Exclusive upper bound: eligible when 1 <= staff_rank < MAX_VIEW_RANK */
     public const MAX_VIEW_RANK = 6;
 
-    /** Default for teaching faculty when designation is empty / generic */
-    public const DEFAULT_TEACHING_RANK = 5;
-
-    /** Explicitly unknown non-teaching / unsupported */
+    /** Missing AES staff_rank */
     public const UNKNOWN = 99;
 
     /**
-     * PlaceHub designation -> rank map (not an AES-exported master list).
+     * Resolve from AES staff_rank only (or previously synced staffRank).
      *
-     * @var array<int, string>
-     */
-    public const STAFF_RANKS = [
-        1 => 'Principal / Director / Vice Principal / Dean',
-        2 => 'HOD / Head of Department',
-        3 => 'Professor',
-        4 => 'Associate Professor',
-        5 => 'Assistant Professor',
-        6 => 'Lecturer / Instructor / Demonstrator / Technical / Adjunct / Professor of Practice / Attender / Clerk / Office Assistant / Accountant',
-    ];
-
-    /**
-     * @return array<int, string>
-     */
-    public static function all(): array
-    {
-        return self::STAFF_RANKS;
-    }
-
-    public static function label(int $rank): string
-    {
-        return self::STAFF_RANKS[$rank] ?? ('Rank ' . $rank);
-    }
-
-    /**
      * @param array<string, mixed> $source AES payload and/or staff profile fields
      */
-    public static function resolve(array $source, string $designation = ''): int
+    public static function resolve(array $source): int
     {
-        $fromAes = self::pickNumeric($source);
+        $fromAes = self::pickAesStaffRank($source);
         if ($fromAes !== null) {
             return $fromAes;
         }
-        $desig = trim($designation);
-        if ($desig === '') {
-            $desig = HodDetection::pickDesignation($source);
+
+        // Previously synced PlaceHub profile value (must already be AES-sourced).
+        foreach (['staffRank', 'staff_rank'] as $key) {
+            if (!array_key_exists($key, $source)) {
+                continue;
+            }
+            $parsed = self::parseRankValue($source[$key]);
+            if ($parsed !== null && $parsed >= 1 && $parsed < 10) {
+                return $parsed;
+            }
         }
-        if ($desig === '' && isset($source['designation'])) {
-            $desig = trim((string) $source['designation']);
-        }
-        return self::fromDesignation($desig);
+
+        return self::UNKNOWN;
     }
 
     public static function canViewPlacementAdminData(int $rank): bool
@@ -77,40 +50,48 @@ final class StaffRank
     }
 
     /**
+     * Read AES staff_rank field only (not pay level, not designation, not generic "rank").
+     *
      * @param array<string, mixed> $source
      */
-    public static function pickNumeric(array $source): ?int
+    public static function pickAesStaffRank(array $source): ?int
     {
-        // Do NOT include staff_level / pay Level 10-14 - those are 7th CPC grades, not ranks.
         $keys = [
             'staff_rank', 'staffRank', 'staf_rank', 'stafRank',
-            'emp_rank', 'empRank', 'employee_rank', 'employeeRank',
-            'faculty_rank', 'facultyRank', 'desig_rank', 'desigRank',
-            'designation_rank', 'designationRank', 'rank_id', 'rankId',
-            'rank_no', 'rankNo', 'rank',
+            'Staff_Rank', 'STAFF_RANK', 'StaffRank',
         ];
         foreach ($keys as $key) {
             if (!array_key_exists($key, $source)) {
                 continue;
             }
             $parsed = self::parseRankValue($source[$key]);
-            if ($parsed === null) {
-                continue;
-            }
-            // Pay levels are typically 10-14; never treat them as seniority ranks.
-            if ($parsed >= 10) {
+            if ($parsed === null || $parsed >= 10) {
                 continue;
             }
             return $parsed;
         }
 
-        foreach (['staff', 'employee', 'faculty', 'profile', 'user'] as $bag) {
+        foreach (['staff', 'employee', 'faculty', 'profile', 'user', 'data', 'details'] as $bag) {
             $nested = $source[$bag] ?? null;
             if (!is_array($nested)) {
                 continue;
             }
-            $parsed = self::pickNumeric($nested);
+            $parsed = self::pickAesStaffRank($nested);
             if ($parsed !== null) {
+                return $parsed;
+            }
+        }
+
+        foreach ($source as $key => $value) {
+            if (!is_string($key)) {
+                continue;
+            }
+            $norm = strtolower(preg_replace('/[^a-z0-9]/i', '', $key) ?? '');
+            if (!in_array($norm, ['staffrank', 'stafrank'], true)) {
+                continue;
+            }
+            $parsed = self::parseRankValue($value);
+            if ($parsed !== null && $parsed >= 1 && $parsed < 10) {
                 return $parsed;
             }
         }
@@ -118,50 +99,10 @@ final class StaffRank
         return null;
     }
 
-    public static function fromDesignation(string $designation): int
+    /** @deprecated Use pickAesStaffRank */
+    public static function pickNumeric(array $source): ?int
     {
-        $raw = trim($designation);
-        $d = strtoupper($raw);
-        $d = preg_replace('/[,\/;|]+/', ' ', $d) ?? $d;
-        $d = preg_replace('/\s+/', ' ', $d) ?? $d;
-        $d = trim($d);
-
-        // Empty / generic teaching labels -> rank 5 (Assistant Professor band).
-        if ($d === '' || preg_match('/^(FACULTY|STAFF|TEACHER|TEACHING\s*STAFF|MEMBER)$/', $d)) {
-            return self::DEFAULT_TEACHING_RANK;
-        }
-
-        if (preg_match('/\b(PRINCIPAL|DIRECTOR|VICE\s*PRINCIPAL|DEAN)\b/', $d)) {
-            return 1;
-        }
-        if (HodDetection::designationLooksLikeHod($raw)
-            || preg_match('/\bH\.?\s*O\.?\s*D\.?\b/', $d)
-            || preg_match('/\bHEAD\s+OF\s+(THE\s+)?(DEPT\.?|DEPARTMENT)\b/', $d)
-            || preg_match('/\b(DEPT\.?|DEPARTMENT)\s+HEAD\b/', $d)) {
-            return 2;
-        }
-        if (preg_match('/\bPROFESSOR\b/', $d)
-            && !preg_match('/\b(ASSOCIATE|ASSISTANT|ADJUNCT)\b/', $d)
-            && !preg_match('/\bOF\s+PRACTICE\b/', $d)) {
-            return 3;
-        }
-        if (preg_match('/\bASSOCIATE\s+PROFESSOR\b/', $d)) {
-            return 4;
-        }
-        if (preg_match('/\bASSISTANT\s+PROFESSOR\b/', $d)) {
-            return 5;
-        }
-        // Junior / non-teaching - rank 6 (not eligible for placement-admin view).
-        if (preg_match('/\b(LECTURER|INSTRUCTOR|DEMONSTRATOR|TECHNICAL|LAB\s*ASSISTANT|ADJUNCT|PROFESSOR\s+OF\s+PRACTICE|ATTENDER|CLERK|OFFICE\s*ASSISTANT|ACCOUNTANT)\b/', $d)) {
-            return 6;
-        }
-
-        // Unknown academic-looking titles still default to teaching rank 5.
-        if (preg_match('/\b(PROF|FACULTY|LECTUR|TEACH|DEPARTMENT)\b/', $d)) {
-            return self::DEFAULT_TEACHING_RANK;
-        }
-
-        return self::DEFAULT_TEACHING_RANK;
+        return self::pickAesStaffRank($source);
     }
 
     private static function parseRankValue(mixed $value): ?int
@@ -179,10 +120,6 @@ final class StaffRank
         }
         if (preg_match('/^\d{1,2}$/', $text)) {
             $n = (int) $text;
-            return ($n >= 1 && $n <= 50) ? $n : null;
-        }
-        if (preg_match('/\brank\s*[=:]?\s*(\d{1,2})\b/i', $text, $m)) {
-            $n = (int) $m[1];
             return ($n >= 1 && $n <= 50) ? $n : null;
         }
         return null;

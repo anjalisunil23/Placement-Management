@@ -292,6 +292,11 @@ final class AesLoginService
         if ($designation !== '') {
             $aesProfile['designation'] = $designation;
         }
+        $staffRank = \PMS\Services\StaffRank::pickAesStaffRank($aesProfile);
+        if ($staffRank !== null) {
+            $aesProfile['staff_rank'] = $staffRank;
+            $aesProfile['staffRank'] = $staffRank;
+        }
         if ($isHod) {
             $aesProfile['isHod'] = true;
             if (($aesProfile['designation'] ?? '') === '') {
@@ -1604,6 +1609,8 @@ final class AesLoginService
             'year'           => $this->pick($aesDetails, ['year', 'academic_year', 'academicYear', 'batch_year']),
             'semester'       => $this->pick($aesDetails, ['semester', 'sem', 'current_semester']),
             'designation'    => HodDetection::pickDesignation($aesDetails),
+            'staff_rank'     => \PMS\Services\StaffRank::pickAesStaffRank($aesDetails),
+            'staffRank'      => \PMS\Services\StaffRank::pickAesStaffRank($aesDetails),
             'gender'         => $this->normalizeGender($this->pickInsensitive($aesDetails, [
                 'stud_gender', 'gender', 'sex', 'stud_sex', 'Gender', 'SEX',
             ])),
@@ -2004,10 +2011,9 @@ final class AesLoginService
             $designation = $existingDesig;
         }
         $designation = HodDetection::normalizeDesignationForHod($designation, $isHod);
-        $staffRank = \PMS\Services\StaffRank::resolve(
-            array_merge($aesDetails, $extras, is_array($existing) ? $existing : []),
-            $designation
-        );
+        // AES staff_rank only — never keep / invent from designation or stale profile ranks.
+        $staffRank = \PMS\Services\StaffRank::pickAesStaffRank(array_merge($aesDetails, $extras))
+            ?? \PMS\Services\StaffRank::UNKNOWN;
 
         if (!$existing) {
             $staffModel->createProfile((string) $user['_id'], [
@@ -2965,7 +2971,7 @@ final class AesLoginService
             $designation !== '' ? $designation : 'Faculty',
             $isHod
         );
-        $staffRank = StaffRank::resolve($mapped, $designation);
+        $staffRank = StaffRank::pickAesStaffRank($mapped) ?? StaffRank::UNKNOWN;
 
         $userId = $userModel->createUser([
             'name'     => $name,
@@ -3025,7 +3031,7 @@ final class AesLoginService
             'designation'  => $designation,
             'phone'        => (string) ($mapped['phone'] ?? ''),
             'isHod'        => $isHod,
-            'staffRank'    => StaffRank::resolve($mapped, $designation),
+            'staffRank'    => StaffRank::pickAesStaffRank($mapped) ?? StaffRank::UNKNOWN,
         ]);
 
         return $user;

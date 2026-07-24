@@ -455,36 +455,6 @@ const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html'
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html'];
 
-/** Derive staff seniority rank from designation when AES rank is absent (1=senior … 6+=junior). */
-/** PlaceHub designation→rank map (not an AES-exported master list). */
-const STAFF_RANKS = {
-  1: 'Principal / Director / Vice Principal / Dean',
-  2: 'HOD / Head of Department',
-  3: 'Professor',
-  4: 'Associate Professor',
-  5: 'Assistant Professor',
-  6: 'Lecturer / Instructor / Demonstrator / Technical / Adjunct / Professor of Practice / Attender / Clerk / Office Assistant / Accountant',
-};
-
-function staffRankFromDesignation(designation) {
-  const d = String(designation || '')
-    .toUpperCase()
-    .replace(/[,/;|]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  // Map designation onto PlaceHub STAFF_RANKS (1–6).
-  if (!d || /^(FACULTY|STAFF|TEACHER|TEACHING\s*STAFF|MEMBER)$/.test(d)) return 5;
-  if (/\b(PRINCIPAL|DIRECTOR|VICE\s*PRINCIPAL|DEAN)\b/.test(d)) return 1;
-  if (/\bH\.?\s*O\.?\s*D\.?\b/.test(d) || /\bHEAD\s+OF\s+(THE\s+)?(DEPT\.?|DEPARTMENT)\b/.test(d)
-    || /\b(DEPT\.?|DEPARTMENT)\s+HEAD\b/.test(d) || /^HOD\b/.test(d)) return 2;
-  if (/\bPROFESSOR\b/.test(d) && !/\b(ASSOCIATE|ASSISTANT|ADJUNCT)\b/.test(d) && !/\bOF\s+PRACTICE\b/.test(d)) return 3;
-  if (/\bASSOCIATE\s+PROFESSOR\b/.test(d)) return 4;
-  if (/\bASSISTANT\s+PROFESSOR\b/.test(d)) return 5;
-  if (/\b(LECTURER|INSTRUCTOR|DEMONSTRATOR|TECHNICAL|LAB\s*ASSISTANT|ADJUNCT|PROFESSOR\s+OF\s+PRACTICE|ATTENDER|CLERK|OFFICE\s*ASSISTANT|ACCOUNTANT)\b/.test(d)) return 6;
-  if (/\b(PROF|FACULTY|LECTUR|TEACH|DEPARTMENT)\b/.test(d)) return 5;
-  return 5;
-}
-
 /** Placement Cell guidelines version students must accept on first login. */
 const PLACEMENT_POLICY_VERSION = 'ajce-2026-v1';
 
@@ -651,30 +621,25 @@ const Auth = {
     return false;
   },
   /**
-   * Staff seniority rank (lower = more senior). Prefer a real AES/session rank when
-   * present; otherwise derive from designation. Ignore stored 99 (unknown).
+   * AES staff_rank only (1–9). Never invent from designation.
    */
   staffRank() {
     const u = this.user() || {};
-    const fromDesig = staffRankFromDesignation(u.designation || '');
-    const raw = u.staffRank ?? u.rank;
-    const n = Number(raw);
-    // Ignore pay levels (10+) and unknown (99); prefer designation when stored looks wrong.
-    if (Number.isFinite(n) && n >= 1 && n < 10) {
-      if (fromDesig >= 1 && fromDesig < 6 && n >= 6) return fromDesig;
-      return n;
+    const aes = u.aesProfile && typeof u.aesProfile === 'object' ? u.aesProfile : {};
+    const candidates = [
+      u.staffRank, u.staff_rank,
+      aes.staff_rank, aes.staffRank, aes.staf_rank, aes.stafRank,
+    ];
+    for (const raw of candidates) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 1 && n < 10) return n;
     }
-    return fromDesig;
+    return 99;
   },
-  /** Senior staff (rank &lt; 6), not HOD — view-only placement admin surfaces. */
+  /** AES staff_rank &lt; 6 (not HOD). No designation fallback. */
   canViewPlacementAdminData() {
     if (this.role() !== 'staff') return false;
     if (this.isHod()) return false;
-    if (this.user()?.canViewPlacementAdminData === true
-      || this.user()?.canViewPlacementAdminData === 1
-      || this.user()?.canViewPlacementAdminData === '1') {
-      return true;
-    }
     const rank = this.staffRank();
     return rank >= 1 && rank < 6;
   },
@@ -738,23 +703,23 @@ const Auth = {
         designation,
         isHod,
         staffRank: (() => {
-          const n = Number(u.staffRank ?? merged.staffRank ?? prev.staffRank);
+          const n = Number(u.staffRank ?? merged.staffRank
+            ?? merged.staff_rank ?? u.staff_rank
+            ?? (merged.aesProfile && merged.aesProfile.staff_rank)
+            ?? (u.aesProfile && u.aesProfile.staff_rank));
           if (Number.isFinite(n) && n >= 1 && n < 10) return n;
-          return staffRankFromDesignation(designation);
+          return 99;
         })(),
         canViewPlacementAdminData: (() => {
           if (isHod) return false;
           const dbRole = String(u.role || merged.role || prev.role || '');
           if (dbRole !== 'staff' && role !== 'staff') return false;
           if (role === 'placement_officer' && isHod) return false;
-          const n = Number(u.staffRank ?? merged.staffRank ?? prev.staffRank);
-          const rank = (Number.isFinite(n) && n >= 1 && n < 10)
-            ? n
-            : staffRankFromDesignation(designation);
-          if (rank >= 1 && rank < 6) return true;
-          return u.canViewPlacementAdminData === true
-            || merged.canViewPlacementAdminData === true
-            || prev.canViewPlacementAdminData === true;
+          const n = Number(u.staffRank ?? merged.staffRank
+            ?? merged.staff_rank ?? u.staff_rank
+            ?? (merged.aesProfile && merged.aesProfile.staff_rank)
+            ?? (u.aesProfile && u.aesProfile.staff_rank));
+          return Number.isFinite(n) && n >= 1 && n < 6;
         })(),
         company: merged.company ?? prev.company ?? '',
         companyName: merged.companyName ?? prev.companyName ?? '',
@@ -5168,8 +5133,9 @@ async function dashboardStats(opts = {}) {
       const stats = await OfficerApi.fetchDashboard(opts);
       return mapLiveDashboardStats(stats);
     }
-    // Senior staff viewing placement-admin data always use campus admin KPIs.
-    if (Auth.role() === 'staff' && typeof Auth.canViewPlacementAdminData === 'function'
+    // Senior staff (rank < 6) may open admin KPIs separately; recruiting stays department-scoped.
+    if (Auth.role() === 'staff' && opts.adminView
+      && typeof Auth.canViewPlacementAdminData === 'function'
       && Auth.canViewPlacementAdminData() && typeof AdminApi !== 'undefined') {
       const stats = await AdminApi.fetchDashboard(opts);
       return mapLiveDashboardStats(stats, stats?.activeDrives ?? 0);
@@ -5210,15 +5176,13 @@ const RecruitingStore = {
   async fetch(opts = {}) {
     if (!Auth.hasRealAuth()) return null;
     const role = Auth.role();
-    // Senior staff (rank < 6) use campus-wide admin recruiting (view only).
-    const campusViewer = role === 'staff'
-      && typeof Auth.canViewPlacementAdminData === 'function'
-      && Auth.canViewPlacementAdminData();
+    // Staff recruiting is always department-scoped (old staff dashboard).
+    // Rank < 6 staff open campus admin KPIs via dashboard.html#placement-admin-view.
     const paths = {
       company: '/company/recruiting',
       admin: '/admin/recruiting',
       placement_officer: '/officer/recruiting',
-      staff: campusViewer ? '/admin/recruiting' : '/staff/recruiting',
+      staff: '/staff/recruiting',
     };
     const path = paths[role];
     if (!path) return null;

@@ -49,6 +49,8 @@ try {
         print_r($debug['mapped']);
         echo "\nprofileScan:\n";
         print_r($debug['profileScan']);
+        echo "\nstaff_rank:\n";
+        print_r(\PMS\Services\StaffRank::pickAesStaffRank(array_merge($payload, $service->collectAesDetails($payload))));
         exit;
     }
 
