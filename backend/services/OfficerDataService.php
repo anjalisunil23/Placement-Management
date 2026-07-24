@@ -738,6 +738,8 @@ final class OfficerDataService
         }
         $usersById = $userModel->findByIds(array_keys($userIds));
 
+        // Admin: every placed student campus-wide. Officer/staff: current calendar year only.
+        $currentYearOnly = empty($ctx['isAdmin']);
         $currentYear = (int) date('Y');
         $rows = [];
         foreach ($students as $s) {
@@ -750,7 +752,6 @@ final class OfficerDataService
             $company = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
             $role = trim((string) ($placement['role'] ?? $placement['jobRole'] ?? ''));
             $package = trim((string) ($placement['package'] ?? $placement['ctc'] ?? $placement['salary'] ?? ''));
-            // Prefer dates on the current placement — current calendar year only.
             $placedAt = trim((string) (
                 $placement['joinDate']
                 ?? $placement['placedAt']
@@ -758,7 +759,7 @@ final class OfficerDataService
                 ?? $s['placedAt']
                 ?? ''
             ));
-            if ($placedAt === '' || !$this->isPlacementInYear($placedAt, $currentYear)) {
+            if ($currentYearOnly && ($placedAt === '' || !$this->isPlacementInYear($placedAt, $currentYear))) {
                 continue;
             }
 
@@ -781,7 +782,12 @@ final class OfficerDataService
             $row['placementRole'] = $role;
             $row['placementPackage'] = $package;
             $row['placedAt'] = $placedAt;
-            $row['placementYear'] = $currentYear;
+            if ($placedAt !== '') {
+                $ts = strtotime($placedAt);
+                if ($ts !== false) {
+                    $row['placementYear'] = (int) date('Y', $ts);
+                }
+            }
 
             $rows[] = $row;
         }

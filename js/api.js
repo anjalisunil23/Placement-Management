@@ -3837,6 +3837,31 @@ const UserRegistry = {
     toast(res.message || 'Could not remove placement officer role.', 'error');
     return false;
   },
+  async promoteToAdmin(userId) {
+    if (!(await requireWriteSession())) return false;
+    const res = await api(`/admin/users/${encodeURIComponent(userId)}/promote-to-admin`, { method: 'POST' });
+    if (res.success) {
+      await this.fetch();
+      return true;
+    }
+    toast(res.message || 'Could not promote to administrator.', 'error');
+    return false;
+  },
+  async demoteFromAdmin(userId, departmentId = '') {
+    if (!(await requireWriteSession())) return false;
+    const body = {};
+    if (departmentId) body.departmentId = departmentId;
+    const res = await api(`/admin/users/${encodeURIComponent(userId)}/demote-from-admin`, {
+      method: 'POST',
+      body,
+    });
+    if (res.success) {
+      await this.fetch();
+      return true;
+    }
+    toast(res.message || 'Could not remove administrator role.', 'error');
+    return false;
+  },
   async changeDepartmentOfficer(deptId, userId) {
     if (!(await requireWriteSession())) return false;
     const res = await api(`/admin/departments/${encodeURIComponent(deptId)}/placement-officer`, {

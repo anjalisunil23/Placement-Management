@@ -25,6 +25,7 @@ use PMS\Models\StudentModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
 use PMS\Services\ApplicationWorkflowService;
+use PMS\Services\AesLoginService;
 use PMS\Services\EmailService;
 use PMS\Services\NotificationService;
 use PMS\Services\OfficerDataService;
@@ -385,6 +386,19 @@ final class AdminController
             }
         }
 
+        // Admins promoted from staff may still have a staff profile (used for demotion).
+        if (($user['role'] ?? '') === 'admin') {
+            $profile = (new StaffModel())->findByUserId($userId);
+            if ($profile) {
+                $dept = (new DepartmentModel())->findById((string) ($profile['departmentId'] ?? ''));
+                $row['departmentId'] = (string) ($profile['departmentId'] ?? '');
+                $row['department'] = $this->formatDepartmentLabel($dept);
+                $row['departmentName'] = (string) ($dept['name'] ?? '');
+                $row['designation'] = $profile['designation'] ?? '';
+                $row['fromStaff'] = true;
+            }
+        }
+
         if (($user['role'] ?? '') === 'placement_officer') {
             $profile = (new PlacementOfficerModel())->findByUserId($userId);
             if ($profile) {
@@ -640,6 +654,98 @@ final class AdminController
 
         $this->demotePlacementOfficerToStaff($userId);
         Response::success(['id' => $userId], 'Placement officer role removed.');
+    }
+
+    /** POST /api/admin/users/{id}/promote-to-admin — promote a staff member to administrator */
+    public function promoteStaffToAdmin(string $userId): void
+    {
+        RBACMiddleware::requireAdmin();
+        $user = $this->userModel->findById($userId);
+        if (!$user) {
+            Response::notFound('User not found.');
+        }
+
+        $role = (string) ($user['role'] ?? '');
+        if ($role === 'admin') {
+            Response::success(['id' => $userId], 'User is already an administrator.');
+        }
+        if ($role !== 'staff') {
+            Response::error('Only staff members can be promoted to administrator.', 422);
+        }
+        if (($user['status'] ?? '') === 'blocked') {
+            Response::error('Unblock this staff member before promoting them to administrator.', 422);
+        }
+
+        $staffProfile = (new StaffModel())->findByUserId($userId);
+        if ($staffProfile === null) {
+            Response::error('Staff profile not found for this user.', 422);
+        }
+
+        // Keep the staff profile so they can be returned to staff later.
+        $this->userModel->updateUser($userId, [
+            'role'     => 'admin',
+            'status'   => 'active',
+            'approved' => true,
+        ]);
+
+        Response::success(
+            ['id' => $userId],
+            'Staff member promoted to administrator.'
+        );
+    }
+
+    /** POST /api/admin/users/{id}/demote-from-admin — return an admin to staff */
+    public function demoteAdminToStaff(string $userId): void
+    {
+        $actor = RBACMiddleware::requireAdmin();
+        $user = $this->userModel->findById($userId);
+        if (!$user) {
+            Response::notFound('User not found.');
+        }
+        if (($user['role'] ?? '') !== 'admin') {
+            Response::error('User is not an administrator.', 422);
+        }
+
+        $actorId = (string) ($actor['_id'] ?? $actor['id'] ?? '');
+        if ($actorId !== '' && $actorId === $userId) {
+            Response::error('You cannot remove your own administrator role.', 422);
+        }
+
+        $email = strtolower(trim((string) ($user['email'] ?? '')));
+        if ($email !== '' && (new AesLoginService())->isSuperAdminEmail($email)) {
+            Response::error('Built-in super-admin accounts cannot be demoted.', 422);
+        }
+
+        $adminCount = count($this->userModel->findAll(['role' => 'admin'], 500));
+        if ($adminCount <= 1) {
+            Response::error('Cannot remove the last administrator.', 422);
+        }
+
+        $staffModel = new StaffModel();
+        $staffProfile = $staffModel->findByUserId($userId);
+        if ($staffProfile === null) {
+            $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+            $departmentId = trim((string) ($input['departmentId'] ?? ''));
+            if ($departmentId === '' || !(new DepartmentModel())->findById($departmentId)) {
+                Response::error('Select a department to restore this user as staff.', 422);
+            }
+            try {
+                $staffModel->createProfile($userId, [
+                    'departmentId' => $departmentId,
+                    'designation'  => trim((string) ($input['designation'] ?? 'Staff')) ?: 'Staff',
+                ]);
+            } catch (\Throwable $e) {
+                Response::error('Could not restore staff profile: ' . $e->getMessage(), 422);
+            }
+        }
+
+        $this->userModel->updateUser($userId, [
+            'role'     => 'staff',
+            'status'   => 'active',
+            'approved' => true,
+        ]);
+
+        Response::success(['id' => $userId], 'Administrator role removed. User is now staff.');
     }
 
     /** PUT /api/admin/users/{id} */
@@ -1046,7 +1152,7 @@ final class AdminController
         );
     }
 
-    /** GET /api/admin/students/placed — campus-wide placed students (current year) */
+    /** GET /api/admin/students/placed — all placed students campus-wide */
     public function listPlacedStudents(): void
     {
         $scope = (new OfficerDataService())->requireScope();

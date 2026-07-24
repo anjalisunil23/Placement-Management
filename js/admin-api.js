@@ -16,6 +16,7 @@ const AdminApi = {
       department: u.department || u.departmentName || '',
       departmentId: u.departmentId || '',
       designation: u.designation || '',
+      fromStaff: !!u.fromStaff,
       company: u.company || u.companyName || '',
       alumniRole: u.alumniRole || '',
       companyName: u.companyName || '',

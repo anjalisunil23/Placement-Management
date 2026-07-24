@@ -23,13 +23,14 @@
 <div class="row g-3 mb-3">
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Students</div><div class="val" id="statStudents">0</div></div></div>
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Staff</div><div class="val" id="statStaff">0</div></div></div>
-  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Placement officers</div><div class="val" id="statOfficers">0</div></div></div>
+  <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Admins</div><div class="val" id="statAdmins">0</div></div></div>
   <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Pending approval</div><div class="val" id="statPending">0</div></div></div>
 </div>
 
 <div class="card-surface">
   <ul class="nav nav-tabs px-3 pt-2" role="tablist">
     <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabStudents">Students</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAdmins">Admins</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabOfficers">Placement officers</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabStaff">Staff</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabCompanies">Companies</a></li>
@@ -41,6 +42,14 @@
       <div class="table-wrap"><table class="table-modern"><thead><tr>
         <th>Name</th><th>Register No</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Chances</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="studentRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="tabAdmins">
+      <div class="p-3 border-bottom small text-muted-2" style="border-color:var(--border)!important">
+        Promote staff to administrator from the Staff tab. Admins get full campus access.
+      </div>
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Name</th><th>Email</th><th>Former department</th><th>Status</th><th>Actions</th>
+      </tr></thead><tbody id="adminRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabOfficers">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
@@ -240,6 +249,7 @@ function departmentTypeLabel(d) {
 }
 
 function roleLabelForUser(u) {
+  if (u.role === 'admin') return 'Administrator';
   if (u.designation) return u.designation;
   if (u.role === 'placement_officer') return 'Placement officer';
   if (u.role === 'staff') return 'Staff';
@@ -487,12 +497,64 @@ async function deleteCompanyProfile(companyId) {
 
 function staffActionBtns(u) {
   const dept = departmentForUser(u);
-  const canPromote = u.role === 'staff' && (u.departmentId || u.department) && !u.blocked && u.status === 'approved';
+  const canPromotePo = u.role === 'staff' && (u.departmentId || u.department) && !u.blocked && u.status === 'approved';
+  const canPromoteAdmin = u.role === 'staff' && !u.blocked && u.status === 'approved';
   const promoteTitle = dept?.hasOfficer ? 'Replace as placement officer' : 'Assign as placement officer';
   return `<div class="d-flex gap-1 flex-wrap">
-    ${canPromote ? `<button class="btn btn-sm btn-outline-primary" onclick="assignStaffAsPo('${u.id}')" title="${promoteTitle}"><i class="bi bi-person-badge"></i></button>` : ''}
+    ${canPromoteAdmin ? `<button class="btn btn-sm btn-outline-danger" onclick="promoteStaffToAdmin('${u.id}')" title="Make administrator"><i class="bi bi-shield-lock"></i></button>` : ''}
+    ${canPromotePo ? `<button class="btn btn-sm btn-outline-primary" onclick="assignStaffAsPo('${u.id}')" title="${promoteTitle}"><i class="bi bi-person-badge"></i></button>` : ''}
     ${actionBtns(u)}
   </div>`;
+}
+
+async function promoteStaffToAdmin(userId) {
+  const u = UserRegistry.get(userId);
+  if (!u) return;
+  const confirmed = await confirmAction({
+    title: 'Make administrator',
+    message: `Promote ${u.name} to administrator? They will get full campus admin access on next sign-in.`,
+    confirmText: 'Make admin',
+    variant: 'danger',
+  });
+  if (!confirmed) return;
+  if (!(await requireWriteSession())) return;
+  const ok = await UserRegistry.promoteToAdmin(userId);
+  if (!ok) return;
+  toast(`${u.name} is now an administrator.`, 'success');
+  render();
+}
+
+function adminActionBtns(u) {
+  const me = Auth.user() || {};
+  const myId = String(me.id || me._id || '');
+  const isSelf = myId && myId === String(u.id || '');
+  const canDemote = !isSelf && !u.blocked;
+  return `<div class="d-flex gap-1 flex-wrap">
+    ${canDemote ? `<button class="btn btn-sm btn-outline-warning" onclick="demoteAdminToStaff('${u.id}')" title="Return to staff"><i class="bi bi-person-dash"></i></button>` : ''}
+    ${isSelf ? '<span class="small text-muted-2 align-self-center">You</span>' : actionBtns(u)}
+  </div>`;
+}
+
+async function demoteAdminToStaff(userId) {
+  const u = UserRegistry.get(userId);
+  if (!u) return;
+  const confirmed = await confirmAction({
+    title: 'Remove administrator',
+    message: `Remove administrator access for ${u.name}? They will return to staff access${u.department || u.departmentName ? ` in ${u.department || u.departmentName}` : ''}.`,
+    confirmText: 'Return to staff',
+    variant: 'warning',
+  });
+  if (!confirmed) return;
+  if (!(await requireWriteSession())) return;
+  let deptId = u.departmentId || '';
+  if (!deptId && departments.length) {
+    // Fallback if staff profile was missing — pick first academic dept is too risky; ask via prompt select
+    toast('This admin has no former department on file. Re-create them as staff after demotion if needed.', 'warn');
+  }
+  const ok = await UserRegistry.demoteFromAdmin(userId, deptId);
+  if (!ok) return;
+  toast(`${u.name} is now staff.`, 'success');
+  render();
 }
 
 async function assignStaffAsPo(userId, expectedDeptId = '') {
@@ -601,6 +663,17 @@ function renderOfficers(list) {
     </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No placement officers found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'placement_officer\')">Add one</button></td></tr>';
 }
 
+function renderAdmins(list) {
+  document.getElementById('adminRows').innerHTML = list.length ? list.map(u => `
+    <tr>
+      <td class="fw-semibold small">${u.name}</td>
+      <td>${u.email}</td>
+      <td>${u.department || u.departmentName || '—'}</td>
+      <td>${userStatusBadge(u.status, u.blocked)}</td>
+      <td>${adminActionBtns(u)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No administrators found. Promote a staff member from the Staff tab.</td></tr>';
+}
+
 function renderStaff(list) {
   document.getElementById('staffRows').innerHTML = list.length ? list.map(u => `
     <tr>
@@ -642,9 +715,10 @@ function render() {
   const all = UserRegistry.all();
   document.getElementById('statStudents').textContent = UserRegistry.byRole('student').length;
   document.getElementById('statStaff').textContent = UserRegistry.byRole('staff').length;
-  document.getElementById('statOfficers').textContent = UserRegistry.byRole('placement_officer').length;
+  document.getElementById('statAdmins').textContent = UserRegistry.byRole('admin').length;
   document.getElementById('statPending').textContent = all.filter(u => u.status === 'pending').length;
   renderStudents(UserRegistry.byRole('student'));
+  renderAdmins(UserRegistry.byRole('admin'));
   renderOfficers(UserRegistry.byRole('placement_officer'));
   renderStaff(UserRegistry.byRole('staff'));
   renderCompanies(companyDirectory.length
