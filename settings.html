@@ -773,8 +773,8 @@ function renderProfileQualifications(quals) {
     return `<tr>
       <td>${qual}</td>
       ${inst}${reg}${my}
-      ${cell('mark', formatQualMark(q.mark), { max: 1000 })}
-      ${cell('maxMark', formatQualMark(q.maxMark ?? q.maxmark), { max: 1000 })}
+      ${cell('mark', formatQualMark(q.mark), { max: 10000 })}
+      ${cell('maxMark', formatQualMark(q.maxMark ?? q.maxmark), { max: 10000 })}
       ${cell('percentage', pctDisplay === '—' ? '—' : String(Number(q.percentage)), { max: 100 })}
     </tr>`;
   }).join('');

@@ -1532,9 +1532,14 @@ final class AesApiService
                 }
             }
             if ($percentage === null && $mark !== null && $maxMark !== null && $maxMark > 0) {
-                $pct = round(($mark / $maxMark) * 100, 2);
-                if ($pct > 0 && $pct <= 100) {
-                    $percentage = $pct;
+                // Do not invent a percentage for CGPA-scale rows (maxmark ≤ 10).
+                $isCgpaScale = $maxMark <= 10.0
+                    || preg_match('/\b(CGPA|CURRENT|SGPA)\b/i', $qualification) === 1;
+                if (!$isCgpaScale) {
+                    $pct = round(($mark / $maxMark) * 100, 2);
+                    if ($pct > 0 && $pct <= 100) {
+                        $percentage = $pct;
+                    }
                 }
             }
 
@@ -1549,6 +1554,18 @@ final class AesApiService
                 $qualification = 'SSLC / 10th';
             } elseif ($qualification !== '' && preg_match('/^plus\s*two$/i', $qualification) === 1) {
                 $qualification = 'Plus Two / 12th';
+            }
+
+            // Degree / school rows with percentage but no maxmark — treat as out-of-100.
+            if (
+                $percentage !== null
+                && $maxMark === null
+                && $mark !== null
+                && $mark > 0
+                && $mark <= 100
+                && abs($mark - $percentage) < 0.51
+            ) {
+                $maxMark = 100.0;
             }
 
             $out[] = [
