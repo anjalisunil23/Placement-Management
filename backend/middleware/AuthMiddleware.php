@@ -40,13 +40,20 @@ final class AuthMiddleware
   }
 
   /**
-   * Staff whose designation is Head of Department (HOD).
-   * They get placement_officer dashboard access without a placement_officers row.
+   * Staff whose designation / AES profile is Head of Department (HOD).
+   * They get placement_officer dashboard as the default department PO.
    */
   public static function isHod(array $user): bool
   {
-    if (trim((string) ($user['role'] ?? '')) !== 'staff') {
+    $role = trim((string) ($user['role'] ?? ''));
+    // HOD accounts stay role=staff in DB; assigned POs use placement_officer.
+    if ($role !== 'staff') {
       return false;
+    }
+
+    $designation = strtoupper(trim((string) ($user['designation'] ?? '')));
+    if (\PMS\Services\HodDetection::designationLooksLikeHod($designation)) {
+      return true;
     }
 
     try {
@@ -55,15 +62,17 @@ final class AuthMiddleware
       $profile = [];
     }
 
-    $designation = strtoupper(trim((string) ($profile['designation'] ?? $user['designation'] ?? '')));
-    if ($designation === '') {
-      return false;
+    $profileDesig = (string) ($profile['designation'] ?? '');
+    if (\PMS\Services\HodDetection::designationLooksLikeHod($profileDesig)) {
+      return true;
     }
 
-    return preg_match(
-      '/\bHOD\b|\bHEAD\s+OF\s+DEPARTMENT\b|\bDEPARTMENT\s+HEAD\b|\bPROFESSOR\s*&\s*HEAD\b/',
-      $designation
-    ) === 1;
+    $aes = Security::getSessionAesProfile();
+    if (is_array($aes) && $aes !== [] && \PMS\Services\HodDetection::payloadIndicatesHod($aes)) {
+      return true;
+    }
+
+    return false;
   }
 
   /** @deprecated Use isHod() */
@@ -287,6 +296,24 @@ final class AuthMiddleware
     $data['role'] = self::resolvedRole(array_merge($user, $data));
     $data['dashboard'] = $config['role_dashboards'][$data['role']] ?? '/public-stats.html';
     $data['isHod'] = self::isHod($user);
+    if ($data['isHod']) {
+      $data['designation'] = \PMS\Services\HodDetection::normalizeDesignationForHod(
+        (string) ($data['designation'] ?? ''),
+        true
+      );
+      // Self-heal stale Faculty designation so elevation works without AES session.
+      try {
+        $staffModel = new StaffModel();
+        $staff = $staffModel->findByUserId((string) ($user['_id'] ?? ''));
+        if ($staff && !\PMS\Services\HodDetection::designationLooksLikeHod((string) ($staff['designation'] ?? ''))) {
+          $staffModel->updateProfile((string) $staff['_id'], [
+            'designation' => (string) $data['designation'],
+          ]);
+        }
+      } catch (\Throwable) {
+        // Non-fatal — role elevation still applies for this request.
+      }
+    }
 
     $safe = DocumentHelper::jsonSafe($data);
     return is_array($safe) ? $safe : $data;

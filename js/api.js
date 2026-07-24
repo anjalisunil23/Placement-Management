@@ -602,7 +602,13 @@ const Auth = {
     const u = this.user() || {};
     if (u.isHod === true) return true;
     const d = String(u.designation || '').toUpperCase();
-    return /\bHOD\b|\bHEAD\s+OF\s+DEPARTMENT\b|\bDEPARTMENT\s+HEAD\b|\bPROFESSOR\s*&\s*HEAD\b/.test(d);
+    if (/\bH\.?\s*O\.?\s*D\.?\b/.test(d)) return true;
+    if (/\bHEAD\s+OF\s+(THE\s+)?(DEPT\.?|DEPARTMENT)\b/.test(d)) return true;
+    if (/\b(DEPT\.?|DEPARTMENT)\s+HEAD\b/.test(d)) return true;
+    if (/\bPROFESSOR\s*&\s*HEAD\b/.test(d)) return true;
+    if (/\bAND\s+HEAD\b/.test(d)) return true;
+    if (/\bHEAD\b/.test(d) && /\b(DEPT\.?|DEPARTMENT|BRANCH)\b/.test(d)) return true;
+    return false;
   },
   homePage(role) {
     const u = this.user();

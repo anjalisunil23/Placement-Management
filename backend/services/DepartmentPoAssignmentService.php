@@ -76,8 +76,8 @@ final class DepartmentPoAssignmentService
                 continue;
             }
             // Skip other HODs — they already have PO access via designation.
-            if (AuthMiddleware::isHod($user)) {
-                continue;
+            if (AuthMiddleware::isHod($user) || HodDetection::designationLooksLikeHod((string) ($staff['designation'] ?? ''))) {
+              continue;
             }
 
             $rows[] = [

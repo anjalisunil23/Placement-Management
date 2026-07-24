@@ -211,6 +211,16 @@ final class StaffContext
         );
 
         $designation = trim((string) ($merged['designation'] ?? ''));
+        if ($designation === '') {
+            $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
+            if (is_array($aesProfile)) {
+                $designation = HodDetection::pickDesignation($aesProfile);
+            }
+        }
+        $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
+        $isHod = HodDetection::designationLooksLikeHod($designation)
+            || (is_array($aesProfile) && HodDetection::payloadIndicatesHod($aesProfile));
+        $designation = HodDetection::normalizeDesignationForHod($designation, $isHod);
         $staffModel->createProfile($userId, [
             'departmentId' => $deptId,
             'designation'  => $designation !== '' ? $designation : 'Faculty',

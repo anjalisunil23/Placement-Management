@@ -1554,7 +1554,14 @@ final class AesLoginService
             'course'         => $this->pick($aesDetails, ['stud_course', 'stud_cource_short', 'course', 'program', 'programme', 'degree', 'stream']),
             'year'           => $this->pick($aesDetails, ['year', 'academic_year', 'academicYear', 'batch_year']),
             'semester'       => $this->pick($aesDetails, ['semester', 'sem', 'current_semester']),
-            'designation'    => $this->pick($aesDetails, ['designation', 'title', 'job_title', 'jobTitle']),
+            'designation'    => $this->pick($aesDetails, [
+                'designation', 'title', 'job_title', 'jobTitle', 'desig', 'Desig',
+                'staff_desig', 'staffDesig', 'staff_designation', 'staffDesignation',
+                'emp_desig', 'empDesig', 'emp_designation', 'empDesignation',
+                'faculty_desig', 'facultyDesig', 'faculty_designation', 'facultyDesignation',
+                'post', 'post_name', 'postName', 'position', 'staff_post', 'staffPost',
+                'role_name', 'roleName', 'official_designation', 'officialDesignation',
+            ]) ?: HodDetection::pickDesignation($aesDetails),
             'gender'         => $this->normalizeGender($this->pickInsensitive($aesDetails, [
                 'stud_gender', 'gender', 'sex', 'stud_sex', 'Gender', 'SEX',
             ])),
@@ -1920,8 +1927,16 @@ final class AesLoginService
         $existing = $staffModel->findByUserId((string) $user['_id']);
         $extras = $this->mapAesDetailsToUserFields($aesDetails);
 
+        $designation = trim((string) ($extras['designation'] ?? ''));
+        if ($designation === '') {
+            $designation = HodDetection::pickDesignation($aesDetails);
+        }
+        $isHod = HodDetection::designationLooksLikeHod($designation)
+            || HodDetection::payloadIndicatesHod($aesDetails)
+            || HodDetection::payloadIndicatesHod($extras);
+        $designation = HodDetection::normalizeDesignationForHod($designation, $isHod);
+
         if (!$existing) {
-            $designation = trim((string) ($extras['designation'] ?? ''));
             $staffModel->createProfile((string) $user['_id'], [
                 'departmentId' => $this->resolveDepartmentId($profile['departmentCode'] !== '' ? $profile['departmentCode'] : (string) ($extras['department'] ?? '')),
                 'designation'  => $designation !== '' ? $designation : 'Faculty',
@@ -1933,8 +1948,10 @@ final class AesLoginService
 
         $patch = [];
 
-        if (!empty($extras['designation'])) {
-            $patch['designation'] = (string) $extras['designation'];
+        if ($designation !== '') {
+            $patch['designation'] = $designation;
+        } elseif ($isHod) {
+            $patch['designation'] = 'HOD';
         }
         if (!empty($extras['phone'])) {
             $patch['phone'] = (string) $extras['phone'];
