@@ -714,10 +714,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     applyRoleVisibility();
   };
 
-  // Paint nav immediately from cached session so the sidebar is not blank during API calls.
-  if (Auth.role() || Auth.user()) {
-    paintShell();
-  }
+  const revealApp = () => {
+    const root = document.documentElement;
+    root.classList.add('ph-app-ready');
+    root.classList.remove('ph-booting');
+  };
 
   // Fresh AES login lands on the destination page directly (no aes-complete interstitial).
   let freshAesLogin = false;
@@ -741,6 +742,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
   }
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(pageBase)) {
+    revealApp();
     window.location.replace(`public-stats.html?next=${encodeURIComponent(pageBase)}`);
     return;
   }
@@ -748,6 +750,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (Auth.isDemo()) {
       // preview mode — read-only dashboards only
     } else {
+      revealApp();
       const roleHint = Auth.role() || Auth.user()?.role || '';
       Auth.clear();
       window.location.href = authReentryUrl(pageBase, roleHint);
@@ -758,16 +761,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   // First-time students must complete Placement Cell registration before any other page.
   if (typeof studentNeedsPlacementRegistration === 'function' && studentNeedsPlacementRegistration()) {
     if (pageBase !== 'placement-registration.html') {
+      revealApp();
       window.location.replace('placement-registration.html');
       return;
     }
   } else if (pageBase === 'placement-registration.html' && Auth.role() === 'student') {
+    revealApp();
     window.location.replace(Auth.homePage() || 'dashboard.html');
     return;
   }
 
-  if (!enforcePageRole(pageBase)) return;
+  if (!enforcePageRole(pageBase)) {
+    revealApp();
+    return;
+  }
+
+  // Single paint: sidebar, topbar, and role body reveal together.
   paintShell();
+  revealApp();
 
   if (Auth.hasRealAuth() && pageBase !== 'settings.html' && pageBase !== 'placement-registration.html') {
     const enrichOpts = {};

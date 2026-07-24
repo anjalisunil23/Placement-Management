@@ -1,4 +1,7 @@
 (function () {
+  // Hold the app invisible until shell + role panels are painted together.
+  try { document.documentElement.classList.add('ph-booting'); } catch (_) { /* ignore */ }
+
   function readSessionRole() {
     try {
       var user = JSON.parse(localStorage.getItem('ph-user') || 'null');

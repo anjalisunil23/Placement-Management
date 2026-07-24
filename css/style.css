@@ -36,6 +36,43 @@
   display: none !important;
 }
 
+/* One-shot reveal: keep incomplete shell/body hidden until app.js paints nav + role. */
+html.ph-booting .app,
+.app:has(#sidebar:empty) {
+  opacity: 0;
+  pointer-events: none;
+}
+html.ph-app-ready .app {
+  opacity: 1 !important;
+  pointer-events: auto;
+  transition: opacity .14s ease;
+}
+html.ph-booting,
+html:has(.app #sidebar:empty) {
+  background: var(--bg, #F8FAFC);
+}
+html.ph-booting::after,
+html:has(.app #sidebar:empty):not(.ph-app-ready)::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #E2E8F0;
+  border-top-color: #2563EB;
+  animation: ph-boot-spin .7s linear infinite;
+  z-index: 9999;
+  pointer-events: none;
+}
+html.ph-app-ready::after {
+  display: none !important;
+}
+@keyframes ph-boot-spin {
+  to { transform: rotate(360deg); }
+}
+
 html[data-ph-role="admin"] [data-roles*="admin"]:not(.modal),
 html[data-ph-role="placement_officer"] [data-roles*="placement_officer"]:not(.modal),
 html[data-ph-role="student"] [data-roles*="student"]:not(.modal),
