@@ -44,23 +44,25 @@ const Charts = {
       options: baseOpts(),
     });
   },
-  /** Clustered (grouped) bars — Excel-style comparison, legend at bottom. */
+  /**
+   * Dashboard clustered bars (Weekly Attendance style):
+   * dark panel, blue + orange adjacent bars, gaps between categories, dotted grid.
+   */
   groupedBar(ctx, labels, series) {
-    const CLUSTER = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5'];
-    const c = themeColors();
+    const CLUSTER = ['#4C8DFF', '#FF9F43', '#A5A5A5', '#FFC000', '#5B9BD5'];
+    const text = '#E8EEF9';
+    const muted = 'rgba(232,238,249,.55)';
+    const grid = 'rgba(232,238,249,.12)';
     const datasets = (series || []).map((s, i) => ({
       label: s.label || `Series ${i + 1}`,
       data: s.data || [],
       backgroundColor: s.color || CLUSTER[i % CLUSTER.length],
-      borderColor: s.color || CLUSTER[i % CLUSTER.length],
       borderWidth: 0,
-      borderRadius: 2,
+      borderRadius: { topLeft: 6, topRight: 6, bottomLeft: 0, bottomRight: 0 },
       borderSkipped: false,
-      maxBarThickness: 40,
-      // Keep Total + Placed bars touching within a department.
+      maxBarThickness: 34,
       barPercentage: 1,
-      // Leave a small gap between department groups.
-      categoryPercentage: 0.55,
+      categoryPercentage: 0.42,
     }));
     return this._mount(ctx, {
       type: 'bar',
@@ -72,34 +74,62 @@ const Charts = {
         datasets: {
           bar: {
             barPercentage: 1,
-            categoryPercentage: 0.55,
+            categoryPercentage: 0.42,
           },
         },
         plugins: {
           legend: {
             position: 'bottom',
             labels: {
-              color: c.text,
-              boxWidth: 12,
-              boxHeight: 12,
+              color: muted,
+              boxWidth: 10,
+              boxHeight: 10,
               usePointStyle: false,
-              padding: 16,
-              font: { family: 'Inter', size: 12 },
+              padding: 18,
+              font: { family: 'Inter', size: 12, weight: '500' },
             },
           },
-          tooltip: { mode: 'index', intersect: false },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(15,22,40,.92)',
+            titleColor: text,
+            bodyColor: muted,
+            borderColor: 'rgba(232,238,249,.12)',
+            borderWidth: 1,
+            padding: 10,
+          },
         },
         scales: {
           x: {
             stacked: false,
-            ticks: { color: c.text, maxRotation: 45, minRotation: 0 },
-            grid: { display: false, drawBorder: false },
+            ticks: {
+              color: muted,
+              maxRotation: 45,
+              minRotation: 0,
+              font: { family: 'Inter', size: 11 },
+            },
+            grid: {
+              color: grid,
+              borderDash: [4, 4],
+              drawBorder: false,
+            },
+            border: { display: false },
           },
           y: {
             stacked: false,
             beginAtZero: true,
-            ticks: { color: c.text, precision: 0 },
-            grid: { color: c.grid, drawBorder: false },
+            ticks: {
+              color: muted,
+              precision: 0,
+              font: { family: 'Inter', size: 11 },
+            },
+            grid: {
+              color: grid,
+              borderDash: [4, 4],
+              drawBorder: false,
+            },
+            border: { display: false },
           },
         },
       },

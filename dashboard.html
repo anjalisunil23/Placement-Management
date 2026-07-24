@@ -9,7 +9,7 @@
 <noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" /></noscript>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-<link href="css/style.css?v=20260724hod2" rel="stylesheet" />
+<link href="css/style.css?v=20260724dashchart" rel="stylesheet" />
 <script src="js/ph-role-guard.js?v=20260724hod4"></script>
 </head>
 <body data-page="dashboard.html">
@@ -92,9 +92,9 @@
             <h6 class="fw-bold mb-2">Branch-wise Placement</h6>
             <div style="height:300px" class="mt-2"><canvas id="branchChart"></canvas></div>
           </div></div>
-          <div class="col-12"><div class="card-surface p-3 p-md-4">
-            <h6 class="fw-bold mb-2">Department-wise Placement</h6>
-            <div class="small text-muted-2 mb-2">Students and placements by department</div>
+          <div class="col-12"><div class="card-surface p-3 p-md-4 chart-dashboard-card">
+            <h6 class="fw-bold mb-1 chart-dashboard-title">Department-wise Placement</h6>
+            <div class="small chart-dashboard-sub mb-2">Students and placements by department</div>
             <div style="height:280px" class="mt-2"><canvas id="deptPlacementChart"></canvas></div>
           </div></div>
         </div>
@@ -170,10 +170,10 @@
               <h6 class="fw-bold mb-2">Branch-wise Placement</h6>
               <div style="height:280px" class="mt-2"><canvas id="pavBranchChart"></canvas></div>
             </div></div>
-            <div class="col-12"><div class="card-surface p-3 p-md-4">
-              <h6 class="fw-bold mb-2">Department-wise Placement</h6>
-              <div class="small text-muted-2 mb-2">College-wide students and placements by department</div>
-              <div style="height:260px" class="mt-2"><canvas id="pavDeptPlacementChart"></canvas></div>
+            <div class="col-12"><div class="card-surface p-3 p-md-4 chart-dashboard-card">
+              <h6 class="fw-bold mb-1 chart-dashboard-title">Department-wise Placement</h6>
+              <div class="small chart-dashboard-sub mb-2">College-wide students and placements by department</div>
+              <div style="height:280px" class="mt-2"><canvas id="pavDeptPlacementChart"></canvas></div>
             </div></div>
           </div>
         </div>
@@ -460,7 +460,7 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
-    chartScripts.push('js/charts.js?v=20260724adjbar');
+    chartScripts.push('js/charts.js?v=20260724dashchart');
   }
   const apis = Promise.all(apiScripts.map(load));
   const charts = Promise.all(chartScripts.map(load));
@@ -585,8 +585,8 @@ function paintAdminCharts(s) {
       document.getElementById('deptPlacementChart'),
       deptRows.map(d => d.dept || d.name || ''),
       [
-        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#4472C4' },
-        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#ED7D31' },
+        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#4C8DFF' },
+        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#FF9F43' },
       ]
     );
   }
@@ -636,8 +636,8 @@ function paintStaffAdminView(stats) {
       document.getElementById('pavDeptPlacementChart'),
       deptRows.map(d => d.dept || d.name || ''),
       [
-        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#4472C4' },
-        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#ED7D31' },
+        { label: 'Total students', data: deptRows.map(d => Number(d.total) || 0), color: '#4C8DFF' },
+        { label: 'Placed', data: deptRows.map(d => Number(d.placed) || 0), color: '#FF9F43' },
       ]
     );
   }
