@@ -412,8 +412,14 @@
       const sc = data.statusCounts || {};
       const shortlisted = (Number(sc.shortlisted) || 0) + (Number(sc.under_review) || 0);
       const offers = (Number(sc.offered) || 0) + (Number(sc.selected) || 0);
-      const applicants = Number(stats.applicants) || Object.values(sc).reduce((n, v) => n + (Number(v) || 0), 0);
-      const hired = Number(stats.placedStudents) || 0;
+      const placedInPipeline = Number(sc.placed) || 0;
+      // placedStudents is current-year live placements (API); fall back to placed apps only.
+      const hired = Number(stats.placedStudents) || placedInPipeline;
+      const applicants = Math.max(
+        Number(stats.applicants) || 0,
+        Object.values(sc).reduce((n, v) => n + (Number(v) || 0), 0),
+        hired
+      );
       const companies = (data.activeCompanies || []).map(c => ({
         company: c.company,
         roles: c.openRoles ? [`${c.openRoles} open role${c.openRoles === 1 ? '' : 's'}`] : [],
@@ -451,19 +457,48 @@
       applicants = applicants.filter(a => this.batchMatchesFilter(a.classBatch, batchCode));
     }
 
-    // People counts: one student selected at 3 companies still counts once for Offers.
-    const people = this.uniqueApplicantsByPerson(applicants);
+    // Live funnel counts: unique people (one student at 3 companies still counts once).
+    const statusOf = (a) => String(a.status || a.uiStatus || '').toLowerCase();
+    const appPeople = this.uniqueApplicantsByPerson(applicants);
     const shortlisted = this.uniqueApplicantsByPerson(
-      applicants.filter(a => a.status === 'shortlisted' || a.status === 'under_review')
+      applicants.filter(a => {
+        const s = statusOf(a);
+        return s === 'shortlisted' || s === 'under_review';
+      })
     ).length;
     const offers = this.uniqueApplicantsByPerson(
-      applicants.filter(a => a.status === 'offered' || a.status === 'selected')
+      applicants.filter(a => {
+        const s = statusOf(a);
+        return s === 'offered' || s === 'selected';
+      })
     ).length;
 
-    // Hired = unique people with a current live placement this year (not past companies).
+    // Hired = unique people with a current live placement this year (View-filtered).
     const year = new Date().getFullYear();
     const placements = this.livePlacementsForFilters(deptCode, batchCode, year, data.placements);
-    const hired = placements.length;
+    const placedFromApps = this.uniqueApplicantsByPerson(
+      applicants.filter(a => statusOf(a) === 'placed')
+    ).map(a => ({
+      roll: a.roll,
+      name: a.name,
+      dept: a.dept,
+      company: a.company || '—',
+      year,
+      placedAt: a.appliedAt || `${year}-01-01`,
+    }));
+    const hiredRows = this.uniquePlacementsByPerson([...placements, ...placedFromApps]);
+    const hired = hiredRows.length;
+
+    // Top of funnel includes live placed students even if they have no open application row.
+    const people = this.uniqueApplicantsByPerson([
+      ...appPeople,
+      ...hiredRows.map(p => ({
+        roll: p.roll,
+        name: p.name,
+        dept: p.dept,
+        registerNumber: p.roll,
+      })),
+    ]);
 
     const companyMap = new Map();
     (data.activeCompanies || []).forEach(c => {
@@ -484,8 +519,8 @@
       }
       const row = companyMap.get(key);
       row.applicants++;
-      if (a.status === 'shortlisted' || a.status === 'under_review') row.shortlisted++;
-      if (a.status === 'offered' || a.status === 'selected') row.selected++;
+      if (statusOf(a) === 'shortlisted' || statusOf(a) === 'under_review') row.shortlisted++;
+      if (statusOf(a) === 'offered' || statusOf(a) === 'selected') row.selected++;
     });
 
     const companies = [...companyMap.values()].filter(c => !deptCode || c.applicants > 0);
@@ -615,7 +650,7 @@
       { re: /\b(me|mech|mechanical)\b/i, parent: 'Mechanical Engineering' },
       { re: /\b(ce|civil)\b/i, parent: 'Civil Engineering' },
       { re: /\b(it|aids|artificial\s*intelligence)\b/i, parent: 'AI & Information Technology' },
-      { re: /\b(mca|bca|computer\s*applications)\b/i, parent: 'Computer Applications' },
+      { re: /\b(mca|bca|ca|computer\s*applications)\b/i, parent: 'Computer Applications' },
       { re: /\b(che|chem|chemical)\b/i, parent: 'Chemical Engineering' },
       { re: /\b(ft|food)\b/i, parent: 'Food Technology' },
       { re: /\b(met|mme|metallurg)/i, parent: 'Metallurgical & Materials' },
@@ -924,6 +959,15 @@
         deptSelect.disabled = true;
         this.activeParentKey = '';
         this.activeDeptFilter = value;
+        // Still try to unlock MCA/BCA/… from catalogue when parent group is missing.
+        const catalogGroup = this.findGroupForFilter(label) || this.findGroupForFilter(value);
+        if (catalogGroup) {
+          this.viewDeptGroups = [catalogGroup];
+          this.activeParentKey = catalogGroup.parent;
+          this.activeDeptFilter = catalogGroup.allValue || value;
+          deptSelect.innerHTML = `<option value="${escLabel(catalogGroup.parent)}">${escLabel(catalogGroup.parent)}</option>`;
+          deptSelect.value = catalogGroup.parent;
+        }
         this.syncBranchSelect();
         return;
       }
@@ -959,13 +1003,33 @@
     this.viewExtraProgrammes.forEach(p => {
       html += `<option value="prog:${escLabel(p.code)}">${escLabel(p.label)}</option>`;
     });
+    // Capture before rebuild — replacing innerHTML clears the live selection.
+    const previousDomValue = String(deptSelect.value || '').trim();
     deptSelect.innerHTML = html;
     deptSelect.disabled = false;
+
+    // Keep the current View selection across recruiting refreshes.
+    if (!this.activeParentKey && previousDomValue && !previousDomValue.startsWith('prog:')) {
+      const g = this.findGroupByParent(previousDomValue) || this.findGroupForFilter(previousDomValue);
+      if (g) {
+        this.activeParentKey = g.parent;
+        if (!this.activeDeptFilter) this.activeDeptFilter = g.allValue;
+      }
+    }
 
     if (this.activeParentKey && [...deptSelect.options].some(o => o.value === this.activeParentKey)) {
       deptSelect.value = this.activeParentKey;
     } else if (this.activeDeptFilter && this.viewExtraProgrammes.some(p => p.code === this.activeDeptFilter)) {
       deptSelect.value = `prog:${this.activeDeptFilter}`;
+    } else if (previousDomValue && [...deptSelect.options].some(o => o.value === previousDomValue)) {
+      deptSelect.value = previousDomValue;
+      if (!previousDomValue.startsWith('prog:')) {
+        const g = this.findGroupByParent(previousDomValue) || this.findGroupForFilter(previousDomValue);
+        if (g) {
+          this.activeParentKey = g.parent;
+          if (!this.activeDeptFilter) this.activeDeptFilter = g.allValue;
+        }
+      }
     } else {
       deptSelect.value = '';
       this.activeParentKey = '';
@@ -1035,14 +1099,57 @@
   };
 
   HiringOverviewPage.prototype.findGroupByParent = function (parentKey) {
-    return this.viewDeptGroups.find(g => g.parent === parentKey) || null;
+    const key = String(parentKey || '').trim();
+    if (!key) return null;
+    return this.viewDeptGroups.find(g => g.parent === key)
+      || this.viewDeptGroups.find(g => g.parent.toLowerCase() === key.toLowerCase())
+      || null;
+  };
+
+  /** Resolve the active department group for branch options (parent key, filter, DOM, or own dept). */
+  HiringOverviewPage.prototype.resolveActiveViewGroup = function () {
+    let group = this.findGroupByParent(this.activeParentKey);
+    if (group) return group;
+
+    if (this.activeDeptFilter) {
+      group = this.findGroupForFilter(this.activeDeptFilter);
+      if (group) {
+        this.activeParentKey = group.parent;
+        return group;
+      }
+    }
+
+    const deptSelect = this.$('deptSelect');
+    const domValue = String(deptSelect?.value || '').trim();
+    if (domValue) {
+      if (domValue.startsWith('prog:')) {
+        group = this.findGroupForFilter(domValue.slice(5));
+      } else {
+        group = this.findGroupByParent(domValue) || this.findGroupForFilter(domValue);
+      }
+      if (group) {
+        this.activeParentKey = group.parent;
+        return group;
+      }
+    }
+
+    const role = this.currentRole();
+    if ((role === 'staff' || role === 'placement_officer') && !this.isCampusWideViewer()) {
+      group = this.findOwnDepartmentGroup();
+      if (group) {
+        this.activeParentKey = group.parent;
+        return group;
+      }
+    }
+
+    return null;
   };
 
   HiringOverviewPage.prototype.syncBranchSelect = function () {
     const branchSelect = this.$('branchSelect');
     if (!branchSelect) return;
     const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const group = this.findGroupByParent(this.activeParentKey);
+    const group = this.resolveActiveViewGroup();
 
     if (!group || !group.programmes.length) {
       branchSelect.innerHTML = '<option value="">All branches</option>';
@@ -1059,11 +1166,13 @@
     });
     branchSelect.innerHTML = html;
     branchSelect.disabled = false;
+    branchSelect.removeAttribute('disabled');
 
     if (this.activeDeptFilter && [...branchSelect.options].some(o => o.value === this.activeDeptFilter)) {
       branchSelect.value = this.activeDeptFilter;
     } else {
       branchSelect.value = group.allValue;
+      if (!this.activeDeptFilter) this.activeDeptFilter = group.allValue;
     }
   };
 
@@ -1102,7 +1211,7 @@
         return;
       }
 
-      const group = this.findGroupByParent(value);
+      const group = this.findGroupByParent(value) || this.findGroupForFilter(value);
       if (!group) {
         this.applyViewFilter('', { parentKey: '' });
         return;
@@ -1111,11 +1220,13 @@
       this.applyViewFilter(group.allValue || group.programmes[0]?.code || '', { parentKey: group.parent });
     };
 
-    if (this.isCampusWideViewer() && value) {
-      this.ensureFullRecruiting().finally(apply);
-      return;
-    }
+    // Apply immediately so branch options unlock without waiting on network.
     apply();
+    if (this.isCampusWideViewer() && value) {
+      this.ensureFullRecruiting().finally(() => {
+        this.renderForDept(this.selectedDept());
+      });
+    }
   };
 
   HiringOverviewPage.prototype.onBranchDropdownChange = async function () {

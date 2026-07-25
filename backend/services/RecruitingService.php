@@ -60,7 +60,7 @@ final class RecruitingService
     public function getCampusOverview(?string $departmentId = null, ?array $filterCtx = null, bool $lite = false): array
     {
         if ($lite) {
-            $cacheKey = 'recruiting_lite_' . md5((string) ($departmentId ?? ''));
+            $cacheKey = 'recruiting_lite_y' . (int) date('Y') . '_' . md5((string) ($departmentId ?? ''));
             $cached = $this->readOverviewCache($cacheKey, 60);
             if ($cached !== null) {
                 return $cached;
@@ -92,7 +92,7 @@ final class RecruitingService
             return $out;
         }
 
-        $fullCacheKey = 'recruiting_full_' . md5((string) ($departmentId ?? ''));
+        $fullCacheKey = 'recruiting_full_y' . (int) date('Y') . '_' . md5((string) ($departmentId ?? ''));
         $fullCached = $this->readOverviewCache($fullCacheKey, 90);
         if ($fullCached !== null) {
             return $fullCached;
@@ -343,16 +343,16 @@ final class RecruitingService
 
     private function countCampusPlacements(?string $departmentId): int
     {
-        $filter = ['placed' => true];
-        if ($departmentId !== null && $departmentId !== '') {
-            $deptOid = Security::toObjectId($departmentId);
-            if ($deptOid === null) {
-                return 0;
+        // Current calendar year only — same population as Hired / live placement list.
+        $year = (int) date('Y');
+        $count = 0;
+        foreach ($this->campusPlacements($departmentId) as $row) {
+            if ((int) ($row['year'] ?? 0) === $year) {
+                $count++;
             }
-            $filter['departmentId'] = $deptOid;
         }
 
-        return (new StudentModel())->count($filter);
+        return $count;
     }
 
     /**
