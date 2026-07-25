@@ -186,23 +186,6 @@
 
   <!-- Final year · Registered -->
   <div class="tab-pane fade show active" id="tabFinalYearRegistered">
-    <div class="alert alert-warning d-none mb-3" id="selfPlacementReviewPanel">
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-        <div>
-          <strong>Self-Placement Under Review</strong>
-          <div class="small mb-0">Verify offer letters and mark students as placed when confirmed.</div>
-        </div>
-        <span class="badge-soft warning" id="selfPlacementReviewCount">0</span>
-      </div>
-      <div class="table-wrap mb-0">
-        <table class="table-modern table-sm mb-0">
-          <thead>
-            <tr><th>Student</th><th>Adm. No.</th><th>Company</th><th></th></tr>
-          </thead>
-          <tbody id="selfPlacementReviewRows"></tbody>
-        </table>
-      </div>
-    </div>
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
@@ -267,6 +250,23 @@
 
   <!-- Placed students -->
   <div class="tab-pane fade" id="tabPlaced">
+    <div class="alert alert-warning d-none mb-3" id="selfPlacementReviewPanel">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div>
+          <strong>Self-Placement Under Review</strong>
+          <div class="small mb-0">Verify offer letters and mark students as placed when confirmed.</div>
+        </div>
+        <span class="badge-soft warning" id="selfPlacementReviewCount">0</span>
+      </div>
+      <div class="table-wrap mb-0">
+        <table class="table-modern table-sm mb-0">
+          <thead>
+            <tr><th>Student</th><th>Adm. No.</th><th>Company</th><th></th></tr>
+          </thead>
+          <tbody id="selfPlacementReviewRows"></tbody>
+        </table>
+      </div>
+    </div>
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
@@ -1972,6 +1972,11 @@ document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
   if ((href === 'tabFinalYearRegistered' || href === 'tabFinalYearPending') && canViewFinalYear) {
     loadFinalYearStudents().catch(() => {});
   }
+  if (href === 'tabPlaced' && canViewPlaced) {
+    loadPlacedStudents().catch(() => {});
+    // Pending self-placement rows come from the final-year list.
+    if (canVerifySelfPlacement) loadFinalYearStudents().catch(() => {});
+  }
 });
 
 let finalYearStudentsAll = [];
@@ -2012,17 +2017,12 @@ function finalYearRowHtml(s) {
   const pending = studentHasPendingSelfPlacement(s);
   const pendingBadge = pending ? ' <span class="badge-soft warning">Under Review</span>' : '';
   const regAttr = esc(s.registerNumber || s.admno || '');
-  const sid = esc(studentSelfPlacementId(s));
-  const actions = (pending && canVerifySelfPlacement && sid)
-    ? `<button type="button" class="btn btn-sm btn-warning self-placement-review me-1" data-student-id="${sid}"><i class="bi bi-clipboard-check me-1"></i>Review</button>
-       <button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button>`
-    : `<button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button>`;
   return `<tr>
     <td><strong>${name}</strong>${newBadge}${pendingBadge}</td>
     <td>${admno}</td>
     <td>${dept}</td>
     <td>${batch}</td>
-    <td class="text-end">${actions}</td>
+    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button></td>
   </tr>`;
 }
 
@@ -2142,6 +2142,7 @@ function renderPlacedTab() {
   if (!tbody) return;
   const list = filteredPlacedStudents();
   if (countEl) countEl.textContent = String(list.length);
+  renderSelfPlacementReviewPanel();
   if (!placedLoaded) {
     tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
     return;
@@ -2416,21 +2417,11 @@ document.getElementById('fyProfileSaveBtn')?.addEventListener('click', () => {
 });
 
 document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {
-  const reviewBtn = e.target.closest('.self-placement-review');
-  if (reviewBtn) {
-    openVerifyPlacementModal(reviewBtn.dataset.studentId || '').catch(() => {});
-    return;
-  }
   const btn = e.target.closest('.final-year-open');
   if (!btn) return;
   openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
 });
 document.getElementById('finalYearPendingRows')?.addEventListener('click', (e) => {
-  const reviewBtn = e.target.closest('.self-placement-review');
-  if (reviewBtn) {
-    openVerifyPlacementModal(reviewBtn.dataset.studentId || '').catch(() => {});
-    return;
-  }
   const btn = e.target.closest('.final-year-open');
   if (!btn) return;
   openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
