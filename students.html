@@ -765,7 +765,11 @@ if (isAdminRole) {
   }
   const placedSub = document.getElementById('placedTabSub');
   if (placedSub) {
-    placedSub.textContent = 'Placed students in your department (current year only).';
+    const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+    const assigned = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+    placedSub.textContent = assigned.length
+      ? 'Placed students in your class (current year only).'
+      : 'Placed students in your department (current year only).';
   }
 } else if (canViewFinalYear) {
   const pageSub = document.getElementById('pageSub');
@@ -2027,8 +2031,15 @@ function placedMatchesQuery(s, q) {
 
 function filteredPlacedStudents() {
   const q = document.getElementById('searchPlaced')?.value.trim() || '';
-  // Staff: full department list from API (not CT/CoCT class-batch scope).
-  return placedStudentsAll.filter(s => placedMatchesQuery(s, q));
+  return placedStudentsAll.filter(s => {
+    // CT/CoCT: only their assigned class (API also scopes; keep UI aligned).
+    if (role === 'staff') {
+      const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+      const assigned = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+      if (assigned.length && !studentInStaffScope(s)) return false;
+    }
+    return placedMatchesQuery(s, q);
+  });
 }
 
 function placedRowHtml(s) {

@@ -750,7 +750,7 @@ final class OfficerDataService
             $departments[(string) $d['_id']] = $d;
         }
 
-        // Admin: campus-wide. Officer/staff: department only (not CT/CoCT class batches).
+        // Admin: campus-wide. Officer: department. Staff CT/CoCT: assigned class only.
         $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $filter['placed'] = true;
 
@@ -764,11 +764,32 @@ final class OfficerDataService
         }
         $usersById = $userModel->findByIds(array_keys($userIds));
 
+        // Class teachers / co-class teachers: only their assigned batches (not whole dept).
+        $staffClassScoped = !empty($ctx['staffScope'])
+            && StaffContext::assignedClassBatches($ctx) !== [];
+
         // Admin: every placed student campus-wide. Officer/staff: current calendar year only.
         $currentYearOnly = empty($ctx['isAdmin']);
         $currentYear = (int) date('Y');
         $rows = [];
         foreach ($students as $s) {
+            if ($staffClassScoped) {
+                // Prefer local classBatch; fall back to AES stud_class when unset.
+                if (StaffContext::studentClassBatch($s) === '') {
+                    $reg = strtoupper(trim((string) ($s['registerNumber'] ?? '')));
+                    if ($reg !== '') {
+                        $placement = $this->placementProfileForRegister($reg);
+                        $aesBatch = trim((string) ($placement['stud_class'] ?? $placement['classBatch'] ?? ''));
+                        if ($aesBatch !== '') {
+                            $s['classBatch'] = $aesBatch;
+                            $s['stud_class'] = $aesBatch;
+                        }
+                    }
+                }
+                if (!StaffContext::studentMatchesScope($s, $ctx)) {
+                    continue;
+                }
+            }
             $userId = (string) ($s['userId'] ?? '');
             $deptId = (string) ($s['departmentId'] ?? '');
             $u = $userId !== '' ? ($usersById[$userId] ?? null) : null;
