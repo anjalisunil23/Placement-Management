@@ -1087,12 +1087,15 @@ body.login-page{
   .btn{min-height:40px}
   .form-control,.form-select{min-height:42px;font-size:16px} /* avoid iOS zoom */
 
-  /* Phone: edge-to-edge modals */
-  .modal-dialog{
+  /* Phone: edge-to-edge modals with pinned footer */
+  .modal-dialog,
+  .modal-dialog.modal-dialog-scrollable,
+  .modal-dialog.modal-fullscreen-sm-down{
     margin:0;
     max-width:100%;
+    width:100%;
     height:100%;
-    min-height:100%;
+    max-height:100%;
   }
   .modal-dialog.modal-dialog-centered{
     align-items:stretch;
@@ -1100,19 +1103,39 @@ body.login-page{
   }
   .modal-content{
     border-radius:0;
-    min-height:100%;
+    height:100%;
     max-height:100dvh;
     border-left:none;
     border-right:none;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
   }
   .modal-header{
     padding:.9rem .95rem;
     padding-top:calc(.9rem + env(safe-area-inset-top,0px));
+    flex-shrink:0;
   }
-  .modal-body{padding:.95rem}
+  .modal-body{
+    padding:.95rem;
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
   .modal-footer{
     padding:.85rem .95rem;
     padding-bottom:calc(.85rem + env(safe-area-inset-bottom,0px));
+    flex-shrink:0;
+  }
+  #placementModal .modal-dialog{
+    margin:0;
+    max-width:100%;
+    height:100%;
+  }
+  #placementModal .modal-content{
+    max-height:100dvh;
+    height:100%;
   }
 }
 
@@ -1159,6 +1182,35 @@ body.login-page{
 .modal:not(.show){pointer-events:none!important}
 .modal.show{pointer-events:auto}
 
+/*
+ * Forms often wrap .modal-body + .modal-footer. That breaks Bootstrap’s
+ * modal-dialog-scrollable flex chain, so the footer scrolls off-screen on phones.
+ * Keep header/footer fixed; only the body scrolls.
+ */
+.modal-content > form{
+  display:flex;
+  flex-direction:column;
+  flex:1 1 auto;
+  min-height:0;
+  height:100%;
+  max-height:100%;
+  overflow:hidden;
+}
+.modal-content > form > .modal-body{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.modal-content > form > .modal-header,
+.modal-content > form > .modal-footer{
+  flex-shrink:0;
+}
+.modal-dialog-scrollable .modal-content{
+  max-height:100%;
+  overflow:hidden;
+}
+
 /* Shared modal / page responsive helpers */
 .modal-header .modal-title,
 .modal-header .fw-bold{overflow-wrap:anywhere}
@@ -1168,6 +1220,19 @@ body.login-page{
 .w-sm-auto{width:100%}
 @media (min-width:576px){
   .w-sm-auto{width:auto!important}
+}
+
+/* Placement report modal — pin actions on short phone viewports */
+#placementModal .modal-dialog{
+  margin:.65rem auto;
+  max-width:min(800px, calc(100% - 1.3rem));
+}
+#placementModal .modal-content{
+  max-height:min(92dvh, 920px);
+}
+#placementModal .modal-footer{
+  border-top:1px solid var(--border);
+  background:var(--modal-header-bg);
 }
 
 /* File picker (hidden input + button — reliable across browsers) */
