@@ -1169,6 +1169,16 @@ final class AdminController
         );
     }
 
+    /** GET /api/admin/students/self-placement/pending — campus-wide pending self-placement reviews */
+    public function listPendingSelfPlacements(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        Response::success(
+            (new OfficerDataService())->listPendingSelfPlacements($scope['ctx'], $query !== '' ? $query : null)
+        );
+    }
+
     /** GET /api/admin/students/{id}/profile */
     public function studentProfile(string $studentId): void
     {

@@ -850,6 +850,82 @@ final class OfficerDataService
     }
 
     /**
+     * Students with selfPlacement.status = pending (awaiting approve/reject).
+     * Admin: campus-wide. Officer/HOD: department-scoped. Same list shape for all.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<array<string, mixed>>
+     */
+    public function listPendingSelfPlacements(array $ctx, ?string $query = null): array
+    {
+        $studentModel = new StudentModel();
+        $deptModel = new DepartmentModel();
+        $userModel = new UserModel();
+
+        $departments = [];
+        foreach ($deptModel->findAll([], 200) as $d) {
+            $departments[(string) $d['_id']] = $d;
+        }
+
+        $filter = PlacementOfficerContext::studentCollectionFilter($ctx);
+        $filter['selfPlacement.status'] = 'pending';
+
+        $students = $studentModel->findAll($filter, 5000);
+        $userIds = [];
+        foreach ($students as $s) {
+            $uid = trim((string) ($s['userId'] ?? ''));
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+        }
+        $usersById = $userModel->findByIds(array_keys($userIds));
+
+        $rows = [];
+        foreach ($students as $s) {
+            if (!empty($ctx['staffScope']) && !StaffContext::studentMatchesScope($s, $ctx)) {
+                continue;
+            }
+            // Already marked placed should not stay in the review queue.
+            if (($s['placed'] ?? false) === true) {
+                continue;
+            }
+            $self = is_array($s['selfPlacement'] ?? null) ? $s['selfPlacement'] : null;
+            if ($self === null || (string) ($self['status'] ?? '') !== 'pending') {
+                continue;
+            }
+
+            $userId = (string) ($s['userId'] ?? '');
+            $deptId = (string) ($s['departmentId'] ?? '');
+            $u = $userId !== '' ? ($usersById[$userId] ?? null) : null;
+            $dept = $departments[$deptId] ?? null;
+
+            $row = DocumentHelper::serialize($s) ?? [];
+            $row = $this->enrichStudentListRow($row, $s, $u, false);
+            $row['id'] = (string) ($row['id'] ?? $row['_id'] ?? '');
+            $row['studentId'] = $row['id'];
+            $row['department'] = $dept ? [
+                'id'   => (string) $dept['_id'],
+                'name' => $dept['name'] ?? '',
+                'code' => $dept['code'] ?? '',
+            ] : ($row['department'] ?? null);
+            $row['selfPlacement'] = DocumentHelper::serialize($self) ?? $self;
+            $row['placementStatus'] = 'pending_placement';
+            $row['placementCompany'] = (string) ($self['companyName'] ?? '');
+            $row['placementRole'] = (string) ($self['role'] ?? '');
+            $rows[] = $row;
+        }
+
+        usort($rows, static function (array $a, array $b): int {
+            $an = (string) ($a['displayName'] ?? $a['user']['name'] ?? '');
+            $bn = (string) ($b['displayName'] ?? $b['user']['name'] ?? '');
+
+            return strcasecmp($an, $bn);
+        });
+
+        return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
      * True when $placedAt parses to a real date in the given calendar year.
      */
     private function isPlacementInYear(string $placedAt, int $year): bool

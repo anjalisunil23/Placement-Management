@@ -334,6 +334,15 @@ const AdminApi = {
     return res.data.map(s => this.mapStudentRow(s));
   },
 
+  async fetchPendingSelfPlacements(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/admin/students/self-placement/pending' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(s => this.mapStudentRow(s));
+  },
+
   async fetchStudentProfile(studentId, registerNumber = '') {
     const qs = registerNumber ? `?registerNumber=${encodeURIComponent(registerNumber)}` : '';
     const res = await api(`/admin/students/${encodeURIComponent(studentId)}/profile${qs}`);

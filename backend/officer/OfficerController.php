@@ -646,6 +646,22 @@ final class OfficerController
         );
     }
 
+    /** GET /api/officer/students/self-placement/pending — department pending self-placement reviews */
+    public function listPendingSelfPlacements(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        if (empty($scope['ctx']['isAdmin']) && empty($scope['ctx']['departmentId'])) {
+            Response::forbidden('Your placement officer profile has no department assigned.');
+        }
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        Response::success(
+            (new OfficerDataService())->listPendingSelfPlacements(
+                $scope['ctx'],
+                $query !== '' ? $query : null
+            )
+        );
+    }
+
     /** GET /api/officer/students/{id}/profile */
     public function studentProfile(string $studentId): void
     {

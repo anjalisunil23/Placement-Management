@@ -1568,6 +1568,9 @@ function studentSelfPlacementId(s) {
   return String(s?.studentId || s?.id || s?._id || '').trim();
 }
 
+let pendingSelfPlacementStudentsAll = [];
+let pendingSelfPlacementLoaded = false;
+
 function renderSelfPlacementReviewPanel() {
   const panel = document.getElementById('selfPlacementReviewPanel');
   const rowsEl = document.getElementById('selfPlacementReviewRows');
@@ -1577,7 +1580,7 @@ function renderSelfPlacementReviewPanel() {
     panel.classList.add('d-none');
     return;
   }
-  const pending = (finalYearStudentsAll || []).filter(studentHasPendingSelfPlacement);
+  const pending = pendingSelfPlacementStudentsAll || [];
   if (countEl) countEl.textContent = String(pending.length);
   if (!pending.length) {
     panel.classList.add('d-none');
@@ -1601,6 +1604,30 @@ function renderSelfPlacementReviewPanel() {
       <td class="text-end">${reviewBtn}</td>
     </tr>`;
   }).join('');
+}
+
+async function loadPendingSelfPlacements(force = false) {
+  if (!canVerifySelfPlacement) {
+    pendingSelfPlacementStudentsAll = [];
+    pendingSelfPlacementLoaded = true;
+    renderSelfPlacementReviewPanel();
+    return;
+  }
+  if (pendingSelfPlacementLoaded && !force) {
+    renderSelfPlacementReviewPanel();
+    return;
+  }
+  const client = selfPlacementApiClient();
+  if (!client || typeof client.fetchPendingSelfPlacements !== 'function') {
+    pendingSelfPlacementStudentsAll = [];
+    pendingSelfPlacementLoaded = true;
+    renderSelfPlacementReviewPanel();
+    return;
+  }
+  const rows = await client.fetchPendingSelfPlacements();
+  pendingSelfPlacementStudentsAll = Array.isArray(rows) ? rows : [];
+  pendingSelfPlacementLoaded = true;
+  renderSelfPlacementReviewPanel();
 }
 
 let verifyPlacementModal = null;
@@ -1695,8 +1722,9 @@ async function approveVerifyPlacement() {
   verifyPlacementModal?.hide();
   toast('Student marked as placed.', 'success');
   await refreshOverviewAfterVerification();
-  await loadFinalYearStudents(true);
+  await loadPendingSelfPlacements(true);
   await loadPlacedStudents(true).catch(() => {});
+  await loadFinalYearStudents(true).catch(() => {});
 }
 
 async function rejectVerifyPlacement() {
@@ -1722,7 +1750,8 @@ async function rejectVerifyPlacement() {
   verifyPlacementModal?.hide();
   toast('Placement report rejected.', 'success');
   await refreshOverviewAfterVerification();
-  await loadFinalYearStudents(true);
+  await loadPendingSelfPlacements(true);
+  await loadFinalYearStudents(true).catch(() => {});
 }
 
 async function refreshOverviewAfterVerification() {
@@ -1974,8 +2003,7 @@ document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
   }
   if (href === 'tabPlaced' && canViewPlaced) {
     loadPlacedStudents().catch(() => {});
-    // Pending self-placement rows come from the final-year list.
-    if (canVerifySelfPlacement) loadFinalYearStudents().catch(() => {});
+    if (canVerifySelfPlacement) loadPendingSelfPlacements().catch(() => {});
   }
 });
 
@@ -2054,7 +2082,6 @@ function renderFinalYearList(kind) {
 function renderFinalYearTab() {
   renderFinalYearList('registered');
   renderFinalYearList('pending');
-  renderSelfPlacementReviewPanel();
 }
 
 async function loadFinalYearStudents(force = false) {
@@ -2070,7 +2097,7 @@ async function loadFinalYearStudents(force = false) {
   let rows = null;
   if (role === 'admin' && typeof AdminApi !== 'undefined') {
     rows = await AdminApi.fetchFinalYearStudents();
-  } else if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+  } else if ((role === 'placement_officer' || isHodRole) && typeof OfficerApi !== 'undefined') {
     rows = await OfficerApi.fetchFinalYearStudents();
   } else if (role === 'staff' && typeof StaffApi !== 'undefined') {
     rows = await StaffApi.fetchFinalYearStudents();
@@ -2166,7 +2193,7 @@ async function loadPlacedStudents(force = false) {
   let rows = null;
   if (role === 'admin' && typeof AdminApi !== 'undefined') {
     rows = await AdminApi.fetchPlacedStudents();
-  } else if (role === 'placement_officer' && typeof OfficerApi !== 'undefined') {
+  } else if ((role === 'placement_officer' || isHodRole) && typeof OfficerApi !== 'undefined') {
     rows = await OfficerApi.fetchPlacedStudents();
   } else if (role === 'staff' && typeof StaffApi !== 'undefined') {
     rows = await StaffApi.fetchPlacedStudents();
@@ -3200,8 +3227,12 @@ onAppReady(async () => {
 
   if (live && canViewPlaced && wantPlaced) {
     bootTasks.push(loadPlacedStudents().catch(() => {}));
+    if (canVerifySelfPlacement) bootTasks.push(loadPendingSelfPlacements().catch(() => {}));
   } else if (live && canViewFinalYear) {
     bootTasks.push(loadFinalYearStudents().catch(() => {}));
+  }
+  if (live && canVerifySelfPlacement && !wantPlaced) {
+    bootTasks.push(loadPendingSelfPlacements().catch(() => {}));
   }
 
   if (live && canManageApplications && wantApps) {
@@ -3263,6 +3294,7 @@ onAppReady(async () => {
   // Lazy-load on tab click if background has not finished yet.
   document.getElementById('linkPlaced')?.addEventListener('shown.bs.tab', () => {
     if (canViewPlaced && live) loadPlacedStudents().catch(() => {});
+    if (canVerifySelfPlacement && live) loadPendingSelfPlacements().catch(() => {});
   });
   document.getElementById('linkFinalYearRegistered')?.addEventListener('shown.bs.tab', () => {
     if (canViewFinalYear && live) loadFinalYearStudents().catch(() => {});
