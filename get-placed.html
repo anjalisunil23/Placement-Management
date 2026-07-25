@@ -4,7 +4,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260713p" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260725responsive" rel="stylesheet"/></head>
 <body data-page="get-placed.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -70,7 +70,7 @@
 
 <!-- End date modal (before new placement) -->
 <div class="modal fade" id="endDateModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
     <div class="modal-content">
       <div class="modal-header">
         <div>
@@ -97,7 +97,7 @@
 
 <!-- Update dates modal -->
 <div class="modal fade" id="datesModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
     <div class="modal-content">
       <div class="modal-header">
         <div>
@@ -132,11 +132,11 @@
 
 <!-- New / first placement modal -->
 <div class="modal fade" id="placementModal" tabindex="-1" aria-labelledby="placementModalTitle" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
     <div class="modal-content">
-      <div class="modal-header">
-        <div>
-          <h5 class="modal-title fw-bold" id="placementModalTitle">Report your placement</h5>
+      <div class="modal-header flex-wrap gap-2">
+        <div class="min-w-0 flex-grow-1 pe-2">
+          <h5 class="modal-title fw-bold text-break" id="placementModalTitle">Report your placement</h5>
           <p class="small text-muted-2 mb-0" id="getPlacedNote">Submit company details and at least one document for verification.</p>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -145,21 +145,43 @@
         <div class="modal-body">
           <input type="hidden" id="getPlacedMode" value="submit"/>
           <div class="row g-3">
-            <div class="col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" id="placedCompanyName" required placeholder="e.g. Infosys"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Role / job title</label><input class="form-control" name="role" id="placedRole" required placeholder="e.g. Software Engineer"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Package</label><input class="form-control" name="package" id="placedPackage" required placeholder="e.g. ₹6 LPA"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Company address <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" name="companyAddress" id="placedCompanyAddress" placeholder="Office address"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Join date</label><input class="form-control" type="date" name="joinDate" id="placedJoinDate"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">End date <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" type="date" name="endDate" id="placedEndDate"/></div>
+            <div class="col-12 col-md-6"><label class="form-label small fw-semibold">Company name</label><input class="form-control" name="companyName" id="placedCompanyName" required placeholder="e.g. Infosys"/></div>
+            <div class="col-12 col-md-6"><label class="form-label small fw-semibold">Role / job title</label><input class="form-control" name="role" id="placedRole" required placeholder="e.g. Software Engineer"/></div>
+            <div class="col-12 col-md-6"><label class="form-label small fw-semibold">Package</label><input class="form-control" name="package" id="placedPackage" required placeholder="e.g. ₹6 LPA"/></div>
+            <div class="col-12 col-md-6"><label class="form-label small fw-semibold">Company address <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" name="companyAddress" id="placedCompanyAddress" placeholder="Office address"/></div>
+            <div class="col-12 col-sm-6"><label class="form-label small fw-semibold">Join date</label><input class="form-control" type="date" name="joinDate" id="placedJoinDate"/></div>
+            <div class="col-12 col-sm-6"><label class="form-label small fw-semibold">End date <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" type="date" name="endDate" id="placedEndDate"/></div>
             <div class="col-12"><p class="small text-muted-2 mb-0">Documents — upload <strong>at least one</strong> (offer letter, joining letter, or company ID).</p></div>
-            <div class="col-md-4"><label class="form-label small fw-semibold">Offer letter</label><div class="file-picker"><input type="file" name="offerLetter" id="placedOfferLetter" accept=".pdf" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedOfferLetter"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="placedOfferLetter">No file chosen</span></div><div class="form-text">PDF</div></div>
-            <div class="col-md-4"><label class="form-label small fw-semibold">Joining letter</label><div class="file-picker"><input type="file" name="joiningLetter" id="placedJoiningLetter" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedJoiningLetter"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="placedJoiningLetter">No file chosen</span></div></div>
-            <div class="col-md-4"><label class="form-label small fw-semibold">Company ID</label><div class="file-picker"><input type="file" name="companyIdDoc" id="placedCompanyIdDoc" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" hidden/><button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedCompanyIdDoc"><i class="bi bi-upload me-1"></i>Choose file</button><span class="file-picker-name text-muted-2 small" data-file-picker-name="placedCompanyIdDoc">No file chosen</span></div></div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small fw-semibold">Offer letter</label>
+              <div class="file-picker">
+                <input type="file" name="offerLetter" id="placedOfferLetter" accept=".pdf" hidden/>
+                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedOfferLetter"><i class="bi bi-upload me-1"></i>Choose file</button>
+                <span class="file-picker-name text-muted-2 small" data-file-picker-name="placedOfferLetter">No file chosen</span>
+              </div>
+              <div class="form-text">PDF</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small fw-semibold">Joining letter</label>
+              <div class="file-picker">
+                <input type="file" name="joiningLetter" id="placedJoiningLetter" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" hidden/>
+                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedJoiningLetter"><i class="bi bi-upload me-1"></i>Choose file</button>
+                <span class="file-picker-name text-muted-2 small" data-file-picker-name="placedJoiningLetter">No file chosen</span>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small fw-semibold">Company ID</label>
+              <div class="file-picker">
+                <input type="file" name="companyIdDoc" id="placedCompanyIdDoc" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" hidden/>
+                <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedCompanyIdDoc"><i class="bi bi-upload me-1"></i>Choose file</button>
+                <span class="file-picker-name text-muted-2 small" data-file-picker-name="placedCompanyIdDoc">No file chosen</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="getPlacedSubmitBtn"><i class="bi bi-briefcase me-1"></i>Submit placement report</button>
+        <div class="modal-footer flex-column-reverse flex-sm-row gap-2">
+          <button type="button" class="btn btn-outline-secondary w-100 w-sm-auto" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary w-100 w-sm-auto" id="getPlacedSubmitBtn"><i class="bi bi-briefcase me-1"></i>Submit placement report</button>
         </div>
       </form>
     </div>

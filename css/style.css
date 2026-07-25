@@ -979,31 +979,100 @@ body.login-page{
   .sidebar{transform:translateX(-100%)}
   .sidebar.open{transform:translateX(0)}
   .main{margin-left:0}
-  .page{padding:1rem 1rem 1.25rem}
+  .page{
+    padding:1rem 1rem calc(1.25rem + env(safe-area-inset-bottom,0px));
+    overflow-x:hidden;
+  }
   .page-title{font-size:1.35rem}
   .page-sub{font-size:.88rem}
-  .page-header{align-items:flex-start;gap:.75rem}
+  .page-header{
+    align-items:flex-start;gap:.75rem;
+    flex-direction:column;
+  }
   .page-header > .d-flex,
   .page-header > .btn,
-  .page-header > .btn-group{width:100%}
+  .page-header > .btn-group,
+  .page-header > form{width:100%}
   .page-header .btn{justify-content:center}
+  .page-header .btn-group{display:flex;flex-wrap:wrap}
+  .page-header .btn-group .btn{flex:1 1 auto}
   .topbar{padding:0 .75rem;gap:.5rem}
   .topbar .search{display:none}
   .stat-card .val{font-size:1.5rem}
   .stat-card .lbl{font-size:.8rem}
   .table-modern thead th{font-size:.68rem;padding:.7rem .75rem}
   .table-modern tbody td{padding:.7rem .75rem;font-size:.85rem}
-  .modal-dialog{margin:.65rem;max-width:calc(100% - 1.3rem)}
-  .nav-tabs{padding-bottom:.15rem}
+  .table-wrap{
+    -webkit-overflow-scrolling:touch;
+    margin-inline:0;
+    max-width:100%;
+  }
+  .nav-tabs{
+    padding-bottom:.15rem;
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    gap:.15rem;
+  }
+  .nav-tabs .nav-link{white-space:nowrap}
   .card-surface .p-3.p-md-4{padding:1rem!important}
   .page-header-actions{
     display:flex;flex-wrap:wrap;gap:.5rem;width:100%;
   }
   .page-header-actions .btn{flex:1 1 auto;min-width:0}
+  .filter-bar,
+  .toolbar,
+  .list-toolbar{
+    flex-direction:column;
+    align-items:stretch!important;
+  }
+  .filter-bar .form-control,
+  .filter-bar .form-select,
+  .toolbar .form-control,
+  .toolbar .form-select{width:100%}
+  /* Stack form columns in modals; leave page stat grids (col-6 col-md-*) alone */
+  .modal .row > [class*="col-md-"],
+  .modal .row > [class*="col-lg-"]{
+    flex:0 0 100%;
+    max-width:100%;
+  }
+
+  /* All modals: fit viewport, scroll body, stack actions */
+  .modal-dialog{
+    margin:.65rem;
+    max-width:calc(100% - 1.3rem);
+  }
+  .modal-dialog.modal-lg,
+  .modal-dialog.modal-xl{
+    max-width:calc(100% - 1.3rem);
+  }
+  .modal-content{max-height:calc(100dvh - 1.3rem)}
+  .modal-dialog-scrollable .modal-body,
+  .modal-body{
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+  .modal-header,
+  .modal-footer{
+    flex-shrink:0;
+  }
+  .modal-footer{
+    flex-direction:column-reverse;
+    align-items:stretch;
+  }
+  .modal-footer > *{margin:0!important}
+  .modal-footer .btn{width:100%}
+  .modal .file-picker{
+    flex-direction:column;
+    align-items:stretch;
+    gap:.5rem;
+  }
+  .modal .file-picker-btn{width:100%}
 }
 
 @media (max-width:575px){
-  .page{padding:.85rem .85rem 1.1rem}
+  .page{padding:.85rem .85rem calc(1.1rem + env(safe-area-inset-bottom,0px))}
   .page-title{font-size:1.2rem}
   .stat-card{padding:.9rem 1rem}
   .stat-card .val{font-size:1.35rem}
@@ -1015,6 +1084,36 @@ body.login-page{
   .dropzone{padding:1.25rem 1rem}
   .settings-profile-row{flex-direction:column;align-items:flex-start}
   .settings-profile-edit{width:100%}
+  .btn{min-height:40px}
+  .form-control,.form-select{min-height:42px;font-size:16px} /* avoid iOS zoom */
+
+  /* Phone: edge-to-edge modals */
+  .modal-dialog{
+    margin:0;
+    max-width:100%;
+    height:100%;
+    min-height:100%;
+  }
+  .modal-dialog.modal-dialog-centered{
+    align-items:stretch;
+    min-height:100%;
+  }
+  .modal-content{
+    border-radius:0;
+    min-height:100%;
+    max-height:100dvh;
+    border-left:none;
+    border-right:none;
+  }
+  .modal-header{
+    padding:.9rem .95rem;
+    padding-top:calc(.9rem + env(safe-area-inset-top,0px));
+  }
+  .modal-body{padding:.95rem}
+  .modal-footer{
+    padding:.85rem .95rem;
+    padding-bottom:calc(.85rem + env(safe-area-inset-bottom,0px));
+  }
 }
 
 /* Form */
@@ -1059,6 +1158,17 @@ body.login-page{
 /* Closed modals must not eat clicks — PO role CSS used to force display:block on them. */
 .modal:not(.show){pointer-events:none!important}
 .modal.show{pointer-events:auto}
+
+/* Shared modal / page responsive helpers */
+.modal-header .modal-title,
+.modal-header .fw-bold{overflow-wrap:anywhere}
+.modal-header > div:first-child{min-width:0;flex:1 1 auto}
+.modal-footer{flex-wrap:wrap;gap:.5rem}
+.modal .row > [class*="col-"]{min-width:0}
+.w-sm-auto{width:100%}
+@media (min-width:576px){
+  .w-sm-auto{width:auto!important}
+}
 
 /* File picker (hidden input + button — reliable across browsers) */
 .file-picker{
