@@ -387,9 +387,13 @@
     if (!data) return null;
 
     // Lite payload: headline stats + SQL status counts — no per-row applicants yet.
-    // Cannot scope by department/branch — return empty while full data loads.
+    // Campus-wide View needs full rows to filter by dept/branch. Staff/officer lite is
+    // already department-scoped, so show those totals unless a batch is also selected.
     if (data.lite) {
-      if (deptCode || batchCode) {
+      const needsClientScope = this.isCampusWideViewer()
+        ? !!(deptCode || batchCode)
+        : !!batchCode;
+      if (needsClientScope) {
         return {
           totals: { companiesHiring: 0, applicants: 0, shortlisted: 0, offers: 0, hired: 0 },
           pipeline: [
@@ -1124,7 +1128,7 @@
     if (batchSelect) batchSelect.value = '';
     this.populateBatchSelect();
     this.setDeptUI(this.selectedDept());
-    if (this.isCampusWideViewer() && this.activeDeptFilter) {
+    if (this.activeDeptFilter || this.isCampusWideViewer()) {
       await this.ensureFullRecruiting();
     }
     this.renderForDept(this.selectedDept());
@@ -1253,17 +1257,24 @@
   HiringOverviewPage.prototype.$id = function (id) { return this.$(id); };
 
   HiringOverviewPage.prototype.renderForDept = function (dept) {
-    // Lite campus payload ignores department filters — load full rows when a scope is selected.
-    if (dept && this.campusRecruitingData?.lite && this.isCampusWideViewer()) {
-      this.setStat('statCompanies', 0);
-      this.setStat('statApplicants', 0);
-      this.setStat('statShortlisted', 0);
-      this.setStat('statHired', 0);
-      animateCounters(this.root === document ? document : this.root);
-      this.renderCompanyRows([], 'Loading department data…');
-      const pipelineRows = this.$('pipelineRows');
-      if (pipelineRows) {
-        pipelineRows.innerHTML = '<tr><td colspan="2" class="text-muted-2 p-3">Loading filtered pipeline…</td></tr>';
+    // Lite payload has no per-row applicants — always hydrate full recruiting for live dashboards
+    // so staff/officer (own dept) and campus View (selected dept/branch) can paint real KPIs.
+    const batch = this.selectedBatch();
+    const needsFull = !!(this.campusRecruitingData?.lite && this.campusLive
+      && (dept || batch || !this.isCampusWideViewer()));
+    if (needsFull) {
+      const waitingOnCampusFilter = this.isCampusWideViewer() && !!(dept || batch);
+      if (waitingOnCampusFilter) {
+        this.setStat('statCompanies', 0);
+        this.setStat('statApplicants', 0);
+        this.setStat('statShortlisted', 0);
+        this.setStat('statHired', 0);
+        animateCounters(this.root === document ? document : this.root);
+        this.renderCompanyRows([], 'Loading department data…');
+        const pipelineRows = this.$('pipelineRows');
+        if (pipelineRows) {
+          pipelineRows.innerHTML = '<tr><td colspan="2" class="text-muted-2 p-3">Loading filtered pipeline…</td></tr>';
+        }
       }
       if (!this._awaitingFullForFilter) {
         this._awaitingFullForFilter = true;
@@ -1272,7 +1283,8 @@
           this.renderForDept(this.selectedDept());
         });
       }
-      return;
+      // Staff/officer: keep painting lite dept totals while full rows load.
+      if (waitingOnCampusFilter) return;
     }
 
     const view = this.liveHiringView(dept);
@@ -1477,16 +1489,11 @@
         this.renderForDept(this.selectedDept());
       }
 
-      // Background: trends always; full applicant enrich for campus-wide View filters.
+      // Background: full applicant rows + stats (lite cannot filter by dept/branch).
       if (this.campusLive) {
         const isDashboard = (document.body?.dataset?.page || '') === 'dashboard.html';
         const staffCampus = this.isCampusWideViewer() && role === 'staff';
         const fullDashOpts = staffCampus ? { adminView: true } : {};
-        const hydrateTrends = () => {
-          dashboardStats(fullDashOpts).then((stats) => {
-            if (stats) this.applyRecruitingData(this.campusRecruitingData, stats);
-          }).catch(() => {});
-        };
         const hydrateFull = () => {
           Promise.all([
             RecruitingStore.fetch().catch(() => null),
@@ -1509,12 +1516,11 @@
             setTimeout(fn, Math.min(delay, 1500));
           }
         };
-        // Campus-wide View (senior staff / admin hiring page) needs full rows to filter by dept/branch.
-        if (isDashboard && !this.isCampusWideViewer()) {
-          schedule(hydrateTrends, 2500);
-        } else {
-          schedule(hydrateFull, this.isCampusWideViewer() ? 800 : 2500);
-        }
+        // Always hydrate full recruiting — staff/officer always have a dept selected;
+        // campus View needs full rows to filter by department/branch.
+        schedule(hydrateFull, isDashboard
+          ? (this.isCampusWideViewer() ? 800 : 600)
+          : (this.isCampusWideViewer() ? 800 : 2500));
       }
     } catch (err) {
       console.error('Hiring overview init failed', err);
