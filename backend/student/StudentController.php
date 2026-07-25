@@ -1441,6 +1441,7 @@ final class StudentController
           'action'         => 'verify_self_placement',
           'studentId'      => (string) $profile['_id'],
           'registerNumber' => $registerNo,
+          'departmentId'   => (string) ($profile['departmentId'] ?? ''),
           'companyName'    => $companyName,
           'role'           => $jobRole,
           'link'           => 'students.html?verify=' . rawurlencode((string) $profile['_id']),

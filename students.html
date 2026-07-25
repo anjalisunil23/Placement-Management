@@ -186,6 +186,23 @@
 
   <!-- Final year · Registered -->
   <div class="tab-pane fade show active" id="tabFinalYearRegistered">
+    <div class="alert alert-warning d-none mb-3" id="selfPlacementReviewPanel">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div>
+          <strong>Self-Placement Under Review</strong>
+          <div class="small mb-0">Verify offer letters and mark students as placed when confirmed.</div>
+        </div>
+        <span class="badge-soft warning" id="selfPlacementReviewCount">0</span>
+      </div>
+      <div class="table-wrap mb-0">
+        <table class="table-modern table-sm mb-0">
+          <thead>
+            <tr><th>Student</th><th>Adm. No.</th><th>Company</th><th></th></tr>
+          </thead>
+          <tbody id="selfPlacementReviewRows"></tbody>
+        </table>
+      </div>
+    </div>
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
@@ -610,6 +627,7 @@
               </table>
             </div>
           </div>
+          <div class="alert alert-warning d-none mt-3 mb-0" id="fyVerifyPlacementBanner"></div>
         </div>
       </div>
       <div class="modal-footer border-0 pt-0">
@@ -730,17 +748,19 @@
 <script src="js/app.js?v=20260724boot"></script>
 <script>
 const role = Auth.role();
+const isHodRole = typeof Auth !== 'undefined' && !!Auth.isHod?.();
 const isAdminRole = role === 'admin';
 const canManageRegistrations = false; // portal registration tab removed; use Registered / Non-registered
 const canViewFinalYear = role === 'admin' || role === 'placement_officer' || role === 'staff';
 const canViewPlaced = canViewFinalYear;
-const canVerifySelfPlacement = role === 'admin' || role === 'placement_officer';
-const canManageApplications = role === 'admin' || role === 'placement_officer';
+// HOD is DB staff but elevated to placement_officer; keep isHod as a hard allow.
+const canVerifySelfPlacement = role === 'admin' || role === 'placement_officer' || isHodRole;
+const canManageApplications = role === 'admin' || role === 'placement_officer' || isHodRole;
 const canManageBlacklist = role === 'admin';
 const canViewStaffPolicy = false; // replaced by department Registered / Non-registered tabs
 const canUseFindStudent = false; // Find Student removed from placement officer module
 
-if (!(role === 'admin' || role === 'placement_officer' || role === 'staff')) {
+if (!(role === 'admin' || role === 'placement_officer' || role === 'staff' || isHodRole)) {
   toast('You do not have access to this page.', 'warn');
   setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
 }
@@ -1532,9 +1552,55 @@ function overviewStatusBadge(status) {
 }
 
 function selfPlacementApiClient() {
-  if (role === 'placement_officer') return OfficerApi;
-  if (role === 'admin') return AdminApi;
+  if (role === 'admin') return typeof AdminApi !== 'undefined' ? AdminApi : null;
+  if (role === 'placement_officer' || isHodRole) return typeof OfficerApi !== 'undefined' ? OfficerApi : null;
   return null;
+}
+
+function studentHasPendingSelfPlacement(s) {
+  if (!s) return false;
+  if (s.placementStatus === 'pending_placement') return true;
+  const sp = s.selfPlacement;
+  return !!(sp && typeof sp === 'object' && String(sp.status || '') === 'pending');
+}
+
+function studentSelfPlacementId(s) {
+  return String(s?.studentId || s?.id || s?._id || '').trim();
+}
+
+function renderSelfPlacementReviewPanel() {
+  const panel = document.getElementById('selfPlacementReviewPanel');
+  const rowsEl = document.getElementById('selfPlacementReviewRows');
+  const countEl = document.getElementById('selfPlacementReviewCount');
+  if (!panel || !rowsEl) return;
+  if (!canVerifySelfPlacement) {
+    panel.classList.add('d-none');
+    return;
+  }
+  const pending = (finalYearStudentsAll || []).filter(studentHasPendingSelfPlacement);
+  if (countEl) countEl.textContent = String(pending.length);
+  if (!pending.length) {
+    panel.classList.add('d-none');
+    rowsEl.innerHTML = '';
+    return;
+  }
+  panel.classList.remove('d-none');
+  rowsEl.innerHTML = pending.map(s => {
+    const name = esc(s.displayName || s.name || '—');
+    const admno = esc(s.registerNumber || s.admno || '—');
+    const company = esc(s.selfPlacement?.companyName || s.placementCompany || '—');
+    const sid = esc(studentSelfPlacementId(s));
+    const regAttr = esc(s.registerNumber || s.admno || '');
+    const reviewBtn = sid
+      ? `<button type="button" class="btn btn-sm btn-warning self-placement-review" data-student-id="${sid}"><i class="bi bi-clipboard-check me-1"></i>Review</button>`
+      : `<button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button>`;
+    return `<tr>
+      <td><strong>${name}</strong></td>
+      <td>${admno}</td>
+      <td>${company}</td>
+      <td class="text-end">${reviewBtn}</td>
+    </tr>`;
+  }).join('');
 }
 
 let verifyPlacementModal = null;
@@ -1629,6 +1695,8 @@ async function approveVerifyPlacement() {
   verifyPlacementModal?.hide();
   toast('Student marked as placed.', 'success');
   await refreshOverviewAfterVerification();
+  await loadFinalYearStudents(true);
+  await loadPlacedStudents(true).catch(() => {});
 }
 
 async function rejectVerifyPlacement() {
@@ -1654,6 +1722,7 @@ async function rejectVerifyPlacement() {
   verifyPlacementModal?.hide();
   toast('Placement report rejected.', 'success');
   await refreshOverviewAfterVerification();
+  await loadFinalYearStudents(true);
 }
 
 async function refreshOverviewAfterVerification() {
@@ -1940,13 +2009,20 @@ function finalYearRowHtml(s) {
   const dept = esc(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—'));
   const batch = esc(s.classBatch || '—');
   const newBadge = (s.isNew || s.aesOnly) ? ' <span class="badge-soft info">New</span>' : '';
+  const pending = studentHasPendingSelfPlacement(s);
+  const pendingBadge = pending ? ' <span class="badge-soft warning">Under Review</span>' : '';
   const regAttr = esc(s.registerNumber || s.admno || '');
+  const sid = esc(studentSelfPlacementId(s));
+  const actions = (pending && canVerifySelfPlacement && sid)
+    ? `<button type="button" class="btn btn-sm btn-warning self-placement-review me-1" data-student-id="${sid}"><i class="bi bi-clipboard-check me-1"></i>Review</button>
+       <button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button>`
+    : `<button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button>`;
   return `<tr>
-    <td><strong>${name}</strong>${newBadge}</td>
+    <td><strong>${name}</strong>${newBadge}${pendingBadge}</td>
     <td>${admno}</td>
     <td>${dept}</td>
     <td>${batch}</td>
-    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button></td>
+    <td class="text-end">${actions}</td>
   </tr>`;
 }
 
@@ -1978,6 +2054,7 @@ function renderFinalYearList(kind) {
 function renderFinalYearTab() {
   renderFinalYearList('registered');
   renderFinalYearList('pending');
+  renderSelfPlacementReviewPanel();
 }
 
 async function loadFinalYearStudents(force = false) {
@@ -2187,6 +2264,32 @@ function fillFinalYearProfileFields(s) {
     'fySpQualificationsWrap'
   );
   syncFinalYearProfileEditMode(s);
+  syncFinalYearVerifyBanner(s);
+}
+
+function syncFinalYearVerifyBanner(s) {
+  const banner = document.getElementById('fyVerifyPlacementBanner');
+  if (!banner) return;
+  if (!canVerifySelfPlacement) {
+    banner.classList.add('d-none');
+    banner.innerHTML = '';
+    return;
+  }
+  const studentId = studentSelfPlacementId(s);
+  const pending = studentHasPendingSelfPlacement(s);
+  if (pending && studentId) {
+    banner.classList.remove('d-none');
+    banner.innerHTML = `<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-0">
+      <span><strong>Self-Placement Under Review.</strong> Verify the offer letter and mark as placed when confirmed.</span>
+      <button type="button" class="btn btn-sm btn-warning" id="fyBtnReviewPlacement"><i class="bi bi-clipboard-check me-1"></i>Review report</button>
+    </div>`;
+    document.getElementById('fyBtnReviewPlacement')?.addEventListener('click', () => {
+      openVerifyPlacementModal(studentId).catch(() => {});
+    });
+  } else {
+    banner.classList.add('d-none');
+    banner.innerHTML = '';
+  }
 }
 
 async function saveFinalYearStudentProfile() {
@@ -2313,11 +2416,31 @@ document.getElementById('fyProfileSaveBtn')?.addEventListener('click', () => {
 });
 
 document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {
+  const reviewBtn = e.target.closest('.self-placement-review');
+  if (reviewBtn) {
+    openVerifyPlacementModal(reviewBtn.dataset.studentId || '').catch(() => {});
+    return;
+  }
   const btn = e.target.closest('.final-year-open');
   if (!btn) return;
   openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
 });
 document.getElementById('finalYearPendingRows')?.addEventListener('click', (e) => {
+  const reviewBtn = e.target.closest('.self-placement-review');
+  if (reviewBtn) {
+    openVerifyPlacementModal(reviewBtn.dataset.studentId || '').catch(() => {});
+    return;
+  }
+  const btn = e.target.closest('.final-year-open');
+  if (!btn) return;
+  openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
+});
+document.getElementById('selfPlacementReviewRows')?.addEventListener('click', (e) => {
+  const reviewBtn = e.target.closest('.self-placement-review');
+  if (reviewBtn) {
+    openVerifyPlacementModal(reviewBtn.dataset.studentId || '').catch(() => {});
+    return;
+  }
   const btn = e.target.closest('.final-year-open');
   if (!btn) return;
   openFinalYearStudent(btn.dataset.reg || '').catch(() => {});

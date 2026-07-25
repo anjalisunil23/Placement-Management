@@ -211,17 +211,58 @@ HTML;
     }
 
     /**
-     * Notify admins and placement officers about student-submitted placement reports.
+     * Notify admins, placement officers, and department HODs about student-submitted placement reports.
      */
     public function notifyPlacementCell(string $type, string $title, string $message, array $metadata = [], bool $sendEmail = true): void
     {
         $this->notifyAdmins($type, $title, $message, $metadata);
 
+        $notified = [];
         foreach ($this->userModel->findByRole('placement_officer', 200) as $officer) {
             $uid = (string) ($officer['_id'] ?? '');
-            if ($uid === '' || !Security::isValidId($uid)) {
+            if ($uid === '' || !Security::isValidId($uid) || isset($notified[$uid])) {
                 continue;
             }
+            $notified[$uid] = true;
+            $this->notifyUser($uid, $type, $title, $message, $metadata, $sendEmail);
+        }
+
+        $this->notifyDepartmentHods($type, $title, $message, $metadata, $sendEmail, $notified);
+    }
+
+    /**
+     * HODs remain DB role=staff; notify them so they can review self-placement in Students.
+     *
+     * @param array<string, bool> $alreadyNotified
+     */
+    private function notifyDepartmentHods(
+        string $type,
+        string $title,
+        string $message,
+        array $metadata,
+        bool $sendEmail,
+        array &$alreadyNotified
+    ): void {
+        $deptId = trim((string) ($metadata['departmentId'] ?? ''));
+        $staffModel = new \PMS\Models\StaffModel();
+        $profiles = $deptId !== ''
+            ? $staffModel->findByDepartmentId($deptId, 200)
+            : $staffModel->findAll([], 500);
+
+        foreach ($profiles as $profile) {
+            if (!is_array($profile)) {
+                continue;
+            }
+            $isHod = filter_var($profile['isHod'] ?? false, FILTER_VALIDATE_BOOL)
+                || \PMS\Services\HodDetection::designationLooksLikeHod((string) ($profile['designation'] ?? ''));
+            if (!$isHod) {
+                continue;
+            }
+            $uid = (string) ($profile['userId'] ?? '');
+            if ($uid === '' || !Security::isValidId($uid) || isset($alreadyNotified[$uid])) {
+                continue;
+            }
+            $alreadyNotified[$uid] = true;
             $this->notifyUser($uid, $type, $title, $message, $metadata, $sendEmail);
         }
     }

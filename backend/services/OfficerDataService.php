@@ -1683,6 +1683,17 @@ final class OfficerDataService
             $row = $this->enrichStudentListRow($row, $student, $user, false);
             $row['admno'] = $admno;
             $row['registerNumber'] = $admno;
+            $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : null;
+            if ($self !== null) {
+                $row['selfPlacement'] = DocumentHelper::serialize($self) ?? $self;
+                if (($student['placed'] ?? false) !== true && (string) ($self['status'] ?? '') === 'pending') {
+                    $row['placementStatus'] = 'pending_placement';
+                }
+            }
+            if (($student['placed'] ?? false) === true) {
+                $row['placed'] = true;
+                $row['placementStatus'] = 'placed';
+            }
             $row['department'] = $dept ? [
                 'id'   => (string) $dept['_id'],
                 'name' => $dept['name'] ?? '',
@@ -1854,6 +1865,23 @@ final class OfficerDataService
         if (!empty($localRow['policyAccepted'])) {
             $aesRow['policyAccepted'] = true;
             $aesRow['policyAcceptedAt'] = $localRow['policyAcceptedAt'] ?? ($aesRow['policyAcceptedAt'] ?? '');
+        }
+        // Keep local self-placement pending/approved state on AES-merged directory rows.
+        if (!empty($localRow['selfPlacement']) && is_array($localRow['selfPlacement'])) {
+            $aesRow['selfPlacement'] = $localRow['selfPlacement'];
+            $selfStatus = (string) ($localRow['selfPlacement']['status'] ?? '');
+            if ($selfStatus === 'pending' && empty($aesRow['placed']) && empty($localRow['placed'])) {
+                $aesRow['placementStatus'] = 'pending_placement';
+            }
+        }
+        if (array_key_exists('placed', $localRow)) {
+            $aesRow['placed'] = !empty($localRow['placed']);
+            if (!empty($localRow['placed'])) {
+                $aesRow['placementStatus'] = 'placed';
+            }
+        }
+        if (!empty($localRow['placementStatus'])) {
+            $aesRow['placementStatus'] = $localRow['placementStatus'];
         }
 
         return $aesRow;
@@ -2594,6 +2622,13 @@ final class OfficerDataService
             $userOut = is_array($row['user'] ?? null) ? $row['user'] : [];
             $userOut['name'] = $name;
             $row['user'] = $userOut;
+        }
+
+        $self = is_array($row['selfPlacement'] ?? null) ? $row['selfPlacement'] : null;
+        if ($self !== null && empty($row['placed']) && (string) ($self['status'] ?? '') === 'pending') {
+            $row['placementStatus'] = 'pending_placement';
+        } elseif (!empty($row['placed'])) {
+            $row['placementStatus'] = 'placed';
         }
 
         return $row;
