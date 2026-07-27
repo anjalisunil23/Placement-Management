@@ -19,12 +19,14 @@ const OfficerApi = {
     const email = u.email || '';
     const isCollege = /@(students\.)?amaljyothi\.ac\.in$/i.test(email) || /\.ajce\.in$/i.test(email);
     const studentId = OfficerApi.id(row);
-    const userId = OfficerApi.id(u) || String(row.userId || u.userId || '').trim() || null;
+    const nestedUserId = OfficerApi.id(u);
+    const userId = nestedUserId || null;
+    const hasLogin = !!(userId && /^[a-f\d]{24}$/i.test(userId));
     return {
-      id: userId || studentId,
-      userId: userId || null,
+      id: hasLogin ? userId : studentId,
+      userId: hasLogin ? userId : null,
       studentId,
-      hasLogin: !!userId,
+      hasLogin,
       role: 'student',
       name: row.displayName || u.name || row.name || personal.name || personal.fullName || '',
       email: row.collegeEmail || (isCollege ? email : (row.personalEmail || personal.personalEmail || email)),
@@ -49,8 +51,8 @@ const OfficerApi = {
       ugMarks: academic.ugMarks ?? row.academic?.ugMarks ?? row.academic?.marks12th ?? null,
       backlogs: academic.backlogs ?? row.academic?.backlogs ?? 0,
       photoUrl: row.photo?.url || row.photoUrl || '',
-      status: u.approved ? 'approved' : 'pending',
-      blocked: u.status === 'blocked',
+      status: !hasLogin ? 'no_login' : (u.approved ? 'approved' : 'pending'),
+      blocked: hasLogin && u.status === 'blocked',
       placed: isPlaced,
       selfPlacement,
       placementStatus,

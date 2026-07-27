@@ -1119,6 +1119,29 @@ final class AdminController
         Response::success(null, 'Blacklist removed.');
     }
 
+    /** DELETE /api/admin/students/{id} — remove student profile (and login user when present). */
+    public function deleteStudent(string $studentId): void
+    {
+        RBACMiddleware::requireAdmin();
+        $studentModel = new StudentModel();
+        $student = $studentModel->findById($studentId);
+        if (!$student) {
+            Response::notFound('Student not found.');
+        }
+
+        $userId = trim((string) ($student['userId'] ?? ''));
+        if ($userId !== '' && $this->userModel->findById($userId)) {
+            // Full account delete also removes the student profile.
+            $this->deleteUser($userId);
+            return;
+        }
+
+        if (!$studentModel->delete($studentId)) {
+            Response::notFound('Student not found.');
+        }
+        Response::success(null, 'Student profile deleted.');
+    }
+
     // --- Reports ---
 
     /** GET /api/admin/reports */

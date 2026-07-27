@@ -3986,6 +3986,13 @@ const UserRegistry = {
       if (res.success) { await this.fetch(); return true; }
       return false;
     }
+    if (row?.role === 'student' && row.hasLogin !== true) {
+      const studentId = row.studentId || row.id;
+      if (!studentId || !/^[a-f\d]{24}$/i.test(String(studentId))) return false;
+      const res = await api(`/admin/students/${encodeURIComponent(studentId)}`, { method: 'DELETE' });
+      if (res.success) { await this.fetch(); return true; }
+      return false;
+    }
     const { userId } = this._resolveLoginUserId(id);
     if (!userId) {
       toast(row?.aesOnly || row?.hasLogin === false
@@ -5314,7 +5321,12 @@ const PlacementConsoleStore = {
 
 function userStatusBadge(status, blocked) {
   if (blocked) return '<span class="badge-soft danger">Blocked</span>';
-  const map = { approved:['success','Approved'], pending:['warning','Pending'], rejected:['danger','Rejected'] };
+  const map = {
+    approved: ['success', 'Approved'],
+    pending: ['warning', 'Pending'],
+    rejected: ['danger', 'Rejected'],
+    no_login: ['muted', 'No login'],
+  };
   const [cls, label] = map[status] || ['muted', status];
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }

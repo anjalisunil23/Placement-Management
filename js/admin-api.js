@@ -52,13 +52,17 @@ const AdminApi = {
     if (isPlaced) placementStatus = 'placed';
     else if (selfPlacement?.status === 'pending') placementStatus = 'pending_placement';
     const studentId = this.id(row);
-    const userId = this.id(u) || String(row.userId || u.userId || '').trim() || null;
+    // Only treat as a login account when the nested user document is present.
+    // Orphan student.userId values (missing users row) must not enable approve/block/delete.
+    const nestedUserId = this.id(u);
+    const userId = nestedUserId || null;
+    const hasLogin = !!(userId && /^[a-f\d]{24}$/i.test(userId));
     return {
       // Prefer login user id for approve/block/delete; keep profile id separately.
-      id: userId || studentId,
-      userId: userId || null,
+      id: hasLogin ? userId : studentId,
+      userId: hasLogin ? userId : null,
       studentId,
-      hasLogin: !!userId,
+      hasLogin,
       role: 'student',
       name: row.displayName || u.name || row.name || personal.name || personal.fullName || '',
       email: row.collegeEmail || (isCollege ? email : (row.personalEmail || personal.personalEmail || email)),
@@ -84,8 +88,8 @@ const AdminApi = {
       backlogs: academic.backlogs ?? 0,
       photoUrl: row.photoUrl || photo.url || u.photoUrl || u.photo?.url || '',
       photo: row.photo || u.photo || null,
-      status: u.approved ? 'approved' : 'pending',
-      blocked: u.status === 'blocked',
+      status: !hasLogin ? 'no_login' : (u.approved ? 'approved' : 'pending'),
+      blocked: hasLogin && u.status === 'blocked',
       placed: isPlaced,
       selfPlacement,
       placementStatus,
