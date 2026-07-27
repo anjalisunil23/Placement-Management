@@ -56,7 +56,7 @@ final class AlumniController
     Response::success(DocumentHelper::serialize($out));
   }
 
-  /** GET /api/alumni/profile/photo — stream AES photo through the API (avoids browser hotlink blocks). */
+  /** GET /api/alumni/profile/photo — stream AES/getStudInfo4Placement photo (or cached media). */
   public function streamProfilePhoto(): void
   {
     $user = RBACMiddleware::requireAlumni();
@@ -69,7 +69,26 @@ final class AlumniController
     $aes = new AesLoginService();
     $profile = $aes->syncAlumniPlacementPhoto($user, $profile) ?? $profile;
     $photo = $aes->resolveAlumniProfilePhoto($user, $profile, true);
-    $photoUrl = (new \PMS\Services\AesApiService())->resolvePhotoUrl(trim((string) ($photo['photoUrl'] ?? '')));
+    $rawUrl = trim((string) ($photo['photoUrl'] ?? ''));
+    if ($rawUrl === '') {
+      Response::notFound('Alumni photo not available.');
+    }
+
+    // Cached PlaceHub media — redirect so CSS/img loads without re-proxying AES.
+    if (str_contains($rawUrl, '/api/media/')) {
+      $path = $rawUrl;
+      if (preg_match('#^https?://[^/]+(/.*)$#i', $rawUrl, $m)) {
+        $path = $m[1];
+      }
+      if (str_starts_with($path, '/api/media/')) {
+        $path = '/backend' . $path;
+      }
+      header('Location: ' . $path, true, 302);
+      header('Cache-Control: private, max-age=3600');
+      exit;
+    }
+
+    $photoUrl = (new \PMS\Services\AesApiService())->resolvePhotoUrl($rawUrl);
     if ($photoUrl === '') {
       Response::notFound('Alumni photo not available.');
     }

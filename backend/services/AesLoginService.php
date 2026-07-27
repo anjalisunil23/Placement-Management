@@ -2283,30 +2283,83 @@ final class AesLoginService
     {
         $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
         $mapped = $this->mapAesDetailsToUserFields($aesProfile);
-        $register = $this->resolveAesAdmissionNumber(
+
+        $candidates = [
             (string) ($user['registerNumber'] ?? ''),
-            $aesProfile,
-            $mapped
-        );
-        if ($register === '' && $alumniProfile !== null) {
-            $register = $this->resolveAesAdmissionNumber(
-                (string) ($alumniProfile['registerNumber'] ?? ''),
-                $aesProfile,
-                $mapped
-            );
-        }
-        if ($register === '') {
-            $student = (new StudentModel())->findByUserId((string) ($user['_id'] ?? ''));
-            if ($student) {
-                $register = $this->resolveAesAdmissionNumber(
-                    (string) ($student['registerNumber'] ?? ''),
-                    $aesProfile,
-                    $mapped
-                );
-            }
+            (string) ($alumniProfile['registerNumber'] ?? ''),
+            (string) ($mapped['registerNumber'] ?? ''),
+            $this->pickInsensitive($aesProfile, [
+                'admno', 'stud_admno', 'admission_no', 'admissionNo', 'admission_number',
+                'registerNumber', 'register_number',
+            ]),
+        ];
+
+        $student = (new StudentModel())->findByUserId((string) ($user['_id'] ?? ''));
+        if ($student) {
+            $candidates[] = (string) ($student['registerNumber'] ?? '');
         }
 
-        return $register;
+        // Prefer real admission numbers (not email usernames) for getStudInfo4Placement.
+        foreach ($candidates as $raw) {
+            $register = strtoupper(trim((string) $raw));
+            if ($register === '' || str_contains($register, '@')) {
+                continue;
+            }
+            return $register;
+        }
+
+        // Last resort: AES username / token user when it is not an email.
+        $fallback = $this->resolveAesAdmissionNumber('', $aesProfile, $mapped);
+        if ($fallback !== '' && !str_contains($fallback, '@')) {
+            return $fallback;
+        }
+
+        return '';
+    }
+
+    /**
+     * Fetch alumni stud_photo from AES getStudInfo4Placement (via fetchStudentPlacementProfile).
+     *
+     * @return array{photoUrl:string,photo:array<string,mixed>|null}
+     */
+    public function fetchAlumniPhotoFromStudInfo(string $register): array
+    {
+        $register = strtoupper(trim($register));
+        if ($register === '') {
+            return ['photoUrl' => '', 'photo' => null];
+        }
+
+        try {
+            $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
+        } catch (\Throwable) {
+            return ['photoUrl' => '', 'photo' => null];
+        }
+        if ($placement === []) {
+            return ['photoUrl' => '', 'photo' => null];
+        }
+
+        // getStudInfo4Placement exposes the photo as stud_photo (normalized to photoUrl).
+        $photoUrl = trim((string) (
+            $placement['stud_photo']
+            ?? $placement['photoUrl']
+            ?? $placement['photo_url']
+            ?? $placement['profile_photo']
+            ?? ''
+        ));
+        $photoUrl = $this->normalizeStoredPhotoUrl($photoUrl);
+        if (!$this->isUsablePhotoUrl($photoUrl)) {
+            return ['photoUrl' => '', 'photo' => null];
+        }
+
+        return [
+            'photoUrl' => $photoUrl,
+            'photo'    => [
+                'url'      => $photoUrl,
+                'source'   => 'aes',
+                'aesUrl'   => $photoUrl,
+                'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+            ],
+        ];
     }
 
     /**
@@ -2316,11 +2369,36 @@ final class AesLoginService
      */
     public function resolveAlumniProfilePhoto(array $user, ?array $alumniProfile = null, bool $fetchFromAes = true): array
     {
+        // Prefer a PlaceHub-cached media URL (already downloaded from getStudInfo4Placement).
         $photo = is_array($alumniProfile['photo'] ?? null) ? $alumniProfile['photo'] : null;
         $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
         if ($photoUrl !== '') {
             $photoUrl = $this->normalizeStoredPhotoUrl($photoUrl);
         }
+        if ($this->isAppMediaPhotoUrl($photoUrl)) {
+            if (is_array($photo)) {
+                $photo['url'] = $photoUrl;
+            } else {
+                $photo = ['url' => $photoUrl, 'source' => 'aes_cached'];
+            }
+            return [
+                'photoUrl' => $photoUrl,
+                'photo'    => $photo,
+            ];
+        }
+
+        // Live source of truth for alumni photos: getStudInfo4Placement stud_photo.
+        if ($fetchFromAes) {
+            $register = $this->resolveAlumniAdmissionNumber($user, $alumniProfile);
+            if ($register !== '') {
+                $fromApi = $this->fetchAlumniPhotoFromStudInfo($register);
+                if (($fromApi['photoUrl'] ?? '') !== '') {
+                    return $fromApi;
+                }
+            }
+        }
+
+        // Fall back to already-stored remote AES URL, then session AES payload.
         if ($this->isUsablePhotoUrl($photoUrl)) {
             if (is_array($photo)) {
                 $photo['url'] = $photoUrl;
@@ -2345,45 +2423,11 @@ final class AesLoginService
         if ($this->isUsablePhotoUrl($sessionUrl)) {
             return [
                 'photoUrl' => $sessionUrl,
-                'photo'    => ['url' => $sessionUrl, 'source' => 'aes'],
+                'photo'    => ['url' => $sessionUrl, 'source' => 'aes', 'aesUrl' => $sessionUrl],
             ];
         }
 
-        if (!$fetchFromAes) {
-            return ['photoUrl' => '', 'photo' => null];
-        }
-
-        $register = $this->resolveAlumniAdmissionNumber($user, $alumniProfile);
-        if ($register === '') {
-            return ['photoUrl' => '', 'photo' => null];
-        }
-
-        try {
-            $placement = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
-        } catch (\Throwable) {
-            return ['photoUrl' => '', 'photo' => null];
-        }
-
-        $placementMapped = $this->mapAesDetailsToUserFields($placement);
-        $photoUrl = trim((string) (
-            $placementMapped['photoUrl']
-            ?? $placement['photoUrl']
-            ?? $placement['stud_photo']
-            ?? ''
-        ));
-        $photoUrl = $this->normalizeStoredPhotoUrl($photoUrl);
-        if (!$this->isUsablePhotoUrl($photoUrl)) {
-            return ['photoUrl' => '', 'photo' => null];
-        }
-
-        return [
-            'photoUrl' => $photoUrl,
-            'photo'    => [
-                'url'      => $photoUrl,
-                'source'   => 'aes',
-                'syncedAt' => \PMS\Utils\DocumentHelper::now(),
-            ],
-        ];
+        return ['photoUrl' => '', 'photo' => null];
     }
 
     /**
@@ -2532,7 +2576,7 @@ final class AesLoginService
     }
 
     /**
-     * Fetch alumni photo from AES placement info when missing and persist on the alumni profile.
+     * Sync alumni photo from AES getStudInfo4Placement stud_photo and cache to PlaceHub media.
      *
      * @param array<string, mixed> $user
      * @param array<string, mixed>|null $alumniProfile
@@ -2544,14 +2588,21 @@ final class AesLoginService
             return null;
         }
 
-        $resolved = $this->resolveAlumniProfilePhoto($user, $alumniProfile, true);
-        if (($resolved['photoUrl'] ?? '') === '') {
-            return $alumniProfile;
-        }
-
         $existingPhoto = is_array($alumniProfile['photo'] ?? null) ? $alumniProfile['photo'] : null;
         $source = is_array($existingPhoto) ? (string) ($existingPhoto['source'] ?? '') : '';
         if ($source === 'upload') {
+            return $alumniProfile;
+        }
+
+        $register = $this->resolveAlumniAdmissionNumber($user, $alumniProfile);
+        // Always prefer live getStudInfo4Placement stud_photo when we have an admission number.
+        $resolved = $register !== ''
+            ? $this->fetchAlumniPhotoFromStudInfo($register)
+            : ['photoUrl' => '', 'photo' => null];
+        if (($resolved['photoUrl'] ?? '') === '') {
+            $resolved = $this->resolveAlumniProfilePhoto($user, $alumniProfile, false);
+        }
+        if (($resolved['photoUrl'] ?? '') === '') {
             return $alumniProfile;
         }
 
@@ -2561,27 +2612,45 @@ final class AesLoginService
 
         // Already cached to PlaceHub media for this AES source.
         if ($this->isAppMediaPhotoUrl($existingUrl)
-            && ($existingAes === '' || $existingAes === $remoteUrl || $existingUrl === $remoteUrl)
-            && in_array($source, ['aes_cached', 'aes', 'upload'], true)
+            && ($existingAes === '' || $existingAes === $remoteUrl)
+            && ($source === 'aes_cached' || $this->isAppMediaPhotoUrl($existingUrl))
         ) {
-            if ($source === 'aes_cached' || $this->isAppMediaPhotoUrl($existingUrl)) {
+            $patch = [];
+            if ($register !== '' && trim((string) ($alumniProfile['registerNumber'] ?? '')) === '') {
+                $patch['registerNumber'] = $register;
+            }
+            if ($patch === []) {
                 return $alumniProfile;
             }
+            $alumniModel = new AlumniModel();
+            $alumniModel->update((string) $alumniProfile['_id'], $patch);
+            return array_merge($alumniProfile, $patch);
         }
 
         $ownerId = (string) ($alumniProfile['_id'] ?? $user['_id'] ?? 'alumni');
-        $photo = $this->materializeRemotePhoto($remoteUrl, $ownerId) ?? ($resolved['photo'] ?? null);
+        $photo = $this->isAppMediaPhotoUrl($remoteUrl)
+            ? [
+                'url'      => $remoteUrl,
+                'source'   => 'aes_cached',
+                'aesUrl'   => (string) ($existingAes !== '' ? $existingAes : $remoteUrl),
+                'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+            ]
+            : ($this->materializeRemotePhoto($remoteUrl, $ownerId) ?? ($resolved['photo'] ?? null));
         if (!is_array($photo) || trim((string) ($photo['url'] ?? '')) === '') {
             return $alumniProfile;
         }
 
         $nextUrl = $this->normalizeStoredPhotoUrl((string) $photo['url']);
         if ($existingUrl === $nextUrl && $source === (string) ($photo['source'] ?? '')) {
+            if ($register !== '' && trim((string) ($alumniProfile['registerNumber'] ?? '')) === '') {
+                $alumniModel = new AlumniModel();
+                $alumniModel->update((string) $alumniProfile['_id'], ['registerNumber' => $register]);
+                return array_merge($alumniProfile, ['registerNumber' => $register]);
+            }
             return $alumniProfile;
         }
 
         $patch = ['photo' => $photo];
-        $register = $this->resolveAlumniAdmissionNumber($user, $alumniProfile);
         if ($register !== '' && trim((string) ($alumniProfile['registerNumber'] ?? '')) === '') {
             $patch['registerNumber'] = $register;
         }
