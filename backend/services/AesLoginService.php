@@ -243,6 +243,9 @@ final class AesLoginService
         $user = $this->prepareAesUserForLogin($user);
         $user = $this->normalizeSuperAdminUser($user);
         $user = $this->syncUserFromAes($user, $profile, $aesDetails);
+        // Seed AES session before role sync so alumni/staff photo resolve can read admno/photo.
+        $sanitizedEarly = $this->sanitizeAesProfileForClient($aesDetails);
+        Security::setSessionAesProfile($sanitizedEarly);
         $this->syncRoleProfileFromAes($user, $profile, $aesDetails);
         $user = $this->ensurePlacementOfficerProfile($user, $profile, $mapped);
         $user = $this->normalizeSuperAdminUser($user);
@@ -2298,6 +2301,16 @@ final class AesLoginService
         if ($student) {
             $candidates[] = (string) ($student['registerNumber'] ?? '');
         }
+        // Former-student alumni: match PlaceHub student by college email.
+        if ($register === '') {
+            $email = strtolower(trim((string) ($user['email'] ?? '')));
+            if ($email !== '') {
+                $linked = $this->findStudentRegisterByCollegeEmail($email);
+                if ($linked !== '') {
+                    $register = $linked;
+                }
+            }
+        }
 
         // Prefer real admission numbers (not email usernames) for getStudInfo4Placement.
         foreach ($candidates as $raw) {
@@ -2360,6 +2373,48 @@ final class AesLoginService
                 'syncedAt' => \PMS\Utils\DocumentHelper::now(),
             ],
         ];
+    }
+
+    /**
+     * Look up a PlaceHub student register/admno by college email (alumni reuse same email).
+     */
+    private function findStudentRegisterByCollegeEmail(string $email): string
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return '';
+        }
+
+        try {
+            $studentUser = (new UserModel())->findByEmail($email);
+            if ($studentUser && ($studentUser['role'] ?? '') === 'student') {
+                $student = (new StudentModel())->findByUserId((string) ($studentUser['_id'] ?? ''));
+                $reg = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+                if ($reg !== '') {
+                    return $reg;
+                }
+            }
+
+            // Match PlaceHub student by college / personal email.
+            $studentModel = new StudentModel();
+            foreach ([
+                ['personal.collegeEmail' => $email],
+                ['personal.personalEmail' => $email],
+                ['personal.email' => $email],
+            ] as $filter) {
+                $student = $studentModel->findOne($filter);
+                if ($student) {
+                    $reg = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+                    if ($reg !== '') {
+                        return $reg;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            return '';
+        }
+
+        return '';
     }
 
     /**
@@ -2737,8 +2792,13 @@ final class AesLoginService
             ];
         }
 
+        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+        if ($register === '') {
+            $register = $this->resolveAlumniAdmissionNumber($user, $existing);
+        }
+
         if (!$existing) {
-            $create = [
+            $createData = [
                 'company'    => $company,
                 'role'       => $title,
                 'title'      => $title,
@@ -2746,12 +2806,14 @@ final class AesLoginService
                 'isWorking'  => $company !== '',
             ];
             if ($register !== '') {
-                $create['registerNumber'] = $register;
+                $createData['registerNumber'] = $register;
             }
-            if ($photoPayload !== null) {
-                $create['photo'] = $photoPayload;
+            $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
+            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+            if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+                $createData['photo'] = ['url' => $photoUrl, 'source' => 'aes', 'syncedAt' => \PMS\Utils\DocumentHelper::now()];
             }
-            $alumniModel->createProfile((string) $user['_id'], $create);
+            $alumniModel->createProfile((string) $user['_id'], $createData);
             $existing = $alumniModel->findByUserId((string) $user['_id']);
         } else {
             $patch = [];
@@ -3165,13 +3227,22 @@ final class AesLoginService
             'approved' => true,
         ]);
 
-        $alumniModel->createProfile($userId, [
+        $createData = [
             'company'    => $company,
             'role'       => $title,
             'title'      => $title,
             'experience' => $experience,
             'isWorking'  => $company !== '',
-        ]);
+        ];
+        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+        if ($register !== '') {
+            $createData['registerNumber'] = $register;
+        }
+        $photoUrl = trim((string) ($mapped['photoUrl'] ?? ''));
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $createData['photo'] = ['url' => $photoUrl, 'source' => 'aes', 'syncedAt' => \PMS\Utils\DocumentHelper::now()];
+        }
+        $alumniModel->createProfile($userId, $createData);
 
         $user = $userModel->findById($userId);
         if (!$user) {

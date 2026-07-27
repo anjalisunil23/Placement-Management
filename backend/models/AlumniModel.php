@@ -46,7 +46,7 @@ class AlumniModel extends BaseModel
         if ($register !== '') {
             $doc['registerNumber'] = $register;
         }
-        if (isset($data['photo']) && is_array($data['photo'])) {
+        if (!empty($data['photo']) && is_array($data['photo'])) {
             $doc['photo'] = $data['photo'];
         }
         return $this->insert($doc);
