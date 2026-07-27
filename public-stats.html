@@ -140,6 +140,20 @@
   </div>
 </section>
 
+<section id="stories" class="py-5" style="background:var(--surface-2)">
+  <div class="container">
+    <h2 class="fw-bold text-center mb-4">Success stories</h2>
+    <div class="row g-3" id="storiesRow"></div>
+  </div>
+</section>
+
+<section id="news" class="py-5">
+  <div class="container">
+    <h2 class="fw-bold text-center mb-4">Placement news</h2>
+    <div class="row g-3" id="newsRow"></div>
+  </div>
+</section>
+
 <footer class="landing-page-footer">
   <div class="container">
     <div class="landing-page-footer-grid">
@@ -355,6 +369,37 @@ async function renderPublicPage() {
     ? `${runner.company || 'Recruiter'}${runner.role ? ` · ${runner.role}` : ''}`
     : (avgPkg > 0 ? 'Average package across active offers' : 'Next highest offer');
   document.getElementById('salaryMedian').textContent = fmtPkg(medianPkg);
+
+  const stories = live.successStories || [];
+  document.getElementById('storiesRow').innerHTML = stories.length ? stories.map(s => `
+    <div class="col-md-4"><div class="card-surface p-4 h-100">
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <div class="avatar" style="width:48px;height:48px">${escHtml(s.name).split(' ').map(n => n[0] || '').join('')}</div>
+        <div><strong>${escHtml(s.name)}</strong><div class="small text-muted-2">${escHtml(s.role)}</div></div>
+      </div>
+      <span class="badge-soft success mb-2">${escHtml(s.package)}</span>
+      <p class="text-muted-2 small mb-0">${escHtml(s.quote)}</p>
+    </div></div>`).join('')
+    : '<div class="col-12"><p class="text-center text-muted-2 mb-0">Alumni and placed students can share stories from their dashboard. Check back soon for inspiring journeys.</p></div>';
+
+  if (!PlacementNewsStore._cache) {
+    await PlacementNewsStore.fetchPublic().catch(() => null);
+  }
+  const news = PlacementNewsStore.published();
+  document.getElementById('newsRow').innerHTML = news.length ? news.map(n => {
+    const more = n.link
+      ? `<a href="${n.link.replace(/"/g, '&quot;')}" class="fw-semibold text-decoration-none" target="_blank" rel="noopener">Read more →</a>`
+      : '<span class="text-muted-2 small">—</span>';
+    const title = String(n.title || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const summary = String(n.summary || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    return `
+    <div class="col-md-4"><div class="card-surface p-4 h-100">
+      <small class="text-muted-2">${formatNewsDate(n.date)}</small>
+      <h5 class="fw-bold mt-2">${title}</h5>
+      <p class="text-muted-2 small mb-3">${summary}</p>
+      ${more}
+    </div></div>`;
+  }).join('') : '<div class="col-12"><p class="text-center text-muted-2 mb-0">No placement news yet. Check back soon.</p></div>';
 }
 
 renderPublicPage();

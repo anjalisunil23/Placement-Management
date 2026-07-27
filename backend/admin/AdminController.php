@@ -24,6 +24,7 @@ use PMS\Models\PublicPageContentModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\RuleModel;
 use PMS\Models\StudentModel;
+use PMS\Models\SuccessStoryModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
 use PMS\Services\ApplicationWorkflowService;
@@ -2104,12 +2105,20 @@ final class AdminController
         Response::success(null, 'Placement news removed.');
     }
 
-    /** DELETE /api/admin/placement-news — wipe all placement news. */
+    /** DELETE /api/admin/placement-news — wipe all placement news (keep forms/fields). */
     public function clearAllPlacementNews(): void
     {
         RBACMiddleware::requireAdmin();
         $deleted = (new PlacementNewsModel())->deleteAll();
         Response::success(['deleted' => $deleted], 'All placement news cleared.');
+    }
+
+    /** DELETE /api/admin/success-stories — wipe all alumni success stories (keep forms/fields). */
+    public function clearAllSuccessStories(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $deleted = (new SuccessStoryModel())->deleteAll();
+        Response::success(['deleted' => $deleted], 'All success stories cleared.');
     }
 
     /** GET /api/admin/notifications */
@@ -2173,14 +2182,6 @@ final class AdminController
         RBACMiddleware::requireAdmin();
         $deleted = (new NotificationModel())->deleteAll();
         Response::success(['deleted' => $deleted], 'All notification data cleared.');
-    }
-
-    /** DELETE /api/admin/success-stories — remove all published success stories. */
-    public function clearAllSuccessStories(): void
-    {
-        RBACMiddleware::requireAdmin();
-        $deleted = (new \PMS\Models\SuccessStoryModel())->deleteAll();
-        Response::success(['deleted' => $deleted], 'All success stories cleared.');
     }
 
     /** GET /api/admin/tracking */

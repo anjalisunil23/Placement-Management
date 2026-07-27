@@ -95,16 +95,26 @@
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div>
       <h5 class="fw-bold mb-0">Placement news</h5>
-      <div class="small text-muted-2">Manage news items here. The public portal no longer shows this section.</div>
+      <small class="text-muted-2">Shown on the public portal. Clearing removes records only — add form stays.</small>
     </div>
-    <div class="d-flex gap-2">
-      <button type="button" class="btn btn-outline-danger btn-sm" id="btnClearAllNews"><i class="bi bi-trash3 me-1"></i>Clear all</button>
+    <div class="d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-outline-danger btn-sm" id="btnClearAllNews"><i class="bi bi-trash3 me-1"></i>Clear all news</button>
       <button class="btn btn-primary btn-sm" id="btnAddNews"><i class="bi bi-plus-lg me-1"></i>Add news</button>
     </div>
   </div>
   <div class="table-wrap">
     <table class="table-modern"><thead><tr><th>Date</th><th>Title</th><th>Summary</th><th>Actions</th></tr></thead>
     <tbody id="newsRows"></tbody></table>
+  </div>
+</div>
+
+<div class="card-surface p-4 mt-3">
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h5 class="fw-bold mb-0">Success stories</h5>
+      <small class="text-muted-2">Alumni publish stories from their dashboard. Clearing removes story records only — fields stay.</small>
+    </div>
+    <button type="button" class="btn btn-outline-danger btn-sm" id="btnClearAllStories"><i class="bi bi-trash3 me-1"></i>Clear all stories</button>
   </div>
 </div>
 
@@ -124,7 +134,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260713p"></script>
+<script src="js/admin-api.js?v=20260727clearportal"></script>
 <script src="js/api.js?v=20260727publiclive"></script>
 <script src="js/app.js?v=20260727publiclive"></script>
 <script>
@@ -231,7 +241,7 @@ function renderNewsAdmin() {
           <button class="btn btn-sm btn-outline-danger" type="button" data-remove-news="${n.id}"><i class="bi bi-trash"></i></button>
         </div>
       </td>
-    </tr>`).join('') : '<tr><td colspan="4" class="text-muted-2 p-4">No placement news yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="4" class="text-muted-2 p-4">No placement news yet. Add one to show on the landing page.</td></tr>';
 }
 
 function openAddNews() {
@@ -276,20 +286,43 @@ async function removeNews(id) {
 document.getElementById('btnAddNews').addEventListener('click', openAddNews);
 
 document.getElementById('btnClearAllNews')?.addEventListener('click', async () => {
-  const list = PlacementNewsStore.all();
-  if (!list.length) {
-    toast('No placement news to clear.', 'info');
-    return;
-  }
+  const count = PlacementNewsStore.all().length;
   if (!(await confirmAction({
-    title: 'Clear all news',
-    message: `Delete all ${list.length} placement news item(s)? This cannot be undone.`,
+    title: 'Clear all placement news',
+    message: count
+      ? `Permanently delete all ${count} placement news item(s)? Form fields stay — you can add new news anytime.`
+      : 'Clear all placement news? Form fields stay.',
     confirmText: 'Clear all',
     variant: 'danger',
   }))) return;
-  const ok = await PlacementNewsStore.clearAll();
-  toast(ok ? 'All placement news cleared.' : 'Could not clear news.', ok ? 'success' : 'error');
-  if (ok) renderNewsAdmin();
+  if (!(await requireWriteSession())) return;
+  const res = await AdminApi.clearAllPlacementNews();
+  if (!res?.success) {
+    toast(res?.message || 'Could not clear placement news.', 'error');
+    return;
+  }
+  PlacementNewsStore._cache = [];
+  try { localStorage.setItem(typeof PLACEMENT_NEWS_KEY !== 'undefined' ? PLACEMENT_NEWS_KEY : 'ph-placement-news', '[]'); } catch { /* ignore */ }
+  await PlacementNewsStore.fetch().catch(() => null);
+  renderNewsAdmin();
+  toast(`Cleared ${res.data?.deleted ?? count} news item(s).`, 'success');
+});
+
+document.getElementById('btnClearAllStories')?.addEventListener('click', async () => {
+  if (!(await confirmAction({
+    title: 'Clear all success stories',
+    message: 'Permanently delete all alumni success stories from the portal? Story form fields stay — alumni can publish again.',
+    confirmText: 'Clear all',
+    variant: 'danger',
+  }))) return;
+  if (!(await requireWriteSession())) return;
+  const res = await AdminApi.clearAllSuccessStories();
+  if (!res?.success) {
+    toast(res?.message || 'Could not clear success stories.', 'error');
+    return;
+  }
+  try { localStorage.removeItem(typeof ALUMNI_STORIES_KEY !== 'undefined' ? ALUMNI_STORIES_KEY : 'ph-alumni-success-stories'); } catch { /* ignore */ }
+  toast(`Cleared ${res.data?.deleted ?? 0} success story(ies).`, 'success');
 });
 
 document.getElementById('newsForm').addEventListener('submit', async e => {

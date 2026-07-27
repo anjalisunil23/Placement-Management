@@ -97,12 +97,11 @@ echo "System settings initialized.\n";
 echo "Public page content initialized.\n";
 
 $newsModel = new PlacementNewsModel();
-// Wipe any seeded/demo placement news so the portal starts empty.
-$clearedNews = $newsModel->deleteAll();
-if ($clearedNews > 0) {
-    echo "Cleared {$clearedNews} placement news item(s).\n";
-} else {
+if ($newsModel->count([]) === 0) {
+    // Leave news empty for live campuses — admins publish real items from Settings.
     echo "Placement news left empty (publish from Admin Settings).\n";
+} else {
+    echo "Placement news already exists.\n";
 }
 
 if (!(new RuleModel())->getActiveRule()) {
@@ -387,6 +386,7 @@ if ($rohan) {
         ]);
         echo "Sample alumni referral seeded for rohan.v@alumni.edu\n";
     }
+    // Do not seed success stories — public portal shows live published stories only.
 }
 
 if (!$userModel->findByEmail('neha@acme.io')) {

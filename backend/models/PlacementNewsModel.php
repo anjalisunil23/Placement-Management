@@ -21,14 +21,6 @@ class PlacementNewsModel extends BaseModel
         return $this->findAll([], $limit, 0, ['date' => -1, 'createdAt' => -1]);
     }
 
-    /** Delete all placement news items. */
-    public function deleteAll(): int
-    {
-        $count = (int) $this->db->query("SELECT COUNT(*) FROM `{$this->table}`")->fetchColumn();
-        $this->db->exec("DELETE FROM `{$this->table}`");
-        return $count;
-    }
-
     /**
      * @param array<string, mixed> $data
      */
@@ -53,5 +45,13 @@ class PlacementNewsModel extends BaseModel
             return false;
         }
         return $this->update($id, $update);
+    }
+
+    /** Wipe all placement news rows (admin reset). */
+    public function deleteAll(): int
+    {
+        $count = (int) $this->db->query("SELECT COUNT(*) FROM `{$this->table}`")->fetchColumn();
+        $this->db->exec("DELETE FROM `{$this->table}`");
+        return $count;
     }
 }
