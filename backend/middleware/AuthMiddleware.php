@@ -269,7 +269,9 @@ final class AuthMiddleware
           $data = array_merge($data, AlumniModel::profileToUserFields($profile));
         }
       }
-      $photo = $aesService->resolveAlumniProfilePhoto($user, $profile ?? null, false);
+      // Fetch from AES when still missing after sync (fetchFromAes=false left avatars blank).
+      $stillMissing = trim((string) ($data['photoUrl'] ?? '')) === '';
+      $photo = $aesService->resolveAlumniProfilePhoto($user, $profile ?? null, $stillMissing);
       if (($photo['photoUrl'] ?? '') !== '') {
         $data['photoUrl'] = $photo['photoUrl'];
         $data['photo'] = $photo['photo'];

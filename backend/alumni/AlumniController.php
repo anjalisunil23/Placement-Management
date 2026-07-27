@@ -45,6 +45,15 @@ final class AlumniController
     $aes = new AesLoginService();
     $profile = $aes->syncAlumniPlacementPhoto($user, $profile) ?? $profile;
     $photo = $aes->resolveAlumniProfilePhoto($user, $profile, true);
+    // If resolve found a live AES photo that sync missed, persist it now.
+    $resolvedUrl = trim((string) ($photo['photoUrl'] ?? ''));
+    $storedUrl = is_array($profile['photo'] ?? null)
+      ? trim((string) ($profile['photo']['url'] ?? ''))
+      : '';
+    if ($resolvedUrl !== '' && $resolvedUrl !== $storedUrl) {
+      $profile = $aes->syncAlumniPlacementPhoto($user, $profile) ?? $profile;
+      $photo = $aes->resolveAlumniProfilePhoto($user, $profile, false);
+    }
     $out = AlumniModel::serializeProfile($profile);
     if (($photo['photoUrl'] ?? '') !== '') {
       $out['photoUrl'] = $photo['photoUrl'];

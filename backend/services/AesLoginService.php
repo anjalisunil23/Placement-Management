@@ -283,6 +283,30 @@ final class AesLoginService
             || HodDetection::payloadIndicatesHod($aesProfile);
         $designation = HodDetection::normalizeDesignationForHod($designation, $isHod);
 
+        // Lift admno / stud_photo out of nested bags before they are stripped
+        // (sanitize removes keys named student/alumni/staff).
+        $liftKeys = [
+            'admno', 'stud_admno', 'admission_no', 'admissionNo', 'admission_number',
+            'registerNumber', 'register_number',
+            'stud_photo', 'photoUrl', 'photo_url', 'profile_photo',
+            'collegeEmail', 'personalEmail', 'stud_ajce_mails', 'college_email',
+        ];
+        foreach (['student', 'alumni', 'data', 'user', 'profile', 'details'] as $bag) {
+            if (!is_array($aesProfile[$bag] ?? null)) {
+                continue;
+            }
+            foreach ($liftKeys as $key) {
+                $current = trim((string) ($aesProfile[$key] ?? ''));
+                if ($current !== '') {
+                    continue;
+                }
+                $fromBag = trim((string) ($aesProfile[$bag][$key] ?? ''));
+                if ($fromBag !== '') {
+                    $aesProfile[$key] = $fromBag;
+                }
+            }
+        }
+
         $strip = [
             'role', 'user_type', 'userType', 'category', 'type', 'usertype', 'user_role', 'userRole',
             'login_type', 'logintype', 'account_type', 'accounttype', 'designation_type', 'portal', 'module',
@@ -2285,6 +2309,7 @@ final class AesLoginService
     public function resolveAlumniAdmissionNumber(array $user, ?array $alumniProfile = null): string
     {
         $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
+        $aesProfile = is_array($aesProfile) ? $aesProfile : [];
         $mapped = $this->mapAesDetailsToUserFields($aesProfile);
 
         $candidates = [
@@ -2301,14 +2326,32 @@ final class AesLoginService
         if ($student) {
             $candidates[] = (string) ($student['registerNumber'] ?? '');
         }
-        // Former-student alumni: match PlaceHub student by college email.
-        if ($register === '') {
-            $email = strtolower(trim((string) ($user['email'] ?? '')));
-            if ($email !== '') {
-                $linked = $this->findStudentRegisterByCollegeEmail($email);
-                if ($linked !== '') {
-                    $register = $linked;
-                }
+
+        // Former-student alumni: match PlaceHub student by college / personal email.
+        // Must append to $candidates (never rely on an undefined $register — that skipped
+        // this block entirely after f5dd6a5 because null === '' is false).
+        $emails = [];
+        foreach ([
+            (string) ($user['email'] ?? ''),
+            (string) ($mapped['collegeEmail'] ?? ''),
+            (string) ($mapped['personalEmail'] ?? ''),
+            (string) ($mapped['email'] ?? ''),
+            (string) ($aesProfile['collegeEmail'] ?? ''),
+            (string) ($aesProfile['personalEmail'] ?? ''),
+            $this->pickInsensitive($aesProfile, [
+                'college_email', 'stud_ajce_mails', 'email', 'mail', 'personal_email',
+            ]),
+        ] as $emailRaw) {
+            $email = strtolower(trim($emailRaw));
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $emails[$email] = true;
+            }
+        }
+        foreach (array_keys($emails) as $email) {
+            $linked = $this->findStudentRegisterByCollegeEmail($email);
+            if ($linked !== '') {
+                $candidates[] = $linked;
+                break;
             }
         }
 
@@ -2386,11 +2429,12 @@ final class AesLoginService
         }
 
         try {
-            $studentUser = (new UserModel())->findByEmail($email);
-            if ($studentUser && ($studentUser['role'] ?? '') === 'student') {
-                $student = (new StudentModel())->findByUserId((string) ($studentUser['_id'] ?? ''));
+            // Role may already be alumni while a linked student profile still holds admno.
+            $matchedUser = (new UserModel())->findByEmail($email);
+            if ($matchedUser) {
+                $student = (new StudentModel())->findByUserId((string) ($matchedUser['_id'] ?? ''));
                 $reg = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-                if ($reg !== '') {
+                if ($reg !== '' && !str_contains($reg, '@')) {
                     return $reg;
                 }
             }
@@ -2405,7 +2449,7 @@ final class AesLoginService
                 $student = $studentModel->findOne($filter);
                 if ($student) {
                     $reg = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
-                    if ($reg !== '') {
+                    if ($reg !== '' && !str_contains($reg, '@')) {
                         return $reg;
                     }
                 }
@@ -2780,21 +2824,37 @@ final class AesLoginService
 
         $company = trim((string) ($extras['company'] ?? $extras['organization'] ?? $extras['employer'] ?? ''));
         $title = trim((string) ($extras['designation'] ?? $extras['title'] ?? $extras['job_title'] ?? $extras['jobTitle'] ?? ''));
-        $register = $this->resolveAlumniAdmissionNumber($user, $existing);
+
+        // Prefer live AES payload admno, then profile / PlaceHub / email link.
+        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+        if ($register === '' || str_contains($register, '@')) {
+            $register = strtoupper(trim($this->pickInsensitive($aesDetails, [
+                'admno', 'stud_admno', 'admission_no', 'admissionNo', 'admission_number',
+                'registerNumber', 'register_number',
+            ])));
+        }
+        if ($register === '' || str_contains($register, '@')) {
+            $register = $this->resolveAlumniAdmissionNumber($user, $existing);
+        }
+        if (str_contains($register, '@')) {
+            $register = '';
+        }
+
         $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
         $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+        // Login callback often omits stud_photo; fetch from getStudInfo4Placement when we have admno.
+        if (($photoUrl === '' || !filter_var($photoUrl, FILTER_VALIDATE_URL)) && $register !== '') {
+            $fromApi = $this->fetchAlumniPhotoFromStudInfo($register);
+            $photoUrl = trim((string) ($fromApi['photoUrl'] ?? ''));
+        }
         $photoPayload = null;
-        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+        if ($photoUrl !== '' && $this->isUsablePhotoUrl($photoUrl)) {
             $photoPayload = [
                 'url'      => $photoUrl,
                 'source'   => 'aes',
+                'aesUrl'   => $photoUrl,
                 'syncedAt' => \PMS\Utils\DocumentHelper::now(),
             ];
-        }
-
-        $register = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
-        if ($register === '') {
-            $register = $this->resolveAlumniAdmissionNumber($user, $existing);
         }
 
         if (!$existing) {
@@ -2808,10 +2868,8 @@ final class AesLoginService
             if ($register !== '') {
                 $createData['registerNumber'] = $register;
             }
-            $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
-            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
-            if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
-                $createData['photo'] = ['url' => $photoUrl, 'source' => 'aes', 'syncedAt' => \PMS\Utils\DocumentHelper::now()];
+            if ($photoPayload !== null) {
+                $createData['photo'] = $photoPayload;
             }
             $alumniModel->createProfile((string) $user['_id'], $createData);
             $existing = $alumniModel->findByUserId((string) $user['_id']);
@@ -2850,6 +2908,7 @@ final class AesLoginService
         }
 
         if ($existing) {
+            // Materialize AES photo to PlaceHub media (and persist registerNumber if missing).
             $this->syncAlumniPlacementPhoto($user, $existing);
         }
     }
