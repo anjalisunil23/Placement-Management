@@ -143,8 +143,11 @@ function notifCard(n, { selectable = false } = {}) {
   return `<div class="notif-card ${n.read ? '' : 'unread'} d-flex align-items-start gap-2" data-id="${escHtml(n.id)}" role="button" tabindex="0" style="cursor:pointer;border-left:3px solid ${accent}">
     ${check}
     <div class="notif-ic" style="background:color-mix(in srgb,var(--${icon[0]}) 15%,transparent);color:var(--${icon[0]})"><i class="bi ${icon[1]}"></i></div>
-    <div class="flex-grow-1"><div class="d-flex justify-content-between"><strong>${escHtml(n.title)}</strong><small class="text-muted-2">${ago}</small></div>
+    <div class="flex-grow-1"><div class="d-flex justify-content-between gap-2"><strong>${escHtml(n.title)}</strong><small class="text-muted-2 text-nowrap">${ago}</small></div>
     <p class="mb-0 small text-muted-2">${escHtml(n.body)}</p>${reviewHint}</div>
+    <button type="button" class="btn btn-sm btn-link text-danger p-1 notif-delete-btn" data-id="${escHtml(n.id)}" title="Delete notification" aria-label="Delete notification" onclick="event.stopPropagation()">
+      <i class="bi bi-trash"></i>
+    </button>
   </div>`;
 }
 
@@ -244,11 +247,15 @@ function renderJobFeed() {
     const posterUrl = row.posterUrl || row.imageUrl || '';
     const posterType = row.posterType || (row.imageUrl ? 'image' : '');
     const canPublish = isAdminLike && ['open', 'ongoing', 'reviewing'].includes(status);
-    const actions = canPublish
+    const canDelete = isAdminLike;
+    const actions = (canPublish || canDelete)
       ? `<div class="d-flex flex-wrap gap-2 mt-3">
-          <button type="button" class="btn btn-sm btn-primary job-feed-approve-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" data-source="${escHtml(row.sourceType || '')}">
+          ${canPublish ? `<button type="button" class="btn btn-sm btn-primary job-feed-approve-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" data-source="${escHtml(row.sourceType || '')}">
             <i class="bi bi-check2-circle me-1"></i>Approve &amp; publish drive
-          </button>
+          </button>` : ''}
+          ${canDelete ? `<button type="button" class="btn btn-sm btn-outline-danger job-delete-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" title="Delete job post">
+            <i class="bi bi-trash"></i>
+          </button>` : ''}
         </div>`
       : '';
     return `<div class="col-md-6 col-xl-4"><article class="card-surface h-100 p-3 d-flex flex-column">
@@ -316,6 +323,7 @@ function renderPendingJobPosts() {
               <div class="d-flex flex-wrap gap-2">
                 <button type="button" class="btn btn-sm btn-primary job-approve-btn" data-id="${escHtml(row.id)}">Approve</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary job-reject-btn" data-id="${escHtml(row.id)}">Reject</button>
+                <button type="button" class="btn btn-sm btn-outline-danger job-delete-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" title="Delete"><i class="bi bi-trash"></i></button>
               </div>
               <div class="small text-muted-2 mt-2">Posted ${escHtml(formatDate(row.createdAt))}</div>
             </div>
@@ -387,6 +395,26 @@ async function rejectJobPost(id) {
   }
   toast(res.message || 'Job post rejected.', 'success');
   await loadPendingJobPosts();
+}
+
+async function deleteJobPost(id, title = '') {
+  const endpoint = role === 'admin'
+    ? `/admin/job-posts/${encodeURIComponent(id)}`
+    : `/officer/job-posts/${encodeURIComponent(id)}`;
+  if (!(await confirmAction({
+    title: 'Delete job post',
+    message: `Permanently delete${title ? ` "${title}"` : ' this job post'}? This cannot be undone.`,
+    confirmText: 'Delete',
+    variant: 'danger',
+  }))) return;
+  if (!(await requireWriteSession())) return;
+  const res = await api(endpoint, { method: 'DELETE', noRedirectOn401: true });
+  if (!res?.success) {
+    toast(res?.message || 'Could not delete job post.', 'error');
+    return;
+  }
+  toast(res.message || 'Job post deleted.', 'success');
+  await Promise.all([loadPendingJobPosts(), loadJobFeed()]);
 }
 
 function renderInbox() {
@@ -526,13 +554,34 @@ async function openNotification(id) {
   toast('Marked as read.', 'success');
 }
 
+async function deleteOneNotification(id) {
+  const sid = String(id || '').trim();
+  if (!sid) return;
+  if (!(await confirmAction({
+    title: 'Delete notification',
+    message: 'Delete this notification? This cannot be undone.',
+    confirmText: 'Delete',
+    variant: 'danger',
+  }))) return;
+  if (await deleteNotificationsByIds([sid])) {
+    toast('Notification deleted.', 'success');
+  }
+}
+
 function bindNotificationClicks() {
   const listIds = isStudent ? ['nlistUnread', 'nlistRead', 'nlistApps'] : ['nlistUnread', 'nlistRead'];
   listIds.forEach(listId => {
     const el = document.getElementById(listId);
     if (!el || el.dataset.bound === '1') return;
     el.dataset.bound = '1';
-    el.addEventListener('click', e => {
+    el.addEventListener('click', async e => {
+      const delBtn = e.target.closest('.notif-delete-btn');
+      if (delBtn?.dataset.id) {
+        e.preventDefault();
+        e.stopPropagation();
+        await deleteOneNotification(delBtn.dataset.id);
+        return;
+      }
       if (e.target.closest('.notif-select')) {
         syncReadSelection();
         return;
@@ -545,6 +594,7 @@ function bindNotificationClicks() {
     });
     el.addEventListener('keydown', e => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (e.target.closest('.notif-delete-btn')) return;
       const card = e.target.closest('.notif-card[data-id]');
       if (card) { e.preventDefault(); openNotification(card.dataset.id); }
     });
@@ -649,6 +699,11 @@ if (isAdmin) {
 if (canViewJobFeed) {
   document.getElementById('jobSourceFilter')?.addEventListener('change', renderJobFeed);
   document.getElementById('jobFeedRows')?.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('.job-delete-btn');
+    if (deleteBtn?.dataset.id) {
+      await deleteJobPost(deleteBtn.dataset.id, deleteBtn.dataset.title || '');
+      return;
+    }
     const btn = e.target.closest('.job-feed-approve-btn');
     if (!btn?.dataset.id) return;
     await approveJobPost(btn.dataset.id, { title: btn.dataset.title || '' });
@@ -661,6 +716,11 @@ if (isAdminLike) {
   document.getElementById('pendingJobRows')?.addEventListener('click', async (e) => {
     const approveBtn = e.target.closest('.job-approve-btn');
     const rejectBtn = e.target.closest('.job-reject-btn');
+    const deleteBtn = e.target.closest('.job-delete-btn');
+    if (deleteBtn?.dataset.id) {
+      await deleteJobPost(deleteBtn.dataset.id, deleteBtn.dataset.title || '');
+      return;
+    }
     if (approveBtn?.dataset.id) {
       await approveJobPost(approveBtn.dataset.id);
       return;

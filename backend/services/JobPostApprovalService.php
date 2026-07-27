@@ -402,6 +402,59 @@ final class JobPostApprovalService
     }
 
     /**
+     * Hard-delete an unpublished job post (company job or alumni/staff post).
+     *
+     * @param array{isAdmin:bool,departmentId:?string,department:?array} $ctx
+     * @return array<string, mixed>
+     */
+    public function delete(string $postId, array $ctx): array
+    {
+        if (!Security::isValidId($postId)) {
+            Response::error('Invalid job post id.', 400);
+        }
+
+        $alumniPost = $this->posts->findById($postId);
+        if ($alumniPost) {
+            $this->assertCanReview($alumniPost, $ctx);
+            if (!empty($alumniPost['driveId'])) {
+                Response::error('This job post is already published as a drive. Delete the drive instead.', 409);
+            }
+            $title = trim((string) ($alumniPost['title'] ?? 'Job opening'));
+            if (!$this->posts->delete($postId)) {
+                Response::error('Could not delete job post.', 500);
+            }
+            return [
+                'id' => $postId,
+                'sourceType' => strtolower((string) ($alumniPost['sourceType'] ?? 'alumni')),
+                'title' => $title,
+            ];
+        }
+
+        $companyJob = (new \PMS\Models\JobModel())->findById($postId);
+        if ($companyJob) {
+            if (empty($companyJob['company'])) {
+                $companyJob['company'] = (string) ($companyJob['companyName'] ?? '');
+            }
+            $companyJob['sourceType'] = 'company';
+            $this->assertCanReview($companyJob, $ctx);
+            if (!empty($companyJob['driveId'])) {
+                Response::error('This job post is already published as a drive. Delete the drive instead.', 409);
+            }
+            $title = trim((string) ($companyJob['title'] ?? 'Job opening'));
+            if (!(new \PMS\Models\JobModel())->delete($postId)) {
+                Response::error('Could not delete job post.', 500);
+            }
+            return [
+                'id' => $postId,
+                'sourceType' => 'company',
+                'title' => $title,
+            ];
+        }
+
+        Response::notFound('Job post not found.');
+    }
+
+    /**
      * @param array<string, mixed> $reviewer
      * @param array{isAdmin:bool,departmentId:?string,department:?array} $ctx
      * @return array<string, mixed>

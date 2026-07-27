@@ -99,13 +99,14 @@ function renderJobFeed() {
     const posterUrl = row.posterUrl || row.imageUrl || '';
     const posterType = row.posterType || (row.imageUrl ? 'image' : '');
     const canPublish = ['open', 'ongoing', 'reviewing'].includes(status);
-    const actions = canPublish
-      ? `<div class="d-flex flex-wrap gap-2 mt-3">
-          <button type="button" class="btn btn-sm btn-primary job-feed-approve-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" data-source="${escHtml(row.sourceType || '')}">
+    const actions = `<div class="d-flex flex-wrap gap-2 mt-3">
+          ${canPublish ? `<button type="button" class="btn btn-sm btn-primary job-feed-approve-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" data-source="${escHtml(row.sourceType || '')}">
             <i class="bi bi-check2-circle me-1"></i>Approve &amp; publish drive
+          </button>` : ''}
+          <button type="button" class="btn btn-sm btn-outline-danger job-delete-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" title="Delete job post">
+            <i class="bi bi-trash"></i>
           </button>
-        </div>`
-      : '';
+        </div>`;
     return `<div class="col-md-6 col-xl-4"><article class="card-surface h-100 p-3 d-flex flex-column">
       ${posterType === 'image' && posterUrl ? `<img src="${escHtml(posterUrl)}" alt="${escHtml(row.title)} job poster" class="w-100 rounded-3 mb-3" style="height:180px;object-fit:cover" loading="lazy"/>` : ''}
       <div class="d-flex justify-content-between gap-2 mb-2">
@@ -168,6 +169,7 @@ function renderPendingJobPosts() {
               <div class="d-flex flex-wrap gap-2">
                 <button type="button" class="btn btn-sm btn-primary job-approve-btn" data-id="${escHtml(row.id)}">Approve</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary job-reject-btn" data-id="${escHtml(row.id)}">Reject</button>
+                <button type="button" class="btn btn-sm btn-outline-danger job-delete-btn" data-id="${escHtml(row.id)}" data-title="${escHtml(row.title)}" title="Delete"><i class="bi bi-trash"></i></button>
               </div>
               <div class="small text-muted-2 mt-2">Posted ${escHtml(formatDate(row.createdAt))}</div>
             </div>
@@ -237,15 +239,46 @@ async function rejectJobPost(id) {
   await loadPendingJobPosts();
 }
 
+async function deleteJobPost(id, title = '') {
+  const endpoint = role === 'admin'
+    ? `/admin/job-posts/${encodeURIComponent(id)}`
+    : `/officer/job-posts/${encodeURIComponent(id)}`;
+  if (!(await confirmAction({
+    title: 'Delete job post',
+    message: `Permanently delete${title ? ` "${title}"` : ' this job post'}? This cannot be undone.`,
+    confirmText: 'Delete',
+    variant: 'danger',
+  }))) return;
+  if (!(await requireWriteSession())) return;
+  const res = await api(endpoint, { method: 'DELETE', noRedirectOn401: true });
+  if (!res?.success) {
+    toast(res?.message || 'Could not delete job post.', 'error');
+    return;
+  }
+  toast(res.message || 'Job post deleted.', 'success');
+  await Promise.all([loadPendingJobPosts(), loadJobFeed()]);
+}
+
 document.getElementById('jobSourceFilter')?.addEventListener('change', renderJobFeed);
 document.getElementById('jobFeedRows')?.addEventListener('click', async (e) => {
-  const btn = e.target.closest('.job-feed-approve-btn');
-  if (!btn?.dataset.id) return;
-  await approveJobPost(btn.dataset.id, { title: btn.dataset.title || '' });
+  const approveBtn = e.target.closest('.job-feed-approve-btn');
+  const deleteBtn = e.target.closest('.job-delete-btn');
+  if (deleteBtn?.dataset.id) {
+    await deleteJobPost(deleteBtn.dataset.id, deleteBtn.dataset.title || '');
+    return;
+  }
+  if (approveBtn?.dataset.id) {
+    await approveJobPost(approveBtn.dataset.id, { title: approveBtn.dataset.title || '' });
+  }
 });
 document.getElementById('pendingJobRows')?.addEventListener('click', async (e) => {
   const approveBtn = e.target.closest('.job-approve-btn');
   const rejectBtn = e.target.closest('.job-reject-btn');
+  const deleteBtn = e.target.closest('.job-delete-btn');
+  if (deleteBtn?.dataset.id) {
+    await deleteJobPost(deleteBtn.dataset.id, deleteBtn.dataset.title || '');
+    return;
+  }
   if (approveBtn?.dataset.id) {
     await approveJobPost(approveBtn.dataset.id);
     return;

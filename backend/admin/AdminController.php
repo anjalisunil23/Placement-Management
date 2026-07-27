@@ -267,18 +267,6 @@ final class AdminController
         Response::success((new OfficerDataService())->listApplications($scope['ctx'], $filter));
     }
 
-    /** DELETE /api/admin/applications — wipe all campus-drive applications (fresh start). */
-    public function clearAllApplications(): void
-    {
-        RBACMiddleware::requireAdmin();
-        $deleted = (new ApplicationModel())->deleteAll();
-        $chancesReset = (new PlacementChanceService())->resetAllApplicationCounters();
-        Response::success(
-            ['deleted' => $deleted, 'chancesReset' => $chancesReset],
-            'All drive applications cleared.'
-        );
-    }
-
     /** POST /api/admin/applications/{id}/transition */
     public function transitionApplication(string $appId): void
     {
@@ -1375,6 +1363,15 @@ final class AdminController
         $reason = trim((string) ($input['reason'] ?? ''));
         $result = (new \PMS\Services\JobPostApprovalService())->reject($id, $admin, $ctx, $reason);
         Response::success($result, 'Job post rejected.');
+    }
+
+    /** DELETE /api/admin/job-posts/{id} — remove one unpublished job post. */
+    public function deleteJobPost(string $id): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        $result = (new \PMS\Services\JobPostApprovalService())->delete($id, $ctx);
+        Response::success($result, 'Job post deleted.');
     }
 
     /** GET /api/admin/blacklist */

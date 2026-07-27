@@ -791,6 +791,15 @@ final class OfficerController
         Response::success($result, 'Job post rejected.');
     }
 
+    /** DELETE /api/officer/job-posts/{id} */
+    public function deleteJobPost(string $id): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $result = (new \PMS\Services\JobPostApprovalService())->delete($id, $ctx);
+        Response::success($result, 'Job post deleted.');
+    }
+
     /** GET /api/officer/applications */
     public function listApplications(): void
     {

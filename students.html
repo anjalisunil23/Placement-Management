@@ -347,11 +347,8 @@
           <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Rejected</div><div class="val" id="statRejected">0</div></div></div>
         </div>
         <div class="card-surface">
-          <div class="p-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div class="p-3 pb-0">
             <h6 class="fw-bold mb-0">Applications to Campus Drives</h6>
-            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnClearAllApplications" data-roles="admin" onclick="clearAllDriveApplications()">
-              <i class="bi bi-trash3 me-1"></i>Clear all applications
-            </button>
           </div>
           <div class="table-wrap">
             <table class="table-modern"><thead><tr>
@@ -2838,11 +2835,6 @@ function renderApplications() {
   if (shortlistedStat) shortlistedStat.textContent = shortlisted.length;
   document.getElementById('statRejected').textContent = all.filter(a => a.stage === 'rejected' || a.status === 'rejected').length;
 
-  const clearBtn = document.getElementById('btnClearAllApplications');
-  if (clearBtn) {
-    clearBtn.classList.toggle('d-none', !(isAdminRole && Auth.hasRealAuth() && !Auth.isDemo()));
-  }
-
   document.getElementById('appRows').innerHTML = all.length ? all.map(a => `
     <tr>
       <td class="fw-semibold small">${a.studentName}</td>
@@ -2862,34 +2854,6 @@ function renderApplications() {
 
   refreshShortlistedPanel();
 }
-
-async function clearAllDriveApplications() {
-  if (!isAdminRole) return;
-  const count = ApplicationPipeline.all().length;
-  const confirmed = await confirmAction({
-    title: 'Clear all drive applications',
-    message: count
-      ? `Permanently delete all ${count} campus-drive application(s) and reset student application chances? This cannot be undone.`
-      : 'Clear the applications pipeline and reset student application chances? This cannot be undone.',
-    confirmText: 'Clear all',
-    variant: 'danger',
-  });
-  if (!confirmed) return;
-  if (!(await requireWriteSession())) return;
-  const res = await AdminApi.clearAllApplications();
-  if (!res?.success) {
-    toast(res?.message || 'Could not clear applications.', 'error');
-    return;
-  }
-  ApplicationPipeline._cache = [];
-  try { localStorage.setItem(typeof APPS_KEY !== 'undefined' ? APPS_KEY : 'ph-application-pipeline', '[]'); } catch { /* ignore */ }
-  await ApplicationPipeline.fetch();
-  renderApplications();
-  const deleted = res.data?.deleted ?? count;
-  const chancesReset = res.data?.chancesReset ?? 0;
-  toast(`Cleared ${deleted} application(s)` + (chancesReset ? `; reset chances for ${chancesReset} student(s).` : '.'), 'success');
-}
-window.clearAllDriveApplications = clearAllDriveApplications;
 
 /* —— Resumes —— */
 function formatBadge(fileName, stored) {
