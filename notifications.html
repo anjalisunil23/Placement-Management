@@ -86,7 +86,7 @@ const isAdminLike = role === 'admin' || role === 'placement_officer';
 const isAdmin = role === 'admin';
 const isOfficer = role === 'placement_officer';
 const isSeekingAlumni = isAlumni && (typeof alumniIsWorking !== 'function' || !alumniIsWorking());
-const canViewJobFeed = isAdminLike || isStaff || isStudent || isSeekingAlumni;
+const canViewJobFeed = isAdminLike || isStaff || isSeekingAlumni;
 const hasInbox = !!NotificationInbox.store(role);
 const notifStore = NotificationInbox.store(role);
 const notifApiBase = NotificationInbox.apiBase(role);
