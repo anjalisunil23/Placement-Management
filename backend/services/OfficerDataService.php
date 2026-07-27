@@ -2845,32 +2845,21 @@ final class OfficerDataService
             $qualifications = $academic['qualifications'];
         }
 
-        // Academic marks/CGPA/edu rows always come from getStudQual4Placement.
+        // AES fills gaps; PlaceHub values win when the student/staff locked that field.
         $aesApi = new AesApiService();
         $qual = $this->fetchStudQual4PlacementProfile($aesApi, $placement, $register);
         if ($qual === []) {
             $qual = $aesApi->extractQualificationFromPlacement($placement);
         }
         if ($qual !== []) {
-            if (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
-                $cgpa = (float) $qual['cgpa'];
+            $merged = $this->mergeLocalAcademicEditsOverAes($student, $qual);
+            $cgpa = $merged['cgpa'] !== null ? (float) $merged['cgpa'] : $cgpa;
+            $marks10 = $merged['marks10th'] !== null ? (float) $merged['marks10th'] : $marks10;
+            $marks12 = $merged['marks12th'] !== null ? (float) $merged['marks12th'] : $marks12;
+            if ($merged['backlogs'] !== null) {
+                $backlogs = (int) $merged['backlogs'];
             }
-            if (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
-                $marks10 = (float) $qual['marks10th'];
-            }
-            if (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
-                $marks12 = (float) $qual['marks12th'];
-            }
-            if (isset($qual['backlogs'])) {
-                $backlogs = (int) $qual['backlogs'];
-            }
-            if (!empty($qual['qualifications']) && is_array($qual['qualifications'])) {
-                $qualifications = $this->realEducationQualificationRows($qual['qualifications']);
-            }
-            // Keep the profile education table when AES returns marks only (no edu rows).
-            if ($qualifications === [] && !empty($academic['qualifications']) && is_array($academic['qualifications'])) {
-                $qualifications = $this->realEducationQualificationRows($academic['qualifications']);
-            }
+            $qualifications = $merged['qualifications'];
         }
         // Always normalize max/percentage (same rule as student Settings profile).
         $qualifications = $this->realEducationQualificationRows(
@@ -3022,6 +3011,119 @@ final class OfficerDataService
     }
 
     /**
+     * Whether PlaceHub has an explicit student/staff lock for this profile path.
+     *
+     * @param array<string, mixed> $student
+     */
+    private function studentFieldIsLocallyLocked(array $student, string $path): bool
+    {
+        $locks = is_array($student['profileFieldLocks'] ?? null) ? $student['profileFieldLocks'] : [];
+
+        return isset($locks[$path]) && is_array($locks[$path]);
+    }
+
+    /**
+     * Overlay PlaceHub student/staff edits onto AES qualification data so staff
+     * Open-profile shows what the student actually saved.
+     *
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $aesQual
+     * @return array{cgpa: ?float, marks10th: ?float, marks12th: ?float, backlogs: ?int, qualifications: list<array<string, mixed>>}
+     */
+    private function mergeLocalAcademicEditsOverAes(array $student, array $aesQual): array
+    {
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        $localCgpa = (float) ($academic['cgpa'] ?? 0);
+        $local10 = (float) ($academic['marks10th'] ?? 0);
+        $local12 = (float) ($academic['marks12th'] ?? $academic['ugMarks'] ?? 0);
+
+        $cgpa = (!empty($aesQual['cgpa']) && (float) $aesQual['cgpa'] > 0) ? (float) $aesQual['cgpa'] : null;
+        $marks10 = (!empty($aesQual['marks10th']) && (float) $aesQual['marks10th'] > 0) ? (float) $aesQual['marks10th'] : null;
+        $marks12 = (!empty($aesQual['marks12th']) && (float) $aesQual['marks12th'] > 0) ? (float) $aesQual['marks12th'] : null;
+        $backlogs = isset($aesQual['backlogs'])
+            ? (int) $aesQual['backlogs']
+            : (isset($academic['backlogs']) ? (int) $academic['backlogs'] : null);
+
+        // PlaceHub-saved academics win; AES only fills empty gaps.
+        if ($localCgpa > 0 && $localCgpa <= 10) {
+            $cgpa = $localCgpa;
+        }
+        if ($local10 > 0) {
+            $marks10 = $local10;
+        }
+        if ($local12 > 0) {
+            $marks12 = $local12;
+        }
+
+        $aesRows = $this->realEducationQualificationRows(
+            is_array($aesQual['qualifications'] ?? null) ? array_values($aesQual['qualifications']) : []
+        );
+        $localRows = $this->realEducationQualificationRows(
+            is_array($academic['qualifications'] ?? null) ? array_values($academic['qualifications']) : []
+        );
+
+        if ($localRows === []) {
+            $mergedRows = $aesRows;
+        } elseif ($aesRows === []) {
+            $mergedRows = $localRows;
+        } else {
+            $mergedRows = $this->mergeQualificationRowEdits($aesRows, $localRows, $student);
+        }
+
+        return [
+            'cgpa' => $cgpa,
+            'marks10th' => $marks10,
+            'marks12th' => $marks12,
+            'backlogs' => $backlogs,
+            'qualifications' => $mergedRows,
+        ];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $aesRows
+     * @param list<array<string, mixed>> $localRows
+     * @param array<string, mixed> $student
+     * @return list<array<string, mixed>>
+     */
+    private function mergeQualificationRowEdits(array $aesRows, array $localRows, array $student): array
+    {
+        $count = max(count($aesRows), count($localRows));
+        $out = [];
+        for ($i = 0; $i < $count; $i++) {
+            $aes = is_array($aesRows[$i] ?? null) ? $aesRows[$i] : [];
+            $local = is_array($localRows[$i] ?? null) ? $localRows[$i] : [];
+            if ($aes === [] && $local === []) {
+                continue;
+            }
+            if ($local === []) {
+                $out[] = $aes;
+                continue;
+            }
+            if ($aes === []) {
+                $out[] = $local;
+                continue;
+            }
+
+            $row = $aes;
+            foreach (['qualification', 'institution', 'registerNumber', 'monthYear', 'mark', 'maxMark', 'percentage'] as $field) {
+                $localVal = $local[$field] ?? ($field === 'maxMark' ? ($local['maxmark'] ?? null) : null);
+                $localEmpty = $localVal === null || $localVal === '' || (is_numeric($localVal) && (float) $localVal <= 0);
+                if ($localEmpty) {
+                    continue;
+                }
+                // Prefer PlaceHub cell whenever the student/staff saved a value.
+                $row[$field] = $localVal;
+                if ($field === 'maxMark') {
+                    $row['maxmark'] = $localVal;
+                }
+            }
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
      * Display rule: mark ≤ 10 → max 10; else max 100. Percentage = mark / max × 100.
      *
      * @param array<string, mixed> $q
@@ -3103,41 +3205,47 @@ final class OfficerDataService
     /**
      * @param array<string, mixed> $overview
      * @param array<string, mixed> $qual
+     * @param array<string, mixed> $student
      * @return array<string, mixed>
      */
-    private function applyQualProfileToOverview(array $overview, array $qual): array
+    private function applyQualProfileToOverview(array $overview, array $qual, array $student = []): array
     {
         if ($qual === []) {
             return $overview;
         }
 
-        if (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
-            $overview['cgpa'] = (float) $qual['cgpa'];
+        $merged = $this->mergeLocalAcademicEditsOverAes($student !== [] ? $student : [
+            'academic' => is_array($overview['academic'] ?? null) ? $overview['academic'] : [],
+            'profileFieldLocks' => [],
+        ], $qual);
+
+        if ($merged['cgpa'] !== null && (float) $merged['cgpa'] > 0) {
+            $overview['cgpa'] = (float) $merged['cgpa'];
         }
-        if (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
-            $overview['marks10th'] = (float) $qual['marks10th'];
+        if ($merged['marks10th'] !== null && (float) $merged['marks10th'] > 0) {
+            $overview['marks10th'] = (float) $merged['marks10th'];
         }
-        if (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
-            $overview['marks12th'] = (float) $qual['marks12th'];
-            $overview['ugMarks'] = (float) $qual['marks12th'];
+        if ($merged['marks12th'] !== null && (float) $merged['marks12th'] > 0) {
+            $overview['marks12th'] = (float) $merged['marks12th'];
+            $overview['ugMarks'] = (float) $merged['marks12th'];
         }
-        if (isset($qual['backlogs'])) {
-            $overview['backlogs'] = (int) $qual['backlogs'];
+        if ($merged['backlogs'] !== null) {
+            $overview['backlogs'] = (int) $merged['backlogs'];
         }
-        $quals = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
+        $quals = $merged['qualifications'];
         if ($quals !== []) {
             $overview['qualifications'] = $quals;
             $academic = is_array($overview['academic'] ?? null) ? $overview['academic'] : [];
             $academic['qualifications'] = $quals;
-            if (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) {
-                $academic['cgpa'] = (float) $qual['cgpa'];
+            if ($merged['cgpa'] !== null && (float) $merged['cgpa'] > 0) {
+                $academic['cgpa'] = (float) $merged['cgpa'];
             }
-            if (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) {
-                $academic['marks10th'] = (float) $qual['marks10th'];
+            if ($merged['marks10th'] !== null && (float) $merged['marks10th'] > 0) {
+                $academic['marks10th'] = (float) $merged['marks10th'];
             }
-            if (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) {
-                $academic['marks12th'] = (float) $qual['marks12th'];
-                $academic['ugMarks'] = (float) $qual['marks12th'];
+            if ($merged['marks12th'] !== null && (float) $merged['marks12th'] > 0) {
+                $academic['marks12th'] = (float) $merged['marks12th'];
+                $academic['ugMarks'] = (float) $merged['marks12th'];
             }
             $overview['academic'] = $academic;
         }
@@ -3245,14 +3353,11 @@ final class OfficerDataService
             return $empty;
         }
 
-        $rows = $this->realEducationQualificationRows(
-            is_array($qual['qualifications'] ?? null) ? array_values($qual['qualifications']) : []
-        );
-        // Prefer the live AES edu table when present; otherwise keep profile table rows.
-        $tableRows = $rows !== [] ? $rows : $storedQuals;
-        $cgpa = (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) ? (float) $qual['cgpa'] : $empty['cgpa'];
-        $marks10th = (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) ? (float) $qual['marks10th'] : $empty['marks10th'];
-        $marks12th = (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) ? (float) $qual['marks12th'] : $empty['marks12th'];
+        $merged = $this->mergeLocalAcademicEditsOverAes($student, $qual);
+        $cgpa = $merged['cgpa'] ?? $empty['cgpa'];
+        $marks10th = $merged['marks10th'] ?? $empty['marks10th'];
+        $marks12th = $merged['marks12th'] ?? $empty['marks12th'];
+        $tableRows = $merged['qualifications'] !== [] ? $merged['qualifications'] : $storedQuals;
         $tableRows = $this->backfillAcademicQualificationRows(
             $tableRows,
             $cgpa,
@@ -3276,7 +3381,7 @@ final class OfficerDataService
             'ugMarks' => ($marks12th !== null && $marks12th > 0)
                 ? $marks12th
                 : $empty['ugMarks'],
-            'backlogs' => isset($qual['backlogs']) ? (int) $qual['backlogs'] : $empty['backlogs'],
+            'backlogs' => $merged['backlogs'] ?? $empty['backlogs'],
             'qualifications' => $tableRows,
         ];
     }
@@ -3301,7 +3406,8 @@ final class OfficerDataService
             // Still fetch getStudQual4Placement by admission number when info placement is empty.
             $overview = $this->applyQualProfileToOverview(
                 $overview,
-                $this->fetchStudQual4PlacementProfile($aesApi, ['admno' => $register, 'stud_admno' => $register], $register)
+                $this->fetchStudQual4PlacementProfile($aesApi, ['admno' => $register, 'stud_admno' => $register], $register),
+                $student
             );
 
             return $overview;
@@ -3327,25 +3433,32 @@ final class OfficerDataService
                 }
             }
 
+            // Do not overwrite PlaceHub-saved personal phone with AES.
+            $savedPhone = trim((string) (
+                (is_array($student['personal'] ?? null) ? ($student['personal']['phone'] ?? '') : '')
+            ));
             $phone = trim((string) ($mapped['phone'] ?? ''));
-            if ($phone !== '') {
+            if ($phone !== '' && $savedPhone === '') {
                 $overview['phone'] = $phone;
             }
 
             $gender = trim((string) ($mapped['gender'] ?? ''));
-            if ($gender !== '') {
+            $savedGender = trim((string) (
+                (is_array($student['personal'] ?? null) ? ($student['personal']['gender'] ?? '') : '')
+            ));
+            if ($gender !== '' && $savedGender === '') {
                 $overview['gender'] = $gender;
             }
         }
 
-        // Prefer live getStudQual4Placement over any marks cached on the placement record.
+        // Prefer live AES quals, then overlay PlaceHub locks/edits.
         $qual = $this->fetchStudQual4PlacementProfile($aesApi, $placement, $register);
         if ($qual === []) {
             $qual = $aesApi->extractQualificationFromPlacement($placement);
         }
-        $overview = $this->applyQualProfileToOverview($overview, $qual);
+        $overview = $this->applyQualProfileToOverview($overview, $qual, $student);
 
-        if (isset($mapped['backlogs'])) {
+        if (isset($mapped['backlogs']) && !$this->studentFieldIsLocallyLocked($student, 'academic.backlogs')) {
             $overview['backlogs'] = (int) $mapped['backlogs'];
         }
 
@@ -3356,11 +3469,16 @@ final class OfficerDataService
 
         $collegeEmail = '';
         $personalEmail = trim((string) ($overview['personalEmail'] ?? ''));
+        $savedPersonalEmail = trim((string) (
+            (is_array($student['personal'] ?? null)
+                ? ($student['personal']['personalEmail'] ?? $student['personal']['email'] ?? '')
+                : '')
+        ));
         $email = strtolower(trim((string) ($mapped['email'] ?? '')));
         if ($email !== '') {
             if ($this->isCollegeEmailAddress($email)) {
                 $collegeEmail = $email;
-            } elseif ($personalEmail === '') {
+            } elseif ($personalEmail === '' && $savedPersonalEmail === '') {
                 $personalEmail = $email;
             }
         }
@@ -3369,8 +3487,11 @@ final class OfficerDataService
             $collegeEmail = $collegeFromAes;
         }
         $personalFromAes = trim((string) ($mapped['personalEmail'] ?? ''));
-        if ($personalFromAes !== '') {
+        if ($personalFromAes !== '' && $savedPersonalEmail === '') {
             $personalEmail = $personalFromAes;
+        }
+        if ($savedPersonalEmail !== '') {
+            $personalEmail = $savedPersonalEmail;
         }
         if ($collegeEmail !== '') {
             $overview['collegeEmail'] = $collegeEmail;
@@ -3380,6 +3501,15 @@ final class OfficerDataService
             if (empty($overview['email'])) {
                 $overview['email'] = $personalEmail;
             }
+        }
+        if ($savedPersonalEmail !== '') {
+            $overview['personalEmail'] = $savedPersonalEmail;
+        }
+        $keepPhone = trim((string) (
+            (is_array($student['personal'] ?? null) ? ($student['personal']['phone'] ?? '') : '')
+        ));
+        if ($keepPhone !== '') {
+            $overview['phone'] = $keepPhone;
         }
 
         $photoUrl = trim((string) ($mapped['photoUrl'] ?? $placement['stud_photo'] ?? ''));
