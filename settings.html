@@ -332,16 +332,21 @@ function pickPhotoUrl(u) {
   if (media && (media.includes('/api/media/') || media.startsWith('/backend/api/media/'))) {
     return media.startsWith('/') || /^https?:\/\//i.test(media) ? media : `/${media}`;
   }
-  const proxy = String(merged.photoProxyUrl || '').trim();
-  if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
+  // Prefer direct https AES/S3 URLs — browser sends Referer (bare proxy curls used to 403).
   const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo'];
   for (const key of keys) {
     const url = String(merged[key] || '').trim();
-    if (!url) continue;
-    if (/^https?:\/\//i.test(url) || url.startsWith('/')) return url;
+    if (url && /^https?:\/\//i.test(url)) return url;
   }
   const local = String(merged.photo?.url || '').trim();
-  if (local) return local.startsWith('http') || local.startsWith('/') ? local : `/${local}`;
+  if (local && /^https?:\/\//i.test(local)) return local;
+  const proxy = String(merged.photoProxyUrl || '').trim();
+  if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
+  for (const key of keys) {
+    const url = String(merged[key] || '').trim();
+    if (url && url.startsWith('/')) return url;
+  }
+  if (local) return local.startsWith('/') ? local : `/${local}`;
   return '';
 }
 
@@ -1225,7 +1230,12 @@ if (role === 'alumni') {
       document.getElementById('alumniTitle').value = p.title || p.role || '';
       document.getElementById('alumniPackage').value = p.package || '';
       applyAlumniEmploymentDocsState(p.employmentDocs || null);
-      const alumniPhoto = p.photoProxyUrl || p.photoUrl || p.photo?.url || '';
+      // Prefer cached media / direct AES URL (browser sends Referer). Proxy is last resort.
+      const alumniPhoto = pickPhotoUrl(p)
+        || p.photoUrl
+        || p.photo?.url
+        || p.photoProxyUrl
+        || '';
       if (alumniPhoto) setAvatarPhoto(alumniPhoto);
       Auth.set({
         ...user,

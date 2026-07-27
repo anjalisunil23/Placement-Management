@@ -102,25 +102,12 @@ final class AlumniController
       Response::notFound('Alumni photo not available.');
     }
 
-    $ch = curl_init($photoUrl);
-    if ($ch === false) {
+    $downloaded = (new \PMS\Services\AesApiService())->downloadPhoto($photoUrl);
+    if (!($downloaded['ok'] ?? false)) {
       Response::error('Could not load alumni photo.', 502);
     }
-    curl_setopt_array($ch, [
-      CURLOPT_RETURNTRANSFER => true,
-      CURLOPT_FOLLOWLOCATION => true,
-      CURLOPT_TIMEOUT        => 20,
-      CURLOPT_SSL_VERIFYPEER => true,
-      CURLOPT_USERAGENT      => 'AJCE-Placements/1.0',
-    ]);
-    $body = curl_exec($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
-    curl_close($ch);
-
-    if ($body === false || $status < 200 || $status >= 300) {
-      Response::error('Could not load alumni photo.', 502);
-    }
+    $body = (string) ($downloaded['body'] ?? '');
+    $contentType = (string) ($downloaded['contentType'] ?? 'image/jpeg');
 
     if ($contentType === '' || !str_starts_with(strtolower($contentType), 'image/')) {
       $contentType = 'image/jpeg';

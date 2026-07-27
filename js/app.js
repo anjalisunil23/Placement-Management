@@ -188,6 +188,8 @@ function userPhotoUrl(user) {
   if (media && (media.includes('/api/media/') || media.startsWith('/backend/api/media/'))) {
     return media.startsWith('/') || /^https?:\/\//i.test(media) ? media : `/${media}`;
   }
+  // Direct https AES/S3 URL works in the browser (Referer sent); prefer over proxy.
+  if (media && /^https?:\/\//i.test(media)) return media;
   const proxy = String(user.photoProxyUrl || '').trim();
   if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
   if (typeof resolveSessionPhotoUrl === 'function') {

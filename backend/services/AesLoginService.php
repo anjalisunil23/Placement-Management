@@ -2599,19 +2599,14 @@ final class AesLoginService
         if ($ch === false) {
             return null;
         }
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_TIMEOUT        => 20,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_USERAGENT      => 'AJCE-Placements/1.0',
-        ]);
-        $body = curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $contentType = strtolower((string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE));
-        curl_close($ch);
-
-        if ($body === false || $body === '' || $status < 200 || $status >= 300) {
+        // ajce-photos S3 requires a browser-like Referer; bare curl gets 403.
+        $downloaded = (new AesApiService())->downloadPhoto($remoteUrl);
+        if (!($downloaded['ok'] ?? false)) {
+            return null;
+        }
+        $body = (string) ($downloaded['body'] ?? '');
+        $contentType = strtolower((string) ($downloaded['contentType'] ?? ''));
+        if ($body === '') {
             return null;
         }
 

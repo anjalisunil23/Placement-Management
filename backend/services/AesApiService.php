@@ -1846,6 +1846,74 @@ final class AesApiService
     }
 
     /**
+     * Download an AES / ajce-photos URL. S3 rejects requests without a browser-like Referer (403).
+     *
+     * @return array{ok:bool,body:string,status:int,contentType:string}
+     */
+    public function downloadPhoto(string $url): array
+    {
+        $url = $this->resolvePhotoUrl(trim($url));
+        if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) {
+            return ['ok' => false, 'body' => '', 'status' => 0, 'contentType' => ''];
+        }
+
+        $headerSets = [
+            [
+                'Origin: ' . $this->origin,
+                'Referer: ' . $this->referer,
+            ],
+            [
+                'Origin: https://www.aesajce.in',
+                'Referer: https://www.aesajce.in/',
+            ],
+            [
+                'Origin: https://placements.amaljyothi.ac.in',
+                'Referer: https://placements.amaljyothi.ac.in/',
+            ],
+        ];
+
+        foreach ($headerSets as $headers) {
+            $ch = curl_init($url);
+            if ($ch === false) {
+                continue;
+            }
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_TIMEOUT        => 25,
+                CURLOPT_CONNECTTIMEOUT => 8,
+                CURLOPT_SSL_VERIFYPEER => $this->sslVerify,
+                CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; AJCE-Placements/1.0)',
+                CURLOPT_HTTPHEADER     => $headers,
+            ]);
+            $body = curl_exec($ch);
+            $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $contentType = strtolower((string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE));
+            curl_close($ch);
+
+            if ($body === false || $body === '' || $status < 200 || $status >= 300) {
+                continue;
+            }
+            // Reject XML/HTML error bodies that some CDNs return as 200.
+            if (str_starts_with($contentType, 'application/xml')
+                || str_starts_with($contentType, 'text/html')
+                || str_starts_with(ltrim((string) $body), '<?xml')
+            ) {
+                continue;
+            }
+
+            return [
+                'ok' => true,
+                'body' => (string) $body,
+                'status' => $status,
+                'contentType' => $contentType !== '' ? $contentType : 'image/jpeg',
+            ];
+        }
+
+        return ['ok' => false, 'body' => '', 'status' => 403, 'contentType' => ''];
+    }
+
+    /**
      * @param array<string, mixed> $record
      * @return array{marks10th: ?float, marks12th: ?float}
      */

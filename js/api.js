@@ -303,14 +303,28 @@ function resolveSessionCgpa(merged) {
 
 function resolveSessionPhotoUrl(merged) {
   const sources = [merged, merged.aesProfile || {}];
-  const proxy = String(merged.photoProxyUrl || '').trim();
-  if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
+  const media = String(merged.photoUrl || merged.photo?.url || '').trim();
+  if (media && (media.includes('/api/media/') || media.startsWith('/backend/api/media/'))) {
+    return media.startsWith('/') || /^https?:\/\//i.test(media) ? media : `/${media}`;
+  }
   const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo', 'staff_photo', 'staffPhoto', 'emp_photo', 'employee_photo', 'faculty_photo'];
   for (const src of sources) {
     for (const key of keys) {
       const url = String(src[key] || '').trim();
-      if (!url) continue;
-      if (/^https?:\/\//i.test(url) || url.startsWith('/')) return url;
+      if (url && /^https?:\/\//i.test(url)) return url;
+    }
+    const photo = src.photo;
+    if (photo && typeof photo === 'object') {
+      const url = String(photo.url || '').trim();
+      if (url && /^https?:\/\//i.test(url)) return url;
+    }
+  }
+  const proxy = String(merged.photoProxyUrl || '').trim();
+  if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
+  for (const src of sources) {
+    for (const key of keys) {
+      const url = String(src[key] || '').trim();
+      if (url && url.startsWith('/')) return url;
     }
     const photo = src.photo;
     if (photo && typeof photo === 'object') {
