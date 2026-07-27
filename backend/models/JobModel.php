@@ -52,6 +52,14 @@ class JobModel extends BaseModel
         return $this->insert($doc);
     }
 
+    /** Wipe every company job post (admin reset). */
+    public function deleteAll(): int
+    {
+        $count = (int) $this->db->query("SELECT COUNT(*) FROM `{$this->table}`")->fetchColumn();
+        $this->db->exec("DELETE FROM `{$this->table}`");
+        return $count;
+    }
+
     public function updateJob(string $id, array $data): bool
     {
         $allowed = ['title', 'description', 'package', 'location', 'eligibility', 'status', 'jobType', 'openings', 'audience', 'departmentId', 'departmentIds'];

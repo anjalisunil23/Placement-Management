@@ -11,6 +11,9 @@
 <div class="page-header">
   <div><h1 class="page-title" id="notifTitle">Notifications Center</h1><p class="page-sub" id="notifSub" hidden></p></div>
   <div class="d-flex gap-2" id="notifActions">
+    <button class="btn btn-outline-danger d-none" id="clearAllSystemNotifs" type="button">
+      <i class="bi bi-trash3 me-1"></i>Clear all notifications
+    </button>
     <button class="btn btn-outline-secondary" id="markAllRead"><i class="bi bi-check2-all me-1"></i>Mark all read</button>
   </div>
 </div>
@@ -609,6 +612,38 @@ if (hasInbox) {
     showReadTab();
     toast('All marked as read.', 'success');
   });
+}
+
+if (isAdmin) {
+  const clearSysBtn = document.getElementById('clearAllSystemNotifs');
+  if (clearSysBtn) {
+    clearSysBtn.classList.remove('d-none');
+    clearSysBtn.addEventListener('click', async () => {
+      if (!(await confirmAction({
+        title: 'Clear all notifications',
+        message: 'Permanently delete notification data for every user (admin, officer, staff, student, company, alumni)? This cannot be undone.',
+        confirmText: 'Clear all',
+        variant: 'danger',
+      }))) return;
+      if (!(await requireWriteSession())) return;
+      const res = await api('/admin/notifications', { method: 'DELETE', skipAuthRedirect: true });
+      if (!res?.success) {
+        toast(res?.message || 'Could not clear notifications.', 'error');
+        return;
+      }
+      const deleted = res.data?.deleted ?? 0;
+      toast(res.message || `Cleared ${deleted} notification(s).`, 'success');
+      if (hasInbox) {
+        await loadNotifications();
+        renderInbox();
+      }
+      try {
+        if (typeof NotificationInbox !== 'undefined' && NotificationInbox.refreshBadge) {
+          NotificationInbox.refreshBadge();
+        }
+      } catch { /* ignore */ }
+    });
+  }
 }
 
 if (canViewJobFeed) {

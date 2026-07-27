@@ -13,6 +13,9 @@
     <h1 class="page-title">Job Posts</h1>
     <p class="text-muted-2 small mb-0" id="jobPostsSub">Review pending job posts and browse unpublished posts before they become placement drives.</p>
   </div>
+  <button type="button" class="btn btn-outline-danger d-none" id="btnClearAllJobPosts">
+    <i class="bi bi-trash3 me-1"></i>Clear all job posts
+  </button>
 </div>
 
 <div id="pendingJobPostsPanel" class="card-surface mb-3">
@@ -254,5 +257,30 @@ document.getElementById('pendingJobRows')?.addEventListener('click', async (e) =
 
 loadPendingJobPosts();
 loadJobFeed();
+
+const clearJobsBtn = document.getElementById('btnClearAllJobPosts');
+if (clearJobsBtn && isAdmin) {
+  clearJobsBtn.classList.remove('d-none');
+  clearJobsBtn.addEventListener('click', async () => {
+    const total = (pendingJobRows?.length || 0) + (jobFeedRows?.length || 0);
+    if (!(await confirmAction({
+      title: 'Clear all job posts',
+      message: total
+        ? `Permanently delete all ${total} company, alumni, and staff job post(s)? Approved drives already published are kept. This cannot be undone.`
+        : 'Permanently delete all company, alumni, and staff job posts? Approved drives already published are kept. This cannot be undone.',
+      confirmText: 'Clear all',
+      variant: 'danger',
+    }))) return;
+    if (!(await requireWriteSession())) return;
+    const res = await api('/admin/job-posts', { method: 'DELETE', noRedirectOn401: true });
+    if (!res?.success) {
+      toast(res?.message || 'Could not clear job posts.', 'error');
+      return;
+    }
+    const deleted = res.data?.deleted ?? 0;
+    toast(res.message || `Cleared ${deleted} job post(s).`, 'success');
+    await Promise.all([loadPendingJobPosts(), loadJobFeed()]);
+  });
+}
 });
 </script></body></html>

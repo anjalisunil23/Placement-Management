@@ -91,4 +91,38 @@ final class PlacementChanceService
             'placementHistory'  => $history,
         ]);
     }
+
+    /**
+     * Reset application chance counters for a fresh campus-drive cycle.
+     * Does not change placed status or placement history.
+     */
+    public function resetAllApplicationCounters(): int
+    {
+        $rule = (new RuleModel())->getActiveRule();
+        $total = max(0, (int) ($rule['placementChances'] ?? 3));
+        $studentModel = new StudentModel();
+        $reset = 0;
+        foreach ($studentModel->findAll([], 20000) as $student) {
+            $id = (string) ($student['_id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            $chances = is_array($student['placementChances'] ?? null) ? $student['placementChances'] : [];
+            $used = (int) ($chances['used'] ?? 0);
+            $remaining = (int) ($chances['remaining'] ?? $total);
+            if ($used === 0 && $remaining === $total) {
+                continue;
+            }
+            if ($studentModel->update($id, [
+                'placementChances' => [
+                    'used' => 0,
+                    'remaining' => $total,
+                    'total' => $total,
+                ],
+            ])) {
+                $reset++;
+            }
+        }
+        return $reset;
+    }
 }

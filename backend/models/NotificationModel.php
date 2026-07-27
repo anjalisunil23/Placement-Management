@@ -110,4 +110,12 @@ class NotificationModel extends BaseModel
 
         return $this->deleteMany($filter);
     }
+
+    /** Wipe every notification for every user (admin system reset). */
+    public function deleteAll(): int
+    {
+        $count = (int) $this->db->query("SELECT COUNT(*) FROM `{$this->table}`")->fetchColumn();
+        $this->db->exec("DELETE FROM `{$this->table}`");
+        return $count;
+    }
 }

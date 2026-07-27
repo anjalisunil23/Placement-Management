@@ -52,6 +52,14 @@ class AlumniJobPostModel extends BaseModel
         return $this->insert($doc);
     }
 
+    /** Wipe every alumni/staff job post (admin reset). */
+    public function deleteAll(): int
+    {
+        $count = (int) $this->db->query("SELECT COUNT(*) FROM `{$this->table}`")->fetchColumn();
+        $this->db->exec("DELETE FROM `{$this->table}`");
+        return $count;
+    }
+
     public static function normalizeStatus(mixed $status): string
     {
         $value = strtolower(trim((string) $status));

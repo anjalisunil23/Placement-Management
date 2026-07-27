@@ -96,6 +96,14 @@ class ApplicationModel extends BaseModel
         return $this->insert($doc);
     }
 
+    /** Delete every application document (admin reset / fresh pipeline). */
+    public function deleteAll(): int
+    {
+        $count = (int) $this->db->query("SELECT COUNT(*) FROM `{$this->table}`")->fetchColumn();
+        $this->db->exec("DELETE FROM `{$this->table}`");
+        return $count;
+    }
+
     public function updateStatus(string $id, string $status, string $by, string $remarks = ''): bool
     {
         $app = $this->findById($id);

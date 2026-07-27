@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Admin;
 
 use PMS\Middleware\RBACMiddleware;
+use PMS\Models\AlumniJobPostModel;
 use PMS\Models\AlumniModel;
 use PMS\Models\BlacklistModel;
 use PMS\Models\NotificationModel;
@@ -12,6 +13,7 @@ use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\ApplicationModel;
+use PMS\Models\JobModel;
 use PMS\Models\AlumniReferralModel;
 use PMS\Models\PlacementNewsModel;
 use PMS\Models\RecommendationModel;
@@ -29,6 +31,7 @@ use PMS\Services\AesLoginService;
 use PMS\Services\EmailService;
 use PMS\Services\NotificationService;
 use PMS\Services\OfficerDataService;
+use PMS\Services\PlacementChanceService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\SelfPlacementService;
 use PMS\Services\AnalyticsService;
@@ -262,6 +265,18 @@ final class AdminController
             }
         }
         Response::success((new OfficerDataService())->listApplications($scope['ctx'], $filter));
+    }
+
+    /** DELETE /api/admin/applications — wipe all campus-drive applications (fresh start). */
+    public function clearAllApplications(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $deleted = (new ApplicationModel())->deleteAll();
+        $chancesReset = (new PlacementChanceService())->resetAllApplicationCounters();
+        Response::success(
+            ['deleted' => $deleted, 'chancesReset' => $chancesReset],
+            'All drive applications cleared.'
+        );
     }
 
     /** POST /api/admin/applications/{id}/transition */
@@ -1319,6 +1334,22 @@ final class AdminController
         Response::success((new \PMS\Services\JobPostApprovalService())->listPending($ctx));
     }
 
+    /** DELETE /api/admin/job-posts — wipe company + alumni/staff job posts. */
+    public function clearAllJobPosts(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $companyJobs = (new JobModel())->deleteAll();
+        $communityPosts = (new AlumniJobPostModel())->deleteAll();
+        Response::success(
+            [
+                'companyJobs' => $companyJobs,
+                'communityPosts' => $communityPosts,
+                'deleted' => $companyJobs + $communityPosts,
+            ],
+            'All job posts cleared.'
+        );
+    }
+
     /** POST /api/admin/job-posts/{id}/approve */
     public function approveJobPost(string $id): void
     {
@@ -2129,6 +2160,14 @@ final class AdminController
             ['deleted' => $count],
             $readOnly ? 'All read notifications deleted.' : 'All notifications deleted.'
         );
+    }
+
+    /** DELETE /api/admin/notifications — wipe notifications for every user/module. */
+    public function clearAllSystemNotifications(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $deleted = (new NotificationModel())->deleteAll();
+        Response::success(['deleted' => $deleted], 'All notification data cleared.');
     }
 
     /** GET /api/admin/tracking */

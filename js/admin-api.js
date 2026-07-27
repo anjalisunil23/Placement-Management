@@ -470,6 +470,19 @@ const AdminApi = {
     return res.data.map(a => this.mapApplication(a));
   },
 
+  async clearAllApplications() {
+    const res = await api('/admin/applications', { method: 'DELETE' });
+    return res;
+  },
+
+  async clearAllJobPosts() {
+    return api('/admin/job-posts', { method: 'DELETE' });
+  },
+
+  async clearAllSystemNotifications() {
+    return api('/admin/notifications', { method: 'DELETE' });
+  },
+
   mapResult(r) {
     return {
       id: this.id(r),
