@@ -112,8 +112,8 @@ final class PublicController
         $live = (new AnalyticsService())->getPublicStats();
         $salary = $live['salaryHighlights'];
 
-        // Editorial overrides win when the admin has set a non-zero value.
-        // Otherwise fall back to live campus analytics.
+        // Live campus analytics by default. Non-zero editorial overrides win when
+        // an admin explicitly sets them for the public portal.
         $pick = static function (float|int $liveVal, float|int $editorialVal): float|int {
             return $editorialVal > 0 ? $editorialVal : $liveVal;
         };
@@ -126,9 +126,12 @@ final class PublicController
             'medianPkg'       => $pick($salary['median'], (float) ($editorial['medianPkg'] ?? 0)),
             'lowestPkg'       => $pick($salary['lowest'], (float) ($editorial['lowestPkg'] ?? 0)),
             'placementRate'   => $pick($live['placementPercentage'], (float) ($editorial['placementRate'] ?? 0)),
+            'totalStudents'   => (int) ($live['totalStudents'] ?? 0),
         ]);
-        if (empty($public['season']) && !empty($system['placementYear'])) {
-            $public['season'] = $system['placementYear'];
+        if (!empty($system['placementYear'])) {
+            $public['season'] = (string) $system['placementYear'];
+        } elseif (empty($public['season'])) {
+            $public['season'] = '2025-26';
         }
 
         $news = DocumentHelper::serializeMany((new PlacementNewsModel())->published(50));

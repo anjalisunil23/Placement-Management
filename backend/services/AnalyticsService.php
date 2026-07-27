@@ -13,6 +13,7 @@ use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\StudentModel;
 use PMS\Models\SuccessStoryModel;
+use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
 use PMS\Schemas\Collections;
 use PMS\Utils\Security;
@@ -183,12 +184,14 @@ final class AnalyticsService
         ];
 
         $topOffers = $this->getTopJobOffers(2);
+        $system = (new SystemSettingsModel())->get();
 
         return [
             'placementPercentage' => $analytics['totals']['placementPercentage'],
             'totalPlaced'         => $analytics['totals']['placedStudents'],
             'totalStudents'       => $analytics['totals']['students'],
             'totalCompanies'      => $analytics['totals']['companies'],
+            'season'              => (string) ($system['placementYear'] ?? '2025-26'),
             'salaryHighlights'    => $salary,
             'highestPkg'          => $salary['highest'],
             'avgPkg'              => $salary['average'],

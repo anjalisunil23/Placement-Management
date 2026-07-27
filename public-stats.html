@@ -132,7 +132,7 @@
 <section class="py-5">
   <div class="container">
     <h2 class="fw-bold text-center mb-1">Salary highlights</h2>
-    <p class="text-center text-muted-2 mb-4">2025–26 placement season</p>
+    <p class="text-center text-muted-2 mb-4" id="salarySeasonLabel">Live placement season</p>
     <div class="row g-3">
       <div class="col-md-4"><div class="card-surface p-4 text-center"><i class="bi bi-trophy-fill display-5 text-warning"></i><h3 class="fw-bold mt-2" id="salaryHighest">—</h3><p class="text-muted-2 mb-0" id="salaryHighestMeta">Highest package</p></div></div>
       <div class="col-md-4"><div class="card-surface p-4 text-center"><i class="bi bi-currency-rupee display-5" style="color:var(--primary)"></i><h3 class="fw-bold mt-2" id="salarySecond">—</h3><p class="text-muted-2 mb-0" id="salarySecondMeta">Next highest offer</p></div></div>
@@ -189,8 +189,8 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="/js/api.js?v=20260723perf"></script>
-<script src="/js/app.js?v=20260716notifflat"></script>
+<script src="/js/api.js?v=20260727publiclive"></script>
+<script src="/js/app.js?v=20260727publiclive"></script>
 <script>
 function loadScriptOnce(src) {
   return new Promise((resolve) => {
@@ -308,15 +308,24 @@ async function renderPublicPage() {
   await ensurePublicCharts();
   const pub = PublicPageContent.get();
   const salary = live.salaryHighlights || {};
+  // Live by default; non-zero admin overrides (from publicPage) replace a metric.
   const placed = Number(pub.placed) || pickStat(live.totalPlaced, 0);
   const companies = Number(pub.companies) || pickStat(live.totalCompanies, 0);
   const highestPkg = Number(pub.highestPkg) || pickStat(live.highestPkg ?? salary.highest, 0);
   const avgPkg = Number(pub.avgPkg) || pickStat(live.avgPkg ?? salary.average, 0);
   const medianPkg = Number(pub.medianPkg) || pickStat(live.medianPkg ?? salary.median, 0);
-  const season = pub.season || '2025-26';
+  const season = String(live.season || pub.season || '').trim() || 'Placement season';
   const rate = Number(pub.placementRate) || pickStat(live.placementPercentage, 0);
 
   document.querySelector('.hero .badge-soft').textContent = 'Placement Cell';
+  const seasonEl = document.getElementById('salarySeasonLabel');
+  if (seasonEl) {
+    const usingOverride = [pub.placed, pub.companies, pub.highestPkg, pub.avgPkg, pub.medianPkg, pub.placementRate]
+      .some(v => Number(v) > 0);
+    seasonEl.textContent = usingOverride
+      ? `${season} placement season`
+      : `${season} placement season · live campus data`;
+  }
 
   setCounter(document.getElementById('statPlaced'), placed);
   setCounter(document.getElementById('statRate'), rate, { decimals: 1, suffix: '%' });

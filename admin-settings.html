@@ -42,9 +42,9 @@
         <button class="btn btn-primary btn-sm" id="btnSavePublic"><i class="bi bi-check2-lg me-1"></i>Save</button>
       </div>
       <div class="alert alert-info small py-2 px-3 mb-3" id="liveStatsInfo">
-        <i class="bi bi-info-circle me-1"></i><strong>Live data</strong> is computed from campus records.
-        <strong>Override</strong> values (when non-zero) are shown on the public homepage. Leave an override at 0 to keep showing live data for that metric.
-        Click <strong>Save</strong> at the top of this card after editing.
+        <i class="bi bi-info-circle me-1"></i><strong>Live data</strong> from campus records is shown on the public portal by default.
+        Set an <strong>override</strong> above 0 only when you want that metric to show a fixed value instead of live.
+        Leave override at 0 to keep the live number. Click <strong>Save</strong> after editing.
       </div>
       <div class="table-responsive mb-3">
         <table class="table table-sm table-bordered mb-0 small">
@@ -121,8 +121,8 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/admin-api.js?v=20260713p"></script>
-<script src="js/api.js?v=20260724override"></script>
-<script src="js/app.js?v=20260724nostud"></script>
+<script src="js/api.js?v=20260727publiclive"></script>
+<script src="js/app.js?v=20260727publiclive"></script>
 <script>
 function loadSystem() {
   const s = SystemSettings.get();
@@ -148,14 +148,14 @@ function renderLiveStatsTable() {
   const live = PublicPageContent.liveStats();
   const editorial = PublicPageContent.get();
   if (!live) {
-    document.getElementById('liveStatsTable').innerHTML = '<tr><td colspan="4" class="text-muted-2">Live stats unavailable. Save overrides to populate the public portal.</td></tr>';
+    document.getElementById('liveStatsTable').innerHTML = '<tr><td colspan="4" class="text-muted-2">Live stats unavailable. Save overrides to populate the public portal when needed.</td></tr>';
     return;
   }
   const salary = live.salaryHighlights || {};
   const metrics = [
     { label: 'Students placed', liveVal: live.totalPlaced || 0, editVal: editorial.placed || 0 },
-    { label: 'Companies', liveVal: live.totalCompanies || 0, editVal: editorial.companies || 0, useMax: true },
-    { label: 'Highest package (LPA)', liveVal: salary.highest || 0, editVal: editorial.highestPkg || 0, useMax: true },
+    { label: 'Companies', liveVal: live.totalCompanies || 0, editVal: editorial.companies || 0 },
+    { label: 'Highest package (LPA)', liveVal: salary.highest || 0, editVal: editorial.highestPkg || 0 },
     { label: 'Average package (LPA)', liveVal: salary.average || 0, editVal: editorial.avgPkg || 0 },
     { label: 'Median package (LPA)', liveVal: salary.median || 0, editVal: editorial.medianPkg || 0 },
     { label: 'Lowest package (LPA)', liveVal: salary.lowest || 0, editVal: editorial.lowestPkg || 0 },

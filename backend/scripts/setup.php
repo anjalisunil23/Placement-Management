@@ -85,29 +85,22 @@ echo "System settings initialized.\n";
 
 (new PublicPageContentModel())->save([
     'season'       => '2025-26',
-    'placed'       => 2154,
-    'companies'    => 142,
-    'highestPkg'   => 68,
-    'avgPkg'       => 9.4,
-    'medianPkg'    => 8.2,
-    'lowestPkg'    => 3.5,
-    'placementRate'=> 65.6,
+    'placed'       => 0,
+    'companies'    => 0,
+    'highestPkg'   => 0,
+    'avgPkg'       => 0,
+    'medianPkg'    => 0,
+    'lowestPkg'    => 0,
+    'placementRate'=> 0,
     'headline'     => 'Where ambition meets opportunity',
-    'achievements' => 'Record ₹68 LPA international offer · 92.5% MCA placement rate',
+    'achievements' => 'Placement statistics are computed live from campus data.',
 ]);
 echo "Public page content initialized.\n";
 
 $newsModel = new PlacementNewsModel();
 if ($newsModel->count([]) === 0) {
-    $seedNews = [
-        ['title' => 'Record-breaking season kicks off', 'summary' => 'Over 142 companies have already confirmed campus visits for 2025–26.', 'date' => '2025-11-12', 'link' => ''],
-        ['title' => 'Google announces 28 SDE offers', 'summary' => 'One of the largest cohorts hired from a single drive this year.', 'date' => '2025-10-30', 'link' => ''],
-        ['title' => 'New mentorship program launched', 'summary' => 'Alumni from 60+ companies join the placement readiness program.', 'date' => '2025-10-18', 'link' => ''],
-    ];
-    foreach ($seedNews as $item) {
-        $newsModel->createNews($item);
-    }
-    echo "Placement news seeded.\n";
+    // Leave news empty for live campuses — admins publish real items from Settings.
+    echo "Placement news left empty (publish from Admin Settings).\n";
 } else {
     echo "Placement news already exists.\n";
 }
