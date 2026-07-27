@@ -37,6 +37,12 @@
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAlumni" id="linkTabAlumni">Alumni</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabDepartments" id="linkTabDepartments">Departments</a></li>
   </ul>
+  <div class="px-3 pt-3 pb-1 border-bottom" style="border-color:var(--border)!important">
+    <div class="search-with-icon">
+      <i class="bi bi-search"></i>
+      <input class="form-control" id="usersSearch" type="search" placeholder="Search name, email, department, company…" autocomplete="off"/>
+    </div>
+  </div>
   <div class="tab-content">
     <div class="tab-pane fade show active" id="tabStudents">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
@@ -44,9 +50,6 @@
       </tr></thead><tbody id="studentRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabAdmins">
-      <div class="p-3 border-bottom small text-muted-2" style="border-color:var(--border)!important">
-        Promote staff to administrator from the Staff tab. Admins get full campus access.
-      </div>
       <div class="table-wrap"><table class="table-modern"><thead><tr>
         <th>Name</th><th>Email</th><th>Former department</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="adminRows"></tbody></table></div>
@@ -256,9 +259,38 @@ function roleLabelForUser(u) {
   return ROLE_LABELS?.[u.role] || u.role || '—';
 }
 
+function usersSearchQuery() {
+  return String(document.getElementById('usersSearch')?.value || '').trim().toLowerCase();
+}
+
+function matchesUsersSearch(haystacks) {
+  const q = usersSearchQuery();
+  if (!q) return true;
+  return haystacks.some(v => String(v || '').toLowerCase().includes(q));
+}
+
+function filterUsersList(list) {
+  return (list || []).filter(u => matchesUsersSearch([
+    u.name, u.email, u.registerNumber, u.department, u.departmentName,
+    u.companyName, u.company, u.hrName, u.hrEmail, u.contactPerson,
+    u.category, u.tier, u.associationStatus, u.alumniRole, u.designation,
+    u.status, u.placementStatus, roleLabelForUser(u),
+  ]));
+}
+
+function filterCompaniesList(list) {
+  return (list || []).filter(u => matchesUsersSearch([
+    u.companyName, u.name, u.hrName, u.contactPerson, u.hrEmail, u.email,
+    u.category, u.tier, u.associationStatus, u.status, u.loginEmail,
+  ]));
+}
+
 function renderDepartments() {
-  const list = departments;
-  document.getElementById('statDeptTotal').textContent = list.length;
+  const q = usersSearchQuery();
+  const list = !q ? departments : departments.filter(d => matchesUsersSearch([
+    d.name, d.code, d.placementOfficer?.name, d.placementOfficer?.email, departmentTypeLabel(d),
+  ]));
+  document.getElementById('statDeptTotal').textContent = departments.length;
   document.getElementById('deptRows').innerHTML = list.length ? list.map(d => {
     const po = d.placementOfficer;
     const staffOptions = staffInDepartment(d.id, d.code)
@@ -754,14 +786,16 @@ function render() {
   document.getElementById('statStaff').textContent = UserRegistry.byRole('staff').length;
   document.getElementById('statAdmins').textContent = UserRegistry.byRole('admin').length;
   document.getElementById('statPending').textContent = all.filter(u => u.status === 'pending').length;
-  renderStudents(UserRegistry.byRole('student'));
-  renderAdmins(UserRegistry.byRole('admin'));
-  renderOfficers(UserRegistry.byRole('placement_officer'));
-  renderStaff(UserRegistry.byRole('staff'));
-  renderCompanies(companyDirectory.length
+  renderStudents(filterUsersList(UserRegistry.byRole('student')));
+  renderAdmins(filterUsersList(UserRegistry.byRole('admin')));
+  renderOfficers(filterUsersList(UserRegistry.byRole('placement_officer')));
+  renderStaff(filterUsersList(UserRegistry.byRole('staff')));
+  const companies = companyDirectory.length
     ? companyDirectory.map(company => AdminApi.mergeCompanyUser(UserRegistry.get(company.userId), company))
-    : UserRegistry.byRole('company'));
-  renderAlumni(UserRegistry.byRole('alumni'));
+    : UserRegistry.byRole('company');
+  renderCompanies(filterCompaniesList(companies));
+  renderAlumni(filterUsersList(UserRegistry.byRole('alumni')));
+  renderDepartments();
 }
 
 function refreshDepartmentOptions(role) {
@@ -1080,6 +1114,15 @@ async function initUsersPage() {
   if (live) await UserRegistry.fetch();
   if (live) await loadCompanies();
   bindResumeVerifyToggle();
+  const search = document.getElementById('usersSearch');
+  if (search && search.dataset.wired !== '1') {
+    search.dataset.wired = '1';
+    let t = null;
+    search.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => render(), 150);
+    });
+  }
   render();
 }
 onAppReady(() => initUsersPage());
