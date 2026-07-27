@@ -184,14 +184,16 @@ function escapeAttr(value) {
 
 function userPhotoUrl(user) {
   if (!user || typeof user !== 'object') return '';
+  const proxy = String(user.photoProxyUrl || '').trim();
+  if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
   if (typeof resolveSessionPhotoUrl === 'function') {
     const fromSession = resolveSessionPhotoUrl(user);
     if (fromSession) return fromSession;
   }
   const direct = String(user.photoUrl || user.stud_photo || user.photo?.url || '').trim();
   if (!direct) return '';
-  if (/^https?:\/\//i.test(direct)) return direct;
-  return direct.startsWith('/') ? direct : `/${direct}`;
+  if (/^https?:\/\//i.test(direct) || direct.startsWith('/')) return direct;
+  return `/${direct}`;
 }
 
 function shellProfileHref(role) {

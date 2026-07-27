@@ -328,13 +328,16 @@ function pickDepartmentDisplay(u) {
 
 function pickPhotoUrl(u) {
   const merged = mergeProfileUser(u);
+  const proxy = String(merged.photoProxyUrl || '').trim();
+  if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
   const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo'];
   for (const key of keys) {
     const url = String(merged[key] || '').trim();
-    if (url && /^https?:\/\//i.test(url)) return url;
+    if (!url) continue;
+    if (/^https?:\/\//i.test(url) || url.startsWith('/')) return url;
   }
   const local = String(merged.photo?.url || '').trim();
-  if (local) return local.startsWith('http') ? local : local;
+  if (local) return local.startsWith('http') || local.startsWith('/') ? local : `/${local}`;
   return '';
 }
 
@@ -1218,7 +1221,7 @@ if (role === 'alumni') {
       document.getElementById('alumniTitle').value = p.title || p.role || '';
       document.getElementById('alumniPackage').value = p.package || '';
       applyAlumniEmploymentDocsState(p.employmentDocs || null);
-      const alumniPhoto = p.photoUrl || p.photo?.url || '';
+      const alumniPhoto = p.photoProxyUrl || p.photoUrl || p.photo?.url || '';
       if (alumniPhoto) setAvatarPhoto(alumniPhoto);
       Auth.set({
         ...user,
@@ -1226,9 +1229,11 @@ if (role === 'alumni') {
         company: p.company || '',
         title: p.title || p.role || '',
         package: p.package || '',
-        photoUrl: alumniPhoto || user.photoUrl || '',
+        photoUrl: p.photoUrl || alumniPhoto || user.photoUrl || '',
+        photoProxyUrl: p.photoProxyUrl || user.photoProxyUrl || '',
         photo: p.photo || user.photo || null,
       }, Auth.token());
+      if (typeof hydrateShellAvatars === 'function') hydrateShellAvatars();
       syncAlumniFields();
     });
   }

@@ -481,6 +481,9 @@ final class AesLoginService
                 'staff_photo', 'staffPhoto', 'emp_photo', 'empPhoto', 'employee_photo', 'employeePhoto',
                 'faculty_photo', 'facultyPhoto', 'user_photo', 'userPhoto',
             ]));
+            if ($photoUrl !== '') {
+                $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+            }
             if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
                 $data['photoUrl'] = $photoUrl;
             }
@@ -1273,6 +1276,9 @@ final class AesLoginService
             $aesDetails['backlogs'] = (int) ($placement['backlogs'] ?? $placement['backlog'] ?? 0);
         }
         $photoUrl = trim((string) ($placement['photoUrl'] ?? $placement['stud_photo'] ?? ''));
+        if ($photoUrl !== '') {
+            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+        }
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
             $aesDetails['stud_photo'] = $photoUrl;
             $aesDetails['photoUrl'] = $photoUrl;
@@ -2242,20 +2248,28 @@ final class AesLoginService
     {
         $photo = is_array($profile['photo'] ?? null) ? $profile['photo'] : null;
         $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
+        if ($photoUrl !== '') {
+            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+        }
         if ($photoUrl === '' || !filter_var($photoUrl, FILTER_VALIDATE_URL)) {
             $merged = $this->applyAesSessionToUserFields([
                 'name'  => (string) ($user['name'] ?? ''),
                 'email' => (string) ($user['email'] ?? ''),
             ]);
             $photoUrl = trim((string) ($merged['photoUrl'] ?? ''));
+            if ($photoUrl !== '') {
+                $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+            }
             $photo = ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL))
                 ? ['url' => $photoUrl, 'source' => 'aes']
                 : null;
+        } elseif (is_array($photo)) {
+            $photo['url'] = $photoUrl;
         }
 
         return [
-            'photoUrl' => $photoUrl,
-            'photo'    => $photo,
+            'photoUrl' => ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) ? $photoUrl : '',
+            'photo'    => ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) ? $photo : null,
         ];
     }
 
@@ -2304,7 +2318,15 @@ final class AesLoginService
     {
         $photo = is_array($alumniProfile['photo'] ?? null) ? $alumniProfile['photo'] : null;
         $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
+        if ($photoUrl !== '') {
+            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+        }
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            if (is_array($photo)) {
+                $photo['url'] = $photoUrl;
+            } else {
+                $photo = ['url' => $photoUrl, 'source' => 'aes'];
+            }
             return [
                 'photoUrl' => $photoUrl,
                 'photo'    => $photo,
@@ -2469,15 +2491,33 @@ final class AesLoginService
 
         $company = trim((string) ($extras['company'] ?? $extras['organization'] ?? $extras['employer'] ?? ''));
         $title = trim((string) ($extras['designation'] ?? $extras['title'] ?? $extras['job_title'] ?? $extras['jobTitle'] ?? ''));
+        $register = $this->resolveAlumniAdmissionNumber($user, $existing);
+        $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
+        $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+        $photoPayload = null;
+        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            $photoPayload = [
+                'url'      => $photoUrl,
+                'source'   => 'aes',
+                'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+            ];
+        }
 
         if (!$existing) {
-            $alumniModel->createProfile((string) $user['_id'], [
+            $create = [
                 'company'    => $company,
                 'role'       => $title,
                 'title'      => $title,
                 'experience' => (int) ($extras['experience'] ?? 0),
                 'isWorking'  => $company !== '',
-            ]);
+            ];
+            if ($register !== '') {
+                $create['registerNumber'] = $register;
+            }
+            if ($photoPayload !== null) {
+                $create['photo'] = $photoPayload;
+            }
+            $alumniModel->createProfile((string) $user['_id'], $create);
             $existing = $alumniModel->findByUserId((string) $user['_id']);
         } else {
             $patch = [];
@@ -2492,20 +2532,17 @@ final class AesLoginService
             if (isset($extras['experience'])) {
                 $patch['experience'] = (int) $extras['experience'];
             }
+            if ($register !== '' && trim((string) ($existing['registerNumber'] ?? '')) === '') {
+                $patch['registerNumber'] = $register;
+            }
 
-            $photoUrl = trim((string) ($extras['photoUrl'] ?? $aesDetails['stud_photo'] ?? ''));
-            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
-            if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+            if ($photoPayload !== null) {
                 $existingPhoto = is_array($existing['photo'] ?? null) ? $existing['photo'] : null;
                 $source = is_array($existingPhoto) ? (string) ($existingPhoto['source'] ?? '') : '';
                 if ($source !== 'upload') {
                     $existingUrl = is_array($existingPhoto) ? trim((string) ($existingPhoto['url'] ?? '')) : '';
                     if ($existingUrl !== $photoUrl) {
-                        $patch['photo'] = [
-                            'url'      => $photoUrl,
-                            'source'   => 'aes',
-                            'syncedAt' => \PMS\Utils\DocumentHelper::now(),
-                        ];
+                        $patch['photo'] = $photoPayload;
                     }
                 }
             }

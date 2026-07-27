@@ -42,6 +42,13 @@ class AlumniModel extends BaseModel
             'skills'     => $skills,
             'isWorking'  => $isWorking,
         ];
+        $register = strtoupper(trim((string) ($data['registerNumber'] ?? '')));
+        if ($register !== '') {
+            $doc['registerNumber'] = $register;
+        }
+        if (isset($data['photo']) && is_array($data['photo'])) {
+            $doc['photo'] = $data['photo'];
+        }
         return $this->insert($doc);
     }
 

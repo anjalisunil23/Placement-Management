@@ -49,8 +49,57 @@ final class AlumniController
     if (($photo['photoUrl'] ?? '') !== '') {
       $out['photoUrl'] = $photo['photoUrl'];
       $out['photo'] = $photo['photo'];
+      $out['photoProxyUrl'] = '/backend/api/alumni/profile/photo';
     }
     Response::success(DocumentHelper::serialize($out));
+  }
+
+  /** GET /api/alumni/profile/photo — stream AES photo through the API (avoids browser hotlink blocks). */
+  public function streamProfilePhoto(): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $model = new AlumniModel();
+    $profile = $model->findByUserId((string) $user['_id']);
+    if (!$profile) {
+      Response::notFound('Alumni profile not found.');
+    }
+
+    $aes = new AesLoginService();
+    $profile = $aes->syncAlumniPlacementPhoto($user, $profile) ?? $profile;
+    $photo = $aes->resolveAlumniProfilePhoto($user, $profile, true);
+    $photoUrl = (new \PMS\Services\AesApiService())->resolvePhotoUrl(trim((string) ($photo['photoUrl'] ?? '')));
+    if ($photoUrl === '') {
+      Response::notFound('Alumni photo not available.');
+    }
+
+    $ch = curl_init($photoUrl);
+    if ($ch === false) {
+      Response::error('Could not load alumni photo.', 502);
+    }
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_FOLLOWLOCATION => true,
+      CURLOPT_TIMEOUT        => 20,
+      CURLOPT_SSL_VERIFYPEER => true,
+      CURLOPT_USERAGENT      => 'AJCE-Placements/1.0',
+    ]);
+    $body = curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    curl_close($ch);
+
+    if ($body === false || $status < 200 || $status >= 300) {
+      Response::error('Could not load alumni photo.', 502);
+    }
+
+    if ($contentType === '' || !str_starts_with(strtolower($contentType), 'image/')) {
+      $contentType = 'image/jpeg';
+    }
+
+    header('Content-Type: ' . $contentType);
+    header('Cache-Control: private, max-age=3600');
+    echo $body;
+    exit;
   }
 
   /** PUT /api/alumni/profile */

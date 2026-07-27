@@ -260,11 +260,18 @@ final class AuthMiddleware
       $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
       if ($profile) {
         $data = array_merge($data, AlumniModel::profileToUserFields($profile));
+        $hasPhoto = trim((string) ($data['photoUrl'] ?? '')) !== ''
+          || (is_array($profile['photo'] ?? null) && trim((string) (($profile['photo']['url'] ?? ''))) !== '');
+        if (!$hasPhoto && !$fast) {
+          $profile = $aesService->syncAlumniPlacementPhoto($user, $profile) ?? $profile;
+          $data = array_merge($data, AlumniModel::profileToUserFields($profile));
+        }
       }
-      $photo = $aesService->resolveAlumniProfilePhoto($user, $profile, false);
+      $photo = $aesService->resolveAlumniProfilePhoto($user, $profile ?? null, false);
       if (($photo['photoUrl'] ?? '') !== '') {
         $data['photoUrl'] = $photo['photoUrl'];
         $data['photo'] = $photo['photo'];
+        $data['photoProxyUrl'] = '/backend/api/alumni/profile/photo';
       }
     }
     if ($effectiveRole === 'company') {

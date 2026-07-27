@@ -303,16 +303,19 @@ function resolveSessionCgpa(merged) {
 
 function resolveSessionPhotoUrl(merged) {
   const sources = [merged, merged.aesProfile || {}];
+  const proxy = String(merged.photoProxyUrl || '').trim();
+  if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
   const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo', 'staff_photo', 'staffPhoto', 'emp_photo', 'employee_photo', 'faculty_photo'];
   for (const src of sources) {
     for (const key of keys) {
       const url = String(src[key] || '').trim();
-      if (url && /^https?:\/\//i.test(url)) return url;
+      if (!url) continue;
+      if (/^https?:\/\//i.test(url) || url.startsWith('/')) return url;
     }
     const photo = src.photo;
     if (photo && typeof photo === 'object') {
       const url = String(photo.url || '').trim();
-      if (url) return url.startsWith('http') ? url : url;
+      if (url) return url.startsWith('http') || url.startsWith('/') ? url : `/${url}`;
     }
   }
   return '';
@@ -743,6 +746,7 @@ const Auth = {
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
         backlogs: merged.backlogs ?? prev.backlogs,
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || prev.photoUrl || '',
+        photoProxyUrl: merged.photoProxyUrl || prev.photoProxyUrl || '',
         photo: merged.photo || prev.photo || null,
         placed: merged.placed ?? prev.placed,
         policyAccepted: Object.prototype.hasOwnProperty.call(merged, 'policyAccepted')
@@ -993,6 +997,7 @@ const Auth = {
         policyVersion: p.policyVersion || prev.policyVersion || '',
         policyAcceptedAt: p.policyAcceptedAt || prev.policyAcceptedAt || '',
         photoUrl: p.photoUrl || p.photo?.url || u.photoUrl || prev.photoUrl || '',
+        photoProxyUrl: p.photoProxyUrl || u.photoProxyUrl || prev.photoProxyUrl || '',
         photo: p.photo || prev.photo || null,
         company: p.company ?? u.company ?? prev.company ?? '',
         title: p.title ?? p.role ?? u.title ?? prev.title ?? '',
