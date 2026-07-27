@@ -1036,6 +1036,10 @@ final class AesApiService
             $this->extractRecord($this->postStudInfo4Placement(['admno' => $admno], $admno))
         );
         $out['qualifications'] = $this->mergeInfoPlacementOntoQualRows($out['qualifications'], $infoPlacement);
+        $out['qualifications'] = $this->relabelCurrentProgramQualificationRows(
+            $out['qualifications'],
+            array_merge($infoPlacement, is_array($out) ? $out : [])
+        );
 
         self::$qualificationProfileCache[$admno] = $out;
 
@@ -1076,7 +1080,7 @@ final class AesApiService
             : $this->parseEducationQualifications($normalized);
         if ($qualifications !== []) {
             $normalized = $this->applySchoolMarksFromQualificationRows($normalized, $qualifications);
-            $normalized['qualifications'] = $qualifications;
+            $normalized['qualifications'] = $this->relabelCurrentProgramQualificationRows($qualifications, $normalized);
         }
 
         if ((empty($normalized['cgpa']) || (float) $normalized['cgpa'] <= 0) && $qualifications !== []) {
@@ -1566,7 +1570,7 @@ final class AesApiService
 
             // AES often returns current CGPA with blank qualification and maxmark=10.
             if ($qualification === '' && $maxMark !== null && $maxMark <= 10.0) {
-                $qualification = 'Current CGPA';
+                $qualification = $this->resolveCurrentProgramQualificationLabel($record);
             } elseif ($qualification !== '' && preg_match('/^tenth$/i', $qualification) === 1) {
                 $qualification = 'SSLC / 10th';
             } elseif ($qualification !== '' && preg_match('/^plus\s*two$/i', $qualification) === 1) {
@@ -1686,7 +1690,7 @@ final class AesApiService
             }
 
             $qualificationLabel = trim((string) ($row['qualification'] ?? ''));
-            if ($key === 'current_cgpa' && $qualificationLabel === '') {
+            if ($key === 'current_cgpa' && ($qualificationLabel === '' || $this->isCurrentCgpaQualificationLabel($qualificationLabel))) {
                 $qualificationLabel = $this->resolveCurrentProgramQualificationLabel($infoPlacement);
             }
 
@@ -1743,22 +1747,78 @@ final class AesApiService
     }
 
     /**
+     * Human label for the student's current programme row (e.g. MCA, BCA) instead of "Current CGPA".
+     *
      * @param array<string, mixed> $infoPlacement
      */
-    private function resolveCurrentProgramQualificationLabel(array $infoPlacement): string
+    public function resolveCurrentProgramQualificationLabel(array $infoPlacement): string
     {
         $label = trim((string) (
             $infoPlacement['stud_cource_short']
             ?? $infoPlacement['stud_course']
             ?? $infoPlacement['programme']
             ?? $infoPlacement['branch']
+            ?? $infoPlacement['department']
+            ?? $infoPlacement['departmentName']
             ?? ''
         ));
         if ($label !== '') {
             return $label;
         }
 
+        $batch = trim((string) ($infoPlacement['stud_class'] ?? $infoPlacement['classBatch'] ?? ''));
+        if ($batch !== '' && preg_match('/^([A-Z][A-Z0-9]{1,7})\d{4}/i', $batch, $m) === 1) {
+            return strtoupper($m[1]);
+        }
+
         return 'CGPA';
+    }
+
+    /**
+     * @param list<array<string, mixed>> $qualRows
+     * @param array<string, mixed> $context
+     * @return list<array<string, mixed>>
+     */
+    public function relabelCurrentProgramQualificationRows(array $qualRows, array $context): array
+    {
+        if ($qualRows === []) {
+            return [];
+        }
+
+        $courseLabel = $this->resolveCurrentProgramQualificationLabel($context);
+        $out = [];
+        foreach ($qualRows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : null;
+            $maxMark = isset($row['maxMark']) && is_numeric($row['maxMark']) ? (float) $row['maxMark'] : null;
+            $key = $this->qualificationMatchKey(
+                (string) ($row['qualification'] ?? ''),
+                $mark,
+                $maxMark
+            );
+            $label = trim((string) ($row['qualification'] ?? ''));
+            if ($key === 'current_cgpa' || $this->isCurrentCgpaQualificationLabel($label)) {
+                $row['qualification'] = $courseLabel;
+            }
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    public function isCurrentCgpaQualificationLabel(string $label): bool
+    {
+        $upper = strtoupper(trim($label));
+        if ($upper === '') {
+            return false;
+        }
+
+        return str_contains($upper, 'CURRENT CGPA')
+            || $upper === 'CGPA'
+            || $upper === 'CURRENT'
+            || preg_match('/\bCURRENT\s+CGPA\b/', $upper) === 1;
     }
 
     public function resolvePhotoUrl(string $url): string

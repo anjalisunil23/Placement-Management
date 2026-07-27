@@ -868,16 +868,20 @@ function applyStudentFieldLocks(p) {
     if (!el) return;
     const hasValue = displayValue !== '' && displayValue != null;
     const freeze = hasValue && !alwaysEditable;
-    el.readOnly = freeze;
-    el.disabled = false;
+    if (el.tagName === 'SELECT') {
+      el.disabled = freeze;
+    } else {
+      el.readOnly = freeze;
+      el.disabled = false;
+    }
     if (hint) hint.classList.add('d-none');
     el.classList.toggle('bg-light', freeze);
     el.style.cursor = freeze ? 'default' : '';
     if (freeze) {
-      el.title = 'Already set — click for help';
+      el.title = 'Already set — contact your class teacher to change this';
     } else {
       el.title = '';
-      el.placeholder = el.placeholder || 'Enter if missing';
+      if (el.tagName !== 'SELECT') el.placeholder = el.placeholder || 'Enter if missing';
     }
     if (freeze) bindLockedFieldHint(inputId, hintId);
   };
@@ -895,7 +899,7 @@ function applyStudentFieldLocks(p) {
   if (m12) m12.value = marks12 === '' ? '' : String(marks12);
   if (cg) cg.value = cgpa === '' ? '' : String(cgpa);
 
-  // Phone and personal email are always editable by the student.
+  // Phone and personal email stay always editable; academic marks lock after first fill.
   lockInput('profPhone', 'profPhoneHint', 'personal.phone', phone, true);
   lockInput('profPersonalEmail', 'profPersonalEmailHint', 'personal.personalEmail', personalEmail, true);
   lockInput('profMarks10', 'profMarks10Hint', 'academic.marks10th', marks10, false);
@@ -1499,7 +1503,7 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
   if (role === 'student') {
     const phoneEl = document.getElementById('profPhone');
     const personalEl = document.getElementById('profPersonalEmail');
-    // Phone and personal email are always student-editable.
+    // Phone, personal email, and marital status stay always student-editable.
     const phoneVal = (phoneEl?.value || '').trim();
     const personalEmailVal = (personalEl?.value || '').trim().toLowerCase();
     if (personalEmailVal && !personalEmailVal.includes('@')) {
@@ -1536,7 +1540,6 @@ document.getElementById('saveSettings').addEventListener('click', async () => {
     }
     const qualEdits = collectQualificationEdits();
     if (qualEdits) academic.qualifications = qualEdits;
-    // Phone, personal email, and marital status are always editable by the student.
     const personal = {};
     if (phoneVal !== undefined) personal.phone = phoneVal;
     if (personalEmailVal !== undefined) personal.personalEmail = personalEmailVal;

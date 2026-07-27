@@ -9,8 +9,9 @@ use PMS\Utils\Response;
 use PMS\Utils\Security;
 
 /**
- * Student self-service may fill empty profile fields once.
- * Class teacher / co-class teacher may overwrite those fields afterward.
+ * Student self-service may fill empty academic fields once.
+ * Phone, personal email, and marital status stay student-editable.
+ * Class teacher / co-class teacher may overwrite locked academic fields afterward.
  */
 final class StudentProfileEditService
 {
@@ -42,7 +43,7 @@ final class StudentProfileEditService
         }
         foreach (self::ACADEMIC_KEYS as $key) {
             $path = 'academic.' . $key;
-            // Students may fill marks/CGPA when empty; backlogs stay staff/AES-owned unless empty null.
+            // Students may fill marks/CGPA when empty; backlogs stay staff/AES-owned.
             if ($key === 'backlogs') {
                 continue;
             }
@@ -82,14 +83,14 @@ final class StudentProfileEditService
 
         foreach ($personalPatch as $key => $value) {
             $path = 'personal.' . $key;
+            if (!in_array($key, self::PERSONAL_KEYS, true)) {
+                continue;
+            }
             $existingVal = $personal[$key] ?? null;
             if ($this->valuesEqual($path, $existingVal, $value)) {
                 continue;
             }
-            if (!in_array($key, self::PERSONAL_KEYS, true) && $this->isFieldLockedForStudent($profile, $path)) {
-                $rejected[] = $path;
-                continue;
-            }
+            // Phone / personal email / marital status stay always student-editable.
             $personal[$key] = $value;
             if ($this->isEmptyValue($path, $value)) {
                 unset($locks[$path]);

@@ -2180,10 +2180,17 @@ final class OfficerDataService
      * detailed qualification entries needed by the modal table.
      *
      * @param list<array<string, mixed>> $rows
+     * @param array<string, mixed> $context Student / AES placement hints for current course label
      * @return list<array<string, mixed>>
      */
-    private function backfillAcademicQualificationRows(array $rows, ?float $cgpa, ?float $marks10th, ?float $marks12th): array
-    {
+    private function backfillAcademicQualificationRows(
+        array $rows,
+        ?float $cgpa,
+        ?float $marks10th,
+        ?float $marks12th,
+        array $context = []
+    ): array {
+        $aesApi = new AesApiService();
         $has10th = false;
         $has12th = false;
         $hasCgpa = false;
@@ -2202,8 +2209,15 @@ final class OfficerDataService
             if (preg_match('/\b(HSC|PLUS\s*TWO|PLUS2|12TH|CLASS\s*XII|HIGHER\s*SECONDARY)\b/', $label) === 1) {
                 $has12th = true;
             }
-            if (str_contains($label, 'CGPA') || preg_match('/\bGPA\b/', $label) === 1) {
+            if ($aesApi->isCurrentCgpaQualificationLabel($label)) {
                 $hasCgpa = true;
+            }
+            $mark = isset($row['mark']) && is_numeric($row['mark']) ? (float) $row['mark'] : null;
+            $maxMark = isset($row['maxMark']) && is_numeric($row['maxMark']) ? (float) $row['maxMark'] : null;
+            if (!$hasCgpa && $mark !== null && $mark > 0 && $mark <= 10 && ($maxMark === null || $maxMark <= 10)) {
+                if (!preg_match('/\b(SSLC|SSC|10TH|HSC|12TH|PLUS\s*TWO|BCA|B\.?\s*TECH|M\.?\s*TECH|MBA)\b/', $label)) {
+                    $hasCgpa = true;
+                }
             }
         }
 
@@ -2223,13 +2237,13 @@ final class OfficerDataService
         }
         if ($cgpa !== null && $cgpa > 0 && !$hasCgpa) {
             $rows[] = [
-                'qualification' => 'Current CGPA',
+                'qualification' => $aesApi->resolveCurrentProgramQualificationLabel($context),
                 'mark' => $cgpa,
                 'maxMark' => 10,
             ];
         }
 
-        return $rows;
+        return $aesApi->relabelCurrentProgramQualificationRows($rows, $context);
     }
 
     /**
@@ -2866,7 +2880,30 @@ final class OfficerDataService
             $qualifications,
             $cgpa > 0 ? $cgpa : null,
             $marks10 > 0 ? $marks10 : null,
-            $marks12 > 0 ? $marks12 : null
+            $marks12 > 0 ? $marks12 : null,
+            array_merge(
+                is_array($placement) ? $placement : [],
+                is_array($mapped) ? $mapped : [],
+                is_array($qual) ? $qual : [],
+                [
+                    'classBatch' => $classBatch,
+                    'stud_class' => $classBatch,
+                    'department' => trim((string) (
+                        $mapped['department']
+                        ?? $placement['deptCode']
+                        ?? $placement['department']
+                        ?? ''
+                    )),
+                    'departmentName' => trim((string) (
+                        $mapped['departmentName']
+                        ?? $mapped['branch']
+                        ?? $placement['departmentName']
+                        ?? $placement['deptName']
+                        ?? $placement['branch']
+                        ?? ''
+                    )),
+                ]
+            )
         );
         $qualifications = array_map(
             fn ($q) => is_array($q) ? $this->inferMissingQualificationMaxMark($q) : $q,
@@ -3216,7 +3253,17 @@ final class OfficerDataService
         $cgpa = (!empty($qual['cgpa']) && (float) $qual['cgpa'] > 0) ? (float) $qual['cgpa'] : $empty['cgpa'];
         $marks10th = (!empty($qual['marks10th']) && (float) $qual['marks10th'] > 0) ? (float) $qual['marks10th'] : $empty['marks10th'];
         $marks12th = (!empty($qual['marks12th']) && (float) $qual['marks12th'] > 0) ? (float) $qual['marks12th'] : $empty['marks12th'];
-        $tableRows = $this->backfillAcademicQualificationRows($tableRows, $cgpa, $marks10th, $marks12th);
+        $tableRows = $this->backfillAcademicQualificationRows(
+            $tableRows,
+            $cgpa,
+            $marks10th,
+            $marks12th,
+            array_merge(
+                $placementHint,
+                is_array($qual) ? $qual : [],
+                is_array($student) ? $student : []
+            )
+        );
         $tableRows = array_map(
             fn ($q) => is_array($q) ? $this->inferMissingQualificationMaxMark($q) : $q,
             $tableRows

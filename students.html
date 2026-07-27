@@ -1340,7 +1340,7 @@ function buildDisplayProfile(listRow, api) {
     api?.academic?.qualifications,
     listRow?.qualifications,
     listRow?.academic?.qualifications
-  ));
+  ), { ...(listRow || {}), ...api });
   return {
     ...(listRow || {}),
     ...api,
@@ -1389,8 +1389,18 @@ function formatQualMark(val) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
+/** Resolve current programme label (MCA, BCA, …) for CGPA qualification rows. */
+function currentCourseQualificationLabel(profile) {
+  const p = profile && typeof profile === 'object' ? profile : {};
+  const course = String(p.stud_course || p.stud_cource_short || p.department || p.departmentName || '').trim();
+  if (course) return course;
+  const batch = String(p.classBatch || p.stud_class || '').trim();
+  const m = batch.match(/^([A-Za-z][A-Za-z0-9]{1,7})\d{4}/);
+  return m ? m[1].toUpperCase() : '';
+}
+
 /** Same mark-scale rule as student Settings: ≤10 → max 10; else max 100. % = mark/max×100. */
-function normalizeQualificationRow(q) {
+function normalizeQualificationRow(q, profile) {
   if (!q || typeof q !== 'object') return q;
   const out = { ...q };
   let mark = Number(out.mark);
@@ -1419,18 +1429,23 @@ function normalizeQualificationRow(q) {
   if (mark > 0 && max > 0) {
     out.percentage = Math.round((mark / max) * 10000) / 100;
   }
+  const label = String(out.qualification || '').trim();
+  if (/^current\s*cgpa$/i.test(label) || label.toUpperCase() === 'CGPA') {
+    const course = currentCourseQualificationLabel(profile);
+    if (course) out.qualification = course;
+  }
   return out;
 }
 
-function normalizeQualificationRows(quals) {
-  return (Array.isArray(quals) ? quals : []).map(normalizeQualificationRow);
+function normalizeQualificationRows(quals, profile) {
+  return (Array.isArray(quals) ? quals : []).map(q => normalizeQualificationRow(q, profile));
 }
 
-function renderQualificationsTable(quals, bodyId, wrapId) {
+function renderQualificationsTable(quals, bodyId, wrapId, profile) {
   const body = document.getElementById(bodyId);
   const wrap = document.getElementById(wrapId);
   if (!body || !wrap) return;
-  const rows = normalizeQualificationRows(quals);
+  const rows = normalizeQualificationRows(quals, profile);
   if (!rows.length) {
     wrap.style.display = 'none';
     body.innerHTML = '';
@@ -1534,7 +1549,7 @@ function renderStudentProfilePanel(s) {
   set('spPolicy', isPolicyRegistered(s)
     ? `Registered${s.policyAcceptedAt ? ' · ' + formatPolicyAcceptedAt(s.policyAcceptedAt) : ''}`
     : 'Not Registered');
-  renderQualificationsTable(s.qualifications, 'spQualificationsBody', 'spQualificationsWrap');
+  renderQualificationsTable(s.qualifications, 'spQualificationsBody', 'spQualificationsWrap', s);
 }
 
 function overviewStatusBadge(status) {
@@ -2289,7 +2304,8 @@ function fillFinalYearProfileFields(s) {
   renderQualificationsTable(
     pickProfileQualifications(s.qualifications, s.academic?.qualifications),
     'fySpQualificationsBody',
-    'fySpQualificationsWrap'
+    'fySpQualificationsWrap',
+    s
   );
   syncFinalYearProfileEditMode(s);
   syncFinalYearVerifyBanner(s);
@@ -2411,7 +2427,7 @@ async function openFinalYearStudent(reg) {
     full?.academic?.qualifications,
     listRow?.qualifications,
     listRow?.academic?.qualifications
-  ));
+  ), { ...(listRow || {}), ...(full || {}), ...qualPayload });
   const markOverlay = {
     cgpa: qualPayload.cgpa ?? full?.cgpa ?? null,
     marks10th: qualPayload.marks10th ?? full?.marks10th ?? null,
