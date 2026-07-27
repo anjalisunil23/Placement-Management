@@ -315,6 +315,8 @@ final class AnalyticsService
     }
 
     /**
+     * Published alumni success stories only (no derived/static placement fallbacks).
+     *
      * @return array<int, array{name: string, role: string, package: string, quote: string}>
      */
     private function getSuccessStories(int $limit = 6): array
@@ -325,83 +327,10 @@ final class AnalyticsService
                 $stories[] = SuccessStoryModel::toPublicCard($row);
             }
         } catch (\Throwable) {
-            $stories = [];
-        }
-        if (count($stories) >= $limit) {
-            return array_slice($stories, 0, $limit);
-        }
-
-        $remaining = $limit - count($stories);
-        $placementStories = $this->getPlacementSuccessStories($remaining);
-        return array_merge($stories, $placementStories);
-    }
-
-    /**
-     * @return array<int, array{name: string, role: string, package: string, quote: string}>
-     */
-    private function getPlacementSuccessStories(int $limit): array
-    {
-        if ($limit <= 0) {
             return [];
         }
 
-        $applicationModel = new ApplicationModel();
-        $studentModel = new StudentModel();
-        $userModel = new UserModel();
-        $companyModel = new CompanyModel();
-        $jobModel = new JobModel();
-        $driveModel = new DriveModel();
-
-        $apps = $applicationModel->findAll(['status' => 'selected'], $limit, 0, ['updatedAt' => -1]);
-        if ($apps === []) {
-            foreach ($studentModel->findAll(['placed' => true], $limit) as $student) {
-                $user = $userModel->findById((string) ($student['userId'] ?? ''));
-                if (!$user) {
-                    continue;
-                }
-                $apps[] = ['studentId' => $student['_id'], 'companyId' => null, 'jobId' => null, 'driveId' => null];
-            }
-        }
-
-        $stories = [];
-        foreach ($apps as $app) {
-            $student = $studentModel->findById((string) ($app['studentId'] ?? ''));
-            if (!$student) {
-                continue;
-            }
-            $user = $userModel->findById((string) ($student['userId'] ?? ''));
-            $name = (string) ($user['name'] ?? 'Student');
-
-            $companyName = 'Campus recruiter';
-            if (!empty($app['companyId'])) {
-                $company = $companyModel->findById((string) $app['companyId']);
-                $companyName = (string) ($company['companyName'] ?? $companyName);
-            }
-
-            $roleTitle = '';
-            $package = '';
-            if (!empty($app['jobId'])) {
-                $job = $jobModel->findById((string) $app['jobId']);
-                $roleTitle = (string) ($job['title'] ?? '');
-                $package = (string) ($job['package'] ?? '');
-            } elseif (!empty($app['driveId'])) {
-                $drive = $driveModel->findById((string) $app['driveId']);
-                $roleTitle = (string) ($drive['title'] ?? '');
-                $package = (string) ($drive['tier'] ?? '');
-            }
-
-            $stories[] = [
-                'name'    => $name,
-                'role'    => $roleTitle !== '' ? "{$companyName} · {$roleTitle}" : $companyName,
-                'package' => $this->formatPackageLabel($package),
-                'quote'   => 'Selected through the campus placement process on PlaceHub.',
-            ];
-            if (count($stories) >= $limit) {
-                break;
-            }
-        }
-
-        return $stories;
+        return array_slice($stories, 0, $limit);
     }
 
     /**

@@ -117,7 +117,6 @@
       <div class="col-lg-7"><div class="card-surface p-4"><h5 class="fw-bold" id="branchChartTitle">Placements by branch</h5><div style="height:320px"><canvas id="pubBar"></canvas></div></div></div>
       <div class="col-lg-5"><div class="card-surface p-4"><h5 class="fw-bold">Sector distribution</h5><div style="height:320px"><canvas id="pubPie"></canvas></div></div></div>
     </div>
-    <div class="row g-3 mt-3" id="branchStatsRow"></div>
   </div>
 </section>
 
@@ -348,21 +347,6 @@ async function renderPublicPage() {
   const sectorValues = sector.values?.length ? sector.values : [0];
   if (pubPieChart) pubPieChart.destroy();
   pubPieChart = Charts.doughnut(document.getElementById('pubPie'), sectorLabels, sectorValues);
-
-  const branchRow = document.getElementById('branchStatsRow');
-  if (branchRow) {
-    branchRow.innerHTML = branchStats.length
-      ? branchStats.map(b => `
-        <div class="col-6 col-md-4 col-lg-3">
-          <div class="card-surface p-3 h-100 text-center">
-            <div class="fw-bold">${escHtml(b.code || b.department)}</div>
-            <div class="small text-muted-2 mb-1">${escHtml(b.department || b.code)}</div>
-            <div class="fs-5 fw-bold gradient-text">${b.placed ?? 0}<span class="text-muted-2 fs-6 fw-normal"> / ${b.total ?? 0}</span></div>
-            <div class="small text-muted-2">${Number(b.percentage ?? 0).toFixed(1)}% placed</div>
-          </div>
-        </div>`).join('')
-      : '<div class="col-12"><p class="text-center text-muted-2 mb-0">Branch statistics appear when students are assigned to departments and marked placed.</p></div>';
-  }
 
   const recruiters = live.topRecruiters?.length
     ? live.topRecruiters
