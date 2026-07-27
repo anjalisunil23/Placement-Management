@@ -249,7 +249,8 @@ abstract class BaseModel
             $id,
         ]);
 
-        return $stmt->rowCount() > 0;
+        // MySQL PDO may report rowCount=0 when values are unchanged; the row was validated above.
+        return true;
     }
 
     public function delete(string $id): bool

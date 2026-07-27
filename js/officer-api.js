@@ -18,9 +18,13 @@ const OfficerApi = {
     const personal = row.personal || {};
     const email = u.email || '';
     const isCollege = /@(students\.)?amaljyothi\.ac\.in$/i.test(email) || /\.ajce\.in$/i.test(email);
+    const studentId = OfficerApi.id(row);
+    const userId = OfficerApi.id(u) || String(row.userId || u.userId || '').trim() || null;
     return {
-      id: OfficerApi.id(u) || OfficerApi.id(row),
-      studentId: OfficerApi.id(row),
+      id: userId || studentId,
+      userId: userId || null,
+      studentId,
+      hasLogin: !!userId,
       role: 'student',
       name: row.displayName || u.name || row.name || personal.name || personal.fullName || '',
       email: row.collegeEmail || (isCollege ? email : (row.personalEmail || personal.personalEmail || email)),

@@ -3780,7 +3780,9 @@ const UserRegistry = {
   },
   save(l) { this._cache = l; localStorage.setItem(USERS_KEY, JSON.stringify(l)); },
   byRole(r) { return this.all().filter(u => u.role === r); },
-  get(id) { return this.all().find(u => u.id === id); },
+  get(id) {
+    return this.all().find(u => u.id === id || u.userId === id || u.studentId === id || u.companyId === id);
+  },
   update(id, patch) { this.save(this.all().map(u => u.id === id ? { ...u, ...patch } : u)); },
   remove(id) { this.save(this.all().filter(u => u.id !== id)); },
   async fetch() {
@@ -3813,7 +3815,9 @@ const UserRegistry = {
     }
     const list = [];
     if (students) list.push(...students);
-    const studentIds = new Set(students?.map(s => s.id) || []);
+    const studentLoginIds = new Set(
+      (students || []).map(s => s.userId || s.id).filter(Boolean)
+    );
     const companyByUserId = new Map();
     const companyRows = companies || [];
     companyRows.forEach(c => {
@@ -3821,7 +3825,7 @@ const UserRegistry = {
     });
     const seenCompanyIds = new Set();
     users?.forEach(u => {
-      if (u.role === 'student' && studentIds.has(u.id)) return;
+      if (u.role === 'student' && studentLoginIds.has(u.id)) return;
       if (u.role === 'company') {
         const company = companyByUserId.get(u.id);
         const row = typeof AdminApi !== 'undefined' && AdminApi.mergeCompanyUser
@@ -3932,36 +3936,65 @@ const UserRegistry = {
     toast(res.message || 'Could not change placement officer.', 'error');
     return false;
   },
+  _resolveLoginUserId(id) {
+    const row = this.get(id) || this.all().find(u =>
+      u.id === id || u.userId === id || u.companyId === id || u.studentId === id
+    );
+    const userId = String(row?.userId || (row?.hasLogin === false ? '' : row?.id) || id || '').trim();
+    if (!/^[a-f\d]{24}$/i.test(userId)) return { row, userId: '' };
+    return { row, userId };
+  },
   async approve(id) {
-    if (Auth.role() === 'placement_officer') {
-      const res = await api(`/officer/users/${encodeURIComponent(id)}/approve`, { method: 'POST' });
-      if (res.success) { await this.fetch(); return true; }
+    if (!(await requireWriteSession())) return false;
+    const { row, userId } = this._resolveLoginUserId(id);
+    if (!userId) {
+      toast(row?.aesOnly || row?.hasLogin === false
+        ? 'This student has no PlaceHub login account to approve.'
+        : 'No login account found for this user.', 'error');
+      return false;
     }
-    const res = await api(`/admin/users/${encodeURIComponent(id)}/approve`, { method: 'POST' });
+    if (Auth.role() === 'placement_officer') {
+      const res = await api(`/officer/users/${encodeURIComponent(userId)}/approve`, { method: 'POST' });
+      if (res.success) { await this.fetch(); return true; }
+      return false;
+    }
+    const res = await api(`/admin/users/${encodeURIComponent(userId)}/approve`, { method: 'POST' });
     if (res.success) { await this.fetch(); return true; }
-    this.update(id, { status:'approved' });
     return false;
   },
   async block(id, blocked = true) {
+    if (!(await requireWriteSession())) return false;
+    const { row, userId } = this._resolveLoginUserId(id);
+    if (!userId) {
+      toast(row?.aesOnly || row?.hasLogin === false
+        ? 'This student has no PlaceHub login account to block.'
+        : 'No login account found for this user.', 'error');
+      return false;
+    }
     const path = blocked ? 'block' : 'unblock';
-    const res = await api(`/admin/users/${encodeURIComponent(id)}/${path}`, { method: 'POST' });
+    const res = await api(`/admin/users/${encodeURIComponent(userId)}/${path}`, { method: 'POST' });
     if (res.success) { await this.fetch(); return true; }
-    this.update(id, { blocked });
     return false;
   },
   async removeUser(id) {
+    if (!(await requireWriteSession())) return false;
     const row = this.get(id) || this.all().find(u =>
-      u.id === id || u.userId === id || u.companyId === id
+      u.id === id || u.userId === id || u.companyId === id || u.studentId === id
     );
     if (row?.role === 'company' && row.companyId && !row.hasLogin) {
       const res = await api(`/admin/companies/${encodeURIComponent(row.companyId)}`, { method: 'DELETE' });
       if (res.success) { await this.fetch(); return true; }
       return false;
     }
-    const userId = row?.userId || row?.id || id;
+    const { userId } = this._resolveLoginUserId(id);
+    if (!userId) {
+      toast(row?.aesOnly || row?.hasLogin === false
+        ? 'This student has no PlaceHub login account to delete.'
+        : 'No login account found for this user.', 'error');
+      return false;
+    }
     const res = await api(`/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
     if (res.success) { await this.fetch(); return true; }
-    this.remove(id);
     return false;
   },
 };

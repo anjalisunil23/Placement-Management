@@ -184,8 +184,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260715companyedit"></script>
-<script src="js/api.js?v=20260723perf"></script>
+<script src="js/admin-api.js?v=20260727useractions"></script>
+<script src="js/api.js?v=20260727useractions"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
 let departments = [];
@@ -399,11 +399,13 @@ function placementBadge(s) {
 
 function actionBtns(u) {
   const blocked = u.blocked;
-  const canManageAccount = u.role !== 'company' || u.hasLogin !== false;
+  const canManageAccount = (u.role !== 'company' || u.hasLogin !== false)
+    && !(u.role === 'student' && (u.aesOnly || u.hasLogin === false));
+  const accountId = u.userId || u.id;
   return `<div class="d-flex gap-1 flex-wrap">
-    ${canManageAccount && u.status !== 'approved' ? `<button class="btn btn-sm btn-success" onclick="approveUser('${u.id}')" title="Approve"><i class="bi bi-check2"></i></button>` : ''}
-    ${canManageAccount ? `<button class="btn btn-sm btn-outline-${blocked ? 'info' : 'warning'}" onclick="toggleBlock('${u.id}', ${!blocked})" title="${blocked ? 'Unblock' : 'Block'}"><i class="bi bi-${blocked ? 'unlock' : 'slash-circle'}"></i></button>` : ''}
-    <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${u.id}')" title="Delete"><i class="bi bi-trash"></i></button>
+    ${canManageAccount && u.status !== 'approved' ? `<button class="btn btn-sm btn-success" onclick="approveUser('${accountId}')" title="Approve"><i class="bi bi-check2"></i></button>` : ''}
+    ${canManageAccount ? `<button class="btn btn-sm btn-outline-${blocked ? 'info' : 'warning'}" onclick="toggleBlock('${accountId}', ${!blocked})" title="${blocked ? 'Unblock' : 'Block'}"><i class="bi bi-${blocked ? 'unlock' : 'slash-circle'}"></i></button>` : ''}
+    ${canManageAccount ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${accountId}')" title="Delete"><i class="bi bi-trash"></i></button>` : '<span class="small text-muted-2">No login</span>'}
   </div>`;
 }
 
@@ -597,7 +599,7 @@ async function assignDeptStaffAsPo(deptId) {
 }
 
 async function approveUser(id) {
-  const u = UserRegistry.get(id);
+  const u = UserRegistry.get(id) || UserRegistry.all().find(x => x.id === id || x.userId === id);
   if (!u) return;
   const confirmed = await confirmAction({
     title: 'Approve user',
@@ -606,11 +608,13 @@ async function approveUser(id) {
     variant: 'success',
   });
   if (!confirmed) return;
-  UserRegistry.approve(id).then(ok => { toast(ok ? 'User approved.' : 'Could not approve.', ok ? 'success' : 'error'); render(); });
+  const ok = await UserRegistry.approve(id);
+  toast(ok ? 'User approved.' : 'Could not approve.', ok ? 'success' : 'error');
+  render();
 }
 
 async function toggleBlock(id, blocked) {
-  const u = UserRegistry.get(id);
+  const u = UserRegistry.get(id) || UserRegistry.all().find(x => x.id === id || x.userId === id);
   if (!u) return;
   const confirmed = await confirmAction({
     title: blocked ? 'Block user' : 'Unblock user',
@@ -621,11 +625,13 @@ async function toggleBlock(id, blocked) {
     variant: blocked ? 'warning' : 'primary',
   });
   if (!confirmed) return;
-  UserRegistry.block(id, blocked).then(ok => { toast(blocked ? 'User blocked.' : 'User unblocked.', blocked ? 'warn' : 'success'); render(); });
+  const ok = await UserRegistry.block(id, blocked);
+  toast(ok ? (blocked ? 'User blocked.' : 'User unblocked.') : (blocked ? 'Could not block.' : 'Could not unblock.'), ok ? (blocked ? 'warn' : 'success') : 'error');
+  render();
 }
 
 async function deleteUser(id) {
-  const u = UserRegistry.get(id);
+  const u = UserRegistry.get(id) || UserRegistry.all().find(x => x.id === id || x.userId === id);
   if (!u) return;
   const confirmed = await confirmAction({
     title: 'Delete user',
@@ -634,7 +640,9 @@ async function deleteUser(id) {
     variant: 'danger',
   });
   if (!confirmed) return;
-  UserRegistry.removeUser(id).then(ok => { toast(ok ? 'User removed.' : 'Could not delete.', ok ? 'success' : 'error'); render(); });
+  const ok = await UserRegistry.removeUser(id);
+  toast(ok ? 'User removed.' : 'Could not delete.', ok ? 'success' : 'error');
+  render();
 }
 
 function renderStudents(list) {

@@ -51,9 +51,14 @@ const AdminApi = {
     let placementStatus = 'registered';
     if (isPlaced) placementStatus = 'placed';
     else if (selfPlacement?.status === 'pending') placementStatus = 'pending_placement';
+    const studentId = this.id(row);
+    const userId = this.id(u) || String(row.userId || u.userId || '').trim() || null;
     return {
-      id: this.id(u) || this.id(row),
-      studentId: this.id(row),
+      // Prefer login user id for approve/block/delete; keep profile id separately.
+      id: userId || studentId,
+      userId: userId || null,
+      studentId,
+      hasLogin: !!userId,
       role: 'student',
       name: row.displayName || u.name || row.name || personal.name || personal.fullName || '',
       email: row.collegeEmail || (isCollege ? email : (row.personalEmail || personal.personalEmail || email)),

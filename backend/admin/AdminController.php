@@ -801,7 +801,12 @@ final class AdminController
     public function blockUser(string $id): void
     {
         RBACMiddleware::requireAdmin();
-        $this->userModel->blockUser($id);
+        if (!$this->userModel->findById($id)) {
+            Response::notFound('User not found.');
+        }
+        if (!$this->userModel->blockUser($id)) {
+            Response::error('Could not block user.', 500);
+        }
         Response::success(null, 'User blocked.');
     }
 
@@ -809,7 +814,12 @@ final class AdminController
     public function unblockUser(string $id): void
     {
         RBACMiddleware::requireAdmin();
-        $this->userModel->unblockUser($id);
+        if (!$this->userModel->findById($id)) {
+            Response::notFound('User not found.');
+        }
+        if (!$this->userModel->unblockUser($id)) {
+            Response::error('Could not unblock user.', 500);
+        }
         Response::success(null, 'User unblocked.');
     }
 
@@ -817,7 +827,12 @@ final class AdminController
     public function approveUser(string $id): void
     {
         RBACMiddleware::requireAdmin();
-        $this->userModel->approveUser($id);
+        if (!$this->userModel->findById($id)) {
+            Response::notFound('User not found.');
+        }
+        if (!$this->userModel->approveUser($id)) {
+            Response::error('Could not approve user.', 500);
+        }
         Response::success(null, 'User approved.');
     }
 
