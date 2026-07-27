@@ -260,9 +260,11 @@ final class AuthMiddleware
       $profile = (new AlumniModel())->findByUserId((string) $user['_id']);
       if ($profile) {
         $data = array_merge($data, AlumniModel::profileToUserFields($profile));
-        $hasPhoto = trim((string) ($data['photoUrl'] ?? '')) !== ''
-          || (is_array($profile['photo'] ?? null) && trim((string) (($profile['photo']['url'] ?? ''))) !== '');
-        if (!$hasPhoto && !$fast) {
+        $photoUrl = trim((string) ($data['photoUrl'] ?? ''));
+        $needsSync = $photoUrl === ''
+          || (!str_contains($photoUrl, '/api/media/') && !str_starts_with($photoUrl, '/backend/api/media/'));
+        // Always try to materialize AES photos — even on fast boot — so avatars work in CSS.
+        if ($needsSync) {
           $profile = $aesService->syncAlumniPlacementPhoto($user, $profile) ?? $profile;
           $data = array_merge($data, AlumniModel::profileToUserFields($profile));
         }
@@ -271,7 +273,12 @@ final class AuthMiddleware
       if (($photo['photoUrl'] ?? '') !== '') {
         $data['photoUrl'] = $photo['photoUrl'];
         $data['photo'] = $photo['photo'];
-        $data['photoProxyUrl'] = '/backend/api/alumni/profile/photo';
+        // Prefer public media URL when cached; keep proxy as fallback for remote AES URLs.
+        if (!str_contains((string) $photo['photoUrl'], '/api/media/')) {
+          $data['photoProxyUrl'] = '/backend/api/alumni/profile/photo';
+        } else {
+          unset($data['photoProxyUrl']);
+        }
       }
     }
     if ($effectiveRole === 'company') {

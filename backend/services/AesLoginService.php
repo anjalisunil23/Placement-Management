@@ -2249,18 +2249,18 @@ final class AesLoginService
         $photo = is_array($profile['photo'] ?? null) ? $profile['photo'] : null;
         $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
         if ($photoUrl !== '') {
-            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+            $photoUrl = $this->normalizeStoredPhotoUrl($photoUrl);
         }
-        if ($photoUrl === '' || !filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+        if ($photoUrl === '' || !$this->isUsablePhotoUrl($photoUrl)) {
             $merged = $this->applyAesSessionToUserFields([
                 'name'  => (string) ($user['name'] ?? ''),
                 'email' => (string) ($user['email'] ?? ''),
             ]);
             $photoUrl = trim((string) ($merged['photoUrl'] ?? ''));
             if ($photoUrl !== '') {
-                $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+                $photoUrl = $this->normalizeStoredPhotoUrl($photoUrl);
             }
-            $photo = ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL))
+            $photo = $this->isUsablePhotoUrl($photoUrl)
                 ? ['url' => $photoUrl, 'source' => 'aes']
                 : null;
         } elseif (is_array($photo)) {
@@ -2268,8 +2268,8 @@ final class AesLoginService
         }
 
         return [
-            'photoUrl' => ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) ? $photoUrl : '',
-            'photo'    => ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) ? $photo : null,
+            'photoUrl' => $this->isUsablePhotoUrl($photoUrl) ? $photoUrl : '',
+            'photo'    => $this->isUsablePhotoUrl($photoUrl) ? $photo : null,
         ];
     }
 
@@ -2319,9 +2319,9 @@ final class AesLoginService
         $photo = is_array($alumniProfile['photo'] ?? null) ? $alumniProfile['photo'] : null;
         $photoUrl = is_array($photo) ? trim((string) ($photo['url'] ?? '')) : '';
         if ($photoUrl !== '') {
-            $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
+            $photoUrl = $this->normalizeStoredPhotoUrl($photoUrl);
         }
-        if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+        if ($this->isUsablePhotoUrl($photoUrl)) {
             if (is_array($photo)) {
                 $photo['url'] = $photoUrl;
             } else {
@@ -2341,8 +2341,8 @@ final class AesLoginService
         $aesProfile = \PMS\Utils\Security::getSessionAesProfile();
         $mapped = $this->mapAesDetailsToUserFields($aesProfile);
         $sessionUrl = trim((string) ($mapped['photoUrl'] ?? $aesProfile['stud_photo'] ?? ''));
-        $sessionUrl = (new AesApiService())->resolvePhotoUrl($sessionUrl);
-        if ($sessionUrl !== '' && filter_var($sessionUrl, FILTER_VALIDATE_URL)) {
+        $sessionUrl = $this->normalizeStoredPhotoUrl($sessionUrl);
+        if ($this->isUsablePhotoUrl($sessionUrl)) {
             return [
                 'photoUrl' => $sessionUrl,
                 'photo'    => ['url' => $sessionUrl, 'source' => 'aes'],
@@ -2371,8 +2371,8 @@ final class AesLoginService
             ?? $placement['stud_photo']
             ?? ''
         ));
-        $photoUrl = (new AesApiService())->resolvePhotoUrl($photoUrl);
-        if ($photoUrl === '' || !filter_var($photoUrl, FILTER_VALIDATE_URL)) {
+        $photoUrl = $this->normalizeStoredPhotoUrl($photoUrl);
+        if (!$this->isUsablePhotoUrl($photoUrl)) {
             return ['photoUrl' => '', 'photo' => null];
         }
 
@@ -2383,6 +2383,151 @@ final class AesLoginService
                 'source'   => 'aes',
                 'syncedAt' => \PMS\Utils\DocumentHelper::now(),
             ],
+        ];
+    }
+
+    /**
+     * True for PlaceHub-served media paths (relative or absolute).
+     */
+    private function isAppMediaPhotoUrl(string $url): bool
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return false;
+        }
+        if (str_starts_with($url, '/backend/api/media/') || str_starts_with($url, '/api/media/')) {
+            return true;
+        }
+
+        return (bool) preg_match('#^https?://[^/]+/(?:backend/)?api/media/#i', $url);
+    }
+
+    private function normalizeStoredPhotoUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+        if ($this->isAppMediaPhotoUrl($url)) {
+            // Keep app-relative media URLs; AesApiService::resolvePhotoUrl would wrongly
+            // prefix them with login.aesajce.in.
+            if (str_starts_with($url, '/api/media/')) {
+                return '/backend' . $url;
+            }
+
+            return $url;
+        }
+
+        return (new AesApiService())->resolvePhotoUrl($url);
+    }
+
+    private function isUsablePhotoUrl(string $url): bool
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return false;
+        }
+
+        return filter_var($url, FILTER_VALIDATE_URL) !== false || $this->isAppMediaPhotoUrl($url);
+    }
+
+    /**
+     * Download a remote AES photo into PlaceHub media storage so CSS avatars can load it
+     * without AES hotlink blocks or auth cookies.
+     *
+     * @return array{url:string,source:string,aesUrl:string,path?:string,file?:string,syncedAt:mixed}|null
+     */
+    private function materializeRemotePhoto(string $remoteUrl, string $ownerId): ?array
+    {
+        $remoteUrl = $this->normalizeStoredPhotoUrl($remoteUrl);
+        if (!$this->isUsablePhotoUrl($remoteUrl)) {
+            return null;
+        }
+        if ($this->isAppMediaPhotoUrl($remoteUrl)) {
+            return [
+                'url'      => $remoteUrl,
+                'source'   => 'aes_cached',
+                'aesUrl'   => $remoteUrl,
+                'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+            ];
+        }
+
+        $ch = curl_init($remoteUrl);
+        if ($ch === false) {
+            return null;
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT        => 20,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_USERAGENT      => 'AJCE-Placements/1.0',
+        ]);
+        $body = curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $contentType = strtolower((string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE));
+        curl_close($ch);
+
+        if ($body === false || $body === '' || $status < 200 || $status >= 300) {
+            return null;
+        }
+
+        $ext = 'jpg';
+        if (str_contains($contentType, 'png')) {
+            $ext = 'png';
+        } elseif (str_contains($contentType, 'webp')) {
+            $ext = 'webp';
+        } elseif (str_contains($contentType, 'gif')) {
+            $ext = 'gif';
+        } elseif (preg_match('/\.(png|jpe?g|webp|gif)(?:\?|$)/i', $remoteUrl, $m)) {
+            $ext = strtolower($m[1]) === 'jpeg' ? 'jpg' : strtolower($m[1]);
+        }
+        $mime = match ($ext) {
+            'png' => 'image/png',
+            'webp' => 'image/webp',
+            'gif' => 'image/gif',
+            default => 'image/jpeg',
+        };
+
+        $safeOwner = preg_replace('/[^a-zA-Z0-9_-]/', '', $ownerId) ?: 'alumni';
+        $filename = 'alumni_' . $safeOwner . '_' . substr(sha1($remoteUrl), 0, 12) . '.' . $ext;
+        $storage = new ObjectStorageService();
+
+        try {
+            if ($storage->isConfigured()) {
+                $uri = $storage->putContents(ObjectStorageService::FOLDER_PHOTOS, $filename, $body, $mime);
+                $stored = $storage->storedNameFromUri($uri);
+                $url = $storage->mediaUrl(ObjectStorageService::FOLDER_PHOTOS, $stored);
+
+                return [
+                    'url'      => $url,
+                    'path'     => $uri,
+                    'file'     => $stored,
+                    'source'   => 'aes_cached',
+                    'aesUrl'   => $remoteUrl,
+                    'syncedAt' => \PMS\Utils\DocumentHelper::now(),
+                ];
+            }
+        } catch (\Throwable) {
+            // Fall through to local disk.
+        }
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $dir = (string) ($config['uploads']['photo_dir'] ?? (dirname(__DIR__, 2) . '/uploads/photos'));
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+            return null;
+        }
+        $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        if (@file_put_contents($path, $body) === false) {
+            return null;
+        }
+
+        return [
+            'url'      => '/backend/api/media/' . rawurlencode(ObjectStorageService::FOLDER_PHOTOS) . '/' . rawurlencode($filename),
+            'file'     => $filename,
+            'source'   => 'aes_cached',
+            'aesUrl'   => $remoteUrl,
+            'syncedAt' => \PMS\Utils\DocumentHelper::now(),
         ];
     }
 
@@ -2410,12 +2555,32 @@ final class AesLoginService
             return $alumniProfile;
         }
 
-        $existingUrl = is_array($existingPhoto) ? trim((string) ($existingPhoto['url'] ?? '')) : '';
-        if ($existingUrl === $resolved['photoUrl']) {
+        $remoteUrl = $this->normalizeStoredPhotoUrl((string) ($resolved['photoUrl'] ?? ''));
+        $existingUrl = is_array($existingPhoto) ? $this->normalizeStoredPhotoUrl((string) ($existingPhoto['url'] ?? '')) : '';
+        $existingAes = is_array($existingPhoto) ? $this->normalizeStoredPhotoUrl((string) ($existingPhoto['aesUrl'] ?? '')) : '';
+
+        // Already cached to PlaceHub media for this AES source.
+        if ($this->isAppMediaPhotoUrl($existingUrl)
+            && ($existingAes === '' || $existingAes === $remoteUrl || $existingUrl === $remoteUrl)
+            && in_array($source, ['aes_cached', 'aes', 'upload'], true)
+        ) {
+            if ($source === 'aes_cached' || $this->isAppMediaPhotoUrl($existingUrl)) {
+                return $alumniProfile;
+            }
+        }
+
+        $ownerId = (string) ($alumniProfile['_id'] ?? $user['_id'] ?? 'alumni');
+        $photo = $this->materializeRemotePhoto($remoteUrl, $ownerId) ?? ($resolved['photo'] ?? null);
+        if (!is_array($photo) || trim((string) ($photo['url'] ?? '')) === '') {
             return $alumniProfile;
         }
 
-        $patch = ['photo' => $resolved['photo']];
+        $nextUrl = $this->normalizeStoredPhotoUrl((string) $photo['url']);
+        if ($existingUrl === $nextUrl && $source === (string) ($photo['source'] ?? '')) {
+            return $alumniProfile;
+        }
+
+        $patch = ['photo' => $photo];
         $register = $this->resolveAlumniAdmissionNumber($user, $alumniProfile);
         if ($register !== '' && trim((string) ($alumniProfile['registerNumber'] ?? '')) === '') {
             $patch['registerNumber'] = $register;

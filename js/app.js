@@ -184,6 +184,10 @@ function escapeAttr(value) {
 
 function userPhotoUrl(user) {
   if (!user || typeof user !== 'object') return '';
+  const media = String(user.photoUrl || user.photo?.url || '').trim();
+  if (media && (media.includes('/api/media/') || media.startsWith('/backend/api/media/'))) {
+    return media.startsWith('/') || /^https?:\/\//i.test(media) ? media : `/${media}`;
+  }
   const proxy = String(user.photoProxyUrl || '').trim();
   if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
   if (typeof resolveSessionPhotoUrl === 'function') {
@@ -229,7 +233,7 @@ function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
   ].join(';');
   if (url) {
     const safe = encodeURI(url).replace(/'/g, '%27');
-    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background:url('${safe}') center/cover no-repeat" role="img" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"></span>`;
+    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background:#e2e8f0 url('${safe}') center/cover no-repeat" role="img" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"></span>`;
   }
   return `<span style="${circle};background:linear-gradient(135deg,#2563EB,#3B82F6);color:#fff;display:grid;place-items:center;font-weight:700;font-size:${fontSize}">${ini}</span>`;
 }
@@ -327,6 +331,21 @@ function hydrateShellAvatars() {
     el.style.backgroundImage = `url('${safe}')`;
     el.style.backgroundSize = 'cover';
     el.style.backgroundPosition = 'center';
+    // If the image fails (AES hotlink / 401 proxy), fall back to initials.
+    const probe = new Image();
+    probe.onload = () => { /* keep photo */ };
+    probe.onerror = () => {
+      const ini = el.getAttribute('data-initials') || 'U';
+      el.classList.remove('shell-avatar-photo');
+      el.style.backgroundImage = '';
+      el.style.background = 'linear-gradient(135deg,#2563EB,#3B82F6)';
+      el.style.color = '#fff';
+      el.style.display = 'grid';
+      el.style.placeItems = 'center';
+      el.style.fontWeight = '700';
+      el.textContent = ini;
+    };
+    probe.src = url;
   });
 }
 

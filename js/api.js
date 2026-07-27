@@ -840,7 +840,12 @@ const Auth = {
         const badStudentName = cached.role === 'student' && (
           !isUsableDisplayName(cached.name, cached)
         );
-        if (!badStudentName) {
+        const alumniPhoto = String(cached.photoUrl || cached.photo?.url || '').trim();
+        const alumniNeedsPhoto = cached.role === 'alumni' && !(
+          alumniPhoto.includes('/api/media/')
+          || String(cached.photoProxyUrl || '').trim()
+        );
+        if (!badStudentName && !alumniNeedsPhoto) {
           this._sessionReady = true;
           return true;
         }

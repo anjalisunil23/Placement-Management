@@ -153,8 +153,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260724hod4"></script>
-<script src="js/app.js?v=20260724hod4"></script>
+<script src="js/api.js?v=20260727alumniphoto"></script>
+<script src="js/app.js?v=20260727alumniphoto"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -328,6 +328,10 @@ function pickDepartmentDisplay(u) {
 
 function pickPhotoUrl(u) {
   const merged = mergeProfileUser(u);
+  const media = String(merged.photoUrl || merged.photo?.url || '').trim();
+  if (media && (media.includes('/api/media/') || media.startsWith('/backend/api/media/'))) {
+    return media.startsWith('/') || /^https?:\/\//i.test(media) ? media : `/${media}`;
+  }
   const proxy = String(merged.photoProxyUrl || '').trim();
   if (proxy) return proxy.startsWith('/') || /^https?:\/\//i.test(proxy) ? proxy : `/${proxy}`;
   const keys = ['photoUrl', 'stud_photo', 'photo_url', 'profile_photo'];

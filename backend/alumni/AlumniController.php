@@ -49,7 +49,9 @@ final class AlumniController
     if (($photo['photoUrl'] ?? '') !== '') {
       $out['photoUrl'] = $photo['photoUrl'];
       $out['photo'] = $photo['photo'];
-      $out['photoProxyUrl'] = '/backend/api/alumni/profile/photo';
+      if (!str_contains((string) $photo['photoUrl'], '/api/media/')) {
+        $out['photoProxyUrl'] = '/backend/api/alumni/profile/photo';
+      }
     }
     Response::success(DocumentHelper::serialize($out));
   }
