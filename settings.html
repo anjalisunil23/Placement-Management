@@ -766,12 +766,14 @@ function qualCellEmpty(val) {
 }
 
 let settingsQualRows = [];
+let settingsLockedFields = new Set();
 
-function renderProfileQualifications(quals) {
+function renderProfileQualifications(quals, lockedFields) {
   const body = document.getElementById('profQualificationsBody');
   const wrap = document.getElementById('profQualificationsWrap');
   if (!body || !wrap) return;
   settingsQualRows = Array.isArray(quals) ? quals.map(q => normalizeQualificationRow({ ...(q || {}) })) : [];
+  settingsLockedFields = new Set(Array.isArray(lockedFields) ? lockedFields : []);
   if (!settingsQualRows.length) {
     wrap.style.display = 'none';
     body.innerHTML = '';
@@ -781,28 +783,29 @@ function renderProfileQualifications(quals) {
   const canEdit = role === 'student';
   body.innerHTML = settingsQualRows.map((q, i) => {
     const qual = escHtml(q.qualification || '—');
+    const isLocked = (field) => settingsLockedFields.has(`academic.qualifications.${i}.${field}`);
     const cell = (field, display, opts = {}) => {
       const empty = qualCellEmpty(q[field] ?? q[field === 'maxMark' ? 'maxmark' : field]);
-      if (!canEdit || !empty) {
+      // First visit: allow editing AES-filled cells until locked after first save.
+      if (!canEdit || isLocked(field)) {
         return `<td>${escHtml(display)}</td>`;
       }
       const step = opts.step || '0.01';
       const max = opts.max != null ? ` max="${opts.max}"` : '';
       const type = opts.type || 'number';
-      return `<td><input type="${type}" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="${field}" step="${step}"${max} min="0" placeholder="Enter" aria-label="${field}"/></td>`;
+      const val = empty ? '' : String(q[field] ?? q[field === 'maxMark' ? 'maxmark' : field] ?? '');
+      return `<td><input type="${type}" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="${field}" step="${step}"${max} min="0" value="${escHtml(val)}" placeholder="Enter" aria-label="${field}"/></td>`;
     };
-    const instEmpty = qualCellEmpty(q.institution || q.instname);
-    const regEmpty = qualCellEmpty(q.registerNumber || q.regno);
-    const myEmpty = qualCellEmpty(q.monthYear || q.monthyear);
-    const inst = (!canEdit || !instEmpty)
-      ? `<td>${escHtml(q.institution || q.instname || '—')}</td>`
-      : `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="institution" placeholder="Enter" aria-label="institution"/></td>`;
-    const reg = (!canEdit || !regEmpty)
-      ? `<td>${escHtml(q.registerNumber || q.regno || '—')}</td>`
-      : `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="registerNumber" placeholder="Enter" aria-label="registerNumber"/></td>`;
-    const my = (!canEdit || !myEmpty)
-      ? `<td>${escHtml(q.monthYear || q.monthyear || '—')}</td>`
-      : `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="monthYear" placeholder="Enter" aria-label="monthYear"/></td>`;
+    const textCell = (field, raw) => {
+      const empty = qualCellEmpty(raw);
+      if (!canEdit || isLocked(field)) {
+        return `<td>${escHtml(raw || '—')}</td>`;
+      }
+      return `<td><input type="text" class="form-control form-control-sm qual-edit-input" data-qual-idx="${i}" data-qual-field="${field}" value="${escHtml(empty ? '' : raw)}" placeholder="Enter" aria-label="${field}"/></td>`;
+    };
+    const inst = textCell('institution', q.institution || q.instname || '');
+    const reg = textCell('registerNumber', q.registerNumber || q.regno || '');
+    const my = textCell('monthYear', q.monthYear || q.monthyear || '');
     const pctDisplay = q.percentage != null && Number(q.percentage) > 0 ? `${Number(q.percentage)}%` : '—';
     return `<tr>
       <td>${qual}</td>
@@ -861,13 +864,14 @@ function applyStudentFieldLocks(p) {
   const personal = p?.personal || {};
   const ac = p?.academic || {};
   const derived = deriveMarksFromQualifications(p?.qualifications || ac.qualifications || settingsQualRows);
+  const lockedSet = new Set(Array.isArray(p?.lockedFields) ? p.lockedFields : []);
 
   const lockInput = (inputId, hintId, path, displayValue, alwaysEditable) => {
     const el = document.getElementById(inputId);
     const hint = document.getElementById(hintId);
     if (!el) return;
-    const hasValue = displayValue !== '' && displayValue != null;
-    const freeze = hasValue && !alwaysEditable;
+    // First visit: AES-filled values stay editable until student saves once (lockedFields).
+    const freeze = !alwaysEditable && lockedSet.has(path);
     if (el.tagName === 'SELECT') {
       el.disabled = freeze;
     } else {
@@ -899,7 +903,7 @@ function applyStudentFieldLocks(p) {
   if (m12) m12.value = marks12 === '' ? '' : String(marks12);
   if (cg) cg.value = cgpa === '' ? '' : String(cgpa);
 
-  // Phone and personal email stay always editable; academic marks lock after first fill.
+  // Phone / email always editable; academic locks only after first student save.
   lockInput('profPhone', 'profPhoneHint', 'personal.phone', phone, true);
   lockInput('profPersonalEmail', 'profPersonalEmailHint', 'personal.personalEmail', personalEmail, true);
   lockInput('profMarks10', 'profMarks10Hint', 'academic.marks10th', marks10, false);
@@ -1029,13 +1033,16 @@ async function loadSettingsProfile() {
       if (maritalEl) {
         maritalEl.value = String(p.maritalStatus || personal.maritalStatus || '').trim();
       }
-      renderProfileQualifications(p.qualifications || ac.qualifications || []);
+      renderProfileQualifications(p.qualifications || ac.qualifications || [], p.lockedFields || []);
       const apiPhoto = pickPhotoUrl(profileCtx) || p.photoUrl || p.photo?.url || '';
       if (apiPhoto) setAvatarPhoto(apiPhoto);
     else setAvatarInitials();
       document.getElementById('profPhone').value = apiPhone;
       applyStudentFieldLocks(p);
       showMissingFieldsBanner(p.missingFields);
+      if (typeof Auth !== 'undefined') {
+        Auth._profileIncomplete = Array.isArray(p.missingFields) && p.missingFields.length > 0;
+      }
       user = {
         ...user,
         name: apiName || user.name,

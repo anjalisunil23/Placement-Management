@@ -649,6 +649,10 @@ const Auth = {
     if (r === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
     }
+    // Incomplete academic/contact profile → Profile & Resumes first.
+    if (r === 'student' && this._profileIncomplete) {
+      return 'settings.html';
+    }
     if (u?.dashboard) {
       const page = String(u.dashboard).replace(/^\//, '').split('#')[0];
       if (page && this.isAllowed(page)) return page;
@@ -658,6 +662,12 @@ const Auth = {
   resolveRedirect(next) {
     if (this.role() === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
+    }
+    if (this.role() === 'student' && this._profileIncomplete) {
+      const raw = (next || '').trim();
+      const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
+      if (page === 'settings.html') return 'settings.html';
+      return 'settings.html';
     }
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
@@ -1009,8 +1019,8 @@ const Auth = {
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
-      // Incomplete profile: remind once and soft-nudge to Profile once per session.
-      // Never force-redirect on every page (that trapped students and caused blink).
+      // Incomplete profile: send student to Profile & Resumes until fields are filled.
+      // Policy registration still takes priority (handled by homePage / app gate).
       if (role === 'student' && Array.isArray(p.missingFields) && p.missingFields.length) {
         this._profileIncomplete = true;
         const page = (document.body?.dataset?.page || '').split('#')[0];
@@ -1023,25 +1033,17 @@ const Auth = {
             sessionStorage.setItem('ph_missing_fields_reminded', '1');
             const names = p.missingFields.slice(0, 5).join(', ');
             const extra = p.missingFields.length > 5 ? ` and ${p.missingFields.length - 5} more` : '';
-            toast(`Your profile has missing fields: ${names}${extra}. Please update them in Profile & Resumes.`, 'warn');
+            toast(`Complete your profile first: ${names}${extra}.`, 'warn');
           }
         } catch (_) { /* sessionStorage blocked */ }
 
-        let canNudge = false;
-        try {
-          canNudge = !sessionStorage.getItem('ph_incomplete_profile_nudged');
-          if (canNudge) sessionStorage.setItem('ph_incomplete_profile_nudged', '1');
-        } catch (_) {
-          canNudge = false;
-        }
         if (!opts.skipIncompleteRedirect
-          && canNudge
           && !awaitingPolicy
           && !onPolicyPage
           && !onSettingsPage
           && page
         ) {
-          window.location.href = 'settings.html';
+          window.location.replace('settings.html');
           return true;
         }
       } else if (role === 'student') {

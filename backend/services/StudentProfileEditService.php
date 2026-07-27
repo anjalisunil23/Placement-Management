@@ -54,8 +54,22 @@ final class StudentProfileEditService
             }
         }
 
+        $locks = is_array($profile['profileFieldLocks'] ?? null) ? $profile['profileFieldLocks'] : [];
+        foreach ($locks as $path => $meta) {
+            $path = (string) $path;
+            if ($path === '' || !is_array($meta)) {
+                continue;
+            }
+            if (!str_starts_with($path, 'academic.qualifications.')) {
+                continue;
+            }
+            if ($this->isFieldLockedForStudent($profile, $path)) {
+                $locked[] = $path;
+            }
+        }
+
         return [
-            'lockedFields'   => $locked,
+            'lockedFields'   => array_values(array_unique($locked)),
             'editableFields' => $editable,
         ];
     }
@@ -207,11 +221,65 @@ final class StudentProfileEditService
             Response::error('No valid fields to update.', 422);
         }
 
+        // First successful profile save locks filled academic fields (AES + student).
+        // Further academic edits require class teacher / co-class teacher.
+        $locks = $this->lockFilledAcademicFields(
+            array_merge($profile, $update, [
+                'academic' => $update['academic'] ?? $academic,
+                'profileFieldLocks' => $update['profileFieldLocks'] ?? $locks,
+            ]),
+            is_array($update['profileFieldLocks'] ?? null) ? $update['profileFieldLocks'] : $locks,
+            $now
+        );
+        $update['profileFieldLocks'] = $locks;
+
         $id = (string) ($profile['_id'] ?? '');
         $this->students->update($id, $update);
         $fresh = $this->students->findById($id);
 
         return is_array($fresh) ? $fresh : array_merge($profile, $update);
+    }
+
+    /**
+     * After a student save, lock every filled academic scalar / qualification cell.
+     *
+     * @param array<string, mixed> $profile
+     * @param array<string, mixed> $locks
+     * @return array<string, mixed>
+     */
+    private function lockFilledAcademicFields(array $profile, array $locks, string $now): array
+    {
+        $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+        foreach (self::ACADEMIC_KEYS as $key) {
+            if ($key === 'backlogs') {
+                continue;
+            }
+            $path = 'academic.' . $key;
+            if ($this->isEmptyValue($path, $academic[$key] ?? null)) {
+                continue;
+            }
+            if ($key === 'cgpa' && !$this->isValidCgpa($academic[$key] ?? null)) {
+                continue;
+            }
+            $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+        }
+
+        $rows = is_array($academic['qualifications'] ?? null) ? $academic['qualifications'] : [];
+        foreach ($rows as $i => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            foreach (['institution', 'registerNumber', 'monthYear', 'mark', 'maxMark', 'percentage'] as $field) {
+                $path = 'academic.qualifications.' . $i . '.' . $field;
+                $val = $row[$field] ?? ($field === 'maxMark' ? ($row['maxmark'] ?? null) : null);
+                if ($this->isEmptyValue($path, $val)) {
+                    continue;
+                }
+                $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
+            }
+        }
+
+        return $locks;
     }
 
     /**
@@ -298,9 +366,11 @@ final class StudentProfileEditService
             return false;
         }
 
+        // Lock only after an explicit student/staff save — AES-prefilled values stay
+        // editable on first visit so the student can correct them once.
         $locks = is_array($profile['profileFieldLocks'] ?? null) ? $profile['profileFieldLocks'] : [];
-        if (isset($locks[$path]) && is_array($locks[$path]) && !$this->isEmptyValue($path, $value)) {
-            return true;
+        if (!isset($locks[$path]) || !is_array($locks[$path])) {
+            return false;
         }
 
         return !$this->isEmptyValue($path, $value);
