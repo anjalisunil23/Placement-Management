@@ -95,8 +95,12 @@
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div>
       <h5 class="fw-bold mb-0">Placement news</h5>
+      <div class="small text-muted-2">Manage news items here. The public portal no longer shows this section.</div>
     </div>
-    <button class="btn btn-primary btn-sm" id="btnAddNews"><i class="bi bi-plus-lg me-1"></i>Add news</button>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-outline-danger btn-sm" id="btnClearAllNews"><i class="bi bi-trash3 me-1"></i>Clear all</button>
+      <button class="btn btn-primary btn-sm" id="btnAddNews"><i class="bi bi-plus-lg me-1"></i>Add news</button>
+    </div>
   </div>
   <div class="table-wrap">
     <table class="table-modern"><thead><tr><th>Date</th><th>Title</th><th>Summary</th><th>Actions</th></tr></thead>
@@ -227,7 +231,7 @@ function renderNewsAdmin() {
           <button class="btn btn-sm btn-outline-danger" type="button" data-remove-news="${n.id}"><i class="bi bi-trash"></i></button>
         </div>
       </td>
-    </tr>`).join('') : '<tr><td colspan="4" class="text-muted-2 p-4">No placement news yet. Add one to show on the landing page.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="4" class="text-muted-2 p-4">No placement news yet.</td></tr>';
 }
 
 function openAddNews() {
@@ -270,6 +274,23 @@ async function removeNews(id) {
 }
 
 document.getElementById('btnAddNews').addEventListener('click', openAddNews);
+
+document.getElementById('btnClearAllNews')?.addEventListener('click', async () => {
+  const list = PlacementNewsStore.all();
+  if (!list.length) {
+    toast('No placement news to clear.', 'info');
+    return;
+  }
+  if (!(await confirmAction({
+    title: 'Clear all news',
+    message: `Delete all ${list.length} placement news item(s)? This cannot be undone.`,
+    confirmText: 'Clear all',
+    variant: 'danger',
+  }))) return;
+  const ok = await PlacementNewsStore.clearAll();
+  toast(ok ? 'All placement news cleared.' : 'Could not clear news.', ok ? 'success' : 'error');
+  if (ok) renderNewsAdmin();
+});
 
 document.getElementById('newsForm').addEventListener('submit', async e => {
   e.preventDefault();

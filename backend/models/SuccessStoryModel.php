@@ -71,6 +71,14 @@ class SuccessStoryModel extends BaseModel
         return $this->findAll(['status' => 'published'], $limit, 0, ['createdAt' => -1]);
     }
 
+    /** Delete all success stories (admin / cleanup). */
+    public function deleteAll(): int
+    {
+        $count = (int) $this->db->query("SELECT COUNT(*) FROM `{$this->table}`")->fetchColumn();
+        $this->db->exec("DELETE FROM `{$this->table}`");
+        return $count;
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */

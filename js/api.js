@@ -4470,13 +4470,10 @@ const PublicPageContent = {
 };
 
 function seedPlacementNews() {
+  // No demo news — public portal stays empty until admins publish real items.
   if (!allowDemoSeed()) return;
   if (localStorage.getItem(PLACEMENT_NEWS_KEY)) return;
-  localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify([
-    { id:'news-1', title:'Record-breaking season kicks off', summary:'Over 142 companies have already confirmed campus visits for 2025–26.', date:'2025-11-12', link:'' },
-    { id:'news-2', title:'Google announces 28 SDE offers', summary:'One of the largest cohorts hired from a single drive this year.', date:'2025-10-30', link:'' },
-    { id:'news-3', title:'New mentorship program launched', summary:'Alumni from 60+ companies join the placement readiness program.', date:'2025-10-18', link:'' },
-  ]));
+  localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify([]));
 }
 
 function formatNewsDate(value) {
@@ -4572,6 +4569,17 @@ const PlacementNewsStore = {
       return true;
     }
     toast(res.message || 'Could not delete news item.', 'error');
+    return false;
+  },
+  async clearAll() {
+    if (!(await requireWriteSession())) return false;
+    const res = await api('/admin/placement-news', { method: 'DELETE' });
+    if (res.success) {
+      this._cache = [];
+      localStorage.setItem(PLACEMENT_NEWS_KEY, JSON.stringify([]));
+      return true;
+    }
+    toast(res.message || 'Could not clear placement news.', 'error');
     return false;
   },
   published() {

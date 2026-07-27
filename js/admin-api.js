@@ -478,6 +478,14 @@ const AdminApi = {
     return api('/admin/notifications', { method: 'DELETE' });
   },
 
+  async clearAllPlacementNews() {
+    return api('/admin/placement-news', { method: 'DELETE' });
+  },
+
+  async clearAllSuccessStories() {
+    return api('/admin/success-stories', { method: 'DELETE' });
+  },
+
   mapResult(r) {
     return {
       id: this.id(r),

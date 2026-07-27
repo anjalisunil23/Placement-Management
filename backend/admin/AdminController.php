@@ -2104,6 +2104,14 @@ final class AdminController
         Response::success(null, 'Placement news removed.');
     }
 
+    /** DELETE /api/admin/placement-news — wipe all placement news. */
+    public function clearAllPlacementNews(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $deleted = (new PlacementNewsModel())->deleteAll();
+        Response::success(['deleted' => $deleted], 'All placement news cleared.');
+    }
+
     /** GET /api/admin/notifications */
     public function notifications(): void
     {
@@ -2165,6 +2173,14 @@ final class AdminController
         RBACMiddleware::requireAdmin();
         $deleted = (new NotificationModel())->deleteAll();
         Response::success(['deleted' => $deleted], 'All notification data cleared.');
+    }
+
+    /** DELETE /api/admin/success-stories — remove all published success stories. */
+    public function clearAllSuccessStories(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $deleted = (new \PMS\Models\SuccessStoryModel())->deleteAll();
+        Response::success(['deleted' => $deleted], 'All success stories cleared.');
     }
 
     /** GET /api/admin/tracking */

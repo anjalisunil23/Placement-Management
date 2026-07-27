@@ -45,7 +45,6 @@ use PMS\Models\RecommendationModel;
 use PMS\Models\RuleModel;
 use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
-use PMS\Models\SuccessStoryModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
 use PMS\Utils\Security;
@@ -98,11 +97,12 @@ echo "System settings initialized.\n";
 echo "Public page content initialized.\n";
 
 $newsModel = new PlacementNewsModel();
-if ($newsModel->count([]) === 0) {
-    // Leave news empty for live campuses — admins publish real items from Settings.
-    echo "Placement news left empty (publish from Admin Settings).\n";
+// Wipe any seeded/demo placement news so the portal starts empty.
+$clearedNews = $newsModel->deleteAll();
+if ($clearedNews > 0) {
+    echo "Cleared {$clearedNews} placement news item(s).\n";
 } else {
-    echo "Placement news already exists.\n";
+    echo "Placement news left empty (publish from Admin Settings).\n";
 }
 
 if (!(new RuleModel())->getActiveRule()) {
@@ -386,18 +386,6 @@ if ($rohan) {
             'contactNumber' => '+91 98765 43210',
         ]);
         echo "Sample alumni referral seeded for rohan.v@alumni.edu\n";
-    }
-
-    $storyModel = new SuccessStoryModel();
-    if ($storyModel->findByAlumni($rohanId) === []) {
-        $storyModel->createStory($rohanId, 'Rohan Verma', [
-            'name'    => 'Rohan Verma',
-            'company' => 'Google',
-            'role'    => 'SWE II',
-            'package' => '38 LPA',
-            'quote'   => 'PlaceHub connected me with mentors and mock interviews that made the Google process feel achievable. Grateful for the placement cell team.',
-        ]);
-        echo "Sample alumni success story seeded for rohan.v@alumni.edu\n";
     }
 }
 
