@@ -249,6 +249,7 @@ final class CompanyApplicationService
         }
 
         $serialized['student'] = [
+            'id'             => (string) ($student['_id'] ?? ''),
             'name'           => $user['name'] ?? 'Student',
             'registerNumber' => $student['registerNumber'] ?? '',
             'department'     => $dept,

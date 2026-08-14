@@ -230,6 +230,10 @@ a{color:inherit;text-decoration:none}
   display:grid;place-items:center;flex-shrink:0;cursor:pointer;
 }
 .sidebar .nav-sub-chevron-btn:hover{background:var(--shell-hover);color:var(--shell-text)}
+.sidebar .nav-sub-group .nav-sub-group-row > .nav-sub-item,
+.sidebar .nav-sub-group .nav-sub-group-row > .nav-sub-group-toggle{
+  padding-left:2.65rem;
+}
 .sidebar .nav-sub-group .nav-sub-group-toggle{
   width:100%;border:none;background:transparent;text-align:left;cursor:pointer;
 }

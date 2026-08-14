@@ -61,6 +61,28 @@ const APP_SHELL_VERSION = '2026.07.11o';
 const NAV = [
   { section: "Overview", roles: ROLES },
   { href: "dashboard.html", icon: "bi-grid-1x2-fill", label: "Dashboard", roles: ROLES },
+  {
+    group: "mock",
+    icon: "bi-lightning-charge-fill",
+    label: "Mock",
+    roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'],
+    children: [
+      {
+        group: "mock-aptitude",
+        label: "Aptitude",
+        href: "mock-aptitude.html",
+        roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'],
+        children: [],
+      },
+      {
+        group: "mock-coding",
+        label: "Coding",
+        href: "mock-coding.html",
+        roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'],
+        children: [],
+      },
+    ],
+  },
 
   { section: "Placement", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'] },
   { href: "drives.html", icon: "bi-briefcase-fill", label: "Placement Drives", roles: ['admin', 'placement_officer', 'staff'] },
@@ -132,6 +154,11 @@ const PAGE_LABELS = {
   'blacklist.html': 'Student · Management · Blacklist',
   'results.html': 'Recruitment Results',
   'admin-settings.html': 'System Settings',
+  'mock-aptitude.html': 'Mock · Aptitude',
+  'mock-aptitude.html#take': 'Mock · Aptitude · Take test',
+  'mock-aptitude.html#progress': 'Mock · Aptitude · Progress',
+  'mock-aptitude.html#manage': 'Mock · Aptitude · Manage tests',
+  'mock-coding.html': 'Mock · Coding',
 };
 
 function initials(name = '') {
@@ -526,7 +553,7 @@ function renderShell(active) {
   const activeBase = (active || 'dashboard.html').split('#')[0];
   const pageLabel = role === 'student' && activeBase === 'settings.html'
     ? 'Profile & Resumes'
-    : (PAGE_LABELS[activeBase] || BRAND.title);
+    : (PAGE_LABELS[active] || PAGE_LABELS[activeBase] || BRAND.title);
   const showTopbarTitle = activeBase !== 'staff-recommend.html';
 
   if (sidebar) {
@@ -731,6 +758,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     link.type = 'image/svg+xml';
     link.href = '/favicon.svg';
     document.head.appendChild(link);
+  }
+
+  const demoRole = new URLSearchParams(location.search).get('demo');
+  if (demoRole && typeof demoUserFor === 'function') {
+    Auth.clear();
+    Auth.set(demoUserFor(demoRole), 'demo-token');
+    try { sessionStorage.setItem('ph_auth_boot_at', String(Date.now())); } catch (_) { /* ignore */ }
+    const pageBase = (document.body?.dataset?.page || '').split('#')[0];
+    const next = new URLSearchParams(location.search).get('next');
+    if (pageBase === 'public-stats.html' && next) {
+      window.location.replace(typeof absAppPath === 'function' ? absAppPath(next) : next);
+      return;
+    }
+    const url = new URL(location.href);
+    url.searchParams.delete('demo');
+    url.searchParams.delete('next');
+    window.location.replace(url.pathname + url.search + url.hash);
+    return;
   }
 
   const active = shellActivePage();

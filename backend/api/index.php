@@ -104,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 use PMS\Admin\AdminController;
 use PMS\Alumni\AlumniController;
+use PMS\Api\AptitudeController;
 use PMS\Api\JobFeedController;
 use PMS\Api\PublicController;
 use PMS\Auth\AuthController;
@@ -297,6 +298,7 @@ $routes = [
     ['POST', '/company/applications/{id}/review',   [CompanyController::class, 'startReview']],
     ['POST', '/company/applications/{id}/shortlist', [CompanyController::class, 'shortlist']],
     ['POST', '/company/applications/{id}/result', [CompanyController::class, 'updateResult']],
+    ['GET',  '/company/applicants/{studentId}/aptitude', [AptitudeController::class, 'companyApplicantAptitude']],
     ['GET',  '/company/notifications',              [CompanyController::class, 'notifications']],
     ['POST', '/company/notifications/read-all',     [CompanyController::class, 'markAllNotificationsRead']],
     ['POST', '/company/notifications/delete-selected', [CompanyController::class, 'deleteSelectedNotifications']],
@@ -432,6 +434,26 @@ $routes = [
     ['GET',  '/officer/department-placement-officer', [OfficerController::class, 'getDepartmentPlacementOfficer']],
     ['PUT',  '/officer/department-placement-officer', [OfficerController::class, 'assignDepartmentPlacementOfficer']],
     ['DELETE','/officer/department-placement-officer', [OfficerController::class, 'unassignDepartmentPlacementOfficer']],
+
+    // Aptitude mocks
+    ['GET',  '/aptitude/access',              [AptitudeController::class, 'access']],
+    ['GET',  '/aptitude/meta',                [AptitudeController::class, 'meta']],
+    ['GET',  '/aptitude/tests',               [AptitudeController::class, 'listTests']],
+    ['POST', '/aptitude/tests',               [AptitudeController::class, 'createTest']],
+    ['POST', '/aptitude/media',               [AptitudeController::class, 'uploadMedia']],
+    ['PUT',  '/aptitude/tests/{id}',          [AptitudeController::class, 'updateTest']],
+    ['POST', '/aptitude/tests/{id}/questions/bulk', [AptitudeController::class, 'bulkQuestions']],
+    ['POST', '/aptitude/tests/{id}/questions/from-bank', [AptitudeController::class, 'fromBank']],
+    ['GET',  '/aptitude/question-bank',       [AptitudeController::class, 'listBank']],
+    ['POST', '/aptitude/question-bank/bulk',  [AptitudeController::class, 'bulkBank']],
+    ['POST', '/aptitude/tests/{id}/start',    [AptitudeController::class, 'start']],
+    ['POST', '/aptitude/attempts/{id}/submit',[AptitudeController::class, 'submit']],
+    ['GET',  '/aptitude/attempts/{id}/result',[AptitudeController::class, 'attemptResult']],
+    ['GET',  '/aptitude/me',                  [AptitudeController::class, 'myProgress']],
+    ['GET',  '/aptitude/progress/compare',    [AptitudeController::class, 'compare']],
+    ['GET',  '/aptitude/progress/filters',    [AptitudeController::class, 'progressFilters']],
+    ['GET',  '/aptitude/progress',            [AptitudeController::class, 'progressDirectory']],
+    ['GET',  '/aptitude/subjects/{userId}',   [AptitudeController::class, 'subjectProgress']],
 
     // Health & public
     ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],

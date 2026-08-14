@@ -35,6 +35,9 @@ final class Collections
     public const PLACEMENT_NEWS = 'placement_news';
     public const SUCCESS_STORIES = 'success_stories';
     public const POLICY_ACCEPTANCE_LOGS = 'policy_acceptance_logs';
+    public const APTITUDE_TESTS = 'aptitude_tests';
+    public const APTITUDE_ATTEMPTS = 'aptitude_attempts';
+    public const APTITUDE_QUESTION_BANK = 'aptitude_question_bank';
 
     /** Valid user roles */
     public const ROLES = [
@@ -441,6 +444,63 @@ final class Collections
                 'status'       => 'string (published)',
                 'createdAt'    => 'UTCDateTime',
                 'updatedAt'    => 'UTCDateTime',
+            ],
+            self::APTITUDE_TESTS => [
+                '_id'             => 'ObjectId',
+                'title'           => 'string',
+                'description'     => 'string',
+                'category'        => 'string (Quantitative Aptitude|Logical Reasoning|Verbal Ability|Data Interpretation|Numerical Ability|General Aptitude)',
+                'difficulty'      => 'string (Easy|Medium|Hard)',
+                'questionCount'   => 'int',
+                'durationMinutes' => 'int (duration)',
+                'totalMarks'      => 'float (total_marks)',
+                'negativeMarking' => 'bool',
+                'negativeMarks'   => 'float (negative_mark)',
+                'instructions'    => 'string',
+                'status'          => 'string (published|unpublished)',
+                'questionType'    => 'string (mcq)',
+                'questions'       => 'array AptitudeQuestion/TestQuestion[{id,question_order via index,prompt|question_text,options,correctIndex|correct_answer,explanation,marks,negative_marks,category,difficulty}]',
+                'departmentId'    => 'ObjectId|null (optional — unset = institution-wide; PO tests scoped to department)',
+                'createdBy'       => 'ObjectId|null (created_by)',
+                'createdAt'       => 'UTCDateTime',
+                'updatedAt'       => 'UTCDateTime',
+            ],
+            self::APTITUDE_ATTEMPTS => [
+                '_id'             => 'ObjectId',
+                'testId'          => 'ObjectId (test_id)',
+                'userId'          => 'ObjectId (user_id — subject; never trust client for ownership)',
+                'studentId'       => 'ObjectId|null',
+                'alumniId'        => 'ObjectId|null',
+                'departmentId'    => 'ObjectId|null',
+                'classBatch'      => 'string',
+                'subjectType'     => 'string (student|alumni|staff)',
+                'status'          => 'string (in_progress|completed)',
+                'answers'         => 'object AttemptAnswer map questionId=>selectedIndex',
+                'questionAnalysis'=> 'array AttemptAnswer[{questionId,selectedIndex|selected_answer,isCorrect,marksObtained}]',
+                'score'           => 'float',
+                'marksObtained'   => 'float',
+                'totalMarks'      => 'float',
+                'percentage'      => 'float',
+                'accuracy'        => 'float',
+                'correctCount'    => 'int',
+                'wrongCount'      => 'int (incorrect_count)',
+                'unansweredCount' => 'int',
+                'timeTakenSeconds'=> 'int (time_taken)',
+                'categoryScores'  => 'object',
+                'startedAt'       => 'UTCDateTime',
+                'completedAt'     => 'UTCDateTime|null (submitted_at)',
+                'submittedAt'     => 'UTCDateTime|null',
+            ],
+            self::APTITUDE_QUESTION_BANK => [
+                '_id'          => 'ObjectId',
+                'prompt'       => 'string (question_text)',
+                'options'      => 'array',
+                'correctIndex' => 'int (correct_answer)',
+                'explanation'  => 'string',
+                'marks'        => 'float',
+                'category'     => 'string',
+                'difficulty'   => 'string',
+                'createdBy'    => 'ObjectId|null',
             ],
         ];
     }

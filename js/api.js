@@ -463,14 +463,16 @@ const PAGE_PERMS = {
   'blacklist.html':         ['admin'],
   'results.html':           ['admin','placement_officer'],
   'admin-settings.html':    ['admin'],
+  'mock-aptitude.html':     ['admin','placement_officer','student','staff','alumni'],
+  'mock-coding.html':       ['admin','placement_officer','student','staff','alumni'],
 };
 
-const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
-const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-coding.html'];
+const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-aptitude.html', 'mock-coding.html'];
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
-const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-aptitude.html', 'mock-coding.html'];
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
-const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html'];
+const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'mock-aptitude.html', 'mock-coding.html'];
 
 /** Placement Cell guidelines version students must accept on first login. */
 const PLACEMENT_POLICY_VERSION = 'ajce-2026-v1';
@@ -913,6 +915,32 @@ const Auth = {
     }
     return true;
   },
+  /** Student and job-seeking alumni may take aptitude mocks. */
+  canTakeAptitudeMock() {
+    const role = this.role();
+    if (role === 'student') return true;
+    if (role === 'alumni') return !alumniIsWorking();
+    return false;
+  },
+  /** Admin, placement officer, and class staff may browse scoped aptitude progress. */
+  canViewAptitudeDirectory() {
+    const role = this.role();
+    return role === 'admin' || role === 'placement_officer' || role === 'staff';
+  },
+  /** Admin, department PO, and assigned class staff may manage aptitude tests. */
+  canManageAptitudeMocks() {
+    const role = this.role();
+    if (role === 'admin' || role === 'placement_officer') return true;
+    if (role === 'staff') {
+      return typeof staffIsClassIncharge === 'function' && staffIsClassIncharge();
+    }
+    return false;
+  },
+  /** Admin and department PO may configure weekly / monthly aptitude contests. */
+  canManageAptitudeContests() {
+    const role = this.role();
+    return role === 'admin' || role === 'placement_officer';
+  },
   isAuthed() { return !!this.user(); },
   hasRealAuth() {
     const t = this.token();
@@ -1201,7 +1229,7 @@ function demoUserFor(role) {
     admin:             { name:'Dr. Anjali Mehra',   email:'admin@placehub.app',     role:'admin' },
     placement_officer: { name:'Riya Ahuja',         email:'riya@college.edu',       role:'placement_officer' },
     student:           { name:'Karthik Subramanian',email:'karthik.s@college.edu',  role:'student',  registerNumber:'22MCA047', department:'MCA', cgpa:8.7, backlogs:0 },
-    staff:             { name:'Prof. Ravi Iyer',    email:'ravi.iyer@college.edu',  role:'staff',    department:'CSE', designation:'Associate Professor' },
+    staff:             { name:'Prof. Ravi Iyer',    email:'ravi.iyer@college.edu',  role:'staff',    departmentId:'d2', department:'CSE', departmentName:'Computer Science', designation:'Associate Professor', assignedClassBatches:['CSE2024-2028'] },
     company:           { name:'Neha Sharma',        email:'neha@acme.io',           role:'company',  companyName:'Acme Cloud', category:'Product', tier:'Tier 1' },
     alumni:            { name:'Rohan Verma',        email:'rohan.v@alumni.edu',     role:'alumni',   company:'Google', title:'SWE II', package:'₹38 LPA', experience:3, isWorking:true },
     'alumni-seeking':  { name:'Priya Nair',         email:'priya.v@alumni.edu',     role:'alumni',   company:'', title:'', package:'', experience:2, isWorking:false },
@@ -3786,7 +3814,7 @@ function seedUsers() {
     { id:'u-s1', role:'student', name:'Karthik Subramanian', email:'karthik.s@college.edu', registerNumber:'22MCA047', department:'MCA', classBatch:'MCA2025-2027', cgpa:8.7, ugMarks:78, mcaMarks:82, certifications:'AWS Cloud', status:'approved', blocked:false, blacklisted:false, placementStatus:'applied', chancesUsed:2, chancesMax:5, resumeStatus:'pending' },
     { id:'u-s2', role:'student', name:'Ananya Reddy', email:'ananya@college.edu', registerNumber:'21CSE018', department:'CSE', classBatch:'CSE2024-2028', cgpa:8.9, ugMarks:85, mcaMarks:null, certifications:'', status:'pending', blocked:false, blacklisted:false, placementStatus:'registered', chancesUsed:0, chancesMax:5, resumeStatus:'pending' },
     { id:'u-s3', role:'student', name:'Rahul Verma', email:'rahul@college.edu', registerNumber:'21IT012', department:'IT', classBatch:'INMCA2022-2027', cgpa:9.1, ugMarks:88, mcaMarks:null, certifications:'GCP', status:'approved', blocked:false, blacklisted:false, placementStatus:'placed', chancesUsed:3, chancesMax:5, resumeStatus:'approved' },
-    { id:'u-st1', role:'staff', name:'Prof. Ravi Iyer', email:'ravi.iyer@college.edu', department:'CSE', designation:'Associate Professor', status:'approved', blocked:false, permissions:['recommend_company'] },
+    { id:'u-st1', role:'staff', name:'Prof. Ravi Iyer', email:'ravi.iyer@college.edu', departmentId:'d2', department:'CSE', departmentName:'Computer Science', designation:'Associate Professor', assignedClassBatches:['CSE2024-2028'], status:'approved', blocked:false, permissions:['recommend_company'] },
     { id:'u-po1', role:'placement_officer', name:'PO · MCA', email:'po.mca@college.edu', department:'MCA', status:'approved', blocked:false },
     { id:'u-po2', role:'placement_officer', name:'PO · CSE', email:'po.cse@college.edu', department:'CSE', status:'approved', blocked:false },
     { id:'u-po3', role:'placement_officer', name:'PO · IT',  email:'po.it@college.edu',  department:'IT',  status:'approved', blocked:false },

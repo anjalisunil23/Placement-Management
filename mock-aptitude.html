@@ -1,0 +1,322 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Mock · Aptitude · AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+<style>
+  .apt-option{cursor:pointer}
+  .apt-option input{margin-top:.2rem}
+  .apt-stat .val{font-size:1.35rem;font-weight:700}
+  .apt-pal{
+    width:2.1rem;height:2.1rem;border-radius:.45rem;border:1px solid var(--border);
+    background:#fff;font-size:.8rem;font-weight:600;margin:.15rem;
+  }
+  .apt-pal.is-current{outline:2px solid var(--primary);outline-offset:1px}
+  .apt-pal-not-visited{background:#f1f5f9;color:#64748b}
+  .apt-pal-not-answered{background:#fff7ed;border-color:#fdba74;color:#c2410c}
+  .apt-pal-answered{background:#dcfce7;border-color:#86efac;color:#166534}
+  .apt-pal-review{background:#ede9fe;border-color:#c4b5fd;color:#5b21b6}
+  .apt-pal-answered-review{background:linear-gradient(135deg,#dcfce7 50%,#ede9fe 50%);border-color:#a78bfa;color:#1e293b}
+  .apt-legend span{display:inline-flex;align-items:center;gap:.35rem;margin-right:.85rem;font-size:.75rem;color:var(--muted)}
+  .apt-legend i{width:.75rem;height:.75rem;border-radius:.2rem;display:inline-block}
+  #examShell .exam-timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.15rem}
+  .mcq-quill-wrap .ql-toolbar.ql-snow{border-radius:.375rem .375rem 0 0;border-color:var(--border,#dee2e6);background:#f8fafc}
+  .mcq-quill-wrap .ql-container.ql-snow{border-radius:0 0 .375rem .375rem;border-color:var(--border,#dee2e6);font-size:.875rem;min-height:5.5rem}
+  .mcq-quill-wrap.mcq-quill-sm .ql-container.ql-snow{min-height:3.75rem}
+  .mcq-quill-wrap .ql-editor{min-height:5.5rem}
+  .mcq-quill-wrap.mcq-quill-sm .ql-editor{min-height:3.75rem}
+  .mcq-quill-wrap .ql-editor img,.apt-rich img{max-width:100%;height:auto;border-radius:.375rem;margin:.35rem 0}
+  .apt-rich p:last-child,.apt-rich ul:last-child,.apt-rich ol:last-child{margin-bottom:0}
+</style>
+<link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet"/>
+</head>
+<body data-page="mock-aptitude.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div id="hubView">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Aptitude Mock</h1>
+    </div>
+  </div>
+
+  <ul class="nav nav-pills gap-1 mb-3 flex-wrap d-none" id="aptViewNav">
+    <li class="nav-item"><a class="nav-link" data-view="take" href="#take">Take test</a></li>
+    <li class="nav-item"><a class="nav-link" data-view="progress" href="#progress">Progress</a></li>
+    <li class="nav-item"><a class="nav-link" data-view="manage" href="#manage">Manage tests</a></li>
+  </ul>
+
+  <div id="aptDenied" class="card-surface p-4 text-center d-none">
+    <h5 class="fw-bold mb-2">Aptitude mocks not available</h5>
+    <p class="text-muted-2 mb-0">Your role cannot take or manage aptitude mock tests here.</p>
+  </div>
+
+  <div id="aptTake" class="d-none">
+    <div class="row g-3 mb-3" id="myStatsRow"></div>
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="card-surface p-3 p-md-4">
+          <h6 class="fw-bold mb-3">Available tests</h6>
+          <div id="testList" class="d-flex flex-column gap-2"></div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card-surface p-3 p-md-4">
+          <h6 class="fw-bold mb-3">My recent results</h6>
+          <div id="myHistory" class="small text-muted-2">No attempts yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="aptDirectory" class="d-none mt-3">
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+        <div>
+          <h6 class="fw-bold mb-1" id="dirTitle">Progress directory</h6>
+          <p class="small text-muted-2 mb-0 d-none" id="dirScopeHint"></p>
+        </div>
+      </div>
+      <div class="row g-2 mb-3" id="dirStats"></div>
+      <div class="row g-2 align-items-end mb-3" id="dirFilterRow">
+        <div class="col-6 col-md-3" id="fDepartmentWrap">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fDepartmentLabel">Department</label>
+          <input class="form-control form-control-sm" id="fDepartmentLabel" readonly tabindex="-1" value=""/>
+          <select class="form-select form-select-sm d-none" id="fDepartmentSelect" aria-label="Department">
+            <option value="">All departments</option>
+          </select>
+          <input type="hidden" id="fDepartment" value=""/>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBranch">Branch</label>
+          <select class="form-select form-select-sm" id="fBranch" aria-label="Branch">
+            <option value="">All branches</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBatch">Batch</label>
+          <select class="form-select form-select-sm" id="fBatch" aria-label="Batch">
+            <option value="">All batches</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3" id="fTypeWrap">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fType">Type</label>
+          <select class="form-select form-select-sm" id="fType" aria-label="Type">
+            <option value="">All types</option>
+            <option value="student">Students</option>
+            <option value="alumni">Alumni</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Name</th><th>Student ID</th><th>Class</th><th>Attempts</th><th>Avg</th><th>Best</th><th>Accuracy</th><th>Recent</th><th>Categories</th><th></th>
+      </tr></thead><tbody id="dirRows"></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="studentAptModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title fw-bold">Student aptitude progress</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body" id="studentAptBody"><p class="text-muted-2 mb-0">Loading…</p></div>
+  </div></div></div>
+
+  <div id="aptManage" class="d-none mt-3">
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h6 class="fw-bold mb-0">Manage tests</h6>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnBankUpload"><i class="bi bi-collection me-1"></i>Upload question bank</button>
+      </div>
+
+      <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
+        <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
+        <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
+      </ul>
+
+      <div id="manageTestsPanel">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">Regular aptitude mocks — always available when published.</p>
+          <button type="button" class="btn btn-sm btn-primary" id="btnNewTest"><i class="bi bi-plus-lg me-1"></i>New test</button>
+        </div>
+        <div id="manageTestsList" class="d-flex flex-column gap-2"></div>
+      </div>
+
+      <div id="manageContestsPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">Weekly and monthly contests — visible to students only on the scheduled day.</p>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewWeeklyContest"><i class="bi bi-calendar-week me-1"></i>Weekly contest</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewMonthlyContest"><i class="bi bi-calendar-month me-1"></i>Monthly contest</button>
+          </div>
+        </div>
+        <div id="manageContestsList" class="d-flex flex-column gap-2"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Exam experience -->
+<div id="examShell" class="d-none">
+  <div data-exam-panel="instructions" class="card-surface p-3 p-md-4">
+    <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+      <div>
+        <h1 class="page-title mb-1" data-exam="instr-title">Test</h1>
+        <p class="page-sub mb-0">Review details, then start when ready. Correct answers are hidden until you submit.</p>
+      </div>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-exam-action="cancel">Back</button>
+    </div>
+    <div data-exam="instr-body"></div>
+    <div class="mt-4 d-flex gap-2">
+      <button type="button" class="btn btn-primary" data-exam-action="start"><i class="bi bi-play-fill me-1"></i>Start Test</button>
+    </div>
+  </div>
+
+  <div data-exam-panel="exam" class="d-none">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h1 class="page-title mb-0" data-exam="exam-title">Examination</h1>
+      <div class="exam-timer" data-exam="timer">00:00</div>
+    </div>
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="card-surface p-3 p-md-4">
+          <div class="d-flex justify-content-between mb-2">
+            <div class="fw-semibold" data-exam="q-num">Question 1</div>
+            <span class="badge-soft muted" data-exam="q-marks">1 mark</span>
+          </div>
+          <div class="fw-semibold mb-3" data-exam="q-prompt"></div>
+          <div data-exam="q-options"></div>
+          <div class="d-flex flex-wrap gap-2 mt-4">
+            <button type="button" class="btn btn-outline-secondary" data-exam-action="prev" data-exam="btn-prev">Previous</button>
+            <button type="button" class="btn btn-outline-secondary" data-exam-action="next" data-exam="btn-next">Next</button>
+            <button type="button" class="btn btn-outline-secondary" data-exam-action="clear">Clear answer</button>
+            <button type="button" class="btn btn-outline-warning" data-exam-action="mark" data-exam="btn-mark">Mark for review</button>
+            <button type="button" class="btn btn-primary ms-auto" data-exam-action="submit">Submit Test</button>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="card-surface p-3">
+          <h6 class="fw-bold mb-2">Question palette</h6>
+          <div class="apt-legend mb-2">
+            <span><i style="background:#f1f5f9;border:1px solid #cbd5e1"></i>Not visited</span>
+            <span><i style="background:#fff7ed;border:1px solid #fdba74"></i>Not answered</span>
+            <span><i style="background:#dcfce7;border:1px solid #86efac"></i>Answered</span>
+            <span><i style="background:#ede9fe;border:1px solid #c4b5fd"></i>Review</span>
+            <span><i style="background:linear-gradient(135deg,#dcfce7 50%,#ede9fe 50%);border:1px solid #a78bfa"></i>Answered + review</span>
+          </div>
+          <div data-exam="palette" class="d-flex flex-wrap"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div data-exam-panel="result" class="d-none">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h1 class="page-title mb-0">Result</h1>
+      <button type="button" class="btn btn-outline-primary" data-exam-action="done">Back to tests</button>
+    </div>
+    <div class="card-surface p-3 p-md-4 mb-3" data-exam="result-summary"></div>
+    <div class="card-surface p-3 p-md-4">
+      <h6 class="fw-bold mb-3">Question-wise analysis</h6>
+      <div data-exam="result-analysis"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Admin test form -->
+<div class="modal fade" id="testFormModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="testFormTitle">New aptitude test</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="testForm">
+    <div class="modal-body">
+      <input type="hidden" id="tfId" value=""/>
+      <div class="row g-3">
+        <div class="col-12"><label class="form-label small fw-semibold">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
+        <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">Category</label><select class="form-select" id="tfCategory" required></select></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">Difficulty</label><select class="form-select" id="tfDifficulty" required></select></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Number of questions</label><input class="form-control" type="number" id="tfQuestionCount" min="1" required/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Total marks</label><input class="form-control" type="number" id="tfTotalMarks" min="1" step="0.5" required/></div>
+        <div class="col-md-6"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="tfNegative"/><label class="form-check-label" for="tfNegative">Negative marking</label></div></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">Negative marks (per wrong)</label><input class="form-control" type="number" id="tfNegativeMarks" min="0" step="0.25" value="0"/></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="tfStatus"><option value="unpublished">Unpublished</option><option value="published">Published</option></select></div>
+        <div class="col-12 d-none" id="tfContestWrap">
+          <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 4%,transparent)">
+            <div class="small fw-semibold text-primary mb-2"><i class="bi bi-trophy me-1"></i>Contest schedule</div>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold" for="tfContestType">Contest type</label>
+                <select class="form-select" id="tfContestType">
+                  <option value="none">Regular mock (always available)</option>
+                  <option value="weekly">Weekly contest</option>
+                  <option value="monthly">Monthly contest</option>
+                </select>
+              </div>
+              <div class="col-md-4 d-none" id="tfContestWeekdayWrap">
+                <label class="form-label small fw-semibold" for="tfContestWeekday">Runs every</label>
+                <select class="form-select" id="tfContestWeekday">
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                  <option value="7">Sunday</option>
+                </select>
+              </div>
+              <div class="col-md-4 d-none" id="tfContestMonthDayWrap">
+                <label class="form-label small fw-semibold" for="tfContestMonthDay">Day of month</label>
+                <select class="form-select" id="tfContestMonthDay"></select>
+              </div>
+            </div>
+            <p class="small text-muted-2 mb-0 mt-2" id="tfContestHint">Weekly and monthly contests appear to students only on the scheduled day while published.</p>
+          </div>
+        </div>
+        <div class="col-12"><label class="form-label small fw-semibold">Instructions</label><textarea class="form-control" id="tfInstructions" rows="3"></textarea></div>
+        <div class="col-12">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label small fw-semibold mb-0">MCQ questions</label>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddMcq">Add MCQ</button>
+          </div>
+          <div id="mcqList" class="d-flex flex-column gap-3"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save test</button>
+    </div>
+  </form>
+</div></div></div>
+
+<!-- Bulk upload -->
+<div class="modal fade" id="bulkModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="bulkTitle">Bulk upload questions</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <input type="hidden" id="bulkTestId" value=""/>
+    <input type="hidden" id="bulkMode" value="test"/>
+    <p class="small text-muted-2 mb-2">Upload an Excel workbook (.xlsx or .xls). First row must be headers:
+      <code>prompt, optionA, optionB, optionC, optionD, correct, marks, explanation, category</code>.
+      <code>correct</code> can be A–D, 0–3, or the option text.</p>
+    <div class="mb-3">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkTemplate"><i class="bi bi-download me-1"></i>Download Excel template</button>
+    </div>
+    <div class="mb-3" id="bulkCategoryWrap"><label class="form-label small fw-semibold">Default category</label><select class="form-select" id="bulkCategory"></select></div>
+    <div class="form-check mb-3" id="bulkReplaceWrap"><input class="form-check-input" type="checkbox" id="bulkReplace"/><label class="form-check-label" for="bulkReplace">Replace existing questions on this test</label></div>
+    <div class="mb-0"><label class="form-label small fw-semibold">Excel file</label><input class="form-control" type="file" id="bulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"/></div>
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+    <button type="button" class="btn btn-primary" id="btnBulkUpload">Upload</button>
+  </div>
+</div></div></div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="js/api.js?v=20260814contest"></script>
+<script src="js/app.js?v=20260814contest"></script>
+<script src="js/aptitude-exam.js?v=20260814student"></script>
+<script src="js/aptitude-page.js?v=20260814managepanels"></script>
+</body></html>

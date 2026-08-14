@@ -175,3 +175,39 @@ CREATE TABLE IF NOT EXISTS policy_acceptance_logs (
   created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- AptitudeTest (+ embedded AptitudeQuestion / TestQuestion order via questions[]).
+-- Payload keys: title, description, category, difficulty, durationMinutes, totalMarks,
+-- negativeMarking, negativeMarks, instructions, status, contestType, contestWeekday, contestMonthDay,
+-- createdBy, questions[
+--   { id, prompt|question_text, category, difficulty, options, correctIndex|correct_answer,
+--     explanation, marks, negative_marks } ], questionCount, createdAt, updatedAt
+CREATE TABLE IF NOT EXISTS aptitude_tests (
+  id CHAR(24) NOT NULL PRIMARY KEY,
+  payload JSON NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- TestAttempt (+ embedded AttemptAnswer via answers[] / questionAnalysis[]).
+-- Payload keys: testId, userId, subjectType, studentId, alumniId, departmentId, classBatch,
+-- course, semester, batch, status, startedAt, completedAt|submittedAt, score, percentage,
+-- correctCount, wrongCount|incorrect_count, unansweredCount, accuracy, timeTakenSeconds,
+-- answers[{ questionId, selectedIndex|selected_answer, isCorrect, marksObtained }],
+-- categoryScores, questionAnalysis, rank, percentile
+-- RBAC: never expose rows outside the authenticated viewer's authorized subject userIds.
+CREATE TABLE IF NOT EXISTS aptitude_attempts (
+  id CHAR(24) NOT NULL PRIMARY KEY,
+  payload JSON NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Shared AptitudeQuestion bank (admin). Linked into tests by id copy / from-bank import
+-- (no separate TestQuestion table — order lives in aptitude_tests.payload.questions).
+CREATE TABLE IF NOT EXISTS aptitude_question_bank (
+  id CHAR(24) NOT NULL PRIMARY KEY,
+  payload JSON NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

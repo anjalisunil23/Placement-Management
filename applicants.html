@@ -45,15 +45,24 @@
       <div class="p-3 d-flex gap-2 align-items-center">
         <div class="search-with-icon flex-grow-1"><i class="bi bi-search"></i><input class="form-control" id="searchInput" placeholder="Search applicants…"/></div>
       </div>
-      <div class="table-wrap"><table class="table-modern"><thead><tr><th>Sl. No</th><th>Candidate</th><th>Roll</th><th>Branch</th><th>CGPA</th><th>Status</th><th>Resume</th><th></th></tr></thead><tbody id="ar"></tbody></table></div>
+      <div class="table-wrap"><table class="table-modern"><thead><tr><th>Sl. No</th><th>Candidate</th><th>Roll</th><th>Branch</th><th>CGPA</th><th>Status</th><th>Resume</th><th>Aptitude</th><th></th></tr></thead><tbody id="ar"></tbody></table></div>
     </div>
   </div>
 </div>
 
 </main></div></div>
+
+<div class="modal fade" id="aptitudeModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Applicant aptitude</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <p class="small text-muted-2 mb-3">Visible only for students who applied to your company’s jobs or drives.</p>
+    <div id="aptitudeModalBody"><p class="text-muted-2 mb-0">Loading…</p></div>
+  </div>
+</div></div></div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723perf"></script>
-<script src="js/app.js?v=20260723livedata"></script>
+<script src="js/api.js?v=20260811aptitude"></script>
+<script src="js/app.js?v=20260811aptitude"></script>
 <script>
 const user = Auth.user() || demoUserFor('company');
 const co = user.companyName || 'Acme Cloud';
@@ -75,6 +84,7 @@ function normalizeApplicant(a) {
   if (a.student) {
     return {
       id: String(a._id || a.id),
+      studentId: String(a.studentId || a.student.id || a.student._id || ''),
       name: a.student.name,
       roll: a.student.registerNumber,
       dept: a.student.department,
@@ -86,7 +96,7 @@ function normalizeApplicant(a) {
       resumeUrl: a.resumeUrl || '',
     };
   }
-  return { ...a, id: a.id || ('demo-' + a.roll), rawStatus: a.status, companyViewStatus: a.companyViewStatus || '', resumeUrl: a.resumeUrl || '' };
+  return { ...a, id: a.id || ('demo-' + a.roll), studentId: a.studentId || '', rawStatus: a.status, companyViewStatus: a.companyViewStatus || '', resumeUrl: a.resumeUrl || '' };
 }
 
 function renderQuickStats(rows) {
@@ -138,8 +148,9 @@ function renderTable() {
       <td>${r.roll || '—'}</td><td>${r.dept || '—'}</td><td>${r.cgpa ?? '—'}</td>
       <td>${appStatusBadge(r.status)}</td>
       <td>${resumeCell(r)}</td>
+      <td>${r.studentId ? `<button type="button" class="btn btn-sm btn-outline-primary" data-action="aptitude" data-student="${String(r.studentId).replace(/"/g,'&quot;')}" data-id="${String(r.id).replace(/"/g,'&quot;')}">View</button>` : '<span class="text-muted-2">—</span>'}</td>
       <td>${applicantActionButtons(r)}</td>
-    </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No applicants yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No applicants yet.</td></tr>';
 }
 
 async function loadApplicants() {
@@ -212,9 +223,53 @@ async function openApplicantResume(id) {
   }
 }
 
-async function appAction(id, action) {
+async function openApplicantAptitude(studentId) {
+  const body = document.getElementById('aptitudeModalBody');
+  body.innerHTML = '<p class="text-muted-2 mb-0">Loading…</p>';
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('aptitudeModal'));
+  modal.show();
+  if (!Auth.hasRealAuth() || Auth.isDemo()) {
+    body.innerHTML = '<p class="text-muted-2 mb-0">Sign in with a live company account to view applicant aptitude progress.</p>';
+    return;
+  }
+  const res = await api(`/company/applicants/${encodeURIComponent(studentId)}/aptitude`, { noRedirectOn401: true });
+  if (!res?.success) {
+    body.innerHTML = `<p class="text-danger mb-0">${res?.message || 'Aptitude progress unavailable for this applicant.'}</p>`;
+    return;
+  }
+  const profile = res.data?.profile || {};
+  const apt = res.data?.aptitude || {};
+  const cats = Object.entries(apt.categoryWise || {}).map(([k, v]) =>
+    `<div class="d-flex justify-content-between small border-bottom py-1"><span>${k}</span><strong>${v.percentage ?? 0}%</strong></div>`
+  ).join('') || '<div class="small text-muted-2">No category scores yet.</div>';
+  const hist = (apt.history || []).slice(0, 8).map(h =>
+    `<div class="d-flex justify-content-between small border-bottom py-1"><span>${h.testTitle || 'Test'}</span><strong>${h.percentage ?? 0}%</strong></div>`
+  ).join('') || '<div class="small text-muted-2">No test history.</div>';
+  body.innerHTML = `
+    <div class="mb-3">
+      <div class="fw-bold">${profile.name || 'Applicant'}</div>
+      <div class="small text-muted-2">Student ID ${profile.registerNumber || '—'} · ${profile.department || '—'} · CGPA ${profile.cgpa ?? '—'}</div>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-6 col-md-4"><div class="card-surface p-2"><div class="small text-muted-2">Attempts</div><strong>${apt.testsAttempted ?? 0}</strong></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface p-2"><div class="small text-muted-2">Average</div><strong>${apt.averageScore ?? apt.overallScore ?? apt.percentage ?? 0}%</strong></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface p-2"><div class="small text-muted-2">Best</div><strong>${apt.bestScore ?? 0}%</strong></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface p-2"><div class="small text-muted-2">Accuracy</div><strong>${apt.accuracy ?? 0}%</strong></div></div>
+      <div class="col-6 col-md-4"><div class="card-surface p-2"><div class="small text-muted-2">Recent</div><strong>${apt.recentScore ?? apt.recentPerformance ?? 0}%</strong></div></div>
+    </div>
+    <h6 class="fw-bold">Category performance</h6>
+    <div class="mb-3">${cats}</div>
+    <h6 class="fw-bold">Detailed progress</h6>
+    <div>${hist}</div>`;
+}
+
+async function appAction(id, action, studentId = '') {
   if (action === 'resume') {
     await openApplicantResume(id);
+    return;
+  }
+  if (action === 'aptitude') {
+    await openApplicantAptitude(studentId || id);
     return;
   }
   if (!useApi) { toast(`${action} recorded (demo).`, 'success'); return; }
@@ -238,7 +293,7 @@ async function appAction(id, action) {
 document.getElementById('ar').addEventListener('click', e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
-  appAction(btn.dataset.id, btn.dataset.action);
+  appAction(btn.dataset.id, btn.dataset.action, btn.dataset.student || '');
 });
 
 document.getElementById('cgpaRange').addEventListener('input', e => {

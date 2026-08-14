@@ -245,6 +245,7 @@ final class PublicController
         $allowed = [
             ObjectStorageService::FOLDER_PHOTOS,
             ObjectStorageService::FOLDER_JOB_POSTERS,
+            ObjectStorageService::FOLDER_APTITUDE_IMAGES,
         ];
         if (!in_array($folder, $allowed, true)) {
             Response::notFound('Media not found.');
