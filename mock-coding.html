@@ -123,12 +123,13 @@
           <div data-cod="editor"></div>
           <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
             <button type="button" class="btn btn-outline-secondary" data-cod="btn-run" data-cod-action="run">Run Code</button>
-            <button type="button" class="btn btn-primary" data-cod-action="submit">Submit</button>
+            <button type="button" class="btn btn-primary" data-cod="btn-submit" data-cod-action="submit-answer">Submit Answer</button>
             <span class="small text-muted-2 ms-auto" data-cod="run-state"></span>
           </div>
           <div class="mt-3">
             <h6 class="fw-bold mb-2">Test Cases</h6>
             <div data-cod="cases"></div>
+            <div class="small text-muted-2 mt-2 mb-0" data-cod="case-summary">0 / 0 Test Cases Passed</div>
           </div>
         </div>
       </div>
@@ -137,6 +138,7 @@
       <button type="button" class="btn btn-outline-secondary" data-cod="btn-prev" data-cod-action="prev">Previous</button>
       <div data-cod="q-nav" class="d-flex flex-wrap"></div>
       <button type="button" class="btn btn-outline-secondary" data-cod="btn-next" data-cod-action="next">Next</button>
+      <button type="button" class="btn btn-primary ms-auto" data-cod="btn-submit-test" data-cod-action="submit">Finish Test</button>
     </div>
   </div>
 
@@ -160,6 +162,6 @@
 <script src="js/app.js?v=20260819coding"></script>
 <script src="js/coding-data.js?v=20260819coding"></script>
 <script src="js/coding-service.js?v=20260819coding"></script>
-<script src="js/coding-exam.js?v=20260819coding"></script>
+<script src="js/coding-exam.js?v=20260819finish"></script>
 <script src="js/coding-page.js?v=20260819coding"></script>
 </body></html>

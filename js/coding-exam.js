@@ -286,16 +286,12 @@
         stderr.classList.add('d-none');
       }
       renderCaseTable(run, currentQ());
-      if (summary) {
-        const ran = (run.results || []).filter((r) => r.status !== 'Not Run');
-        const pass = ran.filter((r) => r.passed).length;
-        summary.textContent = `${pass} / ${run.totalCount || (run.results || []).length} Test Cases Passed`;
-      }
     }
 
     function renderCaseTable(run, q) {
-      const table = el('case-table');
+      const table = el('case-table') || el('cases');
       const summary = el('case-summary');
+      if (!table) return;
       const rows = run?.results?.length
         ? run.results
         : (q?.testCases || []).map((tc, i) => ({
@@ -320,7 +316,7 @@
           </table>
         </div>`;
       const pass = rows.filter((r) => r.passed).length;
-      summary.textContent = `${pass} / ${rows.length} Test Cases Passed`;
+      if (summary) summary.textContent = `${pass} / ${rows.length} Test Cases Passed`;
     }
 
     function renderNav() {
@@ -347,7 +343,8 @@
       const locked = !!(state?.submitted);
       el('btn-run') && (el('btn-run').disabled = on || locked);
       el('btn-submit') && (el('btn-submit').disabled = on || locked);
-      document.querySelectorAll('[data-cod-action="submit"]').forEach((btn) => {
+      el('btn-submit-test') && (el('btn-submit-test').disabled = on || locked);
+      document.querySelectorAll('[data-cod-action="submit"], [data-cod-action="submit-answer"]').forEach((btn) => {
         btn.disabled = on || locked;
       });
       if (editor) editor.setReadOnly(locked);
@@ -461,24 +458,38 @@
       }
     }
 
+    function submitAnswer() {
+      if (submitting || running || !state?.attemptId || state.submitted) return;
+      persistCurrent();
+      const last = (state.test.items || []).length - 1;
+      if (state.index < last) {
+        state.index += 1;
+        renderQuestion();
+        toast('Answer saved.', 'success');
+        return;
+      }
+      renderNav();
+      toast('Answer saved. Click Finish Test to end the exam.', 'success');
+    }
+
     async function submitExam(auto = false) {
       if (submitting || !state?.attemptId || state.submitted) return;
       persistCurrent();
       if (!auto) {
         const ok = typeof confirmAction === 'function'
           ? await confirmAction({
-              title: 'Submit Test?',
-              message: 'Are you sure you want to submit this test? You may not be able to modify your answers after submission.',
-              confirmText: 'Submit Test',
+              title: 'Finish Test?',
+              message: 'Are you sure you want to finish this test? You may not be able to modify your answers after submission.',
+              confirmText: 'Finish Test',
               cancelText: 'Cancel',
               variant: 'primary',
             })
-          : window.confirm('Submit this test? You may not be able to modify your answers after submission.');
+          : window.confirm('Finish this test? You may not be able to modify your answers after submission.');
         if (!ok) return;
       }
       submitting = true;
       setBusy(true);
-      if (el('btn-submit')) el('btn-submit').textContent = 'Submitting…';
+      if (el('btn-submit-test')) el('btn-submit-test').textContent = 'Submitting…';
       stopTimer();
       bindUnload(false);
       const timeTakenSeconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
@@ -492,7 +503,7 @@
         renderResult(result);
       } catch (err) {
         submitting = false;
-        if (el('btn-submit')) el('btn-submit').innerHTML = 'Submit Answer';
+        if (el('btn-submit-test')) el('btn-submit-test').textContent = 'Finish Test';
         toast(err?.message || 'Submit failed.', 'error');
         if (!auto) {
           bindUnload(true);
@@ -595,6 +606,7 @@
         }
       }
       if (action === 'run') runCurrent();
+      if (action === 'submit-answer') submitAnswer();
       if (action === 'submit') submitExam(false);
     });
 
