@@ -1,0 +1,53 @@
+/* Resume Builder module — scoped to #resumeBuilderDashboard */
+
+#resumeBuilderDashboard .rb-completion-pct {
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+#resumeBuilderDashboard .rb-completion-bar {
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+#resumeBuilderDashboard .rb-completion-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: var(--primary);
+  border-radius: 999px;
+}
+
+#resumeBuilderDashboard .rb-section-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+#resumeBuilderDashboard .rb-section-card .rb-section-desc {
+  flex: 1 1 auto;
+}
+
+#resumeBuilderDashboard .rb-section-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+
+@media (max-width: 767.98px) {
+  #resumeBuilderDashboard .rb-completion-actions {
+    width: 100%;
+  }
+  #resumeBuilderDashboard .rb-completion-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
