@@ -238,7 +238,7 @@ function shellProfileLabel(role) {
 }
 
 const SHELL_TOPBAR_BTN_STYLE = [
-  'width:40px', 'height:40px', 'min-width:40px', 'min-height:40px', 'flex:0 0 40px',
+  'width:38px', 'height:38px', 'min-width:38px', 'min-height:38px', 'flex:0 0 38px',
   'padding:0', 'margin:0', 'border:0', 'border-radius:50%', 'overflow:hidden',
   'background:transparent', 'line-height:0', 'cursor:pointer',
   'display:inline-flex', 'align-items:center', 'justify-content:center',
@@ -261,8 +261,7 @@ function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
     'pointer-events:none',
   ].join(';');
   if (url) {
-    const safe = encodeURI(url).replace(/'/g, '%27');
-    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background-color:#e2e8f0;background-image:url('${safe}')" role="img" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"></span>`;
+    return `<img class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" data-size="${size}" data-font-size="${escapeAttr(fontSize)}" src="${escapeAttr(url)}" alt="${escapeAttr(label)}" title="${escapeAttr(label)}" decoding="async" referrerpolicy="no-referrer"/>`;
   }
   return `<span style="${circle};background:linear-gradient(135deg,#2563EB,#3B82F6);color:#fff;display:grid;place-items:center;font-weight:700;font-size:${fontSize}">${ini}</span>`;
 }
@@ -273,7 +272,7 @@ function topbarProfileMenuHtml(user, role) {
   return `
     <div class="topbar-profile-menu" id="topbarProfileMenu">
       <button type="button" class="topbar-avatar-btn" id="topbarProfileBtn" style="${SHELL_TOPBAR_BTN_STYLE}" aria-expanded="false" aria-haspopup="true" aria-controls="topbarProfileDropdown" aria-label="Account menu" title="${escapeAttr(name)}">
-        ${shellPhotoCircleHtml(user, 40, '.8rem')}
+        ${shellPhotoCircleHtml(user, 38, '.8rem')}
       </button>
       <div class="topbar-profile-dropdown" id="topbarProfileDropdown" hidden>
         <div class="topbar-profile-dropdown-name">${escapeAttr(name)}</div>
@@ -352,28 +351,35 @@ function bindLogoutButton(btn) {
   });
 }
 
+function shellAvatarPhotoFallback(el) {
+  const ini = el.getAttribute('data-initials') || 'U';
+  const size = Number(el.getAttribute('data-size')) || 38;
+  const fontSize = el.getAttribute('data-font-size') || '.85rem';
+  const circle = [
+    `display:block`, `width:${size}px`, `height:${size}px`,
+    `min-width:${size}px`, `min-height:${size}px`,
+    'border-radius:50%', 'overflow:hidden', 'border:0', 'box-shadow:none', 'margin:0', 'padding:0',
+    'pointer-events:none',
+    'background:linear-gradient(135deg,#2563EB,#3B82F6)', 'color:#fff',
+    'display:grid', 'place-items:center', 'font-weight:700', `font-size:${fontSize}`,
+  ].join(';');
+  const span = document.createElement('span');
+  span.style.cssText = circle;
+  span.textContent = ini;
+  span.setAttribute('role', 'img');
+  span.setAttribute('aria-label', el.getAttribute('alt') || ini);
+  el.replaceWith(span);
+}
+
 function hydrateShellAvatars() {
   const url = userPhotoUrl(Auth.user());
   if (!url) return;
-  const safe = encodeURI(url).replace(/'/g, '%27');
   document.querySelectorAll('.shell-avatar-photo').forEach((el) => {
-    el.style.backgroundImage = `url('${safe}')`;
-    el.style.backgroundSize = '';
-    el.style.backgroundPosition = '';
-    // If the image fails (AES hotlink / 401 proxy), fall back to initials.
+    if (!(el instanceof HTMLImageElement)) return;
+    el.src = url;
     const probe = new Image();
     probe.onload = () => { /* keep photo */ };
-    probe.onerror = () => {
-      const ini = el.getAttribute('data-initials') || 'U';
-      el.classList.remove('shell-avatar-photo');
-      el.style.backgroundImage = '';
-      el.style.background = 'linear-gradient(135deg,#2563EB,#3B82F6)';
-      el.style.color = '#fff';
-      el.style.display = 'grid';
-      el.style.placeItems = 'center';
-      el.style.fontWeight = '700';
-      el.textContent = ini;
-    };
+    probe.onerror = () => shellAvatarPhotoFallback(el);
     probe.src = url;
   });
 }
@@ -743,6 +749,10 @@ document.addEventListener('ph-user-updated', () => {
 document.addEventListener('error', (event) => {
   const img = event.target;
   if (!(img instanceof HTMLImageElement)) return;
+  if (img.classList.contains('shell-avatar-photo')) {
+    shellAvatarPhotoFallback(img);
+    return;
+  }
   const avatar = img.closest('.avatar.has-photo, .settings-profile-avatar.has-photo');
   if (!avatar) return;
   avatar.classList.remove('has-photo');
