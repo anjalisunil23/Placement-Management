@@ -38,7 +38,8 @@ final class AptitudeController
             'categories' => \PMS\Models\AptitudeTestModel::CATEGORIES,
             'difficulties' => \PMS\Models\AptitudeTestModel::DIFFICULTIES,
             'statuses' => \PMS\Models\AptitudeTestModel::STATUSES,
-            'questionTypes' => ['mcq'],
+            'questionTypes' => \PMS\Models\AptitudeTestModel::QUESTION_TYPES,
+            'assignmentModes' => \PMS\Models\AptitudeTestModel::ASSIGNMENT_MODES,
             'bulkExcelHeaders' => ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'marks', 'explanation', 'category'],
             'bulkFormats' => ['xlsx', 'xls'],
         ]);
@@ -71,10 +72,26 @@ final class AptitudeController
         Response::success(['tests' => $tests]);
     }
 
+    /** GET /api/aptitude/tests/available — student assigned tests only (no answers) */
+    public function listAvailable(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireTaker($user);
+        Response::success(['tests' => $this->service->listPublishedForUser($user, false)]);
+    }
+
+    /** GET /api/aptitude/tests/{id} */
+    public function getTest(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->getTestForUser($user, $id));
+    }
+
     /** POST /api/aptitude/tests */
     public function createTest(): void
     {
         $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
         Response::success($this->service->createTest($user, $this->body()), 'Aptitude test created.');
     }
 
@@ -82,6 +99,7 @@ final class AptitudeController
     public function uploadMedia(): void
     {
         $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
         Response::success($this->service->uploadRichTextImage($user), 'Image uploaded.');
     }
 
@@ -89,13 +107,73 @@ final class AptitudeController
     public function updateTest(string $id): void
     {
         $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
         Response::success($this->service->updateTest($user, $id, $this->body()), 'Aptitude test updated.');
+    }
+
+    /** DELETE /api/aptitude/tests/{id} */
+    public function deleteTest(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        $this->service->deleteTest($user, $id);
+        Response::success(null, 'Aptitude test deleted.');
+    }
+
+    /** POST /api/aptitude/tests/{id}/archive */
+    public function archiveTest(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->archiveTest($user, $id), 'Test archived.');
+    }
+
+    /** POST /api/aptitude/tests/{id}/publish */
+    public function publishTest(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->publishTest($user, $id), 'Test published.');
+    }
+
+    /** POST /api/aptitude/tests/{id}/unpublish */
+    public function unpublishTest(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->unpublishTest($user, $id), 'Test unpublished.');
+    }
+
+    /** POST /api/aptitude/tests/{id}/release-results */
+    public function releaseResults(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->releaseResults($user, $id), 'Results released.');
+    }
+
+    /** GET /api/aptitude/admin/stats */
+    public function adminStats(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->adminStats($user));
+    }
+
+    /** GET /api/aptitude/admin/attempts */
+    public function adminAttempts(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        $testId = isset($_GET['testId']) ? (string) $_GET['testId'] : '';
+        Response::success(['attempts' => $this->service->adminAttempts($user, $testId)]);
     }
 
     /** POST /api/aptitude/tests/{id}/questions/bulk */
     public function bulkQuestions(string $id): void
     {
         $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
         $body = $this->body();
         $payload = $body['questions'] ?? $body['csv'] ?? $body['content'] ?? $body;
         $replace = !empty($body['replace']);
@@ -111,13 +189,32 @@ final class AptitudeController
         $user = AuthMiddleware::authenticate();
         AptitudeAccessService::requireManager($user);
         $category = isset($_GET['category']) ? (string) $_GET['category'] : null;
-        Response::success(['questions' => $this->service->listBank($category)]);
+        $search = isset($_GET['search']) ? (string) $_GET['search'] : null;
+        $difficulty = isset($_GET['difficulty']) ? (string) $_GET['difficulty'] : null;
+        Response::success($this->service->listBank($user, $category, $search, $difficulty));
+    }
+
+    /** POST /api/aptitude/question-bank */
+    public function createBankQuestion(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->createBankQuestion($user, $this->body()), 'Question saved.');
+    }
+
+    /** PUT /api/aptitude/question-bank/{id} */
+    public function updateBankQuestion(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->updateBankQuestion($user, $id, $this->body()), 'Question updated.');
     }
 
     /** POST /api/aptitude/question-bank/bulk */
     public function bulkBank(): void
     {
         $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
         $body = $this->body();
         $payload = $body['questions'] ?? $body['csv'] ?? $body['content'] ?? $body;
         $category = (string) ($body['category'] ?? 'General Aptitude');
@@ -127,10 +224,20 @@ final class AptitudeController
         );
     }
 
+    /** DELETE /api/aptitude/question-bank/{id} */
+    public function deleteBankQuestion(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        $this->service->deleteBankQuestion($user, $id);
+        Response::success(null, 'Question deleted from bank.');
+    }
+
     /** POST /api/aptitude/tests/{id}/questions/from-bank */
     public function fromBank(string $id): void
     {
         $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
         $body = $this->body();
         $ids = array_values(array_filter(array_map('strval', (array) ($body['bankIds'] ?? $body['ids'] ?? []))));
         Response::success(
@@ -143,6 +250,7 @@ final class AptitudeController
     public function start(string $id): void
     {
         $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireTaker($user);
         Response::success($this->service->start($user, $id), 'Attempt started.');
     }
 
@@ -150,6 +258,7 @@ final class AptitudeController
     public function submit(string $id): void
     {
         $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireTaker($user);
         $body = $this->body();
         $answers = is_array($body['answers'] ?? null) ? $body['answers'] : [];
         $meta = [
@@ -213,6 +322,7 @@ final class AptitudeController
             'test' => $_GET['test'] ?? ($_GET['testId'] ?? ''),
             'category' => $_GET['category'] ?? '',
             'userType' => $_GET['userType'] ?? '',
+            'resultType' => $_GET['resultType'] ?? '',
         ];
         Response::success($this->service->directory($user, $filters));
     }

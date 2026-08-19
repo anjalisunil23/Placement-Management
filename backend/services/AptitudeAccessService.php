@@ -7,6 +7,7 @@ namespace PMS\Services;
 use PMS\Middleware\AuthMiddleware;
 use PMS\Models\AlumniModel;
 use PMS\Models\ApplicationModel;
+use PMS\Models\AptitudeTestModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\StudentModel;
@@ -157,24 +158,80 @@ final class AptitudeAccessService
     }
 
     /**
-     * Published tests with no department are institution-wide; otherwise match the taker's department.
+     * Whether assignment rules match this taker (department / course / batch / student ids).
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $test
+     */
+    public static function assignmentMatches(array $user, array $test): bool
+    {
+        if (!self::canTake($user)) {
+            return false;
+        }
+        $testDept = (string) ($test['departmentId'] ?? '');
+        $ctx = self::subjectContext($user);
+        $viewerDept = (string) ($ctx['departmentId'] ?? '');
+        if ($testDept !== '' && ($viewerDept === '' || $viewerDept !== $testDept)) {
+            return false;
+        }
+        $mode = AptitudeTestModel::normalizeAssignmentMode((string) ($test['assignmentMode'] ?? 'all'));
+        if ($mode === 'all') {
+            return true;
+        }
+        if ($mode === 'department') {
+            return $viewerDept !== '' && ($testDept === '' || $viewerDept === $testDept);
+        }
+        if ($mode === 'course') {
+            $want = array_map('strtolower', array_map('strval', (array) ($test['assignmentCourses'] ?? [])));
+            $course = strtolower(trim((string) ($ctx['course'] ?? '')));
+            return $course !== '' && in_array($course, $want, true);
+        }
+        if ($mode === 'batch') {
+            $want = array_map('strtolower', array_map('strval', (array) ($test['assignmentBatches'] ?? [])));
+            $batch = strtolower(trim((string) ($ctx['classBatch'] ?? $ctx['batch'] ?? '')));
+            return $batch !== '' && in_array($batch, $want, true);
+        }
+        if ($mode === 'students') {
+            $ids = array_map('strval', (array) ($test['assignmentStudentIds'] ?? []));
+            $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
+            $sid = (string) ($ctx['studentId'] ?? '');
+            return ($uid !== '' && in_array($uid, $ids, true)) || ($sid !== '' && in_array($sid, $ids, true));
+        }
+        return false;
+    }
+
+    /**
+     * Assigned published/scheduled tests a student may see on the hub (not necessarily start yet).
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $test
+     */
+    public static function testListedForTaker(array $user, array $test): bool
+    {
+        if (!self::assignmentMatches($user, $test)) {
+            return false;
+        }
+        $life = AptitudeTestModel::lifecycleStatus($test);
+        if (!in_array($life, ['published', 'scheduled'], true)) {
+            return false;
+        }
+        $contest = AptitudeTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        if ($contest !== 'none') {
+            return AptitudeTestModel::isContestOpen($test);
+        }
+        return true;
+    }
+
+    /**
+     * Published tests with no assignment default to institution-wide (or matching department).
+     * Explicit assignmentMode further restricts who may take the test.
      *
      * @param array<string, mixed> $user
      * @param array<string, mixed> $test
      */
     public static function testVisibleToTaker(array $user, array $test): bool
     {
-        if (!self::canTake($user)) {
-            return false;
-        }
-        $testDept = (string) ($test['departmentId'] ?? '');
-        if ($testDept === '') {
-            return true;
-        }
-        $ctx = self::subjectContext($user);
-        $viewerDept = (string) ($ctx['departmentId'] ?? '');
-
-        return $viewerDept !== '' && $viewerDept === $testDept;
+        return self::testListedForTaker($user, $test) && AptitudeTestModel::isOpenForTaking($test);
     }
 
     /**
@@ -526,6 +583,7 @@ final class AptitudeAccessService
             'test' => trim((string) ($filters['test'] ?? $filters['testId'] ?? '')),
             'category' => trim((string) ($filters['category'] ?? '')),
             'userType' => trim((string) ($filters['userType'] ?? '')),
+            'resultType' => self::normalizeProgressResultType($filters),
         ];
 
         if ($role === 'admin') {
@@ -565,7 +623,18 @@ final class AptitudeAccessService
             'test' => '',
             'category' => '',
             'userType' => '',
+            'resultType' => '',
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    public static function normalizeProgressResultType(array $filters): string
+    {
+        $raw = strtolower(trim((string) ($filters['resultType'] ?? '')));
+
+        return in_array($raw, ['tests', 'contests'], true) ? $raw : '';
     }
 
     /**

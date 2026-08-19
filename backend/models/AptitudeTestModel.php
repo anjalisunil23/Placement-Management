@@ -24,7 +24,11 @@ class AptitudeTestModel extends BaseModel
 
     public const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
 
-    public const STATUSES = ['published', 'unpublished'];
+    public const STATUSES = ['draft', 'scheduled', 'published', 'completed', 'archived'];
+
+    public const QUESTION_TYPES = ['mcq', 'true_false', 'multi_select'];
+
+    public const ASSIGNMENT_MODES = ['all', 'department', 'course', 'batch', 'students'];
 
     public const CONTEST_TYPES = ['none', 'weekly', 'monthly'];
 
@@ -132,13 +136,86 @@ class AptitudeTestModel extends BaseModel
     public static function normalizeStatus(string $value): string
     {
         $raw = strtolower(trim($value));
-        if ($raw === 'draft' || $raw === 'unpublished') {
-            return 'unpublished';
+        if ($raw === 'unpublished' || $raw === 'draft') {
+            return 'draft';
         }
-        if ($raw === 'published' || $raw === 'live' || $raw === 'active') {
+        if (in_array($raw, ['scheduled', 'published', 'completed', 'archived'], true)) {
+            return $raw;
+        }
+        if ($raw === 'live' || $raw === 'active') {
             return 'published';
         }
-        return 'unpublished';
+        return 'draft';
+    }
+
+    public static function normalizeQuestionType(string $value): string
+    {
+        $raw = strtolower(trim(str_replace(['-', ' '], '_', $value)));
+        if ($raw === 'tf' || $raw === 'truefalse' || $raw === 'true_false') {
+            return 'true_false';
+        }
+        if ($raw === 'multi' || $raw === 'multiselect' || $raw === 'multiple_select' || $raw === 'multi_select') {
+            return 'multi_select';
+        }
+        return 'mcq';
+    }
+
+    public static function normalizeAssignmentMode(string $value): string
+    {
+        $raw = strtolower(trim($value));
+        return in_array($raw, self::ASSIGNMENT_MODES, true) ? $raw : 'all';
+    }
+
+    public static function parseDateTime(mixed $value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('c');
+        }
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+        $ts = strtotime($raw);
+        return $ts ? date('c', $ts) : null;
+    }
+
+    /**
+     * Stored status plus schedule window → student-facing lifecycle.
+     *
+     * @param array<string, mixed> $test
+     */
+    public static function lifecycleStatus(array $test, ?\DateTimeInterface $now = null): string
+    {
+        $stored = self::normalizeStatus((string) ($test['status'] ?? 'draft'));
+        if (in_array($stored, ['draft', 'archived', 'completed'], true)) {
+            return $stored;
+        }
+        $nowTs = ($now ?? new \DateTimeImmutable('now'))->getTimestamp();
+        $start = self::parseDateTime($test['startTime'] ?? null);
+        $end = self::parseDateTime($test['endTime'] ?? null);
+        $startTs = $start ? strtotime($start) : null;
+        $endTs = $end ? strtotime($end) : null;
+        if ($stored === 'scheduled' || $stored === 'published') {
+            if ($startTs && $nowTs < $startTs) {
+                return 'scheduled';
+            }
+            if ($endTs && $nowTs > $endTs) {
+                return 'completed';
+            }
+            return 'published';
+        }
+        return $stored;
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    public static function isOpenForTaking(array $test, ?\DateTimeInterface $now = null): bool
+    {
+        if (self::lifecycleStatus($test, $now) !== 'published') {
+            return false;
+        }
+        return self::isContestOpen($test, $now);
     }
 
     /**
@@ -151,10 +228,14 @@ class AptitudeTestModel extends BaseModel
     public static function normalizeMcq(array $q, string $fallbackCategory, int $index = 0): ?array
     {
         $prompt = trim((string) ($q['prompt'] ?? $q['question'] ?? $q['question_text'] ?? ''));
+        $type = self::normalizeQuestionType((string) ($q['type'] ?? $q['questionType'] ?? 'mcq'));
         $options = array_values(array_filter(
             array_map(static fn ($o) => trim((string) $o), (array) ($q['options'] ?? [])),
             static fn ($o) => $o !== ''
         ));
+        if ($type === 'true_false') {
+            $options = ['True', 'False'];
+        }
         if ($prompt === '' || count($options) < 2) {
             return null;
         }
@@ -180,6 +261,25 @@ class AptitudeTestModel extends BaseModel
         if ($correctIndex < 0 || $correctIndex >= count($options)) {
             $correctIndex = 0;
         }
+        $correctIndexes = [];
+        if ($type === 'multi_select') {
+            $rawIdx = $q['correctIndexes'] ?? $q['correct_indexes'] ?? null;
+            if (is_array($rawIdx)) {
+                foreach ($rawIdx as $idx) {
+                    $n = (int) $idx;
+                    if ($n >= 0 && $n < count($options)) {
+                        $correctIndexes[] = $n;
+                    }
+                }
+            }
+            if ($correctIndexes === []) {
+                $correctIndexes = [$correctIndex];
+            }
+            $correctIndexes = array_values(array_unique($correctIndexes));
+            $correctIndex = $correctIndexes[0];
+        } else {
+            $correctIndexes = [$correctIndex];
+        }
         $marks = (float) ($q['marks'] ?? 1);
         if ($marks <= 0) {
             $marks = 1.0;
@@ -195,12 +295,13 @@ class AptitudeTestModel extends BaseModel
 
         return [
             'id' => $id,
-            'type' => 'mcq',
+            'type' => $type,
             'prompt' => $prompt,
             'question_text' => $prompt,
             'options' => $options,
             'correctIndex' => $correctIndex,
-            'correct_answer' => $correctIndex,
+            'correctIndexes' => $correctIndexes,
+            'correct_answer' => $type === 'multi_select' ? $correctIndexes : $correctIndex,
             'marks' => $marks,
             'negative_marks' => $negativeMarks,
             'explanation' => trim((string) ($q['explanation'] ?? $q['solution'] ?? '')),
@@ -307,6 +408,32 @@ class AptitudeTestModel extends BaseModel
             $negativeMarks = abs($negativeMarks);
         }
 
+        $questionSource = strtolower(trim((string) ($data['questionSource'] ?? 'manual'))) === 'random'
+            ? 'random'
+            : 'manual';
+        $randomRules = [];
+        foreach ((array) ($data['randomRules'] ?? []) as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $randomRules[] = [
+                'category' => self::normalizeCategory((string) ($rule['category'] ?? $category)),
+                'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
+                'count' => max(1, (int) ($rule['count'] ?? 1)),
+            ];
+        }
+        $bankQuestionIds = array_values(array_unique(array_filter(
+            array_map(static fn ($id) => trim((string) $id), (array) ($data['bankQuestionIds'] ?? [])),
+            static fn ($id) => $id !== ''
+        )));
+        $passingMarks = (float) ($data['passingMarks'] ?? $data['passMarks'] ?? 0);
+        if ($passingMarks < 0) {
+            $passingMarks = 0.0;
+        }
+        if ($passingMarks > $totalMarks && $totalMarks > 0) {
+            $passingMarks = $totalMarks;
+        }
+
         $payload = [
             'title' => trim((string) ($data['title'] ?? 'Aptitude mock')) ?: 'Aptitude mock',
             'description' => trim((string) ($data['description'] ?? '')),
@@ -315,12 +442,24 @@ class AptitudeTestModel extends BaseModel
             'questionCount' => max(0, $questionCount),
             'durationMinutes' => max(1, (int) ($data['durationMinutes'] ?? $data['duration'] ?? 30)),
             'totalMarks' => $totalMarks,
+            'passingMarks' => $passingMarks,
             'negativeMarking' => $negativeMarking,
             'negativeMarks' => $negativeMarks,
             'instructions' => trim((string) ($data['instructions'] ?? '')),
-            'status' => self::normalizeStatus((string) ($data['status'] ?? 'unpublished')),
+            'status' => self::normalizeStatus((string) ($data['status'] ?? 'draft')),
+            'startTime' => self::parseDateTime($data['startTime'] ?? null),
+            'endTime' => self::parseDateTime($data['endTime'] ?? null),
+            'showResultsImmediately' => filter_var($data['showResultsImmediately'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'allowMultipleAttempts' => filter_var($data['allowMultipleAttempts'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'assignmentMode' => self::normalizeAssignmentMode((string) ($data['assignmentMode'] ?? 'all')),
+            'assignmentCourses' => array_values(array_filter(array_map('strval', (array) ($data['assignmentCourses'] ?? [])))),
+            'assignmentBatches' => array_values(array_filter(array_map('strval', (array) ($data['assignmentBatches'] ?? [])))),
+            'assignmentStudentIds' => array_values(array_filter(array_map('strval', (array) ($data['assignmentStudentIds'] ?? [])))),
             'contestType' => self::normalizeContestType((string) ($data['contestType'] ?? 'none')),
-            'questionType' => 'mcq',
+            'questionSource' => $questionSource,
+            'randomRules' => $questionSource === 'random' ? $randomRules : [],
+            'bankQuestionIds' => $questionSource === 'manual' ? $bankQuestionIds : [],
+            'questionType' => 'mixed',
             'questions' => $questions,
         ];
         $contestType = $payload['contestType'];
@@ -385,14 +524,16 @@ class AptitudeTestModel extends BaseModel
             }
             $row = [
                 'id' => $norm['id'],
-                'type' => 'mcq',
+                'type' => $norm['type'],
                 'prompt' => $norm['prompt'],
                 'options' => $norm['options'],
                 'marks' => $norm['marks'],
                 'category' => $norm['category'],
+                'difficulty' => $norm['difficulty'],
             ];
             if ($includeAnswers) {
                 $row['correctIndex'] = $norm['correctIndex'];
+                $row['correctIndexes'] = $norm['correctIndexes'];
                 $row['explanation'] = $norm['explanation'];
             }
             $questions[] = $row;
@@ -415,16 +556,47 @@ class AptitudeTestModel extends BaseModel
             'questionCount' => $questionCount,
             'durationMinutes' => max(1, (int) ($test['durationMinutes'] ?? 30)),
             'totalMarks' => (float) ($test['totalMarks'] ?? max(1, $questionCount)),
+            'passingMarks' => (float) ($test['passingMarks'] ?? 0),
             'negativeMarking' => $negativeMarking,
             'negativeMarks' => $negativeMarking ? $negativeMarks : 0.0,
             'instructions' => (string) ($test['instructions'] ?? ''),
-            'status' => self::normalizeStatus((string) ($test['status'] ?? 'unpublished')),
+            'status' => self::normalizeStatus((string) ($test['status'] ?? 'draft')),
+            'lifecycleStatus' => self::lifecycleStatus($test),
+            'startTime' => $test['startTime'] ?? null,
+            'endTime' => $test['endTime'] ?? null,
+            'showResultsImmediately' => filter_var($test['showResultsImmediately'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'allowMultipleAttempts' => filter_var($test['allowMultipleAttempts'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'assignmentMode' => self::normalizeAssignmentMode((string) ($test['assignmentMode'] ?? 'all')),
+            'assignmentCourses' => array_values(array_filter(array_map('strval', (array) ($test['assignmentCourses'] ?? [])))),
+            'assignmentBatches' => array_values(array_filter(array_map('strval', (array) ($test['assignmentBatches'] ?? [])))),
+            'assignmentStudentIds' => array_values(array_filter(array_map('strval', (array) ($test['assignmentStudentIds'] ?? [])))),
             'contestType' => self::normalizeContestType((string) ($test['contestType'] ?? 'none')),
             'contestWeekday' => isset($test['contestWeekday']) ? (int) $test['contestWeekday'] : null,
             'contestMonthDay' => isset($test['contestMonthDay']) ? (int) $test['contestMonthDay'] : null,
             'contestScheduleLabel' => self::contestScheduleLabel($test),
             'contestOpen' => self::isContestOpen($test),
-            'questionType' => 'mcq',
+            'questionSource' => in_array((string) ($test['questionSource'] ?? 'manual'), ['random'], true)
+                ? 'random'
+                : 'manual',
+            'randomRules' => array_values(array_map(
+                static function ($rule): array {
+                    if (!is_array($rule)) {
+                        return [];
+                    }
+
+                    return [
+                        'category' => self::normalizeCategory((string) ($rule['category'] ?? 'General Aptitude')),
+                        'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
+                        'count' => max(1, (int) ($rule['count'] ?? 1)),
+                    ];
+                },
+                (array) ($test['randomRules'] ?? [])
+            )),
+            'bankQuestionIds' => array_values(array_filter(array_map(
+                static fn ($id) => trim((string) $id),
+                (array) ($test['bankQuestionIds'] ?? [])
+            ))),
+            'questionType' => 'mixed',
             'questions' => $questions,
             'departmentId' => isset($test['departmentId']) ? (string) $test['departmentId'] : null,
             'createdAt' => $test['createdAt'] ?? null,

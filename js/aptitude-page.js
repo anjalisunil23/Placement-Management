@@ -77,6 +77,48 @@
     localStorage.setItem(DEMO_BANK_KEY, JSON.stringify(list));
   }
 
+  function ensureDemoBankSeed() {
+    if (loadDemoBankStore().length) return;
+    saveDemoBankStore([
+      { id: 'bank-seed-1', category: 'General Aptitude', difficulty: 'Easy', marks: 1, prompt: 'What is 25% of 80?', options: ['15', '20', '25', '30'], correctIndex: 1, explanation: '25% of 80 = 20.' },
+      { id: 'bank-seed-2', category: 'General Aptitude', difficulty: 'Medium', marks: 1, prompt: 'A can finish a job in 10 days and B in 15 days. Working together, how many days?', options: ['5', '6', '7', '8'], correctIndex: 1, explanation: 'Combined rate 1/10 + 1/15 = 1/6 → 6 days.' },
+      { id: 'bank-seed-3', category: 'General Aptitude', difficulty: 'Medium', marks: 1, prompt: 'Find the next number: 2, 6, 12, 20, ?', options: ['28', '30', '32', '36'], correctIndex: 1, explanation: 'Differences +4, +6, +8, +10 → 30.' },
+      { id: 'bank-seed-4', category: 'General Aptitude', difficulty: 'Medium', marks: 1, prompt: 'If 3x + 5 = 20, what is x?', options: ['3', '4', '5', '6'], correctIndex: 2, explanation: '3x = 15 → x = 5.' },
+      { id: 'bank-seed-5', category: 'General Aptitude', difficulty: 'Medium', marks: 1, prompt: 'Average of 10, 20, and 30 is?', options: ['15', '20', '25', '30'], correctIndex: 1, explanation: '(10+20+30)/3 = 20.' },
+      { id: 'bank-seed-6', category: 'General Aptitude', difficulty: 'Hard', marks: 1, prompt: 'A shopkeeper marks goods 40% above cost and gives 10% discount. Profit %?', options: ['26%', '30%', '36%', '40%'], correctIndex: 0, explanation: 'SP = 1.4 × 0.9 = 1.26 → 26% profit.' },
+      { id: 'bank-seed-7', category: 'Quantitative Aptitude', difficulty: 'Easy', marks: 1, prompt: 'What is 15% of 240?', options: ['24', '36', '30', '48'], correctIndex: 1, explanation: '0.15 × 240 = 36.' },
+      { id: 'bank-seed-8', category: 'Logical Reasoning', difficulty: 'Medium', marks: 1, prompt: 'All cats are animals. Some animals are pets. Which is definitely true?', options: ['All pets are cats', 'Some cats may be pets', 'No cats are pets', 'All animals are cats'], correctIndex: 1, explanation: 'Overlap is possible; not guaranteed for all.' },
+    ]);
+  }
+
+  function normalizeBankCategory(value) {
+    const raw = String(value || '').trim();
+    const categories = meta.categories || APTITUDE_CATEGORIES;
+    for (const cat of categories) {
+      if (cat.toLowerCase() === raw.toLowerCase()) return cat;
+    }
+    const map = {
+      quantitative: 'Quantitative Aptitude',
+      logical: 'Logical Reasoning',
+      verbal: 'Verbal Ability',
+      'data interpretation': 'Data Interpretation',
+      numerical: 'Numerical Ability',
+      general: 'General Aptitude',
+      'general aptitude': 'General Aptitude',
+    };
+    return map[raw.toLowerCase()] || 'General Aptitude';
+  }
+
+  function bankQuestionMatchesRule(q, rule) {
+    const qCat = normalizeBankCategory(q.category);
+    const rCat = normalizeBankCategory(rule.category);
+    if (rCat && qCat !== rCat) return false;
+    const qDiff = normalizeDifficulty(q.difficulty);
+    const rDiff = normalizeDifficulty(rule.difficulty);
+    if (rDiff && qDiff !== rDiff) return false;
+    return true;
+  }
+
   function parseCorrectIndex(correct, options) {
     const c = String(correct ?? '').trim();
     if (!c) return 0;
@@ -102,14 +144,22 @@
     return '';
   }
 
-  function normalizeBulkRow(row, fallbackCategory, index) {
+  function normalizeDifficulty(value, fallback = 'Medium') {
+    const raw = String(value || fallback).trim();
+    const hit = APTITUDE_DIFFICULTIES.find((d) => d.toLowerCase() === raw.toLowerCase());
+    return hit || 'Medium';
+  }
+
+  function normalizeBulkRow(row, fallbackCategory, index, fallbackDifficulty = 'Medium') {
     const prompt = rowField(row, 'prompt', 'question', 'question text');
-    const options = [
-      rowField(row, 'optionA', 'option_a', 'a', 'option1'),
-      rowField(row, 'optionB', 'option_b', 'b', 'option2'),
-      rowField(row, 'optionC', 'option_c', 'c', 'option3'),
-      rowField(row, 'optionD', 'option_d', 'd', 'option4'),
-    ].filter(Boolean);
+    const options = Array.isArray(row.options) && row.options.length >= 2
+      ? row.options.map((o) => String(o || '').trim()).filter(Boolean)
+      : [
+        rowField(row, 'optionA', 'option_a', 'a', 'option1'),
+        rowField(row, 'optionB', 'option_b', 'b', 'option2'),
+        rowField(row, 'optionC', 'option_c', 'c', 'option3'),
+        rowField(row, 'optionD', 'option_d', 'd', 'option4'),
+      ].filter(Boolean);
     if (!prompt || options.length < 2) return null;
     const correct = rowField(row, 'correct', 'answer', 'correctIndex', 'correct_option');
     const marks = Number(rowField(row, 'marks', 'mark') || 1) || 1;
@@ -122,13 +172,14 @@
       marks,
       explanation: rowField(row, 'explanation', 'solution'),
       category: rowField(row, 'category') || fallbackCategory,
+      difficulty: normalizeDifficulty(rowField(row, 'difficulty', 'level', 'difficulty level'), fallbackDifficulty),
     };
   }
 
-  function normalizeBulkRows(rows, fallbackCategory) {
+  function normalizeBulkRows(rows, fallbackCategory, fallbackDifficulty = 'Medium') {
     const out = [];
     rows.forEach((row) => {
-      const norm = normalizeBulkRow(row, fallbackCategory, out.length);
+      const norm = normalizeBulkRow(row, fallbackCategory, out.length, fallbackDifficulty);
       if (norm) out.push(norm);
     });
     return out;
@@ -136,7 +187,8 @@
 
   function demoBulkUpload(rawRows, mode) {
     const fallbackCategory = document.getElementById('bulkCategory')?.value || 'General Aptitude';
-    const normalized = normalizeBulkRows(rawRows, fallbackCategory);
+    const fallbackDifficulty = document.getElementById('bulkDifficulty')?.value || 'Medium';
+    const normalized = normalizeBulkRows(rawRows, fallbackCategory, fallbackDifficulty);
     if (!normalized.length) {
       throw new Error('No valid questions found in the Excel file.');
     }
@@ -166,15 +218,30 @@
 
   let access = { canTake: false, canManage: false, canViewDirectory: false, scope: null };
   let tests = [];
-  let meta = { categories: APTITUDE_CATEGORIES, difficulties: APTITUDE_DIFFICULTIES };
+  let meta = { categories: APTITUDE_CATEGORIES, difficulties: APTITUDE_DIFFICULTIES, statuses: ['draft', 'scheduled', 'published', 'completed', 'archived'] };
   let testFormModal;
   let bulkModal;
   let studentAptModal;
+  let bankModal;
+  let bankQuestionModal;
+  let resultsModal;
   let exam;
   let mcqCounter = 0;
+  let bankPickMode = false;
+  let bankCache = [];
+  let adminStats = { totalTests: 0, published: 0, draft: 0, totalAttempts: 0 };
   let dirFilterBranch = '';
   let dirFilterBatch = '';
   let dirFiltersBound = false;
+  let progressPanel = 'tests';
+  let myResultsPanel = 'tests';
+  let bankDifficultyFilter = '';
+  let bankCategoryFilter = '';
+  let bankQuestions = [];
+  let bankSummary = { Easy: 0, Medium: 0, Hard: 0, total: 0 };
+  let bankPickerQuestions = [];
+  let bankPickerAllQuestions = [];
+  const selectedBankIds = new Set();
 
   function dirOptionLabel(value) {
     const raw = String(value || '').trim();
@@ -307,7 +374,7 @@
     hint.classList.add('d-none');
   }
 
-  function demoDirectoryRows() {
+  function demoDirectoryRows(resultType = progressPanel) {
     const role = Auth.role();
     const u = Auth.user() || {};
     const qs = buildDirectoryQuery();
@@ -360,6 +427,21 @@
           ? { 'Quantitative Aptitude': { percentage: stats.averageScore } }
           : {},
       };
+    }).filter((r) => {
+      if (resultType === 'contests') {
+        return (r.testsAttempted || 0) > 0 && (r.userId === 'u-s2' || r.userId === 'u-s1');
+      }
+      return true;
+    }).map((r) => {
+      if (resultType !== 'contests') return r;
+      return {
+        ...r,
+        testsAttempted: Math.min(Number(r.testsAttempted) || 0, 1),
+        averageScore: r.userId === 'u-s2' ? 68 : 74,
+        bestScore: r.userId === 'u-s2' ? 72 : 74,
+        accuracy: r.userId === 'u-s2' ? 65 : 74,
+        recentScore: r.userId === 'u-s2' ? 72 : 74,
+      };
     });
 
     const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
@@ -384,7 +466,165 @@
     };
   }
 
+  function demoContestResults() {
+    const demo = demoDirectoryRows('contests');
+    if (demo.noClass) {
+      return { contests: [], summary: {}, noClass: true };
+    }
+
+    const participants = (demo.rows || [])
+      .filter((r) => (r.testsAttempted || 0) > 0)
+      .map((r, i) => ({
+        attemptId: `demo-contest-${r.userId}`,
+        userId: r.userId,
+        name: r.name,
+        registerNumber: r.registerNumber,
+        studentCode: r.registerNumber,
+        classBatch: r.classBatch,
+        course: r.course,
+        rank: i + 1,
+        percentage: r.recentScore ?? r.bestScore ?? 0,
+        marksObtained: Math.round(((r.recentScore ?? r.bestScore ?? 0) / 100) * 20),
+        totalMarks: 20,
+        correctCount: Math.round(((r.recentScore ?? 0) / 100) * 18),
+        wrongCount: 2,
+        unansweredCount: 0,
+        timeTakenSeconds: 900 + i * 120,
+        timeTakenLabel: i === 0 ? '15m 00s' : '17m 00s',
+        completedAt: new Date(Date.now() - i * 86400000).toISOString(),
+        accuracy: r.accuracy ?? 0,
+      }))
+      .sort((a, b) => (Number(b.percentage) || 0) - (Number(a.percentage) || 0))
+      .map((p, i) => ({ ...p, rank: i + 1 }));
+
+    const percentages = participants.map((p) => Number(p.percentage) || 0);
+    const avgPct = percentages.length
+      ? Math.round((percentages.reduce((a, b) => a + b, 0) / percentages.length) * 10) / 10
+      : 0;
+
+    return {
+      contests: participants.length ? [{
+        testId: 'demo-weekly-contest',
+        title: 'Weekly aptitude contest',
+        category: 'Quantitative Aptitude',
+        contestType: 'weekly',
+        contestScheduleLabel: 'Weekly · Friday',
+        participantCount: participants.length,
+        participants,
+      }] : [],
+      summary: {
+        contestCount: participants.length ? 1 : 0,
+        totalParticipants: participants.length,
+        uniqueParticipants: participants.length,
+        avgPercentage: avgPct,
+        highestScore: percentages.length ? Math.max(...percentages) : 0,
+      },
+      noClass: false,
+    };
+  }
+
+  function formatContestScore(p) {
+    const obtained = Number(p.marksObtained ?? p.score);
+    const total = Number(p.totalMarks ?? p.maximumScore);
+    const pct = Number(p.percentage);
+    if (Number.isFinite(obtained) && Number.isFinite(total) && total > 0) {
+      return Number.isFinite(pct) ? `${obtained}/${total} (${pct}%)` : `${obtained}/${total}`;
+    }
+    return Number.isFinite(pct) ? `${pct}%` : '—';
+  }
+
+  function formatContestBreakdown(p) {
+    const bits = [];
+    if (p.correctCount != null) bits.push(`${p.correctCount} correct`);
+    if (p.wrongCount != null) bits.push(`${p.wrongCount} wrong`);
+    if (p.unansweredCount != null) bits.push(`${p.unansweredCount} skipped`);
+    return bits.length ? bits.join(' · ') : '—';
+  }
+
+  function formatCompletedAt(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString(undefined, {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  function renderContestResults(contests, summary, scope = {}) {
+    document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
+    document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
+
+    document.getElementById('dirStats').innerHTML = [
+      ['Contests', summary.contestCount ?? 0],
+      ['Participants', summary.totalParticipants ?? 0],
+      ['Unique students', summary.uniqueParticipants ?? 0],
+      ['Avg score', `${summary.avgPercentage ?? 0}%`],
+      ['Top score', `${summary.highestScore ?? 0}%`],
+    ].map(([lbl, val]) =>
+      `<div class="col-6 col-md"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
+    ).join('');
+
+    const role = Auth.role();
+    const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+      ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
+      : 'No contest attempts in your authorized scope yet.';
+
+    const root = document.getElementById('dirContestSections');
+    if (!root) return;
+
+    if (!contests.length) {
+      root.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+      return;
+    }
+
+    const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
+    root.innerHTML = contests.map((c) => {
+      const badge = c.contestScheduleLabel
+        ? `<span class="badge-soft info ms-2">${esc(c.contestScheduleLabel)}</span>`
+        : '';
+      const cat = c.category ? `<span class="text-muted-2 ms-2">${esc(c.category)}</span>` : '';
+      const rows = (c.participants || []).map((p) => {
+        const viewBtn = canViewDetail && (p.attemptId || p.id)
+          ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(p.attemptId || p.id)}">View</button>`
+          : `<button type="button" class="btn btn-sm btn-outline-secondary" data-detail="${esc(p.userId || '')}">Profile</button>`;
+        return `<tr>
+          <td class="text-muted-2">${esc(p.rank ?? '—')}</td>
+          <td class="fw-semibold">${esc(p.name || '—')}</td>
+          <td>${esc(studentIdLabel(p))}</td>
+          <td>${esc(p.classBatch || '—')}</td>
+          <td>${esc(formatContestScore(p))}</td>
+          <td>${esc(p.timeTakenLabel || '—')}</td>
+          <td class="small">${esc(formatContestBreakdown(p))}</td>
+          <td class="small text-muted-2">${esc(formatCompletedAt(p.completedAt))}</td>
+          <td>${viewBtn}</td>
+        </tr>`;
+      }).join('');
+
+      return `<div class="card-surface p-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <div class="fw-bold">${esc(c.title || 'Contest')}${badge}${cat}</div>
+            <div class="small text-muted-2">${esc(c.participantCount ?? (c.participants || []).length)} participant(s)</div>
+          </div>
+        </div>
+        <div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
+          <th>Rank</th><th>Name</th><th>Student ID</th><th>Class</th><th>Score</th><th>Time</th><th>Breakdown</th><th>Submitted</th><th></th>
+        </tr></thead><tbody>${rows || `<tr><td colspan="9" class="text-muted-2 p-3">No participants yet.</td></tr>`}</tbody></table></div>
+      </div>`;
+    }).join('');
+
+    root.querySelectorAll('[data-view-attempt]').forEach((btn) => {
+      btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt')));
+    });
+    root.querySelectorAll('[data-detail]').forEach((btn) => {
+      btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
+    });
+  }
+
   function renderDirectoryTable(rows, summary, scope = {}) {
+    document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
+    document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
+
     document.getElementById('dirStats').innerHTML = [
       ['Students', summary.students ?? summary.subjects ?? 0],
       ['With attempts', summary.withAttempts ?? 0],
@@ -397,9 +637,13 @@
     ).join('');
 
     const role = Auth.role();
-    const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
-      ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
-      : 'No aptitude progress in your authorized scope yet.';
+    const emptyMsg = progressPanel === 'contests'
+      ? (role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+        ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
+        : 'No contest results in your authorized scope yet.')
+      : (role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+        ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
+        : 'No test results in your authorized scope yet.');
 
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
       const uid = String(r.userId || '');
@@ -516,7 +760,40 @@
     if (branch) qs.set('course', branch);
     if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
+    if (progressPanel === 'tests' || progressPanel === 'contests') qs.set('resultType', progressPanel);
     return qs;
+  }
+
+  function progressDirTitle(role, panel = progressPanel) {
+    const contest = panel === 'contests';
+    const map = {
+      placement_officer: contest ? 'Department contest results' : 'Department test results',
+      staff: contest ? 'Class contest results' : 'Class test results',
+      admin: contest ? 'Institution contest results' : 'Institution test results',
+    };
+    return map[role] || (contest ? 'Contest results' : 'Test results');
+  }
+
+  function applyProgressPanel(panel) {
+    progressPanel = panel === 'contests' ? 'contests' : 'tests';
+    document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
+    });
+  }
+
+  function applyMyResultsPanel(panel) {
+    myResultsPanel = panel === 'contests' ? 'contests' : 'tests';
+    document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsPanel);
+    });
+  }
+
+  function historyEntryIsContest(h) {
+    const type = String(h?.contestType || '');
+    if (type === 'weekly' || type === 'monthly') return true;
+    if (type === 'none') return false;
+    const test = resolveHistoryTest(h);
+    return test ? isContestTest(test) : false;
   }
 
   function bindDirFilterEvents() {
@@ -556,9 +833,466 @@
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   }
 
-  function fillSelect(el, options, selected = '') {
+  function fillSelect(el, options, selected = '', allowEmpty = false) {
     if (!el) return;
-    el.innerHTML = options.map((o) => `<option value="${esc(o)}" ${o === selected ? 'selected' : ''}>${esc(o)}</option>`).join('');
+    const emptyOpt = allowEmpty ? `<option value="">All categories</option>` : '';
+    el.innerHTML = emptyOpt + options.map((o) => `<option value="${esc(o)}" ${o === selected ? 'selected' : ''}>${esc(o)}</option>`).join('');
+  }
+
+  function stripHtml(text) {
+    const div = document.createElement('div');
+    div.innerHTML = String(text || '');
+    return (div.textContent || div.innerText || '').trim();
+  }
+
+  function bankDifficultyBadge(level) {
+    const map = { Easy: 'success', Medium: 'warning', Hard: 'danger' };
+    const cls = map[normalizeDifficulty(level)] || 'secondary';
+    return `<span class="badge bg-${cls}-subtle text-${cls} border border-${cls}-subtle">${esc(normalizeDifficulty(level))}</span>`;
+  }
+
+  function demoBankSummary(questions) {
+    const summary = { Easy: 0, Medium: 0, Hard: 0, total: 0 };
+    (questions || []).forEach((q) => {
+      const level = normalizeDifficulty(q.difficulty);
+      summary[level] += 1;
+      summary.total += 1;
+    });
+    return summary;
+  }
+
+  async function loadQuestionBank() {
+    if (!access.canManage) return;
+    const categoryEl = document.getElementById('bankFilterCategory');
+    if (categoryEl && categoryEl.options.length <= 1) {
+      fillSelect(categoryEl, meta.categories || APTITUDE_CATEGORIES, bankCategoryFilter, true);
+    }
+    bankCategoryFilter = categoryEl?.value || bankCategoryFilter || '';
+
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const qs = new URLSearchParams();
+      if (bankCategoryFilter) qs.set('category', bankCategoryFilter);
+      if (bankDifficultyFilter) qs.set('difficulty', bankDifficultyFilter);
+      const res = await api('/aptitude/question-bank' + (qs.toString() ? `?${qs}` : '')).catch(() => null);
+      bankQuestions = res?.data?.questions || [];
+      bankSummary = res?.data?.summary || demoBankSummary(bankQuestions);
+    } else {
+      ensureDemoBankSeed();
+      const all = loadDemoBankStore();
+      bankQuestions = all.filter((q) => {
+        if (bankCategoryFilter && String(q.category || '') !== bankCategoryFilter) return false;
+        if (bankDifficultyFilter && normalizeDifficulty(q.difficulty) !== bankDifficultyFilter) return false;
+        return true;
+      });
+      bankSummary = demoBankSummary(all.filter((q) => (
+        !bankCategoryFilter || String(q.category || '') === bankCategoryFilter
+      )));
+    }
+    renderQuestionBank();
+  }
+
+  function renderQuestionBank() {
+    const statsRoot = document.getElementById('bankStats');
+    if (statsRoot) {
+      statsRoot.innerHTML = [
+        ['Total in bank', bankSummary.total ?? 0],
+        ['Easy', bankSummary.Easy ?? 0],
+        ['Medium', bankSummary.Medium ?? 0],
+        ['Hard', bankSummary.Hard ?? 0],
+      ].map(([lbl, val]) =>
+        `<div class="col-6 col-md-3"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
+      ).join('');
+    }
+
+    document.querySelectorAll('#bankDifficultyNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', (link.getAttribute('data-bank-difficulty') || '') === bankDifficultyFilter);
+    });
+
+    const root = document.getElementById('bankQuestionsList');
+    if (!root) return;
+    if (!bankQuestions.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">No questions in this bucket yet. Use bulk upload to add Easy, Medium, and Hard MCQs.</p>';
+      return;
+    }
+
+    root.innerHTML = bankQuestions.slice(0, 100).map((q) => {
+      const id = String(q.id || q.bankId || '');
+      const prompt = stripHtml(q.prompt).slice(0, 160) || 'Question';
+      return `<div class="border rounded-3 p-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+          <div class="min-w-0 flex-grow-1">
+            <div class="fw-medium text-truncate">${esc(prompt)}</div>
+            <div class="small text-muted-2">${esc(q.category || 'General Aptitude')} · ${esc(q.options?.length || 0)} options · ${esc(q.marks ?? 1)} mark(s)</div>
+          </div>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            ${bankDifficultyBadge(q.difficulty)}
+            <button type="button" class="btn btn-sm btn-outline-danger" data-bank-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
+          </div>
+        </div>
+      </div>`;
+    }).join('') + (bankQuestions.length > 100
+      ? `<p class="small text-muted-2 mb-0">Showing first 100 of ${bankQuestions.length} questions.</p>`
+      : '');
+
+    root.querySelectorAll('[data-bank-delete]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteBankQuestion(btn.getAttribute('data-bank-delete')));
+    });
+  }
+
+  async function deleteBankQuestion(id) {
+    if (!id) return;
+    if (!confirm('Delete this question from the bank?')) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      if (!Auth.isDemo() || !access.canManage) {
+        toast('Delete requires a live session with manage access.', 'info');
+        return;
+      }
+      saveDemoBankStore(loadDemoBankStore().filter((q) => String(q.id || q.bankId) !== String(id)));
+      selectedBankIds.delete(String(id));
+      toast('Question deleted (demo).', 'success');
+      await loadQuestionBank();
+      return;
+    }
+    const res = await api(`/aptitude/question-bank/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete question.', 'error');
+      return;
+    }
+    selectedBankIds.delete(String(id));
+    toast('Question deleted.', 'success');
+    await loadQuestionBank();
+  }
+
+  async function deleteTest(id) {
+    if (!id) return;
+    if (!confirm('Delete this test? This cannot be undone.')) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      if (!Auth.isDemo() || !access.canManage) {
+        toast('Delete requires a live session with manage access.', 'info');
+        return;
+      }
+      saveDemoTestsStore(loadDemoTestsStore().filter((t) => String(t.id) !== String(id)));
+      toast('Test deleted (demo).', 'success');
+      await loadTests();
+      renderTestList();
+      renderManage();
+      return;
+    }
+    const res = await api(`/aptitude/tests/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete test.', 'error');
+      return;
+    }
+    toast('Test deleted.', 'success');
+    await loadTests();
+    renderTestList();
+    renderManage();
+  }
+
+  function getQuestionSource() {
+    return document.getElementById('tfSourceRandom')?.checked ? 'random' : 'manual';
+  }
+
+  function syncQuestionSourcePanels() {
+    const random = getQuestionSource() === 'random';
+    document.getElementById('tfRandomPanel')?.classList.toggle('d-none', !random);
+    document.getElementById('tfManualPanel')?.classList.toggle('d-none', random);
+    const countEl = document.getElementById('tfQuestionCount');
+    if (countEl) {
+      countEl.readOnly = random;
+      if (random) updateRandomSummary();
+    }
+  }
+
+  function addRandomRuleRow(rule = {}) {
+    const root = document.getElementById('tfRandomRules');
+    if (!root) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-random-rule row g-2 align-items-end';
+    const categories = meta.categories || APTITUDE_CATEGORIES;
+    const catOpts = categories.map((c) =>
+      `<option value="${esc(c)}" ${c === (rule.category || categories[0]) ? 'selected' : ''}>${esc(c)}</option>`
+    ).join('');
+    const diff = normalizeDifficulty(rule.difficulty || 'Medium');
+    wrap.innerHTML = `
+      <div class="col-md-5">
+        <label class="form-label small mb-1">Category</label>
+        <select class="form-select form-select-sm" data-f="category">${catOpts}</select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Difficulty</label>
+        <select class="form-select form-select-sm" data-f="difficulty">
+          ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">No. of questions</label>
+        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 5)}"/>
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-rule>Remove</button>
+      </div>`;
+    wrap.querySelector('[data-remove-rule]')?.addEventListener('click', () => {
+      wrap.remove();
+      updateRandomSummary();
+    });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', updateRandomSummary);
+      el.addEventListener('input', updateRandomSummary);
+    });
+    root.appendChild(wrap);
+    updateRandomSummary();
+  }
+
+  function collectRandomRules() {
+    return [...document.querySelectorAll('#tfRandomRules .tf-random-rule')].map((row) => ({
+      category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
+      difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+      count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
+    }));
+  }
+
+  function updateRandomSummary() {
+    const rules = collectRandomRules();
+    const total = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const summary = document.getElementById('tfRandomSummary');
+    if (summary) summary.textContent = `${total} question(s) from ${rules.length} rule(s)`;
+    const countEl = document.getElementById('tfQuestionCount');
+    if (countEl && getQuestionSource() === 'random') countEl.value = String(total || 1);
+  }
+
+  function readBankFilterRule(row) {
+    if (!row) {
+      return { category: 'General Aptitude', difficulty: 'Medium', count: 1 };
+    }
+    return {
+      category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
+      difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+      count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
+    };
+  }
+
+  function addBankFilterRuleRow(rule = {}) {
+    const root = document.getElementById('tfBankFilterRules');
+    if (!root) return;
+    const outer = document.createElement('div');
+    outer.className = 'tf-bank-filter-rule-wrap border rounded-3 p-2';
+    const row = document.createElement('div');
+    row.className = 'tf-bank-filter-rule row g-2 align-items-end';
+    const categories = meta.categories || APTITUDE_CATEGORIES;
+    const catOpts = categories.map((c) =>
+      `<option value="${esc(c)}" ${c === (rule.category || categories[0]) ? 'selected' : ''}>${esc(c)}</option>`
+    ).join('');
+    const diff = normalizeDifficulty(rule.difficulty || 'Medium');
+    row.innerHTML = `
+      <div class="col-md-5">
+        <label class="form-label small mb-1">Category</label>
+        <select class="form-select form-select-sm" data-f="category">${catOpts}</select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Difficulty</label>
+        <select class="form-select form-select-sm" data-f="difficulty">
+          ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">No. of questions</label>
+        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 5)}"/>
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-bank-rule>Remove</button>
+      </div>`;
+    const questions = document.createElement('div');
+    questions.className = 'tf-bank-rule-questions mt-2 ps-2 border-start border-2';
+    questions.style.borderColor = 'var(--border)';
+    outer.appendChild(row);
+    outer.appendChild(questions);
+    row.querySelector('[data-remove-bank-rule]')?.addEventListener('click', () => {
+      outer.remove();
+      loadBankPickerQuestions().catch(() => renderBankPicker());
+    });
+    row.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', () => {
+        loadBankPickerQuestions().catch(() => renderBankPicker());
+      });
+      el.addEventListener('input', () => {
+        updateBankPickSummary();
+        updateManualQuestionCount();
+      });
+    });
+    root.appendChild(outer);
+    loadBankPickerQuestions().catch(() => renderBankPicker());
+  }
+
+  function collectBankFilterRules() {
+    return [...document.querySelectorAll('#tfBankFilterRules .tf-bank-filter-rule-wrap')].map((wrap) =>
+      readBankFilterRule(wrap.querySelector('.tf-bank-filter-rule'))
+    );
+  }
+
+  function recomputeBankPickerQuestions(rules) {
+    const seen = new Set();
+    bankPickerQuestions = [];
+    rules.forEach((rule) => {
+      bankPickerAllQuestions.filter((q) => bankQuestionMatchesRule(q, rule)).forEach((q) => {
+        const id = String(q.id || q.bankId || '');
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        bankPickerQuestions.push(q);
+      });
+    });
+  }
+
+  function bankFilterRulesNeeded() {
+    return collectBankFilterRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+  }
+
+  function updateBankPickSummary() {
+    const summary = document.getElementById('tfBankPickSummary');
+    if (!summary) return;
+    const needed = bankFilterRulesNeeded();
+    const bankTotal = bankPickerAllQuestions.length;
+    summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown · ${bankTotal} in bank · ${needed} needed from rules`;
+  }
+
+  async function loadBankPickerQuestions() {
+    const rules = collectBankFilterRules();
+
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/question-bank').catch(() => null);
+      bankPickerAllQuestions = res?.data?.questions || [];
+    } else {
+      ensureDemoBankSeed();
+      bankPickerAllQuestions = loadDemoBankStore();
+    }
+
+    recomputeBankPickerQuestions(rules);
+
+    updateBankPickSummary();
+    updateManualQuestionCount();
+    renderBankPicker();
+  }
+
+  function renderBankPickerQuestionRow(q) {
+    const id = String(q.id || q.bankId || '');
+    const checked = selectedBankIds.has(id) ? 'checked' : '';
+    const prompt = stripHtml(q.prompt).slice(0, 160) || 'Question';
+    return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0 bg-white">
+      <input type="checkbox" class="form-check-input mt-1" data-bank-pick="${esc(id)}" ${checked}/>
+      <span class="small min-w-0 flex-grow-1">
+        <span class="d-block">${esc(prompt)}</span>
+        <span class="text-muted-2">${esc(normalizeDifficulty(q.difficulty))} · ${Number(q.marks ?? 1)} mark(s)</span>
+      </span>
+    </label>`;
+  }
+
+  function bindBankPickerCheckboxes(root) {
+    root.querySelectorAll('[data-bank-pick]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = cb.getAttribute('data-bank-pick');
+        if (!id) return;
+        if (cb.checked) selectedBankIds.add(id);
+        else selectedBankIds.delete(id);
+        updateManualQuestionCount();
+        updateBankPickSummary();
+      });
+    });
+  }
+
+  function renderBankPicker() {
+    updateBankPickSummary();
+
+    const wraps = [...document.querySelectorAll('#tfBankFilterRules .tf-bank-filter-rule-wrap')];
+    if (!wraps.length) return;
+
+    if (!bankPickerAllQuestions.length) {
+      wraps.forEach((wrap, idx) => {
+        const list = wrap.querySelector('.tf-bank-rule-questions');
+        if (!list) return;
+        list.innerHTML = idx === 0
+          ? '<p class="small text-muted-2 mb-0">Question bank is empty. Open the <strong>Question bank</strong> tab and upload Excel questions first.</p>'
+          : '';
+      });
+      return;
+    }
+
+    wraps.forEach((wrap) => {
+      const row = wrap.querySelector('.tf-bank-filter-rule');
+      const list = wrap.querySelector('.tf-bank-rule-questions');
+      if (!row || !list) return;
+
+      const rule = readBankFilterRule(row);
+      const matched = bankPickerAllQuestions.filter((q) => bankQuestionMatchesRule(q, rule));
+      const header = `<div class="small fw-semibold mb-2">${esc(rule.category)} · ${esc(rule.difficulty)} · need ${rule.count} (${matched.length} available)</div>`;
+
+      if (!matched.length) {
+        list.innerHTML = `${header}<p class="small text-muted-2 mb-0">No questions in the bank for this category and difficulty.</p>`;
+        return;
+      }
+
+      list.innerHTML = `${header}<div class="d-flex flex-column gap-1">${matched.map((q) => renderBankPickerQuestionRow(q)).join('')}</div>`;
+      bindBankPickerCheckboxes(list);
+    });
+  }
+
+  function updateManualQuestionCount() {
+    if (getQuestionSource() !== 'manual') return;
+    const mcqCount = collectMcqs().length;
+    const useBank = document.getElementById('tfUseBankManual')?.checked;
+    const bankPart = useBank ? bankFilterRulesNeeded() : 0;
+    const countEl = document.getElementById('tfQuestionCount');
+    if (countEl) countEl.value = String(Math.max(mcqCount + bankPart, 1));
+  }
+
+  function demoPickRandomRules(rules) {
+    const picked = [];
+    const used = new Set();
+    ensureDemoBankSeed();
+    const all = loadDemoBankStore();
+    rules.forEach((rule) => {
+      let pool = all.filter((q) => {
+        const id = String(q.id || q.bankId || '');
+        if (used.has(id)) return false;
+        if (!bankQuestionMatchesRule(q, rule)) return false;
+        return true;
+      });
+      const count = Math.max(1, Number(rule.count) || 1);
+      if (pool.length < count) {
+        throw new Error(`Not enough ${rule.difficulty} questions in ${rule.category} (need ${count}, found ${pool.length}).`);
+      }
+      pool = pool.sort(() => Math.random() - 0.5).slice(0, count);
+      pool.forEach((q) => {
+        const id = String(q.id || q.bankId || '');
+        used.add(id);
+        picked.push({ ...q, bankId: id });
+      });
+    });
+    return picked;
+  }
+
+  function resolveDemoTestQuestions(payload) {
+    if (payload.questionSource === 'random') {
+      const rules = payload.randomRules || [];
+      if (!rules.length) throw new Error('Add at least one random rule.');
+      payload.questions = demoPickRandomRules(rules);
+      payload.questionCount = payload.questions.length;
+      payload.bankQuestionIds = [];
+      payload.category = rules[0]?.category || 'General Aptitude';
+      payload.difficulty = rules[0]?.difficulty || 'Medium';
+      return payload;
+    }
+    const bankIds = payload.bankQuestionIds || [];
+    const all = loadDemoBankStore();
+    const fromBank = bankIds.map((id) => all.find((q) => String(q.id) === String(id))).filter(Boolean);
+    const inline = payload.questions || [];
+    payload.questions = [...fromBank, ...inline];
+    payload.questionCount = payload.questions.length;
+    if (!payload.questions.length) throw new Error('Select bank questions or add MCQs.');
+    payload.category = fromBank[0]?.category || inline[0]?.category || 'General Aptitude';
+    payload.difficulty = fromBank[0]?.difficulty || inline[0]?.difficulty || 'Medium';
+    return payload;
   }
 
   function canManageContests() {
@@ -590,12 +1324,16 @@
   }
 
   function applyManagePanel(panel) {
-    managePanel = panel === 'contests' && canManageContests() ? 'contests' : 'tests';
+    if (panel === 'contests' && canManageContests()) managePanel = 'contests';
+    else if (panel === 'bank') managePanel = 'bank';
+    else managePanel = 'tests';
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
     document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
+    document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-manage-view') === managePanel);
     });
+    if (managePanel === 'bank') loadQuestionBank().catch(() => {});
   }
 
   function syncManageContestActions() {
@@ -604,19 +1342,121 @@
     if (!show && managePanel === 'contests') applyManagePanel('tests');
   }
 
+  function statusBadge(status) {
+    const raw = String(status || 'draft').toLowerCase();
+    const map = { unpublished: 'draft', live: 'published', active: 'published' };
+    const key = map[raw] || raw;
+    const label = key.replace(/_/g, ' ');
+    return `<span class="badge-soft apt-status-${esc(key)}">${esc(label)}</span>`;
+  }
+
+  function assignmentLabel(t) {
+    const mode = String(t?.assignmentMode || 'all');
+    if (mode === 'department') return 'Department';
+    if (mode === 'course') return (t.assignmentCourses || []).join(', ') || 'Courses';
+    if (mode === 'batch') return (t.assignmentBatches || []).join(', ') || 'Batches';
+    if (mode === 'students') return `${(t.assignmentStudentIds || []).length} student(s)`;
+    return 'All students';
+  }
+
+  function splitCsv(value) {
+    return String(value || '').split(',').map((s) => s.trim()).filter(Boolean);
+  }
+
+  function toDatetimeLocal(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function formatDeadline(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString();
+  }
+
+  function testLifecycle(t) {
+    return String(t?.lifecycleStatus || t?.status || 'draft');
+  }
+
+  function syncAssignFields() {
+    const mode = document.getElementById('tfAssignMode')?.value || 'all';
+    document.getElementById('tfAssignCoursesWrap')?.classList.toggle('d-none', mode !== 'course');
+    document.getElementById('tfAssignBatchesWrap')?.classList.toggle('d-none', mode !== 'batch');
+    document.getElementById('tfAssignStudentsWrap')?.classList.toggle('d-none', mode !== 'students');
+  }
+
+  function updateBuilderSummary() {
+    const questions = typeof collectMcqs === 'function' ? collectMcqs() : [];
+    const marks = questions.reduce((s, q) => s + Number(q.marks || 1), 0);
+    const duration = Number(document.getElementById('tfDuration')?.value || 30);
+    const passing = Number(document.getElementById('tfPassingMarks')?.value || 0);
+    const mode = document.getElementById('tfAssignMode')?.value || 'all';
+    const status = document.getElementById('tfStatus')?.value || 'draft';
+    const assignMap = { all: 'All students', department: 'Department', course: 'Courses', batch: 'Batches', students: 'Selected students' };
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('sumQuestions', String(questions.length));
+    set('sumMarks', String(marks || document.getElementById('tfTotalMarks')?.value || 0));
+    set('sumDuration', `${duration} min`);
+    set('sumPassing', String(passing));
+    set('sumAssign', assignMap[mode] || mode);
+    set('sumStatus', status);
+    const totalEl = document.getElementById('tfTotalMarks');
+    if (totalEl && marks > 0 && !totalEl.dataset.manual) totalEl.value = String(marks);
+  }
+
   function renderManageRow(t, { showContestBadge = false } = {}) {
+    const life = testLifecycle(t);
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div>
           <strong>${esc(t.title)}</strong>
-          <div class="small text-muted-2">${esc(t.status || 'unpublished')} · ${testMetaLine(t)}</div>
-          ${showContestBadge ? contestBadgeHtml(t) : ''}
+          <div class="small text-muted-2">${testMetaLine(t)}</div>
+          <div class="mt-1">${statusBadge(life)} ${showContestBadge ? contestBadgeHtml(t) : ''}</div>
         </div>
         <div class="d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk="${esc(t.id)}">Bulk questions</button>
-          <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+          ${manageActionButtons(t)}
         </div>
       </div>`;
+  }
+
+  function manageActionButtons(t) {
+    const id = esc(t.id);
+    const life = testLifecycle(t);
+    const publish = life === 'published'
+      ? `<button type="button" class="btn btn-sm btn-outline-warning" data-unpublish="${id}">Unpublish</button>`
+      : (life === 'archived' ? '' : `<button type="button" class="btn btn-sm btn-outline-success" data-publish="${id}">Publish</button>`);
+    const release = t.showResultsImmediately === false
+      ? `<button type="button" class="btn btn-sm btn-outline-info" data-release="${id}">Release results</button>`
+      : '';
+    return `
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-results="${id}">Results</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk="${id}">Bulk questions</button>
+      <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${id}">Edit</button>
+      ${publish}
+      ${release}
+      <button type="button" class="btn btn-sm btn-outline-danger" data-archive="${id}">Archive</button>
+      <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${id}">Delete</button>`;
+  }
+
+  function renderManageTableRow(t) {
+    const qCount = t.questionCount || (t.questions || []).length || 0;
+    return `<tr>
+      <td>
+        <div class="fw-semibold">${esc(t.title)}</div>
+        <div class="small text-muted-2">${esc(t.description || '').slice(0, 80)}</div>
+      </td>
+      <td>${esc(t.category || '—')}</td>
+      <td>${esc(qCount)}</td>
+      <td>${esc(t.durationMinutes || 0)} min</td>
+      <td>${esc(t.totalMarks || 0)}${t.passingMarks ? ` <span class="small text-muted-2">(pass ${esc(t.passingMarks)})</span>` : ''}</td>
+      <td class="small">${esc(assignmentLabel(t))}</td>
+      <td>${statusBadge(testLifecycle(t))}</td>
+      <td><div class="d-flex flex-wrap gap-1">${manageActionButtons(t)}</div></td>
+    </tr>`;
   }
 
   function bindManageListActions(root) {
@@ -630,6 +1470,52 @@
     root.querySelectorAll('[data-bulk]').forEach((btn) => {
       btn.addEventListener('click', () => openBulk('test', btn.getAttribute('data-bulk')));
     });
+    root.querySelectorAll('[data-delete-test]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteTest(btn.getAttribute('data-delete-test')));
+    });
+    root.querySelectorAll('[data-publish]').forEach((btn) => {
+      btn.addEventListener('click', () => mutateTest(btn.getAttribute('data-publish'), 'publish'));
+    });
+    root.querySelectorAll('[data-unpublish]').forEach((btn) => {
+      btn.addEventListener('click', () => mutateTest(btn.getAttribute('data-unpublish'), 'unpublish'));
+    });
+    root.querySelectorAll('[data-archive]').forEach((btn) => {
+      btn.addEventListener('click', () => mutateTest(btn.getAttribute('data-archive'), 'archive'));
+    });
+    root.querySelectorAll('[data-release]').forEach((btn) => {
+      btn.addEventListener('click', () => mutateTest(btn.getAttribute('data-release'), 'release-results'));
+    });
+    root.querySelectorAll('[data-results]').forEach((btn) => {
+      btn.addEventListener('click', () => openResults(btn.getAttribute('data-results')));
+    });
+  }
+
+  async function mutateTest(id, action) {
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      toast('Managing tests requires a live session.', 'info');
+      return;
+    }
+    if (action === 'archive') {
+      const ok = typeof confirmAction === 'function'
+        ? await confirmAction({
+            title: 'Archive test',
+            message: 'Archive this test? Students will no longer see it.',
+            confirmText: 'Archive',
+            variant: 'danger',
+          })
+        : window.confirm('Archive this test?');
+      if (!ok) return;
+    }
+    const res = await api(`/aptitude/tests/${encodeURIComponent(id)}/${action}`, { method: 'POST' }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not update test.', 'error');
+      return;
+    }
+    toast(res.message || 'Test updated.', 'success');
+    await loadTests();
+    renderManage();
+    renderTestList();
   }
 
   function isContestOpenClient(test) {
@@ -725,6 +1611,7 @@
     const test = resolveHistoryTest(copy);
     if (test) {
       copy.testId = copy.testId || test.id;
+      if (!copy.contestType) copy.contestType = test.contestType || 'none';
       if (!copy.totalMarks && !copy.maximumScore) {
         const total = Number(test.totalMarks) || (Array.isArray(test.questions) ? test.questions.length : 0);
         if (total > 0) {
@@ -782,13 +1669,29 @@
       const full = (fullDemoTest(test.id)?.questions || []).find((x) => x.id === q.id) || q;
       const qMarks = Number(full.marks ?? 1);
       total += qMarks;
-      const picked = Object.prototype.hasOwnProperty.call(answers, q.id) ? Number(answers[q.id]) : -1;
+      const pickedRaw = Object.prototype.hasOwnProperty.call(answers, q.id) ? answers[q.id] : -1;
+      const pickedList = Array.isArray(pickedRaw)
+        ? pickedRaw.map((n) => Number(n)).filter((n) => n >= 0)
+        : (Number(pickedRaw) >= 0 ? [Number(pickedRaw)] : []);
+      const picked = pickedList[0] ?? -1;
       const opts = full.options || q.options || [];
-      const correctIndex = Number(full.correctIndex);
+      const type = full.type || q.type || 'mcq';
+      const correctIndexes = Array.isArray(full.correctIndexes) ? full.correctIndexes.map(Number) : [Number(full.correctIndex)];
       let status = 'unanswered';
       let marksForQ = 0;
-      if (picked < 0) unanswered += 1;
-      else if (picked === correctIndex) {
+      let isCorrect = false;
+      if (pickedList.length) {
+        if (type === 'multi_select') {
+          const a = [...pickedList].sort();
+          const b = [...correctIndexes].sort();
+          isCorrect = a.length === b.length && a.every((v, i) => v === b[i]);
+        } else {
+          isCorrect = picked === Number(full.correctIndex);
+        }
+      }
+      if (!pickedList.length) {
+        unanswered += 1;
+      } else if (isCorrect) {
         correct += 1;
         marksForQ = qMarks;
         marks += qMarks;
@@ -801,10 +1704,16 @@
         }
         status = 'incorrect';
       }
+      const studentAnswer = type === 'multi_select'
+        ? (pickedList.length ? pickedList.map((i) => opts[i]).join(', ') : null)
+        : (picked >= 0 ? opts[picked] : null);
+      const correctAnswer = type === 'multi_select'
+        ? correctIndexes.map((i) => opts[i]).join(', ')
+        : opts[Number(full.correctIndex)];
       analysis.push({
         question: full.prompt || q.prompt,
-        studentAnswer: picked >= 0 ? opts[picked] : null,
-        correctAnswer: opts[correctIndex],
+        studentAnswer,
+        correctAnswer,
         explanation: full.explanation || '',
         marks: qMarks,
         marksObtained: marksForQ,
@@ -814,6 +1723,7 @@
     if (marks < 0) marks = 0;
     const pct = total > 0 ? Math.round((marks / total) * 1000) / 10 : 0;
     const accuracy = correct + wrong > 0 ? Math.round((correct / (correct + wrong)) * 1000) / 10 : 0;
+    const passing = Number(test.passingMarks || 0);
     const result = {
       score: marks,
       marksObtained: marks,
@@ -824,6 +1734,8 @@
       correctAnswers: correct,
       incorrectAnswers: wrong,
       unansweredQuestions: unanswered,
+      passingMarks: passing,
+      passed: passing > 0 ? marks >= passing : true,
       timeTakenSeconds: metaPayload.timeTakenSeconds || 0,
       timeTakenLabel: AptitudeExam.formatTimer(metaPayload.timeTakenSeconds || 0),
       rank: 1,
@@ -834,6 +1746,7 @@
     p.history = [{
       testTitle: test.title,
       testId: test.id,
+      contestType: test.contestType || 'none',
       percentage: pct,
       category: test.category,
       marksObtained: marks,
@@ -867,6 +1780,7 @@
   function defaultView() {
     const views = allowedViews();
     const role = Auth.role();
+    if (views.includes('manage') && role === 'admin') return 'manage';
     if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
     if (views.includes('manage') && (role === 'admin' || role === 'staff')) return 'manage';
     if (views.includes('take')) return 'take';
@@ -909,7 +1823,10 @@
       await initDirFilters();
       await loadDirectory();
     }
-    if (view === 'manage' && access.canManage) renderManage();
+    if (view === 'manage' && access.canManage) {
+      await loadAdminStats();
+      renderManage();
+    }
 
     if (typeof renderShell === 'function') {
       renderShell(`${document.body?.dataset?.page || 'mock-aptitude.html'}${hash}`);
@@ -1027,19 +1944,41 @@
 
   async function loadTests() {
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/aptitude/tests').catch(() => null);
+      const path = access.canManage ? '/aptitude/tests' : '/aptitude/tests/available';
+      const res = await api(path).catch(() => null);
       if (res?.success) {
         tests = res.data?.tests || [];
         return;
+      }
+      if (!access.canManage) {
+        const fallback = await api('/aptitude/tests').catch(() => null);
+        if (fallback?.success) {
+          tests = fallback.data?.tests || [];
+          return;
+        }
       }
     }
     tests = loadDemoTestsStore().map((t) => {
       const copy = JSON.parse(JSON.stringify(t));
       if (!access.canManage) {
-        copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
+        copy.questions = (copy.questions || []).map(({ correctIndex, correctIndexes, explanation, ...q }) => q);
       }
       return copy;
     });
+  }
+
+  async function loadAdminStats() {
+    if (!access.canManage || !(Auth.hasRealAuth() && !Auth.isDemo())) {
+      adminStats = {
+        totalTests: tests.length,
+        published: tests.filter((t) => testLifecycle(t) === 'published').length,
+        draft: tests.filter((t) => testLifecycle(t) === 'draft').length,
+        totalAttempts: 0,
+      };
+      return;
+    }
+    const res = await api('/aptitude/admin/stats').catch(() => null);
+    if (res?.success && res.data) adminStats = res.data;
   }
 
   function renderMyStats(p) {
@@ -1081,22 +2020,38 @@
 
   function renderHistory(p) {
     const hist = (p.history || []).map((h) => enrichHistoryEntry(h));
+    const filtered = hist.filter((h) => (
+      myResultsPanel === 'contests' ? historyEntryIsContest(h) : !historyEntryIsContest(h)
+    ));
     const canReview = access.canTake;
-    document.getElementById('myHistory').innerHTML = hist.length
-      ? hist.slice(0, 8).map((h) => {
+    const emptyLabel = myResultsPanel === 'contests'
+      ? 'No contest attempts yet.'
+      : 'No attempts yet. Select a test on the left to begin.';
+    document.getElementById('myHistory').innerHTML = filtered.length
+      ? filtered.slice(0, 12).map((h) => {
           const attemptId = h.attemptId || h.id;
+          const held = !!h.resultHeld || h.resultStatus === 'pending';
+          const pass = held ? 'Pending release' : (h.passed === false ? 'Fail' : (h.passed === true ? 'Pass' : ''));
+          const passCls = held ? 'muted' : (h.passed === false ? 'danger' : 'success');
+          const scoreLine = held ? 'Result pending admin release' : formatHistoryMeta(h);
           const viewBtn = canReview && attemptId && Auth.hasRealAuth() && !Auth.isDemo()
-            ? `<button type="button" class="btn btn-link btn-sm p-0" data-view-attempt="${esc(attemptId)}">View</button>`
+            ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(attemptId)}">View result</button>`
             : '';
-          return `<div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
-            <div class="min-w-0">
-              <div class="text-truncate fw-medium">${esc(h.testTitle || h.testName || 'Test')}</div>
-              <div class="small text-muted-2">${esc(formatHistoryMeta(h))}</div>
+          const when = h.completedAt || h.startedAt || '';
+          return `<div class="border-bottom py-2">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div class="min-w-0">
+                <div class="text-truncate fw-medium">${esc(h.testTitle || h.testName || 'Test')}</div>
+                <div class="small text-muted-2">${esc(when ? formatDeadline(when) : '')}${when ? ' · ' : ''}${esc(scoreLine)}</div>
+              </div>
+              <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                ${pass ? `<span class="badge-soft ${passCls}">${esc(pass)}</span>` : ''}
+                ${viewBtn}
+              </div>
             </div>
-            <div class="d-flex align-items-center gap-2 flex-shrink-0 pt-1">${viewBtn}</div>
           </div>`;
         }).join('')
-      : '<p class="text-muted-2 mb-0">No attempts yet. Select a test on the left to begin.</p>';
+      : `<p class="text-muted-2 mb-0">${emptyLabel}</p>`;
     document.getElementById('myHistory').querySelectorAll('[data-view-attempt]').forEach((btn) => {
       btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt')));
     });
@@ -1119,31 +2074,47 @@
 
   function renderTestList() {
     const root = document.getElementById('testList');
+    if (!root) return;
+    if (access.canManage && !access.canTake) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">Use Test management to create and assign tests. Students take published assigned tests from this list.</p>';
+      return;
+    }
     let visible = access.canManage
-      ? tests
-      : tests.filter((t) => (t.status || 'published') === 'published' && isContestOpenClient(t));
+      ? tests.filter((t) => ['published', 'scheduled'].includes(testLifecycle(t)) && isContestOpenClient(t))
+      : tests.filter((t) => ['published', 'scheduled'].includes(testLifecycle(t)) && isContestOpenClient(t));
+    if (!access.canManage) {
+      visible = tests.filter((t) => ['published', 'scheduled'].includes(String(t.lifecycleStatus || t.status || 'published')));
+    }
     if (!visible.length) {
       const msg = Auth.role() === 'student'
-        ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
+        ? 'No aptitude mocks are assigned to you yet. Check back later or contact your placement officer.'
         : 'No published aptitude tests yet.';
       root.innerHTML = `<p class="text-muted-2 mb-0">${msg}</p>`;
       return;
     }
     root.innerHTML = visible.map((t) => {
+      const life = testLifecycle(t);
+      const open = life === 'published' && isContestOpenClient(t);
+      const deadline = t.endTime ? `Deadline: ${formatDeadline(t.endTime)}` : (life === 'scheduled' && t.startTime ? `Opens: ${formatDeadline(t.startTime)}` : '');
       const contestLine = String(t.contestType || 'none') !== 'none'
         ? `<div class="small mt-1"><span class="badge-soft info">${esc(contestScheduleLabel(t))}</span></div>`
         : '';
+      const startBtn = access.canTake && open
+        ? `<button type="button" class="btn btn-sm btn-primary" data-open-test="${esc(t.id)}">Start Test</button>`
+        : (access.canTake ? `<button type="button" class="btn btn-sm btn-outline-secondary" disabled>${life === 'scheduled' ? 'Scheduled' : 'Closed'}</button>` : '');
       return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-start gap-2">
         <div class="flex-grow-1">
-          <div class="fw-semibold">${esc(t.title)}</div>
-          <div class="small text-muted-2">${testMetaLine(t)}</div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="fw-semibold">${esc(t.title)}</div>
+            ${statusBadge(life)}
+          </div>
+          <div class="small text-muted-2">${esc(t.category || '')} · ${esc(t.questionCount || (t.questions || []).length)} Qs · ${esc(t.durationMinutes)} min · ${esc(t.totalMarks || 0)} marks</div>
+          ${deadline ? `<div class="small text-muted-2">${esc(deadline)}</div>` : ''}
           ${contestLine}
-          <div class="small mt-1">${esc(t.description || '')}</div>
+          <div class="small mt-1">${esc(t.description || t.instructions || '').slice(0, 160)}</div>
         </div>
-        ${access.canTake && (t.status || 'published') === 'published'
-          ? `<button type="button" class="btn btn-sm btn-primary" data-open-test="${esc(t.id)}">Select</button>`
-          : ''}
+        ${startBtn}
       </div>`;
     }).join('');
     root.querySelectorAll('[data-open-test]').forEach((btn) => {
@@ -1270,46 +2241,107 @@
     return html === '<p><br></p>' ? '' : html;
   }
 
-  function addMcqRow(q = {}) {
+  function syncFormQuestionTotals() {
+    updateManualQuestionCount();
+    updateBuilderSummary();
+  }
+
+  async function importMcqsFromFormExcel(file) {
+    const rows = await parseExcelFile(file);
+    const category = (meta.categories || APTITUDE_CATEGORIES)[0] || 'General Aptitude';
+    const normalized = normalizeBulkRows(rows, category, 'Medium');
+    if (!normalized.length) {
+      throw new Error('No valid questions found in the Excel file.');
+    }
+    const list = document.getElementById('mcqList');
+    if (!list) return 0;
+    normalized.forEach((q) => addMcqRow(q));
+    syncFormQuestionTotals();
+    return normalized.length;
+  }
+
+  function addMcqRow(q = {}, parentId = 'mcqList') {
     mcqCounter += 1;
     const opts = Array.isArray(q.options) && q.options.length ? q.options.slice() : ['', '', '', ''];
     while (opts.length < 4) opts.push('');
     const wrap = document.createElement('div');
     wrap.className = 'border rounded-3 p-3';
     wrap.dataset.mcq = '1';
+    const type = q.type === 'true_false' || q.type === 'multi_select' ? q.type : 'mcq';
+    const correctIdx = Array.isArray(q.correctIndexes) ? q.correctIndexes : [Number(q.correctIndex || 0)];
     wrap.innerHTML = `
-      <div class="d-flex justify-content-between mb-2"><strong class="small">MCQ</strong><button type="button" class="btn btn-sm btn-outline-danger" data-remove-mcq>Remove</button></div>
+      <div class="d-flex justify-content-between mb-2 gap-2 align-items-center">
+        <select class="form-select form-select-sm" data-f="type" style="max-width:13rem">
+          <option value="mcq" ${type === 'mcq' ? 'selected' : ''}>Multiple choice</option>
+          <option value="true_false" ${type === 'true_false' ? 'selected' : ''}>True / False</option>
+          <option value="multi_select" ${type === 'multi_select' ? 'selected' : ''}>Multiple select</option>
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-remove-mcq>Remove</button>
+      </div>
       <div class="mb-2">
         <label class="form-label small mb-1">Question</label>
         <div data-f="prompt-editor"></div>
       </div>
-      <div class="row g-2 mb-2">${opts.slice(0, 4).map((o, i) => `<div class="col-md-6"><label class="form-label small mb-1">Option ${i + 1}</label><input class="form-control form-control-sm" data-f="opt${i}" placeholder="Option ${i + 1}" value="${esc(o)}" ${i < 2 ? 'required' : ''}/></div>`).join('')}</div>
+      <div class="row g-2 mb-2" data-f="opts-mcq">${opts.slice(0, 4).map((o, i) => `<div class="col-md-6"><label class="form-label small mb-1">Option ${i + 1}</label><input class="form-control form-control-sm" data-f="opt${i}" placeholder="Option ${i + 1}" value="${esc(o)}"/></div>`).join('')}</div>
       <div class="row g-2">
-        <div class="col-md-3"><label class="form-label small mb-0">Correct</label><select class="form-select form-select-sm" data-f="correct">${[0, 1, 2, 3].map((i) => `<option value="${i}" ${Number(q.correctIndex) === i ? 'selected' : ''}>Option ${i + 1}</option>`).join('')}</select></div>
+        <div class="col-md-3" data-f="correct-mcq"><label class="form-label small mb-0">Correct</label><select class="form-select form-select-sm" data-f="correct">${[0, 1, 2, 3].map((i) => `<option value="${i}" ${Number(q.correctIndex) === i ? 'selected' : ''}>Option ${i + 1}</option>`).join('')}</select></div>
+        <div class="col-md-3 d-none" data-f="correct-tf"><label class="form-label small mb-0">Correct</label><select class="form-select form-select-sm" data-f="correct-tf-val"><option value="0" ${Number(q.correctIndex) === 0 ? 'selected' : ''}>True</option><option value="1" ${Number(q.correctIndex) === 1 ? 'selected' : ''}>False</option></select></div>
+        <div class="col-md-6 d-none" data-f="correct-multi"><label class="form-label small mb-0">Correct options</label><div class="d-flex flex-wrap gap-2 pt-1">${[0, 1, 2, 3].map((i) => `<label class="small"><input type="checkbox" data-f="multi-${i}" ${correctIdx.includes(i) ? 'checked' : ''}/> ${i + 1}</label>`).join('')}</div></div>
         <div class="col-md-3"><label class="form-label small mb-0">Marks</label><input class="form-control form-control-sm" type="number" min="0.5" step="0.5" data-f="marks" value="${esc(q.marks ?? 1)}"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold mb-0">Difficulty</label><select class="form-select form-select-sm" data-f="difficulty">${(meta.difficulties || APTITUDE_DIFFICULTIES).map((d) => `<option ${String(q.difficulty || 'Medium') === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div>
         <div class="col-md-6">
-          <label class="form-label small mb-0">Explanation</label>
+          <label class="form-label small mb-0">Explanation / solution</label>
           <div data-f="explanation-editor"></div>
         </div>
       </div>`;
-    wrap.querySelector('[data-remove-mcq]').addEventListener('click', () => wrap.remove());
-    document.getElementById('mcqList').appendChild(wrap);
+    wrap.querySelector('[data-remove-mcq]').addEventListener('click', () => {
+      wrap.remove();
+      if (typeof updateManualQuestionCount === 'function') updateManualQuestionCount();
+      updateBuilderSummary();
+    });
+    const syncType = () => {
+      const t = wrap.querySelector('[data-f="type"]').value;
+      wrap.querySelector('[data-f="opts-mcq"]').classList.toggle('d-none', t === 'true_false');
+      wrap.querySelector('[data-f="correct-mcq"]').classList.toggle('d-none', t !== 'mcq');
+      wrap.querySelector('[data-f="correct-tf"]').classList.toggle('d-none', t !== 'true_false');
+      wrap.querySelector('[data-f="correct-multi"]').classList.toggle('d-none', t !== 'multi_select');
+    };
+    wrap.querySelector('[data-f="type"]').addEventListener('change', () => { syncType(); updateBuilderSummary(); });
+    wrap.querySelector('[data-f="marks"]')?.addEventListener('input', updateBuilderSummary);
+    const parent = document.getElementById(parentId || 'mcqList') || document.getElementById('mcqList');
+    parent.appendChild(wrap);
     initMcqQuill(wrap.querySelector('[data-f="prompt-editor"]'), q.prompt || '');
     initMcqQuill(wrap.querySelector('[data-f="explanation-editor"]'), q.explanation || '', true);
+    syncType();
+    updateBuilderSummary();
   }
 
   function collectMcqs() {
     return [...document.querySelectorAll('#mcqList [data-mcq]')].map((el, i) => {
-      const options = [0, 1, 2, 3].map((n) => String(el.querySelector(`[data-f="opt${n}"]`)?.value || '').trim()).filter(Boolean);
+      const type = el.querySelector('[data-f="type"]')?.value || 'mcq';
+      let options = [0, 1, 2, 3].map((n) => String(el.querySelector(`[data-f="opt${n}"]`)?.value || '').trim()).filter(Boolean);
+      let correctIndex = Number(el.querySelector('[data-f="correct"]')?.value || 0);
+      let correctIndexes = [correctIndex];
+      if (type === 'true_false') {
+        options = ['True', 'False'];
+        correctIndex = Number(el.querySelector('[data-f="correct-tf-val"]')?.value || 0);
+        correctIndexes = [correctIndex];
+      } else if (type === 'multi_select') {
+        correctIndexes = [0, 1, 2, 3].filter((n) => el.querySelector(`[data-f="multi-${n}"]`)?.checked);
+        if (!correctIndexes.length) correctIndexes = [correctIndex];
+        correctIndex = correctIndexes[0];
+      }
       const prompt = getMcqEditorHtml(el.querySelector('[data-f="prompt-editor"]'));
       const explanation = getMcqEditorHtml(el.querySelector('[data-f="explanation-editor"]'));
       return {
         id: `q${i + 1}`,
-        type: 'mcq',
+        type,
         prompt,
         options,
-        correctIndex: Number(el.querySelector('[data-f="correct"]')?.value || 0),
+        correctIndex,
+        correctIndexes,
         marks: Number(el.querySelector('[data-f="marks"]')?.value || 1),
+        difficulty: el.querySelector('[data-f="difficulty"]')?.value || 'Medium',
         explanation,
       };
     }).filter((q) => richTextHasContent(q.prompt) && q.options.length >= 2);
@@ -1317,32 +2349,114 @@
 
   function openTestForm(test = null, preset = null) {
     const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
+    const isContest = isContestTest(test) || isContestPreset;
     document.getElementById('testFormTitle').textContent = test
-      ? 'Edit aptitude test'
-      : (isContestPreset ? `New ${preset.contestType} contest` : 'New aptitude test');
+      ? (isContest ? 'Edit contest' : 'Edit test')
+      : (isContestPreset ? `New ${preset.contestType} contest` : 'Create test');
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
     fillSelect(document.getElementById('tfCategory'), meta.categories || APTITUDE_CATEGORIES, test?.category || 'General Aptitude');
     fillSelect(document.getElementById('tfDifficulty'), meta.difficulties || APTITUDE_DIFFICULTIES, test?.difficulty || 'Medium');
-    document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 1;
+    document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 10;
     document.getElementById('tfDuration').value = test?.durationMinutes || 30;
     document.getElementById('tfTotalMarks').value = test?.totalMarks || 1;
+    document.getElementById('tfPassingMarks').value = test?.passingMarks ?? 0;
+    document.getElementById('tfStartTime').value = toDatetimeLocal(test?.startTime);
+    document.getElementById('tfEndTime').value = toDatetimeLocal(test?.endTime);
     document.getElementById('tfNegative').checked = !!test?.negativeMarking;
     document.getElementById('tfNegativeMarks').value = test?.negativeMarks ?? 0;
-    document.getElementById('tfStatus').value = test?.status === 'published' ? 'published' : 'unpublished';
+    const stored = test?.status === 'unpublished' ? 'draft' : (test?.status || 'draft');
+    document.getElementById('tfStatus').value = stored;
+    document.getElementById('tfAssignMode').value = test?.assignmentMode || 'all';
+    document.getElementById('tfAssignCourses').value = (test?.assignmentCourses || []).join(', ');
+    document.getElementById('tfAssignBatches').value = (test?.assignmentBatches || []).join(', ');
+    document.getElementById('tfAssignStudents').value = (test?.assignmentStudentIds || []).join(', ');
+    document.getElementById('tfShowResults').checked = test?.showResultsImmediately !== false;
+    document.getElementById('tfMultiAttempts').checked = !!test?.allowMultipleAttempts;
     document.getElementById('tfInstructions').value = test?.instructions || '';
+
+    const source = test?.questionSource === 'random' ? 'random' : 'manual';
+    document.getElementById('tfSourceManual').checked = source === 'manual';
+    document.getElementById('tfSourceRandom').checked = source === 'random';
+
+    selectedBankIds.clear();
+    (test?.bankQuestionIds || []).forEach((id) => selectedBankIds.add(String(id)));
+
+    document.getElementById('tfRandomRules').innerHTML = '';
+    const rules = test?.randomRules?.length ? test.randomRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5 }];
+    if (source === 'random') rules.forEach((r) => addRandomRuleRow(r));
+    else addRandomRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5 });
+
+    const useBank = (test?.bankQuestionIds || []).length > 0;
+    document.getElementById('tfUseBankManual').checked = useBank;
+    document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
+
+    document.getElementById('tfBankFilterRules').innerHTML = '';
+    if (useBank) {
+      addBankFilterRuleRow({
+        category: test?.category || 'General Aptitude',
+        difficulty: test?.difficulty || 'Medium',
+        count: Math.max(1, (test?.bankQuestionIds || []).length || 5),
+      });
+    }
+
     initContestMonthDaySelect();
     const contestType = test?.contestType || preset?.contestType || 'none';
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
     document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
     document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
     syncContestFormFields();
+    syncQuestionSourcePanels();
+    syncAssignFields();
+    if (document.getElementById('tfBulkFile')) document.getElementById('tfBulkFile').value = '';
     document.getElementById('mcqList').innerHTML = '';
-    const qs = test?.questions || [];
+    const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId) : [];
     if (qs.length) qs.forEach((q) => addMcqRow(q));
-    else addMcqRow();
+    else if (source === 'manual' && !useBank) addMcqRow();
+    loadBankPickerQuestions().catch(() => renderBankPicker());
+    updateBuilderSummary();
     testFormModal.show();
+  }
+
+  function collectTestFormPayload() {
+    const source = getQuestionSource();
+    const payload = {
+      title: document.getElementById('tfTitle').value.trim(),
+      description: document.getElementById('tfDescription').value.trim(),
+      category: document.getElementById('tfCategory')?.value || 'General Aptitude',
+      difficulty: document.getElementById('tfDifficulty')?.value || 'Medium',
+      questionCount: Number(document.getElementById('tfQuestionCount').value || 0),
+      durationMinutes: Number(document.getElementById('tfDuration').value || 30),
+      totalMarks: Number(document.getElementById('tfTotalMarks')?.value || 0),
+      passingMarks: Number(document.getElementById('tfPassingMarks')?.value || 0),
+      startTime: document.getElementById('tfStartTime')?.value || null,
+      endTime: document.getElementById('tfEndTime')?.value || null,
+      negativeMarking: document.getElementById('tfNegative').checked,
+      negativeMarks: Number(document.getElementById('tfNegativeMarks').value || 0),
+      status: document.getElementById('tfStatus').value,
+      questionSource: source,
+      assignmentMode: document.getElementById('tfAssignMode')?.value || 'all',
+      assignmentCourses: splitCsv(document.getElementById('tfAssignCourses')?.value || ''),
+      assignmentBatches: splitCsv(document.getElementById('tfAssignBatches')?.value || ''),
+      assignmentStudentIds: splitCsv(document.getElementById('tfAssignStudents')?.value || ''),
+      showResultsImmediately: document.getElementById('tfShowResults')?.checked !== false,
+      allowMultipleAttempts: !!document.getElementById('tfMultiAttempts')?.checked,
+      instructions: document.getElementById('tfInstructions')?.value.trim() || '',
+    };
+    if (source === 'random') {
+      payload.randomRules = collectRandomRules();
+      payload.questions = [];
+      payload.bankQuestionIds = [];
+    } else {
+      payload.randomRules = [];
+      payload.bankQuestionIds = document.getElementById('tfUseBankManual')?.checked
+        ? [...selectedBankIds]
+        : [];
+      payload.questions = collectMcqs();
+    }
+    if (canManageContests()) Object.assign(payload, collectContestPayload());
+    return payload;
   }
 
   function openBulk(mode, testId = '') {
@@ -1350,24 +2464,32 @@
     document.getElementById('bulkTestId').value = testId || '';
     document.getElementById('bulkTitle').textContent = mode === 'bank' ? 'Upload question bank' : 'Bulk upload to test';
     document.getElementById('bulkCategoryWrap').classList.toggle('d-none', mode !== 'bank');
+    document.getElementById('bulkDifficultyWrap').classList.toggle('d-none', mode !== 'bank');
     document.getElementById('bulkReplaceWrap').classList.toggle('d-none', mode !== 'test');
     fillSelect(document.getElementById('bulkCategory'), meta.categories || APTITUDE_CATEGORIES, 'General Aptitude');
     document.getElementById('bulkFile').value = '';
     bulkModal.show();
   }
 
-  const BULK_EXCEL_HEADERS = ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'marks', 'explanation', 'category'];
+  const BULK_EXCEL_HEADERS = ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'marks', 'explanation', 'category', 'difficulty'];
+  const BULK_SHEET_DIFFICULTIES = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
   function downloadExcelTemplate() {
     if (typeof XLSX === 'undefined') {
       toast('Excel library is still loading. Try again in a moment.', 'info');
       return;
     }
-    const sample = ['What is 2+2?', '3', '4', '5', '6', 'B', 1, 'Basic arithmetic', 'Quantitative Aptitude'];
-    const ws = XLSX.utils.aoa_to_sheet([BULK_EXCEL_HEADERS, sample]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Questions');
-    XLSX.writeFile(wb, 'aptitude-questions-template.xlsx');
+    const samples = {
+      Easy: ['What is 2+2?', '3', '4', '5', '6', 'B', 1, 'Basic arithmetic', 'Quantitative Aptitude', 'Easy'],
+      Medium: ['If x+3=10, x=?', '5', '6', '7', '8', 'C', 2, 'Linear equation', 'Quantitative Aptitude', 'Medium'],
+      Hard: ['Train A 60km/h, B 90km/h, opposite. Total 450km. Meet in?', '2h', '3h', '4h', '5h', 'B', 3, 'Relative speed', 'Quantitative Aptitude', 'Hard'],
+    };
+    Object.entries(samples).forEach(([sheetName, sample]) => {
+      const ws = XLSX.utils.aoa_to_sheet([BULK_EXCEL_HEADERS, sample]);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+    XLSX.writeFile(wb, 'aptitude-question-bank-template.xlsx');
   }
 
   async function parseExcelFile(file) {
@@ -1380,15 +2502,27 @@
     }
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array' });
-    const sheetName = wb.SheetNames?.[0];
-    if (!sheetName) {
+    if (!wb.SheetNames?.length) {
       throw new Error('The Excel file has no worksheets.');
     }
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
-    if (!rows.length) {
-      throw new Error('No question rows found in the first worksheet.');
+
+    const allRows = [];
+    wb.SheetNames.forEach((sheetName) => {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+      const sheetDifficulty = BULK_SHEET_DIFFICULTIES[String(sheetName).trim().toLowerCase()] || null;
+      rows.forEach((row) => {
+        if (!row || typeof row !== 'object') return;
+        if (sheetDifficulty && !rowField(row, 'difficulty', 'level', 'difficulty level')) {
+          row.difficulty = sheetDifficulty;
+        }
+        allRows.push(row);
+      });
+    });
+
+    if (!allRows.length) {
+      throw new Error('No question rows found in the workbook.');
     }
-    return rows;
+    return allRows;
   }
 
   function renderManage() {
@@ -1396,15 +2530,40 @@
     syncManageContestActions();
     applyManagePanel(managePanel);
 
-    const regular = tests.filter((t) => !isContestTest(t));
+    const catSel = document.getElementById('manageCategoryFilter');
+    if (catSel && catSel.options.length <= 1) {
+      fillSelect(catSel, ['', ...(meta.categories || APTITUDE_CATEGORIES)], catSel.value || '');
+      if (catSel.options[0]) catSel.options[0].textContent = 'All categories';
+    }
+
+    const q = String(document.getElementById('manageSearch')?.value || '').trim().toLowerCase();
+    const statusF = String(document.getElementById('manageStatusFilter')?.value || '');
+    const catF = String(document.getElementById('manageCategoryFilter')?.value || '');
+    const regular = tests.filter((t) => !isContestTest(t)).filter((t) => {
+      if (q && !String(t.title || '').toLowerCase().includes(q) && !String(t.category || '').toLowerCase().includes(q)) return false;
+      if (statusF && testLifecycle(t) !== statusF) return false;
+      if (catF && String(t.category || '') !== catF) return false;
+      return true;
+    });
     const contests = tests.filter((t) => isContestTest(t));
+
+    const published = tests.filter((t) => testLifecycle(t) === 'published').length;
+    const draft = tests.filter((t) => testLifecycle(t) === 'draft').length;
+    document.getElementById('manageStatsRow').innerHTML = [
+      ['Total tests', adminStats.totalTests || tests.length],
+      ['Published', adminStats.published || published],
+      ['Draft tests', adminStats.draft || draft],
+      ['Total attempts', adminStats.totalAttempts || 0],
+    ].map(([lbl, val]) =>
+      `<div class="col-6 col-md-3"><div class="card-surface p-3 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val">${esc(val)}</div></div></div>`
+    ).join('');
 
     const testsRoot = document.getElementById('manageTestsList');
     const contestsRoot = document.getElementById('manageContestsList');
     if (testsRoot) {
       testsRoot.innerHTML = regular.length
-        ? regular.map((t) => renderManageRow(t)).join('')
-        : '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
+        ? regular.map((t) => renderManageTableRow(t)).join('')
+        : '<tr><td colspan="8" class="text-muted-2 p-3">No tests match these filters.</td></tr>';
       bindManageListActions(testsRoot);
     }
     if (contestsRoot) {
@@ -1433,26 +2592,25 @@
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
     const role = Auth.role();
-    const titles = {
-      placement_officer: 'Department aptitude statistics',
-      staff: 'Assigned class aptitude progress',
-      admin: 'Institution aptitude progress',
-    };
-    document.getElementById('dirTitle').textContent = titles[role] || 'Progress directory';
+    document.getElementById('dirTitle').textContent = progressDirTitle(role, progressPanel);
     if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
-      const demo = demoDirectoryRows();
       const scope = {
         ...(access.scope || {}),
         assignedClassBatches: staffAssignedBatches(),
       };
       access.scope = scope;
       updateDirScopeHint(scope);
-      renderDirectoryTable(demo.rows || [], demo.summary || {}, scope);
+      if (progressPanel === 'contests') {
+        const demo = demoContestResults();
+        renderContestResults(demo.contests || [], demo.summary || {}, scope);
+      } else {
+        const demo = demoDirectoryRows(progressPanel);
+        renderDirectoryTable(demo.rows || [], demo.summary || {}, scope);
+      }
       return;
     }
     const qs = buildDirectoryQuery();
     const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
-    const rows = res?.data?.rows || [];
     const summary = res?.data?.summary || {};
     const scope = res?.data?.scope || access.scope || {};
     access.scope = scope;
@@ -1463,18 +2621,170 @@
       }]);
     }
     updateDirScopeHint(scope);
-    renderDirectoryTable(rows, summary, scope);
+    if (progressPanel === 'contests' || res?.data?.view === 'contests') {
+      renderContestResults(res?.data?.contests || [], summary, scope);
+      return;
+    }
+    renderDirectoryTable(res?.data?.rows || [], summary, scope);
+  }
+
+  function promptHtml(q) {
+    const raw = String(q.prompt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return raw.slice(0, 90) || 'Untitled question';
+  }
+
+  async function loadBank() {
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      bankCache = loadDemoBankStore();
+      return bankCache;
+    }
+    const params = new URLSearchParams();
+    const cat = document.getElementById('bankCategory')?.value;
+    const diff = document.getElementById('bankDifficulty')?.value;
+    const search = document.getElementById('bankSearch')?.value;
+    if (cat) params.set('category', cat);
+    if (diff) params.set('difficulty', diff);
+    if (search) params.set('search', search);
+    const res = await api('/aptitude/question-bank?' + params.toString()).catch(() => null);
+    bankCache = res?.data?.questions || [];
+    return bankCache;
+  }
+
+  function renderBankRows() {
+    const rows = document.getElementById('bankRows');
+    if (!rows) return;
+    rows.innerHTML = bankCache.length
+      ? bankCache.map((q) => `<tr>
+          <td><input type="checkbox" data-bank-id="${esc(q.id || q.bankId)}"/></td>
+          <td>${esc(promptHtml(q))}</td>
+          <td class="small">${esc((q.type || 'mcq').replace('_', ' '))}</td>
+          <td class="small">${esc(q.category || '')}</td>
+          <td>${esc(q.difficulty || 'Medium')}</td>
+          <td>${esc(q.marks ?? 1)}</td>
+          <td>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-bank-edit="${esc(q.id)}">Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(q.id)}">Delete</button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="7" class="text-muted-2 p-3">No questions in the bank yet.</td></tr>';
+    rows.querySelectorAll('[data-bank-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const q = bankCache.find((x) => String(x.id) === String(btn.getAttribute('data-bank-edit')));
+        if (q) openBankQuestionForm(q);
+      });
+    });
+    rows.querySelectorAll('[data-bank-del]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteBankQuestion(btn.getAttribute('data-bank-del')));
+    });
+  }
+
+  async function openBank(pickMode = false) {
+    bankPickMode = !!pickMode;
+    fillSelect(document.getElementById('bankCategory'), ['', ...(meta.categories || APTITUDE_CATEGORIES)]);
+    if (document.getElementById('bankCategory')?.options[0]) document.getElementById('bankCategory').options[0].textContent = 'All categories';
+    fillSelect(document.getElementById('bankDifficulty'), ['', ...(meta.difficulties || APTITUDE_DIFFICULTIES)]);
+    if (document.getElementById('bankDifficulty')?.options[0]) document.getElementById('bankDifficulty').options[0].textContent = 'All difficulty';
+    document.getElementById('btnUseBankSelected')?.classList.toggle('d-none', !bankPickMode);
+    await loadBank();
+    renderBankRows();
+    bankModal?.show();
+  }
+
+  function openBankQuestionForm(q = null) {
+    document.getElementById('bankQTitle').textContent = q ? 'Edit bank question' : 'Add bank question';
+    document.getElementById('bqId').value = q?.id || '';
+    document.getElementById('bqEditor').innerHTML = '';
+    addMcqRow(q || {}, 'bqEditor');
+    bankQuestionModal?.show();
+  }
+
+  async function deleteBankQuestion(id) {
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      saveDemoBankStore(loadDemoBankStore().filter((q) => String(q.id) !== String(id)));
+      await loadBank();
+      renderBankRows();
+      return;
+    }
+    const res = await api(`/aptitude/question-bank/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete question.', 'error');
+      return;
+    }
+    toast('Question deleted.', 'success');
+    await loadBank();
+    renderBankRows();
+  }
+
+  async function useSelectedBankQuestions() {
+    const ids = [...document.querySelectorAll('#bankRows [data-bank-id]:checked')].map((el) => el.getAttribute('data-bank-id'));
+    if (!ids.length) {
+      toast('Select at least one question.', 'info');
+      return;
+    }
+    const selected = bankCache.filter((q) => ids.includes(String(q.id || q.bankId)));
+    selected.forEach((q) => addMcqRow(q));
+    toast(`Added ${selected.length} question(s) to the test.`, 'success');
+    bankModal?.hide();
+    updateBuilderSummary();
+  }
+
+  async function openResults(testId = '') {
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    const filter = document.getElementById('resultsTestFilter');
+    if (filter && filter.options.length <= 1) {
+      filter.innerHTML = `<option value="">All tests</option>` + tests.map((t) => `<option value="${esc(t.id)}">${esc(t.title)}</option>`).join('');
+    }
+    if (testId && filter) filter.value = testId;
+    const qs = (filter?.value || testId) ? `?testId=${encodeURIComponent(filter?.value || testId)}` : '';
+    let attempts = [];
+    if (live) {
+      const res = await api('/aptitude/admin/attempts' + qs).catch(() => null);
+      attempts = res?.data?.attempts || [];
+    }
+    const body = document.getElementById('resultsRows');
+    body.innerHTML = attempts.length
+      ? attempts.map((a) => {
+          const held = a.resultStatus === 'pending' || a.resultHeld;
+          return `<tr>
+            <td>${esc(a.attemptId || a.id)}</td>
+            <td>${esc(a.testTitle || '')}</td>
+            <td>${held ? '—' : esc(a.marksObtained ?? a.score ?? 0)}${a.totalMarks ? ` / ${esc(a.totalMarks)}` : ''}</td>
+            <td>${held ? '—' : `${esc(a.percentage ?? 0)}%`}</td>
+            <td>${statusBadge(a.resultStatus || (a.passed ? 'pass' : 'fail'))}</td>
+            <td class="small">${esc(a.completedAt ? formatDeadline(a.completedAt) : '')}</td>
+            <td><button type="button" class="btn btn-sm btn-outline-primary" data-admin-attempt="${esc(a.attemptId || a.id)}">View</button></td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="7" class="text-muted-2 p-3">No attempts yet.</td></tr>';
+    body.querySelectorAll('[data-admin-attempt]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const res = await api(`/aptitude/attempts/${encodeURIComponent(btn.getAttribute('data-admin-attempt'))}/result`).catch(() => null);
+        if (!res?.success) {
+          toast(res?.message || 'Could not load result.', 'error');
+          return;
+        }
+        resultsModal?.hide();
+        document.getElementById('hubView').classList.add('d-none');
+        exam.showResult(res.data);
+      });
+    });
+    resultsModal?.show();
   }
 
   onAppReady(async () => {
     testFormModal = new bootstrap.Modal(document.getElementById('testFormModal'));
     bulkModal = new bootstrap.Modal(document.getElementById('bulkModal'));
+    bankModal = document.getElementById('bankModal') ? new bootstrap.Modal(document.getElementById('bankModal')) : null;
+    bankQuestionModal = document.getElementById('bankQuestionModal') ? new bootstrap.Modal(document.getElementById('bankQuestionModal')) : null;
+    resultsModal = document.getElementById('resultsModal') ? new bootstrap.Modal(document.getElementById('resultsModal')) : null;
     exam = AptitudeExam.createExamController({
       root: document.getElementById('examShell'),
       onExit: () => closeExam(),
       resolveDemoQuestions: (id) => {
         const t = fullDemoTest(id);
-        return (t?.questions || []).map(({ correctIndex, explanation, ...q }) => q);
+        return (t?.questions || []).map(({ correctIndex, correctIndexes, explanation, ...q }) => q);
       },
       scoreLocally,
     });
@@ -1507,7 +2817,65 @@
       applyView(link.getAttribute('data-view')).catch(() => {});
     });
 
-    document.getElementById('btnAddMcq')?.addEventListener('click', () => addMcqRow());
+    document.getElementById('progressViewNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-progress-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyProgressPanel(link.getAttribute('data-progress-view'));
+      loadDirectory().catch(() => {});
+    });
+    document.getElementById('myResultsNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-results-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyMyResultsPanel(link.getAttribute('data-results-view'));
+      if (access.canTake) {
+        const p = Auth.isDemo() ? demoProgress() : { history: [] };
+        if (Auth.hasRealAuth() && !Auth.isDemo()) {
+          api('/aptitude/me').then((res) => {
+            renderHistory(res?.success ? (res.data || p) : p);
+          }).catch(() => renderHistory(p));
+        } else {
+          renderHistory(p);
+        }
+      }
+    });
+
+    document.getElementById('btnAddMcq')?.addEventListener('click', () => {
+      addMcqRow();
+      updateManualQuestionCount();
+    });
+    document.querySelectorAll('input[name="tfQuestionSource"]').forEach((el) => {
+      el.addEventListener('change', syncQuestionSourcePanels);
+    });
+    document.getElementById('btnAddRandomRule')?.addEventListener('click', () => addRandomRuleRow());
+    document.getElementById('tfUseBankManual')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
+      if (on && !document.querySelector('#tfBankFilterRules .tf-bank-filter-rule-wrap')) {
+        addBankFilterRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5 });
+      } else if (on) {
+        loadBankPickerQuestions().catch(() => renderBankPicker());
+      }
+      updateManualQuestionCount();
+    });
+    document.getElementById('btnAddBankFilterRule')?.addEventListener('click', () => addBankFilterRuleRow());
+    document.getElementById('btnFormBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate());
+    document.getElementById('btnFormBulkImport')?.addEventListener('click', () => {
+      document.getElementById('tfBulkFile')?.click();
+    });
+    document.getElementById('tfBulkFile')?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const added = await importMcqsFromFormExcel(file);
+        toast(`Imported ${added} question(s) into the form.`, 'success');
+      } catch (err) {
+        toast(err?.message || 'Could not import Excel file.', 'error');
+      } finally {
+        e.target.value = '';
+      }
+    });
     document.getElementById('btnNewTest')?.addEventListener('click', () => {
       applyManagePanel('tests');
       openTestForm(null, { contestType: 'none' });
@@ -1535,31 +2903,142 @@
       applyManagePanel(link.getAttribute('data-manage-view'));
     });
     document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
+    document.getElementById('tfAssignMode')?.addEventListener('change', () => { syncAssignFields(); updateBuilderSummary(); });
+    ['tfDuration', 'tfPassingMarks', 'tfStatus', 'tfTotalMarks'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('input', updateBuilderSummary);
+      document.getElementById(id)?.addEventListener('change', updateBuilderSummary);
+    });
+    document.getElementById('tfTotalMarks')?.addEventListener('input', () => {
+      document.getElementById('tfTotalMarks').dataset.manual = '1';
+    });
     document.getElementById('btnBankUpload')?.addEventListener('click', () => openBulk('bank'));
+    document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
+
+    document.getElementById('bankFilterCategory')?.addEventListener('change', () => {
+      bankCategoryFilter = document.getElementById('bankFilterCategory')?.value || '';
+      loadQuestionBank().catch(() => {});
+    });
+    document.getElementById('bankDifficultyNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-bank-difficulty]');
+      if (!link) return;
+      e.preventDefault();
+      bankDifficultyFilter = link.getAttribute('data-bank-difficulty') || '';
+      loadQuestionBank().catch(() => {});
+    });
+    document.getElementById('btnQuestionBank')?.addEventListener('click', () => openBank(false));
+    document.getElementById('btnPickBank')?.addEventListener('click', () => openBank(true));
+    document.getElementById('btnViewResults')?.addEventListener('click', () => openResults(''));
+    document.getElementById('btnNewBankQ')?.addEventListener('click', () => openBankQuestionForm());
+    document.getElementById('btnUseBankSelected')?.addEventListener('click', () => useSelectedBankQuestions());
+    document.getElementById('manageSearch')?.addEventListener('input', () => renderManage());
+    document.getElementById('manageStatusFilter')?.addEventListener('change', () => renderManage());
+    document.getElementById('manageCategoryFilter')?.addEventListener('change', () => renderManage());
+    document.getElementById('bankSearch')?.addEventListener('input', async () => { await loadBank(); renderBankRows(); });
+    document.getElementById('bankCategory')?.addEventListener('change', async () => { await loadBank(); renderBankRows(); });
+    document.getElementById('bankDifficulty')?.addEventListener('change', async () => { await loadBank(); renderBankRows(); });
+    document.getElementById('resultsTestFilter')?.addEventListener('change', () => openResults(document.getElementById('resultsTestFilter').value));
+    document.getElementById('bankQuestionForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const host = document.getElementById('bqEditor');
+      const listId = 'mcqList';
+      const questions = [...host.querySelectorAll('[data-mcq]')].map((el) => {
+        const type = el.querySelector('[data-f="type"]')?.value || 'mcq';
+        let options = [0, 1, 2, 3].map((n) => String(el.querySelector(`[data-f="opt${n}"]`)?.value || '').trim()).filter(Boolean);
+        let correctIndex = Number(el.querySelector('[data-f="correct"]')?.value || 0);
+        let correctIndexes = [correctIndex];
+        if (type === 'true_false') {
+          options = ['True', 'False'];
+          correctIndex = Number(el.querySelector('[data-f="correct-tf-val"]')?.value || 0);
+          correctIndexes = [correctIndex];
+        } else if (type === 'multi_select') {
+          correctIndexes = [0, 1, 2, 3].filter((n) => el.querySelector(`[data-f="multi-${n}"]`)?.checked);
+          correctIndex = correctIndexes[0] || 0;
+        }
+        return {
+          prompt: getMcqEditorHtml(el.querySelector('[data-f="prompt-editor"]')),
+          type,
+          options,
+          correctIndex,
+          correctIndexes,
+          marks: Number(el.querySelector('[data-f="marks"]')?.value || 1),
+          difficulty: el.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+          explanation: getMcqEditorHtml(el.querySelector('[data-f="explanation-editor"]')),
+          category: document.getElementById('tfCategory')?.value || 'General Aptitude',
+        };
+      }).filter((q) => richTextHasContent(q.prompt) && q.options.length >= 2);
+      void listId;
+      if (!questions.length) {
+        toast('Add a valid question with 2+ options.', 'error');
+        return;
+      }
+      const payload = questions[0];
+      const id = document.getElementById('bqId').value.trim();
+      const live = Auth.hasRealAuth() && !Auth.isDemo();
+      if (!live) {
+        const bank = loadDemoBankStore();
+        if (id) {
+          const idx = bank.findIndex((q) => String(q.id) === id);
+          if (idx >= 0) bank[idx] = { ...bank[idx], ...payload, id };
+        } else {
+          bank.push({ ...payload, id: `bank-${Date.now()}` });
+        }
+        saveDemoBankStore(bank);
+        toast('Question saved (demo).', 'success');
+        bankQuestionModal?.hide();
+        await loadBank();
+        renderBankRows();
+        return;
+      }
+      const res = id
+        ? await api(`/aptitude/question-bank/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) })
+        : await api('/aptitude/question-bank', { method: 'POST', body: JSON.stringify(payload) });
+      if (!res?.success) {
+        toast(res?.message || 'Could not save question.', 'error');
+        return;
+      }
+      toast('Question saved.', 'success');
+      bankQuestionModal?.hide();
+      await loadBank();
+      renderBankRows();
+    });
 
     document.getElementById('testForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const questions = collectMcqs();
-      if (!questions.length) {
-        toast('Add at least one MCQ with a question and 2+ options.', 'error');
+      const saveAsDraft = e.submitter && e.submitter.getAttribute('data-save-status') === 'draft';
+      let payload = collectTestFormPayload();
+      if (saveAsDraft) payload.status = 'draft';
+      if (!payload.title) {
+        toast('Enter a test title.', 'error');
         return;
       }
-      const payload = {
-        title: document.getElementById('tfTitle').value.trim(),
-        description: document.getElementById('tfDescription').value.trim(),
-        category: document.getElementById('tfCategory').value,
-        difficulty: document.getElementById('tfDifficulty').value,
-        questionCount: Number(document.getElementById('tfQuestionCount').value || questions.length),
-        durationMinutes: Number(document.getElementById('tfDuration').value || 30),
-        totalMarks: Number(document.getElementById('tfTotalMarks').value || 0),
-        negativeMarking: document.getElementById('tfNegative').checked,
-        negativeMarks: Number(document.getElementById('tfNegativeMarks').value || 0),
-        instructions: document.getElementById('tfInstructions').value.trim(),
-        status: document.getElementById('tfStatus').value,
-        questions,
-      };
-      if (canManageContests()) Object.assign(payload, collectContestPayload());
-      if (!payload.totalMarks) payload.totalMarks = questions.reduce((s, q) => s + Number(q.marks || 1), 0);
+      if (payload.questionSource === 'random') {
+        if (!payload.randomRules?.length) {
+          toast('Add at least one random rule.', 'error');
+          return;
+        }
+        const ruleTotal = payload.randomRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
+        if (ruleTotal !== payload.questionCount) {
+          payload.questionCount = ruleTotal;
+        }
+      } else {
+        const mcqCount = payload.questions?.length || 0;
+        const useBank = document.getElementById('tfUseBankManual')?.checked;
+        const bankNeeded = useBank ? bankFilterRulesNeeded() : 0;
+        const bankSelected = useBank ? selectedBankIds.size : 0;
+        if (useBank && bankNeeded > 0 && bankSelected !== bankNeeded) {
+          toast(`Select ${bankNeeded} question(s) from the bank (${bankSelected} selected).`, 'error');
+          return;
+        }
+        const total = mcqCount + (useBank ? bankNeeded : bankSelected);
+        if (!total) {
+          toast('Select bank questions or add at least one MCQ.', 'error');
+          return;
+        }
+        payload.questionCount = total;
+      }
+      if (!payload.totalMarks) {
+        payload.totalMarks = (payload.questions || []).reduce((s, q) => s + Number(q.marks || 1), 0);
+      }
       if (canManageContests()) applyManagePanel(isContestTest(payload) ? 'contests' : 'tests');
       const live = Auth.hasRealAuth() && !Auth.isDemo();
       if (!live) {
@@ -1567,9 +3046,16 @@
           toast('Saving tests requires a live session with manage access.', 'info');
           return;
         }
+        try {
+          payload = resolveDemoTestQuestions(payload);
+        } catch (err) {
+          toast(err?.message || 'Could not build test questions.', 'error');
+          return;
+        }
+        payload.totalMarks = (payload.questions || []).reduce((s, q) => s + Number(q.marks || 1), 0);
         const store = loadDemoTestsStore();
         const id = document.getElementById('tfId').value.trim() || `demo-${Date.now()}`;
-        const next = { ...payload, id, questions };
+        const next = { ...payload, id };
         const idx = store.findIndex((t) => String(t.id) === String(id));
         if (idx >= 0) store[idx] = { ...store[idx], ...next };
         else store.push(next);
@@ -1617,14 +3103,24 @@
         return;
       }
       const mode = document.getElementById('bulkMode').value;
+      const fallbackCategory = document.getElementById('bulkCategory')?.value
+        || (meta.categories || APTITUDE_CATEGORIES)[0]
+        || 'General Aptitude';
+      const fallbackDifficulty = document.getElementById('bulkDifficulty')?.value || 'Medium';
+      const normalized = normalizeBulkRows(questions, fallbackCategory, fallbackDifficulty);
+      if (!normalized.length) {
+        toast('No valid questions found in the Excel file.', 'error');
+        return;
+      }
       if (!live) {
         try {
-          const result = demoBulkUpload(questions, mode);
+          const result = demoBulkUpload(normalized.map((q) => ({ ...q })), mode);
           toast(`Imported ${result.added} question(s) (demo).`, 'success');
           bulkModal.hide();
           await loadTests();
           renderTestList();
           renderManage();
+          if (mode === 'bank') await loadQuestionBank();
         } catch (err) {
           toast(err?.message || 'Upload failed.', 'error');
         }
@@ -1635,8 +3131,8 @@
         res = await api('/aptitude/question-bank/bulk', {
           method: 'POST',
           body: JSON.stringify({
-            questions,
-            category: document.getElementById('bulkCategory').value,
+            questions: normalized,
+            category: fallbackCategory,
           }),
         });
       } else {
@@ -1644,7 +3140,7 @@
         res = await api(`/aptitude/tests/${encodeURIComponent(testId)}/questions/bulk`, {
           method: 'POST',
           body: JSON.stringify({
-            questions,
+            questions: normalized,
             replace: document.getElementById('bulkReplace').checked,
           }),
         });
@@ -1658,6 +3154,7 @@
       await loadTests();
       renderTestList();
       renderManage();
+      if (mode === 'bank') await loadQuestionBank();
     });
   });
 })();

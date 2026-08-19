@@ -158,7 +158,7 @@ const PAGE_LABELS = {
   'mock-aptitude.html#take': 'Mock · Aptitude · Take test',
   'mock-aptitude.html#progress': 'Mock · Aptitude · Progress',
   'mock-aptitude.html#manage': 'Mock · Aptitude · Manage tests',
-  'mock-coding.html': 'Mock · Coding',
+  'mock-coding.html': 'Mock · Coding Practice',
 };
 
 function initials(name = '') {
@@ -261,8 +261,7 @@ function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
     'pointer-events:none',
   ].join(';');
   if (url) {
-    const safe = encodeURI(url).replace(/'/g, '%27');
-    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background:#e2e8f0 url('${safe}') center/cover no-repeat" role="img" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"></span>`;
+    return `<img class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" data-size="${size}" data-font-size="${escapeAttr(fontSize)}" src="${escapeAttr(url)}" alt="${escapeAttr(label)}" title="${escapeAttr(label)}" decoding="async" referrerpolicy="no-referrer"/>`;
   }
   return `<span style="${circle};background:linear-gradient(135deg,#2563EB,#3B82F6);color:#fff;display:grid;place-items:center;font-weight:700;font-size:${fontSize}">${ini}</span>`;
 }
@@ -352,28 +351,35 @@ function bindLogoutButton(btn) {
   });
 }
 
+function shellAvatarPhotoFallback(el) {
+  const ini = el.getAttribute('data-initials') || 'U';
+  const size = Number(el.getAttribute('data-size')) || 38;
+  const fontSize = el.getAttribute('data-font-size') || '.85rem';
+  const circle = [
+    `display:block`, `width:${size}px`, `height:${size}px`,
+    `min-width:${size}px`, `min-height:${size}px`,
+    'border-radius:50%', 'overflow:hidden', 'border:0', 'box-shadow:none', 'margin:0', 'padding:0',
+    'pointer-events:none',
+    'background:linear-gradient(135deg,#2563EB,#3B82F6)', 'color:#fff',
+    'display:grid', 'place-items:center', 'font-weight:700', `font-size:${fontSize}`,
+  ].join(';');
+  const span = document.createElement('span');
+  span.style.cssText = circle;
+  span.textContent = ini;
+  span.setAttribute('role', 'img');
+  span.setAttribute('aria-label', el.getAttribute('alt') || ini);
+  el.replaceWith(span);
+}
+
 function hydrateShellAvatars() {
   const url = userPhotoUrl(Auth.user());
   if (!url) return;
-  const safe = encodeURI(url).replace(/'/g, '%27');
   document.querySelectorAll('.shell-avatar-photo').forEach((el) => {
-    el.style.backgroundImage = `url('${safe}')`;
-    el.style.backgroundSize = 'cover';
-    el.style.backgroundPosition = 'center';
-    // If the image fails (AES hotlink / 401 proxy), fall back to initials.
+    if (!(el instanceof HTMLImageElement)) return;
+    el.src = url;
     const probe = new Image();
     probe.onload = () => { /* keep photo */ };
-    probe.onerror = () => {
-      const ini = el.getAttribute('data-initials') || 'U';
-      el.classList.remove('shell-avatar-photo');
-      el.style.backgroundImage = '';
-      el.style.background = 'linear-gradient(135deg,#2563EB,#3B82F6)';
-      el.style.color = '#fff';
-      el.style.display = 'grid';
-      el.style.placeItems = 'center';
-      el.style.fontWeight = '700';
-      el.textContent = ini;
-    };
+    probe.onerror = () => shellAvatarPhotoFallback(el);
     probe.src = url;
   });
 }
@@ -743,6 +749,10 @@ document.addEventListener('ph-user-updated', () => {
 document.addEventListener('error', (event) => {
   const img = event.target;
   if (!(img instanceof HTMLImageElement)) return;
+  if (img.classList.contains('shell-avatar-photo')) {
+    shellAvatarPhotoFallback(img);
+    return;
+  }
   const avatar = img.closest('.avatar.has-photo, .settings-profile-avatar.has-photo');
   if (!avatar) return;
   avatar.classList.remove('has-photo');
