@@ -158,7 +158,7 @@ const PAGE_LABELS = {
   'mock-aptitude.html#take': 'Mock · Aptitude · Take test',
   'mock-aptitude.html#progress': 'Mock · Aptitude · Progress',
   'mock-aptitude.html#manage': 'Mock · Aptitude · Manage tests',
-  'mock-coding.html': 'Mock · Coding',
+  'mock-coding.html': 'Mock · Coding Practice',
 };
 
 function initials(name = '') {
