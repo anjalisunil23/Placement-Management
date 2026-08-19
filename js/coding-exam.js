@@ -492,7 +492,7 @@
         renderResult(result);
       } catch (err) {
         submitting = false;
-        if (el('btn-submit')) el('btn-submit').innerHTML = 'Submit Test';
+        if (el('btn-submit')) el('btn-submit').innerHTML = 'Submit Answer';
         toast(err?.message || 'Submit failed.', 'error');
         if (!auto) {
           bindUnload(true);
