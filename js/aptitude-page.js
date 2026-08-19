@@ -918,7 +918,7 @@
         </select>
       </div>
       <div class="col-md-2">
-        <label class="form-label small mb-1">Count</label>
+        <label class="form-label small mb-1">No. of questions</label>
         <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 5)}"/>
       </div>
       <div class="col-md-2">
@@ -953,30 +953,102 @@
     if (countEl && getQuestionSource() === 'random') countEl.value = String(total || 1);
   }
 
-  async function loadBankPickerQuestions() {
-    const cat = document.getElementById('tfBankPickCategory')?.value || '';
-    const diff = document.getElementById('tfBankPickDifficulty')?.value || '';
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const qs = new URLSearchParams();
-      if (cat) qs.set('category', cat);
-      if (diff) qs.set('difficulty', diff);
-      const res = await api('/aptitude/question-bank' + (qs.toString() ? `?${qs}` : '')).catch(() => null);
-      bankPickerQuestions = res?.data?.questions || [];
-    } else {
-      bankPickerQuestions = loadDemoBankStore().filter((q) => {
-        if (cat && String(q.category || '') !== cat) return false;
-        if (diff && normalizeDifficulty(q.difficulty) !== diff) return false;
-        return true;
+  function addBankFilterRuleRow(rule = {}) {
+    const root = document.getElementById('tfBankFilterRules');
+    if (!root) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-bank-filter-rule row g-2 align-items-end';
+    const categories = meta.categories || APTITUDE_CATEGORIES;
+    const catOpts = categories.map((c) =>
+      `<option value="${esc(c)}" ${c === (rule.category || categories[0]) ? 'selected' : ''}>${esc(c)}</option>`
+    ).join('');
+    const diff = normalizeDifficulty(rule.difficulty || 'Medium');
+    wrap.innerHTML = `
+      <div class="col-md-5">
+        <label class="form-label small mb-1">Category</label>
+        <select class="form-select form-select-sm" data-f="category">${catOpts}</select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Difficulty</label>
+        <select class="form-select form-select-sm" data-f="difficulty">
+          ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">No. of questions</label>
+        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 5)}"/>
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-bank-rule>Remove</button>
+      </div>`;
+    wrap.querySelector('[data-remove-bank-rule]')?.addEventListener('click', () => {
+      wrap.remove();
+      loadBankPickerQuestions().catch(() => renderBankPicker());
+    });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', () => {
+        loadBankPickerQuestions().catch(() => renderBankPicker());
       });
+      el.addEventListener('input', () => {
+        updateBankPickSummary();
+        updateManualQuestionCount();
+      });
+    });
+    root.appendChild(wrap);
+    loadBankPickerQuestions().catch(() => renderBankPicker());
+  }
+
+  function collectBankFilterRules() {
+    return [...document.querySelectorAll('#tfBankFilterRules .tf-bank-filter-rule')].map((row) => ({
+      category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
+      difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+      count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
+    }));
+  }
+
+  function bankFilterRulesNeeded() {
+    return collectBankFilterRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+  }
+
+  function updateBankPickSummary() {
+    const summary = document.getElementById('tfBankPickSummary');
+    if (!summary) return;
+    const needed = bankFilterRulesNeeded();
+    summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown · ${needed} needed from rules`;
+  }
+
+  async function loadBankPickerQuestions() {
+    const rules = collectBankFilterRules();
+    if (!rules.length) {
+      bankPickerQuestions = [];
+      updateBankPickSummary();
+      renderBankPicker();
+      return;
     }
+
+    let all = [];
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/question-bank').catch(() => null);
+      all = res?.data?.questions || [];
+    } else {
+      all = loadDemoBankStore();
+    }
+
+    bankPickerQuestions = all.filter((q) => rules.some((r) => {
+      if (r.category && String(q.category || '') !== r.category) return false;
+      if (r.difficulty && normalizeDifficulty(q.difficulty) !== normalizeDifficulty(r.difficulty)) return false;
+      return true;
+    }));
+
+    updateBankPickSummary();
+    updateManualQuestionCount();
     renderBankPicker();
   }
 
   function renderBankPicker() {
     const root = document.getElementById('tfBankPickList');
-    const summary = document.getElementById('tfBankPickSummary');
     if (!root) return;
-    if (summary) summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown`;
+    updateBankPickSummary();
     if (!bankPickerQuestions.length) {
       root.innerHTML = '<p class="small text-muted-2 mb-0">No bank questions match these filters. Upload to the question bank first.</p>';
       return;
@@ -1000,7 +1072,7 @@
         if (cb.checked) selectedBankIds.add(id);
         else selectedBankIds.delete(id);
         updateManualQuestionCount();
-        if (summary) summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown`;
+        updateBankPickSummary();
       });
     });
   }
@@ -1008,10 +1080,10 @@
   function updateManualQuestionCount() {
     if (getQuestionSource() !== 'manual') return;
     const mcqCount = collectMcqs().length;
-    const bankCount = selectedBankIds.size;
-    const total = mcqCount + bankCount;
+    const useBank = document.getElementById('tfUseBankManual')?.checked;
+    const bankPart = useBank ? bankFilterRulesNeeded() : 0;
     const countEl = document.getElementById('tfQuestionCount');
-    if (countEl) countEl.value = String(total || 1);
+    if (countEl) countEl.value = String(Math.max(mcqCount + bankPart, 1));
   }
 
   function demoPickRandomRules(rules) {
@@ -1093,15 +1165,12 @@
 
   function applyManagePanel(panel) {
     if (panel === 'contests' && canManageContests()) managePanel = 'contests';
-    else if (panel === 'bank') managePanel = 'bank';
     else managePanel = 'tests';
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
     document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
-    document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-manage-view') === managePanel);
     });
-    if (managePanel === 'bank') loadQuestionBank().catch(() => {});
   }
 
   function syncManageContestActions() {
@@ -1790,7 +1859,7 @@
 
   async function importMcqsFromFormExcel(file) {
     const rows = await parseExcelFile(file);
-    const category = (meta.categories || APTITUDE_CATEGORIES)[0] || 'General Aptitude';
+    const category = document.getElementById('tfCategory')?.value || 'General Aptitude';
     const normalized = normalizeBulkRows(rows, category, 'Medium');
     if (!normalized.length) {
       throw new Error('No valid questions found in the Excel file.');
@@ -1859,70 +1928,46 @@
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
+    fillSelect(document.getElementById('tfCategory'), meta.categories || APTITUDE_CATEGORIES, test?.category || 'General Aptitude');
+    fillSelect(document.getElementById('tfDifficulty'), meta.difficulties || APTITUDE_DIFFICULTIES, test?.difficulty || 'Medium');
     document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 10;
     document.getElementById('tfDuration').value = test?.durationMinutes || 30;
     document.getElementById('tfNegative').checked = !!test?.negativeMarking;
     document.getElementById('tfNegativeMarks').value = test?.negativeMarks ?? 0;
     document.getElementById('tfStatus').value = test?.status === 'published' ? 'published' : 'unpublished';
-
-    const source = test?.questionSource === 'random' ? 'random' : 'manual';
-    document.getElementById('tfSourceManual').checked = source === 'manual';
-    document.getElementById('tfSourceRandom').checked = source === 'random';
-
-    selectedBankIds.clear();
-    (test?.bankQuestionIds || []).forEach((id) => selectedBankIds.add(String(id)));
-
-    document.getElementById('tfRandomRules').innerHTML = '';
-    const rules = test?.randomRules?.length ? test.randomRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5 }];
-    if (source === 'random') rules.forEach((r) => addRandomRuleRow(r));
-    else addRandomRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5 });
-
-    const useBank = (test?.bankQuestionIds || []).length > 0;
-    document.getElementById('tfUseBankManual').checked = useBank;
-    document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
-
-    fillSelect(document.getElementById('tfBankPickCategory'), meta.categories || APTITUDE_CATEGORIES, '', true);
     initContestMonthDaySelect();
     const contestType = test?.contestType || preset?.contestType || 'none';
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
     document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
     document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
     syncContestFormFields();
-    syncQuestionSourcePanels();
     document.getElementById('tfBulkFile').value = '';
     document.getElementById('mcqList').innerHTML = '';
-    const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId) : [];
+    const qs = test?.questions || [];
     if (qs.length) qs.forEach((q) => addMcqRow(q));
-    loadBankPickerQuestions().catch(() => renderBankPicker());
+    else addMcqRow();
     testFormModal.show();
   }
 
   function collectTestFormPayload() {
-    const source = getQuestionSource();
-    const payload = {
+    const questions = collectMcqs();
+    return {
       title: document.getElementById('tfTitle').value.trim(),
       description: document.getElementById('tfDescription').value.trim(),
-      questionCount: Number(document.getElementById('tfQuestionCount').value || 0),
+      category: document.getElementById('tfCategory').value,
+      difficulty: document.getElementById('tfDifficulty').value,
+      questionCount: Number(document.getElementById('tfQuestionCount').value || questions.length),
       durationMinutes: Number(document.getElementById('tfDuration').value || 30),
       negativeMarking: document.getElementById('tfNegative').checked,
       negativeMarks: Number(document.getElementById('tfNegativeMarks').value || 0),
       status: document.getElementById('tfStatus').value,
-      questionSource: source,
+      questionSource: 'manual',
+      randomRules: [],
+      bankQuestionIds: [],
+      questions,
       instructions: '',
+      ...(canManageContests() ? collectContestPayload() : {}),
     };
-    if (source === 'random') {
-      payload.randomRules = collectRandomRules();
-      payload.questions = [];
-      payload.bankQuestionIds = [];
-    } else {
-      payload.randomRules = [];
-      payload.bankQuestionIds = document.getElementById('tfUseBankManual')?.checked
-        ? [...selectedBankIds]
-        : [];
-      payload.questions = collectMcqs();
-    }
-    if (canManageContests()) Object.assign(payload, collectContestPayload());
-    return payload;
   }
 
   function openBulk(mode, testId = '') {
@@ -2136,26 +2181,6 @@
 
     document.getElementById('btnAddMcq')?.addEventListener('click', () => {
       addMcqRow();
-      updateManualQuestionCount();
-    });
-    document.querySelectorAll('input[name="tfQuestionSource"]').forEach((el) => {
-      el.addEventListener('change', syncQuestionSourcePanels);
-    });
-    document.getElementById('btnAddRandomRule')?.addEventListener('click', () => addRandomRuleRow());
-    document.getElementById('tfUseBankManual')?.addEventListener('change', (e) => {
-      const on = e.target.checked;
-      document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
-      if (on) loadBankPickerQuestions().catch(() => renderBankPicker());
-      updateManualQuestionCount();
-    });
-    document.getElementById('btnRefreshBankPicker')?.addEventListener('click', () => {
-      loadBankPickerQuestions().catch(() => renderBankPicker());
-    });
-    document.getElementById('tfBankPickCategory')?.addEventListener('change', () => {
-      loadBankPickerQuestions().catch(() => renderBankPicker());
-    });
-    document.getElementById('tfBankPickDifficulty')?.addEventListener('change', () => {
-      loadBankPickerQuestions().catch(() => renderBankPicker());
     });
     document.getElementById('btnFormBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate());
     document.getElementById('btnFormBulkImport')?.addEventListener('click', () => {
@@ -2200,20 +2225,6 @@
       applyManagePanel(link.getAttribute('data-manage-view'));
     });
     document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
-    document.getElementById('btnBankUpload')?.addEventListener('click', () => openBulk('bank'));
-    document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
-
-    document.getElementById('bankFilterCategory')?.addEventListener('change', () => {
-      bankCategoryFilter = document.getElementById('bankFilterCategory')?.value || '';
-      loadQuestionBank().catch(() => {});
-    });
-    document.getElementById('bankDifficultyNav')?.addEventListener('click', (e) => {
-      const link = e.target.closest('[data-bank-difficulty]');
-      if (!link) return;
-      e.preventDefault();
-      bankDifficultyFilter = link.getAttribute('data-bank-difficulty') || '';
-      loadQuestionBank().catch(() => {});
-    });
 
     document.getElementById('testForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -2222,26 +2233,12 @@
         toast('Enter a test title.', 'error');
         return;
       }
-      if (payload.questionSource === 'random') {
-        if (!payload.randomRules?.length) {
-          toast('Add at least one random rule.', 'error');
-          return;
-        }
-        const ruleTotal = payload.randomRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
-        if (ruleTotal !== payload.questionCount) {
-          payload.questionCount = ruleTotal;
-        }
-      } else {
-        const total = (payload.bankQuestionIds?.length || 0) + (payload.questions?.length || 0);
-        if (!total) {
-          toast('Select bank questions or add at least one MCQ.', 'error');
-          return;
-        }
-        if (payload.questionCount !== total) {
-          payload.questionCount = total;
-        }
+      if (!payload.questions?.length) {
+        toast('Add at least one MCQ with a question and 2+ options.', 'error');
+        return;
       }
-      payload.totalMarks = 0;
+      payload.questionCount = payload.questions.length;
+      payload.totalMarks = payload.questions.reduce((s, q) => s + Number(q.marks || 1), 0);
       if (canManageContests()) applyManagePanel(isContestTest(payload) ? 'contests' : 'tests');
       const live = Auth.hasRealAuth() && !Auth.isDemo();
       if (!live) {
@@ -2249,13 +2246,6 @@
           toast('Saving tests requires a live session with manage access.', 'info');
           return;
         }
-        try {
-          payload = resolveDemoTestQuestions(payload);
-        } catch (err) {
-          toast(err?.message || 'Could not build test questions.', 'error');
-          return;
-        }
-        payload.totalMarks = (payload.questions || []).reduce((s, q) => s + Number(q.marks || 1), 0);
         const store = loadDemoTestsStore();
         const id = document.getElementById('tfId').value.trim() || `demo-${Date.now()}`;
         const next = { ...payload, id };

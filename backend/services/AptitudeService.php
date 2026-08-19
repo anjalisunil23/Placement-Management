@@ -1261,57 +1261,17 @@ final class AptitudeService
      */
     private function resolveTestQuestions(array $data): array
     {
-        $source = strtolower(trim((string) ($data['questionSource'] ?? 'manual'))) === 'random'
-            ? 'random'
-            : 'manual';
-        $data['questionSource'] = $source;
+        $data['questionSource'] = 'manual';
+        $data['randomRules'] = [];
+        $data['bankQuestionIds'] = [];
 
-        if ($source === 'random') {
-            $rules = array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array'));
-            if ($rules === []) {
-                Response::error('Add at least one category + difficulty rule for random selection.', 422);
-            }
-            $expected = max(0, (int) ($data['questionCount'] ?? 0));
-            $ruleTotal = array_sum(array_map(static fn (array $r): int => max(0, (int) ($r['count'] ?? 0)), $rules));
-            if ($expected > 0 && $ruleTotal > 0 && $expected !== $ruleTotal) {
-                Response::error('Total questions must match the sum of random rule counts.', 422);
-            }
-            try {
-                $questions = (new AptitudeQuestionBankModel())->pickRandomByRules($rules);
-            } catch (\InvalidArgumentException $e) {
-                Response::error($e->getMessage(), 422);
-            }
-            if ($questions === []) {
-                Response::error('Could not pick questions from the bank for the given rules.', 422);
-            }
-            $data['questions'] = $questions;
-            $data['questionCount'] = count($questions);
-            $data['bankQuestionIds'] = [];
-            $firstCategory = (string) ($rules[0]['category'] ?? '');
-            if ($firstCategory !== '') {
-                $data['category'] = $firstCategory;
-            }
-            if (!empty($rules[0]['difficulty'])) {
-                $data['difficulty'] = (string) $rules[0]['difficulty'];
-            }
-            return $data;
-        }
-
-        $bankIds = array_values(array_unique(array_filter(
-            array_map(static fn ($id) => trim((string) $id), (array) ($data['bankQuestionIds'] ?? [])),
-            static fn ($id) => $id !== ''
-        )));
         $inline = array_values(array_filter((array) ($data['questions'] ?? []), 'is_array'));
         $questions = [];
-
-        if ($bankIds !== []) {
-            $questions = (new AptitudeQuestionBankModel())->questionsByIds($bankIds);
-        }
         foreach ($inline as $i => $q) {
             $norm = AptitudeTestModel::normalizeMcq(
                 $q,
                 (string) ($q['category'] ?? $data['category'] ?? 'General Aptitude'),
-                count($questions) + (int) $i
+                (int) $i
             );
             if ($norm !== null) {
                 $questions[] = $norm;
@@ -1319,18 +1279,17 @@ final class AptitudeService
         }
 
         if ($questions === []) {
-            Response::error('Select questions from the bank or add at least one MCQ.', 422);
+            Response::error('Add at least one MCQ to the test.', 422);
         }
 
         $expected = max(0, (int) ($data['questionCount'] ?? 0));
         if ($expected > 0 && count($questions) !== $expected) {
-            Response::error('Total questions must match selected bank questions and manual MCQs.', 422);
+            $data['questionCount'] = count($questions);
+        } else {
+            $data['questionCount'] = count($questions);
         }
 
         $data['questions'] = $questions;
-        $data['questionCount'] = count($questions);
-        $data['bankQuestionIds'] = $bankIds;
-        $data['randomRules'] = [];
         return $data;
     }
 
