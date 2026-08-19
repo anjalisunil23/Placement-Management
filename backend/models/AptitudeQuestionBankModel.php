@@ -91,7 +91,7 @@ class AptitudeQuestionBankModel extends BaseModel
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function listQuestions(?string $category = null, ?string $difficulty = null, int $limit = 500): array
+    public function listQuestions(?string $category = null, int $limit = 500, ?string $search = null, ?string $difficulty = null): array
     {
         $filter = [];
         if ($category !== null && trim($category) !== '') {
@@ -102,18 +102,32 @@ class AptitudeQuestionBankModel extends BaseModel
         }
         $rows = $this->findAll($filter, $limit, 0, ['createdAt' => -1]);
         $out = [];
+        $q = $search !== null ? strtolower(trim($search)) : '';
+        $wantDiff = $difficulty !== null && trim($difficulty) !== ''
+            ? AptitudeTestModel::normalizeDifficulty($difficulty)
+            : '';
         foreach ($rows as $row) {
+            $diff = AptitudeTestModel::normalizeDifficulty((string) ($row['difficulty'] ?? 'Medium'));
+            if ($wantDiff !== '' && strcasecmp($diff, $wantDiff) !== 0) {
+                continue;
+            }
+            $prompt = (string) ($row['prompt'] ?? '');
+            if ($q !== '' && !str_contains(strtolower($prompt), $q) && !str_contains(strtolower((string) ($row['category'] ?? '')), $q)) {
+                continue;
+            }
+            $type = AptitudeTestModel::normalizeQuestionType((string) ($row['type'] ?? 'mcq'));
             $out[] = [
                 'id' => (string) ($row['_id'] ?? ''),
                 'bankId' => (string) ($row['_id'] ?? ''),
-                'type' => 'mcq',
-                'prompt' => (string) ($row['prompt'] ?? ''),
+                'type' => $type,
+                'prompt' => $prompt,
                 'options' => array_values((array) ($row['options'] ?? [])),
                 'correctIndex' => (int) ($row['correctIndex'] ?? 0),
+                'correctIndexes' => array_values(array_map('intval', (array) ($row['correctIndexes'] ?? [$row['correctIndex'] ?? 0]))),
                 'marks' => (float) ($row['marks'] ?? 1),
                 'explanation' => (string) ($row['explanation'] ?? ''),
                 'category' => (string) ($row['category'] ?? 'General Aptitude'),
-                'difficulty' => (string) ($row['difficulty'] ?? 'Medium'),
+                'difficulty' => $diff,
             ];
         }
         return $out;
@@ -223,5 +237,55 @@ class AptitudeQuestionBankModel extends BaseModel
             }
         }
         return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function saveQuestion(array $data, ?string $createdBy = null): string
+    {
+        $norm = AptitudeTestModel::normalizeMcq($data, (string) ($data['category'] ?? 'General Aptitude'));
+        if ($norm === null) {
+            return '';
+        }
+        return $this->insert([
+            'type' => $norm['type'],
+            'prompt' => $norm['prompt'],
+            'options' => $norm['options'],
+            'correctIndex' => $norm['correctIndex'],
+            'correctIndexes' => $norm['correctIndexes'],
+            'marks' => $norm['marks'],
+            'explanation' => $norm['explanation'],
+            'category' => $norm['category'],
+            'difficulty' => $norm['difficulty'],
+            'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function updateQuestion(string $id, array $data): bool
+    {
+        $existing = $this->findById($id);
+        if (!$existing) {
+            return false;
+        }
+        $norm = AptitudeTestModel::normalizeMcq(array_merge($existing, $data), (string) ($data['category'] ?? $existing['category'] ?? 'General Aptitude'));
+        if ($norm === null) {
+            return false;
+        }
+        return $this->update($id, [
+            'type' => $norm['type'],
+            'prompt' => $norm['prompt'],
+            'options' => $norm['options'],
+            'correctIndex' => $norm['correctIndex'],
+            'correctIndexes' => $norm['correctIndexes'],
+            'marks' => $norm['marks'],
+            'explanation' => $norm['explanation'],
+            'category' => $norm['category'],
+            'difficulty' => $norm['difficulty'],
+            'updatedAt' => DocumentHelper::now(),
+        ]);
     }
 }

@@ -80,6 +80,38 @@
           </div></div>
         </div>
 
+        <div class="card-surface p-3 p-md-4 mt-3">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <div>
+              <h6 class="fw-bold mb-0">Test management</h6>
+              <p class="small text-muted-2 mb-0">Create tests, manage the question bank, and review student attempts.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <a href="mock-aptitude.html#manage" class="btn btn-sm btn-primary"><i class="bi bi-sliders me-1"></i>Manage tests</a>
+              <a href="mock-aptitude.html#manage" class="btn btn-sm btn-outline-primary">Question bank</a>
+              <a href="mock-aptitude.html#progress" class="btn btn-sm btn-outline-secondary">View results</a>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+              <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-journal-text"></i></div><span class="badge-soft info">Tests</span></div>
+              <div class="val"><span class="counter" id="aptStatTotal" data-target="0">0</span></div><div class="lbl">Total Tests</div>
+            </div></div>
+            <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+              <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-broadcast"></i></div><span class="badge-soft success">Live</span></div>
+              <div class="val"><span class="counter" id="aptStatPublished" data-target="0">0</span></div><div class="lbl">Published</div>
+            </div></div>
+            <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+              <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:#b45309"><i class="bi bi-pencil-square"></i></div><span class="badge-soft warning">Draft</span></div>
+              <div class="val"><span class="counter" id="aptStatDraft" data-target="0">0</span></div><div class="lbl">Draft Tests</div>
+            </div></div>
+            <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+              <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-clipboard-data"></i></div><span class="badge-soft muted">Attempts</span></div>
+              <div class="val"><span class="counter" id="aptStatAttempts" data-target="0">0</span></div><div class="lbl">Total Attempts</div>
+            </div></div>
+          </div>
+        </div>
+
         <div class="row g-3 mt-1">
           <div class="col-12 col-xl-8"><div class="card-surface p-3 p-md-4">
             <div class="d-flex justify-content-between align-items-center mb-2">
@@ -319,7 +351,7 @@
               <div class="ic flex-shrink-0" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-lightning-charge-fill"></i></div>
               <div>
                 <h6 class="fw-bold mb-1">Mock · Aptitude</h6>
-                <p class="small text-muted-2 mb-0" id="studentAptSub">Practice aptitude tests and track your scores.</p>
+                <p class="small text-muted-2 mb-0" id="studentAptSub">Take assigned tests and view your allowed results.</p>
               </div>
             </div>
             <div class="d-flex flex-wrap align-items-center gap-3">
@@ -588,6 +620,21 @@ function paintAdminStats(s) {
   animateCounters(document.getElementById('adminDashPanel') || document.querySelector('[data-roles="admin"]'));
 }
 
+async function paintAptitudeAdminStats() {
+  if (role !== 'admin' && role !== 'placement_officer' && role !== 'staff') return;
+  if (typeof apisReady !== 'undefined') await apisReady;
+  if (typeof Auth === 'undefined' || !Auth.hasRealAuth() || Auth.isDemo()) return;
+  const res = await api('/aptitude/admin/stats').catch(() => null);
+  if (!res?.success || !res.data) return;
+  const s = res.data;
+  const setStat = (id, val) => { const el = document.getElementById(id); if (el) { el.dataset.target = val; el.dataset.animated = '0'; } };
+  setStat('aptStatTotal', s.totalTests || 0);
+  setStat('aptStatPublished', s.published || 0);
+  setStat('aptStatDraft', s.draft || 0);
+  setStat('aptStatAttempts', s.totalAttempts || 0);
+  animateCounters(document.getElementById('adminDashPanel'));
+}
+
 function paintAdminCharts(s) {
   if (!s || typeof Charts === 'undefined') return;
   const trend = s.hiringTrend;
@@ -703,6 +750,7 @@ if (role === 'admin') {
       }
 
       if (Auth.hasRealAuth() && !Auth.isDemo()) {
+        paintAptitudeAdminStats();
         const runFull = () => {
           Promise.all([apisReady, chartsReady, dashboardStats({})]).then(([, , full]) => {
             if (full) {
@@ -949,7 +997,7 @@ if (role === 'student') {
         if (subEl) {
           subEl.textContent = (p.testsAttempted || 0) > 0
             ? 'Review scores or take another published mock test.'
-            : 'Practice aptitude tests and track your scores.';
+            : 'Take assigned tests and view your allowed results.';
         }
       }
       await paintStudentAptitude();

@@ -94,7 +94,11 @@
         language = lang || 'Python';
         paint();
       },
-      focus() { input.focus(); },
+      setReadOnly(on) {
+        input.readOnly = !!on;
+        input.classList.toggle('is-locked', !!on);
+      },
+      focus() { if (!input.readOnly) input.focus(); },
     };
   }
 
@@ -168,11 +172,13 @@
       if (!q || !editor) return;
       const language = el('language').value;
       const code = editor.getValue();
+      const customInput = el('stdin') ? el('stdin').value : '';
       state.answers[q.id] = state.answers[q.id] || {};
       state.answers[q.id].language = language;
       state.answers[q.id].code = code;
+      state.answers[q.id].customInput = customInput;
       if (state.attemptId) {
-        CodingService.saveDraft(state.attemptId, q.id, language, code);
+        CodingService.saveDraft(state.attemptId, q.id, { language, code, customInput });
       }
     }
 
@@ -215,38 +221,106 @@
         </div>`;
     }
 
-    function renderCases(run) {
-      const box = el('cases');
-      if (!run) {
-        const q = currentQ();
-        const sample = (q.testCases || []).find((t) => t.sample);
-        box.innerHTML = sample ? `
-          <div class="border rounded-3 p-3">
-            <div class="small fw-semibold mb-2">${esc(sample.label || 'Sample Test Case')}</div>
-            <div class="cod-io mb-0">
-              <div><span>Input</span><pre>${esc(sample.input)}</pre></div>
-              <div><span>Expected Output</span><pre>${esc(sample.expected)}</pre></div>
-            </div>
-            <div class="small text-muted-2 mt-2 mb-0">Run code to see your output.</div>
-          </div>` : '<p class="text-muted-2 mb-0">No sample test case.</p>';
+    function statusBadge(status) {
+      const s = String(status || '');
+      if (s === 'Passed') return { cls: 'success', text: '✓ Test Case Passed' };
+      if (s === 'Wrong Answer') return { cls: 'danger', text: '✕ Wrong Answer' };
+      if (s === 'Syntax Error') return { cls: 'danger', text: '✕ Syntax Error' };
+      if (s === 'Runtime Error') return { cls: 'danger', text: '✕ Runtime Error' };
+      if (s === 'Compilation Error') return { cls: 'danger', text: '✕ Compilation Error' };
+      if (s === 'Time Limit Exceeded') return { cls: 'warning', text: '⏱ Time Limit Exceeded' };
+      if (s === 'Not Run') return { cls: 'muted', text: 'Not Run' };
+      if (s === 'Running') return { cls: 'info', text: 'Running code...' };
+      return { cls: 'muted', text: s || '—' };
+    }
+
+    function caseBadge(status) {
+      const s = String(status || '');
+      if (s === 'Passed') return { cls: 'success', text: '✓ Passed' };
+      if (s === 'Wrong Answer' || s === 'Failed') return { cls: 'danger', text: '✕ Failed' };
+      if (s === 'Syntax Error' || s === 'Runtime Error' || s === 'Compilation Error') {
+        return { cls: 'danger', text: '✕ ' + s };
+      }
+      if (s === 'Time Limit Exceeded') return { cls: 'warning', text: '⏱ TLE' };
+      return { cls: 'muted', text: 'Not Run' };
+    }
+
+    function renderRunPanel(run, runningNow) {
+      const out = el('output');
+      const expected = el('expected');
+      const stderr = el('stderr');
+      const status = el('run-status');
+      if (!out || !expected || !status) return;
+
+      if (runningNow) {
+        status.innerHTML = '<span class="badge-soft info">Running code...</span>';
+        out.textContent = '';
+        expected.textContent = '';
+        stderr.textContent = '';
+        stderr.classList.add('d-none');
         return;
       }
-      box.innerHTML = (run.results || []).map((tc) => {
-        const ok = tc.status === 'Passed';
-        const cls = ok ? 'success' : (tc.status === 'Compilation Error' || tc.status === 'Runtime Error' ? 'danger' : 'warning');
-        return `
-          <div class="border rounded-3 p-3">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="small fw-semibold">${esc(tc.label || 'Sample Test Case')}</div>
-              <span class="badge-soft ${cls}">${ok ? '✓ Passed' : esc(tc.status)}</span>
-            </div>
-            <div class="cod-io">
-              <div><span>Input</span><pre>${esc(tc.input)}</pre></div>
-              <div><span>Expected Output</span><pre>${esc(tc.expected)}</pre></div>
-              <div><span>Your Output</span><pre>${esc(tc.output || '')}</pre></div>
-            </div>
-          </div>`;
-      }).join('');
+
+      if (!run) {
+        const q = currentQ();
+        const sample = (q?.testCases || []).find((t) => t.sample);
+        out.textContent = '';
+        expected.textContent = sample ? sample.expected : '';
+        stderr.textContent = '';
+        stderr.classList.add('d-none');
+        status.innerHTML = '<span class="small text-muted-2">Run code to see output.</span>';
+        renderCaseTable(null, q);
+        return;
+      }
+
+      const custom = run.custom || {};
+      const badge = statusBadge(custom.status || run.overall);
+      status.innerHTML = `<span class="badge-soft ${badge.cls}">${esc(badge.text)}</span>`;
+      out.textContent = custom.output || '';
+      expected.textContent = custom.expected || '';
+      if (custom.stderr && custom.status !== 'Passed' && custom.status !== 'Wrong Answer') {
+        stderr.textContent = custom.stderr;
+        stderr.classList.remove('d-none');
+      } else {
+        stderr.textContent = '';
+        stderr.classList.add('d-none');
+      }
+      renderCaseTable(run, currentQ());
+      if (summary) {
+        const ran = (run.results || []).filter((r) => r.status !== 'Not Run');
+        const pass = ran.filter((r) => r.passed).length;
+        summary.textContent = `${pass} / ${run.totalCount || (run.results || []).length} Test Cases Passed`;
+      }
+    }
+
+    function renderCaseTable(run, q) {
+      const table = el('case-table');
+      const summary = el('case-summary');
+      const rows = run?.results?.length
+        ? run.results
+        : (q?.testCases || []).map((tc, i) => ({
+            index: i + 1,
+            label: `Test Case ${i + 1}`,
+            status: 'Not Run',
+            passed: false,
+          }));
+      table.innerHTML = `
+        <div class="table-wrap">
+          <table class="table-modern mb-0">
+            <thead><tr><th>Test Case</th><th>Status</th></tr></thead>
+            <tbody>
+              ${rows.map((tc, i) => {
+                const badge = caseBadge(tc.status);
+                return `<tr>
+                  <td>${esc(tc.label || `Test Case ${tc.index || i + 1}`)}</td>
+                  <td><span class="badge-soft ${badge.cls}">${esc(badge.text)}</span></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      const pass = rows.filter((r) => r.passed).length;
+      summary.textContent = `${pass} / ${rows.length} Test Cases Passed`;
     }
 
     function renderNav() {
@@ -259,31 +333,48 @@
       }).join('');
       el('q-nav').querySelectorAll('[data-goto]').forEach((btn) => {
         btn.addEventListener('click', () => {
+          if (state.submitted) return;
           persistCurrent();
           state.index = Number(btn.getAttribute('data-goto'));
           renderQuestion();
         });
       });
-      el('btn-prev').disabled = state.index <= 0;
-      el('btn-next').disabled = state.index >= state.test.items.length - 1;
+      el('btn-prev').disabled = state.index <= 0 || state.submitted;
+      el('btn-next').disabled = state.index >= state.test.items.length - 1 || state.submitted;
+    }
+
+    function setBusy(on) {
+      const locked = !!(state?.submitted);
+      el('btn-run') && (el('btn-run').disabled = on || locked);
+      el('btn-submit') && (el('btn-submit').disabled = on || locked);
+      document.querySelectorAll('[data-cod-action="submit"]').forEach((btn) => {
+        btn.disabled = on || locked;
+      });
+      if (editor) editor.setReadOnly(locked);
+      if (el('stdin')) el('stdin').readOnly = locked;
+      if (el('language')) el('language').disabled = locked;
     }
 
     function renderQuestion() {
       const q = currentQ();
       if (!q) return;
+      const sample = (q.testCases || []).find((t) => t.sample);
       const ans = state.answers[q.id] || {
         language: 'Python',
         code: q.starterCode.Python,
+        customInput: sample ? sample.input : '',
         lastRun: null,
       };
       state.answers[q.id] = ans;
       el('language').value = ans.language || 'Python';
       editor.setLanguage(ans.language || 'Python');
       editor.setValue(ans.code || q.starterCode[ans.language] || '');
+      if (el('stdin')) el('stdin').value = ans.customInput != null ? ans.customInput : (sample ? sample.input : '');
       renderProblem(q);
-      renderCases(ans.lastRun);
-      el('run-state').textContent = ans.lastRun?.overall ? ans.lastRun.overall : '';
+      renderRunPanel(ans.lastRun, false);
+      el('run-state').textContent = '';
       renderNav();
+      setBusy(false);
     }
 
     function startTimer() {
@@ -309,11 +400,14 @@
         state.test = started.test;
         state.endsAt = started.endsAt;
         state.startedAt = started.startedAt;
+        state.submitted = false;
         state.answers = {};
         (started.test.items || []).forEach((item) => {
+          const sample = (item.testCases || []).find((tc) => tc.sample);
           state.answers[item.id] = {
             language: 'Python',
             code: item.starterCode.Python,
+            customInput: sample ? sample.input : '',
             lastRun: null,
           };
         });
@@ -331,66 +425,79 @@
     }
 
     async function runCurrent() {
-      if (running || !state?.attemptId) return;
+      if (running || !state?.attemptId || state.submitted) return;
       persistCurrent();
       const q = currentQ();
       const ans = state.answers[q.id];
       running = true;
-      el('run-state').textContent = 'Running...';
-      el('btn-run').disabled = true;
+      setBusy(true);
+      el('run-state').textContent = 'Running code...';
+      renderRunPanel(null, true);
       try {
         const result = await CodingService.runCode({
           attemptId: state.attemptId,
           questionId: q.id,
           language: ans.language,
           code: ans.code,
+          stdin: ans.customInput,
         });
         ans.lastRun = result;
-        el('run-state').textContent = result.overall;
-        renderCases(result);
+        el('run-state').textContent = '';
+        renderRunPanel(result, false);
         renderNav();
       } catch (err) {
-        el('run-state').textContent = 'Runtime Error';
+        el('run-state').textContent = '';
+        renderRunPanel({
+          overall: 'Runtime Error',
+          custom: { output: '', expected: '', stderr: err?.message || 'Could not run code.', status: 'Runtime Error', passed: false },
+          results: [],
+          passedCount: 0,
+          totalCount: 0,
+        }, false);
         toast(err?.message || 'Could not run code.', 'error');
       } finally {
         running = false;
-        el('btn-run').disabled = false;
+        setBusy(false);
       }
     }
 
     async function submitExam(auto = false) {
-      if (submitting || !state?.attemptId) return;
+      if (submitting || !state?.attemptId || state.submitted) return;
       persistCurrent();
       if (!auto) {
-        const answered = answeredCount();
-        const total = state.test.items.length;
         const ok = typeof confirmAction === 'function'
           ? await confirmAction({
               title: 'Submit Test?',
-              message: `You have answered ${answered} of ${total} questions. Are you sure you want to submit?`,
+              message: 'Are you sure you want to submit this test? You may not be able to modify your answers after submission.',
               confirmText: 'Submit Test',
               cancelText: 'Cancel',
               variant: 'primary',
             })
-          : window.confirm('Submit test now?');
+          : window.confirm('Submit this test? You may not be able to modify your answers after submission.');
         if (!ok) return;
       }
       submitting = true;
+      setBusy(true);
+      if (el('btn-submit')) el('btn-submit').textContent = 'Submitting…';
       stopTimer();
       bindUnload(false);
       const timeTakenSeconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
       try {
         const result = await CodingService.submitAttempt(state.attemptId, { timeTakenSeconds });
         state.lastResult = result;
+        state.submitted = true;
         state.attemptId = null;
+        if (editor) editor.setReadOnly(true);
         if (auto) toast('Time is up — test submitted automatically.', 'info');
         renderResult(result);
       } catch (err) {
         submitting = false;
+        if (el('btn-submit')) el('btn-submit').innerHTML = 'Submit Test';
         toast(err?.message || 'Submit failed.', 'error');
         if (!auto) {
           bindUnload(true);
           startTimer();
+          setBusy(false);
         }
         return;
       }
@@ -406,6 +513,12 @@
           <div class="cod-score">${esc(result.score)} / ${esc(result.totalMarks)}</div>
           <div class="cod-pct">${esc(result.percentage)}%</div>
           <span class="badge-soft ${result.passed ? 'success' : 'danger'} mt-2">${esc(result.status)}</span>
+        </div>
+        <div class="border rounded-3 p-3 mt-3">
+          <div class="small fw-semibold mb-2">Submission Result</div>
+          <div class="small">Passed: <strong>${esc(result.testsPassed ?? 0)} / ${esc(result.testsTotal ?? 0)}</strong> test cases</div>
+          <div class="small">Score: <strong>${esc(result.score)} / ${esc(result.totalMarks)}</strong></div>
+          <div class="small">Status: <strong>${esc(result.status)}</strong></div>
         </div>`;
       el('result-stats').innerHTML = [
         ['Questions', result.questions],
@@ -427,7 +540,7 @@
         const cls = row.status === 'Correct' ? 'success' : row.status === 'Incorrect' ? 'danger' : 'muted';
         return `<div class="d-flex justify-content-between align-items-center border-bottom py-2">
           <div>Question ${esc(row.index)} — ${esc(row.title)}</div>
-          <span class="badge-soft ${cls}">${esc(row.status)}</span>
+          <span class="badge-soft ${cls}">${esc(row.status)}${row.testsTotal ? ` · ${esc(row.testsPassed)}/${esc(row.testsTotal)}` : ''}</span>
         </div>`;
       }).join('') || '<p class="text-muted-2 mb-0">No question analysis available.</p>';
     }
@@ -450,8 +563,8 @@
       }
       editor.setLanguage(language);
       editor.setValue(ans.code);
-      renderCases(ans.lastRun);
-      if (state.attemptId) CodingService.saveDraft(state.attemptId, q.id, language, ans.code);
+      renderRunPanel(ans.lastRun, false);
+      if (state.attemptId) CodingService.saveDraft(state.attemptId, q.id, { language, code: ans.code, customInput: ans.customInput });
     });
 
     root.addEventListener('click', (e) => {
@@ -466,6 +579,7 @@
         onExit(state?.lastResult);
       }
       if (action === 'prev') {
+        if (state.submitted) return;
         persistCurrent();
         if (state.index > 0) {
           state.index -= 1;
@@ -473,6 +587,7 @@
         }
       }
       if (action === 'next') {
+        if (state.submitted) return;
         persistCurrent();
         if (state.index < state.test.items.length - 1) {
           state.index += 1;
@@ -488,7 +603,7 @@
         stopTimer();
         submitting = false;
         running = false;
-        state = { testMeta, test: null, answers: {}, index: 0, attemptId: null };
+        state = { testMeta, test: null, answers: {}, index: 0, attemptId: null, submitted: false };
         renderInstructions(testMeta);
         root.classList.remove('d-none');
       },

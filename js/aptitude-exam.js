@@ -54,9 +54,14 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  function isAnsweredValue(val) {
+    if (Array.isArray(val)) return val.some((n) => Number(n) >= 0);
+    return val != null && Number(val) >= 0;
+  }
+
   function paletteState(idx, answers, marked, visited) {
     const qid = answers._order?.[idx];
-    const answered = qid != null && answers[qid] != null && answers[qid] >= 0;
+    const answered = qid != null && isAnsweredValue(answers[qid]);
     const rev = !!(marked && marked[qid]);
     if (answered && rev) return 'answered-review';
     if (rev) return 'review';
@@ -99,7 +104,8 @@
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Total marks</div><strong>${esc(test.totalMarks || 0)}</strong></div></div>
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Negative marking</div><strong>${test.negativeMarking ? `Yes (−${esc(test.negativeMarks || 0)})` : 'No'}</strong></div></div>
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Category</div><strong>${esc(test.category || '—')}</strong></div></div>
-          <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Difficulty</div><strong>${esc(test.difficulty || '—')}</strong></div></div>
+          <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Passing marks</div><strong>${esc(test.passingMarks || 0)}</strong></div></div>
+          <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Window</div><strong>${esc(test.startTime || test.endTime ? 'Timed window' : 'Open when published')}</strong></div></div>
         </div>
         <h6 class="fw-bold">Instructions</h6>
         <div class="text-muted-2" style="white-space:pre-wrap">${esc(test.instructions || 'Read each question carefully. Choose one option. Submit before time ends.')}</div>`;
@@ -117,18 +123,35 @@
       el('q-prompt').innerHTML = renderRichHtml(q.prompt || '');
       el('q-marks').textContent = `${q.marks ?? 1} mark${Number(q.marks) === 1 ? '' : 's'}`;
       const selected = state.answers[q.id];
+      const type = q.type === 'true_false' || q.type === 'multi_select' ? q.type : 'mcq';
+      const inputType = type === 'multi_select' ? 'checkbox' : 'radio';
+      const selectedSet = new Set(Array.isArray(selected) ? selected.map(Number) : (selected != null && Number(selected) >= 0 ? [Number(selected)] : []));
       el('q-options').innerHTML = (q.options || []).map((opt, i) => `
-        <label class="apt-option d-flex gap-2 align-items-start mb-2 p-2 border rounded-3 ${selected === i ? 'border-primary' : ''}">
-          <input type="radio" name="apt_opt" value="${i}" ${selected === i ? 'checked' : ''}/>
+        <label class="apt-option d-flex gap-2 align-items-start mb-2 p-2 border rounded-3 ${selectedSet.has(i) ? 'border-primary' : ''}">
+          <input type="${inputType}" name="apt_opt" value="${i}" ${selectedSet.has(i) ? 'checked' : ''}/>
           <span><strong class="me-1">${LETTERS[i] || i + 1}.</strong>${esc(opt)}</span>
         </label>`).join('');
-      el('q-options').querySelectorAll('input[name="apt_opt"]').forEach((input) => {
-        input.addEventListener('change', () => {
-          state.answers[q.id] = Number(input.value);
-          renderPalette();
-          renderQuestion();
+      if (type === 'multi_select') {
+        el('q-options').querySelectorAll('input[name="apt_opt"]').forEach((input) => {
+          input.addEventListener('change', () => {
+            const picked = [...el('q-options').querySelectorAll('input[name="apt_opt"]:checked')].map((n) => Number(n.value));
+            if (picked.length) state.answers[q.id] = picked;
+            else delete state.answers[q.id];
+            renderPalette();
+            renderQuestion();
+          });
         });
-      });
+      } else {
+        el('q-options').querySelectorAll('input[name="apt_opt"]').forEach((input) => {
+          input.addEventListener('change', () => {
+            state.answers[q.id] = Number(input.value);
+            renderPalette();
+            renderQuestion();
+          });
+        });
+      }
+      const answeredCount = state.questions.filter((item) => isAnsweredValue(state.answers[item.id])).length;
+      if (el('q-progress')) el('q-progress').textContent = `${answeredCount} / ${state.questions.length} answered`;
       const marked = !!state.marked[q.id];
       el('btn-mark').classList.toggle('btn-warning', marked);
       el('btn-mark').classList.toggle('btn-outline-warning', !marked);
@@ -180,7 +203,7 @@
         attemptId = res.data.attemptId;
         questions = (res.data.test && res.data.test.questions) || questions;
         // Ensure no answers leaked
-        questions = questions.map(({ correctIndex, explanation, ...q }) => q);
+        questions = questions.map(({ correctIndex, correctIndexes, explanation, ...q }) => q);
       } else if (opts.resolveDemoQuestions) {
         questions = opts.resolveDemoQuestions(state.test.id) || questions;
       }
@@ -246,11 +269,21 @@
 
     function renderResult(result) {
       showPanel('result');
+      if (result?.resultHeld) {
+        el('result-summary').innerHTML = `
+          <div class="alert alert-info mb-0">
+            <strong>Test submitted.</strong>
+            ${esc(result.message || 'Results will be visible after the admin releases them.')}
+          </div>`;
+        el('result-analysis').innerHTML = '<p class="text-muted-2 mb-0">Question analysis is hidden until results are released.</p>';
+        return;
+      }
+      const pass = result.passed === true ? 'Pass' : (result.passed === false ? 'Fail' : '');
       el('result-summary').innerHTML = `
         <div class="row g-2 mb-3">
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Score</div><strong>${esc(result.score ?? result.marksObtained ?? 0)} / ${esc(result.maximumScore ?? result.totalMarks ?? 0)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Percentage</div><strong>${esc(result.percentage ?? 0)}%</strong></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Accuracy</div><strong>${esc(result.accuracy ?? 0)}%</strong></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Pass / Fail</div><strong class="${result.passed === false ? 'text-danger' : 'text-success'}">${esc(pass || '—')}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Time taken</div><strong>${esc(result.timeTakenLabel || formatTimer(result.timeTakenSeconds || 0))}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Correct</div><strong class="text-success">${esc(result.correctAnswers ?? result.correctCount ?? 0)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Incorrect</div><strong class="text-danger">${esc(result.incorrectAnswers ?? result.wrongCount ?? 0)}</strong></div></div>
