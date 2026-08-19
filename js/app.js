@@ -238,7 +238,7 @@ function shellProfileLabel(role) {
 }
 
 const SHELL_TOPBAR_BTN_STYLE = [
-  'width:48px', 'height:48px', 'min-width:48px', 'min-height:48px', 'flex:0 0 48px',
+  'width:40px', 'height:40px', 'min-width:40px', 'min-height:40px', 'flex:0 0 40px',
   'padding:0', 'margin:0', 'border:0', 'border-radius:50%', 'overflow:hidden',
   'background:transparent', 'line-height:0', 'cursor:pointer',
   'display:inline-flex', 'align-items:center', 'justify-content:center',
@@ -246,7 +246,7 @@ const SHELL_TOPBAR_BTN_STYLE = [
 ].join(';');
 
 const SHELL_SIDEBAR_WRAP_STYLE = [
-  'width:44px', 'height:44px', 'min-width:44px', 'min-height:44px', 'flex:0 0 44px',
+  'width:36px', 'height:36px', 'min-width:36px', 'min-height:36px', 'flex:0 0 36px',
   'border-radius:50%', 'overflow:hidden', 'display:inline-block', 'line-height:0', 'vertical-align:middle',
 ].join(';');
 
@@ -273,7 +273,7 @@ function topbarProfileMenuHtml(user, role) {
   return `
     <div class="topbar-profile-menu" id="topbarProfileMenu">
       <button type="button" class="topbar-avatar-btn" id="topbarProfileBtn" style="${SHELL_TOPBAR_BTN_STYLE}" aria-expanded="false" aria-haspopup="true" aria-controls="topbarProfileDropdown" aria-label="Account menu" title="${escapeAttr(name)}">
-        ${shellPhotoCircleHtml(user, 48, '.85rem')}
+        ${shellPhotoCircleHtml(user, 40, '.8rem')}
       </button>
       <div class="topbar-profile-dropdown" id="topbarProfileDropdown" hidden>
         <div class="topbar-profile-dropdown-name">${escapeAttr(name)}</div>
@@ -570,7 +570,7 @@ function renderShell(active) {
       </div>
       <div style="padding:1rem;border-top:1px solid var(--border)">
         <div class="d-flex align-items-center gap-2">
-          <span class="sidebar-avatar-wrap" style="${SHELL_SIDEBAR_WRAP_STYLE}">${shellPhotoCircleHtml(user, 44, '.9rem')}</span>
+          <span class="sidebar-avatar-wrap" style="${SHELL_SIDEBAR_WRAP_STYLE}">${shellPhotoCircleHtml(user, 36, '.85rem')}</span>
           <div style="min-width:0;flex:1">
             <div style="font-size:.85rem;font-weight:600" class="text-truncate" title="${escapeAttr(sidebarName)}">${escapeAttr(sidebarName)}</div>
             <div style="font-size:.72rem;color:var(--muted)">${roleLabel}</div>
