@@ -358,6 +358,44 @@ final class AptitudeService
 
     /**
      * @param array<string, mixed> $admin
+     */
+    public function deleteBankQuestion(array $admin, string $id): void
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($id)) {
+            Response::notFound('Question not found.');
+        }
+        $bank = new AptitudeQuestionBankModel();
+        if (!$bank->findById($id)) {
+            Response::notFound('Question not found.');
+        }
+        if (!$bank->delete($id)) {
+            Response::error('Could not delete question.', 500);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     */
+    public function deleteTest(array $admin, string $id): void
+    {
+        AptitudeAccessService::requireManager($admin);
+        $test = $this->tests->findById($id);
+        if (!$test) {
+            Response::notFound('Aptitude test not found.');
+        }
+        AptitudeAccessService::assertTestManageable($admin, $test);
+        $contestType = AptitudeTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        if (in_array($contestType, ['weekly', 'monthly'], true) && !AptitudeAccessService::canManageContests($admin)) {
+            Response::forbidden('You cannot delete aptitude contests.');
+        }
+        if (!$this->tests->delete($id)) {
+            Response::error('Could not delete test.', 500);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $admin
      * @param string[] $bankIds
      * @return array<string, mixed>
      */

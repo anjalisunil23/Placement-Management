@@ -77,6 +77,48 @@
     localStorage.setItem(DEMO_BANK_KEY, JSON.stringify(list));
   }
 
+  function ensureDemoBankSeed() {
+    if (loadDemoBankStore().length) return;
+    saveDemoBankStore([
+      { id: 'bank-seed-1', category: 'General Aptitude', difficulty: 'Easy', marks: 1, prompt: 'What is 25% of 80?', options: ['15', '20', '25', '30'], correctIndex: 1, explanation: '25% of 80 = 20.' },
+      { id: 'bank-seed-2', category: 'General Aptitude', difficulty: 'Medium', marks: 1, prompt: 'A can finish a job in 10 days and B in 15 days. Working together, how many days?', options: ['5', '6', '7', '8'], correctIndex: 1, explanation: 'Combined rate 1/10 + 1/15 = 1/6 → 6 days.' },
+      { id: 'bank-seed-3', category: 'General Aptitude', difficulty: 'Medium', marks: 1, prompt: 'Find the next number: 2, 6, 12, 20, ?', options: ['28', '30', '32', '36'], correctIndex: 1, explanation: 'Differences +4, +6, +8, +10 → 30.' },
+      { id: 'bank-seed-4', category: 'General Aptitude', difficulty: 'Medium', marks: 1, prompt: 'If 3x + 5 = 20, what is x?', options: ['3', '4', '5', '6'], correctIndex: 2, explanation: '3x = 15 → x = 5.' },
+      { id: 'bank-seed-5', category: 'General Aptitude', difficulty: 'Medium', marks: 1, prompt: 'Average of 10, 20, and 30 is?', options: ['15', '20', '25', '30'], correctIndex: 1, explanation: '(10+20+30)/3 = 20.' },
+      { id: 'bank-seed-6', category: 'General Aptitude', difficulty: 'Hard', marks: 1, prompt: 'A shopkeeper marks goods 40% above cost and gives 10% discount. Profit %?', options: ['26%', '30%', '36%', '40%'], correctIndex: 0, explanation: 'SP = 1.4 × 0.9 = 1.26 → 26% profit.' },
+      { id: 'bank-seed-7', category: 'Quantitative Aptitude', difficulty: 'Easy', marks: 1, prompt: 'What is 15% of 240?', options: ['24', '36', '30', '48'], correctIndex: 1, explanation: '0.15 × 240 = 36.' },
+      { id: 'bank-seed-8', category: 'Logical Reasoning', difficulty: 'Medium', marks: 1, prompt: 'All cats are animals. Some animals are pets. Which is definitely true?', options: ['All pets are cats', 'Some cats may be pets', 'No cats are pets', 'All animals are cats'], correctIndex: 1, explanation: 'Overlap is possible; not guaranteed for all.' },
+    ]);
+  }
+
+  function normalizeBankCategory(value) {
+    const raw = String(value || '').trim();
+    const categories = meta.categories || APTITUDE_CATEGORIES;
+    for (const cat of categories) {
+      if (cat.toLowerCase() === raw.toLowerCase()) return cat;
+    }
+    const map = {
+      quantitative: 'Quantitative Aptitude',
+      logical: 'Logical Reasoning',
+      verbal: 'Verbal Ability',
+      'data interpretation': 'Data Interpretation',
+      numerical: 'Numerical Ability',
+      general: 'General Aptitude',
+      'general aptitude': 'General Aptitude',
+    };
+    return map[raw.toLowerCase()] || 'General Aptitude';
+  }
+
+  function bankQuestionMatchesRule(q, rule) {
+    const qCat = normalizeBankCategory(q.category);
+    const rCat = normalizeBankCategory(rule.category);
+    if (rCat && qCat !== rCat) return false;
+    const qDiff = normalizeDifficulty(q.difficulty);
+    const rDiff = normalizeDifficulty(rule.difficulty);
+    if (rDiff && qDiff !== rDiff) return false;
+    return true;
+  }
+
   function parseCorrectIndex(correct, options) {
     const c = String(correct ?? '').trim();
     if (!c) return 0;
@@ -192,6 +234,7 @@
   let bankQuestions = [];
   let bankSummary = { Easy: 0, Medium: 0, Hard: 0, total: 0 };
   let bankPickerQuestions = [];
+  let bankPickerAllQuestions = [];
   const selectedBankIds = new Set();
 
   function dirOptionLabel(value) {
@@ -828,6 +871,7 @@
       bankQuestions = res?.data?.questions || [];
       bankSummary = res?.data?.summary || demoBankSummary(bankQuestions);
     } else {
+      ensureDemoBankSeed();
       const all = loadDemoBankStore();
       bankQuestions = all.filter((q) => {
         if (bankCategoryFilter && String(q.category || '') !== bankCategoryFilter) return false;
@@ -866,6 +910,7 @@
     }
 
     root.innerHTML = bankQuestions.slice(0, 100).map((q) => {
+      const id = String(q.id || q.bankId || '');
       const prompt = stripHtml(q.prompt).slice(0, 160) || 'Question';
       return `<div class="border rounded-3 p-3">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
@@ -873,12 +918,71 @@
             <div class="fw-medium text-truncate">${esc(prompt)}</div>
             <div class="small text-muted-2">${esc(q.category || 'General Aptitude')} · ${esc(q.options?.length || 0)} options · ${esc(q.marks ?? 1)} mark(s)</div>
           </div>
-          ${bankDifficultyBadge(q.difficulty)}
+          <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            ${bankDifficultyBadge(q.difficulty)}
+            <button type="button" class="btn btn-sm btn-outline-danger" data-bank-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
+          </div>
         </div>
       </div>`;
     }).join('') + (bankQuestions.length > 100
       ? `<p class="small text-muted-2 mb-0">Showing first 100 of ${bankQuestions.length} questions.</p>`
       : '');
+
+    root.querySelectorAll('[data-bank-delete]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteBankQuestion(btn.getAttribute('data-bank-delete')));
+    });
+  }
+
+  async function deleteBankQuestion(id) {
+    if (!id) return;
+    if (!confirm('Delete this question from the bank?')) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      if (!Auth.isDemo() || !access.canManage) {
+        toast('Delete requires a live session with manage access.', 'info');
+        return;
+      }
+      saveDemoBankStore(loadDemoBankStore().filter((q) => String(q.id || q.bankId) !== String(id)));
+      selectedBankIds.delete(String(id));
+      toast('Question deleted (demo).', 'success');
+      await loadQuestionBank();
+      return;
+    }
+    const res = await api(`/aptitude/question-bank/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete question.', 'error');
+      return;
+    }
+    selectedBankIds.delete(String(id));
+    toast('Question deleted.', 'success');
+    await loadQuestionBank();
+  }
+
+  async function deleteTest(id) {
+    if (!id) return;
+    if (!confirm('Delete this test? This cannot be undone.')) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      if (!Auth.isDemo() || !access.canManage) {
+        toast('Delete requires a live session with manage access.', 'info');
+        return;
+      }
+      saveDemoTestsStore(loadDemoTestsStore().filter((t) => String(t.id) !== String(id)));
+      toast('Test deleted (demo).', 'success');
+      await loadTests();
+      renderTestList();
+      renderManage();
+      return;
+    }
+    const res = await api(`/aptitude/tests/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete test.', 'error');
+      return;
+    }
+    toast('Test deleted.', 'success');
+    await loadTests();
+    renderTestList();
+    renderManage();
   }
 
   function getQuestionSource() {
@@ -1014,57 +1118,44 @@
     const summary = document.getElementById('tfBankPickSummary');
     if (!summary) return;
     const needed = bankFilterRulesNeeded();
-    summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown · ${needed} needed from rules`;
+    const bankTotal = bankPickerAllQuestions.length;
+    summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown · ${bankTotal} in bank · ${needed} needed from rules`;
   }
 
   async function loadBankPickerQuestions() {
     const rules = collectBankFilterRules();
-    if (!rules.length) {
-      bankPickerQuestions = [];
-      updateBankPickSummary();
-      renderBankPicker();
-      return;
-    }
 
-    let all = [];
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
       const res = await api('/aptitude/question-bank').catch(() => null);
-      all = res?.data?.questions || [];
+      bankPickerAllQuestions = res?.data?.questions || [];
     } else {
-      all = loadDemoBankStore();
+      ensureDemoBankSeed();
+      bankPickerAllQuestions = loadDemoBankStore();
     }
 
-    bankPickerQuestions = all.filter((q) => rules.some((r) => {
-      if (r.category && String(q.category || '') !== r.category) return false;
-      if (r.difficulty && normalizeDifficulty(q.difficulty) !== normalizeDifficulty(r.difficulty)) return false;
-      return true;
-    }));
+    bankPickerQuestions = rules.length
+      ? bankPickerAllQuestions.filter((q) => rules.some((r) => bankQuestionMatchesRule(q, r)))
+      : bankPickerAllQuestions.slice();
 
     updateBankPickSummary();
     updateManualQuestionCount();
     renderBankPicker();
   }
 
-  function renderBankPicker() {
-    const root = document.getElementById('tfBankPickList');
-    if (!root) return;
-    updateBankPickSummary();
-    if (!bankPickerQuestions.length) {
-      root.innerHTML = '<p class="small text-muted-2 mb-0">No bank questions match these filters. Upload to the question bank first.</p>';
-      return;
-    }
-    root.innerHTML = bankPickerQuestions.map((q) => {
-      const id = String(q.id || q.bankId || '');
-      const checked = selectedBankIds.has(id) ? 'checked' : '';
-      const prompt = stripHtml(q.prompt).slice(0, 120) || 'Question';
-      return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0">
-        <input type="checkbox" class="form-check-input mt-1" data-bank-pick="${esc(id)}" ${checked}/>
-        <span class="small min-w-0">
-          <span class="d-block text-truncate">${esc(prompt)}</span>
-          <span class="text-muted-2">${esc(q.category || '')} · ${esc(normalizeDifficulty(q.difficulty))}</span>
-        </span>
-      </label>`;
-    }).join('');
+  function renderBankPickerQuestionRow(q) {
+    const id = String(q.id || q.bankId || '');
+    const checked = selectedBankIds.has(id) ? 'checked' : '';
+    const prompt = stripHtml(q.prompt).slice(0, 160) || 'Question';
+    return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0">
+      <input type="checkbox" class="form-check-input mt-1" data-bank-pick="${esc(id)}" ${checked}/>
+      <span class="small min-w-0 flex-grow-1">
+        <span class="d-block">${esc(prompt)}</span>
+        <span class="text-muted-2">${esc(normalizeBankCategory(q.category))} · ${esc(normalizeDifficulty(q.difficulty))} · ${Number(q.marks ?? 1)} mark(s)</span>
+      </span>
+    </label>`;
+  }
+
+  function bindBankPickerCheckboxes(root) {
     root.querySelectorAll('[data-bank-pick]').forEach((cb) => {
       cb.addEventListener('change', () => {
         const id = cb.getAttribute('data-bank-pick');
@@ -1075,6 +1166,40 @@
         updateBankPickSummary();
       });
     });
+  }
+
+  function renderBankPicker() {
+    const root = document.getElementById('tfBankPickList');
+    if (!root) return;
+    updateBankPickSummary();
+
+    const rules = collectBankFilterRules();
+    if (!bankPickerAllQuestions.length) {
+      root.innerHTML = '<p class="small text-muted-2 mb-0">Question bank is empty. Open the <strong>Question bank</strong> tab and upload Excel questions first.</p>';
+      return;
+    }
+    if (!rules.length) {
+      root.innerHTML = '<p class="small text-muted-2 mb-0">Add at least one category row above to list matching questions.</p>';
+      return;
+    }
+    if (!bankPickerQuestions.length) {
+      root.innerHTML = `<p class="small text-muted-2 mb-0">${bankPickerAllQuestions.length} question(s) in the bank, but none match these filters. Try another category or difficulty, or upload matching questions in the Question bank tab.</p>`;
+      return;
+    }
+
+    root.innerHTML = rules.map((rule, idx) => {
+      const matched = bankPickerAllQuestions.filter((q) => bankQuestionMatchesRule(q, rule));
+      const header = `${rule.category} · ${rule.difficulty} · need ${rule.count} (${matched.length} available)`;
+      const body = matched.length
+        ? matched.map((q) => renderBankPickerQuestionRow(q)).join('')
+        : '<p class="small text-muted-2 mb-0">No questions in the bank for this row.</p>';
+      return `<div class="${idx ? 'mt-3 pt-3 border-top' : ''}">
+        <div class="small fw-semibold mb-2">${esc(header)}</div>
+        <div class="d-flex flex-column gap-1">${body}</div>
+      </div>`;
+    }).join('');
+
+    bindBankPickerCheckboxes(root);
   }
 
   function updateManualQuestionCount() {
@@ -1089,13 +1214,13 @@
   function demoPickRandomRules(rules) {
     const picked = [];
     const used = new Set();
+    ensureDemoBankSeed();
     const all = loadDemoBankStore();
     rules.forEach((rule) => {
       let pool = all.filter((q) => {
         const id = String(q.id || q.bankId || '');
         if (used.has(id)) return false;
-        if (rule.category && String(q.category || '') !== rule.category) return false;
-        if (rule.difficulty && normalizeDifficulty(q.difficulty) !== normalizeDifficulty(rule.difficulty)) return false;
+        if (!bankQuestionMatchesRule(q, rule)) return false;
         return true;
       });
       const count = Math.max(1, Number(rule.count) || 1);
@@ -1193,6 +1318,7 @@
         <div class="d-flex flex-wrap gap-2">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk="${esc(t.id)}">Bulk questions</button>
           <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
         </div>
       </div>`;
   }
@@ -1207,6 +1333,9 @@
     });
     root.querySelectorAll('[data-bulk]').forEach((btn) => {
       btn.addEventListener('click', () => openBulk('test', btn.getAttribute('data-bulk')));
+    });
+    root.querySelectorAll('[data-delete-test]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteTest(btn.getAttribute('data-delete-test')));
     });
   }
 

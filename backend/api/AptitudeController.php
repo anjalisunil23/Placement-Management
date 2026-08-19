@@ -92,6 +92,14 @@ final class AptitudeController
         Response::success($this->service->updateTest($user, $id, $this->body()), 'Aptitude test updated.');
     }
 
+    /** DELETE /api/aptitude/tests/{id} */
+    public function deleteTest(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service->deleteTest($user, $id);
+        Response::success(null, 'Aptitude test deleted.');
+    }
+
     /** POST /api/aptitude/tests/{id}/questions/bulk */
     public function bulkQuestions(string $id): void
     {
@@ -126,6 +134,14 @@ final class AptitudeController
             $this->service->bulkAddToBank($user, $payload, $category),
             'Question bank updated.'
         );
+    }
+
+    /** DELETE /api/aptitude/question-bank/{id} */
+    public function deleteBankQuestion(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service->deleteBankQuestion($user, $id);
+        Response::success(null, 'Question deleted from bank.');
     }
 
     /** POST /api/aptitude/tests/{id}/questions/from-bank */
