@@ -76,6 +76,9 @@
   }
 
   async function executeOnce(question, language, code, stdin, quick) {
+    if (typeof CodeExecutionService === 'undefined' || typeof CodeExecutionService.run !== 'function') {
+      throw new Error('Code runner failed to load. Refresh the page and try Run Code again.');
+    }
     const exec = await CodeExecutionService.run({
       language,
       source: code,

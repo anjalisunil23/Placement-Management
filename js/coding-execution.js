@@ -199,10 +199,21 @@
     return lines[0].slice(0, Math.max(0, lines[0].length - 1));
   }
 
+  function sourceLineWith(source, re) {
+    const lines = String(source || '').split('\n');
+    const idx = lines.findIndex((line) => re.test(line));
+    if (idx < 0) return { line: 1, text: lines[0] || '' };
+    return { line: idx + 1, text: lines[idx] };
+  }
+
   function runtimeFromInput(language, source, stdin) {
     const empty = !String(stdin || '').trim();
-    if (language === 'Python' && /int\s*\(\s*input\s*\(/.test(source) && empty) {
-      return "ValueError: invalid literal for int() with base 10: ''";
+    if (language === 'Python' && /\binput\s*\(/.test(source) && empty) {
+      const hit = sourceLineWith(source, /\binput\s*\(/);
+      if (/int\s*\(\s*input\s*\(/.test(source)) {
+        return `ValueError: invalid literal for int() with base 10: ''\n  File "solution.py", line ${hit.line}\n    ${hit.text}`;
+      }
+      return `EOFError: EOF when reading a line\n  File "solution.py", line ${hit.line}\n    ${hit.text}`;
     }
     if (language === 'Python' && /\braise\s+/.test(source)) {
       const m = source.match(/raise\s+(\w+)/);

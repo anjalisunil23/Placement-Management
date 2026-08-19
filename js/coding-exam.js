@@ -245,45 +245,63 @@
       return { cls: 'muted', text: 'Not Run' };
     }
 
+    function formatRunError(custom) {
+      const status = String(custom?.status || '');
+      const stderr = String(custom?.stderr || '').trim();
+      const isError = ['Syntax Error', 'Runtime Error', 'Compilation Error', 'Time Limit Exceeded'].includes(status);
+      if (!isError && !stderr) return '';
+      const parts = [];
+      if (isError) parts.push(status);
+      if (stderr && stderr !== status) parts.push(stderr);
+      return parts.join('\n');
+    }
+
     function renderRunPanel(run, runningNow) {
       const out = el('output');
       const expected = el('expected');
       const stderr = el('stderr');
       const status = el('run-status');
-      if (!out || !expected || !status) return;
 
       if (runningNow) {
-        status.innerHTML = '<span class="badge-soft info">Running code...</span>';
-        out.textContent = '';
-        expected.textContent = '';
-        stderr.textContent = '';
-        stderr.classList.add('d-none');
+        if (status) status.innerHTML = '<span class="badge-soft info">Running code...</span>';
+        if (out) out.textContent = '';
+        if (expected) expected.textContent = '';
+        if (stderr) {
+          stderr.textContent = '';
+          stderr.classList.add('d-none');
+        }
+        renderCaseTable(null, currentQ());
         return;
       }
 
       if (!run) {
         const q = currentQ();
         const sample = (q?.testCases || []).find((t) => t.sample);
-        out.textContent = '';
-        expected.textContent = sample ? sample.expected : '';
-        stderr.textContent = '';
-        stderr.classList.add('d-none');
-        status.innerHTML = '<span class="small text-muted-2">Run code to see output.</span>';
+        if (out) out.textContent = '';
+        if (expected) expected.textContent = sample ? sample.expected : '';
+        if (stderr) {
+          stderr.textContent = '';
+          stderr.classList.add('d-none');
+        }
+        if (status) status.innerHTML = '<span class="small text-muted-2">Run code to see output.</span>';
         renderCaseTable(null, q);
         return;
       }
 
       const custom = run.custom || {};
       const badge = statusBadge(custom.status || run.overall);
-      status.innerHTML = `<span class="badge-soft ${badge.cls}">${esc(badge.text)}</span>`;
-      out.textContent = custom.output || '';
-      expected.textContent = custom.expected || '';
-      if (custom.stderr && custom.status !== 'Passed' && custom.status !== 'Wrong Answer') {
-        stderr.textContent = custom.stderr;
-        stderr.classList.remove('d-none');
-      } else {
-        stderr.textContent = '';
-        stderr.classList.add('d-none');
+      if (status) status.innerHTML = `<span class="badge-soft ${badge.cls}">${esc(badge.text)}</span>`;
+      if (out) out.textContent = custom.output || '';
+      if (expected) expected.textContent = custom.expected || '';
+      const detail = formatRunError(custom);
+      if (stderr) {
+        if (detail) {
+          stderr.textContent = detail;
+          stderr.classList.remove('d-none');
+        } else {
+          stderr.textContent = '';
+          stderr.classList.add('d-none');
+        }
       }
       renderCaseTable(run, currentQ());
     }
@@ -307,8 +325,13 @@
             <tbody>
               ${rows.map((tc, i) => {
                 const badge = caseBadge(tc.status);
+                const err = String(tc.stderr || '').trim();
+                const showErr = err && !['Passed', 'Not Run'].includes(String(tc.status || ''));
                 return `<tr>
-                  <td>${esc(tc.label || `Test Case ${tc.index || i + 1}`)}</td>
+                  <td>
+                    ${esc(tc.label || `Test Case ${tc.index || i + 1}`)}
+                    ${showErr ? `<div class="small text-danger mt-1" style="white-space:pre-wrap">${esc(err)}</div>` : ''}
+                  </td>
                   <td><span class="badge-soft ${badge.cls}">${esc(badge.text)}</span></td>
                 </tr>`;
               }).join('')}
