@@ -1356,22 +1356,10 @@ final class AptitudeService
         )));
         $inline = array_values(array_filter((array) ($data['questions'] ?? []), 'is_array'));
         $questions = [];
+        $bank = new AptitudeQuestionBankModel();
 
         if ($bankIds !== []) {
-            $questions = (new AptitudeQuestionBankModel())->questionsByIds($bankIds);
-        } elseif ($source === 'manual') {
-            $filterRules = array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array'));
-            if ($filterRules !== []) {
-                try {
-                    $questions = (new AptitudeQuestionBankModel())->pickRandomByRules($filterRules);
-                } catch (\InvalidArgumentException $e) {
-                    Response::error($e->getMessage(), 422);
-                }
-                $bankIds = array_values(array_filter(array_map(
-                    static fn (array $q): string => trim((string) ($q['bankId'] ?? '')),
-                    $questions
-                )));
-            }
+            $questions = $bank->questionsByIds($bankIds);
         }
         foreach ($inline as $i => $q) {
             $norm = AptitudeTestModel::normalizeMcq(

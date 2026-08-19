@@ -1067,12 +1067,11 @@
 
   function readBankFilterRule(row) {
     if (!row) {
-      return { category: 'General Aptitude', difficulty: 'Medium', count: 1 };
+      return { category: 'General Aptitude', difficulty: 'Medium' };
     }
     return {
       category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
       difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
-      count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
     };
   }
 
@@ -1093,15 +1092,11 @@
         <label class="form-label small mb-1">Category</label>
         <select class="form-select form-select-sm" data-f="category">${catOpts}</select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-5">
         <label class="form-label small mb-1">Difficulty</label>
         <select class="form-select form-select-sm" data-f="difficulty">
           ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`).join('')}
         </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">No. of questions</label>
-        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 5)}"/>
       </div>
       <div class="col-md-2">
         <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-bank-rule>Remove</button>
@@ -1121,7 +1116,6 @@
       });
       el.addEventListener('input', () => {
         updateBankPickSummary();
-        updateManualQuestionCount();
       });
     });
     root.appendChild(outer);
@@ -1147,16 +1141,11 @@
     });
   }
 
-  function bankFilterRulesNeeded() {
-    return collectBankFilterRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0);
-  }
-
   function updateBankPickSummary() {
     const summary = document.getElementById('tfBankPickSummary');
     if (!summary) return;
-    const needed = bankFilterRulesNeeded();
     const bankTotal = bankPickerAllQuestions.length;
-    summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown · ${bankTotal} in bank · ${needed} needed from rules`;
+    summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown · ${bankTotal} in bank`;
   }
 
   async function loadBankPickerQuestions() {
@@ -1227,7 +1216,7 @@
 
       const rule = readBankFilterRule(row);
       const matched = bankPickerAllQuestions.filter((q) => bankQuestionMatchesRule(q, rule));
-      const header = `<div class="small fw-semibold mb-2">${esc(rule.category)} · ${esc(rule.difficulty)} · need ${rule.count} (${matched.length} available)</div>`;
+      const header = `<div class="small fw-semibold mb-2">${esc(rule.category)} · ${esc(rule.difficulty)} (${matched.length} available)</div>`;
 
       if (!matched.length) {
         list.innerHTML = `${header}<p class="small text-muted-2 mb-0">No questions in the bank for this category and difficulty.</p>`;
@@ -1243,7 +1232,7 @@
     if (getQuestionSource() !== 'manual') return;
     const mcqCount = collectMcqs().length;
     const useBank = document.getElementById('tfUseBankManual')?.checked;
-    const bankPart = useBank ? bankFilterRulesNeeded() : 0;
+    const bankPart = useBank ? selectedBankIds.size : 0;
     const countEl = document.getElementById('tfQuestionCount');
     if (countEl) countEl.value = String(Math.max(mcqCount + bankPart, 1));
   }
@@ -2127,7 +2116,6 @@
       addBankFilterRuleRow({
         category: test?.category || 'General Aptitude',
         difficulty: test?.difficulty || 'Medium',
-        count: Math.max(1, (test?.bankQuestionIds || []).length || 5),
       });
     }
 
@@ -2167,7 +2155,6 @@
       payload.randomRules = [];
       const useBank = document.getElementById('tfUseBankManual')?.checked;
       payload.bankQuestionIds = useBank ? [...selectedBankIds] : [];
-      payload.bankFilterRules = useBank ? collectBankFilterRules() : [];
       payload.questions = collectMcqs();
     }
     if (canManageContests()) Object.assign(payload, collectContestPayload());
@@ -2395,7 +2382,7 @@
       const on = e.target.checked;
       document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
       if (on && !document.querySelector('#tfBankFilterRules .tf-bank-filter-rule-wrap')) {
-        addBankFilterRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5 });
+        addBankFilterRuleRow({ category: 'General Aptitude', difficulty: 'Medium' });
       } else if (on) {
         loadBankPickerQuestions().catch(() => renderBankPicker());
       }
@@ -2478,13 +2465,12 @@
       } else {
         const mcqCount = payload.questions?.length || 0;
         const useBank = document.getElementById('tfUseBankManual')?.checked;
-        const bankNeeded = useBank ? bankFilterRulesNeeded() : 0;
         const bankSelected = useBank ? selectedBankIds.size : 0;
-        if (useBank && bankNeeded > 0 && bankSelected > 0 && bankSelected !== bankNeeded) {
-          toast(`Select ${bankNeeded} question(s) from the bank (${bankSelected} selected), or leave all unchecked to auto-pick from your rules on save.`, 'error');
+        const total = mcqCount + bankSelected;
+        if (useBank && !bankSelected && !mcqCount) {
+          toast('Select at least one question from the bank or add an MCQ.', 'error');
           return;
         }
-        const total = mcqCount + (useBank ? (bankSelected > 0 ? bankSelected : bankNeeded) : 0);
         if (!total) {
           toast('Select bank questions or add at least one MCQ.', 'error');
           return;
