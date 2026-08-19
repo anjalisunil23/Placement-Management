@@ -78,6 +78,7 @@ function pms_load_module_controllers(string $backendDir): void
         'PMS\\Officer\\OfficerController' => 'officer/OfficerController.php',
         'PMS\\Admin\\AdminController'   => 'admin/AdminController.php',
         'PMS\\Student\\StudentController' => 'student/StudentController.php',
+        'PMS\\Student\\ResumeBuilderController' => 'student/ResumeBuilderController.php',
         'PMS\\Alumni\\AlumniController' => 'alumni/AlumniController.php',
         'PMS\\Company\\CompanyController' => 'company/CompanyController.php',
         'PMS\\Auth\\AuthController'     => 'auth/AuthController.php',

@@ -111,6 +111,7 @@ use PMS\Auth\AuthController;
 use PMS\Company\CompanyController;
 use PMS\Officer\OfficerController;
 use PMS\Staff\StaffController;
+use PMS\Student\ResumeBuilderController;
 use PMS\Student\StudentController;
 use PMS\Utils\Response;
 
@@ -278,6 +279,10 @@ $routes = [
     ['POST', '/student/signed-report',     [StudentController::class, 'uploadSignedReport']],
     ['POST', '/student/applications/{id}/withdraw', [StudentController::class, 'withdrawApplication']],
     ['POST', '/student/notifications/{id}/read',    [StudentController::class, 'markNotificationRead']],
+
+    // Resume Builder (isolated)
+    ['GET',  '/student/resume-builder/career-objective', [ResumeBuilderController::class, 'getCareerObjective']],
+    ['PUT',  '/student/resume-builder/career-objective', [ResumeBuilderController::class, 'saveCareerObjective']],
 
     // Company
     ['GET',  '/company/profile',                  [CompanyController::class, 'profile']],

@@ -76,9 +76,15 @@
     { key: 'department', label: 'Department' },
   ];
 
+  const OBJECTIVE_MIN = 50;
+  const OBJECTIVE_MAX = 500;
+
   const state = {
     personalComplete: false,
     educationComplete: false,
+    objectiveComplete: false,
+    objectiveText: '',
+    objectiveEditing: false,
   };
 
   function esc(value) {
@@ -149,7 +155,9 @@
   }
 
   function completedCount() {
-    return (state.personalComplete ? 1 : 0) + (state.educationComplete ? 1 : 0);
+    return (state.personalComplete ? 1 : 0)
+      + (state.educationComplete ? 1 : 0)
+      + (state.objectiveComplete ? 1 : 0);
   }
 
   function completionPercent() {
@@ -365,6 +373,71 @@
       </button>`;
   }
 
+  function objectiveLength(text) {
+    return String(text || '').trim().length;
+  }
+
+  function objectiveValid(text) {
+    const len = objectiveLength(text);
+    return len >= OBJECTIVE_MIN && len <= OBJECTIVE_MAX;
+  }
+
+  function objectiveEditor(text, message) {
+    const value = String(text || '');
+    const len = objectiveLength(value);
+    const ok = objectiveValid(value);
+    const msg = message
+      ? `<div class="alert alert-warning py-2 small mb-2" role="alert">${esc(message)}</div>`
+      : '';
+    return `
+      ${msg}
+      <label class="form-label small fw-semibold" for="rbObjectiveText">Career objective</label>
+      <textarea class="form-control" id="rbObjectiveText" rows="4" maxlength="${OBJECTIVE_MAX}" data-rb-objective-input>${esc(value)}</textarea>
+      <div class="d-flex justify-content-between align-items-center mt-1 mb-3">
+        <div class="form-text mb-0" data-rb-objective-count>${len} / ${OBJECTIVE_MAX} characters (minimum ${OBJECTIVE_MIN})</div>
+        <div class="d-flex gap-2">
+          ${state.objectiveText ? '<button type="button" class="btn btn-sm btn-outline-secondary" data-rb-objective-cancel>Cancel</button>' : ''}
+          <button type="button" class="btn btn-sm btn-primary" data-rb-objective-save ${ok ? '' : 'disabled'}>Save</button>
+        </div>
+      </div>
+      <p class="small text-muted-2 mb-0">
+        Examples:<br>
+        - MCA student passionate about software development and problem solving.<br>
+        - Seeking opportunities to apply programming and analytical skills in real-world projects.
+      </p>`;
+  }
+
+  function objectiveCardBody(loading, message) {
+    if (loading) {
+      return `<p class="small text-muted-2 mb-0">Loading career objective…</p>`;
+    }
+
+    const hasSaved = objectiveValid(state.objectiveText);
+    const editing = state.objectiveEditing || !hasSaved;
+    const badge = hasSaved
+      ? '<span class="badge-soft success">Completed</span>'
+      : '<span class="badge-soft warning">Incomplete</span>';
+
+    let body;
+    if (editing) {
+      body = objectiveEditor(state.objectiveEditing ? state.objectiveText : (hasSaved ? state.objectiveText : ''), message);
+    } else {
+      body = `
+        <p class="mb-3" style="white-space:pre-wrap">${esc(state.objectiveText)}</p>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-rb-objective-edit>Edit</button>`;
+    }
+
+    return `
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+        <div class="d-flex align-items-center gap-2">
+          <div class="rb-section-icon" aria-hidden="true"><i class="bi bi-bullseye"></i></div>
+          <h6 class="fw-bold mb-0">Career Objective</h6>
+        </div>
+        ${badge}
+      </div>
+      ${body}`;
+  }
+
   function sectionCard(section) {
     if (section.id === 'personal') {
       return `
@@ -380,6 +453,15 @@
         <div class="col-12">
           <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="education">
             ${educationCardBody([], { complete: false }, true)}
+          </div>
+        </div>`;
+    }
+
+    if (section.id === 'objective') {
+      return `
+        <div class="col-12">
+          <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="objective">
+            ${objectiveCardBody(true)}
           </div>
         </div>`;
     }
@@ -433,7 +515,33 @@
       }
       if (event.target.closest('[data-rb-view-academic]')) {
         goToAcademicProfile();
+        return;
       }
+      if (event.target.closest('[data-rb-objective-edit]')) {
+        state.objectiveEditing = true;
+        renderObjectiveCard();
+        return;
+      }
+      if (event.target.closest('[data-rb-objective-cancel]')) {
+        state.objectiveEditing = false;
+        renderObjectiveCard();
+        return;
+      }
+      if (event.target.closest('[data-rb-objective-save]')) {
+        saveCareerObjective();
+      }
+    });
+
+    root.addEventListener('input', (event) => {
+      const ta = event.target.closest('[data-rb-objective-input]');
+      if (!ta || !root.contains(ta)) return;
+      const len = objectiveLength(ta.value);
+      const count = root.querySelector('[data-rb-objective-count]');
+      if (count) {
+        count.textContent = len + ' / ' + OBJECTIVE_MAX + ' characters (minimum ' + OBJECTIVE_MIN + ')';
+      }
+      const saveBtn = root.querySelector('[data-rb-objective-save]');
+      if (saveBtn) saveBtn.disabled = !objectiveValid(ta.value);
     });
 
     if (window.bootstrap && typeof bootstrap.Tooltip === 'function') {
@@ -457,6 +565,72 @@
     const card = root.querySelector('[data-rb-card="education"]');
     if (card) card.innerHTML = educationCardBody(rows, status, false);
     updateCompletionUi();
+  }
+
+  function renderObjectiveCard(message) {
+    const card = root.querySelector('[data-rb-card="objective"]');
+    if (card) card.innerHTML = objectiveCardBody(false, message);
+    updateCompletionUi();
+  }
+
+  function applyObjective(text) {
+    const saved = String(text || '').trim();
+    state.objectiveText = saved;
+    state.objectiveComplete = objectiveValid(saved);
+    state.objectiveEditing = !state.objectiveComplete;
+    renderObjectiveCard();
+  }
+
+  async function loadCareerObjective() {
+    const canFetch = typeof api === 'function'
+      && typeof Auth !== 'undefined'
+      && typeof Auth.hasRealAuth === 'function'
+      && Auth.hasRealAuth();
+    if (!canFetch) {
+      applyObjective('');
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/career-objective', { skipAuthRedirect: true });
+      if (res?.success) {
+        applyObjective(res.data?.objectiveText || '');
+        return;
+      }
+    } catch (_err) {
+      // Fall through to empty state.
+    }
+    applyObjective('');
+  }
+
+  async function saveCareerObjective() {
+    const ta = root.querySelector('[data-rb-objective-input]');
+    const text = ta ? ta.value : '';
+    if (!objectiveValid(text)) {
+      renderObjectiveCard('Career objective must be between ' + OBJECTIVE_MIN + ' and ' + OBJECTIVE_MAX + ' characters.');
+      const again = root.querySelector('[data-rb-objective-input]');
+      if (again) again.value = text;
+      return;
+    }
+    const saveBtn = root.querySelector('[data-rb-objective-save]');
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const res = await api('/student/resume-builder/career-objective', {
+        method: 'PUT',
+        body: { objectiveText: String(text).trim() },
+        skipAuthRedirect: true,
+      });
+      if (res?.success) {
+        applyObjective(res.data?.objectiveText || text);
+        return;
+      }
+      renderObjectiveCard(res?.message || 'Could not save career objective.');
+      const again = root.querySelector('[data-rb-objective-input]');
+      if (again) again.value = text;
+    } catch (_err) {
+      renderObjectiveCard('Could not save career objective.');
+      const again = root.querySelector('[data-rb-objective-input]');
+      if (again) again.value = text;
+    }
   }
 
   async function loadPersonalFromProfile() {
@@ -484,6 +658,7 @@
   function init() {
     renderShell();
     loadPersonalFromProfile();
+    loadCareerObjective();
   }
 
   if (typeof onAppReady === 'function') onAppReady(init);
