@@ -70,7 +70,7 @@
   const PERSONAL_MANDATORY = [
     { key: 'fullName', label: 'Full Name' },
     { key: 'registerNumber', label: 'Register Number' },
-    { key: 'studentId', label: 'Student ID' },
+    { key: 'studentId', hidden: true },
     { key: 'collegeEmail', label: 'College Email' },
     { key: 'mobile', label: 'Mobile Number' },
     { key: 'department', label: 'Department' },
@@ -140,10 +140,10 @@
   }
 
   function personalStatus(fields) {
-    const missing = PERSONAL_MANDATORY.filter((item) => !String(fields[item.key] || '').trim()).map((item) => item.label);
+    const missingItems = PERSONAL_MANDATORY.filter((item) => !String(fields[item.key] || '').trim());
     return {
-      complete: missing.length === 0,
-      missing,
+      complete: missingItems.length === 0,
+      missing: missingItems.filter((item) => !item.hidden).map((item) => item.label),
     };
   }
 
@@ -209,7 +209,6 @@
       <div class="row g-3 mb-3">
         ${fieldRow('Full Name', fields.fullName)}
         ${fieldRow('Register Number', fields.registerNumber)}
-        ${fieldRow('Student ID', fields.studentId)}
         ${fieldRow('College Email', fields.collegeEmail)}
         ${fieldRow('Personal Email', fields.personalEmail)}
         ${fieldRow('Mobile Number', fields.mobile)}
