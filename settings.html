@@ -5,7 +5,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
-<link href="css/style.css?v=20260819avatar2" rel="stylesheet"/>
+<link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
 <script src="js/ph-role-guard.js?v=20260724hod4"></script></head>
 <body data-page="settings.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
@@ -161,7 +161,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260727alumniphoto"></script>
-<script src="js/app.js?v=20260819avatar"></script>
+<script src="js/app.js?v=20260727alumniphoto"></script>
 <script>
 let user = Auth.user() || demoUserFor(Auth.role() || 'student');
 let role = user.role || Auth.role() || '';
@@ -689,15 +689,13 @@ function setAvatarPhoto(url) {
   const ini = profileInitials(document.getElementById('profName')?.value || user.name);
   profAvatarEl.dataset.initials = ini;
   profAvatarEl.textContent = '';
-  profAvatarEl.style.backgroundImage = '';
   profAvatarEl.querySelector('img')?.remove();
   profAvatarEl.classList.add('has-photo');
-  const img = document.createElement('img');
-  img.src = String(url);
-  img.alt = '';
-  img.decoding = 'async';
-  img.referrerPolicy = 'no-referrer';
-  profAvatarEl.appendChild(img);
+  const safe = encodeURI(String(url)).replace(/'/g, '%27');
+  profAvatarEl.style.backgroundImage = `url('${safe}')`;
+  profAvatarEl.style.backgroundSize = 'cover';
+  profAvatarEl.style.backgroundPosition = 'center';
+  profAvatarEl.style.backgroundRepeat = 'no-repeat';
 }
 
 function escHtml(text) {

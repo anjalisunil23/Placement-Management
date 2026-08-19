@@ -21,7 +21,6 @@
   --shell-active:rgba(37,99,235,.22);
   --sidebar-w:260px;
   --topbar-h:64px;
-  --avatar-photo-scale:82%;
   --shadow-sm:0 1px 2px rgba(15,23,42,.04),0 1px 3px rgba(15,23,42,.06);
   --shadow:0 4px 12px rgba(15,23,42,.06),0 2px 4px rgba(15,23,42,.04);
   --radius:14px;
@@ -305,8 +304,8 @@ a{color:inherit;text-decoration:none}
 .sidebar-avatar-wrap{
   width:36px;height:36px;flex:0 0 36px;
   aspect-ratio:1/1;
-  border-radius:50%;overflow:visible;display:inline-flex;align-items:center;justify-content:center;
-  line-height:0;vertical-align:middle;
+  border-radius:50%;overflow:hidden;display:inline-block;line-height:0;
+  vertical-align:middle;
 }
 .topbar-profile-menu{position:relative;z-index:1080}
 .topbar-profile-menu .topbar-avatar-btn{
@@ -447,9 +446,9 @@ a{color:inherit;text-decoration:none}
 }
 .avatar.has-photo img,
 .shell-avatar img{
-  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-  width:var(--avatar-photo-scale)!important;height:var(--avatar-photo-scale)!important;
-  max-width:var(--avatar-photo-scale)!important;max-height:var(--avatar-photo-scale)!important;
+  position:absolute;inset:0;
+  width:100%!important;height:100%!important;
+  max-width:100%!important;max-height:100%!important;
   object-fit:cover;display:block;border-radius:50%!important;
   pointer-events:none;
 }
@@ -463,34 +462,22 @@ a{color:inherit;text-decoration:none}
   display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;
 }
 .settings-profile-avatar{
-  width:64px;height:64px;min-width:64px;min-height:64px;max-width:64px;max-height:64px;
+  width:80px;height:80px;min-width:80px;min-height:80px;max-width:80px;max-height:80px;
   border-radius:50%;flex-shrink:0;overflow:hidden;position:relative;
   background:linear-gradient(135deg,var(--primary) 0%,var(--primary-2) 100%);
   color:#fff;display:flex;align-items:center;justify-content:center;
-  font-weight:700;font-size:1.35rem;letter-spacing:.02em;
+  font-weight:700;font-size:1.65rem;letter-spacing:.02em;
+  background-size:cover;background-position:center;background-repeat:no-repeat;
   box-shadow:0 4px 14px color-mix(in srgb,var(--primary) 22%,transparent);
 }
 .settings-profile-avatar.has-photo{
-  width:64px;height:64px;min-width:64px;min-height:64px;max-width:64px;max-height:64px;
-  background-color:var(--surface-2,#e2e8f0);
-  box-shadow:0 4px 14px color-mix(in srgb,var(--primary) 22%,transparent);
-  color:transparent;line-height:0;overflow:hidden;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
+  background-color:var(--surface-2);
+  color:transparent;
+  line-height:0;
 }
 .settings-profile-avatar.has-photo img{
-  position:static;width:var(--avatar-photo-scale);height:var(--avatar-photo-scale);
-  max-width:var(--avatar-photo-scale);max-height:var(--avatar-photo-scale);
+  position:absolute;inset:0;width:100%;height:100%;max-width:100%;max-height:100%;
   object-fit:cover;display:block;border-radius:50%;pointer-events:none;
-}
-/* Shell / header avatars — photo inset inside the round button/wrap */
-.shell-avatar-photo{
-  border-radius:50%;object-fit:cover;display:block;flex-shrink:0;
-  width:var(--avatar-photo-scale)!important;height:var(--avatar-photo-scale)!important;
-  min-width:0!important;min-height:0!important;
-  background:transparent!important;
-}
-.avatar .shell-avatar-photo{
-  width:var(--avatar-photo-scale)!important;height:var(--avatar-photo-scale)!important;
 }
 .settings-profile-edit{
   border-color:var(--primary);color:var(--primary);
