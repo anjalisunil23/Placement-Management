@@ -1355,10 +1355,21 @@ final class AptitudeService
             static fn ($id) => $id !== '' && Security::isValidId($id)
         )));
         $inline = array_values(array_filter((array) ($data['questions'] ?? []), 'is_array'));
+        $filterRules = array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array'));
         $questions = [];
         $bank = new AptitudeQuestionBankModel();
 
-        if ($bankIds !== []) {
+        if ($source === 'manual' && $filterRules !== []) {
+            try {
+                $questions = $bank->resolveByRulesWithPreferred($filterRules, $bankIds);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            $bankIds = array_values(array_filter(array_map(
+                static fn (array $q): string => trim((string) ($q['bankId'] ?? '')),
+                $questions
+            )));
+        } elseif ($bankIds !== []) {
             $questions = $bank->questionsByIds($bankIds);
         }
         foreach ($inline as $i => $q) {
