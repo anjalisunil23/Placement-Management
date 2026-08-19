@@ -133,6 +133,10 @@
     return found >= 0 ? found : 0;
   }
 
+  function isLiveAptitudeId(id) {
+    return /^[a-f\d]{24}$/i.test(String(id || '').trim());
+  }
+
   function rowField(row, ...keys) {
     for (const k of keys) {
       if (row[k] != null && String(row[k]).trim() !== '') return String(row[k]).trim();
@@ -218,18 +222,12 @@
 
   let access = { canTake: false, canManage: false, canViewDirectory: false, scope: null };
   let tests = [];
-  let meta = { categories: APTITUDE_CATEGORIES, difficulties: APTITUDE_DIFFICULTIES, statuses: ['draft', 'scheduled', 'published', 'completed', 'archived'] };
+  let meta = { categories: APTITUDE_CATEGORIES, difficulties: APTITUDE_DIFFICULTIES };
   let testFormModal;
   let bulkModal;
   let studentAptModal;
-  let bankModal;
-  let bankQuestionModal;
-  let resultsModal;
   let exam;
   let mcqCounter = 0;
-  let bankPickMode = false;
-  let bankCache = [];
-  let adminStats = { totalTests: 0, published: 0, draft: 0, totalAttempts: 0 };
   let dirFilterBranch = '';
   let dirFilterBatch = '';
   let dirFiltersBound = false;
@@ -980,6 +978,10 @@
       renderManage();
       return;
     }
+    if (!isLiveAptitudeId(id)) {
+      toast('This test is not on the server. Refresh the page and try again.', 'error');
+      return;
+    }
     const res = await api(`/aptitude/tests/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
     if (!res?.success) {
       toast(res?.message || 'Could not delete test.', 'error');
@@ -1342,121 +1344,20 @@
     if (!show && managePanel === 'contests') applyManagePanel('tests');
   }
 
-  function statusBadge(status) {
-    const raw = String(status || 'draft').toLowerCase();
-    const map = { unpublished: 'draft', live: 'published', active: 'published' };
-    const key = map[raw] || raw;
-    const label = key.replace(/_/g, ' ');
-    return `<span class="badge-soft apt-status-${esc(key)}">${esc(label)}</span>`;
-  }
-
-  function assignmentLabel(t) {
-    const mode = String(t?.assignmentMode || 'all');
-    if (mode === 'department') return 'Department';
-    if (mode === 'course') return (t.assignmentCourses || []).join(', ') || 'Courses';
-    if (mode === 'batch') return (t.assignmentBatches || []).join(', ') || 'Batches';
-    if (mode === 'students') return `${(t.assignmentStudentIds || []).length} student(s)`;
-    return 'All students';
-  }
-
-  function splitCsv(value) {
-    return String(value || '').split(',').map((s) => s.trim()).filter(Boolean);
-  }
-
-  function toDatetimeLocal(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-
-  function formatDeadline(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return String(iso);
-    return d.toLocaleString();
-  }
-
-  function testLifecycle(t) {
-    return String(t?.lifecycleStatus || t?.status || 'draft');
-  }
-
-  function syncAssignFields() {
-    const mode = document.getElementById('tfAssignMode')?.value || 'all';
-    document.getElementById('tfAssignCoursesWrap')?.classList.toggle('d-none', mode !== 'course');
-    document.getElementById('tfAssignBatchesWrap')?.classList.toggle('d-none', mode !== 'batch');
-    document.getElementById('tfAssignStudentsWrap')?.classList.toggle('d-none', mode !== 'students');
-  }
-
-  function updateBuilderSummary() {
-    const questions = typeof collectMcqs === 'function' ? collectMcqs() : [];
-    const marks = questions.reduce((s, q) => s + Number(q.marks || 1), 0);
-    const duration = Number(document.getElementById('tfDuration')?.value || 30);
-    const passing = Number(document.getElementById('tfPassingMarks')?.value || 0);
-    const mode = document.getElementById('tfAssignMode')?.value || 'all';
-    const status = document.getElementById('tfStatus')?.value || 'draft';
-    const assignMap = { all: 'All students', department: 'Department', course: 'Courses', batch: 'Batches', students: 'Selected students' };
-    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    set('sumQuestions', String(questions.length));
-    set('sumMarks', String(marks || document.getElementById('tfTotalMarks')?.value || 0));
-    set('sumDuration', `${duration} min`);
-    set('sumPassing', String(passing));
-    set('sumAssign', assignMap[mode] || mode);
-    set('sumStatus', status);
-    const totalEl = document.getElementById('tfTotalMarks');
-    if (totalEl && marks > 0 && !totalEl.dataset.manual) totalEl.value = String(marks);
-  }
-
   function renderManageRow(t, { showContestBadge = false } = {}) {
-    const life = testLifecycle(t);
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div>
           <strong>${esc(t.title)}</strong>
-          <div class="small text-muted-2">${testMetaLine(t)}</div>
-          <div class="mt-1">${statusBadge(life)} ${showContestBadge ? contestBadgeHtml(t) : ''}</div>
+          <div class="small text-muted-2">${esc(t.status || 'unpublished')} · ${testMetaLine(t)}</div>
+          ${showContestBadge ? contestBadgeHtml(t) : ''}
         </div>
         <div class="d-flex flex-wrap gap-2">
-          ${manageActionButtons(t)}
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk="${esc(t.id)}">Bulk questions</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
         </div>
       </div>`;
-  }
-
-  function manageActionButtons(t) {
-    const id = esc(t.id);
-    const life = testLifecycle(t);
-    const publish = life === 'published'
-      ? `<button type="button" class="btn btn-sm btn-outline-warning" data-unpublish="${id}">Unpublish</button>`
-      : (life === 'archived' ? '' : `<button type="button" class="btn btn-sm btn-outline-success" data-publish="${id}">Publish</button>`);
-    const release = t.showResultsImmediately === false
-      ? `<button type="button" class="btn btn-sm btn-outline-info" data-release="${id}">Release results</button>`
-      : '';
-    return `
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-results="${id}">Results</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk="${id}">Bulk questions</button>
-      <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${id}">Edit</button>
-      ${publish}
-      ${release}
-      <button type="button" class="btn btn-sm btn-outline-danger" data-archive="${id}">Archive</button>
-      <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${id}">Delete</button>`;
-  }
-
-  function renderManageTableRow(t) {
-    const qCount = t.questionCount || (t.questions || []).length || 0;
-    return `<tr>
-      <td>
-        <div class="fw-semibold">${esc(t.title)}</div>
-        <div class="small text-muted-2">${esc(t.description || '').slice(0, 80)}</div>
-      </td>
-      <td>${esc(t.category || '—')}</td>
-      <td>${esc(qCount)}</td>
-      <td>${esc(t.durationMinutes || 0)} min</td>
-      <td>${esc(t.totalMarks || 0)}${t.passingMarks ? ` <span class="small text-muted-2">(pass ${esc(t.passingMarks)})</span>` : ''}</td>
-      <td class="small">${esc(assignmentLabel(t))}</td>
-      <td>${statusBadge(testLifecycle(t))}</td>
-      <td><div class="d-flex flex-wrap gap-1">${manageActionButtons(t)}</div></td>
-    </tr>`;
   }
 
   function bindManageListActions(root) {
@@ -1473,49 +1374,6 @@
     root.querySelectorAll('[data-delete-test]').forEach((btn) => {
       btn.addEventListener('click', () => deleteTest(btn.getAttribute('data-delete-test')));
     });
-    root.querySelectorAll('[data-publish]').forEach((btn) => {
-      btn.addEventListener('click', () => mutateTest(btn.getAttribute('data-publish'), 'publish'));
-    });
-    root.querySelectorAll('[data-unpublish]').forEach((btn) => {
-      btn.addEventListener('click', () => mutateTest(btn.getAttribute('data-unpublish'), 'unpublish'));
-    });
-    root.querySelectorAll('[data-archive]').forEach((btn) => {
-      btn.addEventListener('click', () => mutateTest(btn.getAttribute('data-archive'), 'archive'));
-    });
-    root.querySelectorAll('[data-release]').forEach((btn) => {
-      btn.addEventListener('click', () => mutateTest(btn.getAttribute('data-release'), 'release-results'));
-    });
-    root.querySelectorAll('[data-results]').forEach((btn) => {
-      btn.addEventListener('click', () => openResults(btn.getAttribute('data-results')));
-    });
-  }
-
-  async function mutateTest(id, action) {
-    const live = Auth.hasRealAuth() && !Auth.isDemo();
-    if (!live) {
-      toast('Managing tests requires a live session.', 'info');
-      return;
-    }
-    if (action === 'archive') {
-      const ok = typeof confirmAction === 'function'
-        ? await confirmAction({
-            title: 'Archive test',
-            message: 'Archive this test? Students will no longer see it.',
-            confirmText: 'Archive',
-            variant: 'danger',
-          })
-        : window.confirm('Archive this test?');
-      if (!ok) return;
-    }
-    const res = await api(`/aptitude/tests/${encodeURIComponent(id)}/${action}`, { method: 'POST' }).catch(() => null);
-    if (!res?.success) {
-      toast(res?.message || 'Could not update test.', 'error');
-      return;
-    }
-    toast(res.message || 'Test updated.', 'success');
-    await loadTests();
-    renderManage();
-    renderTestList();
   }
 
   function isContestOpenClient(test) {
@@ -1669,29 +1527,13 @@
       const full = (fullDemoTest(test.id)?.questions || []).find((x) => x.id === q.id) || q;
       const qMarks = Number(full.marks ?? 1);
       total += qMarks;
-      const pickedRaw = Object.prototype.hasOwnProperty.call(answers, q.id) ? answers[q.id] : -1;
-      const pickedList = Array.isArray(pickedRaw)
-        ? pickedRaw.map((n) => Number(n)).filter((n) => n >= 0)
-        : (Number(pickedRaw) >= 0 ? [Number(pickedRaw)] : []);
-      const picked = pickedList[0] ?? -1;
+      const picked = Object.prototype.hasOwnProperty.call(answers, q.id) ? Number(answers[q.id]) : -1;
       const opts = full.options || q.options || [];
-      const type = full.type || q.type || 'mcq';
-      const correctIndexes = Array.isArray(full.correctIndexes) ? full.correctIndexes.map(Number) : [Number(full.correctIndex)];
+      const correctIndex = Number(full.correctIndex);
       let status = 'unanswered';
       let marksForQ = 0;
-      let isCorrect = false;
-      if (pickedList.length) {
-        if (type === 'multi_select') {
-          const a = [...pickedList].sort();
-          const b = [...correctIndexes].sort();
-          isCorrect = a.length === b.length && a.every((v, i) => v === b[i]);
-        } else {
-          isCorrect = picked === Number(full.correctIndex);
-        }
-      }
-      if (!pickedList.length) {
-        unanswered += 1;
-      } else if (isCorrect) {
+      if (picked < 0) unanswered += 1;
+      else if (picked === correctIndex) {
         correct += 1;
         marksForQ = qMarks;
         marks += qMarks;
@@ -1704,16 +1546,10 @@
         }
         status = 'incorrect';
       }
-      const studentAnswer = type === 'multi_select'
-        ? (pickedList.length ? pickedList.map((i) => opts[i]).join(', ') : null)
-        : (picked >= 0 ? opts[picked] : null);
-      const correctAnswer = type === 'multi_select'
-        ? correctIndexes.map((i) => opts[i]).join(', ')
-        : opts[Number(full.correctIndex)];
       analysis.push({
         question: full.prompt || q.prompt,
-        studentAnswer,
-        correctAnswer,
+        studentAnswer: picked >= 0 ? opts[picked] : null,
+        correctAnswer: opts[correctIndex],
         explanation: full.explanation || '',
         marks: qMarks,
         marksObtained: marksForQ,
@@ -1723,7 +1559,6 @@
     if (marks < 0) marks = 0;
     const pct = total > 0 ? Math.round((marks / total) * 1000) / 10 : 0;
     const accuracy = correct + wrong > 0 ? Math.round((correct / (correct + wrong)) * 1000) / 10 : 0;
-    const passing = Number(test.passingMarks || 0);
     const result = {
       score: marks,
       marksObtained: marks,
@@ -1734,8 +1569,6 @@
       correctAnswers: correct,
       incorrectAnswers: wrong,
       unansweredQuestions: unanswered,
-      passingMarks: passing,
-      passed: passing > 0 ? marks >= passing : true,
       timeTakenSeconds: metaPayload.timeTakenSeconds || 0,
       timeTakenLabel: AptitudeExam.formatTimer(metaPayload.timeTakenSeconds || 0),
       rank: 1,
@@ -1780,7 +1613,6 @@
   function defaultView() {
     const views = allowedViews();
     const role = Auth.role();
-    if (views.includes('manage') && role === 'admin') return 'manage';
     if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
     if (views.includes('manage') && (role === 'admin' || role === 'staff')) return 'manage';
     if (views.includes('take')) return 'take';
@@ -1823,10 +1655,7 @@
       await initDirFilters();
       await loadDirectory();
     }
-    if (view === 'manage' && access.canManage) {
-      await loadAdminStats();
-      renderManage();
-    }
+    if (view === 'manage' && access.canManage) renderManage();
 
     if (typeof renderShell === 'function') {
       renderShell(`${document.body?.dataset?.page || 'mock-aptitude.html'}${hash}`);
@@ -1944,41 +1773,22 @@
 
   async function loadTests() {
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const path = access.canManage ? '/aptitude/tests' : '/aptitude/tests/available';
-      const res = await api(path).catch(() => null);
+      const res = await api('/aptitude/tests').catch(() => null);
       if (res?.success) {
         tests = res.data?.tests || [];
         return;
       }
-      if (!access.canManage) {
-        const fallback = await api('/aptitude/tests').catch(() => null);
-        if (fallback?.success) {
-          tests = fallback.data?.tests || [];
-          return;
-        }
-      }
+      tests = [];
+      toast(res?.message || 'Could not load aptitude tests from the server.', 'error');
+      return;
     }
     tests = loadDemoTestsStore().map((t) => {
       const copy = JSON.parse(JSON.stringify(t));
       if (!access.canManage) {
-        copy.questions = (copy.questions || []).map(({ correctIndex, correctIndexes, explanation, ...q }) => q);
+        copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
       }
       return copy;
     });
-  }
-
-  async function loadAdminStats() {
-    if (!access.canManage || !(Auth.hasRealAuth() && !Auth.isDemo())) {
-      adminStats = {
-        totalTests: tests.length,
-        published: tests.filter((t) => testLifecycle(t) === 'published').length,
-        draft: tests.filter((t) => testLifecycle(t) === 'draft').length,
-        totalAttempts: 0,
-      };
-      return;
-    }
-    const res = await api('/aptitude/admin/stats').catch(() => null);
-    if (res?.success && res.data) adminStats = res.data;
   }
 
   function renderMyStats(p) {
@@ -2028,27 +1838,17 @@
       ? 'No contest attempts yet.'
       : 'No attempts yet. Select a test on the left to begin.';
     document.getElementById('myHistory').innerHTML = filtered.length
-      ? filtered.slice(0, 12).map((h) => {
+      ? filtered.slice(0, 8).map((h) => {
           const attemptId = h.attemptId || h.id;
-          const held = !!h.resultHeld || h.resultStatus === 'pending';
-          const pass = held ? 'Pending release' : (h.passed === false ? 'Fail' : (h.passed === true ? 'Pass' : ''));
-          const passCls = held ? 'muted' : (h.passed === false ? 'danger' : 'success');
-          const scoreLine = held ? 'Result pending admin release' : formatHistoryMeta(h);
           const viewBtn = canReview && attemptId && Auth.hasRealAuth() && !Auth.isDemo()
-            ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(attemptId)}">View result</button>`
+            ? `<button type="button" class="btn btn-link btn-sm p-0" data-view-attempt="${esc(attemptId)}">View</button>`
             : '';
-          const when = h.completedAt || h.startedAt || '';
-          return `<div class="border-bottom py-2">
-            <div class="d-flex justify-content-between align-items-start gap-2">
-              <div class="min-w-0">
-                <div class="text-truncate fw-medium">${esc(h.testTitle || h.testName || 'Test')}</div>
-                <div class="small text-muted-2">${esc(when ? formatDeadline(when) : '')}${when ? ' · ' : ''}${esc(scoreLine)}</div>
-              </div>
-              <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                ${pass ? `<span class="badge-soft ${passCls}">${esc(pass)}</span>` : ''}
-                ${viewBtn}
-              </div>
+          return `<div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
+            <div class="min-w-0">
+              <div class="text-truncate fw-medium">${esc(h.testTitle || h.testName || 'Test')}</div>
+              <div class="small text-muted-2">${esc(formatHistoryMeta(h))}</div>
             </div>
+            <div class="d-flex align-items-center gap-2 flex-shrink-0 pt-1">${viewBtn}</div>
           </div>`;
         }).join('')
       : `<p class="text-muted-2 mb-0">${emptyLabel}</p>`;
@@ -2074,47 +1874,31 @@
 
   function renderTestList() {
     const root = document.getElementById('testList');
-    if (!root) return;
-    if (access.canManage && !access.canTake) {
-      root.innerHTML = '<p class="text-muted-2 mb-0">Use Test management to create and assign tests. Students take published assigned tests from this list.</p>';
-      return;
-    }
     let visible = access.canManage
-      ? tests.filter((t) => ['published', 'scheduled'].includes(testLifecycle(t)) && isContestOpenClient(t))
-      : tests.filter((t) => ['published', 'scheduled'].includes(testLifecycle(t)) && isContestOpenClient(t));
-    if (!access.canManage) {
-      visible = tests.filter((t) => ['published', 'scheduled'].includes(String(t.lifecycleStatus || t.status || 'published')));
-    }
+      ? tests
+      : tests.filter((t) => (t.status || 'published') === 'published' && isContestOpenClient(t));
     if (!visible.length) {
       const msg = Auth.role() === 'student'
-        ? 'No aptitude mocks are assigned to you yet. Check back later or contact your placement officer.'
+        ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
         : 'No published aptitude tests yet.';
       root.innerHTML = `<p class="text-muted-2 mb-0">${msg}</p>`;
       return;
     }
     root.innerHTML = visible.map((t) => {
-      const life = testLifecycle(t);
-      const open = life === 'published' && isContestOpenClient(t);
-      const deadline = t.endTime ? `Deadline: ${formatDeadline(t.endTime)}` : (life === 'scheduled' && t.startTime ? `Opens: ${formatDeadline(t.startTime)}` : '');
       const contestLine = String(t.contestType || 'none') !== 'none'
         ? `<div class="small mt-1"><span class="badge-soft info">${esc(contestScheduleLabel(t))}</span></div>`
         : '';
-      const startBtn = access.canTake && open
-        ? `<button type="button" class="btn btn-sm btn-primary" data-open-test="${esc(t.id)}">Start Test</button>`
-        : (access.canTake ? `<button type="button" class="btn btn-sm btn-outline-secondary" disabled>${life === 'scheduled' ? 'Scheduled' : 'Closed'}</button>` : '');
       return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-start gap-2">
         <div class="flex-grow-1">
-          <div class="d-flex flex-wrap align-items-center gap-2">
-            <div class="fw-semibold">${esc(t.title)}</div>
-            ${statusBadge(life)}
-          </div>
-          <div class="small text-muted-2">${esc(t.category || '')} · ${esc(t.questionCount || (t.questions || []).length)} Qs · ${esc(t.durationMinutes)} min · ${esc(t.totalMarks || 0)} marks</div>
-          ${deadline ? `<div class="small text-muted-2">${esc(deadline)}</div>` : ''}
+          <div class="fw-semibold">${esc(t.title)}</div>
+          <div class="small text-muted-2">${testMetaLine(t)}</div>
           ${contestLine}
-          <div class="small mt-1">${esc(t.description || t.instructions || '').slice(0, 160)}</div>
+          <div class="small mt-1">${esc(t.description || '')}</div>
         </div>
-        ${startBtn}
+        ${access.canTake && (t.status || 'published') === 'published'
+          ? `<button type="button" class="btn btn-sm btn-primary" data-open-test="${esc(t.id)}">Select</button>`
+          : ''}
       </div>`;
     }).join('');
     root.querySelectorAll('[data-open-test]').forEach((btn) => {
@@ -2243,7 +2027,6 @@
 
   function syncFormQuestionTotals() {
     updateManualQuestionCount();
-    updateBuilderSummary();
   }
 
   async function importMcqsFromFormExcel(file) {
@@ -2260,88 +2043,49 @@
     return normalized.length;
   }
 
-  function addMcqRow(q = {}, parentId = 'mcqList') {
+  function addMcqRow(q = {}) {
     mcqCounter += 1;
     const opts = Array.isArray(q.options) && q.options.length ? q.options.slice() : ['', '', '', ''];
     while (opts.length < 4) opts.push('');
     const wrap = document.createElement('div');
     wrap.className = 'border rounded-3 p-3';
     wrap.dataset.mcq = '1';
-    const type = q.type === 'true_false' || q.type === 'multi_select' ? q.type : 'mcq';
-    const correctIdx = Array.isArray(q.correctIndexes) ? q.correctIndexes : [Number(q.correctIndex || 0)];
     wrap.innerHTML = `
-      <div class="d-flex justify-content-between mb-2 gap-2 align-items-center">
-        <select class="form-select form-select-sm" data-f="type" style="max-width:13rem">
-          <option value="mcq" ${type === 'mcq' ? 'selected' : ''}>Multiple choice</option>
-          <option value="true_false" ${type === 'true_false' ? 'selected' : ''}>True / False</option>
-          <option value="multi_select" ${type === 'multi_select' ? 'selected' : ''}>Multiple select</option>
-        </select>
-        <button type="button" class="btn btn-sm btn-outline-danger" data-remove-mcq>Remove</button>
-      </div>
+      <div class="d-flex justify-content-between mb-2"><strong class="small">MCQ</strong><button type="button" class="btn btn-sm btn-outline-danger" data-remove-mcq>Remove</button></div>
       <div class="mb-2">
         <label class="form-label small mb-1">Question</label>
         <div data-f="prompt-editor"></div>
       </div>
-      <div class="row g-2 mb-2" data-f="opts-mcq">${opts.slice(0, 4).map((o, i) => `<div class="col-md-6"><label class="form-label small mb-1">Option ${i + 1}</label><input class="form-control form-control-sm" data-f="opt${i}" placeholder="Option ${i + 1}" value="${esc(o)}"/></div>`).join('')}</div>
+      <div class="row g-2 mb-2">${opts.slice(0, 4).map((o, i) => `<div class="col-md-6"><label class="form-label small mb-1">Option ${i + 1}</label><input class="form-control form-control-sm" data-f="opt${i}" placeholder="Option ${i + 1}" value="${esc(o)}" ${i < 2 ? 'required' : ''}/></div>`).join('')}</div>
       <div class="row g-2">
-        <div class="col-md-3" data-f="correct-mcq"><label class="form-label small mb-0">Correct</label><select class="form-select form-select-sm" data-f="correct">${[0, 1, 2, 3].map((i) => `<option value="${i}" ${Number(q.correctIndex) === i ? 'selected' : ''}>Option ${i + 1}</option>`).join('')}</select></div>
-        <div class="col-md-3 d-none" data-f="correct-tf"><label class="form-label small mb-0">Correct</label><select class="form-select form-select-sm" data-f="correct-tf-val"><option value="0" ${Number(q.correctIndex) === 0 ? 'selected' : ''}>True</option><option value="1" ${Number(q.correctIndex) === 1 ? 'selected' : ''}>False</option></select></div>
-        <div class="col-md-6 d-none" data-f="correct-multi"><label class="form-label small mb-0">Correct options</label><div class="d-flex flex-wrap gap-2 pt-1">${[0, 1, 2, 3].map((i) => `<label class="small"><input type="checkbox" data-f="multi-${i}" ${correctIdx.includes(i) ? 'checked' : ''}/> ${i + 1}</label>`).join('')}</div></div>
+        <div class="col-md-3"><label class="form-label small mb-0">Correct</label><select class="form-select form-select-sm" data-f="correct">${[0, 1, 2, 3].map((i) => `<option value="${i}" ${Number(q.correctIndex) === i ? 'selected' : ''}>Option ${i + 1}</option>`).join('')}</select></div>
         <div class="col-md-3"><label class="form-label small mb-0">Marks</label><input class="form-control form-control-sm" type="number" min="0.5" step="0.5" data-f="marks" value="${esc(q.marks ?? 1)}"/></div>
-        <div class="col-md-3"><label class="form-label small fw-semibold mb-0">Difficulty</label><select class="form-select form-select-sm" data-f="difficulty">${(meta.difficulties || APTITUDE_DIFFICULTIES).map((d) => `<option ${String(q.difficulty || 'Medium') === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div>
         <div class="col-md-6">
-          <label class="form-label small mb-0">Explanation / solution</label>
+          <label class="form-label small mb-0">Explanation</label>
           <div data-f="explanation-editor"></div>
         </div>
       </div>`;
     wrap.querySelector('[data-remove-mcq]').addEventListener('click', () => {
       wrap.remove();
-      if (typeof updateManualQuestionCount === 'function') updateManualQuestionCount();
-      updateBuilderSummary();
+      updateManualQuestionCount();
     });
-    const syncType = () => {
-      const t = wrap.querySelector('[data-f="type"]').value;
-      wrap.querySelector('[data-f="opts-mcq"]').classList.toggle('d-none', t === 'true_false');
-      wrap.querySelector('[data-f="correct-mcq"]').classList.toggle('d-none', t !== 'mcq');
-      wrap.querySelector('[data-f="correct-tf"]').classList.toggle('d-none', t !== 'true_false');
-      wrap.querySelector('[data-f="correct-multi"]').classList.toggle('d-none', t !== 'multi_select');
-    };
-    wrap.querySelector('[data-f="type"]').addEventListener('change', () => { syncType(); updateBuilderSummary(); });
-    wrap.querySelector('[data-f="marks"]')?.addEventListener('input', updateBuilderSummary);
-    const parent = document.getElementById(parentId || 'mcqList') || document.getElementById('mcqList');
-    parent.appendChild(wrap);
+    document.getElementById('mcqList').appendChild(wrap);
     initMcqQuill(wrap.querySelector('[data-f="prompt-editor"]'), q.prompt || '');
     initMcqQuill(wrap.querySelector('[data-f="explanation-editor"]'), q.explanation || '', true);
-    syncType();
-    updateBuilderSummary();
   }
 
   function collectMcqs() {
     return [...document.querySelectorAll('#mcqList [data-mcq]')].map((el, i) => {
-      const type = el.querySelector('[data-f="type"]')?.value || 'mcq';
-      let options = [0, 1, 2, 3].map((n) => String(el.querySelector(`[data-f="opt${n}"]`)?.value || '').trim()).filter(Boolean);
-      let correctIndex = Number(el.querySelector('[data-f="correct"]')?.value || 0);
-      let correctIndexes = [correctIndex];
-      if (type === 'true_false') {
-        options = ['True', 'False'];
-        correctIndex = Number(el.querySelector('[data-f="correct-tf-val"]')?.value || 0);
-        correctIndexes = [correctIndex];
-      } else if (type === 'multi_select') {
-        correctIndexes = [0, 1, 2, 3].filter((n) => el.querySelector(`[data-f="multi-${n}"]`)?.checked);
-        if (!correctIndexes.length) correctIndexes = [correctIndex];
-        correctIndex = correctIndexes[0];
-      }
+      const options = [0, 1, 2, 3].map((n) => String(el.querySelector(`[data-f="opt${n}"]`)?.value || '').trim()).filter(Boolean);
       const prompt = getMcqEditorHtml(el.querySelector('[data-f="prompt-editor"]'));
       const explanation = getMcqEditorHtml(el.querySelector('[data-f="explanation-editor"]'));
       return {
         id: `q${i + 1}`,
-        type,
+        type: 'mcq',
         prompt,
         options,
-        correctIndex,
-        correctIndexes,
+        correctIndex: Number(el.querySelector('[data-f="correct"]')?.value || 0),
         marks: Number(el.querySelector('[data-f="marks"]')?.value || 1),
-        difficulty: el.querySelector('[data-f="difficulty"]')?.value || 'Medium',
         explanation,
       };
     }).filter((q) => richTextHasContent(q.prompt) && q.options.length >= 2);
@@ -2351,30 +2095,16 @@
     const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
     const isContest = isContestTest(test) || isContestPreset;
     document.getElementById('testFormTitle').textContent = test
-      ? (isContest ? 'Edit contest' : 'Edit test')
-      : (isContestPreset ? `New ${preset.contestType} contest` : 'Create test');
+      ? (isContest ? 'Edit contest' : 'Edit aptitude test')
+      : (isContestPreset ? `New ${preset.contestType} contest` : 'New aptitude test');
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
-    fillSelect(document.getElementById('tfCategory'), meta.categories || APTITUDE_CATEGORIES, test?.category || 'General Aptitude');
-    fillSelect(document.getElementById('tfDifficulty'), meta.difficulties || APTITUDE_DIFFICULTIES, test?.difficulty || 'Medium');
     document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 10;
     document.getElementById('tfDuration').value = test?.durationMinutes || 30;
-    document.getElementById('tfTotalMarks').value = test?.totalMarks || 1;
-    document.getElementById('tfPassingMarks').value = test?.passingMarks ?? 0;
-    document.getElementById('tfStartTime').value = toDatetimeLocal(test?.startTime);
-    document.getElementById('tfEndTime').value = toDatetimeLocal(test?.endTime);
     document.getElementById('tfNegative').checked = !!test?.negativeMarking;
     document.getElementById('tfNegativeMarks').value = test?.negativeMarks ?? 0;
-    const stored = test?.status === 'unpublished' ? 'draft' : (test?.status || 'draft');
-    document.getElementById('tfStatus').value = stored;
-    document.getElementById('tfAssignMode').value = test?.assignmentMode || 'all';
-    document.getElementById('tfAssignCourses').value = (test?.assignmentCourses || []).join(', ');
-    document.getElementById('tfAssignBatches').value = (test?.assignmentBatches || []).join(', ');
-    document.getElementById('tfAssignStudents').value = (test?.assignmentStudentIds || []).join(', ');
-    document.getElementById('tfShowResults').checked = test?.showResultsImmediately !== false;
-    document.getElementById('tfMultiAttempts').checked = !!test?.allowMultipleAttempts;
-    document.getElementById('tfInstructions').value = test?.instructions || '';
+    document.getElementById('tfStatus').value = test?.status === 'published' ? 'published' : 'unpublished';
 
     const source = test?.questionSource === 'random' ? 'random' : 'manual';
     document.getElementById('tfSourceManual').checked = source === 'manual';
@@ -2408,14 +2138,11 @@
     document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
     syncContestFormFields();
     syncQuestionSourcePanels();
-    syncAssignFields();
-    if (document.getElementById('tfBulkFile')) document.getElementById('tfBulkFile').value = '';
+    document.getElementById('tfBulkFile').value = '';
     document.getElementById('mcqList').innerHTML = '';
     const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId) : [];
     if (qs.length) qs.forEach((q) => addMcqRow(q));
-    else if (source === 'manual' && !useBank) addMcqRow();
     loadBankPickerQuestions().catch(() => renderBankPicker());
-    updateBuilderSummary();
     testFormModal.show();
   }
 
@@ -2424,25 +2151,13 @@
     const payload = {
       title: document.getElementById('tfTitle').value.trim(),
       description: document.getElementById('tfDescription').value.trim(),
-      category: document.getElementById('tfCategory')?.value || 'General Aptitude',
-      difficulty: document.getElementById('tfDifficulty')?.value || 'Medium',
       questionCount: Number(document.getElementById('tfQuestionCount').value || 0),
       durationMinutes: Number(document.getElementById('tfDuration').value || 30),
-      totalMarks: Number(document.getElementById('tfTotalMarks')?.value || 0),
-      passingMarks: Number(document.getElementById('tfPassingMarks')?.value || 0),
-      startTime: document.getElementById('tfStartTime')?.value || null,
-      endTime: document.getElementById('tfEndTime')?.value || null,
       negativeMarking: document.getElementById('tfNegative').checked,
       negativeMarks: Number(document.getElementById('tfNegativeMarks').value || 0),
       status: document.getElementById('tfStatus').value,
       questionSource: source,
-      assignmentMode: document.getElementById('tfAssignMode')?.value || 'all',
-      assignmentCourses: splitCsv(document.getElementById('tfAssignCourses')?.value || ''),
-      assignmentBatches: splitCsv(document.getElementById('tfAssignBatches')?.value || ''),
-      assignmentStudentIds: splitCsv(document.getElementById('tfAssignStudents')?.value || ''),
-      showResultsImmediately: document.getElementById('tfShowResults')?.checked !== false,
-      allowMultipleAttempts: !!document.getElementById('tfMultiAttempts')?.checked,
-      instructions: document.getElementById('tfInstructions')?.value.trim() || '',
+      instructions: '',
     };
     if (source === 'random') {
       payload.randomRules = collectRandomRules();
@@ -2450,9 +2165,9 @@
       payload.bankQuestionIds = [];
     } else {
       payload.randomRules = [];
-      payload.bankQuestionIds = document.getElementById('tfUseBankManual')?.checked
-        ? [...selectedBankIds]
-        : [];
+      const useBank = document.getElementById('tfUseBankManual')?.checked;
+      payload.bankQuestionIds = useBank ? [...selectedBankIds] : [];
+      payload.bankFilterRules = useBank ? collectBankFilterRules() : [];
       payload.questions = collectMcqs();
     }
     if (canManageContests()) Object.assign(payload, collectContestPayload());
@@ -2530,40 +2245,15 @@
     syncManageContestActions();
     applyManagePanel(managePanel);
 
-    const catSel = document.getElementById('manageCategoryFilter');
-    if (catSel && catSel.options.length <= 1) {
-      fillSelect(catSel, ['', ...(meta.categories || APTITUDE_CATEGORIES)], catSel.value || '');
-      if (catSel.options[0]) catSel.options[0].textContent = 'All categories';
-    }
-
-    const q = String(document.getElementById('manageSearch')?.value || '').trim().toLowerCase();
-    const statusF = String(document.getElementById('manageStatusFilter')?.value || '');
-    const catF = String(document.getElementById('manageCategoryFilter')?.value || '');
-    const regular = tests.filter((t) => !isContestTest(t)).filter((t) => {
-      if (q && !String(t.title || '').toLowerCase().includes(q) && !String(t.category || '').toLowerCase().includes(q)) return false;
-      if (statusF && testLifecycle(t) !== statusF) return false;
-      if (catF && String(t.category || '') !== catF) return false;
-      return true;
-    });
+    const regular = tests.filter((t) => !isContestTest(t));
     const contests = tests.filter((t) => isContestTest(t));
-
-    const published = tests.filter((t) => testLifecycle(t) === 'published').length;
-    const draft = tests.filter((t) => testLifecycle(t) === 'draft').length;
-    document.getElementById('manageStatsRow').innerHTML = [
-      ['Total tests', adminStats.totalTests || tests.length],
-      ['Published', adminStats.published || published],
-      ['Draft tests', adminStats.draft || draft],
-      ['Total attempts', adminStats.totalAttempts || 0],
-    ].map(([lbl, val]) =>
-      `<div class="col-6 col-md-3"><div class="card-surface p-3 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val">${esc(val)}</div></div></div>`
-    ).join('');
 
     const testsRoot = document.getElementById('manageTestsList');
     const contestsRoot = document.getElementById('manageContestsList');
     if (testsRoot) {
       testsRoot.innerHTML = regular.length
-        ? regular.map((t) => renderManageTableRow(t)).join('')
-        : '<tr><td colspan="8" class="text-muted-2 p-3">No tests match these filters.</td></tr>';
+        ? regular.map((t) => renderManageRow(t)).join('')
+        : '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
       bindManageListActions(testsRoot);
     }
     if (contestsRoot) {
@@ -2628,163 +2318,15 @@
     renderDirectoryTable(res?.data?.rows || [], summary, scope);
   }
 
-  function promptHtml(q) {
-    const raw = String(q.prompt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    return raw.slice(0, 90) || 'Untitled question';
-  }
-
-  async function loadBank() {
-    const live = Auth.hasRealAuth() && !Auth.isDemo();
-    if (!live) {
-      bankCache = loadDemoBankStore();
-      return bankCache;
-    }
-    const params = new URLSearchParams();
-    const cat = document.getElementById('bankCategory')?.value;
-    const diff = document.getElementById('bankDifficulty')?.value;
-    const search = document.getElementById('bankSearch')?.value;
-    if (cat) params.set('category', cat);
-    if (diff) params.set('difficulty', diff);
-    if (search) params.set('search', search);
-    const res = await api('/aptitude/question-bank?' + params.toString()).catch(() => null);
-    bankCache = res?.data?.questions || [];
-    return bankCache;
-  }
-
-  function renderBankRows() {
-    const rows = document.getElementById('bankRows');
-    if (!rows) return;
-    rows.innerHTML = bankCache.length
-      ? bankCache.map((q) => `<tr>
-          <td><input type="checkbox" data-bank-id="${esc(q.id || q.bankId)}"/></td>
-          <td>${esc(promptHtml(q))}</td>
-          <td class="small">${esc((q.type || 'mcq').replace('_', ' '))}</td>
-          <td class="small">${esc(q.category || '')}</td>
-          <td>${esc(q.difficulty || 'Medium')}</td>
-          <td>${esc(q.marks ?? 1)}</td>
-          <td>
-            <button type="button" class="btn btn-sm btn-outline-primary" data-bank-edit="${esc(q.id)}">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(q.id)}">Delete</button>
-          </td>
-        </tr>`).join('')
-      : '<tr><td colspan="7" class="text-muted-2 p-3">No questions in the bank yet.</td></tr>';
-    rows.querySelectorAll('[data-bank-edit]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const q = bankCache.find((x) => String(x.id) === String(btn.getAttribute('data-bank-edit')));
-        if (q) openBankQuestionForm(q);
-      });
-    });
-    rows.querySelectorAll('[data-bank-del]').forEach((btn) => {
-      btn.addEventListener('click', () => deleteBankQuestion(btn.getAttribute('data-bank-del')));
-    });
-  }
-
-  async function openBank(pickMode = false) {
-    bankPickMode = !!pickMode;
-    fillSelect(document.getElementById('bankCategory'), ['', ...(meta.categories || APTITUDE_CATEGORIES)]);
-    if (document.getElementById('bankCategory')?.options[0]) document.getElementById('bankCategory').options[0].textContent = 'All categories';
-    fillSelect(document.getElementById('bankDifficulty'), ['', ...(meta.difficulties || APTITUDE_DIFFICULTIES)]);
-    if (document.getElementById('bankDifficulty')?.options[0]) document.getElementById('bankDifficulty').options[0].textContent = 'All difficulty';
-    document.getElementById('btnUseBankSelected')?.classList.toggle('d-none', !bankPickMode);
-    await loadBank();
-    renderBankRows();
-    bankModal?.show();
-  }
-
-  function openBankQuestionForm(q = null) {
-    document.getElementById('bankQTitle').textContent = q ? 'Edit bank question' : 'Add bank question';
-    document.getElementById('bqId').value = q?.id || '';
-    document.getElementById('bqEditor').innerHTML = '';
-    addMcqRow(q || {}, 'bqEditor');
-    bankQuestionModal?.show();
-  }
-
-  async function deleteBankQuestion(id) {
-    const live = Auth.hasRealAuth() && !Auth.isDemo();
-    if (!live) {
-      saveDemoBankStore(loadDemoBankStore().filter((q) => String(q.id) !== String(id)));
-      await loadBank();
-      renderBankRows();
-      return;
-    }
-    const res = await api(`/aptitude/question-bank/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
-    if (!res?.success) {
-      toast(res?.message || 'Could not delete question.', 'error');
-      return;
-    }
-    toast('Question deleted.', 'success');
-    await loadBank();
-    renderBankRows();
-  }
-
-  async function useSelectedBankQuestions() {
-    const ids = [...document.querySelectorAll('#bankRows [data-bank-id]:checked')].map((el) => el.getAttribute('data-bank-id'));
-    if (!ids.length) {
-      toast('Select at least one question.', 'info');
-      return;
-    }
-    const selected = bankCache.filter((q) => ids.includes(String(q.id || q.bankId)));
-    selected.forEach((q) => addMcqRow(q));
-    toast(`Added ${selected.length} question(s) to the test.`, 'success');
-    bankModal?.hide();
-    updateBuilderSummary();
-  }
-
-  async function openResults(testId = '') {
-    const live = Auth.hasRealAuth() && !Auth.isDemo();
-    const filter = document.getElementById('resultsTestFilter');
-    if (filter && filter.options.length <= 1) {
-      filter.innerHTML = `<option value="">All tests</option>` + tests.map((t) => `<option value="${esc(t.id)}">${esc(t.title)}</option>`).join('');
-    }
-    if (testId && filter) filter.value = testId;
-    const qs = (filter?.value || testId) ? `?testId=${encodeURIComponent(filter?.value || testId)}` : '';
-    let attempts = [];
-    if (live) {
-      const res = await api('/aptitude/admin/attempts' + qs).catch(() => null);
-      attempts = res?.data?.attempts || [];
-    }
-    const body = document.getElementById('resultsRows');
-    body.innerHTML = attempts.length
-      ? attempts.map((a) => {
-          const held = a.resultStatus === 'pending' || a.resultHeld;
-          return `<tr>
-            <td>${esc(a.attemptId || a.id)}</td>
-            <td>${esc(a.testTitle || '')}</td>
-            <td>${held ? '—' : esc(a.marksObtained ?? a.score ?? 0)}${a.totalMarks ? ` / ${esc(a.totalMarks)}` : ''}</td>
-            <td>${held ? '—' : `${esc(a.percentage ?? 0)}%`}</td>
-            <td>${statusBadge(a.resultStatus || (a.passed ? 'pass' : 'fail'))}</td>
-            <td class="small">${esc(a.completedAt ? formatDeadline(a.completedAt) : '')}</td>
-            <td><button type="button" class="btn btn-sm btn-outline-primary" data-admin-attempt="${esc(a.attemptId || a.id)}">View</button></td>
-          </tr>`;
-        }).join('')
-      : '<tr><td colspan="7" class="text-muted-2 p-3">No attempts yet.</td></tr>';
-    body.querySelectorAll('[data-admin-attempt]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const res = await api(`/aptitude/attempts/${encodeURIComponent(btn.getAttribute('data-admin-attempt'))}/result`).catch(() => null);
-        if (!res?.success) {
-          toast(res?.message || 'Could not load result.', 'error');
-          return;
-        }
-        resultsModal?.hide();
-        document.getElementById('hubView').classList.add('d-none');
-        exam.showResult(res.data);
-      });
-    });
-    resultsModal?.show();
-  }
-
   onAppReady(async () => {
     testFormModal = new bootstrap.Modal(document.getElementById('testFormModal'));
     bulkModal = new bootstrap.Modal(document.getElementById('bulkModal'));
-    bankModal = document.getElementById('bankModal') ? new bootstrap.Modal(document.getElementById('bankModal')) : null;
-    bankQuestionModal = document.getElementById('bankQuestionModal') ? new bootstrap.Modal(document.getElementById('bankQuestionModal')) : null;
-    resultsModal = document.getElementById('resultsModal') ? new bootstrap.Modal(document.getElementById('resultsModal')) : null;
     exam = AptitudeExam.createExamController({
       root: document.getElementById('examShell'),
       onExit: () => closeExam(),
       resolveDemoQuestions: (id) => {
         const t = fullDemoTest(id);
-        return (t?.questions || []).map(({ correctIndex, correctIndexes, explanation, ...q }) => q);
+        return (t?.questions || []).map(({ correctIndex, explanation, ...q }) => q);
       },
       scoreLocally,
     });
@@ -2903,14 +2445,6 @@
       applyManagePanel(link.getAttribute('data-manage-view'));
     });
     document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
-    document.getElementById('tfAssignMode')?.addEventListener('change', () => { syncAssignFields(); updateBuilderSummary(); });
-    ['tfDuration', 'tfPassingMarks', 'tfStatus', 'tfTotalMarks'].forEach((id) => {
-      document.getElementById(id)?.addEventListener('input', updateBuilderSummary);
-      document.getElementById(id)?.addEventListener('change', updateBuilderSummary);
-    });
-    document.getElementById('tfTotalMarks')?.addEventListener('input', () => {
-      document.getElementById('tfTotalMarks').dataset.manual = '1';
-    });
     document.getElementById('btnBankUpload')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
 
@@ -2925,88 +2459,10 @@
       bankDifficultyFilter = link.getAttribute('data-bank-difficulty') || '';
       loadQuestionBank().catch(() => {});
     });
-    document.getElementById('btnQuestionBank')?.addEventListener('click', () => openBank(false));
-    document.getElementById('btnPickBank')?.addEventListener('click', () => openBank(true));
-    document.getElementById('btnViewResults')?.addEventListener('click', () => openResults(''));
-    document.getElementById('btnNewBankQ')?.addEventListener('click', () => openBankQuestionForm());
-    document.getElementById('btnUseBankSelected')?.addEventListener('click', () => useSelectedBankQuestions());
-    document.getElementById('manageSearch')?.addEventListener('input', () => renderManage());
-    document.getElementById('manageStatusFilter')?.addEventListener('change', () => renderManage());
-    document.getElementById('manageCategoryFilter')?.addEventListener('change', () => renderManage());
-    document.getElementById('bankSearch')?.addEventListener('input', async () => { await loadBank(); renderBankRows(); });
-    document.getElementById('bankCategory')?.addEventListener('change', async () => { await loadBank(); renderBankRows(); });
-    document.getElementById('bankDifficulty')?.addEventListener('change', async () => { await loadBank(); renderBankRows(); });
-    document.getElementById('resultsTestFilter')?.addEventListener('change', () => openResults(document.getElementById('resultsTestFilter').value));
-    document.getElementById('bankQuestionForm')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const host = document.getElementById('bqEditor');
-      const listId = 'mcqList';
-      const questions = [...host.querySelectorAll('[data-mcq]')].map((el) => {
-        const type = el.querySelector('[data-f="type"]')?.value || 'mcq';
-        let options = [0, 1, 2, 3].map((n) => String(el.querySelector(`[data-f="opt${n}"]`)?.value || '').trim()).filter(Boolean);
-        let correctIndex = Number(el.querySelector('[data-f="correct"]')?.value || 0);
-        let correctIndexes = [correctIndex];
-        if (type === 'true_false') {
-          options = ['True', 'False'];
-          correctIndex = Number(el.querySelector('[data-f="correct-tf-val"]')?.value || 0);
-          correctIndexes = [correctIndex];
-        } else if (type === 'multi_select') {
-          correctIndexes = [0, 1, 2, 3].filter((n) => el.querySelector(`[data-f="multi-${n}"]`)?.checked);
-          correctIndex = correctIndexes[0] || 0;
-        }
-        return {
-          prompt: getMcqEditorHtml(el.querySelector('[data-f="prompt-editor"]')),
-          type,
-          options,
-          correctIndex,
-          correctIndexes,
-          marks: Number(el.querySelector('[data-f="marks"]')?.value || 1),
-          difficulty: el.querySelector('[data-f="difficulty"]')?.value || 'Medium',
-          explanation: getMcqEditorHtml(el.querySelector('[data-f="explanation-editor"]')),
-          category: document.getElementById('tfCategory')?.value || 'General Aptitude',
-        };
-      }).filter((q) => richTextHasContent(q.prompt) && q.options.length >= 2);
-      void listId;
-      if (!questions.length) {
-        toast('Add a valid question with 2+ options.', 'error');
-        return;
-      }
-      const payload = questions[0];
-      const id = document.getElementById('bqId').value.trim();
-      const live = Auth.hasRealAuth() && !Auth.isDemo();
-      if (!live) {
-        const bank = loadDemoBankStore();
-        if (id) {
-          const idx = bank.findIndex((q) => String(q.id) === id);
-          if (idx >= 0) bank[idx] = { ...bank[idx], ...payload, id };
-        } else {
-          bank.push({ ...payload, id: `bank-${Date.now()}` });
-        }
-        saveDemoBankStore(bank);
-        toast('Question saved (demo).', 'success');
-        bankQuestionModal?.hide();
-        await loadBank();
-        renderBankRows();
-        return;
-      }
-      const res = id
-        ? await api(`/aptitude/question-bank/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) })
-        : await api('/aptitude/question-bank', { method: 'POST', body: JSON.stringify(payload) });
-      if (!res?.success) {
-        toast(res?.message || 'Could not save question.', 'error');
-        return;
-      }
-      toast('Question saved.', 'success');
-      bankQuestionModal?.hide();
-      await loadBank();
-      renderBankRows();
-    });
 
     document.getElementById('testForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const saveAsDraft = e.submitter && e.submitter.getAttribute('data-save-status') === 'draft';
       let payload = collectTestFormPayload();
-      if (saveAsDraft) payload.status = 'draft';
       if (!payload.title) {
         toast('Enter a test title.', 'error');
         return;
@@ -3025,20 +2481,18 @@
         const useBank = document.getElementById('tfUseBankManual')?.checked;
         const bankNeeded = useBank ? bankFilterRulesNeeded() : 0;
         const bankSelected = useBank ? selectedBankIds.size : 0;
-        if (useBank && bankNeeded > 0 && bankSelected !== bankNeeded) {
-          toast(`Select ${bankNeeded} question(s) from the bank (${bankSelected} selected).`, 'error');
+        if (useBank && bankNeeded > 0 && bankSelected > 0 && bankSelected !== bankNeeded) {
+          toast(`Select ${bankNeeded} question(s) from the bank (${bankSelected} selected), or leave all unchecked to auto-pick from your rules on save.`, 'error');
           return;
         }
-        const total = mcqCount + (useBank ? bankNeeded : bankSelected);
+        const total = mcqCount + (useBank ? (bankSelected > 0 ? bankSelected : bankNeeded) : 0);
         if (!total) {
           toast('Select bank questions or add at least one MCQ.', 'error');
           return;
         }
         payload.questionCount = total;
       }
-      if (!payload.totalMarks) {
-        payload.totalMarks = (payload.questions || []).reduce((s, q) => s + Number(q.marks || 1), 0);
-      }
+      payload.totalMarks = 0;
       if (canManageContests()) applyManagePanel(isContestTest(payload) ? 'contests' : 'tests');
       const live = Auth.hasRealAuth() && !Auth.isDemo();
       if (!live) {
@@ -3067,7 +2521,11 @@
         renderManage();
         return;
       }
-      const id = document.getElementById('tfId').value.trim();
+      const rawId = document.getElementById('tfId').value.trim();
+      const id = isLiveAptitudeId(rawId) ? rawId : '';
+      if (rawId && !id) {
+        toast('Creating a new test on the server (previous demo id ignored).', 'info');
+      }
       const res = id
         ? await api(`/aptitude/tests/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) })
         : await api('/aptitude/tests', { method: 'POST', body: JSON.stringify(payload) });
@@ -3137,6 +2595,10 @@
         });
       } else {
         const testId = document.getElementById('bulkTestId').value;
+        if (!isLiveAptitudeId(testId)) {
+          toast('Test not found. Refresh the manage list and try again.', 'error');
+          return;
+        }
         res = await api(`/aptitude/tests/${encodeURIComponent(testId)}/questions/bulk`, {
           method: 'POST',
           body: JSON.stringify({

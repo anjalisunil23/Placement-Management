@@ -133,12 +133,13 @@ final class AptitudeService
     {
         $this->ensureSeeded();
         $rows = array_values(array_filter(
-            $this->tests->findAll([], 300),
-            static fn ($t) => AptitudeAccessService::testListedForTaker($user, $t)
+            $this->tests->published(200),
+            static fn ($t) => AptitudeAccessService::testVisibleToTaker($user, $t)
+                && AptitudeTestModel::isContestOpen($t)
         ));
 
         return array_map(
-            static fn ($t) => AptitudeTestModel::publicView($t, false),
+            static fn ($t) => AptitudeTestModel::publicView($t, $includeAnswers),
             $rows
         );
     }
@@ -176,56 +177,27 @@ final class AptitudeService
     }
 
     /**
-     * Student: assigned test without answers. Manager: full test with answers.
-     *
-     * @param array<string, mixed> $user
-     * @return array<string, mixed>
-     */
-    public function getTestForUser(array $user, string $id): array
-    {
-        $test = $this->tests->findById($id);
-        if (!$test) {
-            Response::notFound('Aptitude test not found.');
-        }
-        if (AptitudeAccessService::canManage($user)) {
-            AptitudeAccessService::assertTestManageable($user, $test);
-            return AptitudeTestModel::publicView($test, true);
-        }
-        AptitudeAccessService::requireTaker($user);
-        if (!AptitudeAccessService::assignmentMatches($user, $test)) {
-            Response::forbidden('This test is not assigned to you.');
-        }
-        $life = AptitudeTestModel::lifecycleStatus($test);
-        if (!in_array($life, ['published', 'scheduled'], true)) {
-            Response::forbidden('This test is not available.');
-        }
-        return AptitudeTestModel::publicView($test, false);
-    }
-
-    /**
      * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
     public function start(array $user, string $testId): array
     {
         AptitudeAccessService::requireTaker($user);
+        if (!Security::isValidId($testId)) {
+            Response::error('Invalid aptitude test id.', 400);
+        }
         $test = $this->tests->findById($testId);
         if (!$test) {
             Response::notFound('Aptitude test not found.');
         }
-        if (!AptitudeAccessService::testVisibleToTaker($user, $test)) {
-            Response::forbidden('This test is not assigned to you or is not currently open.');
+        if (($test['status'] ?? '') !== 'published') {
+            Response::forbidden('This aptitude test is not published yet.');
         }
-        $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
-        $allowMulti = filter_var($test['allowMultipleAttempts'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        if (!$allowMulti && $userId !== '') {
-            $prior = $this->attempts->completed([
-                'testId' => Security::toObjectId($testId),
-                'userId' => Security::toObjectId($userId),
-            ], 5);
-            if ($prior !== []) {
-                Response::forbidden('You have already submitted this test. Multiple attempts are not allowed.');
-            }
+        if (!AptitudeAccessService::testVisibleToTaker($user, $test)) {
+            Response::forbidden('This aptitude test is not available for your department.');
+        }
+        if (!AptitudeTestModel::isContestOpen($test)) {
+            Response::forbidden('This contest is not open today. Check the weekly or monthly schedule.');
         }
         $ctx = AptitudeAccessService::subjectContext($user);
         $attemptId = $this->attempts->startAttempt([
@@ -301,16 +273,6 @@ final class AptitudeService
             $fresh['rank'] = $rankInfo['rank'];
             $fresh['percentile'] = $rankInfo['percentile'];
         }
-        $showNow = filter_var($test['showResultsImmediately'] ?? true, FILTER_VALIDATE_BOOLEAN);
-        if (!$showNow) {
-            return [
-                'attemptId' => $attemptId,
-                'resultHeld' => true,
-                'message' => 'Your attempt was submitted. Results will be visible after the admin releases them.',
-                'testName' => (string) ($test['title'] ?? ''),
-                'questionAnalysis' => [],
-            ];
-        }
         return $this->buildResultPayload($fresh, $test);
     }
 
@@ -333,20 +295,6 @@ final class AptitudeService
         $test = $this->tests->findById((string) ($attempt['testId'] ?? ''));
         if (!$test) {
             Response::notFound('Aptitude test not found.');
-        }
-        $isManager = AptitudeAccessService::canManage($user);
-        $showNow = $isManager || filter_var($test['showResultsImmediately'] ?? true, FILTER_VALIDATE_BOOLEAN);
-        if (!$showNow) {
-            $summary = $this->publicAttempt($attempt, (string) ($test['title'] ?? ''), (string) ($test['category'] ?? ''));
-            return array_merge($summary, [
-                'resultHeld' => true,
-                'message' => 'Your attempt was submitted. Results will be visible after the admin releases them.',
-                'questionAnalysis' => [],
-                'correctAnswers' => null,
-                'incorrectAnswers' => null,
-                'score' => null,
-                'percentage' => null,
-            ]);
         }
         // Rebuild analysis if missing (older attempts)
         if (empty($attempt['questionAnalysis'])) {
@@ -372,6 +320,9 @@ final class AptitudeService
     public function bulkAddToTest(array $admin, string $testId, $payload, bool $replace = false): array
     {
         AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($testId)) {
+            Response::error('Invalid aptitude test id.', 400);
+        }
         $test = $this->tests->findById($testId);
         if (!$test) {
             Response::notFound('Aptitude test not found.');
@@ -438,6 +389,9 @@ final class AptitudeService
     public function deleteTest(array $admin, string $id): void
     {
         AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid aptitude test id.', 400);
+        }
         $test = $this->tests->findById($id);
         if (!$test) {
             Response::notFound('Aptitude test not found.');
@@ -476,179 +430,16 @@ final class AptitudeService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function listBank(array $admin, ?string $category = null, ?string $search = null, ?string $difficulty = null): array
+    public function listBank(?string $category = null, ?string $difficulty = null): array
     {
-        AptitudeAccessService::requireManager($admin);
         $bank = new AptitudeQuestionBankModel();
         $category = $category !== null && trim($category) !== '' ? trim($category) : null;
         $difficulty = $difficulty !== null && trim($difficulty) !== '' ? trim($difficulty) : null;
-        $search = $search !== null && trim($search) !== '' ? trim($search) : null;
 
         return [
-            'questions' => $bank->listQuestions($category, 1000, $search, $difficulty),
+            'questions' => $bank->listQuestions($category, $difficulty, 1000),
             'summary' => $bank->countByDifficulty($category),
         ];
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     * @param array<string, mixed> $data
-     * @return array<string, mixed>
-     */
-    public function createBankQuestion(array $admin, array $data): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        $id = (new AptitudeQuestionBankModel())->saveQuestion($data, (string) ($admin['_id'] ?? $admin['id'] ?? ''));
-        if ($id === '') {
-            Response::error('Question is invalid. Add a prompt and at least two options.', 422);
-        }
-        $items = (new AptitudeQuestionBankModel())->listQuestions(null, 5);
-        foreach ($items as $item) {
-            if ((string) ($item['id'] ?? '') === $id) {
-                return $item;
-            }
-        }
-        return ['id' => $id];
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     * @param array<string, mixed> $data
-     * @return array<string, mixed>
-     */
-    public function updateBankQuestion(array $admin, string $id, array $data): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        $ok = (new AptitudeQuestionBankModel())->updateQuestion($id, $data);
-        if (!$ok) {
-            Response::notFound('Question not found.');
-        }
-        $all = (new AptitudeQuestionBankModel())->listQuestions(null, 2000);
-        foreach ($all as $item) {
-            if ((string) ($item['id'] ?? '') === $id) {
-                return $item;
-            }
-        }
-        return ['id' => $id];
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     */
-    public function archiveTest(array $admin, string $id): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        $existing = $this->tests->findById($id);
-        if (!$existing) {
-            Response::notFound('Aptitude test not found.');
-        }
-        AptitudeAccessService::assertTestManageable($admin, $existing);
-        $this->tests->update($id, ['status' => 'archived', 'updatedAt' => \PMS\Utils\DocumentHelper::now()]);
-        $doc = $this->tests->findById($id);
-        return AptitudeTestModel::publicView($doc ?: [], true);
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     */
-    public function publishTest(array $admin, string $id): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        $existing = $this->tests->findById($id);
-        if (!$existing) {
-            Response::notFound('Aptitude test not found.');
-        }
-        AptitudeAccessService::assertTestManageable($admin, $existing);
-        if (count((array) ($existing['questions'] ?? [])) < 1) {
-            Response::error('Add at least one question before publishing.', 422);
-        }
-        $this->tests->update($id, ['status' => 'published', 'updatedAt' => \PMS\Utils\DocumentHelper::now()]);
-        $doc = $this->tests->findById($id);
-        return AptitudeTestModel::publicView($doc ?: [], true);
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     */
-    public function unpublishTest(array $admin, string $id): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        $existing = $this->tests->findById($id);
-        if (!$existing) {
-            Response::notFound('Aptitude test not found.');
-        }
-        AptitudeAccessService::assertTestManageable($admin, $existing);
-        $this->tests->update($id, ['status' => 'draft', 'updatedAt' => \PMS\Utils\DocumentHelper::now()]);
-        $doc = $this->tests->findById($id);
-        return AptitudeTestModel::publicView($doc ?: [], true);
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     * @return array<string, mixed>
-     */
-    public function adminStats(array $admin): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        $tests = $this->listAllForAdmin($admin);
-        $total = count($tests);
-        $published = 0;
-        $draft = 0;
-        foreach ($tests as $t) {
-            $life = (string) ($t['lifecycleStatus'] ?? $t['status'] ?? '');
-            if ($life === 'published') {
-                $published++;
-            }
-            if ($life === 'draft') {
-                $draft++;
-            }
-        }
-        $attempts = $this->attempts->completed([], 5000);
-        return [
-            'totalTests' => $total,
-            'published' => $published,
-            'draft' => $draft,
-            'totalAttempts' => count($attempts),
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     * @return array<int, array<string, mixed>>
-     */
-    public function adminAttempts(array $admin, string $testId = ''): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        $filter = [];
-        if ($testId !== '' && Security::isValidId($testId)) {
-            $filter['testId'] = Security::toObjectId($testId);
-        }
-        $rows = $this->attempts->completed($filter, 500);
-        $out = [];
-        foreach ($rows as $row) {
-            if (!AptitudeAccessService::canViewAttempt($admin, $row)) {
-                continue;
-            }
-            $test = $this->tests->findById((string) ($row['testId'] ?? ''));
-            $out[] = $this->publicAttempt($row, (string) ($test['title'] ?? ''), (string) ($test['category'] ?? ''));
-        }
-        return $out;
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     */
-    public function releaseResults(array $admin, string $id): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        $existing = $this->tests->findById($id);
-        if (!$existing) {
-            Response::notFound('Aptitude test not found.');
-        }
-        AptitudeAccessService::assertTestManageable($admin, $existing);
-        $this->tests->update($id, ['showResultsImmediately' => true, 'updatedAt' => \PMS\Utils\DocumentHelper::now()]);
-        $doc = $this->tests->findById($id);
-        return AptitudeTestModel::publicView($doc ?: [], true);
     }
 
     /**
@@ -663,24 +454,7 @@ final class AptitudeService
             Response::forbidden('Invalid session.');
         }
         $rows = $this->attempts->forUser($userId, 200);
-        $summary = $this->summarizeSubject($userId, $rows, true);
-        if (!empty($summary['history']) && is_array($summary['history'])) {
-            foreach ($summary['history'] as &$entry) {
-                if (empty($entry['resultHeld'])) {
-                    continue;
-                }
-                $entry['score'] = null;
-                $entry['marksObtained'] = null;
-                $entry['percentage'] = null;
-                $entry['accuracy'] = null;
-                $entry['correctCount'] = null;
-                $entry['wrongCount'] = null;
-                $entry['resultStatus'] = 'pending';
-                $entry['passed'] = null;
-            }
-            unset($entry);
-        }
-        return $summary;
+        return $this->summarizeSubject($userId, $rows, true);
     }
 
     /**
@@ -1517,6 +1291,9 @@ final class AptitudeService
     public function updateTest(array $admin, string $id, array $data): array
     {
         AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid aptitude test id.', 400);
+        }
         $existing = $this->tests->findById($id);
         if (!$existing) {
             Response::notFound('Aptitude test not found.');
@@ -1575,13 +1352,26 @@ final class AptitudeService
 
         $bankIds = array_values(array_unique(array_filter(
             array_map(static fn ($id) => trim((string) $id), (array) ($data['bankQuestionIds'] ?? [])),
-            static fn ($id) => $id !== ''
+            static fn ($id) => $id !== '' && Security::isValidId($id)
         )));
         $inline = array_values(array_filter((array) ($data['questions'] ?? []), 'is_array'));
         $questions = [];
 
         if ($bankIds !== []) {
             $questions = (new AptitudeQuestionBankModel())->questionsByIds($bankIds);
+        } elseif ($source === 'manual') {
+            $filterRules = array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array'));
+            if ($filterRules !== []) {
+                try {
+                    $questions = (new AptitudeQuestionBankModel())->pickRandomByRules($filterRules);
+                } catch (\InvalidArgumentException $e) {
+                    Response::error($e->getMessage(), 422);
+                }
+                $bankIds = array_values(array_filter(array_map(
+                    static fn (array $q): string => trim((string) ($q['bankId'] ?? '')),
+                    $questions
+                )));
+            }
         }
         foreach ($inline as $i => $q) {
             $norm = AptitudeTestModel::normalizeMcq(
@@ -1685,9 +1475,6 @@ final class AptitudeService
             'questionAnalysis' => array_values((array) ($attempt['questionAnalysis'] ?? [])),
             'negativeMarking' => filter_var($test['negativeMarking'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'negativeMarks' => (float) ($test['negativeMarks'] ?? 0),
-            'passingMarks' => (float) ($test['passingMarks'] ?? 0),
-            'passed' => (float) ($attempt['marksObtained'] ?? $attempt['score'] ?? 0) >= (float) ($test['passingMarks'] ?? 0),
-            'resultHeld' => false,
         ]);
     }
 
@@ -1891,8 +1678,8 @@ final class AptitudeService
      */
     private function publicAttempt(array $attempt, string $title = '', string $category = ''): array
     {
-        $test = $this->tests->findById((string) ($attempt['testId'] ?? ''));
         if ($title === '') {
+            $test = $this->tests->findById((string) ($attempt['testId'] ?? ''));
             $title = (string) ($test['title'] ?? '');
             $category = (string) ($test['category'] ?? '');
         }
@@ -1904,11 +1691,8 @@ final class AptitudeService
                 $timeTaken = $ended - $started;
             }
         }
-        $totalMarks = (float) ($attempt['totalMarks'] ?? ($test['totalMarks'] ?? 0));
+        $totalMarks = (float) ($attempt['totalMarks'] ?? 0);
         $marksObtained = (float) ($attempt['marksObtained'] ?? $attempt['score'] ?? 0);
-        $passingMarks = (float) ($test['passingMarks'] ?? 0);
-        $passed = $passingMarks > 0 ? $marksObtained >= $passingMarks : true;
-        $showNow = filter_var($test['showResultsImmediately'] ?? true, FILTER_VALIDATE_BOOLEAN);
 
         return [
             'id' => (string) ($attempt['_id'] ?? ''),
@@ -1932,10 +1716,6 @@ final class AptitudeService
             'timeTakenLabel' => $this->formatDuration($timeTaken),
             'startedAt' => $attempt['startedAt'] ?? null,
             'completedAt' => $attempt['completedAt'] ?? null,
-            'passingMarks' => $passingMarks,
-            'passed' => $passed,
-            'resultHeld' => !$showNow,
-            'resultStatus' => !$showNow ? 'pending' : ($passed ? 'pass' : 'fail'),
         ];
     }
 
@@ -1978,67 +1758,31 @@ final class AptitudeService
             $qMarks = (float) ($q['marks'] ?? 1);
             $totalMarks += $qMarks;
             $categoryTotals[$cat] = ($categoryTotals[$cat] ?? 0) + 1;
-            $pickedRaw = $answers[$qid] ?? -1;
-            $pickedList = [];
-            if (is_array($pickedRaw)) {
-                foreach ($pickedRaw as $idx) {
-                    $n = (int) $idx;
-                    if ($n >= 0) {
-                        $pickedList[] = $n;
-                    }
-                }
-                $pickedList = array_values(array_unique($pickedList));
-                $picked = $pickedList[0] ?? -1;
-            } else {
-                $picked = is_numeric($pickedRaw) ? (int) $pickedRaw : -1;
-                $pickedList = $picked >= 0 ? [$picked] : [];
-            }
-            $normalized[$qid] = $q['type'] === 'multi_select' ? $pickedList : $picked;
+            $picked = array_key_exists($qid, $answers) ? (int) $answers[$qid] : -1;
+            $normalized[$qid] = $picked;
             $options = array_values((array) ($q['options'] ?? []));
             $correctIndex = (int) ($q['correctIndex'] ?? -1);
-            $correctIndexes = array_values(array_map('intval', (array) ($q['correctIndexes'] ?? [$correctIndex])));
             $correctText = ($correctIndex >= 0 && isset($options[$correctIndex])) ? (string) $options[$correctIndex] : '';
-            if ($q['type'] === 'multi_select') {
-                $correctText = implode(', ', array_map(static fn ($i) => $options[$i] ?? '', $correctIndexes));
-            }
-            $studentText = null;
-            if ($q['type'] === 'multi_select') {
-                $studentText = $pickedList !== []
-                    ? implode(', ', array_map(static fn ($i) => $options[$i] ?? '', $pickedList))
-                    : null;
-            } elseif ($picked >= 0 && isset($options[$picked])) {
-                $studentText = (string) $options[$picked];
-            }
+            $studentText = ($picked >= 0 && isset($options[$picked])) ? (string) $options[$picked] : null;
 
             $marksForQ = 0.0;
             $status = 'unanswered';
-            $isCorrect = false;
-            if ($pickedList === [] && $picked < 0) {
+            if ($picked < 0) {
                 $unanswered++;
+            } elseif ($picked === $correctIndex) {
+                $correct++;
+                $marksForQ = $qMarks;
+                $marksObtained += $qMarks;
+                $categoryCorrect[$cat] = ($categoryCorrect[$cat] ?? 0) + 1;
+                $categoryMarks[$cat] = ($categoryMarks[$cat] ?? 0) + $qMarks;
+                $status = 'correct';
             } else {
-                if ($q['type'] === 'multi_select') {
-                    sort($pickedList);
-                    $want = $correctIndexes;
-                    sort($want);
-                    $isCorrect = $pickedList === $want;
-                } else {
-                    $isCorrect = $picked === $correctIndex;
+                $wrong++;
+                if ($negativeMarks > 0) {
+                    $marksForQ = -$negativeMarks;
+                    $marksObtained -= $negativeMarks;
                 }
-                if ($isCorrect) {
-                    $correct++;
-                    $marksForQ = $qMarks;
-                    $marksObtained += $qMarks;
-                    $categoryCorrect[$cat] = ($categoryCorrect[$cat] ?? 0) + 1;
-                    $categoryMarks[$cat] = ($categoryMarks[$cat] ?? 0) + $qMarks;
-                    $status = 'correct';
-                } else {
-                    $wrong++;
-                    if ($negativeMarks > 0) {
-                        $marksForQ = -$negativeMarks;
-                        $marksObtained -= $negativeMarks;
-                    }
-                    $status = 'incorrect';
-                }
+                $status = 'incorrect';
             }
 
             $analysis[] = [
@@ -2046,8 +1790,8 @@ final class AptitudeService
                 'questionId' => $qid,
                 'question' => (string) ($q['prompt'] ?? ''),
                 'options' => $options,
-                'studentAnswerIndex' => $q['type'] === 'multi_select' ? $pickedList : ($picked >= 0 ? $picked : null),
-                'selected_answer' => $q['type'] === 'multi_select' ? $pickedList : ($picked >= 0 ? $picked : null),
+                'studentAnswerIndex' => $picked >= 0 ? $picked : null,
+                'selected_answer' => $picked >= 0 ? $picked : null,
                 'studentAnswer' => $studentText,
                 'correctAnswerIndex' => $correctIndex >= 0 ? $correctIndex : null,
                 'correctAnswer' => $correctText,
