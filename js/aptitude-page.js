@@ -1063,17 +1063,30 @@
     if (countEl && getQuestionSource() === 'random') countEl.value = String(total || 1);
   }
 
+  function readBankFilterRule(row) {
+    if (!row) {
+      return { category: 'General Aptitude', difficulty: 'Medium', count: 1 };
+    }
+    return {
+      category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
+      difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+      count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
+    };
+  }
+
   function addBankFilterRuleRow(rule = {}) {
     const root = document.getElementById('tfBankFilterRules');
     if (!root) return;
-    const wrap = document.createElement('div');
-    wrap.className = 'tf-bank-filter-rule row g-2 align-items-end';
+    const outer = document.createElement('div');
+    outer.className = 'tf-bank-filter-rule-wrap border rounded-3 p-2';
+    const row = document.createElement('div');
+    row.className = 'tf-bank-filter-rule row g-2 align-items-end';
     const categories = meta.categories || APTITUDE_CATEGORIES;
     const catOpts = categories.map((c) =>
       `<option value="${esc(c)}" ${c === (rule.category || categories[0]) ? 'selected' : ''}>${esc(c)}</option>`
     ).join('');
     const diff = normalizeDifficulty(rule.difficulty || 'Medium');
-    wrap.innerHTML = `
+    row.innerHTML = `
       <div class="col-md-5">
         <label class="form-label small mb-1">Category</label>
         <select class="form-select form-select-sm" data-f="category">${catOpts}</select>
@@ -1091,11 +1104,16 @@
       <div class="col-md-2">
         <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-bank-rule>Remove</button>
       </div>`;
-    wrap.querySelector('[data-remove-bank-rule]')?.addEventListener('click', () => {
-      wrap.remove();
+    const questions = document.createElement('div');
+    questions.className = 'tf-bank-rule-questions mt-2 ps-2 border-start border-2';
+    questions.style.borderColor = 'var(--border)';
+    outer.appendChild(row);
+    outer.appendChild(questions);
+    row.querySelector('[data-remove-bank-rule]')?.addEventListener('click', () => {
+      outer.remove();
       loadBankPickerQuestions().catch(() => renderBankPicker());
     });
-    wrap.querySelectorAll('[data-f]').forEach((el) => {
+    row.querySelectorAll('[data-f]').forEach((el) => {
       el.addEventListener('change', () => {
         loadBankPickerQuestions().catch(() => renderBankPicker());
       });
@@ -1104,16 +1122,27 @@
         updateManualQuestionCount();
       });
     });
-    root.appendChild(wrap);
+    root.appendChild(outer);
     loadBankPickerQuestions().catch(() => renderBankPicker());
   }
 
   function collectBankFilterRules() {
-    return [...document.querySelectorAll('#tfBankFilterRules .tf-bank-filter-rule')].map((row) => ({
-      category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
-      difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
-      count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
-    }));
+    return [...document.querySelectorAll('#tfBankFilterRules .tf-bank-filter-rule-wrap')].map((wrap) =>
+      readBankFilterRule(wrap.querySelector('.tf-bank-filter-rule'))
+    );
+  }
+
+  function recomputeBankPickerQuestions(rules) {
+    const seen = new Set();
+    bankPickerQuestions = [];
+    rules.forEach((rule) => {
+      bankPickerAllQuestions.filter((q) => bankQuestionMatchesRule(q, rule)).forEach((q) => {
+        const id = String(q.id || q.bankId || '');
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        bankPickerQuestions.push(q);
+      });
+    });
   }
 
   function bankFilterRulesNeeded() {
@@ -1139,9 +1168,7 @@
       bankPickerAllQuestions = loadDemoBankStore();
     }
 
-    bankPickerQuestions = rules.length
-      ? bankPickerAllQuestions.filter((q) => rules.some((r) => bankQuestionMatchesRule(q, r)))
-      : bankPickerAllQuestions.slice();
+    recomputeBankPickerQuestions(rules);
 
     updateBankPickSummary();
     updateManualQuestionCount();
@@ -1152,11 +1179,11 @@
     const id = String(q.id || q.bankId || '');
     const checked = selectedBankIds.has(id) ? 'checked' : '';
     const prompt = stripHtml(q.prompt).slice(0, 160) || 'Question';
-    return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0">
+    return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0 bg-white">
       <input type="checkbox" class="form-check-input mt-1" data-bank-pick="${esc(id)}" ${checked}/>
       <span class="small min-w-0 flex-grow-1">
         <span class="d-block">${esc(prompt)}</span>
-        <span class="text-muted-2">${esc(normalizeBankCategory(q.category))} · ${esc(normalizeDifficulty(q.difficulty))} · ${Number(q.marks ?? 1)} mark(s)</span>
+        <span class="text-muted-2">${esc(normalizeDifficulty(q.difficulty))} · ${Number(q.marks ?? 1)} mark(s)</span>
       </span>
     </label>`;
   }
@@ -1175,37 +1202,39 @@
   }
 
   function renderBankPicker() {
-    const root = document.getElementById('tfBankPickList');
-    if (!root) return;
     updateBankPickSummary();
 
-    const rules = collectBankFilterRules();
+    const wraps = [...document.querySelectorAll('#tfBankFilterRules .tf-bank-filter-rule-wrap')];
+    if (!wraps.length) return;
+
     if (!bankPickerAllQuestions.length) {
-      root.innerHTML = '<p class="small text-muted-2 mb-0">Question bank is empty. Open the <strong>Question bank</strong> tab and upload Excel questions first.</p>';
-      return;
-    }
-    if (!rules.length) {
-      root.innerHTML = '<p class="small text-muted-2 mb-0">Add at least one category row above to list matching questions.</p>';
-      return;
-    }
-    if (!bankPickerQuestions.length) {
-      root.innerHTML = `<p class="small text-muted-2 mb-0">${bankPickerAllQuestions.length} question(s) in the bank, but none match these filters. Try another category or difficulty, or upload matching questions in the Question bank tab.</p>`;
+      wraps.forEach((wrap, idx) => {
+        const list = wrap.querySelector('.tf-bank-rule-questions');
+        if (!list) return;
+        list.innerHTML = idx === 0
+          ? '<p class="small text-muted-2 mb-0">Question bank is empty. Open the <strong>Question bank</strong> tab and upload Excel questions first.</p>'
+          : '';
+      });
       return;
     }
 
-    root.innerHTML = rules.map((rule, idx) => {
+    wraps.forEach((wrap) => {
+      const row = wrap.querySelector('.tf-bank-filter-rule');
+      const list = wrap.querySelector('.tf-bank-rule-questions');
+      if (!row || !list) return;
+
+      const rule = readBankFilterRule(row);
       const matched = bankPickerAllQuestions.filter((q) => bankQuestionMatchesRule(q, rule));
-      const header = `${rule.category} · ${rule.difficulty} · need ${rule.count} (${matched.length} available)`;
-      const body = matched.length
-        ? matched.map((q) => renderBankPickerQuestionRow(q)).join('')
-        : '<p class="small text-muted-2 mb-0">No questions in the bank for this row.</p>';
-      return `<div class="${idx ? 'mt-3 pt-3 border-top' : ''}">
-        <div class="small fw-semibold mb-2">${esc(header)}</div>
-        <div class="d-flex flex-column gap-1">${body}</div>
-      </div>`;
-    }).join('');
+      const header = `<div class="small fw-semibold mb-2">${esc(rule.category)} · ${esc(rule.difficulty)} · need ${rule.count} (${matched.length} available)</div>`;
 
-    bindBankPickerCheckboxes(root);
+      if (!matched.length) {
+        list.innerHTML = `${header}<p class="small text-muted-2 mb-0">No questions in the bank for this category and difficulty.</p>`;
+        return;
+      }
+
+      list.innerHTML = `${header}<div class="d-flex flex-column gap-1">${matched.map((q) => renderBankPickerQuestionRow(q)).join('')}</div>`;
+      bindBankPickerCheckboxes(list);
+    });
   }
 
   function updateManualQuestionCount() {
@@ -2823,7 +2852,7 @@
     document.getElementById('tfUseBankManual')?.addEventListener('change', (e) => {
       const on = e.target.checked;
       document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
-      if (on && !document.querySelector('#tfBankFilterRules .tf-bank-filter-rule')) {
+      if (on && !document.querySelector('#tfBankFilterRules .tf-bank-filter-rule-wrap')) {
         addBankFilterRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5 });
       } else if (on) {
         loadBankPickerQuestions().catch(() => renderBankPicker());
