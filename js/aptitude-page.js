@@ -1031,7 +1031,7 @@
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">No. of questions</label>
-        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 5)}"/>
+        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 1)}"/>
       </div>
       <div class="col-md-2">
         <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-rule>Remove</button>
@@ -1101,7 +1101,7 @@
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">No. of questions</label>
-        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 5)}"/>
+        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 1)}"/>
       </div>
       <div class="col-md-2">
         <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-bank-rule>Remove</button>
@@ -1248,6 +1248,54 @@
     if (countEl) countEl.value = String(Math.max(mcqCount + bankPart, 1));
   }
 
+  function demoResolveBankWithPreferred(rules, preferredIds = []) {
+    ensureDemoBankSeed();
+    const all = loadDemoBankStore();
+    const preferred = preferredIds
+      .map((id) => all.find((q) => String(q.id || q.bankId) === String(id)))
+      .filter(Boolean);
+    const used = new Set();
+    const picked = [];
+
+    rules.forEach((rule) => {
+      const count = Math.max(0, Number(rule.count) || 0);
+      if (!count) return;
+
+      const ruleManual = [];
+      preferred.forEach((q) => {
+        if (ruleManual.length >= count) return;
+        const id = String(q.id || q.bankId || '');
+        if (!id || used.has(id) || !bankQuestionMatchesRule(q, rule)) return;
+        ruleManual.push(q);
+      });
+      ruleManual.forEach((q) => {
+        const id = String(q.id || q.bankId || '');
+        used.add(id);
+        picked.push({ ...q, bankId: id });
+      });
+
+      const stillNeed = count - ruleManual.length;
+      if (stillNeed > 0) {
+        let pool = all.filter((q) => {
+          const id = String(q.id || q.bankId || '');
+          if (used.has(id) || !bankQuestionMatchesRule(q, rule)) return false;
+          return true;
+        });
+        if (pool.length < stillNeed) {
+          throw new Error(`Not enough ${rule.difficulty} questions in ${rule.category} (need ${stillNeed} more, found ${pool.length}).`);
+        }
+        pool = pool.sort(() => Math.random() - 0.5).slice(0, stillNeed);
+        pool.forEach((q) => {
+          const id = String(q.id || q.bankId || '');
+          used.add(id);
+          picked.push({ ...q, bankId: id });
+        });
+      }
+    });
+
+    return picked;
+  }
+
   function demoPickRandomRules(rules) {
     const picked = [];
     const used = new Set();
@@ -1286,8 +1334,14 @@
       return payload;
     }
     const bankIds = payload.bankQuestionIds || [];
+    const rules = payload.bankFilterRules || [];
     const all = loadDemoBankStore();
-    const fromBank = bankIds.map((id) => all.find((q) => String(q.id) === String(id))).filter(Boolean);
+    let fromBank = [];
+    if (rules.length) {
+      fromBank = demoResolveBankWithPreferred(rules, bankIds);
+    } else if (bankIds.length) {
+      fromBank = bankIds.map((id) => all.find((q) => String(q.id) === String(id))).filter(Boolean);
+    }
     const inline = payload.questions || [];
     payload.questions = [...fromBank, ...inline];
     payload.questionCount = payload.questions.length;
@@ -2127,7 +2181,7 @@
       addBankFilterRuleRow({
         category: test?.category || 'General Aptitude',
         difficulty: test?.difficulty || 'Medium',
-        count: Math.max(1, (test?.bankQuestionIds || []).length || 5),
+        count: 1,
       });
     }
 
@@ -2395,7 +2449,7 @@
       const on = e.target.checked;
       document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
       if (on && !document.querySelector('#tfBankFilterRules .tf-bank-filter-rule-wrap')) {
-        addBankFilterRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5 });
+        addBankFilterRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 1 });
       } else if (on) {
         loadBankPickerQuestions().catch(() => renderBankPicker());
       }
@@ -2479,12 +2533,7 @@
         const mcqCount = payload.questions?.length || 0;
         const useBank = document.getElementById('tfUseBankManual')?.checked;
         const bankNeeded = useBank ? bankFilterRulesNeeded() : 0;
-        const bankSelected = useBank ? selectedBankIds.size : 0;
-        if (useBank && bankNeeded > 0 && bankSelected > 0 && bankSelected !== bankNeeded) {
-          toast(`Select ${bankNeeded} question(s) from the bank (${bankSelected} selected), or leave all unchecked to auto-pick from your rules on save.`, 'error');
-          return;
-        }
-        const total = mcqCount + (useBank ? (bankSelected > 0 ? bankSelected : bankNeeded) : 0);
+        const total = mcqCount + (useBank ? bankNeeded : 0);
         if (!total) {
           toast('Select bank questions or add at least one MCQ.', 'error');
           return;

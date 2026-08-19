@@ -140,12 +140,16 @@ class AptitudeQuestionBankModel extends BaseModel
      * Pick random MCQs from the bank using one or more category + difficulty rules.
      *
      * @param array<int, array<string, mixed>> $rules
+     * @param string[] $excludeIds
      * @return array<int, array<string, mixed>>
      */
-    public function pickRandomByRules(array $rules): array
+    public function pickRandomByRules(array $rules, array $excludeIds = []): array
     {
         $picked = [];
-        $usedIds = [];
+        $usedIds = array_values(array_unique(array_filter(array_map(
+            static fn ($id) => trim((string) $id),
+            $excludeIds
+        ))));
 
         foreach (array_values($rules) as $rule) {
             if (!is_array($rule)) {
@@ -201,6 +205,88 @@ class AptitudeQuestionBankModel extends BaseModel
         }
 
         return $picked;
+    }
+
+    /**
+     * Fill rule counts using preferred bank ids first, then random picks for the remainder.
+     *
+     * @param array<int, array<string, mixed>> $rules
+     * @param string[] $preferredIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function resolveByRulesWithPreferred(array $rules, array $preferredIds = []): array
+    {
+        $preferred = $this->questionsByIds($preferredIds);
+        $usedIds = [];
+        $picked = [];
+
+        foreach (array_values($rules) as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $count = max(0, (int) ($rule['count'] ?? 0));
+            if ($count === 0) {
+                continue;
+            }
+
+            $ruleManual = [];
+            foreach ($preferred as $q) {
+                $id = (string) ($q['bankId'] ?? '');
+                if ($id === '' || in_array($id, $usedIds, true)) {
+                    continue;
+                }
+                if (!$this->questionMatchesRule($q, $rule)) {
+                    continue;
+                }
+                $ruleManual[] = $q;
+                if (count($ruleManual) >= $count) {
+                    break;
+                }
+            }
+
+            foreach ($ruleManual as $q) {
+                $id = (string) ($q['bankId'] ?? '');
+                if ($id === '') {
+                    continue;
+                }
+                $usedIds[] = $id;
+                $picked[] = $q;
+            }
+
+            $stillNeed = $count - count($ruleManual);
+            if ($stillNeed > 0) {
+                $extra = $this->pickRandomByRules([
+                    [
+                        'category' => $rule['category'] ?? '',
+                        'difficulty' => $rule['difficulty'] ?? 'Medium',
+                        'count' => $stillNeed,
+                    ],
+                ], $usedIds);
+                foreach ($extra as $q) {
+                    $id = (string) ($q['bankId'] ?? '');
+                    if ($id !== '') {
+                        $usedIds[] = $id;
+                    }
+                    $picked[] = $q;
+                }
+            }
+        }
+
+        return $picked;
+    }
+
+    /**
+     * @param array<string, mixed> $question
+     * @param array<string, mixed> $rule
+     */
+    private function questionMatchesRule(array $question, array $rule): bool
+    {
+        $category = AptitudeTestModel::normalizeCategory((string) ($rule['category'] ?? ''));
+        $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium'));
+        $qCat = AptitudeTestModel::normalizeCategory((string) ($question['category'] ?? ''));
+        $qDiff = AptitudeTestModel::normalizeDifficulty((string) ($question['difficulty'] ?? 'Medium'));
+
+        return $qCat === $category && $qDiff === $difficulty;
     }
 
     /**
