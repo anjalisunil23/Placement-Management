@@ -39,6 +39,7 @@ final class Collections
     public const APTITUDE_ATTEMPTS = 'aptitude_attempts';
     public const APTITUDE_QUESTION_BANK = 'aptitude_question_bank';
     public const RESUME_CAREER_OBJECTIVES = 'resume_career_objectives';
+    public const RESUME_SKILLS = 'resume_skills';
 
     /** Valid user roles */
     public const ROLES = [

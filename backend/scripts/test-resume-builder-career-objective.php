@@ -43,8 +43,9 @@ $assert(str_contains($js, 'OBJECTIVE_MIN = 50'), 'UI min length 50');
 $assert(str_contains($js, 'OBJECTIVE_MAX = 500'), 'UI max length 500');
 $assert(str_contains($js, 'data-rb-objective-save'), 'Save control exists');
 $assert(str_contains($js, 'data-rb-objective-edit'), 'Edit control exists');
-$assert(str_contains($js, 'MCA student passionate about software development'), 'helper example 1');
-$assert(str_contains($js, 'Seeking opportunities to apply programming and analytical skills'), 'helper example 2');
+$assert(str_contains($js, 'Motivated and dedicated student seeking opportunities to apply academic knowledge'), 'helper example 1');
+$assert(str_contains($js, 'Enthusiastic learner with strong problem-solving and teamwork abilities'), 'helper example 2');
+$assert(!str_contains($js, 'MCA student passionate about software development'), 'no MCA-specific helper text');
 $assert(str_contains($js, "api('/student/resume-builder/career-objective'"), 'UI uses isolated AJAX endpoint');
 
 require $root . '/vendor/autoload.php';

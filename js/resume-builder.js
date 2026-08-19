@@ -78,6 +78,10 @@
 
   const OBJECTIVE_MIN = 50;
   const OBJECTIVE_MAX = 500;
+  const SKILL_MIN = 2;
+  const SKILL_MAX = 50;
+  const SKILL_COMPLETE_MIN = 3;
+  const SKILL_CATEGORIES = ['Technical', 'Tools', 'Soft Skills', 'Domain Skills', 'Languages'];
 
   const state = {
     personalComplete: false,
@@ -85,6 +89,10 @@
     objectiveComplete: false,
     objectiveText: '',
     objectiveEditing: false,
+    skills: [],
+    skillsEditingId: '',
+    skillsMessage: '',
+    skillsFormOpen: false,
   };
 
   function esc(value) {
@@ -157,7 +165,8 @@
   function completedCount() {
     return (state.personalComplete ? 1 : 0)
       + (state.educationComplete ? 1 : 0)
-      + (state.objectiveComplete ? 1 : 0);
+      + (state.objectiveComplete ? 1 : 0)
+      + (state.skills.length >= SKILL_COMPLETE_MIN ? 1 : 0);
   }
 
   function completionPercent() {
@@ -402,8 +411,8 @@
       </div>
       <p class="small text-muted-2 mb-0">
         Examples:<br>
-        - MCA student passionate about software development and problem solving.<br>
-        - Seeking opportunities to apply programming and analytical skills in real-world projects.
+        - Motivated and dedicated student seeking opportunities to apply academic knowledge, develop professional skills, and contribute effectively to organizational goals.<br>
+        - Enthusiastic learner with strong problem-solving and teamwork abilities, looking to gain practical experience and grow in a challenging professional environment.
       </p>`;
   }
 
@@ -438,6 +447,108 @@
       ${body}`;
   }
 
+  function skillNameValid(name) {
+    const len = String(name || '').trim().length;
+    return len >= SKILL_MIN && len <= SKILL_MAX;
+  }
+
+  function skillsCardBody(loading) {
+    if (loading) {
+      return `<p class="small text-muted-2 mb-0">Loading skills…</p>`;
+    }
+
+    const count = state.skills.length;
+    const complete = count >= SKILL_COMPLETE_MIN;
+    const badge = complete
+      ? '<span class="badge-soft success">Completed</span>'
+      : '<span class="badge-soft warning">Incomplete</span>';
+    const editing = !!state.skillsEditingId;
+    const formOpen = state.skillsFormOpen || editing;
+    const editingSkill = state.skills.find((s) => s.id === state.skillsEditingId) || null;
+    const msg = state.skillsMessage
+      ? `<div class="alert alert-warning py-2 small mb-3" role="alert">${esc(state.skillsMessage)}</div>`
+      : '';
+    const recTarget = 8;
+    const recPct = Math.min(100, Math.round((count / recTarget) * 100));
+
+    const grouped = SKILL_CATEGORIES.map((cat) => {
+      const items = state.skills.filter((s) => s.skillCategory === cat);
+      if (!items.length) return '';
+      const heading = cat === 'Technical' ? 'Technical Skills' : cat;
+      const chips = items.map((skill) => `
+        <span class="rb-skill-chip">
+          <span class="rb-skill-name">${esc(skill.skillName)}</span>
+          <span class="rb-skill-actions">
+            <button type="button" class="rb-skill-action" data-rb-skill-edit="${esc(skill.id)}" title="Edit" aria-label="Edit ${esc(skill.skillName)}"><i class="bi bi-pencil"></i></button>
+            <button type="button" class="rb-skill-action" data-rb-skill-delete="${esc(skill.id)}" title="Remove" aria-label="Remove ${esc(skill.skillName)}"><i class="bi bi-x-lg"></i></button>
+          </span>
+        </span>`).join('');
+      return `
+        <div class="rb-skill-group">
+          <div class="rb-skill-group-title">${esc(heading)}</div>
+          <div class="rb-skill-list">${chips}</div>
+        </div>`;
+    }).join('');
+
+    const categoryOpts = SKILL_CATEGORIES.map((cat) => {
+      const selected = editingSkill && editingSkill.skillCategory === cat ? ' selected' : '';
+      return `<option value="${esc(cat)}"${selected}>${esc(cat)}</option>`;
+    }).join('');
+
+    const formHtml = `
+      ${msg}
+      <div class="rb-skill-form">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-5">
+            <label class="form-label small fw-semibold" for="rbSkillName">Skill name</label>
+            <input class="form-control" id="rbSkillName" maxlength="${SKILL_MAX}" placeholder="e.g. MS Excel" value="${esc(editingSkill ? editingSkill.skillName : '')}" data-rb-skill-name />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label small fw-semibold" for="rbSkillCategory">Category</label>
+            <select class="form-select" id="rbSkillCategory" data-rb-skill-category>
+              <option value="">Select category</option>
+              ${categoryOpts}
+            </select>
+          </div>
+          <div class="col-12 col-md-3 d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary" data-rb-skill-cancel>Cancel</button>
+            <button type="button" class="btn btn-primary flex-grow-1" data-rb-skill-save>${editing ? 'Save' : 'Add Skill'}</button>
+          </div>
+        </div>
+      </div>`;
+
+    const emptyHtml = `
+      <div class="rb-skill-empty">
+        <p class="mb-3">No skills added yet</p>
+        <button type="button" class="btn btn-primary" data-rb-skill-add><i class="bi bi-plus-lg me-1"></i>Add Skill</button>
+      </div>`;
+
+    const listHtml = count
+      ? `<div class="rb-skill-groups">${grouped}</div>
+         ${formOpen ? '' : '<button type="button" class="btn btn-sm btn-outline-primary mt-3" data-rb-skill-add><i class="bi bi-plus-lg me-1"></i>Add Skill</button>'}`
+      : (formOpen ? '' : emptyHtml);
+
+    return `
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+        <h6 class="fw-bold mb-0">Skills</h6>
+        ${badge}
+      </div>
+      <div class="alert alert-info py-2 small mb-3" role="note">
+        Include technical, domain, software, communication and professional skills relevant to your career goals.
+      </div>
+      <div class="rb-skill-summary mb-3">
+        <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
+          <div class="fw-semibold">Skills Added: ${count}</div>
+          <div class="small text-muted-2">Recommended: 8+ Skills</div>
+        </div>
+        <div class="rb-skill-rec-bar" role="progressbar" aria-valuemin="0" aria-valuemax="8" aria-valuenow="${count}" aria-label="Recommended skills">
+          <div class="rb-skill-rec-fill" style="width:${recPct}%"></div>
+        </div>
+      </div>
+      ${listHtml}
+      ${formOpen ? formHtml : ''}`;
+  }
+
   function sectionCard(section) {
     if (section.id === 'personal') {
       return `
@@ -462,6 +573,15 @@
         <div class="col-12">
           <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="objective">
             ${objectiveCardBody(true)}
+          </div>
+        </div>`;
+    }
+
+    if (section.id === 'skills') {
+      return `
+        <div class="col-12">
+          <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="skills">
+            ${skillsCardBody(true)}
           </div>
         </div>`;
     }
@@ -529,6 +649,37 @@
       }
       if (event.target.closest('[data-rb-objective-save]')) {
         saveCareerObjective();
+        return;
+      }
+      if (event.target.closest('[data-rb-skill-save]')) {
+        saveSkill();
+        return;
+      }
+      if (event.target.closest('[data-rb-skill-add]')) {
+        state.skillsFormOpen = true;
+        state.skillsEditingId = '';
+        state.skillsMessage = '';
+        renderSkillsCard();
+        return;
+      }
+      if (event.target.closest('[data-rb-skill-cancel]')) {
+        state.skillsEditingId = '';
+        state.skillsFormOpen = false;
+        state.skillsMessage = '';
+        renderSkillsCard();
+        return;
+      }
+      const editSkill = event.target.closest('[data-rb-skill-edit]');
+      if (editSkill) {
+        state.skillsEditingId = editSkill.getAttribute('data-rb-skill-edit') || '';
+        state.skillsFormOpen = true;
+        state.skillsMessage = '';
+        renderSkillsCard();
+        return;
+      }
+      const delSkill = event.target.closest('[data-rb-skill-delete]');
+      if (delSkill) {
+        deleteSkill(delSkill.getAttribute('data-rb-skill-delete') || '');
       }
     });
 
@@ -602,6 +753,139 @@
     applyObjective('');
   }
 
+  function renderSkillsCard() {
+    const card = root.querySelector('[data-rb-card="skills"]');
+    if (card) card.innerHTML = skillsCardBody(false);
+    updateCompletionUi();
+  }
+
+  function applySkills(skills) {
+    state.skills = Array.isArray(skills) ? skills.filter((s) => s && s.skillName) : [];
+    renderSkillsCard();
+  }
+
+  function canUseResumeBuilderApi() {
+    return typeof api === 'function'
+      && typeof Auth !== 'undefined'
+      && typeof Auth.hasRealAuth === 'function'
+      && Auth.hasRealAuth();
+  }
+
+  async function loadSkills() {
+    if (!canUseResumeBuilderApi()) {
+      applySkills([]);
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/skills', { skipAuthRedirect: true });
+      if (res?.success) {
+        applySkills(res.data?.skills || []);
+        return;
+      }
+    } catch (_err) {
+      // Fall through.
+    }
+    applySkills([]);
+  }
+
+  function readSkillForm() {
+    const nameEl = root.querySelector('[data-rb-skill-name]');
+    const catEl = root.querySelector('[data-rb-skill-category]');
+    return {
+      skillName: nameEl ? String(nameEl.value || '').trim() : '',
+      skillCategory: catEl ? String(catEl.value || '').trim() : '',
+    };
+  }
+
+  async function saveSkill() {
+    const form = readSkillForm();
+    if (!skillNameValid(form.skillName)) {
+      state.skillsMessage = 'Skill name must be between ' + SKILL_MIN + ' and ' + SKILL_MAX + ' characters.';
+      renderSkillsCard();
+      const nameEl = root.querySelector('[data-rb-skill-name]');
+      if (nameEl) nameEl.value = form.skillName;
+      const catEl = root.querySelector('[data-rb-skill-category]');
+      if (catEl) catEl.value = form.skillCategory;
+      return;
+    }
+    if (!SKILL_CATEGORIES.includes(form.skillCategory)) {
+      state.skillsMessage = 'Select a skill category.';
+      renderSkillsCard();
+      const nameEl = root.querySelector('[data-rb-skill-name]');
+      if (nameEl) nameEl.value = form.skillName;
+      return;
+    }
+    const dup = state.skills.some((s) => s.id !== state.skillsEditingId
+      && String(s.skillName || '').toLowerCase() === form.skillName.toLowerCase());
+    if (dup) {
+      state.skillsMessage = 'This skill is already added.';
+      renderSkillsCard();
+      const nameEl = root.querySelector('[data-rb-skill-name]');
+      if (nameEl) nameEl.value = form.skillName;
+      const catEl = root.querySelector('[data-rb-skill-category]');
+      if (catEl) catEl.value = form.skillCategory;
+      return;
+    }
+
+    if (!canUseResumeBuilderApi()) {
+      state.skillsMessage = 'Sign in to save skills.';
+      renderSkillsCard();
+      return;
+    }
+
+    const editingId = state.skillsEditingId;
+    try {
+      const res = editingId
+        ? await api('/student/resume-builder/skills/' + encodeURIComponent(editingId), {
+            method: 'PUT',
+            body: form,
+            skipAuthRedirect: true,
+          })
+        : await api('/student/resume-builder/skills', {
+            method: 'POST',
+            body: form,
+            skipAuthRedirect: true,
+          });
+      if (res?.success) {
+        state.skillsEditingId = '';
+        state.skillsFormOpen = false;
+        state.skillsMessage = '';
+        applySkills(res.data?.skills || []);
+        return;
+      }
+      state.skillsMessage = res?.message || 'Could not save skill.';
+      renderSkillsCard();
+      const nameEl = root.querySelector('[data-rb-skill-name]');
+      if (nameEl) nameEl.value = form.skillName;
+      const catEl = root.querySelector('[data-rb-skill-category]');
+      if (catEl) catEl.value = form.skillCategory;
+    } catch (_err) {
+      state.skillsMessage = 'Could not save skill.';
+      renderSkillsCard();
+    }
+  }
+
+  async function deleteSkill(id) {
+    if (!id || !canUseResumeBuilderApi()) return;
+    try {
+      const res = await api('/student/resume-builder/skills/' + encodeURIComponent(id) + '/delete', {
+        method: 'POST',
+        skipAuthRedirect: true,
+      });
+      if (res?.success) {
+        if (state.skillsEditingId === id) state.skillsEditingId = '';
+        state.skillsMessage = '';
+        applySkills(res.data?.skills || []);
+        return;
+      }
+      state.skillsMessage = res?.message || 'Could not remove skill.';
+      renderSkillsCard();
+    } catch (_err) {
+      state.skillsMessage = 'Could not remove skill.';
+      renderSkillsCard();
+    }
+  }
+
   async function saveCareerObjective() {
     const ta = root.querySelector('[data-rb-objective-input]');
     const text = ta ? ta.value : '';
@@ -659,6 +943,7 @@
     renderShell();
     loadPersonalFromProfile();
     loadCareerObjective();
+    loadSkills();
   }
 
   if (typeof onAppReady === 'function') onAppReady(init);
