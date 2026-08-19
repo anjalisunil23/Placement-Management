@@ -78,6 +78,7 @@
 
   const state = {
     personalComplete: false,
+    educationComplete: false,
   };
 
   function esc(value) {
@@ -148,7 +149,7 @@
   }
 
   function completedCount() {
-    return state.personalComplete ? 1 : 0;
+    return (state.personalComplete ? 1 : 0) + (state.educationComplete ? 1 : 0);
   }
 
   function completionPercent() {
@@ -170,6 +171,98 @@
 
   function goToExistingProfile() {
     document.querySelector('#settingsNav a[href="#prof"]')?.click();
+  }
+
+  function goToAcademicProfile() {
+    goToExistingProfile();
+    window.setTimeout(() => {
+      document.getElementById('profQualificationsWrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 250);
+  }
+
+  function educationRank(label) {
+    const upper = String(label || '').toUpperCase();
+    if (/\b(SSLC|SSC|10TH|10\s*STD|CLASS\s*X|TENTH)\b/.test(upper) && !/HIGHER/.test(upper)) return 4;
+    if (/\b(HSC|12TH|PLUS\s*TWO|PLUS2|PUC|CLASS\s*XII|HIGHER\s*SECONDARY)\b/.test(upper)) return 3;
+    if (/\b(BCA|BTECH|B\.TECH|B\.E\.?|BE|BSC|B\.SC|BACHELOR|UNDERGRAD|UG)\b/.test(upper)) return 2;
+    if (/\b(MCA|M\.?\s*TECH|MTECH|M\.?\s*SC|MSC|MBA|MASTER|CURRENT|CGPA|PG)\b/.test(upper)) return 1;
+    return 2;
+  }
+
+  function passingYear(monthYear) {
+    const match = String(monthYear || '').match(/(19|20)\d{2}/);
+    return match ? Number(match[0]) : 0;
+  }
+
+  function formatEducationScore(row) {
+    const mark = Number(row.mark);
+    const maxMark = Number(row.maxMark ?? row.maxmark);
+    const pct = Number(row.percentage);
+    if (mark > 0 && mark <= 10 && (!maxMark || maxMark <= 10)) {
+      const shown = Number.isInteger(mark) ? String(mark) : String(Math.round(mark * 100) / 100);
+      return shown + ' CGPA';
+    }
+    if (pct > 0 && pct <= 100) return String(Math.round(pct * 100) / 100) + '%';
+    if (mark > 0 && maxMark > 0) return String(Math.round((mark / maxMark) * 10000) / 100) + '%';
+    if (mark > 0) return String(mark);
+    return '';
+  }
+
+  function mapQualificationRow(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const qualification = firstText(raw.qualification, raw.qual, raw.degree);
+    const institution = firstText(raw.institution, raw.instname, raw.inst_name, raw.instName);
+    const university = firstText(raw.university, raw.board, raw.universityName, raw.boardName, raw.univ, raw.boardname);
+    const registerNumber = firstText(raw.registerNumber, raw.regno, raw.reg_no, raw.registerno);
+    const year = firstText(raw.monthYear, raw.monthyear, raw.month_year, raw.passedYear, raw.year);
+    const score = formatEducationScore(raw);
+    if (!qualification && !institution && !university && !registerNumber && !year && !score) return null;
+    return {
+      qualification,
+      institution,
+      university,
+      registerNumber,
+      year,
+      score,
+      rank: educationRank(qualification),
+      yearNum: passingYear(year),
+    };
+  }
+
+  function extractEducation(profile, session) {
+    const p = profile && typeof profile === 'object' ? profile : {};
+    const sessionUser = session && typeof session === 'object' ? session : {};
+    const academic = (p.academic && typeof p.academic === 'object')
+      ? p.academic
+      : ((sessionUser.academic && typeof sessionUser.academic === 'object') ? sessionUser.academic : {});
+    const rawRows = Array.isArray(p.qualifications) && p.qualifications.length
+      ? p.qualifications
+      : (Array.isArray(academic.qualifications) ? academic.qualifications : []);
+    let rows = rawRows.map(mapQualificationRow).filter(Boolean);
+
+    if (rows.length === 0) {
+      const program = firstText(p.programme, p.program, academic.course, departmentName(p), departmentName(sessionUser), 'Current Degree');
+      const cgpa = Number(p.cgpa ?? academic.cgpa);
+      const marks12 = Number(academic.marks12th ?? p.marks12th ?? academic.ugMarks);
+      const marks10 = Number(academic.marks10th ?? p.marks10th);
+      if (cgpa > 0 && cgpa <= 10) {
+        rows.push(mapQualificationRow({ qualification: program, mark: cgpa, maxMark: 10 }));
+      }
+      if (marks12 > 0 && marks12 <= 100) {
+        rows.push(mapQualificationRow({ qualification: 'Plus Two / Higher Secondary', percentage: marks12, mark: marks12, maxMark: 100 }));
+      }
+      if (marks10 > 0 && marks10 <= 100) {
+        rows.push(mapQualificationRow({ qualification: 'SSLC / 10th', percentage: marks10, mark: marks10, maxMark: 100 }));
+      }
+      rows = rows.filter(Boolean);
+    }
+
+    rows.sort((a, b) => a.rank - b.rank || b.yearNum - a.yearNum);
+    return rows;
+  }
+
+  function educationStatus(rows) {
+    return { complete: Array.isArray(rows) && rows.length > 0 };
   }
 
   function fieldRow(label, value) {
@@ -222,12 +315,71 @@
       </button>`;
   }
 
+  function educationEntry(row) {
+    const details = [];
+    if (row.institution) details.push(`<div>${esc(row.institution)}</div>`);
+    if (row.university) details.push(`<div>${esc(row.university)}</div>`);
+    if (row.registerNumber) details.push(`<div>Reg. No. ${esc(row.registerNumber)}</div>`);
+    const detailsHtml = details.length ? `<div class="rb-edu-meta mt-1">${details.join('')}</div>` : '';
+    return `
+      <div class="rb-edu-item">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div>
+            <div class="rb-edu-title">${displayValue(row.qualification)}</div>
+            ${detailsHtml}
+          </div>
+          <div class="text-end flex-shrink-0">
+            ${row.year ? `<div class="small fw-semibold">${esc(row.year)}</div>` : ''}
+            ${row.score ? `<div class="small text-muted-2">${esc(row.score)}</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function educationCardBody(rows, status, loading) {
+    if (loading) {
+      return `<p class="small text-muted-2 mb-0">Loading education details…</p>`;
+    }
+
+    const badge = status.complete
+      ? '<span class="badge-soft success">Completed</span>'
+      : '<span class="badge-soft warning">Incomplete</span>';
+    const listHtml = rows.length
+      ? rows.map(educationEntry).join('')
+      : '<p class="small text-muted-2 mb-3">No education records were found on your academic profile.</p>';
+
+    return `
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+        <div class="d-flex align-items-center gap-2">
+          <div class="rb-section-icon" aria-hidden="true"><i class="bi bi-mortarboard"></i></div>
+          <h6 class="fw-bold mb-0">Education</h6>
+        </div>
+        ${badge}
+      </div>
+      <div class="alert alert-info py-2 small mb-3" role="note">
+        Education details are automatically synced from your academic profile.
+      </div>
+      <div class="mb-3">${listHtml}</div>
+      <button type="button" class="btn btn-sm btn-outline-primary" data-rb-view-academic>
+        <i class="bi bi-box-arrow-up-right me-1"></i>View Academic Profile
+      </button>`;
+  }
+
   function sectionCard(section) {
     if (section.id === 'personal') {
       return `
         <div class="col-12">
           <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="personal">
             ${personalCardBody({}, { complete: false, missing: [] }, true)}
+          </div>
+        </div>`;
+    }
+
+    if (section.id === 'education') {
+      return `
+        <div class="col-12">
+          <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="education">
+            ${educationCardBody([], { complete: false }, true)}
           </div>
         </div>`;
     }
@@ -275,9 +427,13 @@
     `;
 
     root.addEventListener('click', (event) => {
-      const btn = event.target.closest('[data-rb-edit-profile]');
-      if (!btn || !root.contains(btn)) return;
-      goToExistingProfile();
+      if (event.target.closest('[data-rb-edit-profile]')) {
+        goToExistingProfile();
+        return;
+      }
+      if (event.target.closest('[data-rb-view-academic]')) {
+        goToAcademicProfile();
+      }
     });
 
     if (window.bootstrap && typeof bootstrap.Tooltip === 'function') {
@@ -292,6 +448,14 @@
     state.personalComplete = status.complete;
     const card = root.querySelector('[data-rb-card="personal"]');
     if (card) card.innerHTML = personalCardBody(fields, status, false);
+    updateCompletionUi();
+  }
+
+  function applyEducation(rows) {
+    const status = educationStatus(rows);
+    state.educationComplete = status.complete;
+    const card = root.querySelector('[data-rb-card="education"]');
+    if (card) card.innerHTML = educationCardBody(rows, status, false);
     updateCompletionUi();
   }
 
@@ -314,6 +478,7 @@
     }
 
     applyPersonal(extractPersonal(profile, session));
+    applyEducation(extractEducation(profile, session));
   }
 
   function init() {
