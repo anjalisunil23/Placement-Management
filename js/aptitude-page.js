@@ -2445,7 +2445,6 @@
       applyManagePanel(link.getAttribute('data-manage-view'));
     });
     document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
-    document.getElementById('btnBankUpload')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
 
     document.getElementById('bankFilterCategory')?.addEventListener('change', () => {

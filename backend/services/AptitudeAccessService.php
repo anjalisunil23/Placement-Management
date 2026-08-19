@@ -7,6 +7,7 @@ namespace PMS\Services;
 use PMS\Middleware\AuthMiddleware;
 use PMS\Models\AlumniModel;
 use PMS\Models\ApplicationModel;
+use PMS\Models\AptitudeTestModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\StudentModel;
