@@ -9,7 +9,7 @@
 <noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" /></noscript>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-<link href="css/style.css?v=20260819profile" rel="stylesheet" />
+<link href="css/style.css?v=20260819avatar" rel="stylesheet" />
 <script src="js/ph-role-guard.js?v=20260724hod4"></script>
 </head>
 <body data-page="dashboard.html">
@@ -454,7 +454,7 @@
 </div>
 
 <script src="js/api.js?v=20260814staffmanage"></script>
-<script src="js/app.js?v=20260819profile"></script>
+<script src="js/app.js?v=20260819avatar"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -1171,7 +1171,7 @@ function alumniStoryAvatarHtml(name) {
   const initials = alumniStoryInitials(name || u.name);
   if (photo) {
     const safe = encodeURI(photo).replace(/'/g, '%27');
-    return `<span class="avatar has-photo" style="width:48px;height:48px;border-radius:50%;background:url('${safe}') center/cover no-repeat;display:inline-block" role="img" aria-label="${escDash(name || 'Alumni')}"></span>`;
+    return `<span class="avatar has-photo" style="width:48px;height:48px;border-radius:50%;background-color:var(--surface-2,#e2e8f0);background-image:url('${safe}');background-position:center;background-size:var(--avatar-photo-scale,75%);background-repeat:no-repeat;display:inline-block" role="img" aria-label="${escDash(name || 'Alumni')}"></span>`;
   }
   return `<div class="avatar" style="width:48px;height:48px">${escDash(initials)}</div>`;
 }

@@ -262,7 +262,7 @@ function shellPhotoCircleHtml(user, size, fontSize = '.85rem') {
   ].join(';');
   if (url) {
     const safe = encodeURI(url).replace(/'/g, '%27');
-    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background:#e2e8f0 url('${safe}') center/cover no-repeat" role="img" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"></span>`;
+    return `<span class="shell-avatar-photo" data-initials="${escapeAttr(ini)}" style="${circle};background-color:#e2e8f0;background-image:url('${safe}')" role="img" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"></span>`;
   }
   return `<span style="${circle};background:linear-gradient(135deg,#2563EB,#3B82F6);color:#fff;display:grid;place-items:center;font-weight:700;font-size:${fontSize}">${ini}</span>`;
 }
@@ -358,8 +358,8 @@ function hydrateShellAvatars() {
   const safe = encodeURI(url).replace(/'/g, '%27');
   document.querySelectorAll('.shell-avatar-photo').forEach((el) => {
     el.style.backgroundImage = `url('${safe}')`;
-    el.style.backgroundSize = 'cover';
-    el.style.backgroundPosition = 'center';
+    el.style.backgroundSize = '';
+    el.style.backgroundPosition = '';
     // If the image fails (AES hotlink / 401 proxy), fall back to initials.
     const probe = new Image();
     probe.onload = () => { /* keep photo */ };
