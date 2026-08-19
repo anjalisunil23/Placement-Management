@@ -467,14 +467,18 @@
         renderNav();
       } catch (err) {
         el('run-state').textContent = '';
+        const raw = String(err?.message || '');
+        const message = /unavailable|is not defined|failed to load|Failed to fetch|NetworkError/i.test(raw)
+          ? 'Code execution service unavailable, please try again'
+          : (raw || 'Could not run code.');
         renderRunPanel({
           overall: 'Runtime Error',
-          custom: { output: '', expected: '', stderr: err?.message || 'Could not run code.', status: 'Runtime Error', passed: false },
+          custom: { output: '', expected: '', stderr: message, status: 'Runtime Error', passed: false },
           results: [],
           passedCount: 0,
           totalCount: 0,
         }, false);
-        toast(err?.message || 'Could not run code.', 'error');
+        toast(message, 'error');
       } finally {
         running = false;
         setBusy(false);

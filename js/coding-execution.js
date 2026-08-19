@@ -325,11 +325,20 @@
 
   global.CodeExecutionService = {
     TIME_LIMIT_MS: DEFAULT_TIME_LIMIT_MS,
+    ready: true,
     async run(opts) {
-      if (API_ENABLED && typeof api === 'function') {
-        return apiRun(opts);
+      try {
+        if (API_ENABLED && typeof api === 'function') {
+          return await apiRun(opts);
+        }
+        return await mockRun(opts);
+      } catch (err) {
+        const msg = String(err?.message || '');
+        if (/Failed to fetch|NetworkError|Execution failed/i.test(msg)) {
+          throw new Error('Code execution service unavailable, please try again');
+        }
+        throw err;
       }
-      return mockRun(opts);
     },
   };
 })(window);

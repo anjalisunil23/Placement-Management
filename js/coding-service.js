@@ -1,8 +1,22 @@
-/* PlaceHub — coding practice service (local mock; swap in API later) */
+/* PlaceHub — coding practice service (local mock; swap in API later)
+ * Depends on window.CodeExecutionService from js/coding-execution.js.
+ * That script must load first; this file installs a throwing stub if it did not.
+ */
 (function (global) {
   const PASS_PERCENT = 60;
   const STORAGE_PREFIX = 'ph-coding-progress-';
   const API_ENABLED = false;
+  const EXEC_UNAVAILABLE = 'Code execution service unavailable, please try again';
+
+  if (typeof global.CodeExecutionService === 'undefined') {
+    global.CodeExecutionService = {
+      TIME_LIMIT_MS: 3000,
+      ready: false,
+      async run() {
+        throw new Error(EXEC_UNAVAILABLE);
+      },
+    };
+  }
 
   function userKey() {
     try {
@@ -75,18 +89,29 @@
     return passed ? 'Passed' : 'Wrong Answer';
   }
 
+  function isExecUnavailable(err) {
+    const msg = String(err?.message || err || '');
+    return /unavailable|is not defined|failed to load|Failed to fetch|NetworkError|Execution failed/i.test(msg);
+  }
+
   async function executeOnce(question, language, code, stdin, quick) {
-    if (typeof CodeExecutionService === 'undefined' || typeof CodeExecutionService.run !== 'function') {
-      throw new Error('Code runner failed to load. Refresh the page and try Run Code again.');
+    const svc = global.CodeExecutionService;
+    if (!svc || typeof svc.run !== 'function' || svc.ready === false) {
+      throw new Error(EXEC_UNAVAILABLE);
     }
-    const exec = await CodeExecutionService.run({
-      language,
-      source: code,
-      stdin: stdin || '',
-      timeLimitMs: CodeExecutionService.TIME_LIMIT_MS,
-      quick: !!quick,
-      _mock: mockHints(question, language, stdin),
-    });
+    let exec;
+    try {
+      exec = await svc.run({
+        language,
+        source: code,
+        stdin: stdin || '',
+        timeLimitMs: svc.TIME_LIMIT_MS || 3000,
+        quick: !!quick,
+        _mock: mockHints(question, language, stdin),
+      });
+    } catch (err) {
+      throw new Error(isExecUnavailable(err) ? EXEC_UNAVAILABLE : (err?.message || EXEC_UNAVAILABLE));
+    }
     const expected = expectedFor(question, stdin);
     const stdout = normalizeOut(exec.stdout);
     const error = exec.timedOut || exec.status !== 'OK';

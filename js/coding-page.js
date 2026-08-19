@@ -1,5 +1,9 @@
 /* PlaceHub — coding practice hub */
 (function () {
+  if (!window.CodeExecutionService || window.CodeExecutionService.ready === false) {
+    console.error('CodeExecutionService is not loaded. Include js/coding-execution.js before js/coding-service.js.');
+  }
+
   const exam = CodingExam.createExamController({
     root: document.getElementById('examShell'),
     onExit() {
