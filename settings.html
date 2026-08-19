@@ -20,6 +20,7 @@
         <a class="nav-item nav-link" data-bs-toggle="pill" href="#resumes" data-student-only>Resumes</a>
         <a class="nav-item nav-link" data-bs-toggle="pill" href="#sec" data-password-settings>Security</a>
         <a class="nav-item nav-link" data-bs-toggle="pill" href="#notif">Notification preferences</a>
+        <a class="nav-item nav-link" data-bs-toggle="pill" href="#resume-builder" data-student-only>Resume Builder</a>
       </div>
     </div>
   </div>
@@ -146,6 +147,12 @@
       <div class="tab-pane fade" id="notif"><div class="card-surface p-4">
         <h5 class="fw-bold mb-3">Notification preferences</h5>
         <div id="notifList"></div>
+      </div></div>
+
+      <div class="tab-pane fade" id="resume-builder"><div class="card-surface p-4">
+        <div class="text-center py-5">
+          <p class="fw-semibold mb-0">Resume Builder Coming Soon</p>
+        </div>
       </div></div>
     </div>
   </div>
@@ -1186,11 +1193,27 @@ if (role === 'student') {
     if (location.hash.replace(/^#/, '') === 'resumes') {
       document.querySelector('[href="#resumes"]')?.click();
     }
+    if (location.hash.replace(/^#/, '') === 'resume-builder') {
+      document.querySelector('[href="#resume-builder"]')?.click();
+    }
   });
 } else {
   document.querySelector('[href="#resumes"]')?.remove();
   document.getElementById('resumes')?.remove();
+  document.querySelector('[href="#resume-builder"]')?.remove();
+  document.getElementById('resume-builder')?.remove();
 }
+
+document.querySelector('[href="#resume-builder"]')?.addEventListener('shown.bs.tab', () => {
+  const saveBtn = document.getElementById('saveSettings');
+  if (saveBtn) saveBtn.style.display = 'none';
+});
+document.querySelectorAll('#settingsNav a[data-bs-toggle="pill"]:not([href="#resume-builder"])').forEach((link) => {
+  link.addEventListener('shown.bs.tab', () => {
+    const saveBtn = document.getElementById('saveSettings');
+    if (saveBtn) saveBtn.style.display = '';
+  });
+});
 
 document.getElementById('profName')?.addEventListener('input', () => {
   if (!profAvatarEl?.classList.contains('has-photo')) setAvatarInitials();
