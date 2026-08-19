@@ -102,14 +102,22 @@
     return '';
   }
 
-  function normalizeBulkRow(row, fallbackCategory, index) {
+  function normalizeDifficulty(value, fallback = 'Medium') {
+    const raw = String(value || fallback).trim();
+    const hit = APTITUDE_DIFFICULTIES.find((d) => d.toLowerCase() === raw.toLowerCase());
+    return hit || 'Medium';
+  }
+
+  function normalizeBulkRow(row, fallbackCategory, index, fallbackDifficulty = 'Medium') {
     const prompt = rowField(row, 'prompt', 'question', 'question text');
-    const options = [
-      rowField(row, 'optionA', 'option_a', 'a', 'option1'),
-      rowField(row, 'optionB', 'option_b', 'b', 'option2'),
-      rowField(row, 'optionC', 'option_c', 'c', 'option3'),
-      rowField(row, 'optionD', 'option_d', 'd', 'option4'),
-    ].filter(Boolean);
+    const options = Array.isArray(row.options) && row.options.length >= 2
+      ? row.options.map((o) => String(o || '').trim()).filter(Boolean)
+      : [
+        rowField(row, 'optionA', 'option_a', 'a', 'option1'),
+        rowField(row, 'optionB', 'option_b', 'b', 'option2'),
+        rowField(row, 'optionC', 'option_c', 'c', 'option3'),
+        rowField(row, 'optionD', 'option_d', 'd', 'option4'),
+      ].filter(Boolean);
     if (!prompt || options.length < 2) return null;
     const correct = rowField(row, 'correct', 'answer', 'correctIndex', 'correct_option');
     const marks = Number(rowField(row, 'marks', 'mark') || 1) || 1;
@@ -122,13 +130,14 @@
       marks,
       explanation: rowField(row, 'explanation', 'solution'),
       category: rowField(row, 'category') || fallbackCategory,
+      difficulty: normalizeDifficulty(rowField(row, 'difficulty', 'level', 'difficulty level'), fallbackDifficulty),
     };
   }
 
-  function normalizeBulkRows(rows, fallbackCategory) {
+  function normalizeBulkRows(rows, fallbackCategory, fallbackDifficulty = 'Medium') {
     const out = [];
     rows.forEach((row) => {
-      const norm = normalizeBulkRow(row, fallbackCategory, out.length);
+      const norm = normalizeBulkRow(row, fallbackCategory, out.length, fallbackDifficulty);
       if (norm) out.push(norm);
     });
     return out;
@@ -136,7 +145,8 @@
 
   function demoBulkUpload(rawRows, mode) {
     const fallbackCategory = document.getElementById('bulkCategory')?.value || 'General Aptitude';
-    const normalized = normalizeBulkRows(rawRows, fallbackCategory);
+    const fallbackDifficulty = document.getElementById('bulkDifficulty')?.value || 'Medium';
+    const normalized = normalizeBulkRows(rawRows, fallbackCategory, fallbackDifficulty);
     if (!normalized.length) {
       throw new Error('No valid questions found in the Excel file.');
     }
@@ -175,6 +185,14 @@
   let dirFilterBranch = '';
   let dirFilterBatch = '';
   let dirFiltersBound = false;
+  let progressPanel = 'tests';
+  let myResultsPanel = 'tests';
+  let bankDifficultyFilter = '';
+  let bankCategoryFilter = '';
+  let bankQuestions = [];
+  let bankSummary = { Easy: 0, Medium: 0, Hard: 0, total: 0 };
+  let bankPickerQuestions = [];
+  const selectedBankIds = new Set();
 
   function dirOptionLabel(value) {
     const raw = String(value || '').trim();
@@ -307,7 +325,7 @@
     hint.classList.add('d-none');
   }
 
-  function demoDirectoryRows() {
+  function demoDirectoryRows(resultType = progressPanel) {
     const role = Auth.role();
     const u = Auth.user() || {};
     const qs = buildDirectoryQuery();
@@ -360,6 +378,21 @@
           ? { 'Quantitative Aptitude': { percentage: stats.averageScore } }
           : {},
       };
+    }).filter((r) => {
+      if (resultType === 'contests') {
+        return (r.testsAttempted || 0) > 0 && (r.userId === 'u-s2' || r.userId === 'u-s1');
+      }
+      return true;
+    }).map((r) => {
+      if (resultType !== 'contests') return r;
+      return {
+        ...r,
+        testsAttempted: Math.min(Number(r.testsAttempted) || 0, 1),
+        averageScore: r.userId === 'u-s2' ? 68 : 74,
+        bestScore: r.userId === 'u-s2' ? 72 : 74,
+        accuracy: r.userId === 'u-s2' ? 65 : 74,
+        recentScore: r.userId === 'u-s2' ? 72 : 74,
+      };
     });
 
     const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
@@ -384,7 +417,165 @@
     };
   }
 
+  function demoContestResults() {
+    const demo = demoDirectoryRows('contests');
+    if (demo.noClass) {
+      return { contests: [], summary: {}, noClass: true };
+    }
+
+    const participants = (demo.rows || [])
+      .filter((r) => (r.testsAttempted || 0) > 0)
+      .map((r, i) => ({
+        attemptId: `demo-contest-${r.userId}`,
+        userId: r.userId,
+        name: r.name,
+        registerNumber: r.registerNumber,
+        studentCode: r.registerNumber,
+        classBatch: r.classBatch,
+        course: r.course,
+        rank: i + 1,
+        percentage: r.recentScore ?? r.bestScore ?? 0,
+        marksObtained: Math.round(((r.recentScore ?? r.bestScore ?? 0) / 100) * 20),
+        totalMarks: 20,
+        correctCount: Math.round(((r.recentScore ?? 0) / 100) * 18),
+        wrongCount: 2,
+        unansweredCount: 0,
+        timeTakenSeconds: 900 + i * 120,
+        timeTakenLabel: i === 0 ? '15m 00s' : '17m 00s',
+        completedAt: new Date(Date.now() - i * 86400000).toISOString(),
+        accuracy: r.accuracy ?? 0,
+      }))
+      .sort((a, b) => (Number(b.percentage) || 0) - (Number(a.percentage) || 0))
+      .map((p, i) => ({ ...p, rank: i + 1 }));
+
+    const percentages = participants.map((p) => Number(p.percentage) || 0);
+    const avgPct = percentages.length
+      ? Math.round((percentages.reduce((a, b) => a + b, 0) / percentages.length) * 10) / 10
+      : 0;
+
+    return {
+      contests: participants.length ? [{
+        testId: 'demo-weekly-contest',
+        title: 'Weekly aptitude contest',
+        category: 'Quantitative Aptitude',
+        contestType: 'weekly',
+        contestScheduleLabel: 'Weekly · Friday',
+        participantCount: participants.length,
+        participants,
+      }] : [],
+      summary: {
+        contestCount: participants.length ? 1 : 0,
+        totalParticipants: participants.length,
+        uniqueParticipants: participants.length,
+        avgPercentage: avgPct,
+        highestScore: percentages.length ? Math.max(...percentages) : 0,
+      },
+      noClass: false,
+    };
+  }
+
+  function formatContestScore(p) {
+    const obtained = Number(p.marksObtained ?? p.score);
+    const total = Number(p.totalMarks ?? p.maximumScore);
+    const pct = Number(p.percentage);
+    if (Number.isFinite(obtained) && Number.isFinite(total) && total > 0) {
+      return Number.isFinite(pct) ? `${obtained}/${total} (${pct}%)` : `${obtained}/${total}`;
+    }
+    return Number.isFinite(pct) ? `${pct}%` : '—';
+  }
+
+  function formatContestBreakdown(p) {
+    const bits = [];
+    if (p.correctCount != null) bits.push(`${p.correctCount} correct`);
+    if (p.wrongCount != null) bits.push(`${p.wrongCount} wrong`);
+    if (p.unansweredCount != null) bits.push(`${p.unansweredCount} skipped`);
+    return bits.length ? bits.join(' · ') : '—';
+  }
+
+  function formatCompletedAt(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString(undefined, {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  function renderContestResults(contests, summary, scope = {}) {
+    document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
+    document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
+
+    document.getElementById('dirStats').innerHTML = [
+      ['Contests', summary.contestCount ?? 0],
+      ['Participants', summary.totalParticipants ?? 0],
+      ['Unique students', summary.uniqueParticipants ?? 0],
+      ['Avg score', `${summary.avgPercentage ?? 0}%`],
+      ['Top score', `${summary.highestScore ?? 0}%`],
+    ].map(([lbl, val]) =>
+      `<div class="col-6 col-md"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
+    ).join('');
+
+    const role = Auth.role();
+    const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+      ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
+      : 'No contest attempts in your authorized scope yet.';
+
+    const root = document.getElementById('dirContestSections');
+    if (!root) return;
+
+    if (!contests.length) {
+      root.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+      return;
+    }
+
+    const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
+    root.innerHTML = contests.map((c) => {
+      const badge = c.contestScheduleLabel
+        ? `<span class="badge-soft info ms-2">${esc(c.contestScheduleLabel)}</span>`
+        : '';
+      const cat = c.category ? `<span class="text-muted-2 ms-2">${esc(c.category)}</span>` : '';
+      const rows = (c.participants || []).map((p) => {
+        const viewBtn = canViewDetail && (p.attemptId || p.id)
+          ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(p.attemptId || p.id)}">View</button>`
+          : `<button type="button" class="btn btn-sm btn-outline-secondary" data-detail="${esc(p.userId || '')}">Profile</button>`;
+        return `<tr>
+          <td class="text-muted-2">${esc(p.rank ?? '—')}</td>
+          <td class="fw-semibold">${esc(p.name || '—')}</td>
+          <td>${esc(studentIdLabel(p))}</td>
+          <td>${esc(p.classBatch || '—')}</td>
+          <td>${esc(formatContestScore(p))}</td>
+          <td>${esc(p.timeTakenLabel || '—')}</td>
+          <td class="small">${esc(formatContestBreakdown(p))}</td>
+          <td class="small text-muted-2">${esc(formatCompletedAt(p.completedAt))}</td>
+          <td>${viewBtn}</td>
+        </tr>`;
+      }).join('');
+
+      return `<div class="card-surface p-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <div class="fw-bold">${esc(c.title || 'Contest')}${badge}${cat}</div>
+            <div class="small text-muted-2">${esc(c.participantCount ?? (c.participants || []).length)} participant(s)</div>
+          </div>
+        </div>
+        <div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
+          <th>Rank</th><th>Name</th><th>Student ID</th><th>Class</th><th>Score</th><th>Time</th><th>Breakdown</th><th>Submitted</th><th></th>
+        </tr></thead><tbody>${rows || `<tr><td colspan="9" class="text-muted-2 p-3">No participants yet.</td></tr>`}</tbody></table></div>
+      </div>`;
+    }).join('');
+
+    root.querySelectorAll('[data-view-attempt]').forEach((btn) => {
+      btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt')));
+    });
+    root.querySelectorAll('[data-detail]').forEach((btn) => {
+      btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
+    });
+  }
+
   function renderDirectoryTable(rows, summary, scope = {}) {
+    document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
+    document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
+
     document.getElementById('dirStats').innerHTML = [
       ['Students', summary.students ?? summary.subjects ?? 0],
       ['With attempts', summary.withAttempts ?? 0],
@@ -397,9 +588,13 @@
     ).join('');
 
     const role = Auth.role();
-    const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
-      ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
-      : 'No aptitude progress in your authorized scope yet.';
+    const emptyMsg = progressPanel === 'contests'
+      ? (role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+        ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
+        : 'No contest results in your authorized scope yet.')
+      : (role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+        ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
+        : 'No test results in your authorized scope yet.');
 
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
       const uid = String(r.userId || '');
@@ -516,7 +711,40 @@
     if (branch) qs.set('course', branch);
     if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
+    if (progressPanel === 'tests' || progressPanel === 'contests') qs.set('resultType', progressPanel);
     return qs;
+  }
+
+  function progressDirTitle(role, panel = progressPanel) {
+    const contest = panel === 'contests';
+    const map = {
+      placement_officer: contest ? 'Department contest results' : 'Department test results',
+      staff: contest ? 'Class contest results' : 'Class test results',
+      admin: contest ? 'Institution contest results' : 'Institution test results',
+    };
+    return map[role] || (contest ? 'Contest results' : 'Test results');
+  }
+
+  function applyProgressPanel(panel) {
+    progressPanel = panel === 'contests' ? 'contests' : 'tests';
+    document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
+    });
+  }
+
+  function applyMyResultsPanel(panel) {
+    myResultsPanel = panel === 'contests' ? 'contests' : 'tests';
+    document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsPanel);
+    });
+  }
+
+  function historyEntryIsContest(h) {
+    const type = String(h?.contestType || '');
+    if (type === 'weekly' || type === 'monthly') return true;
+    if (type === 'none') return false;
+    const test = resolveHistoryTest(h);
+    return test ? isContestTest(test) : false;
   }
 
   function bindDirFilterEvents() {
@@ -556,9 +784,283 @@
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   }
 
-  function fillSelect(el, options, selected = '') {
+  function fillSelect(el, options, selected = '', allowEmpty = false) {
     if (!el) return;
-    el.innerHTML = options.map((o) => `<option value="${esc(o)}" ${o === selected ? 'selected' : ''}>${esc(o)}</option>`).join('');
+    const emptyOpt = allowEmpty ? `<option value="">All categories</option>` : '';
+    el.innerHTML = emptyOpt + options.map((o) => `<option value="${esc(o)}" ${o === selected ? 'selected' : ''}>${esc(o)}</option>`).join('');
+  }
+
+  function stripHtml(text) {
+    const div = document.createElement('div');
+    div.innerHTML = String(text || '');
+    return (div.textContent || div.innerText || '').trim();
+  }
+
+  function bankDifficultyBadge(level) {
+    const map = { Easy: 'success', Medium: 'warning', Hard: 'danger' };
+    const cls = map[normalizeDifficulty(level)] || 'secondary';
+    return `<span class="badge bg-${cls}-subtle text-${cls} border border-${cls}-subtle">${esc(normalizeDifficulty(level))}</span>`;
+  }
+
+  function demoBankSummary(questions) {
+    const summary = { Easy: 0, Medium: 0, Hard: 0, total: 0 };
+    (questions || []).forEach((q) => {
+      const level = normalizeDifficulty(q.difficulty);
+      summary[level] += 1;
+      summary.total += 1;
+    });
+    return summary;
+  }
+
+  async function loadQuestionBank() {
+    if (!access.canManage) return;
+    const categoryEl = document.getElementById('bankFilterCategory');
+    if (categoryEl && categoryEl.options.length <= 1) {
+      fillSelect(categoryEl, meta.categories || APTITUDE_CATEGORIES, bankCategoryFilter, true);
+    }
+    bankCategoryFilter = categoryEl?.value || bankCategoryFilter || '';
+
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const qs = new URLSearchParams();
+      if (bankCategoryFilter) qs.set('category', bankCategoryFilter);
+      if (bankDifficultyFilter) qs.set('difficulty', bankDifficultyFilter);
+      const res = await api('/aptitude/question-bank' + (qs.toString() ? `?${qs}` : '')).catch(() => null);
+      bankQuestions = res?.data?.questions || [];
+      bankSummary = res?.data?.summary || demoBankSummary(bankQuestions);
+    } else {
+      const all = loadDemoBankStore();
+      bankQuestions = all.filter((q) => {
+        if (bankCategoryFilter && String(q.category || '') !== bankCategoryFilter) return false;
+        if (bankDifficultyFilter && normalizeDifficulty(q.difficulty) !== bankDifficultyFilter) return false;
+        return true;
+      });
+      bankSummary = demoBankSummary(all.filter((q) => (
+        !bankCategoryFilter || String(q.category || '') === bankCategoryFilter
+      )));
+    }
+    renderQuestionBank();
+  }
+
+  function renderQuestionBank() {
+    const statsRoot = document.getElementById('bankStats');
+    if (statsRoot) {
+      statsRoot.innerHTML = [
+        ['Total in bank', bankSummary.total ?? 0],
+        ['Easy', bankSummary.Easy ?? 0],
+        ['Medium', bankSummary.Medium ?? 0],
+        ['Hard', bankSummary.Hard ?? 0],
+      ].map(([lbl, val]) =>
+        `<div class="col-6 col-md-3"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
+      ).join('');
+    }
+
+    document.querySelectorAll('#bankDifficultyNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', (link.getAttribute('data-bank-difficulty') || '') === bankDifficultyFilter);
+    });
+
+    const root = document.getElementById('bankQuestionsList');
+    if (!root) return;
+    if (!bankQuestions.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">No questions in this bucket yet. Use bulk upload to add Easy, Medium, and Hard MCQs.</p>';
+      return;
+    }
+
+    root.innerHTML = bankQuestions.slice(0, 100).map((q) => {
+      const prompt = stripHtml(q.prompt).slice(0, 160) || 'Question';
+      return `<div class="border rounded-3 p-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+          <div class="min-w-0 flex-grow-1">
+            <div class="fw-medium text-truncate">${esc(prompt)}</div>
+            <div class="small text-muted-2">${esc(q.category || 'General Aptitude')} · ${esc(q.options?.length || 0)} options · ${esc(q.marks ?? 1)} mark(s)</div>
+          </div>
+          ${bankDifficultyBadge(q.difficulty)}
+        </div>
+      </div>`;
+    }).join('') + (bankQuestions.length > 100
+      ? `<p class="small text-muted-2 mb-0">Showing first 100 of ${bankQuestions.length} questions.</p>`
+      : '');
+  }
+
+  function getQuestionSource() {
+    return document.getElementById('tfSourceRandom')?.checked ? 'random' : 'manual';
+  }
+
+  function syncQuestionSourcePanels() {
+    const random = getQuestionSource() === 'random';
+    document.getElementById('tfRandomPanel')?.classList.toggle('d-none', !random);
+    document.getElementById('tfManualPanel')?.classList.toggle('d-none', random);
+    const countEl = document.getElementById('tfQuestionCount');
+    if (countEl) {
+      countEl.readOnly = random;
+      if (random) updateRandomSummary();
+    }
+  }
+
+  function addRandomRuleRow(rule = {}) {
+    const root = document.getElementById('tfRandomRules');
+    if (!root) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-random-rule row g-2 align-items-end';
+    const categories = meta.categories || APTITUDE_CATEGORIES;
+    const catOpts = categories.map((c) =>
+      `<option value="${esc(c)}" ${c === (rule.category || categories[0]) ? 'selected' : ''}>${esc(c)}</option>`
+    ).join('');
+    const diff = normalizeDifficulty(rule.difficulty || 'Medium');
+    wrap.innerHTML = `
+      <div class="col-md-5">
+        <label class="form-label small mb-1">Category</label>
+        <select class="form-select form-select-sm" data-f="category">${catOpts}</select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Difficulty</label>
+        <select class="form-select form-select-sm" data-f="difficulty">
+          ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Count</label>
+        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 5)}"/>
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-rule>Remove</button>
+      </div>`;
+    wrap.querySelector('[data-remove-rule]')?.addEventListener('click', () => {
+      wrap.remove();
+      updateRandomSummary();
+    });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', updateRandomSummary);
+      el.addEventListener('input', updateRandomSummary);
+    });
+    root.appendChild(wrap);
+    updateRandomSummary();
+  }
+
+  function collectRandomRules() {
+    return [...document.querySelectorAll('#tfRandomRules .tf-random-rule')].map((row) => ({
+      category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
+      difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+      count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
+    }));
+  }
+
+  function updateRandomSummary() {
+    const rules = collectRandomRules();
+    const total = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const summary = document.getElementById('tfRandomSummary');
+    if (summary) summary.textContent = `${total} question(s) from ${rules.length} rule(s)`;
+    const countEl = document.getElementById('tfQuestionCount');
+    if (countEl && getQuestionSource() === 'random') countEl.value = String(total || 1);
+  }
+
+  async function loadBankPickerQuestions() {
+    const cat = document.getElementById('tfBankPickCategory')?.value || '';
+    const diff = document.getElementById('tfBankPickDifficulty')?.value || '';
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const qs = new URLSearchParams();
+      if (cat) qs.set('category', cat);
+      if (diff) qs.set('difficulty', diff);
+      const res = await api('/aptitude/question-bank' + (qs.toString() ? `?${qs}` : '')).catch(() => null);
+      bankPickerQuestions = res?.data?.questions || [];
+    } else {
+      bankPickerQuestions = loadDemoBankStore().filter((q) => {
+        if (cat && String(q.category || '') !== cat) return false;
+        if (diff && normalizeDifficulty(q.difficulty) !== diff) return false;
+        return true;
+      });
+    }
+    renderBankPicker();
+  }
+
+  function renderBankPicker() {
+    const root = document.getElementById('tfBankPickList');
+    const summary = document.getElementById('tfBankPickSummary');
+    if (!root) return;
+    if (summary) summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown`;
+    if (!bankPickerQuestions.length) {
+      root.innerHTML = '<p class="small text-muted-2 mb-0">No bank questions match these filters. Upload to the question bank first.</p>';
+      return;
+    }
+    root.innerHTML = bankPickerQuestions.map((q) => {
+      const id = String(q.id || q.bankId || '');
+      const checked = selectedBankIds.has(id) ? 'checked' : '';
+      const prompt = stripHtml(q.prompt).slice(0, 120) || 'Question';
+      return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0">
+        <input type="checkbox" class="form-check-input mt-1" data-bank-pick="${esc(id)}" ${checked}/>
+        <span class="small min-w-0">
+          <span class="d-block text-truncate">${esc(prompt)}</span>
+          <span class="text-muted-2">${esc(q.category || '')} · ${esc(normalizeDifficulty(q.difficulty))}</span>
+        </span>
+      </label>`;
+    }).join('');
+    root.querySelectorAll('[data-bank-pick]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = cb.getAttribute('data-bank-pick');
+        if (!id) return;
+        if (cb.checked) selectedBankIds.add(id);
+        else selectedBankIds.delete(id);
+        updateManualQuestionCount();
+        if (summary) summary.textContent = `${selectedBankIds.size} selected · ${bankPickerQuestions.length} shown`;
+      });
+    });
+  }
+
+  function updateManualQuestionCount() {
+    if (getQuestionSource() !== 'manual') return;
+    const mcqCount = collectMcqs().length;
+    const bankCount = selectedBankIds.size;
+    const total = mcqCount + bankCount;
+    const countEl = document.getElementById('tfQuestionCount');
+    if (countEl) countEl.value = String(total || 1);
+  }
+
+  function demoPickRandomRules(rules) {
+    const picked = [];
+    const used = new Set();
+    const all = loadDemoBankStore();
+    rules.forEach((rule) => {
+      let pool = all.filter((q) => {
+        const id = String(q.id || q.bankId || '');
+        if (used.has(id)) return false;
+        if (rule.category && String(q.category || '') !== rule.category) return false;
+        if (rule.difficulty && normalizeDifficulty(q.difficulty) !== normalizeDifficulty(rule.difficulty)) return false;
+        return true;
+      });
+      const count = Math.max(1, Number(rule.count) || 1);
+      if (pool.length < count) {
+        throw new Error(`Not enough ${rule.difficulty} questions in ${rule.category} (need ${count}, found ${pool.length}).`);
+      }
+      pool = pool.sort(() => Math.random() - 0.5).slice(0, count);
+      pool.forEach((q) => {
+        const id = String(q.id || q.bankId || '');
+        used.add(id);
+        picked.push({ ...q, bankId: id });
+      });
+    });
+    return picked;
+  }
+
+  function resolveDemoTestQuestions(payload) {
+    if (payload.questionSource === 'random') {
+      const rules = payload.randomRules || [];
+      if (!rules.length) throw new Error('Add at least one random rule.');
+      payload.questions = demoPickRandomRules(rules);
+      payload.questionCount = payload.questions.length;
+      payload.bankQuestionIds = [];
+      payload.category = rules[0]?.category || 'General Aptitude';
+      payload.difficulty = rules[0]?.difficulty || 'Medium';
+      return payload;
+    }
+    const bankIds = payload.bankQuestionIds || [];
+    const all = loadDemoBankStore();
+    const fromBank = bankIds.map((id) => all.find((q) => String(q.id) === String(id))).filter(Boolean);
+    const inline = payload.questions || [];
+    payload.questions = [...fromBank, ...inline];
+    payload.questionCount = payload.questions.length;
+    if (!payload.questions.length) throw new Error('Select bank questions or add MCQs.');
+    payload.category = fromBank[0]?.category || inline[0]?.category || 'General Aptitude';
+    payload.difficulty = fromBank[0]?.difficulty || inline[0]?.difficulty || 'Medium';
+    return payload;
   }
 
   function canManageContests() {
@@ -590,12 +1092,16 @@
   }
 
   function applyManagePanel(panel) {
-    managePanel = panel === 'contests' && canManageContests() ? 'contests' : 'tests';
+    if (panel === 'contests' && canManageContests()) managePanel = 'contests';
+    else if (panel === 'bank') managePanel = 'bank';
+    else managePanel = 'tests';
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
     document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
+    document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-manage-view') === managePanel);
     });
+    if (managePanel === 'bank') loadQuestionBank().catch(() => {});
   }
 
   function syncManageContestActions() {
@@ -725,6 +1231,7 @@
     const test = resolveHistoryTest(copy);
     if (test) {
       copy.testId = copy.testId || test.id;
+      if (!copy.contestType) copy.contestType = test.contestType || 'none';
       if (!copy.totalMarks && !copy.maximumScore) {
         const total = Number(test.totalMarks) || (Array.isArray(test.questions) ? test.questions.length : 0);
         if (total > 0) {
@@ -834,6 +1341,7 @@
     p.history = [{
       testTitle: test.title,
       testId: test.id,
+      contestType: test.contestType || 'none',
       percentage: pct,
       category: test.category,
       marksObtained: marks,
@@ -1081,9 +1589,15 @@
 
   function renderHistory(p) {
     const hist = (p.history || []).map((h) => enrichHistoryEntry(h));
+    const filtered = hist.filter((h) => (
+      myResultsPanel === 'contests' ? historyEntryIsContest(h) : !historyEntryIsContest(h)
+    ));
     const canReview = access.canTake;
-    document.getElementById('myHistory').innerHTML = hist.length
-      ? hist.slice(0, 8).map((h) => {
+    const emptyLabel = myResultsPanel === 'contests'
+      ? 'No contest attempts yet.'
+      : 'No attempts yet. Select a test on the left to begin.';
+    document.getElementById('myHistory').innerHTML = filtered.length
+      ? filtered.slice(0, 8).map((h) => {
           const attemptId = h.attemptId || h.id;
           const viewBtn = canReview && attemptId && Auth.hasRealAuth() && !Auth.isDemo()
             ? `<button type="button" class="btn btn-link btn-sm p-0" data-view-attempt="${esc(attemptId)}">View</button>`
@@ -1096,7 +1610,7 @@
             <div class="d-flex align-items-center gap-2 flex-shrink-0 pt-1">${viewBtn}</div>
           </div>`;
         }).join('')
-      : '<p class="text-muted-2 mb-0">No attempts yet. Select a test on the left to begin.</p>';
+      : `<p class="text-muted-2 mb-0">${emptyLabel}</p>`;
     document.getElementById('myHistory').querySelectorAll('[data-view-attempt]').forEach((btn) => {
       btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt')));
     });
@@ -1270,6 +1784,24 @@
     return html === '<p><br></p>' ? '' : html;
   }
 
+  function syncFormQuestionTotals() {
+    updateManualQuestionCount();
+  }
+
+  async function importMcqsFromFormExcel(file) {
+    const rows = await parseExcelFile(file);
+    const category = (meta.categories || APTITUDE_CATEGORIES)[0] || 'General Aptitude';
+    const normalized = normalizeBulkRows(rows, category, 'Medium');
+    if (!normalized.length) {
+      throw new Error('No valid questions found in the Excel file.');
+    }
+    const list = document.getElementById('mcqList');
+    if (!list) return 0;
+    normalized.forEach((q) => addMcqRow(q));
+    syncFormQuestionTotals();
+    return normalized.length;
+  }
+
   function addMcqRow(q = {}) {
     mcqCounter += 1;
     const opts = Array.isArray(q.options) && q.options.length ? q.options.slice() : ['', '', '', ''];
@@ -1292,7 +1824,10 @@
           <div data-f="explanation-editor"></div>
         </div>
       </div>`;
-    wrap.querySelector('[data-remove-mcq]').addEventListener('click', () => wrap.remove());
+    wrap.querySelector('[data-remove-mcq]').addEventListener('click', () => {
+      wrap.remove();
+      updateManualQuestionCount();
+    });
     document.getElementById('mcqList').appendChild(wrap);
     initMcqQuill(wrap.querySelector('[data-f="prompt-editor"]'), q.prompt || '');
     initMcqQuill(wrap.querySelector('[data-f="explanation-editor"]'), q.explanation || '', true);
@@ -1317,32 +1852,77 @@
 
   function openTestForm(test = null, preset = null) {
     const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
+    const isContest = isContestTest(test) || isContestPreset;
     document.getElementById('testFormTitle').textContent = test
-      ? 'Edit aptitude test'
+      ? (isContest ? 'Edit contest' : 'Edit aptitude test')
       : (isContestPreset ? `New ${preset.contestType} contest` : 'New aptitude test');
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
-    fillSelect(document.getElementById('tfCategory'), meta.categories || APTITUDE_CATEGORIES, test?.category || 'General Aptitude');
-    fillSelect(document.getElementById('tfDifficulty'), meta.difficulties || APTITUDE_DIFFICULTIES, test?.difficulty || 'Medium');
-    document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 1;
+    document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 10;
     document.getElementById('tfDuration').value = test?.durationMinutes || 30;
-    document.getElementById('tfTotalMarks').value = test?.totalMarks || 1;
     document.getElementById('tfNegative').checked = !!test?.negativeMarking;
     document.getElementById('tfNegativeMarks').value = test?.negativeMarks ?? 0;
     document.getElementById('tfStatus').value = test?.status === 'published' ? 'published' : 'unpublished';
-    document.getElementById('tfInstructions').value = test?.instructions || '';
+
+    const source = test?.questionSource === 'random' ? 'random' : 'manual';
+    document.getElementById('tfSourceManual').checked = source === 'manual';
+    document.getElementById('tfSourceRandom').checked = source === 'random';
+
+    selectedBankIds.clear();
+    (test?.bankQuestionIds || []).forEach((id) => selectedBankIds.add(String(id)));
+
+    document.getElementById('tfRandomRules').innerHTML = '';
+    const rules = test?.randomRules?.length ? test.randomRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5 }];
+    if (source === 'random') rules.forEach((r) => addRandomRuleRow(r));
+    else addRandomRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5 });
+
+    const useBank = (test?.bankQuestionIds || []).length > 0;
+    document.getElementById('tfUseBankManual').checked = useBank;
+    document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
+
+    fillSelect(document.getElementById('tfBankPickCategory'), meta.categories || APTITUDE_CATEGORIES, '', true);
     initContestMonthDaySelect();
     const contestType = test?.contestType || preset?.contestType || 'none';
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
     document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
     document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
     syncContestFormFields();
+    syncQuestionSourcePanels();
+    document.getElementById('tfBulkFile').value = '';
     document.getElementById('mcqList').innerHTML = '';
-    const qs = test?.questions || [];
+    const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId) : [];
     if (qs.length) qs.forEach((q) => addMcqRow(q));
-    else addMcqRow();
+    loadBankPickerQuestions().catch(() => renderBankPicker());
     testFormModal.show();
+  }
+
+  function collectTestFormPayload() {
+    const source = getQuestionSource();
+    const payload = {
+      title: document.getElementById('tfTitle').value.trim(),
+      description: document.getElementById('tfDescription').value.trim(),
+      questionCount: Number(document.getElementById('tfQuestionCount').value || 0),
+      durationMinutes: Number(document.getElementById('tfDuration').value || 30),
+      negativeMarking: document.getElementById('tfNegative').checked,
+      negativeMarks: Number(document.getElementById('tfNegativeMarks').value || 0),
+      status: document.getElementById('tfStatus').value,
+      questionSource: source,
+      instructions: '',
+    };
+    if (source === 'random') {
+      payload.randomRules = collectRandomRules();
+      payload.questions = [];
+      payload.bankQuestionIds = [];
+    } else {
+      payload.randomRules = [];
+      payload.bankQuestionIds = document.getElementById('tfUseBankManual')?.checked
+        ? [...selectedBankIds]
+        : [];
+      payload.questions = collectMcqs();
+    }
+    if (canManageContests()) Object.assign(payload, collectContestPayload());
+    return payload;
   }
 
   function openBulk(mode, testId = '') {
@@ -1350,24 +1930,32 @@
     document.getElementById('bulkTestId').value = testId || '';
     document.getElementById('bulkTitle').textContent = mode === 'bank' ? 'Upload question bank' : 'Bulk upload to test';
     document.getElementById('bulkCategoryWrap').classList.toggle('d-none', mode !== 'bank');
+    document.getElementById('bulkDifficultyWrap').classList.toggle('d-none', mode !== 'bank');
     document.getElementById('bulkReplaceWrap').classList.toggle('d-none', mode !== 'test');
     fillSelect(document.getElementById('bulkCategory'), meta.categories || APTITUDE_CATEGORIES, 'General Aptitude');
     document.getElementById('bulkFile').value = '';
     bulkModal.show();
   }
 
-  const BULK_EXCEL_HEADERS = ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'marks', 'explanation', 'category'];
+  const BULK_EXCEL_HEADERS = ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'marks', 'explanation', 'category', 'difficulty'];
+  const BULK_SHEET_DIFFICULTIES = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
   function downloadExcelTemplate() {
     if (typeof XLSX === 'undefined') {
       toast('Excel library is still loading. Try again in a moment.', 'info');
       return;
     }
-    const sample = ['What is 2+2?', '3', '4', '5', '6', 'B', 1, 'Basic arithmetic', 'Quantitative Aptitude'];
-    const ws = XLSX.utils.aoa_to_sheet([BULK_EXCEL_HEADERS, sample]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Questions');
-    XLSX.writeFile(wb, 'aptitude-questions-template.xlsx');
+    const samples = {
+      Easy: ['What is 2+2?', '3', '4', '5', '6', 'B', 1, 'Basic arithmetic', 'Quantitative Aptitude', 'Easy'],
+      Medium: ['If x+3=10, x=?', '5', '6', '7', '8', 'C', 2, 'Linear equation', 'Quantitative Aptitude', 'Medium'],
+      Hard: ['Train A 60km/h, B 90km/h, opposite. Total 450km. Meet in?', '2h', '3h', '4h', '5h', 'B', 3, 'Relative speed', 'Quantitative Aptitude', 'Hard'],
+    };
+    Object.entries(samples).forEach(([sheetName, sample]) => {
+      const ws = XLSX.utils.aoa_to_sheet([BULK_EXCEL_HEADERS, sample]);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+    XLSX.writeFile(wb, 'aptitude-question-bank-template.xlsx');
   }
 
   async function parseExcelFile(file) {
@@ -1380,15 +1968,27 @@
     }
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array' });
-    const sheetName = wb.SheetNames?.[0];
-    if (!sheetName) {
+    if (!wb.SheetNames?.length) {
       throw new Error('The Excel file has no worksheets.');
     }
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
-    if (!rows.length) {
-      throw new Error('No question rows found in the first worksheet.');
+
+    const allRows = [];
+    wb.SheetNames.forEach((sheetName) => {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+      const sheetDifficulty = BULK_SHEET_DIFFICULTIES[String(sheetName).trim().toLowerCase()] || null;
+      rows.forEach((row) => {
+        if (!row || typeof row !== 'object') return;
+        if (sheetDifficulty && !rowField(row, 'difficulty', 'level', 'difficulty level')) {
+          row.difficulty = sheetDifficulty;
+        }
+        allRows.push(row);
+      });
+    });
+
+    if (!allRows.length) {
+      throw new Error('No question rows found in the workbook.');
     }
-    return rows;
+    return allRows;
   }
 
   function renderManage() {
@@ -1433,26 +2033,25 @@
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
     const role = Auth.role();
-    const titles = {
-      placement_officer: 'Department aptitude statistics',
-      staff: 'Assigned class aptitude progress',
-      admin: 'Institution aptitude progress',
-    };
-    document.getElementById('dirTitle').textContent = titles[role] || 'Progress directory';
+    document.getElementById('dirTitle').textContent = progressDirTitle(role, progressPanel);
     if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
-      const demo = demoDirectoryRows();
       const scope = {
         ...(access.scope || {}),
         assignedClassBatches: staffAssignedBatches(),
       };
       access.scope = scope;
       updateDirScopeHint(scope);
-      renderDirectoryTable(demo.rows || [], demo.summary || {}, scope);
+      if (progressPanel === 'contests') {
+        const demo = demoContestResults();
+        renderContestResults(demo.contests || [], demo.summary || {}, scope);
+      } else {
+        const demo = demoDirectoryRows(progressPanel);
+        renderDirectoryTable(demo.rows || [], demo.summary || {}, scope);
+      }
       return;
     }
     const qs = buildDirectoryQuery();
     const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
-    const rows = res?.data?.rows || [];
     const summary = res?.data?.summary || {};
     const scope = res?.data?.scope || access.scope || {};
     access.scope = scope;
@@ -1463,7 +2062,11 @@
       }]);
     }
     updateDirScopeHint(scope);
-    renderDirectoryTable(rows, summary, scope);
+    if (progressPanel === 'contests' || res?.data?.view === 'contests') {
+      renderContestResults(res?.data?.contests || [], summary, scope);
+      return;
+    }
+    renderDirectoryTable(res?.data?.rows || [], summary, scope);
   }
 
   onAppReady(async () => {
@@ -1507,7 +2110,69 @@
       applyView(link.getAttribute('data-view')).catch(() => {});
     });
 
-    document.getElementById('btnAddMcq')?.addEventListener('click', () => addMcqRow());
+    document.getElementById('progressViewNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-progress-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyProgressPanel(link.getAttribute('data-progress-view'));
+      loadDirectory().catch(() => {});
+    });
+    document.getElementById('myResultsNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-results-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyMyResultsPanel(link.getAttribute('data-results-view'));
+      if (access.canTake) {
+        const p = Auth.isDemo() ? demoProgress() : { history: [] };
+        if (Auth.hasRealAuth() && !Auth.isDemo()) {
+          api('/aptitude/me').then((res) => {
+            renderHistory(res?.success ? (res.data || p) : p);
+          }).catch(() => renderHistory(p));
+        } else {
+          renderHistory(p);
+        }
+      }
+    });
+
+    document.getElementById('btnAddMcq')?.addEventListener('click', () => {
+      addMcqRow();
+      updateManualQuestionCount();
+    });
+    document.querySelectorAll('input[name="tfQuestionSource"]').forEach((el) => {
+      el.addEventListener('change', syncQuestionSourcePanels);
+    });
+    document.getElementById('btnAddRandomRule')?.addEventListener('click', () => addRandomRuleRow());
+    document.getElementById('tfUseBankManual')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
+      if (on) loadBankPickerQuestions().catch(() => renderBankPicker());
+      updateManualQuestionCount();
+    });
+    document.getElementById('btnRefreshBankPicker')?.addEventListener('click', () => {
+      loadBankPickerQuestions().catch(() => renderBankPicker());
+    });
+    document.getElementById('tfBankPickCategory')?.addEventListener('change', () => {
+      loadBankPickerQuestions().catch(() => renderBankPicker());
+    });
+    document.getElementById('tfBankPickDifficulty')?.addEventListener('change', () => {
+      loadBankPickerQuestions().catch(() => renderBankPicker());
+    });
+    document.getElementById('btnFormBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate());
+    document.getElementById('btnFormBulkImport')?.addEventListener('click', () => {
+      document.getElementById('tfBulkFile')?.click();
+    });
+    document.getElementById('tfBulkFile')?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const added = await importMcqsFromFormExcel(file);
+        toast(`Imported ${added} question(s) into the form.`, 'success');
+      } catch (err) {
+        toast(err?.message || 'Could not import Excel file.', 'error');
+      } finally {
+        e.target.value = '';
+      }
+    });
     document.getElementById('btnNewTest')?.addEventListener('click', () => {
       applyManagePanel('tests');
       openTestForm(null, { contestType: 'none' });
@@ -1536,30 +2201,47 @@
     });
     document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
     document.getElementById('btnBankUpload')?.addEventListener('click', () => openBulk('bank'));
+    document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
+
+    document.getElementById('bankFilterCategory')?.addEventListener('change', () => {
+      bankCategoryFilter = document.getElementById('bankFilterCategory')?.value || '';
+      loadQuestionBank().catch(() => {});
+    });
+    document.getElementById('bankDifficultyNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-bank-difficulty]');
+      if (!link) return;
+      e.preventDefault();
+      bankDifficultyFilter = link.getAttribute('data-bank-difficulty') || '';
+      loadQuestionBank().catch(() => {});
+    });
 
     document.getElementById('testForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const questions = collectMcqs();
-      if (!questions.length) {
-        toast('Add at least one MCQ with a question and 2+ options.', 'error');
+      let payload = collectTestFormPayload();
+      if (!payload.title) {
+        toast('Enter a test title.', 'error');
         return;
       }
-      const payload = {
-        title: document.getElementById('tfTitle').value.trim(),
-        description: document.getElementById('tfDescription').value.trim(),
-        category: document.getElementById('tfCategory').value,
-        difficulty: document.getElementById('tfDifficulty').value,
-        questionCount: Number(document.getElementById('tfQuestionCount').value || questions.length),
-        durationMinutes: Number(document.getElementById('tfDuration').value || 30),
-        totalMarks: Number(document.getElementById('tfTotalMarks').value || 0),
-        negativeMarking: document.getElementById('tfNegative').checked,
-        negativeMarks: Number(document.getElementById('tfNegativeMarks').value || 0),
-        instructions: document.getElementById('tfInstructions').value.trim(),
-        status: document.getElementById('tfStatus').value,
-        questions,
-      };
-      if (canManageContests()) Object.assign(payload, collectContestPayload());
-      if (!payload.totalMarks) payload.totalMarks = questions.reduce((s, q) => s + Number(q.marks || 1), 0);
+      if (payload.questionSource === 'random') {
+        if (!payload.randomRules?.length) {
+          toast('Add at least one random rule.', 'error');
+          return;
+        }
+        const ruleTotal = payload.randomRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
+        if (ruleTotal !== payload.questionCount) {
+          payload.questionCount = ruleTotal;
+        }
+      } else {
+        const total = (payload.bankQuestionIds?.length || 0) + (payload.questions?.length || 0);
+        if (!total) {
+          toast('Select bank questions or add at least one MCQ.', 'error');
+          return;
+        }
+        if (payload.questionCount !== total) {
+          payload.questionCount = total;
+        }
+      }
+      payload.totalMarks = 0;
       if (canManageContests()) applyManagePanel(isContestTest(payload) ? 'contests' : 'tests');
       const live = Auth.hasRealAuth() && !Auth.isDemo();
       if (!live) {
@@ -1567,9 +2249,16 @@
           toast('Saving tests requires a live session with manage access.', 'info');
           return;
         }
+        try {
+          payload = resolveDemoTestQuestions(payload);
+        } catch (err) {
+          toast(err?.message || 'Could not build test questions.', 'error');
+          return;
+        }
+        payload.totalMarks = (payload.questions || []).reduce((s, q) => s + Number(q.marks || 1), 0);
         const store = loadDemoTestsStore();
         const id = document.getElementById('tfId').value.trim() || `demo-${Date.now()}`;
-        const next = { ...payload, id, questions };
+        const next = { ...payload, id };
         const idx = store.findIndex((t) => String(t.id) === String(id));
         if (idx >= 0) store[idx] = { ...store[idx], ...next };
         else store.push(next);
@@ -1617,14 +2306,24 @@
         return;
       }
       const mode = document.getElementById('bulkMode').value;
+      const fallbackCategory = document.getElementById('bulkCategory')?.value
+        || (meta.categories || APTITUDE_CATEGORIES)[0]
+        || 'General Aptitude';
+      const fallbackDifficulty = document.getElementById('bulkDifficulty')?.value || 'Medium';
+      const normalized = normalizeBulkRows(questions, fallbackCategory, fallbackDifficulty);
+      if (!normalized.length) {
+        toast('No valid questions found in the Excel file.', 'error');
+        return;
+      }
       if (!live) {
         try {
-          const result = demoBulkUpload(questions, mode);
+          const result = demoBulkUpload(normalized.map((q) => ({ ...q })), mode);
           toast(`Imported ${result.added} question(s) (demo).`, 'success');
           bulkModal.hide();
           await loadTests();
           renderTestList();
           renderManage();
+          if (mode === 'bank') await loadQuestionBank();
         } catch (err) {
           toast(err?.message || 'Upload failed.', 'error');
         }
@@ -1635,8 +2334,8 @@
         res = await api('/aptitude/question-bank/bulk', {
           method: 'POST',
           body: JSON.stringify({
-            questions,
-            category: document.getElementById('bulkCategory').value,
+            questions: normalized,
+            category: fallbackCategory,
           }),
         });
       } else {
@@ -1644,7 +2343,7 @@
         res = await api(`/aptitude/tests/${encodeURIComponent(testId)}/questions/bulk`, {
           method: 'POST',
           body: JSON.stringify({
-            questions,
+            questions: normalized,
             replace: document.getElementById('bulkReplace').checked,
           }),
         });
@@ -1658,6 +2357,7 @@
       await loadTests();
       renderTestList();
       renderManage();
+      if (mode === 'bank') await loadQuestionBank();
     });
   });
 })();

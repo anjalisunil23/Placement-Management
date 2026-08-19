@@ -526,6 +526,7 @@ final class AptitudeAccessService
             'test' => trim((string) ($filters['test'] ?? $filters['testId'] ?? '')),
             'category' => trim((string) ($filters['category'] ?? '')),
             'userType' => trim((string) ($filters['userType'] ?? '')),
+            'resultType' => self::normalizeProgressResultType($filters),
         ];
 
         if ($role === 'admin') {
@@ -565,7 +566,18 @@ final class AptitudeAccessService
             'test' => '',
             'category' => '',
             'userType' => '',
+            'resultType' => '',
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    public static function normalizeProgressResultType(array $filters): string
+    {
+        $raw = strtolower(trim((string) ($filters['resultType'] ?? '')));
+
+        return in_array($raw, ['tests', 'contests'], true) ? $raw : '';
     }
 
     /**

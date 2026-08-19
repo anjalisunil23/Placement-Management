@@ -111,7 +111,8 @@ final class AptitudeController
         $user = AuthMiddleware::authenticate();
         AptitudeAccessService::requireManager($user);
         $category = isset($_GET['category']) ? (string) $_GET['category'] : null;
-        Response::success(['questions' => $this->service->listBank($category)]);
+        $difficulty = isset($_GET['difficulty']) ? (string) $_GET['difficulty'] : null;
+        Response::success($this->service->listBank($category, $difficulty));
     }
 
     /** POST /api/aptitude/question-bank/bulk */
@@ -213,6 +214,7 @@ final class AptitudeController
             'test' => $_GET['test'] ?? ($_GET['testId'] ?? ''),
             'category' => $_GET['category'] ?? '',
             'userType' => $_GET['userType'] ?? '',
+            'resultType' => $_GET['resultType'] ?? '',
         ];
         Response::success($this->service->directory($user, $filters));
     }

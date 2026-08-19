@@ -64,7 +64,11 @@
       </div>
       <div class="col-lg-5">
         <div class="card-surface p-3 p-md-4">
-          <h6 class="fw-bold mb-3">My recent results</h6>
+          <h6 class="fw-bold mb-2">My recent results</h6>
+          <ul class="nav nav-pills gap-1 mb-2 flex-wrap" id="myResultsNav">
+            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test results</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest results</a></li>
+          </ul>
           <div id="myHistory" class="small text-muted-2">No attempts yet.</div>
         </div>
       </div>
@@ -79,6 +83,10 @@
           <p class="small text-muted-2 mb-0 d-none" id="dirScopeHint"></p>
         </div>
       </div>
+      <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="progressViewNav">
+        <li class="nav-item"><a class="nav-link active" href="#" data-progress-view="tests">Test results</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contest results</a></li>
+      </ul>
       <div class="row g-2 mb-3" id="dirStats"></div>
       <div class="row g-2 align-items-end mb-3" id="dirFilterRow">
         <div class="col-6 col-md-3" id="fDepartmentWrap">
@@ -110,9 +118,10 @@
           </select>
         </div>
       </div>
-      <div class="table-wrap"><table class="table-modern"><thead><tr>
+      <div class="table-wrap" id="dirTestResultsWrap"><table class="table-modern"><thead><tr>
         <th>Name</th><th>Student ID</th><th>Class</th><th>Attempts</th><th>Avg</th><th>Best</th><th>Accuracy</th><th>Recent</th><th>Categories</th><th></th>
       </tr></thead><tbody id="dirRows"></tbody></table></div>
+      <div class="d-none" id="dirContestResultsWrap"><div id="dirContestSections" class="d-flex flex-column gap-3"></div></div>
     </div>
   </div>
 
@@ -131,6 +140,7 @@
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
       </ul>
 
       <div id="manageTestsPanel">
@@ -150,6 +160,27 @@
           </div>
         </div>
         <div id="manageContestsList" class="d-flex flex-column gap-2"></div>
+      </div>
+
+      <div id="manageBankPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">Reusable MCQ bucket — store Easy, Medium, and Hard questions for tests and contests.</p>
+          <button type="button" class="btn btn-sm btn-primary" id="btnBankUploadPanel"><i class="bi bi-cloud-upload me-1"></i>Bulk upload to bank</button>
+        </div>
+        <div class="row g-2 mb-3" id="bankStats"></div>
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col-6 col-md-4">
+            <label class="form-label small fw-semibold text-muted-2 mb-1" for="bankFilterCategory">Category</label>
+            <select class="form-select form-select-sm" id="bankFilterCategory"><option value="">All categories</option></select>
+          </div>
+        </div>
+        <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="bankDifficultyNav">
+          <li class="nav-item"><a class="nav-link active" href="#" data-bank-difficulty="">All</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Easy">Easy</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Medium">Medium</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Hard">Hard</a></li>
+        </ul>
+        <div id="bankQuestionsList" class="d-flex flex-column gap-2"></div>
       </div>
     </div>
   </div>
@@ -230,16 +261,78 @@
     <div class="modal-body">
       <input type="hidden" id="tfId" value=""/>
       <div class="row g-3">
-        <div class="col-12"><label class="form-label small fw-semibold">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
-        <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold">Category</label><select class="form-select" id="tfCategory" required></select></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold">Difficulty</label><select class="form-select" id="tfDifficulty" required></select></div>
-        <div class="col-md-4"><label class="form-label small fw-semibold">Number of questions</label><input class="form-control" type="number" id="tfQuestionCount" min="1" required/></div>
-        <div class="col-md-4"><label class="form-label small fw-semibold">Duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required/></div>
-        <div class="col-md-4"><label class="form-label small fw-semibold">Total marks</label><input class="form-control" type="number" id="tfTotalMarks" min="1" step="0.5" required/></div>
-        <div class="col-md-6"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="tfNegative"/><label class="form-check-label" for="tfNegative">Negative marking</label></div></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold">Negative marks (per wrong)</label><input class="form-control" type="number" id="tfNegativeMarks" min="0" step="0.25" value="0"/></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="tfStatus"><option value="unpublished">Unpublished</option><option value="published">Published</option></select></div>
+        <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
+        <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfQuestionCount">Total number of questions</label><input class="form-control" type="number" id="tfQuestionCount" min="1" required/></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDuration">Total duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required/></div>
+
+        <div class="col-12">
+          <label class="form-label small fw-semibold d-block mb-2">Question selection</label>
+          <div class="btn-group" role="group" aria-label="Question selection">
+            <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceManual" value="manual" checked>
+            <label class="btn btn-outline-primary btn-sm" for="tfSourceManual">Manual</label>
+            <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceRandom" value="random">
+            <label class="btn btn-outline-primary btn-sm" for="tfSourceRandom">Random from bank</label>
+          </div>
+        </div>
+
+        <div class="col-12" id="tfRandomPanel">
+          <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div class="small fw-semibold">Random rules from question bank</div>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRandomRule"><i class="bi bi-plus-lg me-1"></i>Add rule</button>
+            </div>
+            <p class="small text-muted-2 mb-2">Add one or more rows — the same category can be used multiple times. Each row picks random questions for that category and difficulty.</p>
+            <div id="tfRandomRules" class="d-flex flex-column gap-2 mb-2"></div>
+            <div class="small text-muted-2" id="tfRandomSummary">0 questions from rules</div>
+          </div>
+        </div>
+
+        <div class="col-12" id="tfManualPanel">
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="tfUseBankManual"/>
+            <label class="form-check-label" for="tfUseBankManual">Select questions from question bank manually</label>
+          </div>
+          <div class="border rounded-3 p-3 mb-3 d-none" id="tfBankPicker">
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-md-4">
+                <label class="form-label small mb-1" for="tfBankPickCategory">Category</label>
+                <select class="form-select form-select-sm" id="tfBankPickCategory"><option value="">All categories</option></select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small mb-1" for="tfBankPickDifficulty">Difficulty</label>
+                <select class="form-select form-select-sm" id="tfBankPickDifficulty">
+                  <option value="">All</option>
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="btnRefreshBankPicker">Refresh list</button>
+              </div>
+            </div>
+            <div class="small text-muted-2 mb-2" id="tfBankPickSummary">0 selected</div>
+            <div id="tfBankPickList" class="d-flex flex-column gap-1" style="max-height:220px;overflow:auto"></div>
+          </div>
+          <div id="tfManualMcqSection">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <label class="form-label small fw-semibold mb-0">Or add MCQs directly</label>
+              <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnFormBulkTemplate"><i class="bi bi-download me-1"></i>Excel template</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnFormBulkImport"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Bulk Excel</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddMcq"><i class="bi bi-plus-lg me-1"></i>Add MCQ</button>
+              </div>
+            </div>
+            <input type="file" class="d-none" id="tfBulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"/>
+            <div id="mcqList" class="d-flex flex-column gap-3"></div>
+          </div>
+        </div>
+
+        <div class="col-md-6"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="tfNegative"/><label class="form-check-label" for="tfNegative">Negative marking</label></div></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfNegativeMarks">Negative marks (per wrong)</label><input class="form-control" type="number" id="tfNegativeMarks" min="0" step="0.25" value="0"/></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfStatus">Status</label><select class="form-select" id="tfStatus"><option value="unpublished">Unpublished</option><option value="published">Published</option></select></div>
+
         <div class="col-12 d-none" id="tfContestWrap">
           <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 4%,transparent)">
             <div class="small fw-semibold text-primary mb-2"><i class="bi bi-trophy me-1"></i>Contest schedule</div>
@@ -269,16 +362,8 @@
                 <select class="form-select" id="tfContestMonthDay"></select>
               </div>
             </div>
-            <p class="small text-muted-2 mb-0 mt-2" id="tfContestHint">Weekly and monthly contests appear to students only on the scheduled day while published.</p>
+            <p class="small text-muted-2 mb-0 mt-2" id="tfContestHint">Contests with random selection draw questions from the bank when saved. Students see them on the scheduled day while published.</p>
           </div>
-        </div>
-        <div class="col-12"><label class="form-label small fw-semibold">Instructions</label><textarea class="form-control" id="tfInstructions" rows="3"></textarea></div>
-        <div class="col-12">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <label class="form-label small fw-semibold mb-0">MCQ questions</label>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddMcq">Add MCQ</button>
-          </div>
-          <div id="mcqList" class="d-flex flex-column gap-3"></div>
         </div>
       </div>
     </div>
@@ -296,12 +381,13 @@
     <input type="hidden" id="bulkTestId" value=""/>
     <input type="hidden" id="bulkMode" value="test"/>
     <p class="small text-muted-2 mb-2">Upload an Excel workbook (.xlsx or .xls). First row must be headers:
-      <code>prompt, optionA, optionB, optionC, optionD, correct, marks, explanation, category</code>.
-      <code>correct</code> can be A–D, 0–3, or the option text.</p>
+      <code>prompt, optionA, optionB, optionC, optionD, correct, marks, explanation, category, difficulty</code>.
+      Use sheets named <strong>Easy</strong>, <strong>Medium</strong>, and <strong>Hard</strong> for difficulty buckets, or set <code>difficulty</code> per row.</p>
     <div class="mb-3">
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkTemplate"><i class="bi bi-download me-1"></i>Download Excel template</button>
     </div>
     <div class="mb-3" id="bulkCategoryWrap"><label class="form-label small fw-semibold">Default category</label><select class="form-select" id="bulkCategory"></select></div>
+    <div class="mb-3 d-none" id="bulkDifficultyWrap"><label class="form-label small fw-semibold">Default difficulty (when row/sheet has none)</label><select class="form-select" id="bulkDifficulty"><option value="Easy">Easy</option><option value="Medium" selected>Medium</option><option value="Hard">Hard</option></select></div>
     <div class="form-check mb-3" id="bulkReplaceWrap"><input class="form-check-input" type="checkbox" id="bulkReplace"/><label class="form-check-label" for="bulkReplace">Replace existing questions on this test</label></div>
     <div class="mb-0"><label class="form-label small fw-semibold">Excel file</label><input class="form-control" type="file" id="bulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"/></div>
   </div>
@@ -318,5 +404,5 @@
 <script src="js/api.js?v=20260814contest"></script>
 <script src="js/app.js?v=20260814contest"></script>
 <script src="js/aptitude-exam.js?v=20260814student"></script>
-<script src="js/aptitude-page.js?v=20260814managepanels"></script>
+<script src="js/aptitude-page.js?v=20260819testform"></script>
 </body></html>

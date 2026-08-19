@@ -307,6 +307,25 @@ class AptitudeTestModel extends BaseModel
             $negativeMarks = abs($negativeMarks);
         }
 
+        $questionSource = strtolower(trim((string) ($data['questionSource'] ?? 'manual'))) === 'random'
+            ? 'random'
+            : 'manual';
+        $randomRules = [];
+        foreach ((array) ($data['randomRules'] ?? []) as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $randomRules[] = [
+                'category' => self::normalizeCategory((string) ($rule['category'] ?? $category)),
+                'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
+                'count' => max(1, (int) ($rule['count'] ?? 1)),
+            ];
+        }
+        $bankQuestionIds = array_values(array_unique(array_filter(
+            array_map(static fn ($id) => trim((string) $id), (array) ($data['bankQuestionIds'] ?? [])),
+            static fn ($id) => $id !== ''
+        )));
+
         $payload = [
             'title' => trim((string) ($data['title'] ?? 'Aptitude mock')) ?: 'Aptitude mock',
             'description' => trim((string) ($data['description'] ?? '')),
@@ -320,6 +339,9 @@ class AptitudeTestModel extends BaseModel
             'instructions' => trim((string) ($data['instructions'] ?? '')),
             'status' => self::normalizeStatus((string) ($data['status'] ?? 'unpublished')),
             'contestType' => self::normalizeContestType((string) ($data['contestType'] ?? 'none')),
+            'questionSource' => $questionSource,
+            'randomRules' => $questionSource === 'random' ? $randomRules : [],
+            'bankQuestionIds' => $questionSource === 'manual' ? $bankQuestionIds : [],
             'questionType' => 'mcq',
             'questions' => $questions,
         ];
@@ -424,6 +446,27 @@ class AptitudeTestModel extends BaseModel
             'contestMonthDay' => isset($test['contestMonthDay']) ? (int) $test['contestMonthDay'] : null,
             'contestScheduleLabel' => self::contestScheduleLabel($test),
             'contestOpen' => self::isContestOpen($test),
+            'questionSource' => in_array((string) ($test['questionSource'] ?? 'manual'), ['random'], true)
+                ? 'random'
+                : 'manual',
+            'randomRules' => array_values(array_map(
+                static function ($rule): array {
+                    if (!is_array($rule)) {
+                        return [];
+                    }
+
+                    return [
+                        'category' => self::normalizeCategory((string) ($rule['category'] ?? 'General Aptitude')),
+                        'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
+                        'count' => max(1, (int) ($rule['count'] ?? 1)),
+                    ];
+                },
+                (array) ($test['randomRules'] ?? [])
+            )),
+            'bankQuestionIds' => array_values(array_filter(array_map(
+                static fn ($id) => trim((string) $id),
+                (array) ($test['bankQuestionIds'] ?? [])
+            ))),
             'questionType' => 'mcq',
             'questions' => $questions,
             'departmentId' => isset($test['departmentId']) ? (string) $test['departmentId'] : null,

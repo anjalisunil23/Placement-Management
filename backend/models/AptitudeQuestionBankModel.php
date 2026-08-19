@@ -42,7 +42,7 @@ class AptitudeQuestionBankModel extends BaseModel
                 'marks' => $norm['marks'],
                 'explanation' => $norm['explanation'],
                 'category' => $norm['category'],
-                'difficulty' => AptitudeTestModel::normalizeDifficulty((string) ($q['difficulty'] ?? 'Medium')),
+                'difficulty' => AptitudeTestModel::normalizeDifficulty((string) ($norm['difficulty'] ?? $q['difficulty'] ?? 'Medium')),
                 'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
             ]);
             $doc = $this->findById($id);
@@ -66,11 +66,14 @@ class AptitudeQuestionBankModel extends BaseModel
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function listQuestions(?string $category = null, int $limit = 500): array
+    public function listQuestions(?string $category = null, ?string $difficulty = null, int $limit = 500): array
     {
         $filter = [];
         if ($category !== null && trim($category) !== '') {
             $filter['category'] = AptitudeTestModel::normalizeCategory($category);
+        }
+        if ($difficulty !== null && trim($difficulty) !== '') {
+            $filter['difficulty'] = AptitudeTestModel::normalizeDifficulty($difficulty);
         }
         $rows = $this->findAll($filter, $limit, 0, ['createdAt' => -1]);
         $out = [];
@@ -92,6 +95,90 @@ class AptitudeQuestionBankModel extends BaseModel
     }
 
     /**
+     * @return array{Easy:int,Medium:int,Hard:int,total:int}
+     */
+    public function countByDifficulty(?string $category = null): array
+    {
+        $counts = ['Easy' => 0, 'Medium' => 0, 'Hard' => 0, 'total' => 0];
+        foreach ($this->listQuestions($category, null, 5000) as $question) {
+            $level = AptitudeTestModel::normalizeDifficulty((string) ($question['difficulty'] ?? 'Medium'));
+            if (isset($counts[$level])) {
+                $counts[$level]++;
+            }
+            $counts['total']++;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Pick random MCQs from the bank using one or more category + difficulty rules.
+     *
+     * @param array<int, array<string, mixed>> $rules
+     * @return array<int, array<string, mixed>>
+     */
+    public function pickRandomByRules(array $rules): array
+    {
+        $picked = [];
+        $usedIds = [];
+
+        foreach (array_values($rules) as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $category = trim((string) ($rule['category'] ?? ''));
+            $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium'));
+            $count = max(0, (int) ($rule['count'] ?? 0));
+            if ($count === 0) {
+                continue;
+            }
+
+            $pool = $this->listQuestions(
+                $category !== '' ? $category : null,
+                $difficulty,
+                5000
+            );
+            $pool = array_values(array_filter(
+                $pool,
+                static fn (array $q): bool => !in_array((string) ($q['id'] ?? ''), $usedIds, true)
+            ));
+
+            if (count($pool) < $count) {
+                $label = $category !== '' ? $category : 'question bank';
+                throw new \InvalidArgumentException(
+                    sprintf(
+                        'Not enough %s questions in %s (need %d, found %d).',
+                        $difficulty,
+                        $label,
+                        $count,
+                        count($pool)
+                    )
+                );
+            }
+
+            shuffle($pool);
+            foreach (array_slice($pool, 0, $count) as $q) {
+                $id = (string) ($q['id'] ?? '');
+                if ($id === '') {
+                    continue;
+                }
+                $usedIds[] = $id;
+                $norm = AptitudeTestModel::normalizeMcq(
+                    $q,
+                    (string) ($q['category'] ?? $category ?: 'General Aptitude')
+                );
+                if ($norm === null) {
+                    continue;
+                }
+                $norm['bankId'] = $id;
+                $picked[] = $norm;
+            }
+        }
+
+        return $picked;
+    }
+
+    /**
      * @param string[] $ids
      * @return array<int, array<string, mixed>>
      */
@@ -106,6 +193,7 @@ class AptitudeQuestionBankModel extends BaseModel
             }
             $norm = AptitudeTestModel::normalizeMcq($row, (string) ($row['category'] ?? 'General Aptitude'));
             if ($norm !== null) {
+                $norm['bankId'] = (string) ($row['_id'] ?? $id);
                 $out[] = $norm;
             }
         }
