@@ -295,6 +295,14 @@ $routes = [
     ['POST', '/student/resume-builder/experience', [ResumeBuilderController::class, 'addExperience']],
     ['PUT',  '/student/resume-builder/experience/{id}', [ResumeBuilderController::class, 'updateExperience']],
     ['POST', '/student/resume-builder/experience/{id}/delete', [ResumeBuilderController::class, 'deleteExperience']],
+    ['GET',  '/student/resume-builder/certifications', [ResumeBuilderController::class, 'listCertifications']],
+    ['POST', '/student/resume-builder/certifications', [ResumeBuilderController::class, 'addCertification']],
+    ['PUT',  '/student/resume-builder/certifications/{id}', [ResumeBuilderController::class, 'updateCertification']],
+    ['POST', '/student/resume-builder/certifications/{id}/delete', [ResumeBuilderController::class, 'deleteCertification']],
+    ['GET',  '/student/resume-builder/activities', [ResumeBuilderController::class, 'listActivities']],
+    ['POST', '/student/resume-builder/activities', [ResumeBuilderController::class, 'addActivity']],
+    ['PUT',  '/student/resume-builder/activities/{id}', [ResumeBuilderController::class, 'updateActivity']],
+    ['POST', '/student/resume-builder/activities/{id}/delete', [ResumeBuilderController::class, 'deleteActivity']],
 
     // Company
     ['GET',  '/company/profile',                  [CompanyController::class, 'profile']],

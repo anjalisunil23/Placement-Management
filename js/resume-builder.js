@@ -56,8 +56,8 @@
     {
       id: 'achievements',
       icon: 'bi-trophy',
-      title: 'Achievements',
-      description: 'Awards, rankings, and other notable accomplishments.',
+      title: 'Achievements, Leadership & Activities',
+      description: 'Leadership roles, volunteer work, clubs, competitions, sports, and notable accomplishments.',
     },
     {
       id: 'preview',
@@ -98,6 +98,32 @@
   const EXP_COMPLETE_MIN = 1;
   const EXP_RECOMMENDED = 2;
   const EXP_TYPES = ['Internship', 'Industrial Training', 'Research', 'Freelance', 'Volunteer', 'Part Time', 'Apprenticeship', 'Other'];
+  const CERT_NAME_MIN = 3;
+  const CERT_NAME_MAX = 200;
+  const CERT_ORG_MIN = 2;
+  const CERT_ORG_MAX = 150;
+  const CERT_DESC_MAX = 1000;
+  const CERT_COMPLETE_MIN = 1;
+  const CERT_RECOMMENDED = 2;
+  const ACT_TITLE_MIN = 3;
+  const ACT_TITLE_MAX = 150;
+  const ACT_DESC_MIN = 20;
+  const ACT_DESC_MAX = 1000;
+  const ACT_COMPLETE_MIN = 1;
+  const ACT_RECOMMENDED = 2;
+  const ACT_TYPES = [
+    'Achievement',
+    'Leadership',
+    'Club Membership',
+    'Professional Membership',
+    'Volunteer Work',
+    'Sports',
+    'Arts & Culture',
+    'Event Coordination',
+    'Competition',
+    'Community Service',
+    'Other',
+  ];
 
   const state = {
     personalComplete: false,
@@ -117,6 +143,14 @@
     experiencesEditingId: '',
     experiencesMessage: '',
     experiencesFormOpen: false,
+    certifications: [],
+    certificationsEditingId: '',
+    certificationsMessage: '',
+    certificationsFormOpen: false,
+    activities: [],
+    activitiesEditingId: '',
+    activitiesMessage: '',
+    activitiesFormOpen: false,
   };
 
   function esc(value) {
@@ -192,7 +226,9 @@
       + (state.objectiveComplete ? 1 : 0)
       + (state.skills.length >= SKILL_COMPLETE_MIN ? 1 : 0)
       + (state.projects.length >= PROJECT_COMPLETE_MIN ? 1 : 0)
-      + (state.experiences.length >= EXP_COMPLETE_MIN ? 1 : 0);
+      + (state.experiences.length >= EXP_COMPLETE_MIN ? 1 : 0)
+      + (state.certifications.length >= CERT_COMPLETE_MIN ? 1 : 0)
+      + (state.activities.length >= ACT_COMPLETE_MIN ? 1 : 0);
   }
 
   function completionPercent() {
@@ -921,6 +957,302 @@
       ${formOpen ? formHtml : ''}`;
   }
 
+  function formatCertDate(dateStr) {
+    const raw = String(dateStr || '').trim();
+    if (!raw) return '';
+    const parts = raw.split('-');
+    if (parts.length < 2) return raw;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = parseInt(parts[1], 10);
+    const year = parts[0];
+    if (month >= 1 && month <= 12) return months[month - 1] + ' ' + year;
+    return raw;
+  }
+
+  function formatCertDateRange(cert) {
+    const issued = formatCertDate(cert.issueDate);
+    const expiry = formatCertDate(cert.expiryDate);
+    if (issued && expiry) return 'Issued ' + issued + ' · Expires ' + expiry;
+    if (issued) return 'Issued ' + issued + ' · No expiry';
+    return '';
+  }
+
+  function certificationCardItem(cert) {
+    const dates = formatCertDateRange(cert);
+    const credentialId = String(cert.credentialId || '').trim();
+    const credentialUrl = String(cert.credentialUrl || '').trim();
+    const description = String(cert.description || '').trim();
+    return `
+      <article class="rb-cert-card card-surface">
+        <header class="rb-cert-card-header">
+          <div class="rb-cert-card-heading">
+            <h3 class="rb-cert-name">${esc(cert.certificationName)}</h3>
+            <p class="rb-cert-org">${esc(cert.issuingOrganization)}</p>
+          </div>
+          <div class="rb-cert-card-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary rb-cert-action" data-rb-cert-edit="${esc(cert.id)}" title="Edit certification" aria-label="Edit ${esc(cert.certificationName)}">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger rb-cert-action" data-rb-cert-delete="${esc(cert.id)}" title="Delete certification" aria-label="Delete ${esc(cert.certificationName)}">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </header>
+        ${dates ? `<div class="rb-cert-dates"><i class="bi bi-calendar3" aria-hidden="true"></i>${esc(dates)}</div>` : ''}
+        ${credentialId ? `<div class="rb-cert-id"><i class="bi bi-shield-check" aria-hidden="true"></i><span>ID:</span> <code>${esc(credentialId)}</code></div>` : ''}
+        ${description ? `<p class="rb-cert-desc">${esc(description)}</p>` : ''}
+        ${credentialUrl ? `<footer class="rb-cert-card-footer"><a class="btn btn-sm btn-outline-primary rb-cert-link-btn" href="${esc(credentialUrl)}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>View Credential</a></footer>` : ''}
+      </article>`;
+  }
+
+  function certificationsCardBody(loading) {
+    if (loading) {
+      return `<p class="small text-muted-2 mb-0">Loading certifications…</p>`;
+    }
+
+    const count = state.certifications.length;
+    const complete = count >= CERT_COMPLETE_MIN;
+    const badge = complete
+      ? '<span class="badge-soft success">Completed</span>'
+      : '<span class="badge-soft warning">Incomplete</span>';
+    const editing = !!state.certificationsEditingId;
+    const formOpen = state.certificationsFormOpen || editing;
+    const editingCert = state.certifications.find((c) => c.id === state.certificationsEditingId) || null;
+    const msg = state.certificationsMessage
+      ? `<div class="alert alert-warning py-2 small mb-3" role="alert">${esc(state.certificationsMessage)}</div>`
+      : '';
+    const recPct = Math.min(100, Math.round((count / CERT_RECOMMENDED) * 100));
+
+    const formHtml = `
+      ${msg}
+      <div class="rb-cert-form">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbCertName">Certification Name *</label>
+            <input class="form-control" id="rbCertName" maxlength="${CERT_NAME_MAX}" value="${esc(editingCert ? editingCert.certificationName : '')}" data-rb-cert-name />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbCertOrg">Issuing Organization *</label>
+            <input class="form-control" id="rbCertOrg" maxlength="${CERT_ORG_MAX}" value="${esc(editingCert ? editingCert.issuingOrganization : '')}" data-rb-cert-org />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbCertIssue">Issue Date *</label>
+            <input type="date" class="form-control" id="rbCertIssue" value="${esc(editingCert && editingCert.issueDate ? editingCert.issueDate : '')}" data-rb-cert-issue required />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbCertExpiry">Expiry Date</label>
+            <input type="date" class="form-control" id="rbCertExpiry" value="${esc(editingCert && editingCert.expiryDate ? editingCert.expiryDate : '')}" data-rb-cert-expiry />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbCertId">Credential ID</label>
+            <input class="form-control" id="rbCertId" maxlength="100" placeholder="Optional" value="${esc(editingCert && editingCert.credentialId ? editingCert.credentialId : '')}" data-rb-cert-id />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbCertUrl">Credential URL</label>
+            <input type="url" class="form-control" id="rbCertUrl" maxlength="500" placeholder="https://..." value="${esc(editingCert && editingCert.credentialUrl ? editingCert.credentialUrl : '')}" data-rb-cert-url />
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold" for="rbCertDesc">Description</label>
+            <textarea class="form-control" id="rbCertDesc" rows="3" maxlength="${CERT_DESC_MAX}" placeholder="Optional notes about this certification" data-rb-cert-desc>${esc(editingCert && editingCert.description ? editingCert.description : '')}</textarea>
+          </div>
+          <div class="col-12 d-flex gap-2 justify-content-end mt-1">
+            <button type="button" class="btn btn-outline-secondary" data-rb-cert-cancel>Cancel</button>
+            <button type="button" class="btn btn-primary" data-rb-cert-save>${editing ? 'Save Certification' : 'Add Certification'}</button>
+          </div>
+        </div>
+      </div>`;
+
+    const emptyHtml = `
+      <div class="rb-cert-empty">
+        <div class="rb-cert-empty-icon" aria-hidden="true"><i class="bi bi-award"></i></div>
+        <p class="rb-cert-empty-title mb-3">No certifications added yet</p>
+        <button type="button" class="btn btn-primary rb-cert-add-btn" data-rb-cert-add><i class="bi bi-plus-lg me-1"></i>Add Certification</button>
+      </div>`;
+
+    const addBtnHtml = formOpen
+      ? ''
+      : `<div class="rb-cert-add-wrap">
+           <button type="button" class="btn btn-primary rb-cert-add-btn" data-rb-cert-add><i class="bi bi-plus-lg me-1"></i>Add Certification</button>
+         </div>`;
+
+    const listHtml = count
+      ? `<div class="rb-cert-list">${state.certifications.map(certificationCardItem).join('')}</div>${addBtnHtml}`
+      : (formOpen ? '' : emptyHtml);
+
+    return `
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+        <h6 class="fw-bold mb-0">Certifications</h6>
+        ${badge}
+      </div>
+      <div class="alert alert-info py-2 small mb-3" role="note">
+        Include courses, certifications, workshops, trainings, MOOCs, and professional credentials relevant to your academic and career goals.
+      </div>
+      <div class="rb-cert-summary mb-3">
+        <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
+          <div class="fw-semibold">Certifications Added: ${count}</div>
+          <div class="small text-muted-2">Recommended: ${CERT_RECOMMENDED}+ Certifications</div>
+        </div>
+        <div class="rb-skill-rec-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${CERT_RECOMMENDED}" aria-valuenow="${count}" aria-label="Recommended certifications">
+          <div class="rb-skill-rec-fill" style="width:${recPct}%"></div>
+        </div>
+      </div>
+      ${listHtml}
+      ${formOpen ? formHtml : ''}`;
+  }
+
+  function activityTypeBadgeClass(type) {
+    const map = {
+      Achievement: 'success',
+      Leadership: 'info',
+      'Club Membership': 'info',
+      'Professional Membership': 'warning',
+      'Volunteer Work': 'success',
+      Sports: 'warning',
+      'Arts & Culture': 'info',
+      'Event Coordination': 'warning',
+      Competition: 'success',
+      'Community Service': 'success',
+      Other: 'muted',
+    };
+    return map[type] || 'muted';
+  }
+
+  function formatActivityDate(dateStr) {
+    const raw = String(dateStr || '').trim();
+    if (!raw) return '';
+    const parts = raw.split('-');
+    if (parts.length < 2) return raw;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = parseInt(parts[1], 10);
+    const year = parts[0];
+    if (month >= 1 && month <= 12) return months[month - 1] + ' ' + year;
+    return raw;
+  }
+
+  function activityCardItem(activity) {
+    const typeClass = activityTypeBadgeClass(activity.activityType);
+    const org = String(activity.organization || '').trim();
+    const date = formatActivityDate(activity.activityDate);
+    return `
+      <article class="rb-act-card card-surface">
+        <header class="rb-act-card-header">
+          <div class="rb-act-card-heading">
+            <h3 class="rb-act-title">${esc(activity.title)}</h3>
+            <div class="rb-act-meta">
+              <span class="badge-soft ${typeClass} rb-act-type-badge">${esc(activity.activityType)}</span>
+              ${org ? `<span class="rb-act-org"><i class="bi bi-building" aria-hidden="true"></i>${esc(org)}</span>` : ''}
+              ${date ? `<span class="rb-act-date"><i class="bi bi-calendar3" aria-hidden="true"></i>${esc(date)}</span>` : ''}
+            </div>
+          </div>
+          <div class="rb-act-card-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary rb-act-action" data-rb-act-edit="${esc(activity.id)}" title="Edit entry" aria-label="Edit ${esc(activity.title)}">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger rb-act-action" data-rb-act-delete="${esc(activity.id)}" title="Delete entry" aria-label="Delete ${esc(activity.title)}">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </header>
+        <p class="rb-act-desc">${esc(activity.description)}</p>
+      </article>`;
+  }
+
+  function activitiesCardBody(loading) {
+    if (loading) {
+      return `<p class="small text-muted-2 mb-0">Loading activities…</p>`;
+    }
+
+    const count = state.activities.length;
+    const complete = count >= ACT_COMPLETE_MIN;
+    const badge = complete
+      ? '<span class="badge-soft success">Completed</span>'
+      : '<span class="badge-soft warning">Incomplete</span>';
+    const editing = !!state.activitiesEditingId;
+    const formOpen = state.activitiesFormOpen || editing;
+    const editingAct = state.activities.find((a) => a.id === state.activitiesEditingId) || null;
+    const msg = state.activitiesMessage
+      ? `<div class="alert alert-warning py-2 small mb-3" role="alert">${esc(state.activitiesMessage)}</div>`
+      : '';
+    const recPct = Math.min(100, Math.round((count / ACT_RECOMMENDED) * 100));
+
+    const typeOpts = ACT_TYPES.map((type) => {
+      const selected = editingAct && editingAct.activityType === type ? ' selected' : '';
+      return `<option value="${esc(type)}"${selected}>${esc(type)}</option>`;
+    }).join('');
+
+    const formHtml = `
+      ${msg}
+      <div class="rb-act-form">
+        <div class="row g-2">
+          <div class="col-md-8">
+            <label class="form-label small fw-semibold" for="rbActTitle">Title *</label>
+            <input class="form-control" id="rbActTitle" maxlength="${ACT_TITLE_MAX}" value="${esc(editingAct ? editingAct.title : '')}" data-rb-act-title />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold" for="rbActType">Activity Type *</label>
+            <select class="form-select" id="rbActType" data-rb-act-type>
+              <option value="">Select type</option>
+              ${typeOpts}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbActOrg">Organization</label>
+            <input class="form-control" id="rbActOrg" maxlength="150" placeholder="Optional" value="${esc(editingAct && editingAct.organization ? editingAct.organization : '')}" data-rb-act-org />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbActDate">Activity Date</label>
+            <input type="date" class="form-control" id="rbActDate" value="${esc(editingAct && editingAct.activityDate ? editingAct.activityDate : '')}" data-rb-act-date />
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold" for="rbActDesc">Description *</label>
+            <textarea class="form-control" id="rbActDesc" rows="4" maxlength="${ACT_DESC_MAX}" data-rb-act-desc>${esc(editingAct ? editingAct.description : '')}</textarea>
+            <div class="form-text">Minimum ${ACT_DESC_MIN} characters.</div>
+          </div>
+          <div class="col-12 d-flex gap-2 justify-content-end mt-1">
+            <button type="button" class="btn btn-outline-secondary" data-rb-act-cancel>Cancel</button>
+            <button type="button" class="btn btn-primary" data-rb-act-save>${editing ? 'Save Entry' : 'Add Entry'}</button>
+          </div>
+        </div>
+      </div>`;
+
+    const emptyHtml = `
+      <div class="rb-act-empty">
+        <div class="rb-act-empty-icon" aria-hidden="true"><i class="bi bi-trophy"></i></div>
+        <p class="rb-act-empty-title mb-3">No achievements or activities added yet</p>
+        <button type="button" class="btn btn-primary rb-act-add-btn" data-rb-act-add><i class="bi bi-plus-lg me-1"></i>Add Entry</button>
+      </div>`;
+
+    const addBtnHtml = formOpen
+      ? ''
+      : `<div class="rb-act-add-wrap">
+           <button type="button" class="btn btn-primary rb-act-add-btn" data-rb-act-add><i class="bi bi-plus-lg me-1"></i>Add Entry</button>
+         </div>`;
+
+    const listHtml = count
+      ? `<div class="rb-act-list">${state.activities.map(activityCardItem).join('')}</div>${addBtnHtml}`
+      : (formOpen ? '' : emptyHtml);
+
+    return `
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+        <h6 class="fw-bold mb-0">Achievements, Leadership & Activities</h6>
+        ${badge}
+      </div>
+      <div class="alert alert-info py-2 small mb-3" role="note">
+        Include leadership roles, volunteer work, club memberships, competitions, sports, cultural activities, event coordination, and notable achievements.
+      </div>
+      <div class="rb-act-summary mb-3">
+        <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
+          <div class="fw-semibold">Activities Added: ${count}</div>
+          <div class="small text-muted-2">Recommended: ${ACT_RECOMMENDED}+ Entries</div>
+        </div>
+        <div class="rb-skill-rec-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${ACT_RECOMMENDED}" aria-valuenow="${count}" aria-label="Recommended activities">
+          <div class="rb-skill-rec-fill" style="width:${recPct}%"></div>
+        </div>
+      </div>
+      ${listHtml}
+      ${formOpen ? formHtml : ''}`;
+  }
+
   function sectionCard(section) {
     if (section.id === 'personal') {
       return `
@@ -972,6 +1304,24 @@
         <div class="col-12">
           <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="experience">
             ${experienceCardBody(true)}
+          </div>
+        </div>`;
+    }
+
+    if (section.id === 'certifications') {
+      return `
+        <div class="col-12">
+          <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="certifications">
+            ${certificationsCardBody(true)}
+          </div>
+        </div>`;
+    }
+
+    if (section.id === 'achievements') {
+      return `
+        <div class="col-12">
+          <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="activities">
+            ${activitiesCardBody(true)}
           </div>
         </div>`;
     }
@@ -1132,6 +1482,68 @@
       const delExp = event.target.closest('[data-rb-exp-delete]');
       if (delExp) {
         deleteExperience(delExp.getAttribute('data-rb-exp-delete') || '');
+        return;
+      }
+      if (event.target.closest('[data-rb-cert-save]')) {
+        saveCertification();
+        return;
+      }
+      if (event.target.closest('[data-rb-cert-add]')) {
+        state.certificationsFormOpen = true;
+        state.certificationsEditingId = '';
+        state.certificationsMessage = '';
+        renderCertificationsCard();
+        return;
+      }
+      if (event.target.closest('[data-rb-cert-cancel]')) {
+        state.certificationsEditingId = '';
+        state.certificationsFormOpen = false;
+        state.certificationsMessage = '';
+        renderCertificationsCard();
+        return;
+      }
+      const editCert = event.target.closest('[data-rb-cert-edit]');
+      if (editCert) {
+        state.certificationsEditingId = editCert.getAttribute('data-rb-cert-edit') || '';
+        state.certificationsFormOpen = true;
+        state.certificationsMessage = '';
+        renderCertificationsCard();
+        return;
+      }
+      const delCert = event.target.closest('[data-rb-cert-delete]');
+      if (delCert) {
+        deleteCertification(delCert.getAttribute('data-rb-cert-delete') || '');
+        return;
+      }
+      if (event.target.closest('[data-rb-act-save]')) {
+        saveActivity();
+        return;
+      }
+      if (event.target.closest('[data-rb-act-add]')) {
+        state.activitiesFormOpen = true;
+        state.activitiesEditingId = '';
+        state.activitiesMessage = '';
+        renderActivitiesCard();
+        return;
+      }
+      if (event.target.closest('[data-rb-act-cancel]')) {
+        state.activitiesEditingId = '';
+        state.activitiesFormOpen = false;
+        state.activitiesMessage = '';
+        renderActivitiesCard();
+        return;
+      }
+      const editAct = event.target.closest('[data-rb-act-edit]');
+      if (editAct) {
+        state.activitiesEditingId = editAct.getAttribute('data-rb-act-edit') || '';
+        state.activitiesFormOpen = true;
+        state.activitiesMessage = '';
+        renderActivitiesCard();
+        return;
+      }
+      const delAct = event.target.closest('[data-rb-act-delete]');
+      if (delAct) {
+        deleteActivity(delAct.getAttribute('data-rb-act-delete') || '');
       }
     });
 
@@ -1688,6 +2100,306 @@
     }
   }
 
+  function renderCertificationsCard() {
+    const card = root.querySelector('[data-rb-card="certifications"]');
+    if (card) card.innerHTML = certificationsCardBody(false);
+    updateCompletionUi();
+  }
+
+  function applyCertifications(certifications) {
+    state.certifications = Array.isArray(certifications)
+      ? certifications.filter((c) => c && c.certificationName)
+      : [];
+    renderCertificationsCard();
+  }
+
+  async function loadCertifications() {
+    if (!canUseResumeBuilderApi()) {
+      applyCertifications([]);
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/certifications', { skipAuthRedirect: true });
+      if (res?.success) {
+        applyCertifications(res.data?.certifications || []);
+        return;
+      }
+    } catch (_err) {
+      // Fall through.
+    }
+    applyCertifications([]);
+  }
+
+  function readCertificationForm() {
+    const nameEl = root.querySelector('[data-rb-cert-name]');
+    const orgEl = root.querySelector('[data-rb-cert-org]');
+    const issueEl = root.querySelector('[data-rb-cert-issue]');
+    const expiryEl = root.querySelector('[data-rb-cert-expiry]');
+    const idEl = root.querySelector('[data-rb-cert-id]');
+    const urlEl = root.querySelector('[data-rb-cert-url]');
+    const descEl = root.querySelector('[data-rb-cert-desc]');
+    return {
+      certificationName: nameEl ? String(nameEl.value || '').trim() : '',
+      issuingOrganization: orgEl ? String(orgEl.value || '').trim() : '',
+      issueDate: issueEl ? String(issueEl.value || '').trim() : '',
+      expiryDate: expiryEl ? String(expiryEl.value || '').trim() : '',
+      credentialId: idEl ? String(idEl.value || '').trim() : '',
+      credentialUrl: urlEl ? String(urlEl.value || '').trim() : '',
+      description: descEl ? String(descEl.value || '').trim() : '',
+    };
+  }
+
+  function restoreCertificationForm(form) {
+    const nameEl = root.querySelector('[data-rb-cert-name]');
+    const orgEl = root.querySelector('[data-rb-cert-org]');
+    const issueEl = root.querySelector('[data-rb-cert-issue]');
+    const expiryEl = root.querySelector('[data-rb-cert-expiry]');
+    const idEl = root.querySelector('[data-rb-cert-id]');
+    const urlEl = root.querySelector('[data-rb-cert-url]');
+    const descEl = root.querySelector('[data-rb-cert-desc]');
+    if (nameEl) nameEl.value = form.certificationName;
+    if (orgEl) orgEl.value = form.issuingOrganization;
+    if (issueEl) issueEl.value = form.issueDate;
+    if (expiryEl) expiryEl.value = form.expiryDate;
+    if (idEl) idEl.value = form.credentialId;
+    if (urlEl) urlEl.value = form.credentialUrl;
+    if (descEl) descEl.value = form.description;
+  }
+
+  function validateCertificationForm(form) {
+    const nameLen = form.certificationName.length;
+    if (nameLen < CERT_NAME_MIN || nameLen > CERT_NAME_MAX) {
+      return 'Certification name must be between ' + CERT_NAME_MIN + ' and ' + CERT_NAME_MAX + ' characters.';
+    }
+    const orgLen = form.issuingOrganization.length;
+    if (orgLen < CERT_ORG_MIN || orgLen > CERT_ORG_MAX) {
+      return 'Issuing organization must be between ' + CERT_ORG_MIN + ' and ' + CERT_ORG_MAX + ' characters.';
+    }
+    if (!form.issueDate) {
+      return 'Issue date is required.';
+    }
+    if (form.expiryDate && form.expiryDate < form.issueDate) {
+      return 'Expiry date cannot be earlier than issue date.';
+    }
+    if (form.credentialUrl) {
+      try {
+        const parsed = new URL(form.credentialUrl);
+        if (!/^https?:$/i.test(parsed.protocol)) return 'Enter a valid credential URL (including https://).';
+      } catch (_err) {
+        return 'Enter a valid credential URL (including https://).';
+      }
+    }
+    if (form.description.length > CERT_DESC_MAX) {
+      return 'Description must be at most ' + CERT_DESC_MAX + ' characters.';
+    }
+    return '';
+  }
+
+  async function saveCertification() {
+    const form = readCertificationForm();
+    const error = validateCertificationForm(form);
+    if (error) {
+      state.certificationsMessage = error;
+      renderCertificationsCard();
+      restoreCertificationForm(form);
+      return;
+    }
+    if (!canUseResumeBuilderApi()) {
+      state.certificationsMessage = 'Sign in to save certifications.';
+      renderCertificationsCard();
+      return;
+    }
+
+    const editingId = state.certificationsEditingId;
+    try {
+      const res = editingId
+        ? await api('/student/resume-builder/certifications/' + encodeURIComponent(editingId), {
+            method: 'PUT',
+            body: form,
+            skipAuthRedirect: true,
+          })
+        : await api('/student/resume-builder/certifications', {
+            method: 'POST',
+            body: form,
+            skipAuthRedirect: true,
+          });
+      if (res?.success) {
+        state.certificationsEditingId = '';
+        state.certificationsFormOpen = false;
+        state.certificationsMessage = '';
+        applyCertifications(res.data?.certifications || []);
+        return;
+      }
+      state.certificationsMessage = res?.message || 'Could not save certification.';
+      renderCertificationsCard();
+      restoreCertificationForm(form);
+    } catch (_err) {
+      state.certificationsMessage = 'Could not save certification.';
+      renderCertificationsCard();
+      restoreCertificationForm(form);
+    }
+  }
+
+  async function deleteCertification(id) {
+    if (!id || !canUseResumeBuilderApi()) return;
+    try {
+      const res = await api('/student/resume-builder/certifications/' + encodeURIComponent(id) + '/delete', {
+        method: 'POST',
+        skipAuthRedirect: true,
+      });
+      if (res?.success) {
+        if (state.certificationsEditingId === id) state.certificationsEditingId = '';
+        state.certificationsMessage = '';
+        applyCertifications(res.data?.certifications || []);
+        return;
+      }
+      state.certificationsMessage = res?.message || 'Could not remove certification.';
+      renderCertificationsCard();
+    } catch (_err) {
+      state.certificationsMessage = 'Could not remove certification.';
+      renderCertificationsCard();
+    }
+  }
+
+  function renderActivitiesCard() {
+    const card = root.querySelector('[data-rb-card="activities"]');
+    if (card) card.innerHTML = activitiesCardBody(false);
+    updateCompletionUi();
+  }
+
+  function applyActivities(activities) {
+    state.activities = Array.isArray(activities)
+      ? activities.filter((a) => a && a.title)
+      : [];
+    renderActivitiesCard();
+  }
+
+  async function loadActivities() {
+    if (!canUseResumeBuilderApi()) {
+      applyActivities([]);
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/activities', { skipAuthRedirect: true });
+      if (res?.success) {
+        applyActivities(res.data?.activities || []);
+        return;
+      }
+    } catch (_err) {
+      // Fall through.
+    }
+    applyActivities([]);
+  }
+
+  function readActivityForm() {
+    const titleEl = root.querySelector('[data-rb-act-title]');
+    const typeEl = root.querySelector('[data-rb-act-type]');
+    const orgEl = root.querySelector('[data-rb-act-org]');
+    const descEl = root.querySelector('[data-rb-act-desc]');
+    const dateEl = root.querySelector('[data-rb-act-date]');
+    return {
+      title: titleEl ? String(titleEl.value || '').trim() : '',
+      activityType: typeEl ? String(typeEl.value || '').trim() : '',
+      organization: orgEl ? String(orgEl.value || '').trim() : '',
+      description: descEl ? String(descEl.value || '').trim() : '',
+      activityDate: dateEl ? String(dateEl.value || '').trim() : '',
+    };
+  }
+
+  function restoreActivityForm(form) {
+    const titleEl = root.querySelector('[data-rb-act-title]');
+    const typeEl = root.querySelector('[data-rb-act-type]');
+    const orgEl = root.querySelector('[data-rb-act-org]');
+    const descEl = root.querySelector('[data-rb-act-desc]');
+    const dateEl = root.querySelector('[data-rb-act-date]');
+    if (titleEl) titleEl.value = form.title;
+    if (typeEl) typeEl.value = form.activityType;
+    if (orgEl) orgEl.value = form.organization;
+    if (descEl) descEl.value = form.description;
+    if (dateEl) dateEl.value = form.activityDate;
+  }
+
+  function validateActivityForm(form) {
+    const titleLen = form.title.length;
+    if (titleLen < ACT_TITLE_MIN || titleLen > ACT_TITLE_MAX) {
+      return 'Title must be between ' + ACT_TITLE_MIN + ' and ' + ACT_TITLE_MAX + ' characters.';
+    }
+    if (!ACT_TYPES.includes(form.activityType)) {
+      return 'Select an activity type.';
+    }
+    const descLen = form.description.length;
+    if (descLen < ACT_DESC_MIN || descLen > ACT_DESC_MAX) {
+      return 'Description must be between ' + ACT_DESC_MIN + ' and ' + ACT_DESC_MAX + ' characters.';
+    }
+    return '';
+  }
+
+  async function saveActivity() {
+    const form = readActivityForm();
+    const error = validateActivityForm(form);
+    if (error) {
+      state.activitiesMessage = error;
+      renderActivitiesCard();
+      restoreActivityForm(form);
+      return;
+    }
+    if (!canUseResumeBuilderApi()) {
+      state.activitiesMessage = 'Sign in to save activities.';
+      renderActivitiesCard();
+      return;
+    }
+
+    const editingId = state.activitiesEditingId;
+    try {
+      const res = editingId
+        ? await api('/student/resume-builder/activities/' + encodeURIComponent(editingId), {
+            method: 'PUT',
+            body: form,
+            skipAuthRedirect: true,
+          })
+        : await api('/student/resume-builder/activities', {
+            method: 'POST',
+            body: form,
+            skipAuthRedirect: true,
+          });
+      if (res?.success) {
+        state.activitiesEditingId = '';
+        state.activitiesFormOpen = false;
+        state.activitiesMessage = '';
+        applyActivities(res.data?.activities || []);
+        return;
+      }
+      state.activitiesMessage = res?.message || 'Could not save activity.';
+      renderActivitiesCard();
+      restoreActivityForm(form);
+    } catch (_err) {
+      state.activitiesMessage = 'Could not save activity.';
+      renderActivitiesCard();
+      restoreActivityForm(form);
+    }
+  }
+
+  async function deleteActivity(id) {
+    if (!id || !canUseResumeBuilderApi()) return;
+    try {
+      const res = await api('/student/resume-builder/activities/' + encodeURIComponent(id) + '/delete', {
+        method: 'POST',
+        skipAuthRedirect: true,
+      });
+      if (res?.success) {
+        if (state.activitiesEditingId === id) state.activitiesEditingId = '';
+        state.activitiesMessage = '';
+        applyActivities(res.data?.activities || []);
+        return;
+      }
+      state.activitiesMessage = res?.message || 'Could not remove activity.';
+      renderActivitiesCard();
+    } catch (_err) {
+      state.activitiesMessage = 'Could not remove activity.';
+      renderActivitiesCard();
+    }
+  }
+
   async function saveCareerObjective() {
     const ta = root.querySelector('[data-rb-objective-input]');
     const text = ta ? ta.value : '';
@@ -1748,6 +2460,8 @@
     loadSkills();
     loadProjects();
     loadExperience();
+    loadCertifications();
+    loadActivities();
   }
 
   if (typeof onAppReady === 'function') onAppReady(init);

@@ -42,6 +42,8 @@ final class Collections
     public const RESUME_SKILLS = 'resume_skills';
     public const RESUME_PROJECTS = 'resume_projects';
     public const RESUME_EXPERIENCE = 'resume_experience';
+    public const RESUME_CERTIFICATIONS = 'resume_certifications';
+    public const RESUME_ACTIVITIES = 'resume_activities';
 
     /** Valid user roles */
     public const ROLES = [

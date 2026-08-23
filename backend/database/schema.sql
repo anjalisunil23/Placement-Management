@@ -266,3 +266,33 @@ CREATE TABLE IF NOT EXISTS resume_experience (
   updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   KEY idx_resume_experience_student (student_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Resume Builder — Certifications (isolated relational table, not JSON payload).
+CREATE TABLE IF NOT EXISTS resume_certifications (
+  id CHAR(24) NOT NULL PRIMARY KEY,
+  student_id CHAR(24) NOT NULL,
+  certification_name VARCHAR(200) NOT NULL,
+  issuing_organization VARCHAR(150) NOT NULL,
+  issue_date DATE NOT NULL,
+  expiry_date DATE NULL,
+  credential_id VARCHAR(100) NULL,
+  credential_url VARCHAR(500) NULL,
+  description VARCHAR(1000) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  KEY idx_resume_certifications_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Resume Builder — Achievements, Leadership & Activities (isolated relational table, not JSON payload).
+CREATE TABLE IF NOT EXISTS resume_activities (
+  id CHAR(24) NOT NULL PRIMARY KEY,
+  student_id CHAR(24) NOT NULL,
+  title VARCHAR(150) NOT NULL,
+  activity_type VARCHAR(32) NOT NULL,
+  organization VARCHAR(150) NULL,
+  description VARCHAR(1000) NOT NULL,
+  activity_date DATE NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  KEY idx_resume_activities_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

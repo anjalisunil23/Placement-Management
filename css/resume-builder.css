@@ -557,6 +557,325 @@
   border-top: 1px solid var(--border);
 }
 
+#resumeBuilderDashboard .rb-cert-summary {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+#resumeBuilderDashboard .rb-cert-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  #resumeBuilderDashboard .rb-cert-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+#resumeBuilderDashboard .rb-cert-card {
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#resumeBuilderDashboard .rb-cert-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  box-shadow: var(--shadow-sm);
+}
+
+#resumeBuilderDashboard .rb-cert-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+#resumeBuilderDashboard .rb-cert-card-heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#resumeBuilderDashboard .rb-cert-name {
+  margin: 0 0 0.3rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--text);
+  word-break: break-word;
+}
+
+#resumeBuilderDashboard .rb-cert-org {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+#resumeBuilderDashboard .rb-cert-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+#resumeBuilderDashboard .rb-cert-action {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#resumeBuilderDashboard .rb-cert-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 0.55rem;
+}
+
+#resumeBuilderDashboard .rb-cert-id {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 0.55rem;
+}
+
+#resumeBuilderDashboard .rb-cert-id code {
+  font-size: 0.78rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  word-break: break-all;
+}
+
+#resumeBuilderDashboard .rb-cert-desc {
+  margin: 0 0 0.75rem;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#resumeBuilderDashboard .rb-cert-card-footer {
+  margin-top: auto;
+  padding-top: 0.65rem;
+}
+
+#resumeBuilderDashboard .rb-cert-link-btn {
+  font-weight: 600;
+}
+
+#resumeBuilderDashboard .rb-cert-empty {
+  text-align: center;
+  padding: 2rem 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+#resumeBuilderDashboard .rb-cert-empty-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 0.85rem;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 1.45rem;
+}
+
+#resumeBuilderDashboard .rb-cert-empty-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+#resumeBuilderDashboard .rb-cert-add-wrap {
+  margin-top: 1rem;
+}
+
+#resumeBuilderDashboard .rb-cert-add-btn {
+  font-weight: 600;
+}
+
+#resumeBuilderDashboard .rb-cert-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+#resumeBuilderDashboard .rb-act-summary {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+#resumeBuilderDashboard .rb-act-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  #resumeBuilderDashboard .rb-act-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+#resumeBuilderDashboard .rb-act-card {
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#resumeBuilderDashboard .rb-act-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  box-shadow: var(--shadow-sm);
+}
+
+#resumeBuilderDashboard .rb-act-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+#resumeBuilderDashboard .rb-act-card-heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#resumeBuilderDashboard .rb-act-title {
+  margin: 0 0 0.55rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--text);
+  word-break: break-word;
+}
+
+#resumeBuilderDashboard .rb-act-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+}
+
+#resumeBuilderDashboard .rb-act-type-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+#resumeBuilderDashboard .rb-act-org,
+#resumeBuilderDashboard .rb-act-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+#resumeBuilderDashboard .rb-act-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+#resumeBuilderDashboard .rb-act-action {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#resumeBuilderDashboard .rb-act-desc {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#resumeBuilderDashboard .rb-act-empty {
+  text-align: center;
+  padding: 2rem 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+#resumeBuilderDashboard .rb-act-empty-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 0.85rem;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 1.45rem;
+}
+
+#resumeBuilderDashboard .rb-act-empty-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+#resumeBuilderDashboard .rb-act-add-wrap {
+  margin-top: 1rem;
+}
+
+#resumeBuilderDashboard .rb-act-add-btn {
+  font-weight: 600;
+}
+
+#resumeBuilderDashboard .rb-act-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
 #resumeBuilderDashboard #rbObjectiveText {
   min-height: 7rem;
 }
@@ -614,6 +933,47 @@
     align-items: flex-start;
   }
   #resumeBuilderDashboard .rb-exp-add-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  #resumeBuilderDashboard .rb-cert-list {
+    grid-template-columns: 1fr;
+  }
+  #resumeBuilderDashboard .rb-cert-card {
+    padding: 1rem;
+  }
+  #resumeBuilderDashboard .rb-cert-card-header {
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  #resumeBuilderDashboard .rb-cert-card-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  #resumeBuilderDashboard .rb-cert-link-btn,
+  #resumeBuilderDashboard .rb-cert-add-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  #resumeBuilderDashboard .rb-act-list {
+    grid-template-columns: 1fr;
+  }
+  #resumeBuilderDashboard .rb-act-card {
+    padding: 1rem;
+  }
+  #resumeBuilderDashboard .rb-act-card-header {
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  #resumeBuilderDashboard .rb-act-card-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  #resumeBuilderDashboard .rb-act-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  #resumeBuilderDashboard .rb-act-add-btn {
     width: 100%;
     justify-content: center;
   }

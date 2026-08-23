@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace PMS\Student;
 
 use PMS\Middleware\RBACMiddleware;
+use PMS\Models\ResumeActivityModel;
 use PMS\Models\ResumeCareerObjectiveModel;
+use PMS\Models\ResumeCertificationModel;
 use PMS\Models\ResumeExperienceModel;
 use PMS\Models\ResumeProjectModel;
 use PMS\Models\ResumeSkillModel;
@@ -22,6 +24,8 @@ final class ResumeBuilderController
     private ResumeSkillModel $skillModel;
     private ResumeProjectModel $projectModel;
     private ResumeExperienceModel $experienceModel;
+    private ResumeCertificationModel $certificationModel;
+    private ResumeActivityModel $activityModel;
 
     public function __construct()
     {
@@ -30,6 +34,8 @@ final class ResumeBuilderController
         $this->skillModel = new ResumeSkillModel();
         $this->projectModel = new ResumeProjectModel();
         $this->experienceModel = new ResumeExperienceModel();
+        $this->certificationModel = new ResumeCertificationModel();
+        $this->activityModel = new ResumeActivityModel();
     }
 
     /** GET /api/student/resume-builder/career-objective */
@@ -436,6 +442,265 @@ final class ResumeBuilderController
             'startDate' => (string) ($row['start_date'] ?? ''),
             'endDate' => $currently || $end === '' ? null : $end,
             'currentlyWorking' => $currently,
+        ];
+    }
+
+    /** GET /api/student/resume-builder/certifications */
+    public function listCertifications(): void
+    {
+        $studentId = $this->currentStudentId();
+        $rows = $this->certificationModel->listByStudentId($studentId);
+        Response::success([
+            'certifications' => array_map([$this, 'serializeCertification'], $rows),
+            'count' => count($rows),
+            'complete' => count($rows) >= ResumeCertificationModel::COMPLETE_MIN_COUNT,
+            'recommended' => count($rows) >= ResumeCertificationModel::RECOMMENDED_COUNT,
+        ]);
+    }
+
+    /** POST /api/student/resume-builder/certifications */
+    public function addCertification(): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = $this->readCertificationInput();
+        $check = ResumeCertificationModel::validate($input);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->certificationModel->createForStudent($studentId, $input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+        Response::success($this->certificationsPayload($studentId, $row), 'Certification added.');
+    }
+
+    /** PUT /api/student/resume-builder/certifications/{id} */
+    public function updateCertification(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = $this->readCertificationInput();
+        $check = ResumeCertificationModel::validate($input);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->certificationModel->updateForStudent($id, $studentId, $input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::notFound($e->getMessage());
+        }
+        Response::success($this->certificationsPayload($studentId, $row), 'Certification updated.');
+    }
+
+    /** POST /api/student/resume-builder/certifications/{id}/delete */
+    public function deleteCertification(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        if (!$this->certificationModel->deleteForStudent($id, $studentId)) {
+            Response::notFound('Certification not found.');
+        }
+        Response::success($this->certificationsPayload($studentId), 'Certification removed.');
+    }
+
+    /**
+     * @return array{
+     *   certification_name: string,
+     *   issuing_organization: string,
+     *   issue_date: string,
+     *   expiry_date: string,
+     *   credential_id: string,
+     *   credential_url: string,
+     *   description: string
+     * }
+     */
+    private function readCertificationInput(): array
+    {
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($input)) {
+            $input = [];
+        }
+        return [
+            'certification_name' => (string) ($input['certificationName'] ?? $input['certification_name'] ?? ''),
+            'issuing_organization' => (string) ($input['issuingOrganization'] ?? $input['issuing_organization'] ?? ''),
+            'issue_date' => (string) ($input['issueDate'] ?? $input['issue_date'] ?? ''),
+            'expiry_date' => (string) ($input['expiryDate'] ?? $input['expiry_date'] ?? ''),
+            'credential_id' => (string) ($input['credentialId'] ?? $input['credential_id'] ?? ''),
+            'credential_url' => (string) ($input['credentialUrl'] ?? $input['credential_url'] ?? ''),
+            'description' => (string) ($input['description'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $changed
+     * @return array<string, mixed>
+     */
+    private function certificationsPayload(string $studentId, ?array $changed = null): array
+    {
+        $rows = $this->certificationModel->listByStudentId($studentId);
+        return [
+            'certification' => $changed ? $this->serializeCertification($changed) : null,
+            'certifications' => array_map([$this, 'serializeCertification'], $rows),
+            'count' => count($rows),
+            'complete' => count($rows) >= ResumeCertificationModel::COMPLETE_MIN_COUNT,
+            'recommended' => count($rows) >= ResumeCertificationModel::RECOMMENDED_COUNT,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array{
+     *   id: string,
+     *   certificationName: string,
+     *   issuingOrganization: string,
+     *   issueDate: string,
+     *   expiryDate: string|null,
+     *   credentialId: string|null,
+     *   credentialUrl: string|null,
+     *   description: string|null
+     * }
+     */
+    private function serializeCertification(array $row): array
+    {
+        $credentialId = trim((string) ($row['credential_id'] ?? ''));
+        $credentialUrl = trim((string) ($row['credential_url'] ?? ''));
+        $description = trim((string) ($row['description'] ?? ''));
+        $expiry = (string) ($row['expiry_date'] ?? '');
+        return [
+            'id' => (string) ($row['id'] ?? ''),
+            'certificationName' => (string) ($row['certification_name'] ?? ''),
+            'issuingOrganization' => (string) ($row['issuing_organization'] ?? ''),
+            'issueDate' => (string) ($row['issue_date'] ?? ''),
+            'expiryDate' => $expiry !== '' ? $expiry : null,
+            'credentialId' => $credentialId !== '' ? $credentialId : null,
+            'credentialUrl' => $credentialUrl !== '' ? $credentialUrl : null,
+            'description' => $description !== '' ? $description : null,
+        ];
+    }
+
+    /** GET /api/student/resume-builder/activities */
+    public function listActivities(): void
+    {
+        $studentId = $this->currentStudentId();
+        $rows = $this->activityModel->listByStudentId($studentId);
+        Response::success([
+            'activities' => array_map([$this, 'serializeActivity'], $rows),
+            'count' => count($rows),
+            'types' => ResumeActivityModel::TYPES,
+            'complete' => count($rows) >= ResumeActivityModel::COMPLETE_MIN_COUNT,
+            'recommended' => count($rows) >= ResumeActivityModel::RECOMMENDED_COUNT,
+        ]);
+    }
+
+    /** POST /api/student/resume-builder/activities */
+    public function addActivity(): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = $this->readActivityInput();
+        $check = ResumeActivityModel::validate($input);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->activityModel->createForStudent($studentId, $input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+        Response::success($this->activitiesPayload($studentId, $row), 'Activity added.');
+    }
+
+    /** PUT /api/student/resume-builder/activities/{id} */
+    public function updateActivity(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = $this->readActivityInput();
+        $check = ResumeActivityModel::validate($input);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->activityModel->updateForStudent($id, $studentId, $input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::notFound($e->getMessage());
+        }
+        Response::success($this->activitiesPayload($studentId, $row), 'Activity updated.');
+    }
+
+    /** POST /api/student/resume-builder/activities/{id}/delete */
+    public function deleteActivity(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        if (!$this->activityModel->deleteForStudent($id, $studentId)) {
+            Response::notFound('Activity not found.');
+        }
+        Response::success($this->activitiesPayload($studentId), 'Activity removed.');
+    }
+
+    /**
+     * @return array{
+     *   title: string,
+     *   activity_type: string,
+     *   organization: string,
+     *   description: string,
+     *   activity_date: string
+     * }
+     */
+    private function readActivityInput(): array
+    {
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($input)) {
+            $input = [];
+        }
+        return [
+            'title' => (string) ($input['title'] ?? ''),
+            'activity_type' => (string) ($input['activityType'] ?? $input['activity_type'] ?? ''),
+            'organization' => (string) ($input['organization'] ?? ''),
+            'description' => (string) ($input['description'] ?? ''),
+            'activity_date' => (string) ($input['activityDate'] ?? $input['activity_date'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $changed
+     * @return array<string, mixed>
+     */
+    private function activitiesPayload(string $studentId, ?array $changed = null): array
+    {
+        $rows = $this->activityModel->listByStudentId($studentId);
+        return [
+            'activity' => $changed ? $this->serializeActivity($changed) : null,
+            'activities' => array_map([$this, 'serializeActivity'], $rows),
+            'count' => count($rows),
+            'complete' => count($rows) >= ResumeActivityModel::COMPLETE_MIN_COUNT,
+            'recommended' => count($rows) >= ResumeActivityModel::RECOMMENDED_COUNT,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array{
+     *   id: string,
+     *   title: string,
+     *   activityType: string,
+     *   organization: string|null,
+     *   description: string,
+     *   activityDate: string|null
+     * }
+     */
+    private function serializeActivity(array $row): array
+    {
+        $org = trim((string) ($row['organization'] ?? ''));
+        $activityDate = (string) ($row['activity_date'] ?? '');
+        return [
+            'id' => (string) ($row['id'] ?? ''),
+            'title' => (string) ($row['title'] ?? ''),
+            'activityType' => (string) ($row['activity_type'] ?? ''),
+            'organization' => $org !== '' ? $org : null,
+            'description' => (string) ($row['description'] ?? ''),
+            'activityDate' => $activityDate !== '' ? $activityDate : null,
         ];
     }
 
