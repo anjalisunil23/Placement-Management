@@ -82,6 +82,13 @@
   const SKILL_MAX = 50;
   const SKILL_COMPLETE_MIN = 3;
   const SKILL_CATEGORIES = ['Technical', 'Tools', 'Soft Skills', 'Domain Skills', 'Languages'];
+  const PROJECT_TITLE_MIN = 3;
+  const PROJECT_TITLE_MAX = 150;
+  const PROJECT_DESC_MIN = 50;
+  const PROJECT_DESC_MAX = 1000;
+  const PROJECT_COMPLETE_MIN = 1;
+  const PROJECT_RECOMMENDED = 2;
+  const PROJECT_TYPES = ['Academic', 'Personal', 'Internship', 'Research', 'Freelance', 'Other'];
 
   const state = {
     personalComplete: false,
@@ -93,6 +100,10 @@
     skillsEditingId: '',
     skillsMessage: '',
     skillsFormOpen: false,
+    projects: [],
+    projectsEditingId: '',
+    projectsMessage: '',
+    projectsFormOpen: false,
   };
 
   function esc(value) {
@@ -166,7 +177,8 @@
     return (state.personalComplete ? 1 : 0)
       + (state.educationComplete ? 1 : 0)
       + (state.objectiveComplete ? 1 : 0)
-      + (state.skills.length >= SKILL_COMPLETE_MIN ? 1 : 0);
+      + (state.skills.length >= SKILL_COMPLETE_MIN ? 1 : 0)
+      + (state.projects.length >= PROJECT_COMPLETE_MIN ? 1 : 0);
   }
 
   function completionPercent() {
@@ -549,6 +561,173 @@
       ${formOpen ? formHtml : ''}`;
   }
 
+  function formatProjectDates(startDate, endDate) {
+    const start = String(startDate || '').trim();
+    const end = String(endDate || '').trim();
+    if (start && end) return esc(start) + ' – ' + esc(end);
+    if (start) return 'From ' + esc(start);
+    if (end) return 'Until ' + esc(end);
+    return '';
+  }
+
+  function projectTypeBadgeClass(type) {
+    const map = {
+      Academic: 'info',
+      Personal: 'success',
+      Internship: 'warning',
+      Research: 'info',
+      Freelance: 'success',
+      Other: 'muted',
+    };
+    return map[type] || 'muted';
+  }
+
+  function projectTechChips(tech) {
+    const items = String(tech || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!items.length) return '';
+    return `
+      <div class="rb-project-tech-list" aria-label="Technologies used">
+        ${items.map((item) => `<span class="rb-project-tech-chip">${esc(item)}</span>`).join('')}
+      </div>`;
+  }
+
+  function projectCardItem(project) {
+    const tech = String(project.technologiesUsed || '').trim();
+    const link = String(project.projectLink || '').trim();
+    const dates = formatProjectDates(project.startDate, project.endDate);
+    const typeClass = projectTypeBadgeClass(project.projectType);
+    return `
+      <article class="rb-project-card card-surface">
+        <header class="rb-project-card-header">
+          <div class="rb-project-card-heading">
+            <h3 class="rb-project-title">${esc(project.projectTitle)}</h3>
+            <span class="badge-soft ${typeClass} rb-project-type-badge">${esc(project.projectType)}</span>
+          </div>
+          <div class="rb-project-card-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary rb-project-action" data-rb-project-edit="${esc(project.id)}" title="Edit project" aria-label="Edit ${esc(project.projectTitle)}">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger rb-project-action" data-rb-project-delete="${esc(project.id)}" title="Delete project" aria-label="Delete ${esc(project.projectTitle)}">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </header>
+        ${projectTechChips(tech)}
+        <p class="rb-project-desc">${esc(project.projectDescription)}</p>
+        <footer class="rb-project-card-footer">
+          ${dates ? `<span class="rb-project-dates"><i class="bi bi-calendar3" aria-hidden="true"></i>${dates}</span>` : ''}
+          ${link ? `<a class="btn btn-sm btn-outline-primary rb-project-link-btn" href="${esc(link)}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>View Project</a>` : ''}
+        </footer>
+      </article>`;
+  }
+
+  function projectsCardBody(loading) {
+    if (loading) {
+      return `<p class="small text-muted-2 mb-0">Loading projects…</p>`;
+    }
+
+    const count = state.projects.length;
+    const complete = count >= PROJECT_COMPLETE_MIN;
+    const badge = complete
+      ? '<span class="badge-soft success">Completed</span>'
+      : '<span class="badge-soft warning">Incomplete</span>';
+    const editing = !!state.projectsEditingId;
+    const formOpen = state.projectsFormOpen || editing;
+    const editingProject = state.projects.find((p) => p.id === state.projectsEditingId) || null;
+    const msg = state.projectsMessage
+      ? `<div class="alert alert-warning py-2 small mb-3" role="alert">${esc(state.projectsMessage)}</div>`
+      : '';
+    const recPct = Math.min(100, Math.round((count / PROJECT_RECOMMENDED) * 100));
+
+    const typeOpts = PROJECT_TYPES.map((type) => {
+      const selected = editingProject && editingProject.projectType === type ? ' selected' : '';
+      return `<option value="${esc(type)}"${selected}>${esc(type)}</option>`;
+    }).join('');
+
+    const formHtml = `
+      ${msg}
+      <div class="rb-project-form">
+        <div class="row g-2">
+          <div class="col-md-8">
+            <label class="form-label small fw-semibold" for="rbProjectTitle">Project Title *</label>
+            <input class="form-control" id="rbProjectTitle" maxlength="${PROJECT_TITLE_MAX}" value="${esc(editingProject ? editingProject.projectTitle : '')}" data-rb-project-title />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold" for="rbProjectType">Project Type *</label>
+            <select class="form-select" id="rbProjectType" data-rb-project-type>
+              <option value="">Select type</option>
+              ${typeOpts}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold" for="rbProjectTech">Technologies / Tools Used</label>
+            <input class="form-control" id="rbProjectTech" maxlength="500" placeholder="e.g. Python, MySQL, React" value="${esc(editingProject ? editingProject.technologiesUsed : '')}" data-rb-project-tech />
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold" for="rbProjectDesc">Description *</label>
+            <textarea class="form-control" id="rbProjectDesc" rows="4" maxlength="${PROJECT_DESC_MAX}" data-rb-project-desc>${esc(editingProject ? editingProject.projectDescription : '')}</textarea>
+            <div class="form-text">Minimum ${PROJECT_DESC_MIN} characters.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbProjectLink">Project Link (Optional)</label>
+            <input type="url" class="form-control" id="rbProjectLink" maxlength="500" placeholder="https://..." value="${esc(editingProject && editingProject.projectLink ? editingProject.projectLink : '')}" data-rb-project-link />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold" for="rbProjectStart">Start Date</label>
+            <input type="date" class="form-control" id="rbProjectStart" value="${esc(editingProject && editingProject.startDate ? editingProject.startDate : '')}" data-rb-project-start />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold" for="rbProjectEnd">End Date</label>
+            <input type="date" class="form-control" id="rbProjectEnd" value="${esc(editingProject && editingProject.endDate ? editingProject.endDate : '')}" data-rb-project-end />
+          </div>
+          <div class="col-12 d-flex gap-2 justify-content-end mt-1">
+            <button type="button" class="btn btn-outline-secondary" data-rb-project-cancel>Cancel</button>
+            <button type="button" class="btn btn-primary" data-rb-project-save>${editing ? 'Save Project' : 'Add Project'}</button>
+          </div>
+        </div>
+      </div>`;
+
+    const emptyHtml = `
+      <div class="rb-project-empty">
+        <div class="rb-project-empty-icon" aria-hidden="true"><i class="bi bi-kanban"></i></div>
+        <p class="rb-project-empty-title mb-3">No projects added yet</p>
+        <button type="button" class="btn btn-primary rb-project-add-btn" data-rb-project-add><i class="bi bi-plus-lg me-1"></i>Add Project</button>
+      </div>`;
+
+    const addBtnHtml = formOpen
+      ? ''
+      : `<div class="rb-project-add-wrap">
+           <button type="button" class="btn btn-primary rb-project-add-btn" data-rb-project-add><i class="bi bi-plus-lg me-1"></i>Add Project</button>
+         </div>`;
+
+    const listHtml = count
+      ? `<div class="rb-project-list">${state.projects.map(projectCardItem).join('')}</div>${addBtnHtml}`
+      : (formOpen ? '' : emptyHtml);
+
+    return `
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+        <h6 class="fw-bold mb-0">Projects</h6>
+        ${badge}
+      </div>
+      <div class="alert alert-info py-2 small mb-3" role="note">
+        Include academic, personal, internship, research, or freelance projects that demonstrate your skills and experience.
+      </div>
+      <div class="rb-project-summary mb-3">
+        <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
+          <div class="fw-semibold">Projects Added: ${count}</div>
+          <div class="small text-muted-2">Recommended: ${PROJECT_RECOMMENDED}+ Projects</div>
+        </div>
+        <div class="rb-skill-rec-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${PROJECT_RECOMMENDED}" aria-valuenow="${count}" aria-label="Recommended projects">
+          <div class="rb-skill-rec-fill" style="width:${recPct}%"></div>
+        </div>
+      </div>
+      ${listHtml}
+      ${formOpen ? formHtml : ''}`;
+  }
+
   function sectionCard(section) {
     if (section.id === 'personal') {
       return `
@@ -582,6 +761,15 @@
         <div class="col-12">
           <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="skills">
             ${skillsCardBody(true)}
+          </div>
+        </div>`;
+    }
+
+    if (section.id === 'projects') {
+      return `
+        <div class="col-12">
+          <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="projects">
+            ${projectsCardBody(true)}
           </div>
         </div>`;
     }
@@ -680,6 +868,37 @@
       const delSkill = event.target.closest('[data-rb-skill-delete]');
       if (delSkill) {
         deleteSkill(delSkill.getAttribute('data-rb-skill-delete') || '');
+        return;
+      }
+      if (event.target.closest('[data-rb-project-save]')) {
+        saveProject();
+        return;
+      }
+      if (event.target.closest('[data-rb-project-add]')) {
+        state.projectsFormOpen = true;
+        state.projectsEditingId = '';
+        state.projectsMessage = '';
+        renderProjectsCard();
+        return;
+      }
+      if (event.target.closest('[data-rb-project-cancel]')) {
+        state.projectsEditingId = '';
+        state.projectsFormOpen = false;
+        state.projectsMessage = '';
+        renderProjectsCard();
+        return;
+      }
+      const editProject = event.target.closest('[data-rb-project-edit]');
+      if (editProject) {
+        state.projectsEditingId = editProject.getAttribute('data-rb-project-edit') || '';
+        state.projectsFormOpen = true;
+        state.projectsMessage = '';
+        renderProjectsCard();
+        return;
+      }
+      const delProject = event.target.closest('[data-rb-project-delete]');
+      if (delProject) {
+        deleteProject(delProject.getAttribute('data-rb-project-delete') || '');
       }
     });
 
@@ -886,6 +1105,162 @@
     }
   }
 
+  function renderProjectsCard() {
+    const card = root.querySelector('[data-rb-card="projects"]');
+    if (card) card.innerHTML = projectsCardBody(false);
+    updateCompletionUi();
+  }
+
+  function applyProjects(projects) {
+    state.projects = Array.isArray(projects) ? projects.filter((p) => p && p.projectTitle) : [];
+    renderProjectsCard();
+  }
+
+  async function loadProjects() {
+    if (!canUseResumeBuilderApi()) {
+      applyProjects([]);
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/projects', { skipAuthRedirect: true });
+      if (res?.success) {
+        applyProjects(res.data?.projects || []);
+        return;
+      }
+    } catch (_err) {
+      // Fall through.
+    }
+    applyProjects([]);
+  }
+
+  function readProjectForm() {
+    const titleEl = root.querySelector('[data-rb-project-title]');
+    const typeEl = root.querySelector('[data-rb-project-type]');
+    const techEl = root.querySelector('[data-rb-project-tech]');
+    const descEl = root.querySelector('[data-rb-project-desc]');
+    const linkEl = root.querySelector('[data-rb-project-link]');
+    const startEl = root.querySelector('[data-rb-project-start]');
+    const endEl = root.querySelector('[data-rb-project-end]');
+    return {
+      projectTitle: titleEl ? String(titleEl.value || '').trim() : '',
+      projectType: typeEl ? String(typeEl.value || '').trim() : '',
+      technologiesUsed: techEl ? String(techEl.value || '').trim() : '',
+      projectDescription: descEl ? String(descEl.value || '').trim() : '',
+      projectLink: linkEl ? String(linkEl.value || '').trim() : '',
+      startDate: startEl ? String(startEl.value || '').trim() : '',
+      endDate: endEl ? String(endEl.value || '').trim() : '',
+    };
+  }
+
+  function restoreProjectForm(form) {
+    const titleEl = root.querySelector('[data-rb-project-title]');
+    const typeEl = root.querySelector('[data-rb-project-type]');
+    const techEl = root.querySelector('[data-rb-project-tech]');
+    const descEl = root.querySelector('[data-rb-project-desc]');
+    const linkEl = root.querySelector('[data-rb-project-link]');
+    const startEl = root.querySelector('[data-rb-project-start]');
+    const endEl = root.querySelector('[data-rb-project-end]');
+    if (titleEl) titleEl.value = form.projectTitle;
+    if (typeEl) typeEl.value = form.projectType;
+    if (techEl) techEl.value = form.technologiesUsed;
+    if (descEl) descEl.value = form.projectDescription;
+    if (linkEl) linkEl.value = form.projectLink;
+    if (startEl) startEl.value = form.startDate;
+    if (endEl) endEl.value = form.endDate;
+  }
+
+  function validateProjectForm(form) {
+    const titleLen = form.projectTitle.length;
+    if (titleLen < PROJECT_TITLE_MIN || titleLen > PROJECT_TITLE_MAX) {
+      return 'Project title must be between ' + PROJECT_TITLE_MIN + ' and ' + PROJECT_TITLE_MAX + ' characters.';
+    }
+    if (!PROJECT_TYPES.includes(form.projectType)) {
+      return 'Select a project type.';
+    }
+    const descLen = form.projectDescription.length;
+    if (descLen < PROJECT_DESC_MIN || descLen > PROJECT_DESC_MAX) {
+      return 'Description must be between ' + PROJECT_DESC_MIN + ' and ' + PROJECT_DESC_MAX + ' characters.';
+    }
+    if (form.projectLink) {
+      try {
+        const parsed = new URL(form.projectLink);
+        if (!/^https?:$/i.test(parsed.protocol)) return 'Enter a valid project URL (including https://).';
+      } catch (_err) {
+        return 'Enter a valid project URL (including https://).';
+      }
+    }
+    if (form.startDate && form.endDate && form.endDate < form.startDate) {
+      return 'End date cannot be earlier than start date.';
+    }
+    return '';
+  }
+
+  async function saveProject() {
+    const form = readProjectForm();
+    const error = validateProjectForm(form);
+    if (error) {
+      state.projectsMessage = error;
+      renderProjectsCard();
+      restoreProjectForm(form);
+      return;
+    }
+    if (!canUseResumeBuilderApi()) {
+      state.projectsMessage = 'Sign in to save projects.';
+      renderProjectsCard();
+      return;
+    }
+
+    const editingId = state.projectsEditingId;
+    try {
+      const res = editingId
+        ? await api('/student/resume-builder/projects/' + encodeURIComponent(editingId), {
+            method: 'PUT',
+            body: form,
+            skipAuthRedirect: true,
+          })
+        : await api('/student/resume-builder/projects', {
+            method: 'POST',
+            body: form,
+            skipAuthRedirect: true,
+          });
+      if (res?.success) {
+        state.projectsEditingId = '';
+        state.projectsFormOpen = false;
+        state.projectsMessage = '';
+        applyProjects(res.data?.projects || []);
+        return;
+      }
+      state.projectsMessage = res?.message || 'Could not save project.';
+      renderProjectsCard();
+      restoreProjectForm(form);
+    } catch (_err) {
+      state.projectsMessage = 'Could not save project.';
+      renderProjectsCard();
+      restoreProjectForm(form);
+    }
+  }
+
+  async function deleteProject(id) {
+    if (!id || !canUseResumeBuilderApi()) return;
+    try {
+      const res = await api('/student/resume-builder/projects/' + encodeURIComponent(id) + '/delete', {
+        method: 'POST',
+        skipAuthRedirect: true,
+      });
+      if (res?.success) {
+        if (state.projectsEditingId === id) state.projectsEditingId = '';
+        state.projectsMessage = '';
+        applyProjects(res.data?.projects || []);
+        return;
+      }
+      state.projectsMessage = res?.message || 'Could not remove project.';
+      renderProjectsCard();
+    } catch (_err) {
+      state.projectsMessage = 'Could not remove project.';
+      renderProjectsCard();
+    }
+  }
+
   async function saveCareerObjective() {
     const ta = root.querySelector('[data-rb-objective-input]');
     const text = ta ? ta.value : '';
@@ -944,6 +1319,7 @@
     loadPersonalFromProfile();
     loadCareerObjective();
     loadSkills();
+    loadProjects();
   }
 
   if (typeof onAppReady === 'function') onAppReady(init);

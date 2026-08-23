@@ -287,6 +287,10 @@ $routes = [
     ['POST', '/student/resume-builder/skills', [ResumeBuilderController::class, 'addSkill']],
     ['PUT',  '/student/resume-builder/skills/{id}', [ResumeBuilderController::class, 'updateSkill']],
     ['POST', '/student/resume-builder/skills/{id}/delete', [ResumeBuilderController::class, 'deleteSkill']],
+    ['GET',  '/student/resume-builder/projects', [ResumeBuilderController::class, 'listProjects']],
+    ['POST', '/student/resume-builder/projects', [ResumeBuilderController::class, 'addProject']],
+    ['PUT',  '/student/resume-builder/projects/{id}', [ResumeBuilderController::class, 'updateProject']],
+    ['POST', '/student/resume-builder/projects/{id}/delete', [ResumeBuilderController::class, 'deleteProject']],
 
     // Company
     ['GET',  '/company/profile',                  [CompanyController::class, 'profile']],

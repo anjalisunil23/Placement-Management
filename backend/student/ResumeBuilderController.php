@@ -6,6 +6,7 @@ namespace PMS\Student;
 
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\ResumeCareerObjectiveModel;
+use PMS\Models\ResumeProjectModel;
 use PMS\Models\ResumeSkillModel;
 use PMS\Models\StudentModel;
 use PMS\Utils\Response;
@@ -18,12 +19,14 @@ final class ResumeBuilderController
     private StudentModel $studentModel;
     private ResumeCareerObjectiveModel $objectiveModel;
     private ResumeSkillModel $skillModel;
+    private ResumeProjectModel $projectModel;
 
     public function __construct()
     {
         $this->studentModel = new StudentModel();
         $this->objectiveModel = new ResumeCareerObjectiveModel();
         $this->skillModel = new ResumeSkillModel();
+        $this->projectModel = new ResumeProjectModel();
     }
 
     /** GET /api/student/resume-builder/career-objective */
@@ -158,6 +161,140 @@ final class ResumeBuilderController
             'id' => (string) ($row['id'] ?? ''),
             'skillName' => (string) ($row['skill_name'] ?? ''),
             'skillCategory' => (string) ($row['skill_category'] ?? ''),
+        ];
+    }
+
+    /** GET /api/student/resume-builder/projects */
+    public function listProjects(): void
+    {
+        $studentId = $this->currentStudentId();
+        $rows = $this->projectModel->listByStudentId($studentId);
+        Response::success([
+            'projects' => array_map([$this, 'serializeProject'], $rows),
+            'count' => count($rows),
+            'types' => ResumeProjectModel::TYPES,
+            'complete' => count($rows) >= ResumeProjectModel::COMPLETE_MIN_COUNT,
+            'recommended' => count($rows) >= ResumeProjectModel::RECOMMENDED_COUNT,
+        ]);
+    }
+
+    /** POST /api/student/resume-builder/projects */
+    public function addProject(): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = $this->readProjectInput();
+        $check = ResumeProjectModel::validate($input);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->projectModel->createForStudent($studentId, $input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+        Response::success($this->projectsPayload($studentId, $row), 'Project added.');
+    }
+
+    /** PUT /api/student/resume-builder/projects/{id} */
+    public function updateProject(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = $this->readProjectInput();
+        $check = ResumeProjectModel::validate($input);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->projectModel->updateForStudent($id, $studentId, $input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::notFound($e->getMessage());
+        }
+        Response::success($this->projectsPayload($studentId, $row), 'Project updated.');
+    }
+
+    /** POST /api/student/resume-builder/projects/{id}/delete */
+    public function deleteProject(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        if (!$this->projectModel->deleteForStudent($id, $studentId)) {
+            Response::notFound('Project not found.');
+        }
+        Response::success($this->projectsPayload($studentId), 'Project removed.');
+    }
+
+    /**
+     * @return array{
+     *   project_title: string,
+     *   project_type: string,
+     *   technologies_used: string,
+     *   project_description: string,
+     *   project_link: string,
+     *   start_date: string,
+     *   end_date: string
+     * }
+     */
+    private function readProjectInput(): array
+    {
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($input)) {
+            $input = [];
+        }
+        return [
+            'project_title' => (string) ($input['projectTitle'] ?? $input['project_title'] ?? ''),
+            'project_type' => (string) ($input['projectType'] ?? $input['project_type'] ?? ''),
+            'technologies_used' => (string) ($input['technologiesUsed'] ?? $input['technologies_used'] ?? ''),
+            'project_description' => (string) ($input['projectDescription'] ?? $input['project_description'] ?? ''),
+            'project_link' => (string) ($input['projectLink'] ?? $input['project_link'] ?? ''),
+            'start_date' => (string) ($input['startDate'] ?? $input['start_date'] ?? ''),
+            'end_date' => (string) ($input['endDate'] ?? $input['end_date'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $changed
+     * @return array<string, mixed>
+     */
+    private function projectsPayload(string $studentId, ?array $changed = null): array
+    {
+        $rows = $this->projectModel->listByStudentId($studentId);
+        return [
+            'project' => $changed ? $this->serializeProject($changed) : null,
+            'projects' => array_map([$this, 'serializeProject'], $rows),
+            'count' => count($rows),
+            'complete' => count($rows) >= ResumeProjectModel::COMPLETE_MIN_COUNT,
+            'recommended' => count($rows) >= ResumeProjectModel::RECOMMENDED_COUNT,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array{
+     *   id: string,
+     *   projectTitle: string,
+     *   projectType: string,
+     *   technologiesUsed: string,
+     *   projectDescription: string,
+     *   projectLink: string|null,
+     *   startDate: string|null,
+     *   endDate: string|null
+     * }
+     */
+    private function serializeProject(array $row): array
+    {
+        $link = trim((string) ($row['project_link'] ?? ''));
+        $start = (string) ($row['start_date'] ?? '');
+        $end = (string) ($row['end_date'] ?? '');
+        return [
+            'id' => (string) ($row['id'] ?? ''),
+            'projectTitle' => (string) ($row['project_title'] ?? ''),
+            'projectType' => (string) ($row['project_type'] ?? ''),
+            'technologiesUsed' => (string) ($row['technologies_used'] ?? ''),
+            'projectDescription' => (string) ($row['project_description'] ?? ''),
+            'projectLink' => $link !== '' ? $link : null,
+            'startDate' => $start !== '' ? $start : null,
+            'endDate' => $end !== '' ? $end : null,
         ];
     }
 

@@ -40,6 +40,7 @@ final class Collections
     public const APTITUDE_QUESTION_BANK = 'aptitude_question_bank';
     public const RESUME_CAREER_OBJECTIVES = 'resume_career_objectives';
     public const RESUME_SKILLS = 'resume_skills';
+    public const RESUME_PROJECTS = 'resume_projects';
 
     /** Valid user roles */
     public const ROLES = [

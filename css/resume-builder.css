@@ -184,6 +184,172 @@
   border-top: 1px solid var(--border);
 }
 
+#resumeBuilderDashboard .rb-project-summary {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+#resumeBuilderDashboard .rb-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+#resumeBuilderDashboard .rb-project-card {
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+#resumeBuilderDashboard .rb-project-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  box-shadow: var(--shadow-sm);
+}
+
+#resumeBuilderDashboard .rb-project-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+#resumeBuilderDashboard .rb-project-card-heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#resumeBuilderDashboard .rb-project-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.08rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--text);
+  word-break: break-word;
+}
+
+#resumeBuilderDashboard .rb-project-type-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+#resumeBuilderDashboard .rb-project-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+#resumeBuilderDashboard .rb-project-action {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#resumeBuilderDashboard .rb-project-tech-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+#resumeBuilderDashboard .rb-project-tech-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+#resumeBuilderDashboard .rb-project-desc {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#resumeBuilderDashboard .rb-project-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+#resumeBuilderDashboard .rb-project-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+#resumeBuilderDashboard .rb-project-link-btn {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+#resumeBuilderDashboard .rb-project-empty {
+  text-align: center;
+  padding: 2rem 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+#resumeBuilderDashboard .rb-project-empty-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 0.85rem;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 1.45rem;
+}
+
+#resumeBuilderDashboard .rb-project-empty-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+#resumeBuilderDashboard .rb-project-add-wrap {
+  margin-top: 1rem;
+}
+
+#resumeBuilderDashboard .rb-project-add-btn {
+  font-weight: 600;
+}
+
+#resumeBuilderDashboard .rb-project-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
 #resumeBuilderDashboard #rbObjectiveText {
   min-height: 7rem;
 }
@@ -200,5 +366,29 @@
     max-width: 3.5rem;
     opacity: 1;
     overflow: visible;
+  }
+  #resumeBuilderDashboard .rb-project-card {
+    padding: 1rem;
+  }
+  #resumeBuilderDashboard .rb-project-card-header {
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  #resumeBuilderDashboard .rb-project-card-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  #resumeBuilderDashboard .rb-project-card-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  #resumeBuilderDashboard .rb-project-link-btn {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+  #resumeBuilderDashboard .rb-project-add-btn {
+    width: 100%;
+    justify-content: center;
   }
 }
