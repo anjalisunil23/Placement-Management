@@ -41,6 +41,7 @@ final class Collections
     public const RESUME_CAREER_OBJECTIVES = 'resume_career_objectives';
     public const RESUME_SKILLS = 'resume_skills';
     public const RESUME_PROJECTS = 'resume_projects';
+    public const RESUME_EXPERIENCE = 'resume_experience';
 
     /** Valid user roles */
     public const ROLES = [

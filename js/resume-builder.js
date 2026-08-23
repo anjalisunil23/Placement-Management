@@ -44,8 +44,8 @@
     {
       id: 'internships',
       icon: 'bi-briefcase',
-      title: 'Internships',
-      description: 'Internship experience, organisation, and duration.',
+      title: 'Experience',
+      description: 'Internships, training, research, volunteering, and other relevant work experience.',
     },
     {
       id: 'certifications',
@@ -89,6 +89,15 @@
   const PROJECT_COMPLETE_MIN = 1;
   const PROJECT_RECOMMENDED = 2;
   const PROJECT_TYPES = ['Academic', 'Personal', 'Internship', 'Research', 'Freelance', 'Other'];
+  const EXP_ORG_MIN = 3;
+  const EXP_ORG_MAX = 150;
+  const EXP_POSITION_MIN = 3;
+  const EXP_POSITION_MAX = 150;
+  const EXP_DESC_MIN = 50;
+  const EXP_DESC_MAX = 1000;
+  const EXP_COMPLETE_MIN = 1;
+  const EXP_RECOMMENDED = 2;
+  const EXP_TYPES = ['Internship', 'Industrial Training', 'Research', 'Freelance', 'Volunteer', 'Part Time', 'Apprenticeship', 'Other'];
 
   const state = {
     personalComplete: false,
@@ -104,6 +113,10 @@
     projectsEditingId: '',
     projectsMessage: '',
     projectsFormOpen: false,
+    experiences: [],
+    experiencesEditingId: '',
+    experiencesMessage: '',
+    experiencesFormOpen: false,
   };
 
   function esc(value) {
@@ -178,7 +191,8 @@
       + (state.educationComplete ? 1 : 0)
       + (state.objectiveComplete ? 1 : 0)
       + (state.skills.length >= SKILL_COMPLETE_MIN ? 1 : 0)
-      + (state.projects.length >= PROJECT_COMPLETE_MIN ? 1 : 0);
+      + (state.projects.length >= PROJECT_COMPLETE_MIN ? 1 : 0)
+      + (state.experiences.length >= EXP_COMPLETE_MIN ? 1 : 0);
   }
 
   function completionPercent() {
@@ -728,6 +742,185 @@
       ${formOpen ? formHtml : ''}`;
   }
 
+  function experienceTypeBadgeClass(type) {
+    const map = {
+      Internship: 'info',
+      'Industrial Training': 'warning',
+      Research: 'info',
+      Freelance: 'success',
+      Volunteer: 'success',
+      'Part Time': 'warning',
+      Apprenticeship: 'warning',
+      Other: 'muted',
+    };
+    return map[type] || 'muted';
+  }
+
+  function formatExperienceMonth(dateStr) {
+    const raw = String(dateStr || '').trim();
+    if (!raw) return '';
+    const parts = raw.split('-');
+    if (parts.length < 2) return raw;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = parseInt(parts[1], 10);
+    const year = parts[0];
+    if (month >= 1 && month <= 12) return months[month - 1] + ' ' + year;
+    return raw;
+  }
+
+  function formatExperienceDateRange(exp) {
+    const start = formatExperienceMonth(exp.startDate);
+    if (exp.currentlyWorking) return start ? start + ' – Present' : 'Present';
+    const end = formatExperienceMonth(exp.endDate);
+    if (start && end) return start + ' – ' + end;
+    return start || end || '';
+  }
+
+  function experienceTimelineItem(exp) {
+    const typeClass = experienceTypeBadgeClass(exp.experienceType);
+    const dates = formatExperienceDateRange(exp);
+    const location = String(exp.location || '').trim();
+    return `
+      <article class="rb-exp-item">
+        <div class="rb-exp-card card-surface">
+          <header class="rb-exp-card-header">
+            <div class="rb-exp-card-heading">
+              <h3 class="rb-exp-org">${esc(exp.organizationName)}</h3>
+              <p class="rb-exp-role">${esc(exp.positionTitle)}</p>
+              <div class="rb-exp-meta">
+                <span class="badge-soft ${typeClass} rb-exp-type-badge">${esc(exp.experienceType)}</span>
+                ${dates ? `<span class="rb-exp-dates"><i class="bi bi-calendar3" aria-hidden="true"></i>${esc(dates)}</span>` : ''}
+                ${location ? `<span class="rb-exp-location"><i class="bi bi-geo-alt" aria-hidden="true"></i>${esc(location)}</span>` : ''}
+              </div>
+            </div>
+            <div class="rb-exp-card-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary rb-exp-action" data-rb-exp-edit="${esc(exp.id)}" title="Edit experience" aria-label="Edit ${esc(exp.organizationName)}">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-danger rb-exp-action" data-rb-exp-delete="${esc(exp.id)}" title="Delete experience" aria-label="Delete ${esc(exp.organizationName)}">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </header>
+          <details class="rb-exp-desc-details">
+            <summary class="rb-exp-desc-summary">View description</summary>
+            <p class="rb-exp-desc">${esc(exp.description)}</p>
+          </details>
+        </div>
+      </article>`;
+  }
+
+  function experienceCardBody(loading) {
+    if (loading) {
+      return `<p class="small text-muted-2 mb-0">Loading experience…</p>`;
+    }
+
+    const count = state.experiences.length;
+    const complete = count >= EXP_COMPLETE_MIN;
+    const badge = complete
+      ? '<span class="badge-soft success">Completed</span>'
+      : '<span class="badge-soft warning">Incomplete</span>';
+    const editing = !!state.experiencesEditingId;
+    const formOpen = state.experiencesFormOpen || editing;
+    const editingExp = state.experiences.find((e) => e.id === state.experiencesEditingId) || null;
+    const msg = state.experiencesMessage
+      ? `<div class="alert alert-warning py-2 small mb-3" role="alert">${esc(state.experiencesMessage)}</div>`
+      : '';
+    const recPct = Math.min(100, Math.round((count / EXP_RECOMMENDED) * 100));
+    const currentlyChecked = editingExp ? !!editingExp.currentlyWorking : false;
+
+    const typeOpts = EXP_TYPES.map((type) => {
+      const selected = editingExp && editingExp.experienceType === type ? ' selected' : '';
+      return `<option value="${esc(type)}"${selected}>${esc(type)}</option>`;
+    }).join('');
+
+    const formHtml = `
+      ${msg}
+      <div class="rb-exp-form">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbExpOrg">Organization Name *</label>
+            <input class="form-control" id="rbExpOrg" maxlength="${EXP_ORG_MAX}" value="${esc(editingExp ? editingExp.organizationName : '')}" data-rb-exp-org />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbExpPosition">Position / Role *</label>
+            <input class="form-control" id="rbExpPosition" maxlength="${EXP_POSITION_MAX}" value="${esc(editingExp ? editingExp.positionTitle : '')}" data-rb-exp-position />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbExpType">Experience Type *</label>
+            <select class="form-select" id="rbExpType" data-rb-exp-type>
+              <option value="">Select type</option>
+              ${typeOpts}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="rbExpLocation">Location</label>
+            <input class="form-control" id="rbExpLocation" maxlength="150" placeholder="City, State" value="${esc(editingExp && editingExp.location ? editingExp.location : '')}" data-rb-exp-location />
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold" for="rbExpDesc">Description *</label>
+            <textarea class="form-control" id="rbExpDesc" rows="4" maxlength="${EXP_DESC_MAX}" data-rb-exp-desc>${esc(editingExp ? editingExp.description : '')}</textarea>
+            <div class="form-text">Minimum ${EXP_DESC_MIN} characters.</div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold" for="rbExpStart">Start Date *</label>
+            <input type="date" class="form-control" id="rbExpStart" value="${esc(editingExp && editingExp.startDate ? editingExp.startDate : '')}" data-rb-exp-start required />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold" for="rbExpEnd">End Date</label>
+            <input type="date" class="form-control" id="rbExpEnd" value="${esc(editingExp && editingExp.endDate ? editingExp.endDate : '')}" data-rb-exp-end ${currentlyChecked ? 'disabled' : ''} />
+          </div>
+          <div class="col-md-4 d-flex align-items-end">
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="rbExpCurrent" data-rb-exp-current ${currentlyChecked ? 'checked' : ''} />
+              <label class="form-check-label small" for="rbExpCurrent">Currently Working</label>
+            </div>
+          </div>
+          <div class="col-12 d-flex gap-2 justify-content-end mt-1">
+            <button type="button" class="btn btn-outline-secondary" data-rb-exp-cancel>Cancel</button>
+            <button type="button" class="btn btn-primary" data-rb-exp-save>${editing ? 'Save Experience' : 'Add Experience'}</button>
+          </div>
+        </div>
+      </div>`;
+
+    const emptyHtml = `
+      <div class="rb-exp-empty">
+        <div class="rb-exp-empty-icon" aria-hidden="true"><i class="bi bi-briefcase"></i></div>
+        <p class="rb-exp-empty-title mb-3">No experience added yet</p>
+        <button type="button" class="btn btn-primary rb-exp-add-btn" data-rb-exp-add><i class="bi bi-plus-lg me-1"></i>Add Experience</button>
+      </div>`;
+
+    const addBtnHtml = formOpen
+      ? ''
+      : `<div class="rb-exp-add-wrap">
+           <button type="button" class="btn btn-primary rb-exp-add-btn" data-rb-exp-add><i class="bi bi-plus-lg me-1"></i>Add Experience</button>
+         </div>`;
+
+    const listHtml = count
+      ? `<div class="rb-exp-timeline">${state.experiences.map(experienceTimelineItem).join('')}</div>${addBtnHtml}`
+      : (formOpen ? '' : emptyHtml);
+
+    return `
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+        <h6 class="fw-bold mb-0">Experience</h6>
+        ${badge}
+      </div>
+      <div class="alert alert-info py-2 small mb-3" role="note">
+        Include internships, industrial training, research work, volunteering, freelance work, apprenticeships, and other relevant experiences.
+      </div>
+      <div class="rb-exp-summary mb-3">
+        <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
+          <div class="fw-semibold">Experience Added: ${count}</div>
+          <div class="small text-muted-2">Recommended: ${EXP_RECOMMENDED}+ Entries</div>
+        </div>
+        <div class="rb-skill-rec-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${EXP_RECOMMENDED}" aria-valuenow="${count}" aria-label="Recommended experience entries">
+          <div class="rb-skill-rec-fill" style="width:${recPct}%"></div>
+        </div>
+      </div>
+      ${listHtml}
+      ${formOpen ? formHtml : ''}`;
+  }
+
   function sectionCard(section) {
     if (section.id === 'personal') {
       return `
@@ -770,6 +963,15 @@
         <div class="col-12">
           <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="projects">
             ${projectsCardBody(true)}
+          </div>
+        </div>`;
+    }
+
+    if (section.id === 'internships') {
+      return `
+        <div class="col-12">
+          <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="experience">
+            ${experienceCardBody(true)}
           </div>
         </div>`;
     }
@@ -899,6 +1101,43 @@
       const delProject = event.target.closest('[data-rb-project-delete]');
       if (delProject) {
         deleteProject(delProject.getAttribute('data-rb-project-delete') || '');
+        return;
+      }
+      if (event.target.closest('[data-rb-exp-save]')) {
+        saveExperience();
+        return;
+      }
+      if (event.target.closest('[data-rb-exp-add]')) {
+        state.experiencesFormOpen = true;
+        state.experiencesEditingId = '';
+        state.experiencesMessage = '';
+        renderExperienceCard();
+        return;
+      }
+      if (event.target.closest('[data-rb-exp-cancel]')) {
+        state.experiencesEditingId = '';
+        state.experiencesFormOpen = false;
+        state.experiencesMessage = '';
+        renderExperienceCard();
+        return;
+      }
+      const editExp = event.target.closest('[data-rb-exp-edit]');
+      if (editExp) {
+        state.experiencesEditingId = editExp.getAttribute('data-rb-exp-edit') || '';
+        state.experiencesFormOpen = true;
+        state.experiencesMessage = '';
+        renderExperienceCard();
+        return;
+      }
+      const delExp = event.target.closest('[data-rb-exp-delete]');
+      if (delExp) {
+        deleteExperience(delExp.getAttribute('data-rb-exp-delete') || '');
+      }
+    });
+
+    root.addEventListener('change', (event) => {
+      if (event.target.matches('[data-rb-exp-current]')) {
+        syncExperienceEndDateField();
       }
     });
 
@@ -1261,6 +1500,194 @@
     }
   }
 
+  function renderExperienceCard() {
+    const card = root.querySelector('[data-rb-card="experience"]');
+    if (card) card.innerHTML = experienceCardBody(false);
+    updateCompletionUi();
+  }
+
+  function syncExperienceEndDateField() {
+    const current = root.querySelector('[data-rb-exp-current]');
+    const end = root.querySelector('[data-rb-exp-end]');
+    if (!current || !end) return;
+    if (current.checked) {
+      end.value = '';
+      end.disabled = true;
+    } else {
+      end.disabled = false;
+    }
+  }
+
+  function applyExperiences(experiences) {
+    state.experiences = Array.isArray(experiences)
+      ? experiences.filter((e) => e && e.organizationName)
+      : [];
+    renderExperienceCard();
+  }
+
+  async function loadExperience() {
+    if (!canUseResumeBuilderApi()) {
+      applyExperiences([]);
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/experience', { skipAuthRedirect: true });
+      if (res?.success) {
+        applyExperiences(res.data?.experiences || []);
+        return;
+      }
+    } catch (_err) {
+      // Fall through.
+    }
+    applyExperiences([]);
+  }
+
+  function readExperienceForm() {
+    const orgEl = root.querySelector('[data-rb-exp-org]');
+    const posEl = root.querySelector('[data-rb-exp-position]');
+    const typeEl = root.querySelector('[data-rb-exp-type]');
+    const locEl = root.querySelector('[data-rb-exp-location]');
+    const descEl = root.querySelector('[data-rb-exp-desc]');
+    const startEl = root.querySelector('[data-rb-exp-start]');
+    const endEl = root.querySelector('[data-rb-exp-end]');
+    const currentEl = root.querySelector('[data-rb-exp-current]');
+    return {
+      organizationName: orgEl ? String(orgEl.value || '').trim() : '',
+      positionTitle: posEl ? String(posEl.value || '').trim() : '',
+      experienceType: typeEl ? String(typeEl.value || '').trim() : '',
+      location: locEl ? String(locEl.value || '').trim() : '',
+      description: descEl ? String(descEl.value || '').trim() : '',
+      startDate: startEl ? String(startEl.value || '').trim() : '',
+      endDate: endEl ? String(endEl.value || '').trim() : '',
+      currentlyWorking: !!(currentEl && currentEl.checked),
+    };
+  }
+
+  function restoreExperienceForm(form) {
+    const orgEl = root.querySelector('[data-rb-exp-org]');
+    const posEl = root.querySelector('[data-rb-exp-position]');
+    const typeEl = root.querySelector('[data-rb-exp-type]');
+    const locEl = root.querySelector('[data-rb-exp-location]');
+    const descEl = root.querySelector('[data-rb-exp-desc]');
+    const startEl = root.querySelector('[data-rb-exp-start]');
+    const endEl = root.querySelector('[data-rb-exp-end]');
+    const currentEl = root.querySelector('[data-rb-exp-current]');
+    if (orgEl) orgEl.value = form.organizationName;
+    if (posEl) posEl.value = form.positionTitle;
+    if (typeEl) typeEl.value = form.experienceType;
+    if (locEl) locEl.value = form.location;
+    if (descEl) descEl.value = form.description;
+    if (startEl) startEl.value = form.startDate;
+    if (endEl) endEl.value = form.endDate;
+    if (currentEl) currentEl.checked = form.currentlyWorking;
+    syncExperienceEndDateField();
+  }
+
+  function validateExperienceForm(form) {
+    const orgLen = form.organizationName.length;
+    if (orgLen < EXP_ORG_MIN || orgLen > EXP_ORG_MAX) {
+      return 'Organization name must be between ' + EXP_ORG_MIN + ' and ' + EXP_ORG_MAX + ' characters.';
+    }
+    const posLen = form.positionTitle.length;
+    if (posLen < EXP_POSITION_MIN || posLen > EXP_POSITION_MAX) {
+      return 'Position must be between ' + EXP_POSITION_MIN + ' and ' + EXP_POSITION_MAX + ' characters.';
+    }
+    if (!EXP_TYPES.includes(form.experienceType)) {
+      return 'Select an experience type.';
+    }
+    const descLen = form.description.length;
+    if (descLen < EXP_DESC_MIN || descLen > EXP_DESC_MAX) {
+      return 'Description must be between ' + EXP_DESC_MIN + ' and ' + EXP_DESC_MAX + ' characters.';
+    }
+    if (!form.startDate) {
+      return 'Start date is required.';
+    }
+    if (form.currentlyWorking && form.endDate) {
+      return 'Clear the end date when currently working here.';
+    }
+    if (!form.currentlyWorking && form.endDate && form.endDate < form.startDate) {
+      return 'End date cannot be earlier than start date.';
+    }
+    return '';
+  }
+
+  async function saveExperience() {
+    const form = readExperienceForm();
+    const error = validateExperienceForm(form);
+    if (error) {
+      state.experiencesMessage = error;
+      renderExperienceCard();
+      restoreExperienceForm(form);
+      return;
+    }
+    if (!canUseResumeBuilderApi()) {
+      state.experiencesMessage = 'Sign in to save experience.';
+      renderExperienceCard();
+      return;
+    }
+
+    const payload = {
+      organizationName: form.organizationName,
+      positionTitle: form.positionTitle,
+      experienceType: form.experienceType,
+      location: form.location,
+      description: form.description,
+      startDate: form.startDate,
+      endDate: form.currentlyWorking ? '' : form.endDate,
+      currentlyWorking: form.currentlyWorking,
+    };
+
+    const editingId = state.experiencesEditingId;
+    try {
+      const res = editingId
+        ? await api('/student/resume-builder/experience/' + encodeURIComponent(editingId), {
+            method: 'PUT',
+            body: payload,
+            skipAuthRedirect: true,
+          })
+        : await api('/student/resume-builder/experience', {
+            method: 'POST',
+            body: payload,
+            skipAuthRedirect: true,
+          });
+      if (res?.success) {
+        state.experiencesEditingId = '';
+        state.experiencesFormOpen = false;
+        state.experiencesMessage = '';
+        applyExperiences(res.data?.experiences || []);
+        return;
+      }
+      state.experiencesMessage = res?.message || 'Could not save experience.';
+      renderExperienceCard();
+      restoreExperienceForm(form);
+    } catch (_err) {
+      state.experiencesMessage = 'Could not save experience.';
+      renderExperienceCard();
+      restoreExperienceForm(form);
+    }
+  }
+
+  async function deleteExperience(id) {
+    if (!id || !canUseResumeBuilderApi()) return;
+    try {
+      const res = await api('/student/resume-builder/experience/' + encodeURIComponent(id) + '/delete', {
+        method: 'POST',
+        skipAuthRedirect: true,
+      });
+      if (res?.success) {
+        if (state.experiencesEditingId === id) state.experiencesEditingId = '';
+        state.experiencesMessage = '';
+        applyExperiences(res.data?.experiences || []);
+        return;
+      }
+      state.experiencesMessage = res?.message || 'Could not remove experience.';
+      renderExperienceCard();
+    } catch (_err) {
+      state.experiencesMessage = 'Could not remove experience.';
+      renderExperienceCard();
+    }
+  }
+
   async function saveCareerObjective() {
     const ta = root.querySelector('[data-rb-objective-input]');
     const text = ta ? ta.value : '';
@@ -1320,6 +1747,7 @@
     loadCareerObjective();
     loadSkills();
     loadProjects();
+    loadExperience();
   }
 
   if (typeof onAppReady === 'function') onAppReady(init);

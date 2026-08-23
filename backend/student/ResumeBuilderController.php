@@ -6,6 +6,7 @@ namespace PMS\Student;
 
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\ResumeCareerObjectiveModel;
+use PMS\Models\ResumeExperienceModel;
 use PMS\Models\ResumeProjectModel;
 use PMS\Models\ResumeSkillModel;
 use PMS\Models\StudentModel;
@@ -20,6 +21,7 @@ final class ResumeBuilderController
     private ResumeCareerObjectiveModel $objectiveModel;
     private ResumeSkillModel $skillModel;
     private ResumeProjectModel $projectModel;
+    private ResumeExperienceModel $experienceModel;
 
     public function __construct()
     {
@@ -27,6 +29,7 @@ final class ResumeBuilderController
         $this->objectiveModel = new ResumeCareerObjectiveModel();
         $this->skillModel = new ResumeSkillModel();
         $this->projectModel = new ResumeProjectModel();
+        $this->experienceModel = new ResumeExperienceModel();
     }
 
     /** GET /api/student/resume-builder/career-objective */
@@ -295,6 +298,144 @@ final class ResumeBuilderController
             'projectLink' => $link !== '' ? $link : null,
             'startDate' => $start !== '' ? $start : null,
             'endDate' => $end !== '' ? $end : null,
+        ];
+    }
+
+    /** GET /api/student/resume-builder/experience */
+    public function listExperience(): void
+    {
+        $studentId = $this->currentStudentId();
+        $rows = $this->experienceModel->listByStudentId($studentId);
+        Response::success([
+            'experiences' => array_map([$this, 'serializeExperience'], $rows),
+            'count' => count($rows),
+            'types' => ResumeExperienceModel::TYPES,
+            'complete' => count($rows) >= ResumeExperienceModel::COMPLETE_MIN_COUNT,
+            'recommended' => count($rows) >= ResumeExperienceModel::RECOMMENDED_COUNT,
+        ]);
+    }
+
+    /** POST /api/student/resume-builder/experience */
+    public function addExperience(): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = $this->readExperienceInput();
+        $check = ResumeExperienceModel::validate($input);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->experienceModel->createForStudent($studentId, $input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+        Response::success($this->experiencePayload($studentId, $row), 'Experience added.');
+    }
+
+    /** PUT /api/student/resume-builder/experience/{id} */
+    public function updateExperience(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = $this->readExperienceInput();
+        $check = ResumeExperienceModel::validate($input);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->experienceModel->updateForStudent($id, $studentId, $input);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::notFound($e->getMessage());
+        }
+        Response::success($this->experiencePayload($studentId, $row), 'Experience updated.');
+    }
+
+    /** POST /api/student/resume-builder/experience/{id}/delete */
+    public function deleteExperience(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        if (!$this->experienceModel->deleteForStudent($id, $studentId)) {
+            Response::notFound('Experience not found.');
+        }
+        Response::success($this->experiencePayload($studentId), 'Experience removed.');
+    }
+
+    /**
+     * @return array{
+     *   organization_name: string,
+     *   position_title: string,
+     *   experience_type: string,
+     *   location: string,
+     *   description: string,
+     *   start_date: string,
+     *   end_date: string,
+     *   currently_working: bool
+     * }
+     */
+    private function readExperienceInput(): array
+    {
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($input)) {
+            $input = [];
+        }
+        return [
+            'organization_name' => (string) ($input['organizationName'] ?? $input['organization_name'] ?? ''),
+            'position_title' => (string) ($input['positionTitle'] ?? $input['position_title'] ?? ''),
+            'experience_type' => (string) ($input['experienceType'] ?? $input['experience_type'] ?? ''),
+            'location' => (string) ($input['location'] ?? ''),
+            'description' => (string) ($input['description'] ?? ''),
+            'start_date' => (string) ($input['startDate'] ?? $input['start_date'] ?? ''),
+            'end_date' => (string) ($input['endDate'] ?? $input['end_date'] ?? ''),
+            'currently_working' => ResumeExperienceModel::parseCurrentlyWorking($input),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $changed
+     * @return array<string, mixed>
+     */
+    private function experiencePayload(string $studentId, ?array $changed = null): array
+    {
+        $rows = $this->experienceModel->listByStudentId($studentId);
+        return [
+            'experience' => $changed ? $this->serializeExperience($changed) : null,
+            'experiences' => array_map([$this, 'serializeExperience'], $rows),
+            'count' => count($rows),
+            'complete' => count($rows) >= ResumeExperienceModel::COMPLETE_MIN_COUNT,
+            'recommended' => count($rows) >= ResumeExperienceModel::RECOMMENDED_COUNT,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array{
+     *   id: string,
+     *   organizationName: string,
+     *   positionTitle: string,
+     *   experienceType: string,
+     *   location: string|null,
+     *   description: string,
+     *   startDate: string,
+     *   endDate: string|null,
+     *   currentlyWorking: bool
+     * }
+     */
+    private function serializeExperience(array $row): array
+    {
+        $location = trim((string) ($row['location'] ?? ''));
+        $end = (string) ($row['end_date'] ?? '');
+        $currently = (int) ($row['currently_working'] ?? 0) === 1;
+        return [
+            'id' => (string) ($row['id'] ?? ''),
+            'organizationName' => (string) ($row['organization_name'] ?? ''),
+            'positionTitle' => (string) ($row['position_title'] ?? ''),
+            'experienceType' => (string) ($row['experience_type'] ?? ''),
+            'location' => $location !== '' ? $location : null,
+            'description' => (string) ($row['description'] ?? ''),
+            'startDate' => (string) ($row['start_date'] ?? ''),
+            'endDate' => $currently || $end === '' ? null : $end,
+            'currentlyWorking' => $currently,
         ];
     }
 
