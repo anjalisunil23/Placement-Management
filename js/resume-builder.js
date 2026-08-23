@@ -126,7 +126,9 @@
   ];
 
   const state = {
+    personal: {},
     personalComplete: false,
+    education: [],
     educationComplete: false,
     objectiveComplete: false,
     objectiveText: '',
@@ -151,6 +153,8 @@
     activitiesEditingId: '',
     activitiesMessage: '',
     activitiesFormOpen: false,
+    previewLoading: false,
+    previewRefreshing: false,
   };
 
   function esc(value) {
@@ -1253,6 +1257,265 @@
       ${formOpen ? formHtml : ''}`;
   }
 
+  function previewContactLine(personal) {
+    const parts = [];
+    if (personal.mobile) parts.push(esc(personal.mobile));
+    if (personal.collegeEmail) parts.push(esc(personal.collegeEmail));
+    if (personal.personalEmail && personal.personalEmail !== personal.collegeEmail) {
+      parts.push(esc(personal.personalEmail));
+    }
+    if (personal.department) parts.push(esc(personal.department));
+    if (personal.batch) parts.push(esc(personal.batch));
+    if (personal.registerNumber) parts.push('Reg. No. ' + esc(personal.registerNumber));
+    return parts.join(' · ');
+  }
+
+  function previewSkillsHtml() {
+    if (!state.skills.length) return '';
+    const groups = SKILL_CATEGORIES.map((cat) => {
+      const items = state.skills.filter((s) => s.skillCategory === cat);
+      if (!items.length) return '';
+      const tags = items.map((s) => `<span class="rb-resume-skill-tag">${esc(s.skillName)}</span>`).join('');
+      return `
+        <div class="rb-resume-skill-group">
+          <span class="rb-resume-skill-label">${esc(cat)}:</span>
+          <span class="rb-resume-skill-tags">${tags}</span>
+        </div>`;
+    }).filter(Boolean).join('');
+    return `
+      <section class="rb-resume-section">
+        <h2 class="rb-resume-h2">Skills</h2>
+        <div class="rb-resume-skills">${groups}</div>
+      </section>`;
+  }
+
+  function previewEducationHtml() {
+    if (!state.education.length) return '';
+    const items = state.education.map((row) => {
+      const meta = [row.institution, row.university].filter(Boolean).map(esc).join(', ');
+      const right = [row.year, row.score].filter(Boolean).map(esc).join(' · ');
+      return `
+        <div class="rb-resume-entry">
+          <div class="rb-resume-entry-top">
+            <div class="rb-resume-entry-title">${esc(row.qualification || 'Qualification')}</div>
+            ${right ? `<div class="rb-resume-entry-right">${right}</div>` : ''}
+          </div>
+          ${meta ? `<div class="rb-resume-entry-sub">${meta}</div>` : ''}
+        </div>`;
+    }).join('');
+    return `
+      <section class="rb-resume-section">
+        <h2 class="rb-resume-h2">Education</h2>
+        ${items}
+      </section>`;
+  }
+
+  function previewProjectsHtml() {
+    if (!state.projects.length) return '';
+    const items = state.projects.map((p) => {
+      const tech = String(p.technologiesUsed || '').trim();
+      const link = String(p.projectLink || '').trim();
+      const dates = formatProjectDates(p.startDate, p.endDate);
+      return `
+        <div class="rb-resume-entry">
+          <div class="rb-resume-entry-top">
+            <div class="rb-resume-entry-title">${esc(p.projectTitle)}${p.projectType ? ` <span class="rb-resume-muted">(${esc(p.projectType)})</span>` : ''}</div>
+            ${dates ? `<div class="rb-resume-entry-right">${dates}</div>` : ''}
+          </div>
+          ${tech ? `<div class="rb-resume-entry-sub">Technologies: ${esc(tech)}</div>` : ''}
+          <p class="rb-resume-entry-body">${esc(p.projectDescription)}</p>
+          ${link ? `<div class="rb-resume-entry-link">${esc(link)}</div>` : ''}
+        </div>`;
+    }).join('');
+    return `
+      <section class="rb-resume-section">
+        <h2 class="rb-resume-h2">Projects</h2>
+        ${items}
+      </section>`;
+  }
+
+  function previewExperienceHtml() {
+    if (!state.experiences.length) return '';
+    const sorted = state.experiences.slice().sort((a, b) => {
+      const aKey = String(a.startDate || '');
+      const bKey = String(b.startDate || '');
+      return bKey.localeCompare(aKey);
+    });
+    const items = sorted.map((exp) => {
+      const dates = formatExperienceDateRange(exp);
+      const location = String(exp.location || '').trim();
+      return `
+        <div class="rb-resume-entry">
+          <div class="rb-resume-entry-top">
+            <div class="rb-resume-entry-title">${esc(exp.organizationName)}</div>
+            ${dates ? `<div class="rb-resume-entry-right">${esc(dates)}</div>` : ''}
+          </div>
+          <div class="rb-resume-entry-sub">${esc(exp.positionTitle)}${exp.experienceType ? ` · ${esc(exp.experienceType)}` : ''}${location ? ` · ${esc(location)}` : ''}</div>
+          <p class="rb-resume-entry-body">${esc(exp.description)}</p>
+        </div>`;
+    }).join('');
+    return `
+      <section class="rb-resume-section">
+        <h2 class="rb-resume-h2">Experience</h2>
+        ${items}
+      </section>`;
+  }
+
+  function previewCertificationsHtml() {
+    if (!state.certifications.length) return '';
+    const items = state.certifications.map((c) => {
+      const dates = formatCertDateRange(c);
+      const credentialId = String(c.credentialId || '').trim();
+      const credentialUrl = String(c.credentialUrl || '').trim();
+      const description = String(c.description || '').trim();
+      return `
+        <div class="rb-resume-entry">
+          <div class="rb-resume-entry-top">
+            <div class="rb-resume-entry-title">${esc(c.certificationName)}</div>
+            ${dates ? `<div class="rb-resume-entry-right">${esc(dates)}</div>` : ''}
+          </div>
+          <div class="rb-resume-entry-sub">${esc(c.issuingOrganization)}</div>
+          ${credentialId ? `<div class="rb-resume-entry-sub">Credential ID: ${esc(credentialId)}</div>` : ''}
+          ${description ? `<p class="rb-resume-entry-body">${esc(description)}</p>` : ''}
+          ${credentialUrl ? `<div class="rb-resume-entry-link">${esc(credentialUrl)}</div>` : ''}
+        </div>`;
+    }).join('');
+    return `
+      <section class="rb-resume-section">
+        <h2 class="rb-resume-h2">Certifications</h2>
+        ${items}
+      </section>`;
+  }
+
+  function previewActivitiesHtml() {
+    if (!state.activities.length) return '';
+    const items = state.activities.map((a) => {
+      const date = formatActivityDate(a.activityDate);
+      const org = String(a.organization || '').trim();
+      return `
+        <div class="rb-resume-entry">
+          <div class="rb-resume-entry-top">
+            <div class="rb-resume-entry-title">${esc(a.title)}</div>
+            ${date ? `<div class="rb-resume-entry-right">${esc(date)}</div>` : ''}
+          </div>
+          <div class="rb-resume-entry-sub">${esc(a.activityType)}${org ? ` · ${esc(org)}` : ''}</div>
+          <p class="rb-resume-entry-body">${esc(a.description)}</p>
+        </div>`;
+    }).join('');
+    return `
+      <section class="rb-resume-section">
+        <h2 class="rb-resume-h2">Achievements &amp; Activities</h2>
+        ${items}
+      </section>`;
+  }
+
+  function buildResumeDocumentHtml() {
+    const personal = state.personal || {};
+    const name = String(personal.fullName || '').trim();
+    const contact = previewContactLine(personal);
+    const hasHeader = !!(name || contact);
+    const objective = String(state.objectiveText || '').trim();
+
+    const sections = [
+      hasHeader ? `
+        <header class="rb-resume-header">
+          ${name ? `<h1 class="rb-resume-name">${esc(name)}</h1>` : ''}
+          ${contact ? `<p class="rb-resume-contact">${contact}</p>` : ''}
+        </header>` : '',
+      objective ? `
+        <section class="rb-resume-section">
+          <h2 class="rb-resume-h2">Career Objective</h2>
+          <p class="rb-resume-objective">${esc(objective)}</p>
+        </section>` : '',
+      previewEducationHtml(),
+      previewSkillsHtml(),
+      previewProjectsHtml(),
+      previewExperienceHtml(),
+      previewCertificationsHtml(),
+      previewActivitiesHtml(),
+    ].filter(Boolean);
+
+    if (!sections.length) {
+      return `
+        <div class="rb-resume-empty-doc">
+          <p>Complete sections above to see your resume preview.</p>
+        </div>`;
+    }
+
+    return `<div class="rb-resume-doc" id="rbResumePrintRoot">${sections.join('')}</div>`;
+  }
+
+  function previewCardBody(loading) {
+    if (loading) {
+      return `<p class="small text-muted-2 mb-0">Preparing resume preview…</p>`;
+    }
+
+    return `
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+        <div>
+          <h6 class="fw-bold mb-1">Resume Preview</h6>
+          <p class="small text-muted-2 mb-0">This preview represents how your resume will appear when exported.</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2 rb-preview-toolbar">
+          <button type="button" class="btn btn-sm btn-outline-primary" data-rb-preview-refresh>
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh Preview
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-rb-preview-print>
+            <i class="bi bi-printer me-1"></i>Print
+          </button>
+        </div>
+      </div>
+      <div class="alert alert-info py-2 small mb-3" role="note">
+        This preview represents how your resume will appear when exported.
+      </div>
+      <div class="rb-preview-stage">
+        <div class="rb-preview-paper">
+          ${buildResumeDocumentHtml()}
+        </div>
+      </div>`;
+  }
+
+  function renderPreviewCard() {
+    if (state.previewRefreshing) return;
+    const card = root.querySelector('[data-rb-card="preview"]');
+    if (!card) return;
+    card.innerHTML = previewCardBody(false);
+  }
+
+  function scrollToPreview() {
+    const card = root.querySelector('[data-rb-card="preview"]');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async function refreshPreviewData() {
+    state.previewRefreshing = true;
+    const card = root.querySelector('[data-rb-card="preview"]');
+    if (card) card.innerHTML = previewCardBody(true);
+    try {
+      await Promise.all([
+        loadPersonalFromProfile(),
+        loadCareerObjective(),
+        loadSkills(),
+        loadProjects(),
+        loadExperience(),
+        loadCertifications(),
+        loadActivities(),
+      ]);
+    } finally {
+      state.previewRefreshing = false;
+      renderPreviewCard();
+    }
+  }
+
+  function printResumePreview() {
+    renderPreviewCard();
+    document.body.classList.add('rb-printing-resume');
+    window.setTimeout(() => {
+      window.print();
+      window.setTimeout(() => document.body.classList.remove('rb-printing-resume'), 300);
+    }, 50);
+  }
+
   function sectionCard(section) {
     if (section.id === 'personal') {
       return `
@@ -1326,6 +1589,15 @@
         </div>`;
     }
 
+    if (section.id === 'preview') {
+      return `
+        <div class="col-12">
+          <div class="card-surface p-3 p-md-4 rb-section-card" data-rb-card="preview">
+            ${previewCardBody(true)}
+          </div>
+        </div>`;
+    }
+
     return `
       <div class="col-12 col-md-6">
         <div class="card-surface p-3 p-md-4 rb-section-card">
@@ -1354,7 +1626,10 @@
               <div class="rb-completion-bar-fill" data-rb-completion-fill></div>
             </div>
           </div>
-          <div class="rb-completion-actions">
+          <div class="rb-completion-actions d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-primary" data-rb-live-preview>
+              <i class="bi bi-eye me-1"></i>Live Preview
+            </button>
             <span class="d-inline-block" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Complete required sections first">
               <button type="button" class="btn btn-primary" disabled aria-disabled="true">
                 <i class="bi bi-file-earmark-pdf me-1"></i>Generate Resume PDF
@@ -1369,6 +1644,19 @@
     `;
 
     root.addEventListener('click', (event) => {
+      if (event.target.closest('[data-rb-live-preview]') || event.target.closest('[data-rb-section="preview"]')) {
+        renderPreviewCard();
+        scrollToPreview();
+        return;
+      }
+      if (event.target.closest('[data-rb-preview-refresh]')) {
+        refreshPreviewData();
+        return;
+      }
+      if (event.target.closest('[data-rb-preview-print]')) {
+        printResumePreview();
+        return;
+      }
       if (event.target.closest('[data-rb-edit-profile]')) {
         goToExistingProfile();
         return;
@@ -1574,18 +1862,22 @@
 
   function applyPersonal(fields) {
     const status = personalStatus(fields);
+    state.personal = fields && typeof fields === 'object' ? fields : {};
     state.personalComplete = status.complete;
     const card = root.querySelector('[data-rb-card="personal"]');
     if (card) card.innerHTML = personalCardBody(fields, status, false);
     updateCompletionUi();
+    renderPreviewCard();
   }
 
   function applyEducation(rows) {
     const status = educationStatus(rows);
+    state.education = Array.isArray(rows) ? rows : [];
     state.educationComplete = status.complete;
     const card = root.querySelector('[data-rb-card="education"]');
     if (card) card.innerHTML = educationCardBody(rows, status, false);
     updateCompletionUi();
+    renderPreviewCard();
   }
 
   function renderObjectiveCard(message) {
@@ -1600,6 +1892,7 @@
     state.objectiveComplete = objectiveValid(saved);
     state.objectiveEditing = !state.objectiveComplete;
     renderObjectiveCard();
+    renderPreviewCard();
   }
 
   async function loadCareerObjective() {
@@ -1632,6 +1925,7 @@
   function applySkills(skills) {
     state.skills = Array.isArray(skills) ? skills.filter((s) => s && s.skillName) : [];
     renderSkillsCard();
+    renderPreviewCard();
   }
 
   function canUseResumeBuilderApi() {
@@ -1765,6 +2059,7 @@
   function applyProjects(projects) {
     state.projects = Array.isArray(projects) ? projects.filter((p) => p && p.projectTitle) : [];
     renderProjectsCard();
+    renderPreviewCard();
   }
 
   async function loadProjects() {
@@ -1935,6 +2230,7 @@
       ? experiences.filter((e) => e && e.organizationName)
       : [];
     renderExperienceCard();
+    renderPreviewCard();
   }
 
   async function loadExperience() {
@@ -2111,6 +2407,7 @@
       ? certifications.filter((c) => c && c.certificationName)
       : [];
     renderCertificationsCard();
+    renderPreviewCard();
   }
 
   async function loadCertifications() {
@@ -2272,6 +2569,7 @@
       ? activities.filter((a) => a && a.title)
       : [];
     renderActivitiesCard();
+    renderPreviewCard();
   }
 
   async function loadActivities() {
