@@ -155,6 +155,7 @@
     activitiesFormOpen: false,
     previewLoading: false,
     previewRefreshing: false,
+    previewMode: false,
   };
 
   function esc(value) {
@@ -213,6 +214,9 @@
       program: firstText(personal.course, p.programme, p.program, p.branch, sessionUser.course, dept),
       batch: firstText(p.classBatch, p.stud_class, personal.year, p.batch, sessionUser.classBatch),
       gender: firstText(p.gender, personal.gender, user.gender, sessionUser.gender),
+      linkedin: firstText(personal.linkedin, personal.linkedinUrl, personal.linkedIn, p.linkedin, user.linkedin),
+      github: firstText(personal.github, personal.githubUrl, p.github, user.github),
+      portfolio: firstText(personal.portfolio, personal.portfolioUrl, personal.website, p.portfolio, user.portfolio),
     };
   }
 
@@ -1259,28 +1263,77 @@
 
   function previewContactLine(personal) {
     const parts = [];
-    if (personal.mobile) parts.push(esc(personal.mobile));
-    if (personal.collegeEmail) parts.push(esc(personal.collegeEmail));
-    if (personal.personalEmail && personal.personalEmail !== personal.collegeEmail) {
-      parts.push(esc(personal.personalEmail));
+    const mobile = String(personal.mobile || '').trim();
+    const email = firstText(personal.personalEmail, personal.collegeEmail);
+    const linkedin = formatContactLink(personal.linkedin, 'linkedin');
+    const github = formatContactLink(personal.github, 'github');
+    const portfolio = formatContactLink(personal.portfolio, 'portfolio');
+    if (mobile) parts.push(esc(mobile));
+    if (email) parts.push(esc(email));
+    if (linkedin) parts.push(linkedin);
+    if (github) parts.push(github);
+    if (portfolio) parts.push(portfolio);
+    return parts.join(' | ');
+  }
+
+  function formatContactLink(raw, kind) {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    let href = value;
+    let label = value.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    if (kind === 'linkedin') {
+      if (!/^https?:\/\//i.test(href)) href = 'https://' + href.replace(/^\/+/, '');
+      label = /linkedin\.com/i.test(value) ? label : ('linkedin.com/in/' + value.replace(/^@/, ''));
+      return `<a class="rb-resume-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
     }
-    if (personal.department) parts.push(esc(personal.department));
-    if (personal.batch) parts.push(esc(personal.batch));
-    if (personal.registerNumber) parts.push('Reg. No. ' + esc(personal.registerNumber));
-    return parts.join(' · ');
+    if (kind === 'github') {
+      if (!/^https?:\/\//i.test(href)) href = 'https://github.com/' + value.replace(/^@/, '');
+      label = /github\.com/i.test(value) ? label : ('github.com/' + value.replace(/^@/, ''));
+      return `<a class="rb-resume-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+    }
+    if (!/^https?:\/\//i.test(href)) href = 'https://' + href.replace(/^\/+/, '');
+    label = value.replace(/^https?:\/\//i, '');
+    return `<a class="rb-resume-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+  }
+
+  function previewBulletsHtml(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return '';
+    const lines = raw
+      .split(/\n+/)
+      .map((line) => line.replace(/^[•\-\*\u2022]\s*/, '').trim())
+      .filter(Boolean);
+    if (lines.length > 1) {
+      return `<ul class="rb-resume-bullets">${lines.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>`;
+    }
+    return `<p class="rb-resume-para">${esc(raw)}</p>`;
+  }
+
+  function previewEducationScore(row) {
+    const score = String(row.score || '').trim();
+    if (!score) return '';
+    if (/CGPA/i.test(score)) {
+      const num = score.replace(/\s*CGPA\s*/i, '').trim();
+      return num ? 'CGPA: ' + num : score;
+    }
+    if (/%\s*$/.test(score)) return 'Percentage: ' + score;
+    return score;
   }
 
   function previewSkillsHtml() {
     if (!state.skills.length) return '';
+    const labelMap = {
+      Technical: 'Technical Skills',
+      Tools: 'Tools & Platforms',
+      'Soft Skills': 'Soft Skills',
+      'Domain Skills': 'Domain Skills',
+      Languages: 'Languages',
+    };
     const groups = SKILL_CATEGORIES.map((cat) => {
       const items = state.skills.filter((s) => s.skillCategory === cat);
       if (!items.length) return '';
-      const tags = items.map((s) => `<span class="rb-resume-skill-tag">${esc(s.skillName)}</span>`).join('');
-      return `
-        <div class="rb-resume-skill-group">
-          <span class="rb-resume-skill-label">${esc(cat)}:</span>
-          <span class="rb-resume-skill-tags">${tags}</span>
-        </div>`;
+      const names = items.map((s) => esc(s.skillName)).join(', ');
+      return `<div class="rb-resume-skill-line"><span class="rb-resume-skill-label">${esc(labelMap[cat] || cat)}:</span> ${names}</div>`;
     }).filter(Boolean).join('');
     return `
       <section class="rb-resume-section">
@@ -1292,15 +1345,18 @@
   function previewEducationHtml() {
     if (!state.education.length) return '';
     const items = state.education.map((row) => {
-      const meta = [row.institution, row.university].filter(Boolean).map(esc).join(', ');
-      const right = [row.year, row.score].filter(Boolean).map(esc).join(' · ');
+      const score = previewEducationScore(row);
+      const institution = [row.institution, row.university].filter(Boolean).join(', ');
       return `
-        <div class="rb-resume-entry">
-          <div class="rb-resume-entry-top">
-            <div class="rb-resume-entry-title">${esc(row.qualification || 'Qualification')}</div>
-            ${right ? `<div class="rb-resume-entry-right">${right}</div>` : ''}
+        <div class="rb-resume-edu">
+          <div class="rb-resume-edu-row">
+            <div class="rb-resume-edu-degree">${esc(row.qualification || 'Qualification')}</div>
+            <div class="rb-resume-edu-year">${row.year ? esc(row.year) : ''}</div>
           </div>
-          ${meta ? `<div class="rb-resume-entry-sub">${meta}</div>` : ''}
+          <div class="rb-resume-edu-row">
+            <div class="rb-resume-edu-inst">${institution ? esc(institution) : ''}</div>
+            <div class="rb-resume-edu-score">${score ? esc(score) : ''}</div>
+          </div>
         </div>`;
     }).join('');
     return `
@@ -1315,16 +1371,12 @@
     const items = state.projects.map((p) => {
       const tech = String(p.technologiesUsed || '').trim();
       const link = String(p.projectLink || '').trim();
-      const dates = formatProjectDates(p.startDate, p.endDate);
       return `
         <div class="rb-resume-entry">
-          <div class="rb-resume-entry-top">
-            <div class="rb-resume-entry-title">${esc(p.projectTitle)}${p.projectType ? ` <span class="rb-resume-muted">(${esc(p.projectType)})</span>` : ''}</div>
-            ${dates ? `<div class="rb-resume-entry-right">${dates}</div>` : ''}
-          </div>
-          ${tech ? `<div class="rb-resume-entry-sub">Technologies: ${esc(tech)}</div>` : ''}
-          <p class="rb-resume-entry-body">${esc(p.projectDescription)}</p>
-          ${link ? `<div class="rb-resume-entry-link">${esc(link)}</div>` : ''}
+          <div class="rb-resume-entry-title">${esc(p.projectTitle)}</div>
+          ${tech ? `<div class="rb-resume-entry-sub"><span class="rb-resume-strong">Technologies / Tools:</span> ${esc(tech)}</div>` : ''}
+          ${previewBulletsHtml(p.projectDescription)}
+          ${link ? `<div class="rb-resume-entry-link"><a class="rb-resume-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link.replace(/^https?:\/\//i, ''))}</a></div>` : ''}
         </div>`;
     }).join('');
     return `
@@ -1344,19 +1396,24 @@
     const items = sorted.map((exp) => {
       const dates = formatExperienceDateRange(exp);
       const location = String(exp.location || '').trim();
+      const orgLine = [
+        exp.organizationName,
+        exp.experienceType,
+        location,
+      ].filter(Boolean).map((v) => esc(v)).join(' · ');
       return `
         <div class="rb-resume-entry">
           <div class="rb-resume-entry-top">
-            <div class="rb-resume-entry-title">${esc(exp.organizationName)}</div>
+            <div class="rb-resume-entry-title">${esc(exp.positionTitle)}</div>
             ${dates ? `<div class="rb-resume-entry-right">${esc(dates)}</div>` : ''}
           </div>
-          <div class="rb-resume-entry-sub">${esc(exp.positionTitle)}${exp.experienceType ? ` · ${esc(exp.experienceType)}` : ''}${location ? ` · ${esc(location)}` : ''}</div>
-          <p class="rb-resume-entry-body">${esc(exp.description)}</p>
+          ${orgLine ? `<div class="rb-resume-entry-sub">${orgLine}</div>` : ''}
+          ${previewBulletsHtml(exp.description)}
         </div>`;
     }).join('');
     return `
       <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Experience</h2>
+        <h2 class="rb-resume-h2">Professional Experience</h2>
         ${items}
       </section>`;
   }
@@ -1364,20 +1421,16 @@
   function previewCertificationsHtml() {
     if (!state.certifications.length) return '';
     const items = state.certifications.map((c) => {
-      const dates = formatCertDateRange(c);
-      const credentialId = String(c.credentialId || '').trim();
+      const issued = formatCertDate(c.issueDate);
       const credentialUrl = String(c.credentialUrl || '').trim();
-      const description = String(c.description || '').trim();
       return `
         <div class="rb-resume-entry">
           <div class="rb-resume-entry-top">
             <div class="rb-resume-entry-title">${esc(c.certificationName)}</div>
-            ${dates ? `<div class="rb-resume-entry-right">${esc(dates)}</div>` : ''}
+            ${issued ? `<div class="rb-resume-entry-right">${esc(issued)}</div>` : ''}
           </div>
           <div class="rb-resume-entry-sub">${esc(c.issuingOrganization)}</div>
-          ${credentialId ? `<div class="rb-resume-entry-sub">Credential ID: ${esc(credentialId)}</div>` : ''}
-          ${description ? `<p class="rb-resume-entry-body">${esc(description)}</p>` : ''}
-          ${credentialUrl ? `<div class="rb-resume-entry-link">${esc(credentialUrl)}</div>` : ''}
+          ${credentialUrl ? `<div class="rb-resume-entry-link"><a class="rb-resume-link" href="${esc(credentialUrl)}" target="_blank" rel="noopener noreferrer">${esc(credentialUrl.replace(/^https?:\/\//i, ''))}</a></div>` : ''}
         </div>`;
     }).join('');
     return `
@@ -1387,9 +1440,33 @@
       </section>`;
   }
 
+  function previewAchievementsHtml() {
+    const rows = state.activities.filter((a) => a.activityType === 'Achievement');
+    if (!rows.length) return '';
+    const items = rows.map((a) => {
+      const date = formatActivityDate(a.activityDate);
+      const org = String(a.organization || '').trim();
+      return `
+        <div class="rb-resume-entry">
+          <div class="rb-resume-entry-top">
+            <div class="rb-resume-entry-title">${esc(a.title)}</div>
+            ${date ? `<div class="rb-resume-entry-right">${esc(date)}</div>` : ''}
+          </div>
+          ${org ? `<div class="rb-resume-entry-sub">${esc(org)}</div>` : ''}
+          ${previewBulletsHtml(a.description)}
+        </div>`;
+    }).join('');
+    return `
+      <section class="rb-resume-section">
+        <h2 class="rb-resume-h2">Achievements</h2>
+        ${items}
+      </section>`;
+  }
+
   function previewActivitiesHtml() {
-    if (!state.activities.length) return '';
-    const items = state.activities.map((a) => {
+    const rows = state.activities.filter((a) => a.activityType !== 'Achievement');
+    if (!rows.length) return '';
+    const items = rows.map((a) => {
       const date = formatActivityDate(a.activityDate);
       const org = String(a.organization || '').trim();
       return `
@@ -1399,12 +1476,12 @@
             ${date ? `<div class="rb-resume-entry-right">${esc(date)}</div>` : ''}
           </div>
           <div class="rb-resume-entry-sub">${esc(a.activityType)}${org ? ` · ${esc(org)}` : ''}</div>
-          <p class="rb-resume-entry-body">${esc(a.description)}</p>
+          ${previewBulletsHtml(a.description)}
         </div>`;
     }).join('');
     return `
       <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Achievements &amp; Activities</h2>
+        <h2 class="rb-resume-h2">Activities / Leadership</h2>
         ${items}
       </section>`;
   }
@@ -1413,24 +1490,24 @@
     const personal = state.personal || {};
     const name = String(personal.fullName || '').trim();
     const contact = previewContactLine(personal);
-    const hasHeader = !!(name || contact);
     const objective = String(state.objectiveText || '').trim();
 
     const sections = [
-      hasHeader ? `
+      (name || contact) ? `
         <header class="rb-resume-header">
           ${name ? `<h1 class="rb-resume-name">${esc(name)}</h1>` : ''}
           ${contact ? `<p class="rb-resume-contact">${contact}</p>` : ''}
         </header>` : '',
+      previewEducationHtml(),
       objective ? `
         <section class="rb-resume-section">
           <h2 class="rb-resume-h2">Career Objective</h2>
-          <p class="rb-resume-objective">${esc(objective)}</p>
+          <p class="rb-resume-para">${esc(objective)}</p>
         </section>` : '',
-      previewEducationHtml(),
       previewSkillsHtml(),
-      previewProjectsHtml(),
       previewExperienceHtml(),
+      previewProjectsHtml(),
+      previewAchievementsHtml(),
       previewCertificationsHtml(),
       previewActivitiesHtml(),
     ].filter(Boolean);
@@ -1438,59 +1515,102 @@
     if (!sections.length) {
       return `
         <div class="rb-resume-empty-doc">
-          <p>Complete sections above to see your resume preview.</p>
+          <p>Complete sections in Resume Builder to see your resume preview.</p>
         </div>`;
     }
 
-    return `<div class="rb-resume-doc" id="rbResumePrintRoot">${sections.join('')}</div>`;
+    return `<article class="rb-resume-doc" id="rbResumePrintRoot">${sections.join('')}</article>`;
+  }
+
+  function previewPageHtml(loading) {
+    const body = loading
+      ? '<p class="small text-muted-2 mb-0 p-4">Preparing resume preview…</p>'
+      : `
+        <p class="rb-preview-notice">This preview represents how your resume will appear when exported.</p>
+        <div class="rb-preview-stage">
+          <div class="rb-preview-paper">
+            ${buildResumeDocumentHtml()}
+          </div>
+        </div>`;
+    return `
+      <div class="rb-preview-page" data-rb-preview-page>
+        <div class="rb-preview-page-bar">
+          <button type="button" class="btn btn-outline-secondary" data-rb-preview-back>
+            <i class="bi bi-arrow-left me-1"></i>Back to Resume Builder
+          </button>
+          <button type="button" class="btn btn-primary" data-rb-preview-print>
+            <i class="bi bi-printer me-1"></i>Print Preview
+          </button>
+        </div>
+        ${body}
+      </div>`;
   }
 
   function previewCardBody(loading) {
     if (loading) {
       return `<p class="small text-muted-2 mb-0">Preparing resume preview…</p>`;
     }
-
     return `
       <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
         <div>
           <h6 class="fw-bold mb-1">Resume Preview</h6>
-          <p class="small text-muted-2 mb-0">This preview represents how your resume will appear when exported.</p>
+          <p class="small text-muted-2 mb-0">Open a full-page ATS preview of your resume.</p>
         </div>
         <div class="d-flex flex-wrap gap-2 rb-preview-toolbar">
-          <button type="button" class="btn btn-sm btn-outline-primary" data-rb-preview-refresh>
-            <i class="bi bi-arrow-clockwise me-1"></i>Refresh Preview
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-rb-preview-print>
-            <i class="bi bi-printer me-1"></i>Print
+          <button type="button" class="btn btn-sm btn-primary" data-rb-live-preview>
+            <i class="bi bi-eye me-1"></i>Live Preview
           </button>
         </div>
       </div>
-      <div class="alert alert-info py-2 small mb-3" role="note">
+      <div class="alert alert-info py-2 small mb-0" role="note">
         This preview represents how your resume will appear when exported.
-      </div>
-      <div class="rb-preview-stage">
-        <div class="rb-preview-paper">
-          ${buildResumeDocumentHtml()}
-        </div>
       </div>`;
   }
 
   function renderPreviewCard() {
     if (state.previewRefreshing) return;
+    if (state.previewMode) {
+      const page = root.querySelector('[data-rb-preview-page]');
+      if (page) page.outerHTML = previewPageHtml(false);
+      return;
+    }
     const card = root.querySelector('[data-rb-card="preview"]');
     if (!card) return;
     card.innerHTML = previewCardBody(false);
   }
 
+  function openLivePreview() {
+    state.previewMode = true;
+    const dash = root.querySelector('[data-rb-dashboard]');
+    let page = root.querySelector('[data-rb-preview-page]');
+    if (dash) dash.classList.add('d-none');
+    if (!page) {
+      root.insertAdjacentHTML('beforeend', previewPageHtml(false));
+      page = root.querySelector('[data-rb-preview-page]');
+    } else {
+      page.outerHTML = previewPageHtml(false);
+    }
+    root.querySelector('[data-rb-preview-page]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function closeLivePreview() {
+    state.previewMode = false;
+    const page = root.querySelector('[data-rb-preview-page]');
+    if (page) page.remove();
+    const dash = root.querySelector('[data-rb-dashboard]');
+    if (dash) dash.classList.remove('d-none');
+  }
+
   function scrollToPreview() {
-    const card = root.querySelector('[data-rb-card="preview"]');
-    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    openLivePreview();
   }
 
   async function refreshPreviewData() {
     state.previewRefreshing = true;
-    const card = root.querySelector('[data-rb-card="preview"]');
-    if (card) card.innerHTML = previewCardBody(true);
+    if (state.previewMode) {
+      const page = root.querySelector('[data-rb-preview-page]');
+      if (page) page.outerHTML = previewPageHtml(true);
+    }
     try {
       await Promise.all([
         loadPersonalFromProfile(),
@@ -1503,12 +1623,18 @@
       ]);
     } finally {
       state.previewRefreshing = false;
-      renderPreviewCard();
+      if (state.previewMode) {
+        const page = root.querySelector('[data-rb-preview-page]');
+        if (page) page.outerHTML = previewPageHtml(false);
+        else openLivePreview();
+      } else {
+        renderPreviewCard();
+      }
     }
   }
 
   function printResumePreview() {
-    renderPreviewCard();
+    if (!state.previewMode) openLivePreview();
     document.body.classList.add('rb-printing-resume');
     window.setTimeout(() => {
       window.print();
@@ -1616,6 +1742,7 @@
 
   function renderShell() {
     root.innerHTML = `
+      <div data-rb-dashboard>
       <div class="card-surface p-3 p-md-4 mb-3">
         <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
           <div class="flex-grow-1">
@@ -1641,12 +1768,19 @@
       <div class="row g-3">
         ${SECTIONS.map(sectionCard).join('')}
       </div>
+      </div>
     `;
 
+    if (root.dataset.rbEventsBound === '1') return;
+    root.dataset.rbEventsBound = '1';
+
     root.addEventListener('click', (event) => {
+      if (event.target.closest('[data-rb-preview-back]')) {
+        closeLivePreview();
+        return;
+      }
       if (event.target.closest('[data-rb-live-preview]') || event.target.closest('[data-rb-section="preview"]')) {
-        renderPreviewCard();
-        scrollToPreview();
+        openLivePreview();
         return;
       }
       if (event.target.closest('[data-rb-preview-refresh]')) {
