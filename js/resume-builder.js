@@ -1348,6 +1348,36 @@
     return score;
   }
 
+  function educationProgramYears(qualification) {
+    const q = String(qualification || '').toUpperCase().replace(/\./g, ' ');
+    if (/\bINMCA\b|\bINTEGRATED\s+MCA\b/.test(q)) return 5;
+    if (/\bMCA\b/.test(q)) return 2;
+    if (/\bMTECH\b|\bM\s+TECH\b/.test(q)) return 2;
+    if (/\bBTECH\b|\bB\s+TECH\b|\bBBA\b|\bBCA\b/.test(q)) return 4;
+    return 0;
+  }
+
+  function previewEducationDuration(row) {
+    const raw = String(row.year || '').trim();
+    if (!raw) return '';
+
+    const fullRange = raw.match(/((?:19|20)\d{2})\s*[-–]\s*((?:19|20)\d{2})/);
+    if (fullRange) return fullRange[1] + ' - ' + fullRange[2];
+
+    const shortRange = raw.match(/((?:19|20)\d{2})\s*[-–]\s*(\d{2})(?!\d)/);
+    if (shortRange) {
+      const start = Number(shortRange[1]);
+      const end = Math.floor(start / 100) * 100 + Number(shortRange[2]);
+      return start + ' - ' + end;
+    }
+
+    const start = passingYear(raw);
+    const duration = educationProgramYears(row.qualification);
+    if (start > 0 && duration > 0) return start + ' - ' + (start + duration);
+    if (start > 0) return String(start);
+    return raw;
+  }
+
   function previewTechnicalSkillsHtml() {
     const techCats = [
       { key: 'Technical', label: 'Programming Languages' },
@@ -1376,12 +1406,13 @@
     if (!state.education.length) return '';
     const items = state.education.map((row) => {
       const score = previewEducationScore(row);
+      const duration = previewEducationDuration(row);
       const institution = [row.institution, row.university].filter(Boolean).join(', ');
       return `
         <div class="rb-resume-edu">
           <div class="rb-resume-edu-row">
             <div class="rb-resume-edu-degree">${esc(row.qualification || 'Qualification')}</div>
-            <div class="rb-resume-edu-year rb-resume-right-bold">${row.year ? esc(row.year) : ''}</div>
+            <div class="rb-resume-edu-year rb-resume-right-bold">${duration ? esc(duration) : ''}</div>
           </div>
           <div class="rb-resume-edu-row">
             <div class="rb-resume-edu-inst">${institution ? esc(institution) : ''}</div>

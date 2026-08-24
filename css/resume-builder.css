@@ -982,9 +982,12 @@
 
 #resumeBuilderDashboard .rb-resume-para {
   margin: 0;
+  width: 100%;
   font-size: 10pt;
   color: #000;
-  white-space: pre-wrap;
+  text-align: justify;
+  text-justify: inter-word;
+  white-space: normal;
   word-break: break-word;
 }
 
@@ -1022,9 +1025,11 @@
 
 #resumeBuilderDashboard .rb-resume-edu-row {
   display: flex;
+  flex-direction: row;
   justify-content: space-between;
   gap: 0.75rem;
   align-items: baseline;
+  width: 100%;
 }
 
 #resumeBuilderDashboard .rb-resume-edu-degree {
@@ -1055,9 +1060,11 @@
 
 #resumeBuilderDashboard .rb-resume-entry-top {
   display: flex;
+  flex-direction: row;
   justify-content: space-between;
   gap: 0.75rem;
   align-items: baseline;
+  width: 100%;
 }
 
 #resumeBuilderDashboard .rb-resume-entry-title {
@@ -1211,17 +1218,6 @@
   #resumeBuilderDashboard .rb-resume-doc {
     padding: 12mm 10mm;
   }
-  #resumeBuilderDashboard .rb-resume-entry-top,
-  #resumeBuilderDashboard .rb-resume-edu-row {
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-  #resumeBuilderDashboard .rb-resume-entry-right,
-  #resumeBuilderDashboard .rb-resume-edu-year,
-  #resumeBuilderDashboard .rb-resume-edu-score {
-    text-align: left;
-    white-space: normal;
-  }
   #resumeBuilderDashboard .rb-preview-page-bar {
     flex-direction: column;
     align-items: stretch;
@@ -1231,6 +1227,21 @@
   #resumeBuilderDashboard [data-rb-live-preview] {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* Keep resume left/right rows intact on narrow screens (print must not stack). */
+@media screen and (max-width: 767.98px) {
+  #resumeBuilderDashboard .rb-preview-paper .rb-resume-entry-top,
+  #resumeBuilderDashboard .rb-preview-paper .rb-resume-edu-row {
+    flex-direction: row;
+    gap: 0.75rem;
+  }
+  #resumeBuilderDashboard .rb-preview-paper .rb-resume-entry-right,
+  #resumeBuilderDashboard .rb-preview-paper .rb-resume-edu-year,
+  #resumeBuilderDashboard .rb-preview-paper .rb-resume-edu-score {
+    text-align: right;
+    white-space: nowrap;
   }
 }
 
@@ -1272,6 +1283,36 @@
     color: #000 !important;
     box-shadow: none !important;
     font-family: "Times New Roman", Times, "Liberation Serif", serif !important;
+  }
+  body.rb-printing-resume .rb-resume-edu-row,
+  body.rb-printing-resume .rb-resume-entry-top {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+    width: 100% !important;
+    gap: 0.75rem !important;
+  }
+  body.rb-printing-resume .rb-resume-edu-degree,
+  body.rb-printing-resume .rb-resume-edu-inst,
+  body.rb-printing-resume .rb-resume-entry-title,
+  body.rb-printing-resume .rb-resume-entry-org {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+  body.rb-printing-resume .rb-resume-edu-year,
+  body.rb-printing-resume .rb-resume-edu-score,
+  body.rb-printing-resume .rb-resume-entry-right {
+    flex: 0 0 auto !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+    margin-left: auto !important;
+  }
+  body.rb-printing-resume .rb-resume-para {
+    width: 100% !important;
+    text-align: justify !important;
+    text-justify: inter-word !important;
+    white-space: normal !important;
   }
   @page {
     size: A4;
