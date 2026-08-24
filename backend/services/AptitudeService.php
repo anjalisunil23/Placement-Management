@@ -369,6 +369,17 @@ final class AptitudeService
      * @param array<string, mixed> $admin
      * @return array<string, mixed>
      */
+    public function getAiServiceStatus(array $admin): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        $ollama = new OllamaService();
+        return $ollama->checkStatus();
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
     public function generateAiBankQuestions(array $admin, array $body): array
     {
         AptitudeAccessService::requireManager($admin);

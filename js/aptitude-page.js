@@ -978,6 +978,44 @@
     document.getElementById('aiSaveStatus')?.classList.add('d-none');
     aiPreviewQuestions = [];
     aiLastFormParams = null;
+    refreshAiServiceStatus();
+  }
+
+  async function refreshAiServiceStatus() {
+    const banner = document.getElementById('aiStatusBanner');
+    const btn = document.getElementById('btnAiGenerate');
+    if (!banner) return;
+
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      banner.classList.remove('d-none', 'alert-success', 'alert-danger');
+      banner.classList.add('alert-warning');
+      banner.textContent = 'AI generation requires a live session with manage access.';
+      btn?.setAttribute('disabled', 'disabled');
+      return;
+    }
+
+    banner.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
+    banner.classList.add('alert-info');
+    banner.textContent = 'Checking Ollama on the server…';
+    btn?.setAttribute('disabled', 'disabled');
+
+    const res = await api('/aptitude/question-bank/ai/status').catch(() => null);
+    const data = res?.data || {};
+    if (res?.success && data.ready) {
+      banner.classList.remove('alert-info', 'alert-warning', 'alert-danger');
+      banner.classList.add('alert-success');
+      banner.textContent = `Ollama is ready (${data.model || 'qwen2.5'}).`;
+      btn?.removeAttribute('disabled');
+      return;
+    }
+
+    banner.classList.remove('alert-info', 'alert-success');
+    banner.classList.add('alert-warning');
+    banner.textContent = data.message
+      || res?.message
+      || 'Ollama is not reachable from the PHP server. Install Ollama on the same machine as the backend, keep it running, then run: ollama pull qwen2.5';
+    btn?.setAttribute('disabled', 'disabled');
   }
 
   function openAiBankModal() {

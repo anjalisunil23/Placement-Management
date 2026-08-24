@@ -149,6 +149,13 @@ final class AptitudeController
         );
     }
 
+    /** GET /api/aptitude/question-bank/ai/status */
+    public function aiBankStatus(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->getAiServiceStatus($user));
+    }
+
     /** POST /api/aptitude/question-bank/ai/save */
     public function saveAiBank(): void
     {
