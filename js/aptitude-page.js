@@ -898,6 +898,7 @@
       )));
     }
     renderQuestionBank();
+    syncBankAiHint();
   }
 
   function renderQuestionBank() {
@@ -981,6 +982,25 @@
     refreshAiServiceStatus();
   }
 
+  function aiSignInUrl() {
+    return `public-stats.html?next=${encodeURIComponent('mock-aptitude.html#manage')}`;
+  }
+
+  function syncBankAiHint() {
+    const el = document.getElementById('bankAiHint');
+    if (!el || !access.canManage) return;
+
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (live) {
+      el.classList.add('d-none');
+      el.innerHTML = '';
+      return;
+    }
+
+    el.classList.remove('d-none');
+    el.innerHTML = `<strong>AI Generate is disabled in Preview mode.</strong> Sign in with your admin or placement officer account (not “Preview as role”), keep Ollama running on this PC, then return here. <a href="${aiSignInUrl()}" class="alert-link">Sign in now</a>`;
+  }
+
   async function refreshAiServiceStatus() {
     const banner = document.getElementById('aiStatusBanner');
     const btn = document.getElementById('btnAiGenerate');
@@ -990,7 +1010,7 @@
     if (!live) {
       banner.classList.remove('d-none', 'alert-success', 'alert-danger');
       banner.classList.add('alert-warning');
-      banner.textContent = 'AI generation requires a live session with manage access.';
+      banner.innerHTML = `<strong>Preview mode — AI is disabled.</strong> Use your real admin login (not Preview as role). Ollama must be running on this computer. <a href="${aiSignInUrl()}" class="alert-link">Sign in</a>`;
       btn?.setAttribute('disabled', 'disabled');
       return;
     }
@@ -1225,7 +1245,8 @@
   async function generateAiQuestions() {
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     if (!live) {
-      toast('AI generation requires a live session with manage access.', 'info');
+      toast('Sign in with your admin account to use AI (Preview mode is read-only).', 'info');
+      window.location.href = aiSignInUrl();
       return;
     }
     const params = collectAiFormParams();
@@ -2723,6 +2744,7 @@
     await loadAccess();
     initContestMonthDaySelect();
     syncManageContestActions();
+    syncBankAiHint();
     const any = access.canTake || access.canManage || access.canViewDirectory;
     if (!any) {
       document.getElementById('aptDenied').classList.remove('d-none');
