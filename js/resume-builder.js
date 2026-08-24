@@ -1348,33 +1348,32 @@
     return score;
   }
 
-  function educationProgramYears(qualification) {
-    const q = String(qualification || '').toUpperCase().replace(/\./g, ' ');
-    if (/\bINMCA\b|\bINTEGRATED\s+MCA\b/.test(q)) return 5;
-    if (/\bMCA\b/.test(q)) return 2;
-    if (/\bMTECH\b|\bM\s+TECH\b/.test(q)) return 2;
-    if (/\bBTECH\b|\bB\s+TECH\b|\bBBA\b|\bBCA\b/.test(q)) return 4;
-    return 0;
-  }
-
+  /**
+   * Format education dates for Resume Preview from THIS record only.
+   * Source field: qualifications[].monthYear (mapped to row.year).
+   * Never invents start/end years from course name or other rows.
+   */
   function previewEducationDuration(row) {
     const raw = String(row.year || '').trim();
     if (!raw) return '';
 
-    const fullRange = raw.match(/((?:19|20)\d{2})\s*[-–]\s*((?:19|20)\d{2})/);
+    // Explicit full range already on this record: "2022 - 2025" / "2022–2025"
+    const fullRange = raw.match(/((?:19|20)\d{2})\s*[-–—−]\s*((?:19|20)\d{2})/);
     if (fullRange) return fullRange[1] + ' - ' + fullRange[2];
 
-    const shortRange = raw.match(/((?:19|20)\d{2})\s*[-–]\s*(\d{2})(?!\d)/);
+    // Batch-style range on this record only: e.g. "MCA2025-27-S3" → 2025 - 2027
+    const shortRange = raw.match(/((?:19|20)\d{2})\s*[-–—−]\s*(\d{2})(?!\d)/);
     if (shortRange) {
       const start = Number(shortRange[1]);
-      const end = Math.floor(start / 100) * 100 + Number(shortRange[2]);
-      return start + ' - ' + end;
+      const endTwo = Number(shortRange[2]);
+      const end = Math.floor(start / 100) * 100 + endTwo;
+      if (end >= start) return start + ' - ' + end;
     }
 
-    const start = passingYear(raw);
-    const duration = educationProgramYears(row.qualification);
-    if (start > 0 && duration > 0) return start + ' - ' + (start + duration);
-    if (start > 0) return String(start);
+    // Single year (or first year found) — display only what exists; do not invent a range
+    const yearOnly = passingYear(raw);
+    if (yearOnly > 0) return String(yearOnly);
+
     return raw;
   }
 
