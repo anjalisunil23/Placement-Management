@@ -59,7 +59,7 @@ class AptitudeQuestionBankModel extends BaseModel
             if ($norm === null) {
                 continue;
             }
-            $id = $this->insert([
+            $doc = [
                 'type' => 'mcq',
                 'prompt' => $norm['prompt'],
                 'options' => $norm['options'],
@@ -69,7 +69,16 @@ class AptitudeQuestionBankModel extends BaseModel
                 'category' => $norm['category'],
                 'difficulty' => AptitudeTestModel::normalizeDifficulty((string) ($norm['difficulty'] ?? $q['difficulty'] ?? 'Medium')),
                 'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
-            ]);
+            ];
+            $topic = trim((string) ($q['topic'] ?? ''));
+            if ($topic !== '') {
+                $doc['topic'] = $topic;
+            }
+            $source = trim((string) ($q['source'] ?? ''));
+            if ($source !== '') {
+                $doc['source'] = $source;
+            }
+            $id = $this->insert($doc);
             $doc = $this->findById($id);
             if ($doc) {
                 $items[] = AptitudeTestModel::publicView([
@@ -86,6 +95,40 @@ class AptitudeQuestionBankModel extends BaseModel
             $added++;
         }
         return ['added' => $added, 'items' => $items];
+    }
+
+    public static function normalizePromptKey(string $text): string
+    {
+        $t = strtolower(trim(strip_tags($text)));
+        $t = preg_replace('/\s+/u', ' ', $t) ?? $t;
+        $t = preg_replace('/[^\p{L}\p{N}\s]/u', '', $t) ?? $t;
+        return trim($t);
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    public function loadNormalizedPromptIndex(): array
+    {
+        $rows = $this->findAll([], 10000, 0, ['createdAt' => -1]);
+        $index = [];
+        foreach ($rows as $row) {
+            $key = self::normalizePromptKey((string) ($row['prompt'] ?? ''));
+            if ($key !== '') {
+                $index[$key] = true;
+            }
+        }
+        return $index;
+    }
+
+    public function promptExists(string $prompt): bool
+    {
+        $key = self::normalizePromptKey($prompt);
+        if ($key === '') {
+            return false;
+        }
+        $index = $this->loadNormalizedPromptIndex();
+        return isset($index[$key]);
     }
 
     /**
@@ -114,6 +157,8 @@ class AptitudeQuestionBankModel extends BaseModel
                 'explanation' => (string) ($row['explanation'] ?? ''),
                 'category' => (string) ($row['category'] ?? 'General Aptitude'),
                 'difficulty' => (string) ($row['difficulty'] ?? 'Medium'),
+                'topic' => (string) ($row['topic'] ?? ''),
+                'source' => (string) ($row['source'] ?? ''),
             ];
         }
         return $out;

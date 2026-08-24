@@ -240,6 +240,17 @@
   let bankPickerQuestions = [];
   let bankPickerAllQuestions = [];
   const selectedBankIds = new Set();
+  let aiBankModal;
+  let aiPreviewQuestions = [];
+  let aiLastFormParams = null;
+
+  const AI_TOPICS_FALLBACK = {
+    'Quantitative Aptitude': ['Percentages', 'Profit and Loss', 'Time and Work', 'Time, Speed and Distance', 'Ratio and Proportion', 'Average', 'Probability', 'Number System', 'Permutation and Combination'],
+    'Logical Reasoning': ['Coding-Decoding', 'Blood Relations', 'Seating Arrangement', 'Syllogism'],
+    'Verbal Ability': ['Reading Comprehension', 'Grammar'],
+    'Data Interpretation': ['Tables', 'Bar Graphs', 'Pie Charts', 'Line Graphs'],
+    'General Aptitude': ['Mixed Aptitude', 'Campus Placement'],
+  };
 
   function dirOptionLabel(value) {
     const raw = String(value || '').trim();
@@ -935,6 +946,290 @@
     root.querySelectorAll('[data-bank-delete]').forEach((btn) => {
       btn.addEventListener('click', () => deleteBankQuestion(btn.getAttribute('data-bank-delete')));
     });
+  }
+
+  function aiTopicsForCategory(category) {
+    const map = meta.aiTopicsByCategory || AI_TOPICS_FALLBACK;
+    return map[category] || map['General Aptitude'] || [];
+  }
+
+  function fillAiTopicSelect(category, selected = '') {
+    const sel = document.getElementById('aiTopic');
+    if (!sel) return;
+    const topics = aiTopicsForCategory(category);
+    sel.innerHTML = '<option value="">Select topic</option>' + topics.map((t) =>
+      `<option value="${esc(t)}"${t === selected ? ' selected' : ''}>${esc(t)}</option>`
+    ).join('');
+  }
+
+  function initAiBankForm() {
+    const categories = (meta.categories || APTITUDE_CATEGORIES).filter((c) => c !== 'Numerical Ability');
+    fillSelect(document.getElementById('aiCategory'), categories.length ? categories : APTITUDE_CATEGORIES, categories[0] || 'Quantitative Aptitude');
+    fillSelect(document.getElementById('aiDifficulty'), meta.difficulties || APTITUDE_DIFFICULTIES, 'Medium');
+    const cat = document.getElementById('aiCategory')?.value || 'Quantitative Aptitude';
+    fillAiTopicSelect(cat);
+    document.getElementById('aiTopicCustom').value = '';
+    document.getElementById('aiInstructions').value = '';
+    document.getElementById('aiCount').value = '10';
+    document.getElementById('aiCountCustom')?.classList.add('d-none');
+    document.getElementById('aiFormPanel')?.classList.remove('d-none');
+    document.getElementById('aiPreviewPanel')?.classList.add('d-none');
+    document.getElementById('aiGenerateStatus')?.classList.add('d-none');
+    document.getElementById('aiSaveStatus')?.classList.add('d-none');
+    aiPreviewQuestions = [];
+    aiLastFormParams = null;
+  }
+
+  function openAiBankModal() {
+    if (!access.canManage) {
+      toast('You do not have permission to manage the question bank.', 'error');
+      return;
+    }
+    initAiBankForm();
+    aiBankModal?.show();
+  }
+
+  function resolveAiTopic() {
+    const custom = document.getElementById('aiTopicCustom')?.value?.trim();
+    if (custom) return custom;
+    return document.getElementById('aiTopic')?.value?.trim() || '';
+  }
+
+  function resolveAiCount() {
+    const sel = document.getElementById('aiCount')?.value || '10';
+    if (sel === 'custom') {
+      return Math.max(1, Math.min(50, Number(document.getElementById('aiCountCustom')?.value) || 1));
+    }
+    return Number(sel) || 10;
+  }
+
+  function collectAiFormParams() {
+    return {
+      category: document.getElementById('aiCategory')?.value || 'General Aptitude',
+      topic: resolveAiTopic(),
+      difficulty: document.getElementById('aiDifficulty')?.value || 'Medium',
+      count: resolveAiCount(),
+      instructions: document.getElementById('aiInstructions')?.value?.trim() || '',
+    };
+  }
+
+  function showAiPreview() {
+    document.getElementById('aiFormPanel')?.classList.add('d-none');
+    document.getElementById('aiPreviewPanel')?.classList.remove('d-none');
+    document.getElementById('aiPreviewCount').textContent = String(aiPreviewQuestions.length);
+    renderAiPreviewList();
+  }
+
+  function renderAiPreviewList() {
+    const root = document.getElementById('aiPreviewList');
+    if (!root) return;
+    if (!aiPreviewQuestions.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">No questions to preview.</p>';
+      return;
+    }
+
+    root.innerHTML = aiPreviewQuestions.map((q, idx) => {
+      const dup = q.duplicateInBank || q.duplicateInBatch;
+      const opts = (q.options || ['', '', '', '']).slice(0, 4);
+      while (opts.length < 4) opts.push('');
+      const optLabels = ['A', 'B', 'C', 'D'];
+      const optFields = optLabels.map((lbl, i) => `
+        <div class="col-md-6">
+          <label class="form-label small mb-1">Option ${lbl}</label>
+          <input type="text" class="form-control form-control-sm ai-prev-opt" data-idx="${idx}" data-opt="${i}" value="${esc(opts[i] || '')}"/>
+        </div>`).join('');
+      return `<div class="border rounded-3 p-3 ${dup ? 'border-warning' : ''}" data-ai-preview="${idx}">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+          <div class="form-check">
+            <input class="form-check-input ai-prev-select" type="checkbox" data-idx="${idx}" ${q.selected && !dup ? 'checked' : ''} ${dup ? 'disabled' : ''}/>
+            <label class="form-check-label small fw-semibold">Question ${idx + 1}</label>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-danger ai-prev-delete" data-idx="${idx}"><i class="bi bi-trash"></i></button>
+        </div>
+        ${dup && q.duplicateMessage ? `<div class="alert alert-warning py-2 small mb-2">${esc(q.duplicateMessage)}</div>` : ''}
+        <div class="mb-2">
+          <label class="form-label small mb-1">Question</label>
+          <textarea class="form-control form-control-sm ai-prev-prompt" data-idx="${idx}" rows="2">${esc(q.prompt || '')}</textarea>
+        </div>
+        <div class="row g-2 mb-2">${optFields}</div>
+        <div class="row g-2 mb-2">
+          <div class="col-md-4">
+            <label class="form-label small mb-1">Correct answer</label>
+            <select class="form-select form-select-sm ai-prev-correct" data-idx="${idx}">
+              ${optLabels.map((lbl, i) => `<option value="${i}"${Number(q.correctIndex) === i ? ' selected' : ''}>Option ${lbl}</option>`).join('')}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small mb-1">Difficulty</label>
+            <select class="form-select form-select-sm ai-prev-diff" data-idx="${idx}">
+              ${(meta.difficulties || APTITUDE_DIFFICULTIES).map((d) =>
+                `<option value="${esc(d)}"${d === q.difficulty ? ' selected' : ''}>${esc(d)}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small mb-1">Topic</label>
+            <input type="text" class="form-control form-control-sm ai-prev-topic" data-idx="${idx}" value="${esc(q.topic || '')}"/>
+          </div>
+        </div>
+        <div class="mb-0">
+          <label class="form-label small mb-1">Explanation</label>
+          <textarea class="form-control form-control-sm ai-prev-explanation" data-idx="${idx}" rows="2">${esc(q.explanation || '')}</textarea>
+        </div>
+        <div class="small text-muted-2 mt-2">${esc(q.category || '')}</div>
+      </div>`;
+    }).join('');
+
+    root.querySelectorAll('.ai-prev-prompt').forEach((el) => {
+      el.addEventListener('input', () => {
+        const i = Number(el.getAttribute('data-idx'));
+        if (aiPreviewQuestions[i]) aiPreviewQuestions[i].prompt = el.value;
+      });
+    });
+    root.querySelectorAll('.ai-prev-opt').forEach((el) => {
+      el.addEventListener('input', () => {
+        const i = Number(el.getAttribute('data-idx'));
+        const o = Number(el.getAttribute('data-opt'));
+        if (aiPreviewQuestions[i]) {
+          aiPreviewQuestions[i].options = aiPreviewQuestions[i].options || ['', '', '', ''];
+          aiPreviewQuestions[i].options[o] = el.value;
+        }
+      });
+    });
+    root.querySelectorAll('.ai-prev-correct').forEach((el) => {
+      el.addEventListener('change', () => {
+        const i = Number(el.getAttribute('data-idx'));
+        if (aiPreviewQuestions[i]) aiPreviewQuestions[i].correctIndex = Number(el.value);
+      });
+    });
+    root.querySelectorAll('.ai-prev-diff').forEach((el) => {
+      el.addEventListener('change', () => {
+        const i = Number(el.getAttribute('data-idx'));
+        if (aiPreviewQuestions[i]) aiPreviewQuestions[i].difficulty = el.value;
+      });
+    });
+    root.querySelectorAll('.ai-prev-topic').forEach((el) => {
+      el.addEventListener('input', () => {
+        const i = Number(el.getAttribute('data-idx'));
+        if (aiPreviewQuestions[i]) aiPreviewQuestions[i].topic = el.value;
+      });
+    });
+    root.querySelectorAll('.ai-prev-explanation').forEach((el) => {
+      el.addEventListener('input', () => {
+        const i = Number(el.getAttribute('data-idx'));
+        if (aiPreviewQuestions[i]) aiPreviewQuestions[i].explanation = el.value;
+      });
+    });
+    root.querySelectorAll('.ai-prev-select').forEach((el) => {
+      el.addEventListener('change', () => {
+        const i = Number(el.getAttribute('data-idx'));
+        if (aiPreviewQuestions[i]) aiPreviewQuestions[i].selected = el.checked;
+      });
+    });
+    root.querySelectorAll('.ai-prev-delete').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const i = Number(btn.getAttribute('data-idx'));
+        aiPreviewQuestions.splice(i, 1);
+        renderAiPreviewList();
+        document.getElementById('aiPreviewCount').textContent = String(aiPreviewQuestions.length);
+      });
+    });
+  }
+
+  function syncAiPreviewFromDom() {
+    document.querySelectorAll('.ai-prev-prompt').forEach((el) => {
+      const i = Number(el.getAttribute('data-idx'));
+      if (aiPreviewQuestions[i]) aiPreviewQuestions[i].prompt = el.value;
+    });
+    document.querySelectorAll('.ai-prev-opt').forEach((el) => {
+      const i = Number(el.getAttribute('data-idx'));
+      const o = Number(el.getAttribute('data-opt'));
+      if (aiPreviewQuestions[i]) {
+        aiPreviewQuestions[i].options = aiPreviewQuestions[i].options || ['', '', '', ''];
+        aiPreviewQuestions[i].options[o] = el.value;
+      }
+    });
+    document.querySelectorAll('.ai-prev-select').forEach((el) => {
+      const i = Number(el.getAttribute('data-idx'));
+      if (aiPreviewQuestions[i]) aiPreviewQuestions[i].selected = el.checked;
+    });
+  }
+
+  async function runAiGenerate(params) {
+    const status = document.getElementById('aiGenerateStatus');
+    const btn = document.getElementById('btnAiGenerate');
+    status?.classList.remove('d-none');
+    btn?.setAttribute('disabled', 'disabled');
+
+    const res = await api('/aptitude/question-bank/ai/generate', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }).catch(() => null);
+
+    status?.classList.add('d-none');
+    btn?.removeAttribute('disabled');
+
+    if (!res?.success) {
+      toast(res?.message || 'AI generation failed. Ensure Ollama is running with qwen2.5 installed.', 'error');
+      return false;
+    }
+
+    aiPreviewQuestions = (res.data?.questions || []).map((q) => ({ ...q }));
+    aiLastFormParams = { ...params };
+    if (!aiPreviewQuestions.length) {
+      toast('No questions were generated.', 'error');
+      return false;
+    }
+    showAiPreview();
+    return true;
+  }
+
+  async function generateAiQuestions() {
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      toast('AI generation requires a live session with manage access.', 'info');
+      return;
+    }
+    const params = collectAiFormParams();
+    if (!params.topic) {
+      toast('Select or enter a topic.', 'error');
+      return;
+    }
+    await runAiGenerate(params);
+  }
+
+  async function saveAiSelectedQuestions() {
+    syncAiPreviewFromDom();
+    const selected = aiPreviewQuestions.filter((q) => q.selected && !q.duplicateInBank && !q.duplicateInBatch);
+    if (!selected.length) {
+      toast('Select at least one question to save.', 'error');
+      return;
+    }
+
+    const status = document.getElementById('aiSaveStatus');
+    const btn = document.getElementById('btnAiSaveSelected');
+    status?.classList.remove('d-none');
+    btn?.setAttribute('disabled', 'disabled');
+
+    const category = aiLastFormParams?.category || selected[0]?.category || 'General Aptitude';
+    const res = await api('/aptitude/question-bank/ai/save', {
+      method: 'POST',
+      body: JSON.stringify({ questions: selected, category }),
+    }).catch(() => null);
+
+    status?.classList.add('d-none');
+    btn?.removeAttribute('disabled');
+
+    if (!res?.success) {
+      toast(res?.message || 'Could not save questions.', 'error');
+      return;
+    }
+
+    const added = res.data?.added ?? 0;
+    const skipped = res.data?.skipped?.length ?? 0;
+    toast(`Saved ${added} question(s) to the bank.${skipped ? ` ${skipped} skipped.` : ''}`, 'success');
+    aiBankModal?.hide();
+    await loadQuestionBank();
   }
 
   async function deleteBankQuestion(id) {
@@ -2375,6 +2670,7 @@
   onAppReady(async () => {
     testFormModal = new bootstrap.Modal(document.getElementById('testFormModal'));
     bulkModal = new bootstrap.Modal(document.getElementById('bulkModal'));
+    aiBankModal = new bootstrap.Modal(document.getElementById('aiBankModal'));
     exam = AptitudeExam.createExamController({
       root: document.getElementById('examShell'),
       onExit: () => closeExam(),
@@ -2500,6 +2796,30 @@
     });
     document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
+    document.getElementById('btnBankAiPanel')?.addEventListener('click', () => openAiBankModal());
+
+    document.getElementById('aiCategory')?.addEventListener('change', (e) => {
+      fillAiTopicSelect(e.target.value);
+    });
+    document.getElementById('aiCount')?.addEventListener('change', (e) => {
+      const custom = document.getElementById('aiCountCustom');
+      if (!custom) return;
+      custom.classList.toggle('d-none', e.target.value !== 'custom');
+    });
+    document.getElementById('btnAiGenerate')?.addEventListener('click', () => generateAiQuestions());
+    document.getElementById('btnAiRegenerate')?.addEventListener('click', async () => {
+      if (aiLastFormParams) await runAiGenerate(aiLastFormParams);
+      else await generateAiQuestions();
+    });
+    document.getElementById('btnAiSaveSelected')?.addEventListener('click', () => saveAiSelectedQuestions());
+    document.getElementById('btnAiCancelPreview')?.addEventListener('click', () => initAiBankForm());
+    document.getElementById('aiSelectAll')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      aiPreviewQuestions.forEach((q) => {
+        if (!q.duplicateInBank && !q.duplicateInBatch) q.selected = on;
+      });
+      renderAiPreviewList();
+    });
 
     document.getElementById('bankFilterCategory')?.addEventListener('change', () => {
       bankCategoryFilter = document.getElementById('bankFilterCategory')?.value || '';
