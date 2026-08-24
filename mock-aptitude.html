@@ -163,9 +163,16 @@
 
       <div id="manageBankPanel" class="d-none">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Reusable MCQ bucket — store Easy, Medium, and Hard questions for tests and contests.</p>
-          <button type="button" class="btn btn-sm btn-primary" id="btnBankUploadPanel"><i class="bi bi-cloud-upload me-1"></i>Bulk upload to bank</button>
+          <div>
+            <p class="small fw-semibold mb-1">Add questions</p>
+            <p class="small text-muted-2 mb-0">Reusable MCQ bucket — store Easy, Medium, and Hard questions for tests and contests.</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnBankUploadPanel"><i class="bi bi-pencil-square me-1"></i>Manual (Bulk upload)</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btnBankAiPanel"><i class="bi bi-stars me-1"></i>AI Generate Questions</button>
+          </div>
         </div>
+        <div id="bankAiHint" class="alert alert-info d-none small py-2 mb-3" role="alert"></div>
         <div class="row g-2 mb-3" id="bankStats"></div>
         <div class="row g-2 align-items-end mb-3">
           <div class="col-6 col-md-4">
@@ -383,6 +390,71 @@
   </div>
 </div></div></div>
 
+<!-- AI question generation -->
+<div class="modal fade" id="aiBankModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header">
+    <h5 class="modal-title fw-bold">AI Generate Questions</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  </div>
+  <div class="modal-body">
+    <div id="aiFormPanel">
+      <div id="aiStatusBanner" class="alert alert-warning d-none small mb-3" role="alert"></div>
+      <p class="small text-muted-2 mb-3">Generate aptitude MCQs locally using Ollama + Qwen2.5. Review and edit before saving to the question bank.</p>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold" for="aiCategory">Aptitude category</label>
+          <select class="form-select" id="aiCategory"></select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold" for="aiTopic">Topic</label>
+          <select class="form-select" id="aiTopic"><option value="">Select or type below</option></select>
+          <input type="text" class="form-control form-control-sm mt-2" id="aiTopicCustom" placeholder="Custom topic (optional override)"/>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold" for="aiDifficulty">Difficulty</label>
+          <select class="form-select" id="aiDifficulty"></select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold" for="aiCount">Number of questions</label>
+          <select class="form-select" id="aiCount">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="30">30</option>
+            <option value="custom">Custom</option>
+          </select>
+          <input type="number" class="form-control form-control-sm mt-2 d-none" id="aiCountCustom" min="1" max="50" value="15" placeholder="1–50"/>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold" for="aiInstructions">Additional instructions for AI <span class="text-muted-2 fw-normal">(optional)</span></label>
+          <textarea class="form-control" id="aiInstructions" rows="3" placeholder="Generate questions suitable for campus placement aptitude tests. Avoid overly simple questions. Include realistic numerical values."></textarea>
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2 mt-4">
+        <button type="button" class="btn btn-primary" id="btnAiGenerate"><i class="bi bi-stars me-1"></i>Generate Questions with AI</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+      <div id="aiGenerateStatus" class="small text-muted-2 mt-3 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Generating questions… this may take a minute.</div>
+    </div>
+    <div id="aiPreviewPanel" class="d-none">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <p class="small mb-0"><span id="aiPreviewCount">0</span> question(s) generated. Edit or remove before saving.</p>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="aiSelectAll" checked/>
+          <label class="form-check-label small" for="aiSelectAll">Select all saveable</label>
+        </div>
+      </div>
+      <div id="aiPreviewList" class="d-flex flex-column gap-3"></div>
+      <div class="d-flex flex-wrap gap-2 mt-4">
+        <button type="button" class="btn btn-outline-primary" id="btnAiRegenerate"><i class="bi bi-arrow-clockwise me-1"></i>Regenerate</button>
+        <button type="button" class="btn btn-primary" id="btnAiSaveSelected"><i class="bi bi-check2-circle me-1"></i>Save Selected Questions</button>
+        <button type="button" class="btn btn-outline-secondary" id="btnAiCancelPreview">Cancel</button>
+      </div>
+      <div id="aiSaveStatus" class="small text-muted-2 mt-3 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Saving questions…</div>
+    </div>
+  </div>
+</div></div></div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
@@ -390,5 +462,5 @@
 <script src="js/api.js?v=20260814contest"></script>
 <script src="js/app.js?v=20260814contest"></script>
 <script src="js/aptitude-exam.js?v=20260814student"></script>
-<script src="js/aptitude-page.js?v=20260819rule1"></script>
+<script src="js/aptitude-page.js?v=20260824ai3"></script>
 </body></html>

@@ -127,4 +127,9 @@ return [
             'emails' => ['jubymathew@amaljyothi.ac.in', 'juby.mathew@amaljyothi.ac.in', 'jubym@amaljyothi.ac.in'],
         ],
     ],
+    'ollama' => [
+        'url' => rtrim((string) ($_ENV['OLLAMA_URL'] ?? 'http://127.0.0.1:11434'), '/'),
+        'model' => trim((string) ($_ENV['OLLAMA_MODEL'] ?? 'qwen2.5')),
+        'timeout' => (int) ($_ENV['OLLAMA_TIMEOUT'] ?? 180),
+    ],
 ];
