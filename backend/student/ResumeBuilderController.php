@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Student;
 
 use PMS\Middleware\RBACMiddleware;
+use PMS\Models\ResumeContactLinkModel;
 use PMS\Models\ResumeActivityModel;
 use PMS\Models\ResumeCareerObjectiveModel;
 use PMS\Models\ResumeCertificationModel;
@@ -26,6 +27,7 @@ final class ResumeBuilderController
     private ResumeExperienceModel $experienceModel;
     private ResumeCertificationModel $certificationModel;
     private ResumeActivityModel $activityModel;
+    private ResumeContactLinkModel $contactLinkModel;
 
     public function __construct()
     {
@@ -36,6 +38,7 @@ final class ResumeBuilderController
         $this->experienceModel = new ResumeExperienceModel();
         $this->certificationModel = new ResumeCertificationModel();
         $this->activityModel = new ResumeActivityModel();
+        $this->contactLinkModel = new ResumeContactLinkModel();
     }
 
     /** GET /api/student/resume-builder/career-objective */
@@ -701,6 +704,58 @@ final class ResumeBuilderController
             'organization' => $org !== '' ? $org : null,
             'description' => (string) ($row['description'] ?? ''),
             'activityDate' => $activityDate !== '' ? $activityDate : null,
+        ];
+    }
+
+    /** GET /api/student/resume-builder/contact-links */
+    public function getContactLinks(): void
+    {
+        $studentId = $this->currentStudentId();
+        $row = $this->contactLinkModel->findByStudentId($studentId);
+        Response::success($this->serializeContactLinks($row));
+    }
+
+    /** PUT /api/student/resume-builder/contact-links */
+    public function saveContactLinks(): void
+    {
+        $studentId = $this->currentStudentId();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($input)) {
+            $input = [];
+        }
+        $data = [
+            'linkedin_url' => (string) ($input['linkedinUrl'] ?? $input['linkedin_url'] ?? ''),
+            'github_url' => (string) ($input['githubUrl'] ?? $input['github_url'] ?? ''),
+            'website_url' => (string) ($input['websiteUrl'] ?? $input['website_url'] ?? ''),
+        ];
+        $check = ResumeContactLinkModel::validate($data);
+        if (!$check['ok']) {
+            Response::error((string) $check['error'], 422);
+        }
+        try {
+            $row = $this->contactLinkModel->upsertForStudent($studentId, $data);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+        Response::success($this->serializeContactLinks($row), 'Professional links saved.');
+    }
+
+    /**
+     * @param array<string, mixed>|null $row
+     * @return array{linkedinUrl: string|null, githubUrl: string|null, websiteUrl: string|null}
+     */
+    private function serializeContactLinks(?array $row): array
+    {
+        if (!$row) {
+            return ['linkedinUrl' => null, 'githubUrl' => null, 'websiteUrl' => null];
+        }
+        $linkedin = trim((string) ($row['linkedin_url'] ?? ''));
+        $github = trim((string) ($row['github_url'] ?? ''));
+        $website = trim((string) ($row['website_url'] ?? ''));
+        return [
+            'linkedinUrl' => $linkedin !== '' ? $linkedin : null,
+            'githubUrl' => $github !== '' ? $github : null,
+            'websiteUrl' => $website !== '' ? $website : null,
         ];
     }
 

@@ -919,10 +919,10 @@
 }
 
 #resumeBuilderDashboard .rb-resume-doc {
-  padding: 14mm 16mm 16mm;
-  font-family: Calibri, "Segoe UI", Arial, Helvetica, sans-serif;
-  font-size: 10.5pt;
-  line-height: 1.32;
+  padding: 12mm 14mm 14mm;
+  font-family: "Times New Roman", Times, "Liberation Serif", serif;
+  font-size: 10pt;
+  line-height: 1.25;
   color: #000;
 }
 
@@ -935,74 +935,85 @@
 
 #resumeBuilderDashboard .rb-resume-header {
   text-align: center;
-  margin: 0 0 0.55rem;
-  padding-bottom: 0.4rem;
+  margin: 0 0 0.35rem;
 }
 
 #resumeBuilderDashboard .rb-resume-name {
-  margin: 0 0 0.28rem;
-  font-size: 18pt;
+  margin: 0 0 0.2rem;
+  font-size: 24pt;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  line-height: 1.15;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.1;
   color: #000;
 }
 
 #resumeBuilderDashboard .rb-resume-contact {
   margin: 0;
-  font-size: 9.5pt;
-  color: #111;
-  line-height: 1.4;
-}
-
-#resumeBuilderDashboard .rb-resume-link {
-  color: #111;
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-}
-
-#resumeBuilderDashboard .rb-resume-link:hover {
-  border-bottom-color: #111;
+  font-size: 10pt;
+  color: #000;
+  line-height: 1.35;
 }
 
 #resumeBuilderDashboard .rb-resume-section {
-  margin-top: 0.55rem;
-  padding-top: 0.25rem;
-  border-top: 1px solid #222;
+  margin-top: 0.45rem;
   break-inside: avoid-page;
 }
 
 #resumeBuilderDashboard .rb-resume-h2 {
-  margin: 0 0 0.28rem;
-  font-size: 11pt;
+  margin: 0;
+  font-size: 10pt;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #000;
 }
 
+#resumeBuilderDashboard .rb-resume-rule {
+  margin: 0.08rem 0 0.28rem;
+  border: 0;
+  border-top: 0.75pt solid #000;
+  height: 0;
+}
+
+#resumeBuilderDashboard .rb-resume-right-bold {
+  font-weight: 700;
+}
+
 #resumeBuilderDashboard .rb-resume-para {
-  margin: 0.1rem 0 0;
-  font-size: 10.25pt;
-  color: #111;
+  margin: 0;
+  font-size: 10pt;
+  color: #000;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 #resumeBuilderDashboard .rb-resume-bullets {
-  margin: 0.2rem 0 0;
-  padding-left: 1.1rem;
+  margin: 0.08rem 0 0;
+  padding-left: 1.05rem;
+  list-style-type: disc;
 }
 
 #resumeBuilderDashboard .rb-resume-bullets li {
-  margin: 0 0 0.12rem;
-  font-size: 10.25pt;
-  color: #111;
+  margin: 0 0 0.06rem;
+  font-size: 10pt;
+  color: #000;
+}
+
+#resumeBuilderDashboard .rb-resume-list {
+  margin: 0.08rem 0 0;
+  padding-left: 1.05rem;
+  list-style-type: disc;
+}
+
+#resumeBuilderDashboard .rb-resume-list li {
+  margin: 0 0 0.06rem;
+  font-size: 10pt;
+  color: #000;
 }
 
 #resumeBuilderDashboard .rb-resume-edu {
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.28rem;
 }
 
 #resumeBuilderDashboard .rb-resume-edu:last-child {
@@ -1018,12 +1029,12 @@
 
 #resumeBuilderDashboard .rb-resume-edu-degree {
   font-weight: 700;
-  font-size: 10.5pt;
+  font-size: 10pt;
 }
 
 #resumeBuilderDashboard .rb-resume-edu-inst {
-  font-size: 10.25pt;
-  color: #111;
+  font-size: 10pt;
+  color: #000;
 }
 
 #resumeBuilderDashboard .rb-resume-edu-year,
@@ -1035,7 +1046,7 @@
 }
 
 #resumeBuilderDashboard .rb-resume-entry {
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.32rem;
 }
 
 #resumeBuilderDashboard .rb-resume-entry:last-child {
@@ -1051,43 +1062,42 @@
 
 #resumeBuilderDashboard .rb-resume-entry-title {
   font-weight: 700;
-  font-size: 10.5pt;
+  font-size: 10pt;
   color: #000;
 }
 
 #resumeBuilderDashboard .rb-resume-entry-right {
   flex-shrink: 0;
   font-size: 10pt;
-  color: #111;
+  color: #000;
   text-align: right;
   white-space: nowrap;
 }
 
-#resumeBuilderDashboard .rb-resume-entry-sub {
-  font-size: 10.1pt;
-  color: #222;
+#resumeBuilderDashboard .rb-resume-entry-org {
+  font-size: 10pt;
+  color: #000;
+}
+
+#resumeBuilderDashboard .rb-resume-tech {
+  font-size: 10pt;
   font-style: italic;
+  color: #000;
 }
 
 #resumeBuilderDashboard .rb-resume-strong {
-  font-style: normal;
   font-weight: 700;
-}
-
-#resumeBuilderDashboard .rb-resume-entry-link {
-  font-size: 9.5pt;
-  word-break: break-all;
 }
 
 #resumeBuilderDashboard .rb-resume-skills {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.08rem;
 }
 
 #resumeBuilderDashboard .rb-resume-skill-line {
-  font-size: 10.25pt;
-  color: #111;
+  font-size: 10pt;
+  color: #000;
 }
 
 #resumeBuilderDashboard .rb-resume-skill-label {
@@ -1261,6 +1271,7 @@
     background: #fff !important;
     color: #000 !important;
     box-shadow: none !important;
+    font-family: "Times New Roman", Times, "Liberation Serif", serif !important;
   }
   @page {
     size: A4;

@@ -156,6 +156,8 @@
     previewLoading: false,
     previewRefreshing: false,
     previewMode: false,
+    contactLinks: { linkedinUrl: '', githubUrl: '', websiteUrl: '' },
+    contactLinksMessage: '',
   };
 
   function esc(value) {
@@ -214,10 +216,14 @@
       program: firstText(personal.course, p.programme, p.program, p.branch, sessionUser.course, dept),
       batch: firstText(p.classBatch, p.stud_class, personal.year, p.batch, sessionUser.classBatch),
       gender: firstText(p.gender, personal.gender, user.gender, sessionUser.gender),
-      linkedin: firstText(personal.linkedin, personal.linkedinUrl, personal.linkedIn, p.linkedin, user.linkedin),
-      github: firstText(personal.github, personal.githubUrl, p.github, user.github),
-      portfolio: firstText(personal.portfolio, personal.portfolioUrl, personal.website, p.portfolio, user.portfolio),
     };
+  }
+
+  function renderPersonalCard() {
+    const card = root.querySelector('[data-rb-card="personal"]');
+    if (!card) return;
+    const status = personalStatus(state.personal);
+    card.innerHTML = personalCardBody(state.personal, status, false);
   }
 
   function personalStatus(fields) {
@@ -396,6 +402,26 @@
         ${fieldRow('Program/Course', fields.program)}
         ${fieldRow('Batch / Passout Year', fields.batch)}
         ${fieldRow('Gender', fields.gender)}
+      </div>
+      <div class="rb-links-form mt-2 pt-3 border-top">
+        <h6 class="fw-semibold mb-2">Professional Links</h6>
+        <p class="small text-muted-2 mb-3">Add LinkedIn, GitHub, or personal website links for your resume header.</p>
+        ${state.contactLinksMessage ? `<div class="alert alert-warning py-2 small mb-3" role="alert">${esc(state.contactLinksMessage)}</div>` : ''}
+        <div class="row g-2 mb-3">
+          <div class="col-12">
+            <label class="form-label small fw-semibold" for="rbLinkLinkedin">LinkedIn URL</label>
+            <input type="url" class="form-control" id="rbLinkLinkedin" maxlength="500" placeholder="https://linkedin.com/in/username" value="${esc(state.contactLinks.linkedinUrl)}" data-rb-link-linkedin />
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold" for="rbLinkGithub">GitHub URL</label>
+            <input type="url" class="form-control" id="rbLinkGithub" maxlength="500" placeholder="https://github.com/username" value="${esc(state.contactLinks.githubUrl)}" data-rb-link-github />
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold" for="rbLinkWebsite">Personal Website / Portfolio</label>
+            <input type="url" class="form-control" id="rbLinkWebsite" maxlength="500" placeholder="https://yourwebsite.com" value="${esc(state.contactLinks.websiteUrl)}" data-rb-link-website />
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-primary mb-3" data-rb-link-save>Save Professional Links</button>
       </div>
       <button type="button" class="btn btn-sm btn-outline-primary" data-rb-edit-profile>
         <i class="bi bi-pencil-square me-1"></i>Edit Profile
@@ -1261,39 +1287,43 @@
       ${formOpen ? formHtml : ''}`;
   }
 
-  function previewContactLine(personal) {
+  function resumeSection(title, bodyHtml) {
+    if (!bodyHtml) return '';
+    return `
+      <section class="rb-resume-section">
+        <h2 class="rb-resume-h2">${esc(title)}</h2>
+        <hr class="rb-resume-rule" aria-hidden="true" />
+        ${bodyHtml}
+      </section>`;
+  }
+
+  function contactLinkText(raw, kind) {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    let label = value.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    if (kind === 'linkedin' && !/linkedin\.com/i.test(label)) {
+      label = 'linkedin.com/in/' + value.replace(/^@/, '').replace(/^\/+/, '');
+    } else if (kind === 'github' && !/github\.com/i.test(label)) {
+      label = 'github.com/' + value.replace(/^@/, '').replace(/^\/+/, '');
+    }
+    return esc(label);
+  }
+
+  function previewContactLine() {
+    const personal = state.personal || {};
+    const links = state.contactLinks || {};
     const parts = [];
     const mobile = String(personal.mobile || '').trim();
     const email = firstText(personal.personalEmail, personal.collegeEmail);
-    const linkedin = formatContactLink(personal.linkedin, 'linkedin');
-    const github = formatContactLink(personal.github, 'github');
-    const portfolio = formatContactLink(personal.portfolio, 'portfolio');
+    const linkedin = contactLinkText(links.linkedinUrl, 'linkedin');
+    const github = contactLinkText(links.githubUrl, 'github');
+    const website = contactLinkText(links.websiteUrl, 'website');
     if (mobile) parts.push(esc(mobile));
     if (email) parts.push(esc(email));
     if (linkedin) parts.push(linkedin);
     if (github) parts.push(github);
-    if (portfolio) parts.push(portfolio);
+    if (website) parts.push(website);
     return parts.join(' | ');
-  }
-
-  function formatContactLink(raw, kind) {
-    const value = String(raw || '').trim();
-    if (!value) return '';
-    let href = value;
-    let label = value.replace(/^https?:\/\//i, '').replace(/\/$/, '');
-    if (kind === 'linkedin') {
-      if (!/^https?:\/\//i.test(href)) href = 'https://' + href.replace(/^\/+/, '');
-      label = /linkedin\.com/i.test(value) ? label : ('linkedin.com/in/' + value.replace(/^@/, ''));
-      return `<a class="rb-resume-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
-    }
-    if (kind === 'github') {
-      if (!/^https?:\/\//i.test(href)) href = 'https://github.com/' + value.replace(/^@/, '');
-      label = /github\.com/i.test(value) ? label : ('github.com/' + value.replace(/^@/, ''));
-      return `<a class="rb-resume-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
-    }
-    if (!/^https?:\/\//i.test(href)) href = 'https://' + href.replace(/^\/+/, '');
-    label = value.replace(/^https?:\/\//i, '');
-    return `<a class="rb-resume-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
   }
 
   function previewBulletsHtml(text) {
@@ -1303,10 +1333,8 @@
       .split(/\n+/)
       .map((line) => line.replace(/^[•\-\*\u2022]\s*/, '').trim())
       .filter(Boolean);
-    if (lines.length > 1) {
-      return `<ul class="rb-resume-bullets">${lines.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>`;
-    }
-    return `<p class="rb-resume-para">${esc(raw)}</p>`;
+    const items = lines.length ? lines : [raw];
+    return `<ul class="rb-resume-bullets">${items.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>`;
   }
 
   function previewEducationScore(row) {
@@ -1316,30 +1344,32 @@
       const num = score.replace(/\s*CGPA\s*/i, '').trim();
       return num ? 'CGPA: ' + num : score;
     }
-    if (/%\s*$/.test(score)) return 'Percentage: ' + score;
+    if (/%\s*$/.test(score)) return score;
     return score;
   }
 
-  function previewSkillsHtml() {
-    if (!state.skills.length) return '';
-    const labelMap = {
-      Technical: 'Technical Skills',
-      Tools: 'Tools & Platforms',
-      'Soft Skills': 'Soft Skills',
-      'Domain Skills': 'Domain Skills',
-      Languages: 'Languages',
-    };
-    const groups = SKILL_CATEGORIES.map((cat) => {
-      const items = state.skills.filter((s) => s.skillCategory === cat);
+  function previewTechnicalSkillsHtml() {
+    const techCats = [
+      { key: 'Technical', label: 'Programming Languages' },
+      { key: 'Tools', label: 'Tools & Platforms' },
+      { key: 'Domain Skills', label: 'Domain Skills' },
+      { key: 'Languages', label: 'Languages' },
+    ];
+    const lines = techCats.map(({ key, label }) => {
+      const items = state.skills.filter((s) => s.skillCategory === key);
       if (!items.length) return '';
       const names = items.map((s) => esc(s.skillName)).join(', ');
-      return `<div class="rb-resume-skill-line"><span class="rb-resume-skill-label">${esc(labelMap[cat] || cat)}:</span> ${names}</div>`;
+      return `<div class="rb-resume-skill-line"><span class="rb-resume-skill-label">${esc(label)}:</span> ${names}</div>`;
     }).filter(Boolean).join('');
-    return `
-      <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Skills</h2>
-        <div class="rb-resume-skills">${groups}</div>
-      </section>`;
+    if (!lines) return '';
+    return resumeSection('Technical Skills', `<div class="rb-resume-skills">${lines}</div>`);
+  }
+
+  function previewSoftSkillsHtml() {
+    const items = state.skills.filter((s) => s.skillCategory === 'Soft Skills');
+    if (!items.length) return '';
+    const names = items.map((s) => esc(s.skillName)).join(', ');
+    return resumeSection('Soft Skills', `<div class="rb-resume-skill-line">${names}</div>`);
   }
 
   function previewEducationHtml() {
@@ -1351,39 +1381,29 @@
         <div class="rb-resume-edu">
           <div class="rb-resume-edu-row">
             <div class="rb-resume-edu-degree">${esc(row.qualification || 'Qualification')}</div>
-            <div class="rb-resume-edu-year">${row.year ? esc(row.year) : ''}</div>
+            <div class="rb-resume-edu-year rb-resume-right-bold">${row.year ? esc(row.year) : ''}</div>
           </div>
           <div class="rb-resume-edu-row">
             <div class="rb-resume-edu-inst">${institution ? esc(institution) : ''}</div>
-            <div class="rb-resume-edu-score">${score ? esc(score) : ''}</div>
+            <div class="rb-resume-edu-score rb-resume-right-bold">${score ? esc(score) : ''}</div>
           </div>
         </div>`;
     }).join('');
-    return `
-      <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Education</h2>
-        ${items}
-      </section>`;
+    return resumeSection('Education', items);
   }
 
   function previewProjectsHtml() {
     if (!state.projects.length) return '';
     const items = state.projects.map((p) => {
       const tech = String(p.technologiesUsed || '').trim();
-      const link = String(p.projectLink || '').trim();
       return `
         <div class="rb-resume-entry">
           <div class="rb-resume-entry-title">${esc(p.projectTitle)}</div>
-          ${tech ? `<div class="rb-resume-entry-sub"><span class="rb-resume-strong">Technologies / Tools:</span> ${esc(tech)}</div>` : ''}
+          ${tech ? `<div class="rb-resume-tech">${esc(tech)}</div>` : ''}
           ${previewBulletsHtml(p.projectDescription)}
-          ${link ? `<div class="rb-resume-entry-link"><a class="rb-resume-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link.replace(/^https?:\/\//i, ''))}</a></div>` : ''}
         </div>`;
     }).join('');
-    return `
-      <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Projects</h2>
-        ${items}
-      </section>`;
+    return resumeSection('Projects', items);
   }
 
   function previewExperienceHtml() {
@@ -1395,101 +1415,59 @@
     });
     const items = sorted.map((exp) => {
       const dates = formatExperienceDateRange(exp);
-      const location = String(exp.location || '').trim();
-      const orgLine = [
-        exp.organizationName,
-        exp.experienceType,
-        location,
-      ].filter(Boolean).map((v) => esc(v)).join(' · ');
       return `
         <div class="rb-resume-entry">
           <div class="rb-resume-entry-top">
             <div class="rb-resume-entry-title">${esc(exp.positionTitle)}</div>
-            ${dates ? `<div class="rb-resume-entry-right">${esc(dates)}</div>` : ''}
+            ${dates ? `<div class="rb-resume-entry-right rb-resume-right-bold">${esc(dates)}</div>` : ''}
           </div>
-          ${orgLine ? `<div class="rb-resume-entry-sub">${orgLine}</div>` : ''}
+          <div class="rb-resume-entry-org">${esc(exp.organizationName)}</div>
           ${previewBulletsHtml(exp.description)}
         </div>`;
     }).join('');
-    return `
-      <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Professional Experience</h2>
-        ${items}
-      </section>`;
+    return resumeSection('Professional Experience', items);
   }
 
   function previewCertificationsHtml() {
     if (!state.certifications.length) return '';
     const items = state.certifications.map((c) => {
       const issued = formatCertDate(c.issueDate);
-      const credentialUrl = String(c.credentialUrl || '').trim();
-      return `
-        <div class="rb-resume-entry">
-          <div class="rb-resume-entry-top">
-            <div class="rb-resume-entry-title">${esc(c.certificationName)}</div>
-            ${issued ? `<div class="rb-resume-entry-right">${esc(issued)}</div>` : ''}
-          </div>
-          <div class="rb-resume-entry-sub">${esc(c.issuingOrganization)}</div>
-          ${credentialUrl ? `<div class="rb-resume-entry-link"><a class="rb-resume-link" href="${esc(credentialUrl)}" target="_blank" rel="noopener noreferrer">${esc(credentialUrl.replace(/^https?:\/\//i, ''))}</a></div>` : ''}
-        </div>`;
+      const parts = [c.issuingOrganization, issued].filter(Boolean).join(', ');
+      const line = parts
+        ? `${esc(c.certificationName)} (${esc(parts)})`
+        : esc(c.certificationName);
+      return `<li>${line}</li>`;
     }).join('');
-    return `
-      <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Certifications</h2>
-        ${items}
-      </section>`;
+    return resumeSection('Certifications', `<ul class="rb-resume-list">${items}</ul>`);
   }
 
   function previewAchievementsHtml() {
     const rows = state.activities.filter((a) => a.activityType === 'Achievement');
     if (!rows.length) return '';
     const items = rows.map((a) => {
-      const date = formatActivityDate(a.activityDate);
       const org = String(a.organization || '').trim();
-      return `
-        <div class="rb-resume-entry">
-          <div class="rb-resume-entry-top">
-            <div class="rb-resume-entry-title">${esc(a.title)}</div>
-            ${date ? `<div class="rb-resume-entry-right">${esc(date)}</div>` : ''}
-          </div>
-          ${org ? `<div class="rb-resume-entry-sub">${esc(org)}</div>` : ''}
-          ${previewBulletsHtml(a.description)}
-        </div>`;
+      const line = org ? `${esc(a.title)} — ${esc(org)}` : esc(a.title);
+      return `<li>${line}</li>`;
     }).join('');
-    return `
-      <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Achievements</h2>
-        ${items}
-      </section>`;
+    return resumeSection('Achievements', `<ul class="rb-resume-list">${items}</ul>`);
   }
 
   function previewActivitiesHtml() {
     const rows = state.activities.filter((a) => a.activityType !== 'Achievement');
     if (!rows.length) return '';
     const items = rows.map((a) => {
-      const date = formatActivityDate(a.activityDate);
       const org = String(a.organization || '').trim();
-      return `
-        <div class="rb-resume-entry">
-          <div class="rb-resume-entry-top">
-            <div class="rb-resume-entry-title">${esc(a.title)}</div>
-            ${date ? `<div class="rb-resume-entry-right">${esc(date)}</div>` : ''}
-          </div>
-          <div class="rb-resume-entry-sub">${esc(a.activityType)}${org ? ` · ${esc(org)}` : ''}</div>
-          ${previewBulletsHtml(a.description)}
-        </div>`;
+      const date = formatActivityDate(a.activityDate);
+      const meta = [a.activityType, org, date].filter(Boolean).map((v) => esc(v)).join(' · ');
+      return `<li><span class="rb-resume-strong">${esc(a.title)}</span>${meta ? ` — ${meta}` : ''}</li>`;
     }).join('');
-    return `
-      <section class="rb-resume-section">
-        <h2 class="rb-resume-h2">Activities / Leadership</h2>
-        ${items}
-      </section>`;
+    return resumeSection('Activities / Leadership', `<ul class="rb-resume-list">${items}</ul>`);
   }
 
   function buildResumeDocumentHtml() {
     const personal = state.personal || {};
     const name = String(personal.fullName || '').trim();
-    const contact = previewContactLine(personal);
+    const contact = previewContactLine();
     const objective = String(state.objectiveText || '').trim();
 
     const sections = [
@@ -1498,18 +1476,15 @@
           ${name ? `<h1 class="rb-resume-name">${esc(name)}</h1>` : ''}
           ${contact ? `<p class="rb-resume-contact">${contact}</p>` : ''}
         </header>` : '',
+      objective ? resumeSection('Career Objective', `<p class="rb-resume-para">${esc(objective)}</p>`) : '',
       previewEducationHtml(),
-      objective ? `
-        <section class="rb-resume-section">
-          <h2 class="rb-resume-h2">Career Objective</h2>
-          <p class="rb-resume-para">${esc(objective)}</p>
-        </section>` : '',
-      previewSkillsHtml(),
+      previewTechnicalSkillsHtml(),
       previewExperienceHtml(),
       previewProjectsHtml(),
       previewAchievementsHtml(),
       previewCertificationsHtml(),
       previewActivitiesHtml(),
+      previewSoftSkillsHtml(),
     ].filter(Boolean);
 
     if (!sections.length) {
@@ -1614,6 +1589,7 @@
     try {
       await Promise.all([
         loadPersonalFromProfile(),
+        loadContactLinks(),
         loadCareerObjective(),
         loadSkills(),
         loadProjects(),
@@ -1793,6 +1769,10 @@
       }
       if (event.target.closest('[data-rb-edit-profile]')) {
         goToExistingProfile();
+        return;
+      }
+      if (event.target.closest('[data-rb-link-save]')) {
+        saveContactLinks();
         return;
       }
       if (event.target.closest('[data-rb-view-academic]')) {
@@ -1998,8 +1978,7 @@
     const status = personalStatus(fields);
     state.personal = fields && typeof fields === 'object' ? fields : {};
     state.personalComplete = status.complete;
-    const card = root.querySelector('[data-rb-card="personal"]');
-    if (card) card.innerHTML = personalCardBody(fields, status, false);
+    renderPersonalCard();
     updateCompletionUi();
     renderPreviewCard();
   }
@@ -2048,6 +2027,69 @@
       // Fall through to empty state.
     }
     applyObjective('');
+  }
+
+  function readContactLinkForm() {
+    const linkedin = root.querySelector('[data-rb-link-linkedin]');
+    const github = root.querySelector('[data-rb-link-github]');
+    const website = root.querySelector('[data-rb-link-website]');
+    return {
+      linkedinUrl: linkedin ? String(linkedin.value || '').trim() : '',
+      githubUrl: github ? String(github.value || '').trim() : '',
+      websiteUrl: website ? String(website.value || '').trim() : '',
+    };
+  }
+
+  function applyContactLinks(links) {
+    state.contactLinks = {
+      linkedinUrl: String(links?.linkedinUrl || '').trim(),
+      githubUrl: String(links?.githubUrl || '').trim(),
+      websiteUrl: String(links?.websiteUrl || '').trim(),
+    };
+    renderPersonalCard();
+    renderPreviewCard();
+  }
+
+  async function loadContactLinks() {
+    if (!canUseResumeBuilderApi()) {
+      applyContactLinks({});
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/contact-links', { skipAuthRedirect: true });
+      if (res?.success) {
+        applyContactLinks(res.data || {});
+        return;
+      }
+    } catch (_err) {
+      // Fall through.
+    }
+    applyContactLinks({});
+  }
+
+  async function saveContactLinks() {
+    const form = readContactLinkForm();
+    if (!canUseResumeBuilderApi()) {
+      state.contactLinksMessage = 'Sign in to save professional links.';
+      renderPersonalCard();
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/contact-links', {
+        method: 'PUT',
+        body: form,
+        skipAuthRedirect: true,
+      });
+      if (res?.success) {
+        state.contactLinksMessage = '';
+        applyContactLinks(res.data || form);
+        return;
+      }
+      state.contactLinksMessage = res?.message || 'Could not save professional links.';
+    } catch (_err) {
+      state.contactLinksMessage = 'Could not save professional links.';
+    }
+    renderPersonalCard();
   }
 
   function renderSkillsCard() {
@@ -2888,6 +2930,7 @@
   function init() {
     renderShell();
     loadPersonalFromProfile();
+    loadContactLinks();
     loadCareerObjective();
     loadSkills();
     loadProjects();

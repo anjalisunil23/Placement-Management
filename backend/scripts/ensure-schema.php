@@ -61,6 +61,7 @@ $required = [
     Collections::RESUME_EXPERIENCE,
     Collections::RESUME_CERTIFICATIONS,
     Collections::RESUME_ACTIVITIES,
+    Collections::RESUME_CONTACT_LINKS,
 ];
 
 $existing = Database::pdo()->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
