@@ -941,6 +941,10 @@ const Auth = {
     const role = this.role();
     return role === 'admin' || role === 'placement_officer';
   },
+  canTakeCodingMock() { return this.canTakeAptitudeMock(); },
+  canViewCodingDirectory() { return this.canViewAptitudeDirectory(); },
+  canManageCodingTests() { return this.canManageAptitudeMocks(); },
+  canManageCodingContests() { return this.canManageAptitudeContests(); },
   isAuthed() { return !!this.user(); },
   hasRealAuth() {
     const t = this.token();

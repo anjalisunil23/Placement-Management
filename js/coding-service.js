@@ -70,7 +70,9 @@
         return '';
       }
     }
-    return '';
+    const want = normalizeOut(stdin);
+    const hit = (question.testCases || []).find((tc) => normalizeOut(tc.input) === want);
+    return hit ? normalizeOut(hit.expected) : '';
   }
 
   function mockHints(question, language, stdin) {
@@ -164,35 +166,262 @@
     };
   }
 
-  const attempts = new Map();
+  const MANAGE_KEY = 'ph-coding-managed-tests';
+  const BANK_KEY = 'ph-coding-problem-bank';
+
+  function liveApi() {
+    return typeof Auth !== 'undefined' && typeof Auth.hasRealAuth === 'function'
+      && Auth.hasRealAuth() && !Auth.isDemo();
+  }
+
+  function loadJson(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return fallback;
+      const parsed = JSON.parse(raw);
+      return parsed == null ? fallback : parsed;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function saveJson(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  function loadManagedTests() {
+    let tests = loadJson(MANAGE_KEY, null);
+    if (!Array.isArray(tests) || !tests.length) {
+      tests = typeof CodingData !== 'undefined' && CodingData.seedManagedTests
+        ? CodingData.seedManagedTests()
+        : [];
+      saveJson(MANAGE_KEY, tests);
+    }
+    return tests;
+  }
+
+  function saveManagedTests(tests) {
+    saveJson(MANAGE_KEY, tests);
+    return tests;
+  }
+
+  function loadBankStore() {
+    return loadJson(BANK_KEY, []);
+  }
+
+  function saveBankStore(rows) {
+    saveJson(BANK_KEY, rows);
+    return rows;
+  }
+
+  function isContestOpen(test) {
+    const type = String(test?.contestType || 'none');
+    if (type === 'none' || !type) return true;
+    const now = new Date();
+    if (type === 'weekly') {
+      const want = Number(test?.contestWeekday);
+      if (!Number.isFinite(want) || want < 1 || want > 7) return false;
+      const iso = now.getDay() === 0 ? 7 : now.getDay();
+      return iso === want;
+    }
+    if (type === 'monthly') {
+      const want = Number(test?.contestMonthDay);
+      return Number.isFinite(want) && want >= 1 && want <= 28 && now.getDate() === want;
+    }
+    return true;
+  }
+
+  function testMetaFromFull(test) {
+    const items = test.items || [];
+    const marks = Number(test.marks || test.totalMarks) || items.reduce((s, q) => s + Number(q.marks || 0), 0);
+    return {
+      id: test.id,
+      title: test.title,
+      category: test.category,
+      difficulty: test.difficulty,
+      questions: items.length || test.questions || 0,
+      questionCount: items.length || test.questionCount || 0,
+      duration: test.duration || test.durationMinutes || 20,
+      durationMinutes: test.duration || test.durationMinutes || 20,
+      marks,
+      totalMarks: marks,
+      description: test.description || '',
+      instructions: test.instructions || [],
+      status: test.status || 'unpublished',
+      contestType: test.contestType || 'none',
+      contestWeekday: test.contestWeekday,
+      contestMonthDay: test.contestMonthDay,
+      contestOpen: isContestOpen(test),
+    };
+  }
+
+  function publicFromFull(test) {
+    const meta = testMetaFromFull(test);
+    const publicQ = typeof CodingData !== 'undefined' && CodingData.publicQuestion
+      ? (item) => CodingData.publicQuestion(item)
+      : (item) => item;
+    return {
+      ...meta,
+      items: (test.items || []).map((item) => publicQ(item)),
+    };
+  }
+
+  function questionFromAttempt(attempt, questionId) {
+    const fromFull = getFullTestLocal(attempt?.testId)?.items?.find((q) => String(q.id) === String(questionId));
+    if (fromFull) return fromFull;
+    const fromAttempt = (attempt?.test?.items || []).find((q) => String(q.id) === String(questionId));
+    if (fromAttempt) return fromAttempt;
+    return typeof CodingData !== 'undefined' ? CodingData.getQuestion(attempt?.testId, questionId) : null;
+  }
+
+  function getFullTestLocal(id) {
+    const managed = loadManagedTests().find((t) => String(t.id) === String(id));
+    if (managed) {
+      const builtin = typeof CodingData !== 'undefined' ? CodingData.getTest(id) : null;
+      if (builtin?.items) {
+        managed.items = (managed.items || []).map((item) => {
+          const src = builtin.items.find((q) => q.id === item.id);
+          return src ? { ...item, solver: src.solver, keywords: item.keywords || src.keywords } : item;
+        });
+      }
+      return managed;
+    }
+    return typeof CodingData !== 'undefined' ? CodingData.getTest(id) : null;
+  }
 
   const CodingService = {
     formatTimer,
     passPercent: PASS_PERCENT,
 
     async listTests() {
-      if (API_ENABLED && typeof api === 'function') {
+      if (liveApi()) {
         const res = await api('/coding/tests').catch(() => null);
         if (res?.success) return res.data.tests || [];
       }
-      return CodingData.listTests();
+      return loadManagedTests()
+        .filter((t) => (t.status || 'published') === 'published' && isContestOpen(t))
+        .map(testMetaFromFull);
+    },
+
+    async listManagedTests() {
+      if (liveApi()) {
+        const res = await api('/coding/tests?manage=1').catch(() => null);
+        if (res?.success) return res.data.tests || [];
+      }
+      return loadManagedTests();
+    },
+
+    getFullTest(id) {
+      return getFullTestLocal(id);
+    },
+
+    async saveTest(payload) {
+      const items = payload.items || [];
+      const marks = items.reduce((s, q) => s + Number(q.marks || 0), 0);
+      const next = {
+        ...payload,
+        questions: items.length,
+        questionCount: items.length,
+        marks,
+        totalMarks: marks,
+        duration: Number(payload.duration || payload.durationMinutes || 20),
+        durationMinutes: Number(payload.duration || payload.durationMinutes || 20),
+      };
+      if (liveApi()) {
+        const id = payload.id;
+        const res = id
+          ? await api(`/coding/tests/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(next) })
+          : await api('/coding/tests', { method: 'POST', body: JSON.stringify(next) });
+        if (!res?.success) throw new Error(res?.message || 'Could not save test.');
+        return res.data;
+      }
+      const store = loadManagedTests();
+      if (!next.id) next.id = 'cod-test-' + Date.now();
+      const idx = store.findIndex((t) => String(t.id) === String(next.id));
+      if (idx >= 0) store[idx] = { ...store[idx], ...next };
+      else store.push(next);
+      saveManagedTests(store);
+      return next;
+    },
+
+    async deleteTest(id) {
+      if (liveApi()) {
+        const res = await api(`/coding/tests/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res?.success) throw new Error(res?.message || 'Could not delete test.');
+        return;
+      }
+      saveManagedTests(loadManagedTests().filter((t) => String(t.id) !== String(id)));
+    },
+
+    async listBank() {
+      if (liveApi()) {
+        const res = await api('/coding/problem-bank').catch(() => null);
+        if (res?.success) return res.data.problems || res.data.questions || [];
+      }
+      return loadBankStore();
+    },
+
+    async saveBankProblem(payload) {
+      if (liveApi()) {
+        const id = payload.id;
+        const res = id
+          ? await api(`/coding/problem-bank/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) })
+          : await api('/coding/problem-bank', { method: 'POST', body: JSON.stringify(payload) });
+        if (!res?.success) throw new Error(res?.message || 'Could not save problem.');
+        return res.data;
+      }
+      const bank = loadBankStore();
+      if (!payload.id) payload.id = 'bank-' + Date.now();
+      const idx = bank.findIndex((q) => String(q.id) === String(payload.id));
+      if (idx >= 0) bank[idx] = { ...bank[idx], ...payload };
+      else bank.push(payload);
+      saveBankStore(bank);
+      return payload;
+    },
+
+    async deleteBankProblem(id) {
+      if (liveApi()) {
+        const res = await api(`/coding/problem-bank/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res?.success) throw new Error(res?.message || 'Could not delete problem.');
+        return;
+      }
+      saveBankStore(loadBankStore().filter((q) => String(q.id) !== String(id)));
+    },
+
+    async directory(query) {
+      if (liveApi()) {
+        const res = await api('/coding/progress?' + (query || new URLSearchParams()).toString()).catch(() => null);
+        if (res?.success) return res.data;
+      }
+      return null;
     },
 
     async getProgress() {
-      if (API_ENABLED && typeof api === 'function') {
-        const res = await api('/coding/progress').catch(() => null);
+      if (liveApi()) {
+        const res = await api('/coding/me').catch(() => null);
         if (res?.success) return res.data;
       }
       return summarizeProgress(loadProgress());
     },
 
     async startAttempt(testId) {
-      if (API_ENABLED && typeof api === 'function') {
-        const res = await api(`/coding/tests/${encodeURIComponent(testId)}/start`, { method: 'POST' });
-        if (!res?.success) throw new Error(res?.message || 'Could not start test.');
-        return res.data;
+      if (liveApi()) {
+        const res = await api(`/coding/tests/${encodeURIComponent(testId)}/start`, { method: 'POST' }).catch(() => null);
+        if (res?.success && res.data) {
+          const started = res.data;
+          attempts.set(started.attemptId, {
+            id: started.attemptId,
+            testId,
+            test: started.test,
+            answers: started.answers || {},
+            startedAt: started.startedAt || Date.now(),
+            endsAt: started.endsAt,
+            submitted: false,
+          });
+          return started;
+        }
       }
-      const pub = CodingData.getPublicTest(testId);
+      const pub = getFullTestLocal(testId) ? publicFromFull(getFullTestLocal(testId)) : (typeof CodingData !== 'undefined' ? CodingData.getPublicTest(testId) : null);
       if (!pub) throw new Error('Test not found.');
       const attemptId = 'cod-' + Date.now();
       const answers = {};
@@ -241,7 +470,7 @@
       }
       const attempt = attempts.get(attemptId);
       if (!attempt || attempt.submitted) throw new Error('This test has already been submitted.');
-      const question = CodingData.getQuestion(attempt.testId, questionId);
+      const question = questionFromAttempt(attempt, questionId);
       if (!question) throw new Error('Question not found.');
       this.saveDraft(attemptId, questionId, { language, code, customInput: stdin });
 
@@ -303,19 +532,15 @@
     },
 
     async submitAttempt(attemptId, { timeTakenSeconds } = {}) {
-      if (API_ENABLED && typeof api === 'function') {
-        const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/submit`, {
-          method: 'POST',
-          body: JSON.stringify({ timeTakenSeconds }),
-        });
-        if (!res?.success) throw new Error(res?.message || 'Submit failed.');
-        return res.data;
-      }
+      const localResult = async () => {
       const attempt = attempts.get(attemptId);
       if (!attempt) throw new Error('Attempt not found.');
       if (attempt.submitted) throw new Error('This test has already been submitted.');
       attempt.submitted = true;
-      const full = CodingData.getTest(attempt.testId);
+      const full = getFullTestLocal(attempt.testId)
+        || attempt.test
+        || (typeof CodingData !== 'undefined' ? CodingData.getTest(attempt.testId) : null);
+      if (!full) throw new Error('Test not found.');
       const questionResults = [];
       let score = 0;
       let correct = 0;
@@ -389,7 +614,7 @@
         });
       }
 
-      const totalMarks = full.marks;
+      const totalMarks = Number(full.marks || full.totalMarks) || (full.items || []).reduce((s, q) => s + Number(q.marks || 0), 0);
       const percentage = totalMarks ? Math.round((score / totalMarks) * 1000) / 10 : 0;
       const passed = percentage >= PASS_PERCENT;
       const taken = Number.isFinite(timeTakenSeconds)
@@ -436,6 +661,15 @@
       progress.solvedQuestionIds = [...set];
       saveProgress(progress);
       result.dateLabel = formatDate(result.submittedAt);
+      return result;
+      };
+      const result = await localResult();
+      if (liveApi()) {
+        await api(`/coding/attempts/${encodeURIComponent(attemptId)}/submit`, {
+          method: 'POST',
+          body: JSON.stringify(result),
+        }).catch(() => null);
+      }
       return result;
     },
   };

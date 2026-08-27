@@ -64,18 +64,149 @@
     </div>
   </div>
 
-  <div class="row g-3 mb-3" id="myStatsRow"></div>
-  <div class="row g-3">
-    <div class="col-lg-7">
-      <div class="card-surface p-3 p-md-4">
-        <h6 class="fw-bold mb-3">Available coding tests</h6>
-        <div id="testList" class="d-flex flex-column gap-2"></div>
+  <ul class="nav nav-pills gap-1 mb-3 flex-wrap d-none" id="codViewNav">
+    <li class="nav-item"><a class="nav-link" data-view="take" href="#take">Take test</a></li>
+    <li class="nav-item"><a class="nav-link" data-view="progress" href="#progress">Progress</a></li>
+    <li class="nav-item"><a class="nav-link" data-view="manage" href="#manage">Manage tests</a></li>
+  </ul>
+
+  <div id="codDenied" class="card-surface p-4 text-center d-none">
+    <h5 class="fw-bold mb-2">Coding practice not available</h5>
+    <p class="text-muted-2 mb-0">Your role cannot take or manage coding practice tests here.</p>
+  </div>
+
+  <div id="codTake" class="d-none">
+    <div class="row g-3 mb-3" id="myStatsRow"></div>
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="card-surface p-3 p-md-4">
+          <h6 class="fw-bold mb-3">Available coding tests</h6>
+          <div id="testList" class="d-flex flex-column gap-2"></div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card-surface p-3 p-md-4">
+          <h6 class="fw-bold mb-2">My recent results</h6>
+          <ul class="nav nav-pills gap-1 mb-2 flex-wrap" id="myResultsNav">
+            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test results</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest results</a></li>
+          </ul>
+          <div id="myHistory" class="small text-muted-2">No coding attempts yet. Select a test on the left to begin.</div>
+        </div>
       </div>
     </div>
-    <div class="col-lg-5">
-      <div class="card-surface p-3 p-md-4">
-        <h6 class="fw-bold mb-3">My recent results</h6>
-        <div id="myHistory" class="small text-muted-2">No coding attempts yet. Select a test on the left to begin.</div>
+  </div>
+
+  <div id="codDirectory" class="d-none mt-3">
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+        <div>
+          <h6 class="fw-bold mb-1" id="dirTitle">Institution test results</h6>
+          <p class="small text-muted-2 mb-0 d-none" id="dirScopeHint"></p>
+        </div>
+      </div>
+      <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="progressViewNav">
+        <li class="nav-item"><a class="nav-link active" href="#" data-progress-view="tests">Test results</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contest results</a></li>
+      </ul>
+      <div class="row g-2 mb-3" id="dirStats"></div>
+      <div class="row g-2 align-items-end mb-3" id="dirFilterRow">
+        <div class="col-6 col-md-3" id="fDepartmentWrap">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fDepartmentLabel">Department</label>
+          <input class="form-control form-control-sm" id="fDepartmentLabel" readonly tabindex="-1" value=""/>
+          <select class="form-select form-select-sm d-none" id="fDepartmentSelect" aria-label="Department">
+            <option value="">All departments</option>
+          </select>
+          <input type="hidden" id="fDepartment" value=""/>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBranch">Branch</label>
+          <select class="form-select form-select-sm" id="fBranch" aria-label="Branch">
+            <option value="">All branches</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBatch">Batch</label>
+          <select class="form-select form-select-sm" id="fBatch" aria-label="Batch">
+            <option value="">All batches</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3" id="fTypeWrap">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fType">Type</label>
+          <select class="form-select form-select-sm" id="fType" aria-label="Type">
+            <option value="">All types</option>
+            <option value="student">Students</option>
+            <option value="alumni">Alumni</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap" id="dirTestResultsWrap"><table class="table-modern"><thead><tr>
+        <th>Name</th><th>Student ID</th><th>Class</th><th>Attempts</th><th>Avg</th><th>Best</th><th>Accuracy</th><th>Recent</th><th>Categories</th><th></th>
+      </tr></thead><tbody id="dirRows"></tbody></table></div>
+      <div class="d-none" id="dirContestResultsWrap"><div id="dirContestSections" class="d-flex flex-column gap-3"></div></div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="studentCodModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title fw-bold">Student coding progress</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body" id="studentCodBody"><p class="text-muted-2 mb-0">Loading…</p></div>
+  </div></div></div>
+
+  <div id="codManage" class="d-none mt-3">
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <div class="mb-3">
+        <h6 class="fw-bold mb-0">Manage tests</h6>
+      </div>
+      <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
+        <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
+        <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Problem bank</a></li>
+      </ul>
+
+      <div id="manageTestsPanel">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">Regular coding mocks — always available when published.</p>
+          <button type="button" class="btn btn-sm btn-primary" id="btnNewTest"><i class="bi bi-plus-lg me-1"></i>New test</button>
+        </div>
+        <div id="manageTestsList" class="d-flex flex-column gap-2"></div>
+      </div>
+
+      <div id="manageContestsPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">Weekly and monthly contests — visible to students only on the scheduled day.</p>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewWeeklyContest"><i class="bi bi-calendar-week me-1"></i>Weekly contest</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewMonthlyContest"><i class="bi bi-calendar-month me-1"></i>Monthly contest</button>
+          </div>
+        </div>
+        <div id="manageContestsList" class="d-flex flex-column gap-2"></div>
+      </div>
+
+      <div id="manageBankPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <div>
+            <h6 class="fw-bold mb-1">Add problems</h6>
+            <p class="small text-muted-2 mb-0">Reusable problem bucket — store Easy, Medium, and Hard coding problems for tests and contests.</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnNewBankProblem"><i class="bi bi-pencil-square me-1"></i>Manual</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btnAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate Problems</button>
+          </div>
+        </div>
+        <div class="row g-2 mb-3" id="bankStats"></div>
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col-6 col-md-4">
+            <label class="form-label small fw-semibold text-muted-2 mb-1" for="bankFilterCategory">Category</label>
+            <select class="form-select form-select-sm" id="bankFilterCategory"><option value="">All categories</option></select>
+          </div>
+        </div>
+        <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="bankDifficultyNav">
+          <li class="nav-item"><a class="nav-link active" href="#" data-bank-difficulty="">All</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Easy">Easy</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Medium">Medium</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Hard">Hard</a></li>
+        </ul>
+        <div id="bankQuestionsList" class="d-flex flex-column gap-2"></div>
       </div>
     </div>
   </div>
@@ -178,14 +309,95 @@
   </div>
 </div>
 
+<div class="modal fade" id="testFormModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="testFormTitle">New coding test</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="testForm">
+    <div class="modal-body">
+      <input type="hidden" id="tfId" value=""/>
+      <div class="row g-3">
+        <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
+        <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfCategory">Category</label><select class="form-select" id="tfCategory"></select></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDifficulty">Difficulty</label><select class="form-select" id="tfDifficulty"></select></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDuration">Duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required value="20"/></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfStatus">Status</label><select class="form-select" id="tfStatus"><option value="unpublished">unpublished</option><option value="published">published</option></select></div>
+        <div class="col-12 d-none" id="tfContestWrap">
+          <div class="border rounded-3 p-3">
+            <div class="small fw-semibold text-primary mb-2"><i class="bi bi-trophy me-1"></i>Contest schedule</div>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold" for="tfContestType">Contest type</label>
+                <select class="form-select" id="tfContestType">
+                  <option value="none">Regular mock (always available)</option>
+                  <option value="weekly">Weekly contest</option>
+                  <option value="monthly">Monthly contest</option>
+                </select>
+              </div>
+              <div class="col-md-4 d-none" id="tfContestWeekdayWrap">
+                <label class="form-label small fw-semibold" for="tfContestWeekday">Runs every</label>
+                <select class="form-select" id="tfContestWeekday">
+                  <option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
+                  <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="7">Sunday</option>
+                </select>
+              </div>
+              <div class="col-md-4 d-none" id="tfContestMonthDayWrap">
+                <label class="form-label small fw-semibold" for="tfContestMonthDay">Day of month</label>
+                <select class="form-select" id="tfContestMonthDay"></select>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <label class="form-label small fw-semibold mb-0">Problems in this test</label>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnPickBankProblems">From problem bank</button>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddProblem"><i class="bi bi-plus-lg me-1"></i>Add problem</button>
+            </div>
+          </div>
+          <div id="problemList" class="d-flex flex-column gap-3"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save test</button>
+    </div>
+  </form>
+</div></div></div>
+
+<div class="modal fade" id="bankPickModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Select problems from bank</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div id="bankPickList" class="d-flex flex-column gap-2"></div>
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+    <button type="button" class="btn btn-primary" id="btnUseBankPicked">Add selected</button>
+  </div>
+</div></div></div>
+
+<div class="modal fade" id="bankProblemModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="bankProblemTitle">Add bank problem</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="bankProblemForm">
+    <div class="modal-body">
+      <input type="hidden" id="bpId" value=""/>
+      <div id="bpEditor"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save problem</button>
+    </div>
+  </form>
+</div></div></div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260819coding"></script>
-<script src="js/app.js?v=20260819coding"></script>
-<script src="js/coding-data.js?v=20260819coding"></script>
-<!-- CodeExecutionService must load before coding-service.js (plain script globals, not ES modules). -->
-<script src="js/coding-execution.js?v=20260819run4"></script>
-<script src="js/coding-service.js?v=20260819run4"></script>
-<script src="js/coding-exam.js?v=20260819run4"></script>
-<script src="js/coding-page.js?v=20260819run4"></script>
+<script src="js/api.js?v=20260827coding-admin"></script>
+<script src="js/app.js?v=20260827coding-admin"></script>
+<script src="js/coding-data.js?v=20260827coding-admin"></script>
+<script src="js/coding-execution.js?v=20260827coding-admin"></script>
+<script src="js/coding-service.js?v=20260827coding-admin"></script>
+<script src="js/coding-exam.js?v=20260827coding-admin"></script>
+<script src="js/coding-page.js?v=20260827coding-admin"></script>
 </body></html>

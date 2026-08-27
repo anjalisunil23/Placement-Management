@@ -105,6 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 use PMS\Admin\AdminController;
 use PMS\Alumni\AlumniController;
 use PMS\Api\AptitudeController;
+use PMS\Api\CodingController;
 use PMS\Api\JobFeedController;
 use PMS\Api\PublicController;
 use PMS\Auth\AuthController;
@@ -486,6 +487,23 @@ $routes = [
     ['GET',  '/aptitude/progress/filters',    [AptitudeController::class, 'progressFilters']],
     ['GET',  '/aptitude/progress',            [AptitudeController::class, 'progressDirectory']],
     ['GET',  '/aptitude/subjects/{userId}',   [AptitudeController::class, 'subjectProgress']],
+
+    // Coding practice
+    ['GET',  '/coding/access',                [CodingController::class, 'access']],
+    ['GET',  '/coding/meta',                  [CodingController::class, 'meta']],
+    ['GET',  '/coding/tests',                 [CodingController::class, 'listTests']],
+    ['POST', '/coding/tests',                 [CodingController::class, 'createTest']],
+    ['PUT',  '/coding/tests/{id}',            [CodingController::class, 'updateTest']],
+    ['DELETE','/coding/tests/{id}',           [CodingController::class, 'deleteTest']],
+    ['GET',  '/coding/problem-bank',          [CodingController::class, 'listBank']],
+    ['POST', '/coding/problem-bank',          [CodingController::class, 'createBankProblem']],
+    ['PUT',  '/coding/problem-bank/{id}',     [CodingController::class, 'updateBankProblem']],
+    ['DELETE','/coding/problem-bank/{id}',    [CodingController::class, 'deleteBankProblem']],
+    ['POST', '/coding/tests/{id}/start',      [CodingController::class, 'start']],
+    ['POST', '/coding/attempts/{id}/submit',  [CodingController::class, 'submit']],
+    ['GET',  '/coding/me',                    [CodingController::class, 'myProgress']],
+    ['GET',  '/coding/progress',              [CodingController::class, 'progressDirectory']],
+    ['GET',  '/coding/subjects/{userId}',     [CodingController::class, 'subjectProgress']],
 
     // Health & public
     ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],

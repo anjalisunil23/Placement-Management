@@ -593,11 +593,54 @@
 
   global.CodingData = {
     LANGUAGES,
+    CATEGORIES: ['Programming', 'Python', 'Data Structures', 'Programming Logic', 'Algorithms'],
+    DIFFICULTIES: ['Easy', 'Medium', 'Hard'],
+    defaultStarters,
     listTests() {
       return TESTS.map(testMeta);
     },
     getTest(id) {
       return TESTS.find((t) => t.id === id) || null;
+    },
+    serializableTest(test) {
+      if (!test) return null;
+      const items = (test.items || []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        inputFormat: item.inputFormat,
+        outputFormat: item.outputFormat,
+        constraints: item.constraints,
+        examples: clone(item.examples || []),
+        starterCode: clone(item.starterCode || defaultStarters('')),
+        testCases: clone(item.testCases || []),
+        keywords: clone(item.keywords || {}),
+        marks: item.marks || 2,
+        category: test.category,
+        difficulty: test.difficulty,
+      }));
+      const marks = items.reduce((s, q) => s + Number(q.marks || 0), 0) || test.marks || 0;
+      return {
+        id: test.id,
+        title: test.title,
+        category: test.category,
+        difficulty: test.difficulty,
+        questions: items.length,
+        duration: test.duration || test.durationMinutes || 20,
+        durationMinutes: test.duration || test.durationMinutes || 20,
+        marks,
+        totalMarks: marks,
+        description: test.description || '',
+        instructions: Array.isArray(test.instructions) ? test.instructions.slice() : [],
+        status: test.status || 'published',
+        contestType: test.contestType || 'none',
+        contestWeekday: test.contestWeekday || 1,
+        contestMonthDay: test.contestMonthDay || 1,
+        items,
+      };
+    },
+    seedManagedTests() {
+      return TESTS.map((t) => this.serializableTest(t));
     },
     getPublicTest(id) {
       const test = TESTS.find((t) => t.id === id);
@@ -607,6 +650,7 @@
         items: test.items.map((item) => publicQuestion(item)),
       };
     },
+    publicQuestion,
     getQuestion(testId, questionId) {
       const test = TESTS.find((t) => t.id === testId);
       return (test?.items || []).find((item) => item.id === questionId) || null;

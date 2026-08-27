@@ -38,6 +38,9 @@ final class Collections
     public const APTITUDE_TESTS = 'aptitude_tests';
     public const APTITUDE_ATTEMPTS = 'aptitude_attempts';
     public const APTITUDE_QUESTION_BANK = 'aptitude_question_bank';
+    public const CODING_TESTS = 'coding_tests';
+    public const CODING_ATTEMPTS = 'coding_attempts';
+    public const CODING_PROBLEM_BANK = 'coding_problem_bank';
     public const RESUME_CAREER_OBJECTIVES = 'resume_career_objectives';
     public const RESUME_SKILLS = 'resume_skills';
     public const RESUME_PROJECTS = 'resume_projects';

@@ -85,6 +85,7 @@ function pms_load_module_controllers(string $backendDir): void
         'PMS\\Api\\PublicController'     => 'api/PublicController.php',
         'PMS\\Api\\JobFeedController'    => 'api/JobFeedController.php',
         'PMS\\Api\\AptitudeController'   => 'api/AptitudeController.php',
+        'PMS\\Api\\CodingController'     => 'api/CodingController.php',
     ];
 
     foreach ($modules as $class => $rel) {
