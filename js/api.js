@@ -463,12 +463,12 @@ const PAGE_PERMS = {
   'blacklist.html':         ['admin'],
   'results.html':           ['admin','placement_officer'],
   'admin-settings.html':    ['admin'],
-  'mock-aptitude.html':     ['admin','placement_officer','student','staff','alumni'],
-  'mock-coding.html':       ['admin','placement_officer','student','staff','alumni'],
+  'mock-aptitude.html':     ['admin','placement_officer','student','staff'],
+  'mock-coding.html':       ['admin','placement_officer','student','staff'],
 };
 
-const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-coding.html'];
-const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-aptitude.html', 'mock-coding.html'];
+const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
+const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-aptitude.html', 'mock-coding.html'];
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
@@ -915,31 +915,22 @@ const Auth = {
     }
     return true;
   },
-  /** Student and job-seeking alumni may take aptitude mocks. */
+  /** Students may take aptitude and coding mocks. */
   canTakeAptitudeMock() {
-    const role = this.role();
-    if (role === 'student') return true;
-    if (role === 'alumni') return !alumniIsWorking();
-    return false;
+    return this.role() === 'student';
   },
-  /** Admin, placement officer, and class staff may browse scoped aptitude progress. */
+  /** Admin, placement officer, and class staff may browse scoped mock progress. */
   canViewAptitudeDirectory() {
     const role = this.role();
     return role === 'admin' || role === 'placement_officer' || role === 'staff';
   },
-  /** Admin, department PO, and assigned class staff may manage aptitude tests. */
+  /** Placement officers may add questions and manage mock tests. */
   canManageAptitudeMocks() {
-    const role = this.role();
-    if (role === 'admin' || role === 'placement_officer') return true;
-    if (role === 'staff') {
-      return typeof staffIsClassIncharge === 'function' && staffIsClassIncharge();
-    }
-    return false;
+    return this.role() === 'placement_officer';
   },
-  /** Admin and department PO may configure weekly / monthly aptitude contests. */
+  /** Placement officers may configure weekly / monthly mock contests. */
   canManageAptitudeContests() {
-    const role = this.role();
-    return role === 'admin' || role === 'placement_officer';
+    return this.role() === 'placement_officer';
   },
   canTakeCodingMock() { return this.canTakeAptitudeMock(); },
   canViewCodingDirectory() { return this.canViewAptitudeDirectory(); },

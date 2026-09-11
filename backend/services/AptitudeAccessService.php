@@ -19,11 +19,11 @@ use PMS\Utils\Security;
  * never by trusting client-supplied studentId / companyId / departmentId / class.
  *
  * Rules:
- * - admin: all aptitude data
- * - placement_officer: students in their department only
- * - staff: students in assigned class only; manage department tests (no self-take)
- * - student / job-seeking alumni: own data only
- * - company: applicants linked via applications for the authenticated company only
+ * - student: take published mocks only
+ * - placement_officer: add/manage tests and questions for their department
+ * - admin / staff: browse scoped progress only (cannot take or add questions)
+ * - alumni / company: no mock take or question management
+ * - company progress: applicants linked via applications for the authenticated company only
  */
 final class AptitudeAccessService
 {
@@ -43,57 +43,32 @@ final class AptitudeAccessService
      */
     public static function canTake(array $user): bool
     {
-        $role = AuthMiddleware::resolvedRole($user);
-        if ($role === 'student') {
-            return true;
-        }
-        if ($role === 'alumni') {
-            return !self::alumniIsWorking($user);
-        }
-        return false;
+        return AuthMiddleware::resolvedRole($user) === 'student';
     }
 
     /**
+     * Only placement officers may add questions and manage mock tests.
+     *
      * @param array<string, mixed> $user
      */
     public static function canManage(array $user): bool
     {
-        $role = AuthMiddleware::resolvedRole($user);
-        if ($role === 'admin') {
-            return true;
+        if (AuthMiddleware::resolvedRole($user) !== 'placement_officer') {
+            return false;
         }
-        if ($role === 'placement_officer') {
-            $ctx = PlacementOfficerContext::resolve($user);
+        $ctx = PlacementOfficerContext::resolve($user);
 
-            return !empty($ctx['departmentId']);
-        }
-        if ($role === 'staff' || ($user['role'] ?? '') === 'staff') {
-            $ctx = StaffContext::resolve($user);
-
-            return !empty($ctx['departmentId']) && StaffContext::assignedClassBatches($ctx) !== [];
-        }
-
-        return false;
+        return !empty($ctx['departmentId']);
     }
 
     /**
-     * Weekly / monthly aptitude contests — admin and department PO only.
+     * Weekly / monthly contests — department placement officer only.
      *
      * @param array<string, mixed> $user
      */
     public static function canManageContests(array $user): bool
     {
-        $role = AuthMiddleware::resolvedRole($user);
-        if ($role === 'admin') {
-            return true;
-        }
-        if ($role === 'placement_officer') {
-            $ctx = PlacementOfficerContext::resolve($user);
-
-            return !empty($ctx['departmentId']);
-        }
-
-        return false;
+        return self::canManage($user);
     }
 
     /**
@@ -143,7 +118,7 @@ final class AptitudeAccessService
     public static function requireTaker(array $user): void
     {
         if (!self::canTake($user)) {
-            Response::forbidden('You are not allowed to take aptitude mock tests.');
+            Response::forbidden('Only students can take mock tests.');
         }
     }
 
@@ -153,7 +128,7 @@ final class AptitudeAccessService
     public static function requireManager(array $user): void
     {
         if (!self::canManage($user)) {
-            Response::forbidden('You are not allowed to manage aptitude mock tests.');
+            Response::forbidden('Only placement officers can add mock test questions.');
         }
     }
 

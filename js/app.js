@@ -65,20 +65,20 @@ const NAV = [
     group: "mock",
     icon: "bi-lightning-charge-fill",
     label: "Mock",
-    roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'],
+    roles: ['admin', 'placement_officer', 'student', 'staff'],
     children: [
       {
         group: "mock-aptitude",
         label: "Aptitude",
         href: "mock-aptitude.html",
-        roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'],
+        roles: ['admin', 'placement_officer', 'student', 'staff'],
         children: [],
       },
       {
         group: "mock-coding",
         label: "Coding",
         href: "mock-coding.html",
-        roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'],
+        roles: ['admin', 'placement_officer', 'student', 'staff'],
         children: [],
       },
     ],

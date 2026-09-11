@@ -173,7 +173,7 @@ final class CodingService
     public function start(array $user, string $testId): array
     {
         if (!AptitudeAccessService::canTake($user)) {
-            Response::forbidden('You cannot take coding tests.');
+            Response::forbidden('Only students can take mock tests.');
         }
         $test = $this->tests->findById($testId);
         if (!$test || ($test['status'] ?? '') !== 'published' || !CodingTestModel::isContestOpen($test)) {
@@ -223,7 +223,7 @@ final class CodingService
     public function submit(array $user, string $attemptId, array $result): array
     {
         if (!AptitudeAccessService::canTake($user)) {
-            Response::forbidden('You cannot submit coding tests.');
+            Response::forbidden('Only students can submit mock tests.');
         }
         $attempt = $this->attempts->findById($attemptId);
         if (!$attempt) {
