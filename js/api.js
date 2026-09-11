@@ -5512,8 +5512,15 @@ async function api(path, opts = {}) {
 }
 
 function onAppReady(fn) {
+  if (window.__phReady || document.documentElement.classList.contains('ph-app-ready')) {
+    fn();
+    return;
+  }
   if (document.body?.dataset?.page && document.body.dataset.page !== 'public-stats.html' && document.body.dataset.page !== 'login.html') {
-    document.addEventListener('ph-ready', fn, { once: true });
+    document.addEventListener('ph-ready', () => {
+      window.__phReady = true;
+      fn();
+    }, { once: true });
   } else {
     fn();
   }

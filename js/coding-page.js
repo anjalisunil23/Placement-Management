@@ -134,6 +134,33 @@
     };
   }
 
+  function currentRole() {
+    return (typeof Auth !== 'undefined' && Auth.role && Auth.role()) || '';
+  }
+
+  function applyRoleAccess(base = access) {
+    const role = currentRole();
+    const next = { ...base };
+    if (role === 'placement_officer') {
+      next.canTake = false;
+      next.canManage = true;
+      next.canViewDirectory = true;
+    } else if (role === 'admin' || role === 'staff') {
+      next.canTake = false;
+      next.canViewDirectory = true;
+      if (role === 'admin') next.canManage = false;
+    } else if (role === 'student') {
+      next.canTake = true;
+      next.canManage = false;
+      next.canViewDirectory = false;
+    } else {
+      next.canTake = false;
+      next.canManage = false;
+      next.canViewDirectory = false;
+    }
+    return next;
+  }
+
   function allowedViews() {
     const views = [];
     if (access.canTake) views.push('take');
@@ -144,7 +171,7 @@
 
   function defaultView() {
     const views = allowedViews();
-    const role = Auth.role();
+    const role = currentRole();
     if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
     if (views.includes('manage') && role === 'placement_officer') return 'manage';
     if (views.includes('take')) return 'take';
@@ -166,6 +193,10 @@
   async function applyView(requested) {
     const views = allowedViews();
     let view = requested || defaultView();
+    const role = currentRole();
+    if ((role === 'placement_officer' || role === 'admin' || role === 'staff') && view === 'take') {
+      view = views.includes('progress') ? 'progress' : defaultView();
+    }
     if (!views.includes(view)) view = defaultView();
     const hash = `#${view}`;
     if (location.hash !== hash) history.replaceState(null, '', hash);
@@ -192,39 +223,29 @@
   }
 
   async function loadAccess() {
-    access = {
-      canTake: (typeof Auth.canTakeCodingMock === 'function' && Auth.canTakeCodingMock())
-        || (typeof Auth.canTakeAptitudeMock === 'function' && Auth.canTakeAptitudeMock()),
-      canManage: (typeof Auth.canManageCodingTests === 'function' && Auth.canManageCodingTests())
-        || (typeof Auth.canManageAptitudeMocks === 'function' && Auth.canManageAptitudeMocks()),
-      canViewDirectory: (typeof Auth.canViewCodingDirectory === 'function' && Auth.canViewCodingDirectory())
-        || (typeof Auth.canViewAptitudeDirectory === 'function' && Auth.canViewAptitudeDirectory()),
+    const u = (typeof Auth !== 'undefined' && Auth.user && Auth.user()) || {};
+    access = applyRoleAccess({
+      canTake: false,
+      canManage: false,
+      canViewDirectory: false,
       scope: null,
-    };
+    });
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
       let res = await api('/coding/access').catch(() => null);
       if (!res?.success) res = await api('/aptitude/access').catch(() => null);
       if (res?.success && res.data) {
-        access = {
-          canTake: !!res.data.canTake,
-          canManage: !!res.data.canManage,
-          canViewDirectory: !!res.data.canViewDirectory,
-          scope: res.data.scope || null,
-        };
+        access.scope = res.data.scope || access.scope;
       }
     }
-    const role = Auth.role();
-    if (role === 'staff' || role === 'placement_officer') {
-      const u = Auth.user() || {};
-      access.canTake = false;
-      if (!access.scope) {
-        access.scope = {
-          role,
-          departmentId: u.departmentId || '',
-          departmentName: u.departmentName || u.department || '',
-          assignedClassBatches: role === 'staff' ? staffAssignedBatches() : [],
-        };
-      }
+    access = applyRoleAccess(access);
+    const role = currentRole();
+    if ((role === 'staff' || role === 'placement_officer') && !access.scope) {
+      access.scope = {
+        role,
+        departmentId: u.departmentId || '',
+        departmentName: u.departmentName || u.department || '',
+        assignedClassBatches: role === 'staff' ? staffAssignedBatches() : [],
+      };
     }
   }
 
@@ -1016,11 +1037,22 @@
     await applyView(hash || defaultView());
   }
 
+  let bootPromise = null;
   const start = () => {
-    boot().catch((err) => {
+    if (bootPromise) {
+      return loadAccess().then(() => {
+        const any = access.canTake || access.canManage || access.canViewDirectory;
+        document.getElementById('codDenied')?.classList.toggle('d-none', any);
+        if (!any) return;
+        setupViewNav();
+        return applyView((location.hash || '').replace('#', '') || defaultView());
+      });
+    }
+    bootPromise = boot().catch((err) => {
       toastMsg(err?.message || 'Could not load coding practice.', 'error');
     });
+    return bootPromise;
   };
+  start();
   if (typeof onAppReady === 'function') onAppReady(start);
-  else start();
 })();

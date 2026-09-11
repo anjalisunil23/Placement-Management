@@ -791,6 +791,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if ((document.body?.dataset?.page || '') !== 'public-stats.html') {
       animateCounters();
     }
+    window.__phReady = true;
     document.dispatchEvent(new CustomEvent('ph-ready'));
     return;
   }
@@ -904,6 +905,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   animateCounters();
   // Defer badge refresh so it doesn't contend with the page's first data fetch.
   setTimeout(() => { NotificationInbox.refreshBadge?.(); }, 1800);
+  window.__phReady = true;
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();
 });
