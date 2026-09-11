@@ -135,7 +135,21 @@
   }
 
   function currentRole() {
-    return (typeof Auth !== 'undefined' && Auth.role && Auth.role()) || '';
+    if (typeof Auth !== 'undefined' && Auth.role) {
+      const role = Auth.role();
+      if (role) return role;
+    }
+    try {
+      const user = JSON.parse(localStorage.getItem('ph-user') || 'null') || {};
+      let role = user.role || localStorage.getItem('ph-role') || '';
+      const designation = String(user.designation || '').toUpperCase();
+      if ((role === 'staff' || !role) && (user.isHod === true || user.isHod === 1 || user.isHod === '1' || /\bHOD\b/.test(designation) || /HEAD OF/.test(designation))) {
+        role = 'placement_officer';
+      }
+      return role || '';
+    } catch (e) {
+      return '';
+    }
   }
 
   function applyRoleAccess(base = access) {
@@ -176,7 +190,7 @@
     if (views.includes('manage') && role === 'placement_officer') return 'manage';
     if (views.includes('take')) return 'take';
     if (views.includes('progress')) return 'progress';
-    return views[0] || 'take';
+    return views[0] || (access.canViewDirectory ? 'progress' : 'take');
   }
 
   function setupViewNav() {
@@ -194,14 +208,16 @@
     const views = allowedViews();
     let view = requested || defaultView();
     const role = currentRole();
-    if ((role === 'placement_officer' || role === 'admin' || role === 'staff') && view === 'take') {
-      view = views.includes('progress') ? 'progress' : defaultView();
+    if (!access.canTake || role === 'placement_officer' || role === 'admin' || role === 'staff') {
+      if (view === 'take' || !views.includes(view)) {
+        view = views.includes('progress') ? 'progress' : (views.includes('manage') ? 'manage' : defaultView());
+      }
     }
     if (!views.includes(view)) view = defaultView();
     const hash = `#${view}`;
     if (location.hash !== hash) history.replaceState(null, '', hash);
 
-    document.getElementById('codTake')?.classList.toggle('d-none', view !== 'take');
+    document.getElementById('codTake')?.classList.toggle('d-none', !(view === 'take' && access.canTake));
     document.getElementById('codDirectory')?.classList.toggle('d-none', view !== 'progress');
     document.getElementById('codManage')?.classList.toggle('d-none', view !== 'manage');
     document.querySelectorAll('#codViewNav .nav-link').forEach((link) => {
@@ -225,12 +241,12 @@
   async function loadAccess() {
     const u = (typeof Auth !== 'undefined' && Auth.user && Auth.user()) || {};
     access = applyRoleAccess({
-      canTake: false,
-      canManage: false,
-      canViewDirectory: false,
+      canTake: typeof Auth !== 'undefined' && typeof Auth.canTakeCodingMock === 'function' && Auth.canTakeCodingMock(),
+      canManage: typeof Auth !== 'undefined' && typeof Auth.canManageCodingTests === 'function' && Auth.canManageCodingTests(),
+      canViewDirectory: typeof Auth !== 'undefined' && typeof Auth.canViewCodingDirectory === 'function' && Auth.canViewCodingDirectory(),
       scope: null,
     });
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+    if (typeof Auth !== 'undefined' && Auth.hasRealAuth() && !Auth.isDemo()) {
       let res = await api('/coding/access').catch(() => null);
       if (!res?.success) res = await api('/aptitude/access').catch(() => null);
       if (res?.success && res.data) {
