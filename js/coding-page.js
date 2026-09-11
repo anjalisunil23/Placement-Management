@@ -24,13 +24,7 @@
   let bankPickModal = null;
   let bankProblemModal = null;
   let studentCodModal = null;
-
-  const exam = CodingExam.createExamController({
-    root: document.getElementById('examShell'),
-    onExit() {
-      closeExam();
-    },
-  });
+  let exam = null;
 
   function esc(s) {
     return CodingExam.esc(s);
@@ -150,8 +144,11 @@
 
   function defaultView() {
     const views = allowedViews();
-    if (access.canViewDirectory && views.includes('progress')) return 'progress';
-    if (access.canManage && views.includes('manage')) return 'manage';
+    const role = Auth.role();
+    if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
+    if (views.includes('manage') && role === 'placement_officer') return 'manage';
+    if (views.includes('take')) return 'take';
+    if (views.includes('progress')) return 'progress';
     return views[0] || 'take';
   }
 
@@ -205,7 +202,8 @@
       scope: null,
     };
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/coding/access').catch(() => api('/aptitude/access').catch(() => null));
+      let res = await api('/coding/access').catch(() => null);
+      if (!res?.success) res = await api('/aptitude/access').catch(() => null);
       if (res?.success && res.data) {
         access = {
           canTake: !!res.data.canTake,
@@ -214,15 +212,19 @@
           scope: res.data.scope || null,
         };
       }
-    } else if (Auth.role() === 'staff') {
+    }
+    const role = Auth.role();
+    if (role === 'staff' || role === 'placement_officer') {
       const u = Auth.user() || {};
       access.canTake = false;
-      access.scope = {
-        role: 'staff',
-        departmentId: u.departmentId || '',
-        departmentName: u.departmentName || u.department || '',
-        assignedClassBatches: staffAssignedBatches(),
-      };
+      if (!access.scope) {
+        access.scope = {
+          role,
+          departmentId: u.departmentId || '',
+          departmentName: u.departmentName || u.department || '',
+          assignedClassBatches: role === 'staff' ? staffAssignedBatches() : [],
+        };
+      }
     }
   }
 
@@ -309,12 +311,13 @@
   }
 
   function openExam(test) {
+    if (!exam) return;
     document.getElementById('hubView').classList.add('d-none');
     exam.open(test);
   }
 
   async function closeExam() {
-    exam.hide();
+    exam?.hide();
     document.getElementById('hubView').classList.remove('d-none');
     await loadHub();
   }
@@ -615,10 +618,14 @@
     bankProblemModal.show();
   }
 
-  function progressDirTitle(role) {
-    if (role === 'admin') return 'Institution test results';
-    if (role === 'placement_officer') return 'Department test results';
-    return 'Class test results';
+  function progressDirTitle(role, panel = progressPanel) {
+    const contest = panel === 'contests';
+    const map = {
+      placement_officer: contest ? 'Department contest results' : 'Department test results',
+      staff: contest ? 'Class contest results' : 'Class test results',
+      admin: contest ? 'Institution contest results' : 'Institution test results',
+    };
+    return map[role] || (contest ? 'Contest results' : 'Test results');
   }
 
   function studentIdLabel(r) {
@@ -848,7 +855,7 @@
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
     const role = Auth.role();
-    document.getElementById('dirTitle').textContent = progressDirTitle(role);
+    document.getElementById('dirTitle').textContent = progressDirTitle(role, progressPanel);
     const scope = access.scope || {};
     updateDirScopeHint(scope);
     const live = await CodingService.directory(buildDirectoryQuery());
@@ -990,6 +997,14 @@
   }
 
   async function boot() {
+    if (typeof CodingExam !== 'undefined' && CodingExam.createExamController) {
+      exam = CodingExam.createExamController({
+        root: document.getElementById('examShell'),
+        onExit() {
+          closeExam();
+        },
+      });
+    }
     bindUi();
     await loadAccess();
     const any = access.canTake || access.canManage || access.canViewDirectory;
@@ -1001,7 +1016,11 @@
     await applyView(hash || defaultView());
   }
 
-  boot().catch((err) => {
-    toastMsg(err?.message || 'Could not load coding practice.', 'error');
-  });
+  const start = () => {
+    boot().catch((err) => {
+      toastMsg(err?.message || 'Could not load coding practice.', 'error');
+    });
+  };
+  if (typeof onAppReady === 'function') onAppReady(start);
+  else start();
 })();
