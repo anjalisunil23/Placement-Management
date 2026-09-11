@@ -3,7 +3,7 @@
 # Pull/update alone only changes ~/repositories/... — NOT public_html.
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/placementsajce/public_html
+    - export DEPLOYPATH=/home/appsamaljyothi/public_html/placements.amaljyothi.ac.in
     - export REPOPATH=$(pwd)
     # Sync app files into the live web root (overwrite stale copies)
     - /bin/rm -rf $DEPLOYPATH/backend
