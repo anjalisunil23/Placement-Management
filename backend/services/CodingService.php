@@ -390,7 +390,7 @@ final class CodingService
         $filters = AptitudeAccessService::sanitizeDirectoryFilters($user, $filters);
         $allowed = AptitudeAccessService::authorizedSubjectUserIds($user);
         $wantContests = (($filters['resultType'] ?? '') === 'contests');
-        $classLookup = trim((string) ($filters['class'] ?? $filters['batch'] ?? ''));
+        $courseLookup = trim((string) ($filters['course'] ?? ''));
         $rows = $this->attempts->findAll(['status' => 'submitted'], 2000, 0, ['submittedAt' => -1]);
         $byUser = [];
         foreach ($rows as $row) {
@@ -405,7 +405,7 @@ final class CodingService
             if ($wantContests && $contest === 'none') {
                 continue;
             }
-            if (!$wantContests && $contest !== 'none' && $classLookup === '') {
+            if (!$wantContests && $contest !== 'none' && $courseLookup === '') {
                 continue;
             }
             $byUser[$uid][] = $row;
@@ -418,9 +418,9 @@ final class CodingService
             }
             $out[] = $row;
         }
-        $class = trim((string) ($filters['class'] ?? ''));
-        if ($class !== '' && !$wantContests) {
-            $out = $this->mergeClassRoster($user, $filters, $out, $byUser);
+        $course = trim((string) ($filters['course'] ?? ''));
+        if ($course !== '' && !$wantContests) {
+            $out = $this->mergeBranchRoster($user, $filters, $out, $byUser);
         }
         usort($out, static fn ($a, $b) => strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? '')));
         $allPercents = [];
@@ -457,8 +457,8 @@ final class CodingService
             ];
         }
         $q = trim((string) ($filters['q'] ?? ''));
-        $class = trim((string) ($filters['class'] ?? $filters['batch'] ?? ''));
-        $needsFilter = $q === '' && $class === '';
+        $course = trim((string) ($filters['course'] ?? ''));
+        $needsFilter = $q === '' && $course === '';
         return [
             'rows' => $needsFilter ? [] : $out,
             'summary' => $needsFilter ? [
@@ -495,17 +495,7 @@ final class CodingService
         if ($classBatch === '') {
             $classBatch = StaffContext::studentClassBatch($userDoc);
         }
-        $course = trim((string) (
-            $student['academic']['course']
-            ?? $student['course']
-            ?? $student['stud_course']
-            ?? $userDoc['course']
-            ?? $userDoc['programme']
-            ?? ''
-        ));
-        if ($course === '' && preg_match('/^([A-Za-z]+)/', $classBatch, $m) === 1) {
-            $course = strtoupper($m[1]);
-        }
+        $course = $this->studentBranchLabel($student, $userDoc, $classBatch);
         return [
             'userId' => $uid,
             'name' => (string) ($userDoc['name'] ?? $student['name'] ?? 'Student'),
@@ -532,7 +522,6 @@ final class CodingService
     private function directoryRowMatches(array $row, array $filters): bool
     {
         $departmentId = trim((string) ($filters['department'] ?? $filters['departmentId'] ?? ''));
-        $classBatch = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
         $course = trim((string) ($filters['course'] ?? ''));
         $userType = trim((string) ($filters['userType'] ?? ''));
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
@@ -546,13 +535,7 @@ final class CodingService
         if ($departmentId !== '' && (string) ($row['departmentId'] ?? '') !== $departmentId) {
             return false;
         }
-        if ($classBatch !== '') {
-            $rowClass = trim((string) ($row['classBatch'] ?? ''));
-            if ($rowClass !== '' && !self::classLabelMatches($rowClass, $classBatch)) {
-                return false;
-            }
-        }
-        if ($classBatch === '' && $course !== '' && !self::courseLabelMatches((string) ($row['course'] ?? ''), $course, (string) ($row['classBatch'] ?? ''))) {
+        if ($course !== '' && !self::courseLabelMatches((string) ($row['course'] ?? ''), $course, (string) ($row['classBatch'] ?? ''))) {
             return false;
         }
         if ($userType !== '' && strcasecmp((string) ($row['userType'] ?? ''), $userType) !== 0) {
@@ -568,10 +551,54 @@ final class CodingService
      * @param array<string, list<array<string, mixed>>> $byUser
      * @return array<int, array<string, mixed>>
      */
-    private function mergeClassRoster(array $viewer, array $filters, array $out, array $byUser): array
+    /**
+     * @param array<string, mixed> $student
+     * @param array<string, mixed> $userDoc
+     */
+    private function studentBranchLabel(array $student, array $userDoc, string $classBatch): string
     {
-        $wantClass = trim((string) ($filters['class'] ?? ''));
-        if ($wantClass === '') {
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        foreach ([
+            $student['stud_branch'] ?? '',
+            $student['branch'] ?? '',
+            $academic['branch'] ?? '',
+            $academic['course'] ?? '',
+            $student['course'] ?? '',
+            $student['stud_course'] ?? '',
+            $student['programme'] ?? '',
+            $userDoc['course'] ?? '',
+            $userDoc['programme'] ?? '',
+            $userDoc['branch'] ?? '',
+        ] as $candidate) {
+            $value = trim((string) $candidate);
+            if ($value !== '') {
+                $code = DepartmentProgrammeCatalog::resolveProgrammeCode($value);
+                return $code !== '' ? $code : $value;
+            }
+        }
+        if ($classBatch !== '') {
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode($classBatch);
+            if ($code !== '') {
+                return $code;
+            }
+            $norm = DepartmentProgrammeCatalog::normalizeCode($classBatch);
+            if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+                return 'INMCA';
+            }
+            if (str_starts_with($norm, 'MCA')) {
+                return 'MCA';
+            }
+            if (str_contains($norm, 'BCA')) {
+                return 'BCA';
+            }
+        }
+        return '';
+    }
+
+    private function mergeBranchRoster(array $viewer, array $filters, array $out, array $byUser): array
+    {
+        $wantCourse = trim((string) ($filters['course'] ?? ''));
+        if ($wantCourse === '') {
             return $out;
         }
         $seen = [];
@@ -592,7 +619,9 @@ final class CodingService
             if (is_array($allowed) && !in_array($uid, $allowed, true)) {
                 continue;
             }
-            if (!self::classLabelMatches(StaffContext::studentClassBatch($student), $wantClass)) {
+            $classBatch = StaffContext::studentClassBatch($student);
+            $branch = $this->studentBranchLabel($student, [], $classBatch);
+            if (!self::courseLabelMatches($branch, $wantCourse, $classBatch)) {
                 continue;
             }
             $out[] = $this->summarizeDirectoryUser($uid, $byUser[$uid] ?? []);
@@ -629,8 +658,13 @@ final class CodingService
         if ($studentCourse !== '' && strcasecmp($studentCourse, $want) === 0) {
             return true;
         }
+        $wantCode = DepartmentProgrammeCatalog::resolveProgrammeCode($want);
+        $rowCode = DepartmentProgrammeCatalog::resolveProgrammeCode($studentCourse !== '' ? $studentCourse : $studentClass);
+        if ($wantCode !== '' && $rowCode !== '' && strcasecmp($wantCode, $rowCode) === 0) {
+            return true;
+        }
         $compactCourse = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $studentCourse));
-        $compactWant = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $want));
+        $compactWant = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $wantCode !== '' ? $wantCode : $want));
         if ($compactCourse !== '' && $compactWant !== '' && (str_starts_with($compactCourse, $compactWant) || str_starts_with($compactWant, $compactCourse))) {
             return true;
         }
