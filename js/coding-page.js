@@ -19,6 +19,8 @@
   let myResultsView = 'tests';
   let dirFilterBranch = '';
   let dirFilterBatch = '';
+  let dirSearch = '';
+  let dirSearchTimer = 0;
   let bankDifficultyFilter = '';
   let testFormModal = null;
   let bankPickModal = null;
@@ -102,7 +104,7 @@
     if (type === 'none') return '';
     const label = contestScheduleLabel(t);
     const open = isContestOpenClient(t);
-    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(label || type)}</span><span class="badge-soft ${open ? 'success' : 'muted'}">${open ? 'Open today' : 'Scheduled'}</span></div>`;
+    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(label || type)}</span><span class="badge-soft ${open ? 'success' : 'muted'}">${open ? 'Open today' : 'Closed'}</span></div>`;
   }
 
   function testMetaLine(t) {
@@ -290,10 +292,17 @@
     return myResultsView === 'contests' ? contest : !contest;
   }
 
+  function syncMyResultsPanels() {
+    const contest = myResultsView === 'contests';
+    document.getElementById('myHistory')?.classList.toggle('d-none', contest);
+    document.getElementById('contestArena')?.classList.toggle('d-none', !contest);
+  }
+
   function renderHistory(p) {
+    syncMyResultsPanels();
     const hist = (p.history || []).filter(historyMatchesView);
     const root = document.getElementById('myHistory');
-    if (!root) return;
+    if (!root || myResultsView === 'contests') return;
     root.innerHTML = hist.length
       ? hist.slice(0, 8).map((h) => `
           <div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
@@ -391,6 +400,7 @@
       renderStats(progress);
       renderHistory(progress);
       renderTestList(list);
+      await renderContestArena();
     } catch (err) {
       toastMsg(err?.message || 'Could not load coding tests.', 'error');
     }
@@ -717,10 +727,36 @@
     }).join(' · ');
   }
 
-  function renderDirectoryTable(rows, summary, scope = {}) {
+  function hasDirectoryLookup() {
+    return !!(dirSearch.trim() || dirFilterBatch);
+  }
+
+  function renderClassChart(rows) {
+    const wrap = document.getElementById('dirClassChartWrap');
+    const chart = document.getElementById('dirClassChart');
+    if (!wrap || !chart) return;
+    const show = progressPanel === 'tests' && !!dirFilterBatch && rows.length;
+    wrap.classList.toggle('d-none', !show);
+    if (!show) {
+      chart.innerHTML = '';
+      return;
+    }
+    const sorted = [...rows].sort((a, b) => (Number(b.bestScore) || 0) - (Number(a.bestScore) || 0));
+    chart.innerHTML = sorted.map((r) => {
+      const pct = Math.max(0, Math.min(100, Number(r.bestScore) || 0));
+      return `<div class="cod-class-bar">
+        <div class="lbl" title="${esc(r.name || '')}">${esc(r.name || 'Student')}</div>
+        <div class="track"><span style="width:${pct}%"></span></div>
+        <div class="pct">${esc(pct)}%</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderDirectoryTable(rows, summary, scope = {}, needsFilter = false) {
     document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
-    document.getElementById('dirStats').innerHTML = [
+    const waiting = needsFilter || !hasDirectoryLookup();
+    document.getElementById('dirStats').innerHTML = waiting ? '' : [
       ['Students', summary.students ?? 0],
       ['With attempts', summary.withAttempts ?? 0],
       ['Total attempts', summary.totalAttempts ?? 0],
@@ -730,10 +766,16 @@
     ].map(([lbl, val]) =>
       `<div class="col-6 col-md-2"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
     ).join('');
-    const emptyMsg = Auth.role() === 'staff' && !staffAssignedBatches().length && !(scope.assignedClassBatches || []).length
-      ? 'No class is assigned to your account. Contact the placement office to monitor student coding progress.'
-      : 'No test results in your authorized scope yet.';
-    document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
+    renderClassChart(waiting ? [] : rows);
+    let emptyMsg = 'Search a student by name or roll number, or select a class to view progress.';
+    if (!waiting && Auth.role() === 'staff' && !staffAssignedBatches().length && !(scope.assignedClassBatches || []).length) {
+      emptyMsg = 'No class is assigned to your account. Contact the placement office to monitor student coding progress.';
+    } else if (!waiting) {
+      emptyMsg = dirFilterBatch
+        ? 'No coding attempts found for this class.'
+        : 'No matching student with coding attempts.';
+    }
+    document.getElementById('dirRows').innerHTML = (!waiting && rows.length) ? rows.map((r) => {
       const uid = String(r.userId || '');
       return `<tr>
         <td class="fw-semibold">${esc(r.name)}</td>
@@ -742,44 +784,147 @@
         <td>${esc(r.testsAttempted ?? r.attempts ?? 0)}</td>
         <td>${esc(r.averageScore ?? r.percentage ?? 0)}%</td>
         <td>${esc(r.bestScore ?? 0)}%</td>
-        <td>${esc(r.accuracy ?? 0)}%</td>
-        <td>${esc(r.recentScore ?? 0)}%</td>
-        <td class="small">${esc(categoryShort(r))}</td>
         <td>${uid ? `<button type="button" class="btn btn-sm btn-outline-primary" data-detail="${esc(uid)}">View</button>` : ''}</td>
       </tr>`;
-    }).join('') : `<tr><td colspan="10" class="text-muted-2 p-3">${emptyMsg}</td></tr>`;
+    }).join('') : `<tr><td colspan="7" class="text-muted-2 p-3">${emptyMsg}</td></tr>`;
     document.querySelectorAll('[data-detail]').forEach((btn) => {
       btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
     });
   }
 
-  function renderContestResults(contests, summary, scope = {}) {
+  function medalMeta(rank) {
+    if (rank === 1) return { cls: 'is-gold', icon: '🥇', label: 'Champion' };
+    if (rank === 2) return { cls: 'is-silver', icon: '🥈', label: 'Runner-up' };
+    if (rank === 3) return { cls: 'is-bronze', icon: '🥉', label: 'Third place' };
+    return { cls: '', icon: `#${rank}`, label: `Rank ${rank}` };
+  }
+
+  function podiumHtml(winners) {
+    const slots = [1, 0, 2].map((i) => winners[i] || null);
+    const rankOf = (w) => Number(w?.rank) || (winners.indexOf(w) + 1);
+    return `<div class="cod-podium mb-3">${slots.map((w) => {
+      if (!w) return '<div class="cod-podium-card"><div class="small text-muted-2">Awaiting a finisher</div></div>';
+      const medal = medalMeta(rankOf(w));
+      return `<div class="cod-podium-card ${medal.cls}">
+        <div class="cod-medal">${medal.icon}</div>
+        <div class="fw-bold">${esc(w.name)}</div>
+        <div class="small text-muted-2">${esc(studentIdLabel(w))}</div>
+        <div class="fw-semibold mt-1">${esc(w.percentage ?? 0)}%</div>
+        <div class="small">${esc(medal.label)} · ${esc(w.points ?? Math.round((w.percentage || 0) * 10))} pts</div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  function contestCardHtml(c, { student = false, myUserId = '' } = {}) {
+    const published = !!c.winnersPublished;
+    const open = !!c.contestOpen;
+    const winners = c.winners || [];
+    const participants = c.participants || [];
+    const mine = c.myResult || participants.find((p) => String(p.userId || '') === String(myUserId)) || null;
+    const typeLabel = c.contestScheduleLabel || (c.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest');
+    const status = open ? 'Live now' : (published ? 'Winners published' : 'Closed');
+    const statusCls = open ? 'success' : (published ? 'warning' : 'muted');
+    let body = '';
+    if (published) {
+      body = `${podiumHtml(winners)}
+        <div class="table-wrap"><table class="table-modern"><thead><tr>
+          <th>Rank</th><th>Name</th><th>Roll no</th><th>Score</th><th>XP</th>
+        </tr></thead><tbody>
+          ${participants.map((p) => {
+            const me = String(p.userId || '') === String(myUserId);
+            return `<tr class="${me ? 'table-warning' : ''}">
+              <td><span class="cod-rank is-${esc(p.rank || '')}">${esc(p.rank || '—')}</span></td>
+              <td>${esc(p.name)}${me ? ' <span class="badge-soft warning">You</span>' : ''}</td>
+              <td>${esc(studentIdLabel(p))}</td>
+              <td>${esc(p.percentage ?? 0)}%</td>
+              <td>${esc(p.points ?? Math.round((p.percentage || 0) * 10))}</td>
+            </tr>`;
+          }).join('') || '<tr><td colspan="5" class="text-muted-2 p-3">No finishers yet.</td></tr>'}
+        </tbody></table></div>`;
+    } else {
+      body = `<div class="border rounded-3 p-3 mb-2">
+        <div class="fw-semibold">${open ? 'Contest is live' : 'Contest closed'}</div>
+        <p class="small text-muted-2 mb-1">${open
+          ? 'Winner names stay hidden until closing time.'
+          : (Number(c.participantCount || 0) === 0
+            ? 'No submissions, so there is no winner to publish.'
+            : 'Winners will appear here once results are published.')}</p>
+        <div class="small">${esc(c.participantCount || 0)} student${Number(c.participantCount) === 1 ? '' : 's'} submitted.</div>
+      </div>`;
+      if (student && mine) {
+        body += `<div class="border rounded-3 p-3">
+          <div class="small text-muted-2">Your score</div>
+          <div class="fw-bold">${esc(mine.percentage ?? 0)}% · ${esc(mine.score ?? 0)} / ${esc(mine.totalMarks ?? 0)}</div>
+          <div class="small text-muted-2">Rank and medals unlock after the contest closes.</div>
+        </div>`;
+      } else if (student && open) {
+        body += '<p class="small text-muted-2 mb-0">Join from the left to earn a podium finish.</p>';
+      }
+    }
+    return `<div class="border rounded-3 p-3 mb-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+        <div>
+          <div class="fw-bold">${open ? '⚔️ ' : '🏆 '}${esc(c.title)}</div>
+          <div class="small text-muted-2">${esc(typeLabel)}</div>
+        </div>
+        <span class="badge-soft ${statusCls}">${esc(status)}</span>
+      </div>
+      ${body}
+    </div>`;
+  }
+
+  function contestBoardsHtml(contests, opts = {}) {
+    if (!contests.length) {
+      return `<p class="text-muted-2 mb-0">${opts.student
+        ? 'No weekly or monthly contests yet. Your own score still appears here after you finish.'
+        : 'No weekly or monthly contests in your scope yet.'}</p>`;
+    }
+    const weekly = contests.filter((c) => c.contestType === 'weekly');
+    const monthly = contests.filter((c) => c.contestType === 'monthly');
+    const other = contests.filter((c) => c.contestType !== 'weekly' && c.contestType !== 'monthly');
+    return [
+      ['Weekly contests', weekly],
+      ['Monthly contests', monthly],
+      ['Other contests', other],
+    ].filter(([, list]) => list.length).map(([title, list]) => `
+      <div class="mb-3">
+        <h6 class="fw-bold mb-2">${esc(title)}</h6>
+        ${list.map((c) => contestCardHtml(c, opts)).join('')}
+      </div>`).join('');
+  }
+
+  async function renderContestArena() {
+    syncMyResultsPanels();
+    if (myResultsView !== 'contests') return;
+    const root = document.getElementById('contestArena');
+    if (!root) return;
+    root.innerHTML = '<p class="text-muted-2 mb-0">Loading contest arena…</p>';
+    try {
+      const board = await CodingService.contestBoard();
+      root.innerHTML = contestBoardsHtml(board.contests || [], { student: true, myUserId: board.myUserId || '' });
+    } catch (err) {
+      root.innerHTML = `<p class="text-muted-2 mb-0">${esc(err?.message || 'Could not load contest arena.')}</p>`;
+    }
+  }
+
+  function renderContestResults(contests, summary) {
     document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
+    document.getElementById('dirClassChartWrap')?.classList.add('d-none');
+    const published = contests.filter((c) => c.winnersPublished).length;
     document.getElementById('dirStats').innerHTML = [
       ['Contests', contests.length],
-      ['Participants', summary.withAttempts ?? 0],
-      ['Total attempts', summary.totalAttempts ?? 0],
+      ['Winners published', published],
+      ['Live now', contests.filter((c) => c.contestOpen).length],
+      ['Submissions', contests.reduce((n, c) => n + Number(c.participantCount || 0), 0)],
       ['Avg score', `${summary.avgPercentage ?? 0}%`],
-      ['Avg best', `${summary.avgBestScore ?? 0}%`],
       ['Highest best', `${summary.highestBestScore ?? 0}%`],
     ].map(([lbl, val]) =>
       `<div class="col-6 col-md-2"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
     ).join('');
     const root = document.getElementById('dirContestSections');
-    if (!contests.length) {
-      root.innerHTML = `<p class="text-muted-2 mb-0">${Auth.role() === 'staff' && !staffAssignedBatches().length ? 'No class is assigned to your account.' : 'No contest results in your authorized scope yet.'}</p>`;
-      return;
-    }
-    root.innerHTML = contests.map((c) => `
-      <div>
-        <h6 class="fw-bold mb-2">${esc(c.title)}</h6>
-        <div class="table-wrap"><table class="table-modern"><thead><tr>
-          <th>Name</th><th>Student ID</th><th>Score</th><th>Status</th>
-        </tr></thead><tbody>
-          ${(c.participants || []).map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(studentIdLabel(p))}</td><td>${esc(p.percentage ?? p.score ?? 0)}%</td><td>${esc(p.status || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted-2 p-3">No participants yet.</td></tr>'}
-        </tbody></table></div>
-      </div>`).join('');
+    if (!root) return;
+    root.innerHTML = contestBoardsHtml(contests, { student: false });
   }
 
   function demoDirectoryFromLocal() {
@@ -889,7 +1034,7 @@
     }
     applyDirDepartmentFromData(data.departments || []);
     fillSelect(document.getElementById('fBranch'), [{ value: '', label: 'All branches' }, ...(data.branches || []).map((b) => ({ value: b, label: b }))], dirFilterBranch);
-    fillSelect(document.getElementById('fBatch'), [{ value: '', label: 'All batches' }, ...(data.batches || []).map((b) => ({ value: b, label: b }))], dirFilterBatch);
+    fillSelect(document.getElementById('fBatch'), [{ value: '', label: 'Select a class' }, ...(data.batches || []).map((b) => ({ value: b, label: b }))], dirFilterBatch);
   }
 
   let dirFiltersReady = false;
@@ -915,6 +1060,17 @@
       await loadDirectory();
     });
     document.getElementById('fType')?.addEventListener('change', () => loadDirectory());
+    document.getElementById('fSearch')?.addEventListener('input', () => {
+      dirSearch = document.getElementById('fSearch').value || '';
+      window.clearTimeout(dirSearchTimer);
+      dirSearchTimer = window.setTimeout(() => loadDirectory(), 280);
+    });
+  }
+
+  function syncProgressFilters() {
+    const tests = progressPanel === 'tests';
+    document.getElementById('dirFilterRow')?.classList.toggle('d-none', !tests);
+    if (!tests) document.getElementById('dirClassChartWrap')?.classList.add('d-none');
   }
 
   function buildDirectoryQuery() {
@@ -923,6 +1079,8 @@
     if (dept) qs.set('department', dept);
     if (dirFilterBranch) qs.set('course', dirFilterBranch);
     if (dirFilterBatch) qs.set('class', dirFilterBatch);
+    const q = dirSearch.trim();
+    if (q) qs.set('q', q);
     const type = document.getElementById('fType')?.value || '';
     if (type) qs.set('userType', type);
     qs.set('resultType', progressPanel === 'contests' ? 'contests' : 'tests');
@@ -949,8 +1107,13 @@
     if (!access.canViewDirectory) return;
     const role = Auth.role();
     document.getElementById('dirTitle').textContent = progressDirTitle(role, progressPanel);
+    syncProgressFilters();
     let scope = access.scope || {};
     updateDirScopeHint(scope);
+    if (progressPanel !== 'contests' && !hasDirectoryLookup()) {
+      renderDirectoryTable([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 }, scope, true);
+      return;
+    }
     try {
       const live = await CodingService.directory(buildDirectoryQuery());
       if (live?.scope) {
@@ -959,14 +1122,14 @@
         updateDirScopeHint(scope);
       }
       if (live && (progressPanel === 'contests' || live.view === 'contests')) {
-        renderContestResults(live.contests || [], live.summary || {}, scope);
+        renderContestResults(live.contests || [], live.summary || {});
         return;
       }
-      renderDirectoryTable(live?.rows || [], live?.summary || {}, scope);
+      renderDirectoryTable(live?.rows || [], live?.summary || {}, scope, !!live?.needsFilter);
     } catch (err) {
       toastMsg(err?.message || 'Could not load coding progress.', 'error');
       if (progressPanel === 'contests') {
-        renderContestResults([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 }, scope);
+        renderContestResults([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 });
       } else {
         renderDirectoryTable([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 }, scope);
       }

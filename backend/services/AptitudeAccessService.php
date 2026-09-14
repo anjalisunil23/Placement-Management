@@ -503,6 +503,7 @@ final class AptitudeAccessService
             'category' => trim((string) ($filters['category'] ?? '')),
             'userType' => trim((string) ($filters['userType'] ?? '')),
             'resultType' => self::normalizeProgressResultType($filters),
+            'q' => trim((string) ($filters['q'] ?? $filters['search'] ?? '')),
         ];
 
         if ($role === 'admin') {
@@ -543,6 +544,7 @@ final class AptitudeAccessService
             'category' => '',
             'userType' => '',
             'resultType' => '',
+            'q' => '',
         ];
     }
 

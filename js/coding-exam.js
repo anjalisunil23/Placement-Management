@@ -546,9 +546,20 @@
     function renderResult(result) {
       showPanel('result');
       const pct = Math.max(0, Math.min(100, Number(result.percentage) || 0));
+      const contestType = String(result.contestType || state?.test?.contestType || state?.testMeta?.contestType || '');
+      const isContest = contestType === 'weekly' || contestType === 'monthly';
+      const winnersReady = !!result.winnersPublished || !!result.contestClosed;
+      const contestNote = isContest
+        ? `<div class="border rounded-3 p-3 mt-3">
+            <div class="small fw-semibold mb-1">${winnersReady ? '🏆 Contest result saved' : '⚔️ Your contest score is in'}</div>
+            <div class="small text-muted-2">${winnersReady
+              ? 'Winners are now visible in Contest arena on the coding page.'
+              : 'Your score is saved now. The winner is published after the contest closes.'}</div>
+          </div>`
+        : '';
       el('result-hero').innerHTML = `
         <div class="text-center py-2">
-          <div class="text-muted-2 mb-1">Coding Test Result</div>
+          <div class="text-muted-2 mb-1">${isContest ? 'Contest Result' : 'Coding Test Result'}</div>
           <div class="cod-score">${esc(result.score)} / ${esc(result.totalMarks)}</div>
           <div class="cod-pct">${esc(result.percentage)}%</div>
           <span class="badge-soft ${result.passed ? 'success' : 'danger'} mt-2">${esc(result.status)}</span>
@@ -558,7 +569,7 @@
           <div class="small">Passed: <strong>${esc(result.testsPassed ?? 0)} / ${esc(result.testsTotal ?? 0)}</strong> test cases</div>
           <div class="small">Score: <strong>${esc(result.score)} / ${esc(result.totalMarks)}</strong></div>
           <div class="small">Status: <strong>${esc(result.status)}</strong></div>
-        </div>`;
+        </div>${contestNote}`;
       el('result-stats').innerHTML = [
         ['Questions', result.questions],
         ['Correct', result.correct],

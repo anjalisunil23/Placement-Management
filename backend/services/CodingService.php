@@ -317,6 +317,17 @@ final class CodingService
             Response::forbidden('This attempt does not belong to you.');
         }
         $result['userId'] = $uid;
+        $contestType = CodingTestModel::normalizeContestType((string) ($attempt['contestType'] ?? 'none'));
+        $result['contestType'] = $contestType;
+        if (in_array($contestType, ['weekly', 'monthly'], true)) {
+            $test = $this->tests->findById((string) ($attempt['testId'] ?? ''));
+            $open = is_array($test) && CodingTestModel::isContestOpen($test);
+            $result['contestClosed'] = !$open;
+            $result['winnersPublished'] = !$open;
+        } else {
+            $result['contestClosed'] = true;
+            $result['winnersPublished'] = false;
+        }
         $this->attempts->complete($attemptId, $result);
         return $result;
     }
@@ -422,42 +433,31 @@ final class CodingService
             'highestBestScore' => $bests === [] ? 0 : (int) max($bests),
         ];
         if ($wantContests) {
-            $contests = [];
-            foreach ($byUser as $uid => $hist) {
-                $profile = $this->summarizeDirectoryUser($uid, $hist);
-                if (!$this->directoryRowMatches($profile, $filters)) {
-                    continue;
-                }
-                foreach ($hist as $row) {
-                    $tid = (string) ($row['testId'] ?? '');
-                    if ($tid === '') {
-                        continue;
-                    }
-                    if (!isset($contests[$tid])) {
-                        $contests[$tid] = [
-                            'title' => (string) ($row['testTitle'] ?? 'Contest'),
-                            'participants' => [],
-                        ];
-                    }
-                    $contests[$tid]['participants'][] = [
-                        'userId' => $uid,
-                        'name' => (string) ($profile['name'] ?? 'Student'),
-                        'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
-                        'percentage' => $row['percentage'] ?? 0,
-                        'status' => $row['resultStatus'] ?? '',
-                    ];
-                }
-            }
+            $boardFilters = $filters;
+            $boardFilters['q'] = '';
+            $boardFilters['class'] = '';
+            $boardFilters['course'] = '';
             return [
                 'view' => 'contests',
-                'contests' => array_values($contests),
+                'contests' => $this->buildContestBoards($user, $byUser, $boardFilters, true),
                 'summary' => $summary,
                 'scope' => AptitudeAccessService::scopeInfo($user),
             ];
         }
+        $q = trim((string) ($filters['q'] ?? ''));
+        $class = trim((string) ($filters['class'] ?? ''));
+        $needsFilter = $q === '' && $class === '';
         return [
-            'rows' => $out,
-            'summary' => $summary,
+            'rows' => $needsFilter ? [] : $out,
+            'summary' => $needsFilter ? [
+                'students' => 0,
+                'withAttempts' => 0,
+                'totalAttempts' => 0,
+                'avgPercentage' => 0,
+                'avgBestScore' => 0,
+                'highestBestScore' => 0,
+            ] : $summary,
+            'needsFilter' => $needsFilter,
             'scope' => AptitudeAccessService::scopeInfo($user),
         ];
     }
@@ -510,6 +510,14 @@ final class CodingService
         $classBatch = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
         $course = trim((string) ($filters['course'] ?? ''));
         $userType = trim((string) ($filters['userType'] ?? ''));
+        $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
+        if ($q !== '') {
+            $name = strtolower((string) ($row['name'] ?? ''));
+            $reg = strtolower((string) ($row['registerNumber'] ?? $row['studentCode'] ?? $row['studentId'] ?? ''));
+            if (!str_contains($name, $q) && !str_contains($reg, $q)) {
+                return false;
+            }
+        }
         if ($departmentId !== '' && (string) ($row['departmentId'] ?? '') !== $departmentId) {
             return false;
         }
@@ -558,6 +566,145 @@ final class CodingService
             'classBatch' => (string) StaffContext::studentClassBatch($student),
             'history' => $history,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function contestBoard(array $user): array
+    {
+        $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
+        $officerView = AptitudeAccessService::canViewDirectory($user);
+        $allowed = $officerView ? AptitudeAccessService::authorizedSubjectUserIds($user) : null;
+        $byUser = [];
+        foreach ($this->attempts->findAll(['status' => 'submitted'], 2000, 0, ['submittedAt' => -1]) as $row) {
+            if (CodingTestModel::normalizeContestType((string) ($row['contestType'] ?? 'none')) === 'none') {
+                continue;
+            }
+            $id = (string) ($row['userId'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            if (is_array($allowed) && !in_array($id, $allowed, true)) {
+                continue;
+            }
+            $byUser[$id][] = $row;
+        }
+        $filters = $officerView ? AptitudeAccessService::sanitizeDirectoryFilters($user, []) : [];
+        $contests = $this->buildContestBoards($user, $byUser, $filters, true);
+        if (!$officerView) {
+            foreach ($contests as $i => $contest) {
+                $mine = null;
+                foreach ((array) ($contest['participants'] ?? []) as $p) {
+                    if ((string) ($p['userId'] ?? '') === $uid) {
+                        $mine = $p;
+                        break;
+                    }
+                }
+                $contests[$i]['myResult'] = $mine;
+                if (empty($contest['winnersPublished'])) {
+                    $contests[$i]['participants'] = $mine ? [$mine] : [];
+                    $contests[$i]['winners'] = [];
+                }
+            }
+        }
+        return [
+            'contests' => $contests,
+            'myUserId' => $uid,
+        ];
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $byUser
+     * @param array<string, mixed> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildContestBoards(array $viewer, array $byUser, array $filters, bool $officerView): array
+    {
+        $tests = [];
+        foreach ($this->tests->findAll([], 500, 0, ['createdAt' => -1]) as $row) {
+            if (CodingTestModel::normalizeContestType((string) ($row['contestType'] ?? 'none')) === 'none') {
+                continue;
+            }
+            if (($row['status'] ?? '') !== 'published') {
+                continue;
+            }
+            $tests[(string) ($row['_id'] ?? $row['id'] ?? '')] = $row;
+        }
+        $grouped = [];
+        foreach ($byUser as $uid => $hist) {
+            $profile = $this->summarizeDirectoryUser((string) $uid, $hist);
+            if ($officerView && !$this->directoryRowMatches($profile, $filters)) {
+                continue;
+            }
+            foreach ($hist as $row) {
+                if (CodingTestModel::normalizeContestType((string) ($row['contestType'] ?? 'none')) === 'none') {
+                    continue;
+                }
+                $tid = (string) ($row['testId'] ?? '');
+                if ($tid === '') {
+                    continue;
+                }
+                $grouped[$tid][] = [
+                    'userId' => (string) $uid,
+                    'name' => (string) ($profile['name'] ?? 'Student'),
+                    'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
+                    'classBatch' => (string) ($profile['classBatch'] ?? ''),
+                    'percentage' => (float) ($row['percentage'] ?? 0),
+                    'score' => (float) ($row['score'] ?? 0),
+                    'totalMarks' => (float) ($row['totalMarks'] ?? 0),
+                    'status' => (string) ($row['resultStatus'] ?? ''),
+                    'submittedAt' => $row['submittedAt'] ?? '',
+                    'testTitle' => (string) ($row['testTitle'] ?? ''),
+                ];
+            }
+        }
+        $out = [];
+        $ids = array_unique(array_merge(array_keys($tests), array_keys($grouped)));
+        foreach ($ids as $tid) {
+            $test = $tests[$tid] ?? [];
+            $participants = $grouped[$tid] ?? [];
+            $title = (string) ($test['title'] ?? ($participants[0]['testTitle'] ?? 'Contest'));
+            usort($participants, static function ($a, $b) {
+                $cmp = ($b['percentage'] <=> $a['percentage']);
+                if ($cmp !== 0) {
+                    return $cmp;
+                }
+                $cmp = ($b['score'] <=> $a['score']);
+                if ($cmp !== 0) {
+                    return $cmp;
+                }
+                return strcmp((string) ($a['submittedAt'] ?? ''), (string) ($b['submittedAt'] ?? ''));
+            });
+            $rank = 1;
+            foreach ($participants as $i => $p) {
+                $participants[$i]['rank'] = $rank;
+                $participants[$i]['points'] = (int) round(($p['percentage'] ?? 0) * 10);
+                $rank++;
+            }
+            $open = $test !== [] ? CodingTestModel::isContestOpen($test) : false;
+            $closed = $test !== [] ? !$open : true;
+            $winnersPublished = $closed && $participants !== [];
+            $winners = $winnersPublished ? array_slice($participants, 0, 3) : [];
+            $type = $test !== []
+                ? CodingTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none'))
+                : 'none';
+            $out[] = [
+                'id' => $tid,
+                'title' => $title !== '' ? $title : 'Contest',
+                'contestType' => $type,
+                'contestOpen' => $open,
+                'contestClosed' => $closed,
+                'contestScheduleLabel' => $test !== [] ? CodingTestModel::contestScheduleLabel($test) : '',
+                'winnersPublished' => $winnersPublished,
+                'winners' => $winners,
+                'participants' => $winnersPublished ? $participants : [],
+                'participantCount' => count($participants),
+            ];
+        }
+        usort($out, static fn ($a, $b) => strcmp((string) ($a['title'] ?? ''), (string) ($b['title'] ?? '')));
+        return $out;
     }
 
     private static function formatDateLabel(mixed $value): string

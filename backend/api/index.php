@@ -506,6 +506,7 @@ $routes = [
     ['GET',  '/coding/me',                    [CodingController::class, 'myProgress']],
     ['GET',  '/coding/progress/filters',      [CodingController::class, 'progressFilters']],
     ['GET',  '/coding/progress',              [CodingController::class, 'progressDirectory']],
+    ['GET',  '/coding/contests/board',        [CodingController::class, 'contestBoard']],
     ['GET',  '/coding/subjects/{userId}',     [CodingController::class, 'subjectProgress']],
 
     // Health & public

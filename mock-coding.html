@@ -4,7 +4,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260914codstu" rel="stylesheet"/>
+<link href="css/style.css?v=20260914codwin" rel="stylesheet"/>
 <style>
   .apt-stat .val{font-size:1.35rem;font-weight:700}
   .cod-test-card{transition:border-color .15s ease,box-shadow .15s ease}
@@ -49,6 +49,21 @@
   }
   .cod-error{color:var(--danger);background:color-mix(in srgb,var(--danger) 8%,#fff)}
   #codStdin{font-size:.85rem}
+  .cod-podium{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;align-items:end}
+  .cod-podium-card{border:1px solid var(--border);border-radius:.85rem;padding:1rem .75rem;text-align:center;background:var(--surface-2)}
+  .cod-podium-card.is-gold{background:linear-gradient(180deg,#fff7d6,#fff);border-color:#f5d76e;transform:translateY(-8px);padding-top:1.25rem}
+  .cod-podium-card.is-silver{background:linear-gradient(180deg,#eef2f7,#fff);border-color:#cbd5e1}
+  .cod-podium-card.is-bronze{background:linear-gradient(180deg,#f8e6d8,#fff);border-color:#e8b48a}
+  .cod-medal{font-size:1.6rem;line-height:1}
+  .cod-rank{display:inline-flex;align-items:center;justify-content:center;min-width:1.6rem;height:1.6rem;border-radius:999px;font-size:.75rem;font-weight:700;background:#e2e8f0}
+  .cod-rank.is-1{background:#f5d76e;color:#7a5400}
+  .cod-rank.is-2{background:#cbd5e1;color:#334155}
+  .cod-rank.is-3{background:#e8b48a;color:#7c3a1d}
+  .cod-class-bar{display:flex;align-items:center;gap:.65rem;margin:.45rem 0}
+  .cod-class-bar .lbl{width:9rem;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cod-class-bar .track{flex:1;height:.7rem;background:var(--surface-2);border-radius:999px;overflow:hidden}
+  .cod-class-bar .track span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),#60a5fa)}
+  .cod-class-bar .pct{width:3rem;text-align:right;font-size:.8rem;font-weight:700}
   body.cod-role-officer #codTake,
   body.cod-role-admin #codTake,
   body.cod-role-staff #codTake{display:none!important}
@@ -89,18 +104,19 @@
         </div>
         <div class="card-surface p-3 p-md-4">
           <h6 class="fw-bold mb-1">Weekly &amp; monthly contests</h6>
-          <p class="small text-muted-2 mb-3">Join when the contest is open. Your score appears automatically after you finish.</p>
+          <p class="small text-muted-2 mb-3">Join when the contest is open. Your score appears after you finish. Winners are published after closing time.</p>
           <div id="contestList" class="d-flex flex-column gap-2"></div>
         </div>
       </div>
       <div class="col-lg-5">
         <div class="card-surface p-3 p-md-4">
-          <h6 class="fw-bold mb-2">My recent results</h6>
+          <h6 class="fw-bold mb-2">My scores</h6>
           <ul class="nav nav-pills gap-1 mb-2 flex-wrap" id="myResultsNav">
-            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test results</a></li>
-            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest results</a></li>
+            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test scores</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest arena</a></li>
           </ul>
-          <div id="myHistory" class="small text-muted-2">No coding attempts yet. Select a test on the left to begin.</div>
+          <div id="myHistory" class="small text-muted-2">Finish a test to see your score here.</div>
+          <div id="contestArena" class="d-none"></div>
         </div>
       </div>
     </div>
@@ -120,6 +136,10 @@
       </ul>
       <div class="row g-2 mb-3" id="dirStats"></div>
       <div class="row g-2 align-items-end mb-3" id="dirFilterRow">
+        <div class="col-12 col-md-4">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fSearch">Search name or roll no</label>
+          <input class="form-control form-control-sm" id="fSearch" type="search" placeholder="Type a name or roll number" autocomplete="off"/>
+        </div>
         <div class="col-6 col-md-3" id="fDepartmentWrap">
           <label class="form-label small fw-semibold text-muted-2 mb-1" for="fDepartmentLabel">Department</label>
           <input class="form-control form-control-sm" id="fDepartmentLabel" readonly tabindex="-1" value=""/>
@@ -128,19 +148,19 @@
           </select>
           <input type="hidden" id="fDepartment" value=""/>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
           <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBranch">Branch</label>
           <select class="form-select form-select-sm" id="fBranch" aria-label="Branch">
             <option value="">All branches</option>
           </select>
         </div>
         <div class="col-6 col-md-3">
-          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBatch">Batch</label>
-          <select class="form-select form-select-sm" id="fBatch" aria-label="Batch">
-            <option value="">All batches</option>
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBatch">Class</label>
+          <select class="form-select form-select-sm" id="fBatch" aria-label="Class">
+            <option value="">Select a class</option>
           </select>
         </div>
-        <div class="col-6 col-md-3" id="fTypeWrap">
+        <div class="col-6 col-md-3 d-none" id="fTypeWrap">
           <label class="form-label small fw-semibold text-muted-2 mb-1" for="fType">Type</label>
           <select class="form-select form-select-sm" id="fType" aria-label="Type">
             <option value="">All types</option>
@@ -149,8 +169,12 @@
           </select>
         </div>
       </div>
+      <div id="dirClassChartWrap" class="d-none mb-3">
+        <h6 class="fw-bold mb-2">Class progress</h6>
+        <div id="dirClassChart"></div>
+      </div>
       <div class="table-wrap" id="dirTestResultsWrap"><table class="table-modern"><thead><tr>
-        <th>Name</th><th>Student ID</th><th>Class</th><th>Attempts</th><th>Avg</th><th>Best</th><th>Accuracy</th><th>Recent</th><th>Categories</th><th></th>
+        <th>Name</th><th>Roll no</th><th>Class</th><th>Attempts</th><th>Avg</th><th>Best</th><th></th>
       </tr></thead><tbody id="dirRows"></tbody></table></div>
       <div class="d-none" id="dirContestResultsWrap"><div id="dirContestSections" class="d-flex flex-column gap-3"></div></div>
     </div>
@@ -198,7 +222,7 @@
             <p class="small text-muted-2 mb-0">Reusable problem bucket — store Easy, Medium, and Hard coding problems for tests and contests.</p>
           </div>
           <div class="d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btnNewBankProblem"><i class="bi bi-pencil-square me-1"></i>Manual</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnNewBankProblem"><i class="bi bi-plus-lg me-1"></i>Add</button>
             <button type="button" class="btn btn-sm btn-primary" id="btnAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate Problems</button>
           </div>
         </div>
@@ -477,11 +501,11 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260914codstu"></script>
-<script src="js/app.js?v=20260914codstu"></script>
-<script src="js/coding-data.js?v=20260914codstu"></script>
-<script src="js/coding-execution.js?v=20260914codstu"></script>
-<script src="js/coding-service.js?v=20260914codstu"></script>
-<script src="js/coding-exam.js?v=20260914codstu"></script>
-<script src="js/coding-page.js?v=20260914codstu"></script>
+<script src="js/api.js?v=20260914codwin"></script>
+<script src="js/app.js?v=20260914codwin"></script>
+<script src="js/coding-data.js?v=20260914codwin"></script>
+<script src="js/coding-execution.js?v=20260914codwin"></script>
+<script src="js/coding-service.js?v=20260914codwin"></script>
+<script src="js/coding-exam.js?v=20260914codwin"></script>
+<script src="js/coding-page.js?v=20260914codwin"></script>
 </body></html>

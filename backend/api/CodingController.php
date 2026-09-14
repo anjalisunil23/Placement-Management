@@ -154,6 +154,12 @@ final class CodingController
         Response::success($this->service()->directory($user, $_GET));
     }
 
+    public function contestBoard(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->contestBoard($user));
+    }
+
     public function subjectProgress(string $userId): void
     {
         $user = AuthMiddleware::authenticate();

@@ -398,6 +398,15 @@
       saveBankStore(loadBankStore().filter((q) => String(q.id) !== String(id)));
     },
 
+    async contestBoard() {
+      if (liveApi()) {
+        const res = await api('/coding/contests/board').catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not load contest board.');
+        return res.data;
+      }
+      return { contests: [], myUserId: '' };
+    },
+
     async directory(query) {
       if (liveApi()) {
         const res = await api('/coding/progress?' + (query || new URLSearchParams()).toString()).catch(() => null);
@@ -670,6 +679,9 @@
         timeTakenLabel: formatTimer(taken),
         questionResults,
         submittedAt: new Date().toISOString(),
+        contestType: full.contestType || attempt.contestType || 'none',
+        winnersPublished: false,
+        contestClosed: false,
       };
       const progress = loadProgress();
       progress.history.unshift({
@@ -702,6 +714,10 @@
         }).catch(() => null);
         if (!res?.success) {
           result.saveWarning = res?.message || 'Result is shown here. Progress may not have saved to the server.';
+        } else if (res.data) {
+          result.contestType = res.data.contestType || result.contestType;
+          result.winnersPublished = !!res.data.winnersPublished;
+          result.contestClosed = !!res.data.contestClosed;
         }
       }
       return result;
