@@ -16,7 +16,7 @@ const must = [
   'btnNewBankProblem',
   'cod-role-officer',
   'codRoleHint',
-  'coding-page.js?v=20260911codpo',
+  'coding-page.js?v=20260914codpo',
 ];
 for (const s of must) {
   if (!html.includes(s)) {

@@ -25,6 +25,9 @@
   let bankProblemModal = null;
   let studentCodModal = null;
   let exam = null;
+  let codAiModal = null;
+  let aiPreviewProblems = [];
+  let aiLastFormParams = null;
 
   function esc(s) {
     return CodingExam.esc(s);
@@ -360,18 +363,28 @@
   }
 
   async function loadHub() {
-    const [list, progress] = await Promise.all([
-      CodingService.listTests(),
-      CodingService.getProgress(),
-    ]);
-    renderStats(progress);
-    renderHistory(progress);
-    renderTestList(list);
+    try {
+      const [list, progress] = await Promise.all([
+        CodingService.listTests(),
+        CodingService.getProgress(),
+      ]);
+      renderStats(progress);
+      renderHistory(progress);
+      renderTestList(list);
+    } catch (err) {
+      toastMsg(err?.message || 'Could not load coding tests.', 'error');
+    }
   }
 
   async function loadManaged() {
-    tests = await CodingService.listManagedTests();
-    bank = await CodingService.listBank();
+    try {
+      tests = await CodingService.listManagedTests();
+      bank = await CodingService.listBank();
+    } catch (err) {
+      tests = [];
+      bank = [];
+      toastMsg(err?.message || 'Could not load coding tests.', 'error');
+    }
   }
 
   function applyManagePanel(panel) {
@@ -437,13 +450,13 @@
     if (testsRoot) {
       testsRoot.innerHTML = regular.length
         ? regular.map((t) => renderManageRow(t)).join('')
-        : '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
+        : '<p class="text-muted-2 mb-0">No regular tests yet. Click <strong>New test</strong> to create one for your department.</p>';
       bindManageListActions(testsRoot);
     }
     if (contestsRoot) {
       contestsRoot.innerHTML = contests.length
         ? contests.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
-        : '<p class="text-muted-2 mb-0">No weekly or monthly contests yet.</p>';
+        : '<p class="text-muted-2 mb-0">No weekly or monthly contests yet. Create a contest, publish it, then track results on Progress.</p>';
       bindManageListActions(contestsRoot);
     }
   }
@@ -629,7 +642,7 @@
               <button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(q.id)}"><i class="bi bi-trash"></i></button>
             </div>
           </div>`).join('')
-      : '<p class="text-muted-2 mb-0">No problems in the bank yet.</p>';
+      : '<p class="text-muted-2 mb-0">No problems in the bank yet. Add one manually or generate with AI.</p>';
     list.querySelectorAll('[data-bank-edit]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const q = bank.find((x) => String(x.id) === String(btn.getAttribute('data-bank-edit')));
@@ -639,9 +652,14 @@
     list.querySelectorAll('[data-bank-del]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Delete this problem from the bank?')) return;
-        await CodingService.deleteBankProblem(btn.getAttribute('data-bank-del'));
-        bank = await CodingService.listBank();
-        renderBank();
+        try {
+          await CodingService.deleteBankProblem(btn.getAttribute('data-bank-del'));
+          toastMsg('Problem deleted.', 'success');
+          bank = await CodingService.listBank();
+          renderBank();
+        } catch (err) {
+          toastMsg(err?.message || 'Could not delete problem.', 'error');
+        }
       });
     });
   }
@@ -790,13 +808,24 @@
       if (res?.success) data = res.data;
     }
     if (!data) {
-      const mine = await CodingService.getProgress();
-      data = { name: Auth.user()?.name || 'Student', history: mine.history || [] };
+      try {
+        const mine = await CodingService.getProgress();
+        data = { name: Auth.user()?.name || 'Student', history: mine.history || [] };
+      } catch {
+        data = { name: 'Student', history: [] };
+      }
     }
     const hist = data.history || [];
     body.innerHTML = `
-      <div class="fw-semibold mb-2">${esc(data.name || 'Student')}</div>
-      ${hist.length ? hist.map((h) => `<div class="d-flex justify-content-between border-bottom py-2"><div>${esc(h.testTitle)}</div><div>${esc(h.percentage)}%</div></div>`).join('') : '<p class="text-muted-2 mb-0">No coding attempts yet.</p>'}`;
+      <div class="fw-semibold mb-1">${esc(data.name || 'Student')}</div>
+      <div class="small text-muted-2 mb-3">${esc(data.registerNumber || '')}${data.classBatch ? ' · ' + esc(data.classBatch) : ''}</div>
+      ${hist.length ? hist.map((h) => {
+        const contest = String(h.contestType || '') === 'weekly' || String(h.contestType || '') === 'monthly';
+        return `<div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
+          <div><div>${esc(h.testTitle || 'Coding test')}</div><div class="small text-muted-2">${esc(h.submittedAt || '')}${contest ? ' · Contest' : ''}</div></div>
+          <div class="text-end"><div class="fw-semibold">${esc(h.percentage ?? 0)}%</div><div class="small text-muted-2">${esc(h.status || '')}</div></div>
+        </div>`;
+      }).join('') : '<p class="text-muted-2 mb-0">No coding attempts yet.</p>'}`;
   }
 
   function applyDirDepartmentFromData(departments) {
@@ -822,11 +851,18 @@
     document.getElementById('fTypeWrap')?.classList.toggle('d-none', role !== 'admin');
     let data = null;
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      data = await api('/aptitude/progress/filters?' + new URLSearchParams({
+      data = await api('/coding/progress/filters?' + new URLSearchParams({
         department: document.getElementById('fDepartment')?.value || '',
         course: dirFilterBranch,
         class: dirFilterBatch,
       }).toString()).then((r) => r?.success ? r.data : null).catch(() => null);
+      if (!data) {
+        data = await api('/aptitude/progress/filters?' + new URLSearchParams({
+          department: document.getElementById('fDepartment')?.value || '',
+          course: dirFilterBranch,
+          class: dirFilterBatch,
+        }).toString()).then((r) => r?.success ? r.data : null).catch(() => null);
+      }
     }
     if (!data) {
       data = { departments: [], branches: [], batches: staffAssignedBatches(), types: [] };
@@ -893,22 +929,133 @@
     if (!access.canViewDirectory) return;
     const role = Auth.role();
     document.getElementById('dirTitle').textContent = progressDirTitle(role, progressPanel);
-    const scope = access.scope || {};
+    let scope = access.scope || {};
     updateDirScopeHint(scope);
-    const live = await CodingService.directory(buildDirectoryQuery());
-    if (live && (progressPanel === 'contests' || live.view === 'contests')) {
-      renderContestResults(live.contests || [], live.summary || {}, live.scope || scope);
+    try {
+      const live = await CodingService.directory(buildDirectoryQuery());
+      if (live?.scope) {
+        access.scope = live.scope;
+        scope = live.scope;
+        updateDirScopeHint(scope);
+      }
+      if (live && (progressPanel === 'contests' || live.view === 'contests')) {
+        renderContestResults(live.contests || [], live.summary || {}, scope);
+        return;
+      }
+      renderDirectoryTable(live?.rows || [], live?.summary || {}, scope);
+    } catch (err) {
+      toastMsg(err?.message || 'Could not load coding progress.', 'error');
+      if (progressPanel === 'contests') {
+        renderContestResults([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 }, scope);
+      } else {
+        renderDirectoryTable([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 }, scope);
+      }
+    }
+  }
+
+  function showCodAiForm() {
+    document.getElementById('codAiFormPanel')?.classList.remove('d-none');
+    document.getElementById('codAiPreviewPanel')?.classList.add('d-none');
+  }
+
+  function openCodAiModal() {
+    fillSelect(document.getElementById('codAiCategory'), CATEGORIES, 'Programming');
+    fillSelect(document.getElementById('codAiDifficulty'), DIFFICULTIES, 'Medium');
+    showCodAiForm();
+    document.getElementById('codAiPreviewList').innerHTML = '';
+    document.getElementById('codAiGenerateStatus')?.classList.add('d-none');
+    document.getElementById('codAiSaveStatus')?.classList.add('d-none');
+    codAiModal?.show();
+  }
+
+  function collectCodAiParams() {
+    return {
+      category: document.getElementById('codAiCategory')?.value || 'Programming',
+      topic: (document.getElementById('codAiTopic')?.value || '').trim() || (document.getElementById('codAiCategory')?.value || 'Programming'),
+      difficulty: document.getElementById('codAiDifficulty')?.value || 'Medium',
+      count: Number(document.getElementById('codAiCount')?.value || 5),
+      instructions: document.getElementById('codAiInstructions')?.value || '',
+    };
+  }
+
+  function renderCodAiPreview() {
+    const list = document.getElementById('codAiPreviewList');
+    const countEl = document.getElementById('codAiPreviewCount');
+    if (countEl) countEl.textContent = String(aiPreviewProblems.length);
+    if (!list) return;
+    list.innerHTML = aiPreviewProblems.map((q, i) => `
+      <label class="border rounded-3 p-3 d-flex gap-2 align-items-start">
+        <input class="form-check-input mt-1" type="checkbox" data-ai-idx="${i}" ${q.selected ? 'checked' : ''}/>
+        <div class="min-w-0">
+          <div class="fw-semibold">${esc(q.title || 'Untitled')}</div>
+          <div class="small text-muted-2">${esc(q.difficulty || '')} · ${esc(q.category || '')} · ${esc(q.marks || 2)} marks</div>
+          <div class="small mt-1">${esc((q.description || '').slice(0, 180))}${(q.description || '').length > 180 ? '…' : ''}</div>
+        </div>
+      </label>`).join('');
+    list.querySelectorAll('[data-ai-idx]').forEach((el) => {
+      el.addEventListener('change', () => {
+        const i = Number(el.getAttribute('data-ai-idx'));
+        if (aiPreviewProblems[i]) aiPreviewProblems[i].selected = el.checked;
+      });
+    });
+  }
+
+  async function runCodAiGenerate() {
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      toastMsg('Sign in as a placement officer to generate problems.', 'info');
       return;
     }
-    if (live && Array.isArray(live.rows)) {
-      renderDirectoryTable(live.rows, live.summary || {}, live.scope || scope);
+    const params = collectCodAiParams();
+    if (!params.topic) {
+      toastMsg('Enter a topic.', 'error');
       return;
     }
-    const demo = await demoDirectoryFromLocal();
-    if (progressPanel === 'contests') {
-      renderContestResults([], demo.summary, scope);
-    } else {
-      renderDirectoryTable(demo.rows, demo.summary, scope);
+    const status = document.getElementById('codAiGenerateStatus');
+    const btn = document.getElementById('btnCodAiRun');
+    status?.classList.remove('d-none');
+    btn?.setAttribute('disabled', 'disabled');
+    try {
+      const data = await CodingService.generateAiProblems(params);
+      aiPreviewProblems = (data.problems || data.questions || []).map((q) => ({ ...q, selected: q.selected !== false }));
+      aiLastFormParams = params;
+      if (!aiPreviewProblems.length) {
+        toastMsg('No problems were generated.', 'error');
+        return;
+      }
+      document.getElementById('codAiFormPanel')?.classList.add('d-none');
+      document.getElementById('codAiPreviewPanel')?.classList.remove('d-none');
+      renderCodAiPreview();
+    } catch (err) {
+      toastMsg(err?.message || 'AI generation failed.', 'error');
+    } finally {
+      status?.classList.add('d-none');
+      btn?.removeAttribute('disabled');
+    }
+  }
+
+  async function saveCodAiSelected() {
+    const selected = aiPreviewProblems.filter((q) => q.selected);
+    if (!selected.length) {
+      toastMsg('Select at least one problem to save.', 'error');
+      return;
+    }
+    const status = document.getElementById('codAiSaveStatus');
+    const btn = document.getElementById('btnCodAiSave');
+    status?.classList.remove('d-none');
+    btn?.setAttribute('disabled', 'disabled');
+    try {
+      const data = await CodingService.saveAiProblems(selected);
+      toastMsg(`Saved ${data?.added ?? selected.length} problem(s) to the bank.`, 'success');
+      codAiModal?.hide();
+      bank = await CodingService.listBank();
+      applyManagePanel('bank');
+      renderBank();
+    } catch (err) {
+      toastMsg(err?.message || 'Could not save AI problems.', 'error');
+    } finally {
+      status?.classList.add('d-none');
+      btn?.removeAttribute('disabled');
     }
   }
 
@@ -917,6 +1064,7 @@
     bankPickModal = document.getElementById('bankPickModal') ? new bootstrap.Modal(document.getElementById('bankPickModal')) : null;
     bankProblemModal = document.getElementById('bankProblemModal') ? new bootstrap.Modal(document.getElementById('bankProblemModal')) : null;
     studentCodModal = document.getElementById('studentCodModal') ? new bootstrap.Modal(document.getElementById('studentCodModal')) : null;
+    codAiModal = document.getElementById('codAiBankModal') ? new bootstrap.Modal(document.getElementById('codAiBankModal')) : null;
 
     document.getElementById('codViewNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-view]');
@@ -991,17 +1139,23 @@
         items,
       };
       try {
-        await CodingService.saveTest(payload);
-        toastMsg('Test saved.', 'success');
+        const saved = await CodingService.saveTest(payload);
+        toastMsg(isContestTest(payload) || isContestTest(saved) ? 'Contest saved.' : 'Test saved.', 'success');
         testFormModal.hide();
         await loadManaged();
+        if (canManageContests() && (isContestTest(payload) || isContestTest(saved))) {
+          applyManagePanel('contests');
+        }
         renderManage();
       } catch (err) {
         toastMsg(err?.message || 'Could not save test.', 'error');
       }
     });
     document.getElementById('btnNewBankProblem')?.addEventListener('click', () => openBankProblemForm());
-    document.getElementById('btnAiGenerate')?.addEventListener('click', () => toastMsg('AI problem generation is not available yet.', 'info'));
+    document.getElementById('btnAiGenerate')?.addEventListener('click', () => openCodAiModal());
+    document.getElementById('btnCodAiRun')?.addEventListener('click', () => runCodAiGenerate());
+    document.getElementById('btnCodAiSave')?.addEventListener('click', () => saveCodAiSelected());
+    document.getElementById('btnCodAiCancelPreview')?.addEventListener('click', () => showCodAiForm());
     document.getElementById('bankFilterCategory')?.addEventListener('change', () => renderBank());
     document.getElementById('bankDifficultyNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-bank-difficulty]');
@@ -1021,11 +1175,15 @@
         toastMsg('Enter a problem title.', 'error');
         return;
       }
-      await CodingService.saveBankProblem(payload);
-      toastMsg('Problem saved.', 'success');
-      bankProblemModal.hide();
-      bank = await CodingService.listBank();
-      renderBank();
+      try {
+        await CodingService.saveBankProblem(payload);
+        toastMsg('Problem saved.', 'success');
+        bankProblemModal.hide();
+        bank = await CodingService.listBank();
+        renderBank();
+      } catch (err) {
+        toastMsg(err?.message || 'Could not save problem.', 'error');
+      }
     });
     window.addEventListener('hashchange', () => {
       const view = String(location.hash || '').replace('#', '');

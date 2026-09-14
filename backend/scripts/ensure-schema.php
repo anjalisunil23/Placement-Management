@@ -62,6 +62,9 @@ $required = [
     Collections::RESUME_CERTIFICATIONS,
     Collections::RESUME_ACTIVITIES,
     Collections::RESUME_CONTACT_LINKS,
+    Collections::CODING_TESTS,
+    Collections::CODING_ATTEMPTS,
+    Collections::CODING_PROBLEM_BANK,
 ];
 
 $existing = Database::pdo()->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);

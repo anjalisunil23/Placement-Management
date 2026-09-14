@@ -33,6 +33,9 @@ final class CodingService
         $rows = $this->tests->findAll(['status' => 'published'], 200, 0, ['createdAt' => -1]);
         $out = [];
         foreach ($rows as $row) {
+            if (!AptitudeAccessService::testVisibleToTaker($user, $row)) {
+                continue;
+            }
             if (!CodingTestModel::isContestOpen($row)) {
                 continue;
             }
@@ -80,9 +83,7 @@ final class CodingService
     {
         AptitudeAccessService::requireManager($user);
         $data = AptitudeAccessService::applyTestDepartmentScope($user, $data);
-        if (!AptitudeAccessService::canManageContests($user)) {
-            $data['contestType'] = 'none';
-        }
+        $data = AptitudeAccessService::sanitizeContestFields($user, $data);
         $title = trim((string) ($data['title'] ?? ''));
         if ($title === '') {
             Response::error('Enter a test title.', 422);
@@ -105,10 +106,13 @@ final class CodingService
             Response::notFound('Coding test not found.');
         }
         AptitudeAccessService::assertTestManageable($user, $existing);
+        $data = AptitudeAccessService::applyTestDepartmentScope($user, $data);
+        $data = AptitudeAccessService::sanitizeContestFields($user, $data);
         if (!AptitudeAccessService::canManageContests($user)) {
             $data['contestType'] = $existing['contestType'] ?? 'none';
+            $data['contestWeekday'] = $existing['contestWeekday'] ?? 1;
+            $data['contestMonthDay'] = $existing['contestMonthDay'] ?? 1;
         }
-        $data = AptitudeAccessService::applyTestDepartmentScope($user, $data);
         $this->tests->saveExisting($id, $data);
         $doc = $this->tests->findById($id);
         return CodingTestModel::publicView($doc ?: $existing, true);
@@ -132,10 +136,59 @@ final class CodingService
      * @param array<string, mixed> $user
      * @return array<int, array<string, mixed>>
      */
-    public function listBank(array $user): array
+    public function listBank(array $user, ?string $category = null, ?string $difficulty = null): array
     {
         AptitudeAccessService::requireManager($user);
-        return $this->bank->listProblems();
+        return $this->bank->listProblems($category, $difficulty);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function generateAiBankProblems(array $user, array $body): array
+    {
+        AptitudeAccessService::requireManager($user);
+        $category = (string) ($body['category'] ?? 'Programming');
+        $topic = trim((string) ($body['topic'] ?? $category));
+        $difficulty = (string) ($body['difficulty'] ?? 'Medium');
+        $count = (int) ($body['count'] ?? 5);
+        $instructions = (string) ($body['instructions'] ?? '');
+        $count = max(1, min(10, $count));
+        try {
+            return (new CodingAiProblemService())->generate($category, $topic, $difficulty, $count, $instructions);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 503);
+        } catch (\Throwable $e) {
+            error_log('[PMS coding AI] generate failed: ' . $e->getMessage());
+            Response::error('AI generation failed. Please try again.', 503);
+            return [];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<int, array<string, mixed>> $problems
+     * @return array<string, mixed>
+     */
+    public function saveAiBankProblems(array $user, array $problems): array
+    {
+        AptitudeAccessService::requireManager($user);
+        if ($problems === []) {
+            Response::error('No problems selected to save.', 422);
+        }
+        try {
+            return (new CodingAiProblemService())->saveApproved($problems);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            error_log('[PMS coding AI] save failed: ' . $e->getMessage());
+            Response::error('Could not save AI problems. Please try again.', 500);
+            return [];
+        }
     }
 
     /**
@@ -249,6 +302,14 @@ final class CodingService
         $history = [];
         $solved = [];
         foreach ($rows as $row) {
+            foreach ((array) ($row['questionResults'] ?? []) as $qr) {
+                if (!is_array($qr)) {
+                    continue;
+                }
+                if (($qr['status'] ?? '') === 'Correct' && ($qr['id'] ?? '') !== '') {
+                    $solved[(string) $qr['id']] = true;
+                }
+            }
             $history[] = [
                 'id' => (string) ($row['_id'] ?? ''),
                 'testId' => (string) ($row['testId'] ?? ''),
@@ -452,11 +513,17 @@ final class CodingService
             $history[] = [
                 'testTitle' => (string) ($row['testTitle'] ?? ''),
                 'percentage' => $row['percentage'] ?? 0,
+                'score' => $row['score'] ?? 0,
+                'totalMarks' => $row['totalMarks'] ?? 0,
                 'status' => $row['resultStatus'] ?? '',
+                'contestType' => $row['contestType'] ?? 'none',
+                'submittedAt' => $row['submittedAt'] ?? '',
             ];
         }
         return [
             'name' => (string) ($userDoc['name'] ?? $student['name'] ?? 'Student'),
+            'registerNumber' => (string) ($student['registerNumber'] ?? $student['studentId'] ?? ''),
+            'classBatch' => (string) StaffContext::studentClassBatch($student),
             'history' => $history,
         ];
     }

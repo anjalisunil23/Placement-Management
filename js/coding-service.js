@@ -7,6 +7,7 @@
   const STORAGE_PREFIX = 'ph-coding-progress-';
   const API_ENABLED = false;
   const EXEC_UNAVAILABLE = 'Code execution service unavailable, please try again';
+  const attempts = new Map();
 
   if (typeof global.CodeExecutionService === 'undefined') {
     global.CodeExecutionService = {
@@ -174,6 +175,10 @@
       && Auth.hasRealAuth() && !Auth.isDemo();
   }
 
+  function isLiveCodingId(id) {
+    return /^[a-f\d]{24}$/i.test(String(id || '').trim());
+  }
+
   function loadJson(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -296,7 +301,8 @@
     async listTests() {
       if (liveApi()) {
         const res = await api('/coding/tests').catch(() => null);
-        if (res?.success) return res.data.tests || [];
+        if (!res?.success) throw new Error(res?.message || 'Could not load coding tests.');
+        return res.data.tests || [];
       }
       return loadManagedTests()
         .filter((t) => (t.status || 'published') === 'published' && isContestOpen(t))
@@ -306,7 +312,8 @@
     async listManagedTests() {
       if (liveApi()) {
         const res = await api('/coding/tests?manage=1').catch(() => null);
-        if (res?.success) return res.data.tests || [];
+        if (!res?.success) throw new Error(res?.message || 'Could not load managed tests.');
+        return res.data.tests || [];
       }
       return loadManagedTests();
     },
@@ -328,10 +335,10 @@
         durationMinutes: Number(payload.duration || payload.durationMinutes || 20),
       };
       if (liveApi()) {
-        const id = payload.id;
+        const id = isLiveCodingId(payload.id) ? payload.id : '';
         const res = id
           ? await api(`/coding/tests/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(next) })
-          : await api('/coding/tests', { method: 'POST', body: JSON.stringify(next) });
+          : await api('/coding/tests', { method: 'POST', body: JSON.stringify({ ...next, id: undefined }) });
         if (!res?.success) throw new Error(res?.message || 'Could not save test.');
         return res.data;
       }
@@ -356,17 +363,20 @@
     async listBank() {
       if (liveApi()) {
         const res = await api('/coding/problem-bank').catch(() => null);
-        if (res?.success) return res.data.problems || res.data.questions || [];
+        if (!res?.success) throw new Error(res?.message || 'Could not load problem bank.');
+        return res.data.problems || res.data.questions || [];
       }
       return loadBankStore();
     },
 
     async saveBankProblem(payload) {
       if (liveApi()) {
-        const id = payload.id;
+        const id = isLiveCodingId(payload.id) ? payload.id : '';
+        const body = { ...payload };
+        if (!id) delete body.id;
         const res = id
-          ? await api(`/coding/problem-bank/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) })
-          : await api('/coding/problem-bank', { method: 'POST', body: JSON.stringify(payload) });
+          ? await api(`/coding/problem-bank/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) })
+          : await api('/coding/problem-bank', { method: 'POST', body: JSON.stringify(body) });
         if (!res?.success) throw new Error(res?.message || 'Could not save problem.');
         return res.data;
       }
@@ -391,15 +401,37 @@
     async directory(query) {
       if (liveApi()) {
         const res = await api('/coding/progress?' + (query || new URLSearchParams()).toString()).catch(() => null);
-        if (res?.success) return res.data;
+        if (!res?.success) throw new Error(res?.message || 'Could not load coding progress.');
+        return res.data;
       }
       return null;
+    },
+
+    async generateAiProblems(params) {
+      if (!liveApi()) throw new Error('Sign in as a placement officer to generate problems.');
+      const res = await api('/coding/problem-bank/ai/generate', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }).catch(() => null);
+      if (!res?.success) throw new Error(res?.message || 'AI generation failed. Ensure Ollama is running.');
+      return res.data;
+    },
+
+    async saveAiProblems(problems) {
+      if (!liveApi()) throw new Error('Sign in as a placement officer to save problems.');
+      const res = await api('/coding/problem-bank/ai/save', {
+        method: 'POST',
+        body: JSON.stringify({ problems }),
+      }).catch(() => null);
+      if (!res?.success) throw new Error(res?.message || 'Could not save AI problems.');
+      return res.data;
     },
 
     async getProgress() {
       if (liveApi()) {
         const res = await api('/coding/me').catch(() => null);
-        if (res?.success) return res.data;
+        if (!res?.success) throw new Error(res?.message || 'Could not load coding progress.');
+        return res.data;
       }
       return summarizeProgress(loadProgress());
     },
@@ -407,19 +439,18 @@
     async startAttempt(testId) {
       if (liveApi()) {
         const res = await api(`/coding/tests/${encodeURIComponent(testId)}/start`, { method: 'POST' }).catch(() => null);
-        if (res?.success && res.data) {
-          const started = res.data;
-          attempts.set(started.attemptId, {
-            id: started.attemptId,
-            testId,
-            test: started.test,
-            answers: started.answers || {},
-            startedAt: started.startedAt || Date.now(),
-            endsAt: started.endsAt,
-            submitted: false,
-          });
-          return started;
-        }
+        if (!res?.success || !res.data) throw new Error(res?.message || 'Could not start coding test.');
+        const started = res.data;
+        attempts.set(started.attemptId, {
+          id: started.attemptId,
+          testId,
+          test: started.test,
+          answers: started.answers || {},
+          startedAt: started.startedAt || Date.now(),
+          endsAt: started.endsAt,
+          submitted: false,
+        });
+        return started;
       }
       const pub = getFullTestLocal(testId) ? publicFromFull(getFullTestLocal(testId)) : (typeof CodingData !== 'undefined' ? CodingData.getPublicTest(testId) : null);
       if (!pub) throw new Error('Test not found.');
@@ -665,10 +696,11 @@
       };
       const result = await localResult();
       if (liveApi()) {
-        await api(`/coding/attempts/${encodeURIComponent(attemptId)}/submit`, {
+        const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/submit`, {
           method: 'POST',
           body: JSON.stringify(result),
         }).catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not submit coding attempt.');
       }
       return result;
     },

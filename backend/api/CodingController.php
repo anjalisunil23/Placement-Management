@@ -81,7 +81,34 @@ final class CodingController
     public function listBank(): void
     {
         $user = AuthMiddleware::authenticate();
-        Response::success(['problems' => $this->service()->listBank($user)]);
+        $category = isset($_GET['category']) ? trim((string) $_GET['category']) : null;
+        $difficulty = isset($_GET['difficulty']) ? trim((string) $_GET['difficulty']) : null;
+        Response::success(['problems' => $this->service()->listBank($user, $category ?: null, $difficulty ?: null)]);
+    }
+
+    public function generateAiBank(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->generateAiBankProblems($user, $this->body()));
+    }
+
+    public function saveAiBank(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $problems = is_array($body['problems'] ?? null) ? $body['problems'] : (is_array($body['questions'] ?? null) ? $body['questions'] : []);
+        Response::success($this->service()->saveAiBankProblems($user, $problems), 'Problems saved.');
+    }
+
+    public function progressFilters(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $filters = [
+            'department' => $_GET['department'] ?? ($_GET['departmentId'] ?? ''),
+            'course' => $_GET['course'] ?? ($_GET['branch'] ?? ''),
+            'class' => $_GET['class'] ?? ($_GET['batch'] ?? ($_GET['classBatch'] ?? '')),
+        ];
+        Response::success((new \PMS\Services\AptitudeService())->progressFilterOptions($user, $filters));
     }
 
     public function createBankProblem(): void
