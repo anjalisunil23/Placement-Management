@@ -305,7 +305,7 @@
         return res.data.tests || [];
       }
       return loadManagedTests()
-        .filter((t) => (t.status || 'published') === 'published' && isContestOpen(t))
+        .filter((t) => (t.status || 'published') === 'published')
         .map(testMetaFromFull);
     },
 
@@ -700,7 +700,9 @@
           method: 'POST',
           body: JSON.stringify(result),
         }).catch(() => null);
-        if (!res?.success) throw new Error(res?.message || 'Could not submit coding attempt.');
+        if (!res?.success) {
+          result.saveWarning = res?.message || 'Result is shown here. Progress may not have saved to the server.';
+        }
       }
       return result;
     },

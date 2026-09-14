@@ -527,6 +527,7 @@
         state.attemptId = null;
         if (editor) editor.setReadOnly(true);
         if (auto) toast('Time is up — test submitted automatically.', 'info');
+        if (result.saveWarning) toast(result.saveWarning, 'info');
         renderResult(result);
       } catch (err) {
         submitting = false;

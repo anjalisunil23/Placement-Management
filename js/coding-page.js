@@ -299,7 +299,7 @@
           <div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
             <div class="min-w-0">
               <div class="text-truncate fw-medium">${esc(h.testTitle)}</div>
-              <div class="small text-muted-2">${esc(h.dateLabel || '')}</div>
+              <div class="small text-muted-2">${esc(h.dateLabel || h.submittedAt || '')}</div>
             </div>
             <div class="text-end flex-shrink-0">
               <div class="small fw-semibold">${esc(h.score)} / ${esc(h.totalMarks)}</div>
@@ -312,17 +312,14 @@
       : `<p class="text-muted-2 mb-0">${myResultsView === 'contests' ? 'No contest attempts yet.' : 'No coding attempts yet. Select a test on the left to begin.'}</p>`;
   }
 
-  function renderTestList(list) {
-    const root = document.getElementById('testList');
-    if (!root) return;
-    const visible = access.canManage
-      ? list
-      : list.filter((t) => (t.status || 'published') === 'published' && isContestOpenClient(t));
-    if (!visible.length) {
-      root.innerHTML = '<p class="text-muted-2 mb-0">No coding tests are available yet.</p>';
-      return;
-    }
-    root.innerHTML = visible.map((t) => `
+  function testCardHtml(t, { allowStart = true } = {}) {
+    const open = !isContestTest(t) || isContestOpenClient(t);
+    const action = !access.canTake
+      ? ''
+      : (allowStart && open
+        ? `<button type="button" class="btn btn-sm btn-primary" data-open-test="${esc(t.id)}">Select</button>`
+        : `<button type="button" class="btn btn-sm btn-outline-secondary" disabled>${esc(isContestTest(t) ? (contestScheduleLabel(t) || 'Scheduled') : 'Unavailable')}</button>`);
+    return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-start gap-2 cod-test-card">
         <div class="flex-grow-1">
           <div class="fw-semibold">${esc(t.title)}</div>
@@ -340,14 +337,37 @@
           <div class="small mt-1">${esc(t.description || '')}</div>
           ${isContestTest(t) ? contestBadgeHtml(t) : ''}
         </div>
-        ${access.canTake ? `<button type="button" class="btn btn-sm btn-primary" data-open-test="${esc(t.id)}">Select</button>` : ''}
-      </div>`).join('');
-    root.querySelectorAll('[data-open-test]').forEach((btn) => {
+        ${action}
+      </div>`;
+  }
+
+  function bindOpenTests(root, list) {
+    root?.querySelectorAll('[data-open-test]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const t = visible.find((x) => String(x.id) === String(btn.getAttribute('data-open-test')));
+        const t = list.find((x) => String(x.id) === String(btn.getAttribute('data-open-test')));
         if (t) openExam(t);
       });
     });
+  }
+
+  function renderTestList(list) {
+    const published = (list || []).filter((t) => (t.status || 'published') === 'published');
+    const regular = published.filter((t) => !isContestTest(t));
+    const contests = published.filter((t) => isContestTest(t));
+    const testsRoot = document.getElementById('testList');
+    const contestsRoot = document.getElementById('contestList');
+    if (testsRoot) {
+      testsRoot.innerHTML = regular.length
+        ? regular.map((t) => testCardHtml(t)).join('')
+        : '<p class="text-muted-2 mb-0">No published coding tests yet. Placement officers add them under Manage tests.</p>';
+      bindOpenTests(testsRoot, regular);
+    }
+    if (contestsRoot) {
+      contestsRoot.innerHTML = contests.length
+        ? contests.map((t) => testCardHtml(t)).join('')
+        : '<p class="text-muted-2 mb-0">No weekly or monthly contests are published yet.</p>';
+      bindOpenTests(contestsRoot, contests);
+    }
   }
 
   function openExam(test) {

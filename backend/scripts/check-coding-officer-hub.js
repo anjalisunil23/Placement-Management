@@ -14,9 +14,10 @@ const must = [
   'btnNewTest',
   'btnNewWeeklyContest',
   'btnNewBankProblem',
+  'id="contestList"',
   'cod-role-officer',
   'codRoleHint',
-  'coding-page.js?v=20260914codpo',
+  'coding-page.js?v=20260914codstu',
 ];
 for (const s of must) {
   if (!html.includes(s)) {

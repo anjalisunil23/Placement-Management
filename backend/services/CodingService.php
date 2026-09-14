@@ -22,6 +22,11 @@ final class CodingService
         $this->tests = new CodingTestModel();
         $this->bank = new CodingProblemBankModel();
         $this->attempts = new CodingAttemptModel();
+        try {
+            (new CodingSeedService($this->bank, $this->tests))->ensureSeeded();
+        } catch (\Throwable $e) {
+            error_log('[PMS coding seed] ' . $e->getMessage());
+        }
     }
 
     /**
@@ -33,10 +38,7 @@ final class CodingService
         $rows = $this->tests->findAll(['status' => 'published'], 200, 0, ['createdAt' => -1]);
         $out = [];
         foreach ($rows as $row) {
-            if (!AptitudeAccessService::testVisibleToTaker($user, $row)) {
-                continue;
-            }
-            if (!CodingTestModel::isContestOpen($row)) {
+            if (!$this->studentCanSeeTest($user, $row)) {
                 continue;
             }
             $view = CodingTestModel::publicView($row, false);
@@ -44,6 +46,27 @@ final class CodingService
             $out[] = $view;
         }
         return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $test
+     */
+    private function studentCanSeeTest(array $user, array $test): bool
+    {
+        if (!AptitudeAccessService::canTake($user)) {
+            return false;
+        }
+        $testDept = (string) ($test['departmentId'] ?? '');
+        if ($testDept === '') {
+            return true;
+        }
+        $ctx = AptitudeAccessService::subjectContext($user);
+        $studentDept = (string) ($ctx['departmentId'] ?? '');
+        if ($studentDept === '') {
+            return true;
+        }
+        return $studentDept === $testDept;
     }
 
     /**
@@ -65,7 +88,7 @@ final class CodingService
         foreach ($rows as $row) {
             if ($role !== 'admin') {
                 $testDept = (string) ($row['departmentId'] ?? '');
-                if ($dept === '' || $testDept !== $dept) {
+                if ($testDept !== '' && ($dept === '' || $testDept !== $dept)) {
                     continue;
                 }
             }
@@ -229,8 +252,15 @@ final class CodingService
             Response::forbidden('Only students can take mock tests.');
         }
         $test = $this->tests->findById($testId);
-        if (!$test || ($test['status'] ?? '') !== 'published' || !CodingTestModel::isContestOpen($test)) {
+        if (!$test || ($test['status'] ?? '') !== 'published') {
             Response::notFound('Coding test not found.');
+        }
+        if (!$this->studentCanSeeTest($user, $test)) {
+            Response::forbidden('This coding test is not available for your account.');
+        }
+        if (!CodingTestModel::isContestOpen($test)) {
+            $when = CodingTestModel::contestScheduleLabel($test) ?: 'the scheduled day';
+            Response::error('This contest is not open today. It runs on ' . $when . '.', 422);
         }
         $duration = max(1, (int) ($test['duration'] ?? 20));
         $startedAt = (int) round(microtime(true) * 1000);
@@ -320,6 +350,7 @@ final class CodingService
                 'percentage' => $row['percentage'] ?? 0,
                 'status' => $row['resultStatus'] ?? $row['status'] ?? '',
                 'contestType' => $row['contestType'] ?? 'none',
+                'dateLabel' => self::formatDateLabel($row['submittedAt'] ?? ''),
             ];
         }
         $percents = array_map(static fn($h) => (float) ($h['percentage'] ?? 0), $history);
@@ -518,6 +549,7 @@ final class CodingService
                 'status' => $row['resultStatus'] ?? '',
                 'contestType' => $row['contestType'] ?? 'none',
                 'submittedAt' => $row['submittedAt'] ?? '',
+                'dateLabel' => self::formatDateLabel($row['submittedAt'] ?? ''),
             ];
         }
         return [
@@ -526,5 +558,18 @@ final class CodingService
             'classBatch' => (string) StaffContext::studentClassBatch($student),
             'history' => $history,
         ];
+    }
+
+    private static function formatDateLabel(mixed $value): string
+    {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return '';
+        }
+        $ts = strtotime($raw);
+        if ($ts === false) {
+            return $raw;
+        }
+        return date('d M Y', $ts);
     }
 }
