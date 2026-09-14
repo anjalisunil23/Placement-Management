@@ -290,15 +290,53 @@ function resolveSessionDepartmentName(merged) {
   return code || '';
 }
 
+function parseCgpaValue(val) {
+  if (val == null || val === '') return undefined;
+  if (typeof val === 'string') {
+    const m = String(val).match(/(\d+(?:\.\d+)?)/);
+    if (!m) return undefined;
+    val = m[1];
+  }
+  const n = Number(val);
+  return Number.isFinite(n) && n > 0 && n <= 10 ? n : undefined;
+}
+
 function resolveSessionCgpa(merged) {
   const academic = (merged.academic && typeof merged.academic === 'object') ? merged.academic : {};
-  const keys = ['cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa'];
+  const aes = (merged.aesProfile && typeof merged.aesProfile === 'object') ? merged.aesProfile : {};
+  const keys = [
+    'cgpa', 'CGPA', 'gpa', 'GPA', 'current_cgpa', 'currentCgpa', 'cumulative_cgpa', 'overall_cgpa',
+    'totcgpa', 'tot_cgpa', 'curcgpa', 'cur_cgpa', 'stud_cgpa', 'sgpa',
+  ];
   for (const key of keys) {
-    const val = merged[key] ?? academic[key] ?? merged.aesProfile?.[key];
-    const n = Number(val);
-    if (Number.isFinite(n) && n > 0 && n <= 10) return n;
+    const hit = parseCgpaValue(merged[key] ?? academic[key] ?? aes[key]);
+    if (hit != null) return hit;
   }
-  return undefined;
+  const quals = Array.isArray(merged.qualifications)
+    ? merged.qualifications
+    : (Array.isArray(academic.qualifications) ? academic.qualifications : []);
+  const programme = String(merged.programme || merged.course || merged.branch || academic.course || '').toUpperCase();
+  const token = programme.replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  let fallback;
+  for (const q of quals) {
+    if (!q || typeof q !== 'object') continue;
+    const label = String(q.qualification || '').toUpperCase();
+    const mark = parseCgpaValue(q.mark);
+    const maxMark = Number(q.maxMark ?? q.maxmark);
+    if (mark == null) continue;
+    if (Number.isFinite(maxMark) && maxMark > 10) continue;
+    if (/\b(SSLC|SSC|10TH|HSC|12TH|PLUS\s*TWO|PLUS2|PUC)\b/.test(label)) continue;
+    const matchesCourse = token && label.replace(/[^A-Z0-9]/g, '').includes(token);
+    if (
+      /\b(CGPA|CURRENT|MCA|BCA|BTECH|MBA|MTECH)\b/.test(label)
+      || matchesCourse
+      || !label
+    ) {
+      return mark;
+    }
+    if (fallback == null) fallback = mark;
+  }
+  return fallback;
 }
 
 function resolveSessionPhotoUrl(merged) {
@@ -760,6 +798,10 @@ const Auth = {
           ? merged.assignedClassBatches
           : (Array.isArray(prev.assignedClassBatches) ? prev.assignedClassBatches : []),
         cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
+        academic: merged.academic || prev.academic || {},
+        qualifications: Array.isArray(merged.qualifications)
+          ? merged.qualifications
+          : (Array.isArray(prev.qualifications) ? prev.qualifications : []),
         backlogs: merged.backlogs ?? prev.backlogs,
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || prev.photoUrl || '',
         photoProxyUrl: merged.photoProxyUrl || prev.photoProxyUrl || '',
@@ -1063,7 +1105,16 @@ const Auth = {
         stud_name: merged.stud_name || resolvedName,
         photoUrl: resolveSessionPhotoUrl(merged) || merged.photoUrl || '',
         phone: resolveSessionPhone(merged) || merged.phone || prev.phone || '',
-        cgpa: resolveSessionCgpa(merged) ?? merged.cgpa ?? prev.cgpa,
+        academic: p.academic || merged.academic || prev.academic || {},
+        qualifications: Array.isArray(p.qualifications)
+          ? p.qualifications
+          : (Array.isArray(merged.qualifications) ? merged.qualifications : (prev.qualifications || [])),
+        cgpa: resolveSessionCgpa({
+          ...merged,
+          academic: p.academic || merged.academic,
+          qualifications: p.qualifications || merged.qualifications,
+          cgpa: resolvedCgpa ?? p.cgpa,
+        }) ?? resolvedCgpa ?? merged.cgpa ?? prev.cgpa,
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
       // Incomplete profile: send student to Profile & Resumes until fields are filled.

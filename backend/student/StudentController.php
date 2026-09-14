@@ -138,11 +138,7 @@ final class StudentController
     $profile = $this->getStudentProfile($user);
 
     $studentId = (string) $profile['_id'];
-    $cgpa = (float) (
-      $profile['cgpa']
-      ?? ($profile['academic']['cgpa'] ?? 0)
-      ?? ($profile['academic']['mca']['cgpa'] ?? 0)
-    );
+    $cgpa = (new AesApiService())->resolveStudentCgpa($profile) ?? 0.0;
 
     $applications = (new ApplicationModel())->count(['studentId' => Security::toObjectId($studentId)]);
     $resumeCount = !empty($profile['resume']) ? 1 : 0;
@@ -202,31 +198,16 @@ final class StudentController
 
     $academic = is_array($out['academic'] ?? null) ? $out['academic'] : [];
     $personal = is_array($out['personal'] ?? null) ? $out['personal'] : [];
-    if (
-      (empty($academic['cgpa']) || (float) $academic['cgpa'] <= 0)
-      && !empty($academic['qualifications'])
-      && is_array($academic['qualifications'])
-    ) {
-      foreach ($academic['qualifications'] as $q) {
-        if (!is_array($q)) {
-          continue;
-        }
-        $label = strtoupper((string) ($q['qualification'] ?? ''));
-        $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
-        $maxMark = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : null;
-        if (
-          $mark !== null
-          && $mark > 0
-          && $mark <= 10
-          && (
-            preg_match('/\b(CGPA|CURRENT)\b/', $label) === 1
-            || ($label === '' && ($maxMark === null || $maxMark <= 10))
-          )
-        ) {
-          $academic['cgpa'] = $mark;
-          $out['academic'] = $academic;
-          break;
-        }
+    $aesApi = new AesApiService();
+    if (empty($academic['cgpa']) || (float) $academic['cgpa'] <= 0) {
+      $resolvedCgpa = $aesApi->resolveStudentCgpa(array_merge($out, [
+        'academic' => $academic,
+        'programme' => (string) ($out['programme'] ?? $out['course'] ?? ''),
+      ]));
+      if ($resolvedCgpa !== null) {
+        $academic['cgpa'] = $resolvedCgpa;
+        $out['academic'] = $academic;
+        $out['cgpa'] = $resolvedCgpa;
       }
     }
     $merged = $aes->applyAesSessionToUserFields(array_merge(
@@ -400,6 +381,18 @@ final class StudentController
     $out['lockedFields'] = $fieldState['lockedFields'];
     $out['editableFields'] = $fieldState['editableFields'];
     $out['missingFields'] = $fieldSvc->missingFieldsForStudent($profile);
+    if (empty($out['cgpa']) || (float) $out['cgpa'] <= 0) {
+      $again = $aesApi->resolveStudentCgpa(array_merge($out, [
+        'academic' => is_array($out['academic'] ?? null) ? $out['academic'] : $academic,
+      ]));
+      if ($again !== null) {
+        $out['cgpa'] = $again;
+        if (!is_array($out['academic'] ?? null)) {
+          $out['academic'] = [];
+        }
+        $out['academic']['cgpa'] = $again;
+      }
+    }
     // Ensure response CGPA is never an invalid admno-like value.
     $respCgpa = $out['cgpa'] ?? ($out['academic']['cgpa'] ?? null);
     if (!$fieldSvc->isValidCgpa($respCgpa)) {

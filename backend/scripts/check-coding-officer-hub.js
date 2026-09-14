@@ -17,7 +17,7 @@ const must = [
   'id="contestList"',
   'cod-role-officer',
   'codRoleHint',
-  'coding-page.js?v=20260914codwin',
+  'coding-page.js?v=20260914cls',
   'id="fSearch"',
   'id="dirClassChart"',
   'id="contestArena"',

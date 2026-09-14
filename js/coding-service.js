@@ -220,19 +220,9 @@
   }
 
   function isContestOpen(test) {
+    if (test && typeof test.contestOpen === 'boolean') return test.contestOpen;
     const type = String(test?.contestType || 'none');
-    if (type === 'none' || !type) return true;
-    const now = new Date();
-    if (type === 'weekly') {
-      const want = Number(test?.contestWeekday);
-      if (!Number.isFinite(want) || want < 1 || want > 7) return false;
-      const iso = now.getDay() === 0 ? 7 : now.getDay();
-      return iso === want;
-    }
-    if (type === 'monthly') {
-      const want = Number(test?.contestMonthDay);
-      return Number.isFinite(want) && want >= 1 && want <= 28 && now.getDate() === want;
-    }
+    if (type === 'none' || type === 'weekly' || type === 'monthly' || !type) return true;
     return true;
   }
 

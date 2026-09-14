@@ -308,12 +308,22 @@ final class StaffContext
      */
     public static function studentClassBatch(array $student): string
     {
-        return trim((string) (
-            $student['classBatch']
-            ?? $student['stud_class']
-            ?? $student['batch']
-            ?? ''
-        ));
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        foreach ([
+            $student['classBatch'] ?? '',
+            $student['stud_class'] ?? '',
+            $academic['classBatch'] ?? '',
+            $academic['stud_class'] ?? '',
+            $student['batch'] ?? '',
+            $academic['batch'] ?? '',
+        ] as $value) {
+            $label = trim((string) $value);
+            if ($label !== '') {
+                return $label;
+            }
+        }
+
+        return '';
     }
 
     /**

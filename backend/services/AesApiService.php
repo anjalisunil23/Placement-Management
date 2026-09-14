@@ -1080,11 +1080,22 @@ final class AesApiService
             : $this->parseEducationQualifications($normalized);
         if ($qualifications !== []) {
             $normalized = $this->applySchoolMarksFromQualificationRows($normalized, $qualifications);
+            if ((empty($normalized['cgpa']) || (float) $normalized['cgpa'] <= 0)) {
+                $fromRows = $this->pickCgpaFromQualificationRows($qualifications, (string) (
+                    $normalized['stud_cource_short'] ?? $normalized['programme'] ?? $normalized['course'] ?? ''
+                ));
+                if ($fromRows !== null) {
+                    $normalized['cgpa'] = $fromRows;
+                }
+            }
             $normalized['qualifications'] = $this->relabelCurrentProgramQualificationRows($qualifications, $normalized);
         }
 
         if ((empty($normalized['cgpa']) || (float) $normalized['cgpa'] <= 0) && $qualifications !== []) {
-            $fromRows = $this->pickCgpaFromQualificationRows($qualifications);
+            $fromRows = $this->pickCgpaFromQualificationRows(
+                $normalized['qualifications'] ?? $qualifications,
+                (string) ($normalized['stud_cource_short'] ?? $normalized['programme'] ?? $normalized['course'] ?? '')
+            );
             if ($fromRows !== null) {
                 $normalized['cgpa'] = $fromRows;
             }
@@ -2085,31 +2096,77 @@ final class AesApiService
     }
 
     /**
+     * Resolve a 10-point CGPA from a student profile, AES record, or qualification rows.
+     * Programme rows (MCA, B.Tech, …) count after "Current CGPA" is relabeled.
+     *
+     * @param array<string, mixed> $profile
+     */
+    public function resolveStudentCgpa(array $profile): ?float
+    {
+        $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+        $fromFields = $this->pickCgpaFromRecord(array_merge($profile, $academic));
+        if ($fromFields !== null) {
+            return $fromFields;
+        }
+        $quals = $academic['qualifications'] ?? $profile['qualifications'] ?? [];
+        if (!is_array($quals) || $quals === []) {
+            return null;
+        }
+        $programme = (string) (
+            $profile['programme']
+            ?? $profile['course']
+            ?? $profile['branch']
+            ?? $academic['course']
+            ?? $profile['departmentName']
+            ?? ''
+        );
+
+        return $this->pickCgpaFromQualificationRows($quals, $programme);
+    }
+
+    /**
      * @param list<array{qualification?: string, mark?: ?float, maxMark?: ?float}> $qualifications
      */
-    private function pickCgpaFromQualificationRows(array $qualifications): ?float
+    private function pickCgpaFromQualificationRows(array $qualifications, string $programme = ''): ?float
     {
+        $fallback = null;
+        $programmeKey = strtoupper(trim($programme));
+        $programmeToken = $programmeKey !== '' ? preg_replace('/[^A-Z0-9]/', '', explode(' ', $programmeKey)[0]) : '';
         foreach ($qualifications as $q) {
             if (!is_array($q)) {
                 continue;
             }
             $label = strtoupper((string) ($q['qualification'] ?? ''));
             $mark = isset($q['mark']) && is_numeric($q['mark']) ? (float) $q['mark'] : null;
-            $maxMark = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : null;
-            $isCgpaRow = preg_match('/\b(CGPA|CURRENT)\b/', $label) === 1
-                || (
-                    $label === ''
-                    && $mark !== null
-                    && $mark > 0
-                    && $mark <= 10
-                    && ($maxMark === null || $maxMark <= 10)
-                );
-            if ($isCgpaRow && $mark !== null && $mark > 0 && $mark <= 10) {
+            $maxMark = isset($q['maxMark']) && is_numeric($q['maxMark']) ? (float) $q['maxMark'] : (
+                isset($q['maxmark']) && is_numeric($q['maxmark']) ? (float) $q['maxmark'] : null
+            );
+            if ($mark === null || $mark <= 0 || $mark > 10) {
+                continue;
+            }
+            if ($maxMark !== null && $maxMark > 10) {
+                continue;
+            }
+            if (preg_match('/\b(SSLC|SSC|10TH|HSC|12TH|PLUS\s*TWO|PLUS2|PUC)\b/', $label) === 1) {
+                continue;
+            }
+            $key = $this->qualificationMatchKey((string) ($q['qualification'] ?? ''), $mark, $maxMark);
+            $matchesProgramme = $programmeToken !== '' && str_contains(preg_replace('/[^A-Z0-9]/', '', $label), $programmeToken);
+            $isCgpaRow = $key === 'current_cgpa'
+                || str_starts_with($key, 'degree:')
+                || $key === 'bca'
+                || $matchesProgramme
+                || preg_match('/\b(CGPA|CURRENT|MCA|BCA|BTECH|MBA|MTECH)\b/', $label) === 1
+                || $label === '';
+            if ($isCgpaRow) {
                 return $mark;
+            }
+            if ($fallback === null) {
+                $fallback = $mark;
             }
         }
 
-        return null;
+        return $fallback;
     }
 
     /**

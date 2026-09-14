@@ -421,8 +421,8 @@
   </div>
 </div>
 
-<script src="js/api.js?v=20260911codpo2"></script>
-<script src="js/app.js?v=20260911codpo2"></script>
+<script src="js/api.js?v=20260914cgpa"></script>
+<script src="js/app.js?v=20260914cgpa"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -971,9 +971,22 @@ if (role === 'student') {
         : '<p class="text-muted-2 mb-0">No applications yet.</p>';
     };
 
-    // Paint from cache immediately, then refresh live apps.
+    // Paint from cache immediately, then refresh live apps and CGPA.
     paintStudent();
+    document.addEventListener('ph-user-updated', paintStudent);
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const dash = await api('/student/dashboard').catch(() => null);
+      if (dash?.success && dash.data) {
+        const n = Number(dash.data.cgpa);
+        if (Number.isFinite(n) && n > 0) {
+          const live = Auth.user() || {};
+          Auth.applySessionUser({
+            ...live,
+            cgpa: n,
+            academic: { ...(live.academic || {}), cgpa: n },
+          });
+        }
+      }
       await StudentApps.fetch().catch(() => null);
       paintStudent();
     }

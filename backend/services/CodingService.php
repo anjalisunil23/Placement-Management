@@ -390,6 +390,7 @@ final class CodingService
         $filters = AptitudeAccessService::sanitizeDirectoryFilters($user, $filters);
         $allowed = AptitudeAccessService::authorizedSubjectUserIds($user);
         $wantContests = (($filters['resultType'] ?? '') === 'contests');
+        $classLookup = trim((string) ($filters['class'] ?? $filters['batch'] ?? ''));
         $rows = $this->attempts->findAll(['status' => 'submitted'], 2000, 0, ['submittedAt' => -1]);
         $byUser = [];
         foreach ($rows as $row) {
@@ -404,29 +405,40 @@ final class CodingService
             if ($wantContests && $contest === 'none') {
                 continue;
             }
-            if (!$wantContests && $contest !== 'none') {
+            if (!$wantContests && $contest !== 'none' && $classLookup === '') {
                 continue;
             }
             $byUser[$uid][] = $row;
         }
         $out = [];
-        $allPercents = [];
-        $bests = [];
-        $totalAttempts = 0;
         foreach ($byUser as $uid => $hist) {
             $row = $this->summarizeDirectoryUser($uid, $hist);
             if (!$this->directoryRowMatches($row, $filters)) {
                 continue;
             }
-            $totalAttempts += (int) ($row['testsAttempted'] ?? 0);
-            $allPercents[] = (float) ($row['averageScore'] ?? 0);
-            $bests[] = (float) ($row['bestScore'] ?? 0);
             $out[] = $row;
         }
+        $class = trim((string) ($filters['class'] ?? ''));
+        if ($class !== '' && !$wantContests) {
+            $out = $this->mergeClassRoster($user, $filters, $out, $byUser);
+        }
         usort($out, static fn ($a, $b) => strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? '')));
+        $allPercents = [];
+        $bests = [];
+        $totalAttempts = 0;
+        $withAttempts = 0;
+        foreach ($out as $row) {
+            $attempts = (int) ($row['testsAttempted'] ?? 0);
+            $totalAttempts += $attempts;
+            if ($attempts > 0) {
+                $withAttempts++;
+                $allPercents[] = (float) ($row['averageScore'] ?? 0);
+                $bests[] = (float) ($row['bestScore'] ?? 0);
+            }
+        }
         $summary = [
             'students' => count($out),
-            'withAttempts' => count($out),
+            'withAttempts' => $withAttempts,
             'totalAttempts' => $totalAttempts,
             'avgPercentage' => $allPercents === [] ? 0 : (int) round(array_sum($allPercents) / count($allPercents)),
             'avgBestScore' => $bests === [] ? 0 : (int) round(array_sum($bests) / count($bests)),
@@ -445,7 +457,7 @@ final class CodingService
             ];
         }
         $q = trim((string) ($filters['q'] ?? ''));
-        $class = trim((string) ($filters['class'] ?? ''));
+        $class = trim((string) ($filters['class'] ?? $filters['batch'] ?? ''));
         $needsFilter = $q === '' && $class === '';
         return [
             'rows' => $needsFilter ? [] : $out,
@@ -479,8 +491,21 @@ final class CodingService
             $title = (string) ($h['testTitle'] ?? 'Coding');
             $cats[$title] = (int) ($h['percentage'] ?? 0);
         }
-        $course = trim((string) ($student['academic']['course'] ?? $student['course'] ?? ''));
-        $classBatch = (string) StaffContext::studentClassBatch($student);
+        $classBatch = StaffContext::studentClassBatch($student);
+        if ($classBatch === '') {
+            $classBatch = StaffContext::studentClassBatch($userDoc);
+        }
+        $course = trim((string) (
+            $student['academic']['course']
+            ?? $student['course']
+            ?? $student['stud_course']
+            ?? $userDoc['course']
+            ?? $userDoc['programme']
+            ?? ''
+        ));
+        if ($course === '' && preg_match('/^([A-Za-z]+)/', $classBatch, $m) === 1) {
+            $course = strtoupper($m[1]);
+        }
         return [
             'userId' => $uid,
             'name' => (string) ($userDoc['name'] ?? $student['name'] ?? 'Student'),
@@ -521,16 +546,96 @@ final class CodingService
         if ($departmentId !== '' && (string) ($row['departmentId'] ?? '') !== $departmentId) {
             return false;
         }
-        if ($classBatch !== '' && strcasecmp((string) ($row['classBatch'] ?? ''), $classBatch) !== 0) {
-            return false;
+        if ($classBatch !== '') {
+            $rowClass = trim((string) ($row['classBatch'] ?? ''));
+            if ($rowClass !== '' && !self::classLabelMatches($rowClass, $classBatch)) {
+                return false;
+            }
         }
-        if ($course !== '' && strcasecmp((string) ($row['course'] ?? ''), $course) !== 0) {
+        if ($classBatch === '' && $course !== '' && !self::courseLabelMatches((string) ($row['course'] ?? ''), $course, (string) ($row['classBatch'] ?? ''))) {
             return false;
         }
         if ($userType !== '' && strcasecmp((string) ($row['userType'] ?? ''), $userType) !== 0) {
             return false;
         }
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $viewer
+     * @param array<string, mixed> $filters
+     * @param array<int, array<string, mixed>> $out
+     * @param array<string, list<array<string, mixed>>> $byUser
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeClassRoster(array $viewer, array $filters, array $out, array $byUser): array
+    {
+        $wantClass = trim((string) ($filters['class'] ?? ''));
+        if ($wantClass === '') {
+            return $out;
+        }
+        $seen = [];
+        foreach ($out as $row) {
+            $uid = (string) ($row['userId'] ?? '');
+            if ($uid !== '') {
+                $seen[$uid] = true;
+            }
+        }
+        $allowed = AptitudeAccessService::authorizedSubjectUserIds($viewer);
+        $deptId = trim((string) ($filters['department'] ?? ''));
+        $query = $deptId !== '' ? ['departmentId' => $deptId] : [];
+        foreach ((new StudentModel())->findAll($query, 3000) as $student) {
+            $uid = trim((string) ($student['userId'] ?? ''));
+            if ($uid === '' || isset($seen[$uid])) {
+                continue;
+            }
+            if (is_array($allowed) && !in_array($uid, $allowed, true)) {
+                continue;
+            }
+            if (!self::classLabelMatches(StaffContext::studentClassBatch($student), $wantClass)) {
+                continue;
+            }
+            $out[] = $this->summarizeDirectoryUser($uid, $byUser[$uid] ?? []);
+            $seen[$uid] = true;
+        }
+        return $out;
+    }
+
+    private static function classLabelMatches(string $studentClass, string $want): bool
+    {
+        $studentClass = trim($studentClass);
+        $want = trim($want);
+        if ($studentClass === '' || $want === '') {
+            return false;
+        }
+        if (strcasecmp($studentClass, $want) === 0) {
+            return true;
+        }
+        $compactA = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $studentClass));
+        $compactB = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $want));
+        if ($compactA !== '' && $compactA === $compactB) {
+            return true;
+        }
+        return strcasecmp(ClassInchargeRegistry::cohortKey($studentClass), ClassInchargeRegistry::cohortKey($want)) === 0;
+    }
+
+    private static function courseLabelMatches(string $studentCourse, string $want, string $studentClass): bool
+    {
+        $want = trim($want);
+        if ($want === '') {
+            return true;
+        }
+        $studentCourse = trim($studentCourse);
+        if ($studentCourse !== '' && strcasecmp($studentCourse, $want) === 0) {
+            return true;
+        }
+        $compactCourse = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $studentCourse));
+        $compactWant = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $want));
+        if ($compactCourse !== '' && $compactWant !== '' && (str_starts_with($compactCourse, $compactWant) || str_starts_with($compactWant, $compactCourse))) {
+            return true;
+        }
+        $compactClass = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $studentClass));
+        return $compactClass !== '' && $compactWant !== '' && str_starts_with($compactClass, $compactWant);
     }
 
     /**
@@ -596,13 +701,18 @@ final class CodingService
         if (!$officerView) {
             foreach ($contests as $i => $contest) {
                 $mine = null;
-                foreach ((array) ($contest['participants'] ?? []) as $p) {
+                $pool = array_merge(
+                    (array) ($contest['liveParticipants'] ?? []),
+                    (array) ($contest['participants'] ?? [])
+                );
+                foreach ($pool as $p) {
                     if ((string) ($p['userId'] ?? '') === $uid) {
                         $mine = $p;
                         break;
                     }
                 }
                 $contests[$i]['myResult'] = $mine;
+                $contests[$i]['liveParticipants'] = [];
                 if (empty($contest['winnersPublished'])) {
                     $contests[$i]['participants'] = $mine ? [$mine] : [];
                     $contests[$i]['winners'] = [];
@@ -664,47 +774,79 @@ final class CodingService
         $ids = array_unique(array_merge(array_keys($tests), array_keys($grouped)));
         foreach ($ids as $tid) {
             $test = $tests[$tid] ?? [];
-            $participants = $grouped[$tid] ?? [];
-            $title = (string) ($test['title'] ?? ($participants[0]['testTitle'] ?? 'Contest'));
-            usort($participants, static function ($a, $b) {
-                $cmp = ($b['percentage'] <=> $a['percentage']);
-                if ($cmp !== 0) {
-                    return $cmp;
-                }
-                $cmp = ($b['score'] <=> $a['score']);
-                if ($cmp !== 0) {
-                    return $cmp;
-                }
-                return strcmp((string) ($a['submittedAt'] ?? ''), (string) ($b['submittedAt'] ?? ''));
-            });
-            $rank = 1;
-            foreach ($participants as $i => $p) {
-                $participants[$i]['rank'] = $rank;
-                $participants[$i]['points'] = (int) round(($p['percentage'] ?? 0) * 10);
-                $rank++;
-            }
-            $open = $test !== [] ? CodingTestModel::isContestOpen($test) : false;
-            $closed = $test !== [] ? !$open : true;
-            $winnersPublished = $closed && $participants !== [];
-            $winners = $winnersPublished ? array_slice($participants, 0, 3) : [];
+            $raw = $grouped[$tid] ?? [];
+            $title = (string) ($test['title'] ?? ($raw[0]['testTitle'] ?? 'Contest'));
             $type = $test !== []
                 ? CodingTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none'))
-                : 'none';
+                : CodingTestModel::normalizeContestType((string) ($raw[0]['contestType'] ?? 'weekly'));
+            $currentKey = CodingTestModel::contestPeriodKey($type);
+            $previousKey = CodingTestModel::previousContestPeriodKey($type);
+            $current = [];
+            $previous = [];
+            foreach ($raw as $p) {
+                $key = CodingTestModel::contestPeriodKey($type, $p['submittedAt'] ?? '');
+                if ($key === $previousKey) {
+                    $previous[] = $p;
+                } else {
+                    $current[] = $p;
+                }
+            }
+            $current = self::rankContestParticipants($current);
+            $previous = self::rankContestParticipants($previous);
+            $open = $test !== [] ? CodingTestModel::isContestOpen($test) : true;
+            $winnersPublished = $previous !== [];
             $out[] = [
                 'id' => $tid,
                 'title' => $title !== '' ? $title : 'Contest',
                 'contestType' => $type,
                 'contestOpen' => $open,
-                'contestClosed' => $closed,
+                'contestClosed' => !$open,
                 'contestScheduleLabel' => $test !== [] ? CodingTestModel::contestScheduleLabel($test) : '',
                 'winnersPublished' => $winnersPublished,
-                'winners' => $winners,
-                'participants' => $winnersPublished ? $participants : [],
-                'participantCount' => count($participants),
+                'winners' => $winnersPublished ? array_slice($previous, 0, 3) : [],
+                'participants' => $winnersPublished ? $previous : [],
+                'liveParticipants' => $current,
+                'participantCount' => count($current),
+                'currentPeriodKey' => $currentKey,
+                'previousPeriodKey' => $previousKey,
             ];
         }
         usort($out, static fn ($a, $b) => strcmp((string) ($a['title'] ?? ''), (string) ($b['title'] ?? '')));
         return $out;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private static function rankContestParticipants(array $rows): array
+    {
+        $best = [];
+        foreach ($rows as $p) {
+            $uid = (string) ($p['userId'] ?? '');
+            $slot = $uid !== '' ? $uid : ('row-' . count($best));
+            if (isset($best[$slot]) && ($p['percentage'] ?? 0) <= ($best[$slot]['percentage'] ?? 0)) {
+                continue;
+            }
+            $best[$slot] = $p;
+        }
+        $rows = array_values($best);
+        usort($rows, static function ($a, $b) {
+            $cmp = ($b['percentage'] <=> $a['percentage']);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            $cmp = ($b['score'] <=> $a['score']);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return strcmp((string) ($a['submittedAt'] ?? ''), (string) ($b['submittedAt'] ?? ''));
+        });
+        foreach ($rows as $i => $p) {
+            $rows[$i]['rank'] = $i + 1;
+            $rows[$i]['points'] = (int) round(($p['percentage'] ?? 0) * 10);
+        }
+        return $rows;
     }
 
     private static function formatDateLabel(mixed $value): string

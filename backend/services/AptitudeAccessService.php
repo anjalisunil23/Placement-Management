@@ -505,6 +505,9 @@ final class AptitudeAccessService
             'resultType' => self::normalizeProgressResultType($filters),
             'q' => trim((string) ($filters['q'] ?? $filters['search'] ?? '')),
         ];
+        if ($out['class'] === '' && $out['batch'] !== '') {
+            $out['class'] = $out['batch'];
+        }
 
         if ($role === 'admin') {
             $out['department'] = trim((string) ($filters['department'] ?? $filters['departmentId'] ?? ''));

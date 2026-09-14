@@ -22,21 +22,60 @@ class CodingTestModel extends BaseModel
         return in_array($raw, ['weekly', 'monthly'], true) ? $raw : 'none';
     }
 
+    public static function contestClock(?\DateTimeInterface $now = null): \DateTimeImmutable
+    {
+        $tz = new \DateTimeZone('Asia/Kolkata');
+        if ($now instanceof \DateTimeInterface) {
+            return \DateTimeImmutable::createFromInterface($now)->setTimezone($tz);
+        }
+
+        return new \DateTimeImmutable('now', $tz);
+    }
+
     public static function isContestOpen(array $test, ?\DateTimeInterface $now = null): bool
     {
         $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
-        if ($type === 'none') {
+        if ($type === 'none' || $type === 'weekly' || $type === 'monthly') {
             return true;
         }
-        $now = $now instanceof \DateTimeInterface
-            ? \DateTimeImmutable::createFromInterface($now)
-            : new \DateTimeImmutable('now');
-        if ($type === 'weekly') {
-            $want = (int) ($test['contestWeekday'] ?? 0);
-            return $want >= 1 && $want <= 7 && (int) $now->format('N') === $want;
+
+        return true;
+    }
+
+    public static function contestPeriodKey(string $type, mixed $when = null): string
+    {
+        $dt = $when instanceof \DateTimeInterface
+            ? self::contestClock($when)
+            : self::contestClockFromValue($when);
+        if ($type === 'monthly') {
+            return $dt->format('Y-m');
         }
-        $want = (int) ($test['contestMonthDay'] ?? 0);
-        return $want >= 1 && $want <= 28 && (int) $now->format('j') === $want;
+
+        return $dt->format('o-\WW');
+    }
+
+    public static function previousContestPeriodKey(string $type, ?\DateTimeInterface $now = null): string
+    {
+        $dt = self::contestClock($now);
+        if ($type === 'monthly') {
+            return $dt->modify('first day of last month')->format('Y-m');
+        }
+
+        return $dt->modify('-7 days')->format('o-\WW');
+    }
+
+    public static function contestClockFromValue(mixed $value): \DateTimeImmutable
+    {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return self::contestClock();
+        }
+        $ts = strtotime($raw);
+        if ($ts === false) {
+            return self::contestClock();
+        }
+
+        return (new \DateTimeImmutable('@' . $ts))->setTimezone(new \DateTimeZone('Asia/Kolkata'));
     }
 
     public static function contestScheduleLabel(array $test): string

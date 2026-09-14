@@ -71,19 +71,7 @@
   function isContestOpenClient(test) {
     if (test && typeof test.contestOpen === 'boolean') return test.contestOpen;
     const type = String(test?.contestType || 'none');
-    if (type === 'none' || !type) return true;
-    const now = new Date();
-    if (type === 'weekly') {
-      const want = Number(test?.contestWeekday);
-      if (!Number.isFinite(want) || want < 1 || want > 7) return false;
-      const iso = now.getDay() === 0 ? 7 : now.getDay();
-      return iso === want;
-    }
-    if (type === 'monthly') {
-      const want = Number(test?.contestMonthDay);
-      return Number.isFinite(want) && want >= 1 && want <= 28 && now.getDate() === want;
-    }
-    return true;
+    return type === 'none' || type === 'weekly' || type === 'monthly' || !type;
   }
 
   function contestScheduleLabel(test) {
@@ -104,7 +92,8 @@
     if (type === 'none') return '';
     const label = contestScheduleLabel(t);
     const open = isContestOpenClient(t);
-    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(label || type)}</span><span class="badge-soft ${open ? 'success' : 'muted'}">${open ? 'Open today' : 'Closed'}</span></div>`;
+    const openLbl = type === 'monthly' ? 'Open this month' : (type === 'weekly' ? 'Open this week' : 'Open now');
+    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(label || type)}</span><span class="badge-soft ${open ? 'success' : 'muted'}">${open ? openLbl : 'Closed'}</span></div>`;
   }
 
   function testMetaLine(t) {
@@ -735,10 +724,14 @@
     const wrap = document.getElementById('dirClassChartWrap');
     const chart = document.getElementById('dirClassChart');
     if (!wrap || !chart) return;
-    const show = progressPanel === 'tests' && !!dirFilterBatch && rows.length;
+    const show = progressPanel === 'tests' && !!dirFilterBatch;
     wrap.classList.toggle('d-none', !show);
     if (!show) {
       chart.innerHTML = '';
+      return;
+    }
+    if (!rows.length) {
+      chart.innerHTML = '<p class="small text-muted-2 mb-0">No students found for this class yet.</p>';
       return;
     }
     const sorted = [...rows].sort((a, b) => (Number(b.bestScore) || 0) - (Number(a.bestScore) || 0));
@@ -767,6 +760,9 @@
       `<div class="col-6 col-md-2"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
     ).join('');
     renderClassChart(waiting ? [] : rows);
+    if (!waiting && dirFilterBatch) {
+      document.getElementById('dirClassChartWrap')?.classList.remove('d-none');
+    }
     let emptyMsg = 'Search a student by name or roll number, or select a class to view progress.';
     if (!waiting && Auth.role() === 'staff' && !staffAssignedBatches().length && !(scope.assignedClassBatches || []).length) {
       emptyMsg = 'No class is assigned to your account. Contact the placement office to monitor student coding progress.';
@@ -822,7 +818,9 @@
     const participants = c.participants || [];
     const mine = c.myResult || participants.find((p) => String(p.userId || '') === String(myUserId)) || null;
     const typeLabel = c.contestScheduleLabel || (c.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest');
-    const status = open ? 'Live now' : (published ? 'Winners published' : 'Closed');
+    const status = open
+      ? (c.contestType === 'monthly' ? 'Open this month' : 'Open this week')
+      : (published ? 'Winners published' : 'Closed');
     const statusCls = open ? 'success' : (published ? 'warning' : 'muted');
     let body = '';
     if (published) {
