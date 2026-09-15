@@ -622,7 +622,18 @@
       if (!t) return;
       const action = t.getAttribute('data-cod-action');
       if (action === 'start') beginExam();
-      if (action === 'cancel' || action === 'done') {
+      if (action === 'cancel') {
+        if (state.test && !state.submitted) {
+          if (!window.confirm('Leave this test and go back? Your code is saved as a draft.')) {
+            return;
+          }
+        }
+        persistCurrent();
+        stopTimer();
+        bindUnload(false);
+        onExit(state?.lastResult);
+      }
+      if (action === 'done') {
         persistCurrent();
         stopTimer();
         bindUnload(false);

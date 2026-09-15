@@ -38,6 +38,9 @@
 <div id="hubView">
   <div class="page-header">
     <div>
+      <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="aptHubBack">
+        <i class="bi bi-arrow-left me-1"></i>Back
+      </button>
       <h1 class="page-title">Aptitude Mock</h1>
     </div>
   </div>
@@ -210,7 +213,12 @@
 
   <div data-exam-panel="exam" class="d-none">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-      <h1 class="page-title mb-0" data-exam="exam-title">Examination</h1>
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-exam-action="cancel">
+          <i class="bi bi-arrow-left me-1"></i>Back
+        </button>
+        <h1 class="page-title mb-0" data-exam="exam-title">Examination</h1>
+      </div>
       <div class="exam-timer" data-exam="timer">00:00</div>
     </div>
     <div class="row g-3">
@@ -460,7 +468,7 @@
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/api.js?v=20260911codpo2"></script>
-<script src="js/app.js?v=20260911codpo2"></script>
-<script src="js/aptitude-exam.js?v=20260814student"></script>
-<script src="js/aptitude-page.js?v=20260824ai3"></script>
+<script src="js/app.js?v=20260915back"></script>
+<script src="js/aptitude-exam.js?v=20260915back"></script>
+<script src="js/aptitude-page.js?v=20260915back"></script>
 </body></html>

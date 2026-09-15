@@ -18,6 +18,7 @@
   let progressPanel = 'tests';
   let myResultsView = 'tests';
   let dirFilterBranch = '';
+  let dirFilterBatch = '';
   let dirSearch = '';
   let dirSearchTimer = 0;
   let bankDifficultyFilter = '';
@@ -716,21 +717,21 @@
   }
 
   function hasDirectoryLookup() {
-    return !!(dirSearch.trim() || dirFilterBranch);
+    return !!(dirSearch.trim() || dirFilterBranch || dirFilterBatch);
   }
 
   function renderClassChart(rows) {
     const wrap = document.getElementById('dirClassChartWrap');
     const chart = document.getElementById('dirClassChart');
     if (!wrap || !chart) return;
-    const show = progressPanel === 'tests' && !!dirFilterBranch;
+    const show = progressPanel === 'tests' && !!(dirFilterBatch || dirFilterBranch);
     wrap.classList.toggle('d-none', !show);
     if (!show) {
       chart.innerHTML = '';
       return;
     }
     if (!rows.length) {
-      chart.innerHTML = '<p class="small text-muted-2 mb-0">No students found for this branch yet.</p>';
+      chart.innerHTML = '<p class="small text-muted-2 mb-0">No students found for this selection yet.</p>';
       return;
     }
     const sorted = [...rows].sort((a, b) => (Number(b.bestScore) || 0) - (Number(a.bestScore) || 0));
@@ -759,18 +760,18 @@
       `<div class="col-6 col-md-2"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
     ).join('');
     renderClassChart(waiting ? [] : rows);
-    if (!waiting && dirFilterBranch) {
+    if (!waiting && (dirFilterBatch || dirFilterBranch)) {
       const title = document.getElementById('dirChartTitle');
-      if (title) title.textContent = `${dirFilterBranch} progress`;
+      if (title) title.textContent = `${dirFilterBatch || dirFilterBranch} progress`;
       document.getElementById('dirClassChartWrap')?.classList.remove('d-none');
     }
-    let emptyMsg = 'Search a student by name or roll number, or select a branch to view progress.';
+    let emptyMsg = 'Search a student by name or roll number, or select a branch and class to view progress.';
     if (!waiting && Auth.role() === 'staff' && !staffAssignedBatches().length && !(scope.assignedClassBatches || []).length) {
       emptyMsg = 'No class is assigned to your account. Contact the placement office to monitor student coding progress.';
     } else if (!waiting) {
-      emptyMsg = dirFilterBranch
-        ? 'No coding progress found for this branch.'
-        : 'No matching student with coding attempts.';
+      emptyMsg = dirFilterBatch
+        ? 'No students found in this class.'
+        : (dirFilterBranch ? 'No coding progress found for this branch.' : 'No matching student with coding attempts.');
     }
     document.getElementById('dirRows').innerHTML = (!waiting && rows.length) ? rows.map((r) => {
       const uid = String(r.userId || '');
@@ -1018,11 +1019,13 @@
       data = await api('/coding/progress/filters?' + new URLSearchParams({
         department: document.getElementById('fDepartment')?.value || '',
         course: dirFilterBranch,
+        class: dirFilterBatch,
       }).toString()).then((r) => r?.success ? r.data : null).catch(() => null);
       if (!data) {
         data = await api('/aptitude/progress/filters?' + new URLSearchParams({
           department: document.getElementById('fDepartment')?.value || '',
           course: dirFilterBranch,
+          class: dirFilterBatch,
         }).toString()).then((r) => r?.success ? r.data : null).catch(() => null);
       }
     }
@@ -1031,6 +1034,7 @@
     }
     applyDirDepartmentFromData(data.departments || []);
     fillSelect(document.getElementById('fBranch'), [{ value: '', label: 'Select a branch' }, ...(data.branches || []).map((b) => ({ value: b, label: b }))], dirFilterBranch);
+    fillSelect(document.getElementById('fBatch'), [{ value: '', label: 'Select a class' }, ...(data.batches || []).map((b) => ({ value: b, label: b }))], dirFilterBatch);
   }
 
   let dirFiltersReady = false;
@@ -1041,11 +1045,18 @@
     document.getElementById('fDepartmentSelect')?.addEventListener('change', async () => {
       document.getElementById('fDepartment').value = document.getElementById('fDepartmentSelect').value;
       dirFilterBranch = '';
+      dirFilterBatch = '';
       await loadDirFilterOptions();
       await loadDirectory();
     });
     document.getElementById('fBranch')?.addEventListener('change', async () => {
       dirFilterBranch = document.getElementById('fBranch').value;
+      dirFilterBatch = '';
+      await loadDirFilterOptions();
+      await loadDirectory();
+    });
+    document.getElementById('fBatch')?.addEventListener('change', async () => {
+      dirFilterBatch = document.getElementById('fBatch').value;
       await loadDirectory();
     });
     document.getElementById('fType')?.addEventListener('change', () => loadDirectory());
@@ -1067,6 +1078,7 @@
     const dept = document.getElementById('fDepartment')?.value || '';
     if (dept) qs.set('department', dept);
     if (dirFilterBranch) qs.set('course', dirFilterBranch);
+    if (dirFilterBatch) qs.set('class', dirFilterBatch);
     const q = dirSearch.trim();
     if (q) qs.set('q', q);
     const type = document.getElementById('fType')?.value || '';
@@ -1237,6 +1249,10 @@
     studentCodModal = document.getElementById('studentCodModal') ? new bootstrap.Modal(document.getElementById('studentCodModal')) : null;
     codAiModal = document.getElementById('codAiBankModal') ? new bootstrap.Modal(document.getElementById('codAiBankModal')) : null;
 
+    document.getElementById('codHubBack')?.addEventListener('click', () => {
+      if (typeof goToPreviousPage === 'function') goToPreviousPage();
+      else window.location.href = (typeof Auth.homePage === 'function' && Auth.homePage()) || 'dashboard.html';
+    });
     document.getElementById('codViewNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-view]');
       if (!link) return;

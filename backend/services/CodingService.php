@@ -411,15 +411,25 @@ final class CodingService
             $byUser[$uid][] = $row;
         }
         $out = [];
+        $byReg = [];
         foreach ($byUser as $uid => $hist) {
             $row = $this->summarizeDirectoryUser($uid, $hist);
+            foreach ($this->registerKeys($row) as $key) {
+                $byReg[$key] = (string) $uid;
+            }
             if (!$this->directoryRowMatches($row, $filters)) {
                 continue;
             }
             $out[] = $row;
         }
         $course = trim((string) ($filters['course'] ?? ''));
-        if ($course !== '' && !$wantContests) {
+        $class = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
+        if ($class !== '' && !$wantContests) {
+            $classRows = $this->mergeClassRoster($user, $filters, $byUser, $byReg);
+            if ($classRows !== []) {
+                $out = $classRows;
+            }
+        } elseif ($course !== '' && !$wantContests) {
             $out = $this->mergeBranchRoster($user, $filters, $out, $byUser);
         }
         usort($out, static fn ($a, $b) => strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? '')));
@@ -458,7 +468,8 @@ final class CodingService
         }
         $q = trim((string) ($filters['q'] ?? ''));
         $course = trim((string) ($filters['course'] ?? ''));
-        $needsFilter = $q === '' && $course === '';
+        $class = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
+        $needsFilter = $q === '' && $course === '' && $class === '';
         return [
             'rows' => $needsFilter ? [] : $out,
             'summary' => $needsFilter ? [
@@ -523,6 +534,7 @@ final class CodingService
     {
         $departmentId = trim((string) ($filters['department'] ?? $filters['departmentId'] ?? ''));
         $course = trim((string) ($filters['course'] ?? ''));
+        $class = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
         $userType = trim((string) ($filters['userType'] ?? ''));
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
         if ($q !== '') {
@@ -532,11 +544,18 @@ final class CodingService
                 return false;
             }
         }
-        if ($departmentId !== '' && (string) ($row['departmentId'] ?? '') !== $departmentId) {
-            return false;
-        }
-        if ($course !== '' && !self::courseLabelMatches((string) ($row['course'] ?? ''), $course, (string) ($row['classBatch'] ?? ''))) {
-            return false;
+        if ($class !== '') {
+            $rowClass = trim((string) ($row['classBatch'] ?? ''));
+            if ($rowClass === '' || !self::classLabelMatches($rowClass, $class)) {
+                return false;
+            }
+        } else {
+            if ($departmentId !== '' && (string) ($row['departmentId'] ?? '') !== $departmentId) {
+                return false;
+            }
+            if ($course !== '' && !self::courseLabelMatches((string) ($row['course'] ?? ''), $course, (string) ($row['classBatch'] ?? ''))) {
+                return false;
+            }
         }
         if ($userType !== '' && strcasecmp((string) ($row['userType'] ?? ''), $userType) !== 0) {
             return false;
@@ -544,13 +563,6 @@ final class CodingService
         return true;
     }
 
-    /**
-     * @param array<string, mixed> $viewer
-     * @param array<string, mixed> $filters
-     * @param array<int, array<string, mixed>> $out
-     * @param array<string, list<array<string, mixed>>> $byUser
-     * @return array<int, array<string, mixed>>
-     */
     /**
      * @param array<string, mixed> $student
      * @param array<string, mixed> $userDoc
@@ -628,6 +640,228 @@ final class CodingService
             $seen[$uid] = true;
         }
         return $out;
+    }
+
+    /**
+     * Complete AES + local roster for the selected class, with coding stats attached.
+     *
+     * @param array<string, mixed> $viewer
+     * @param array<string, mixed> $filters
+     * @param array<string, list<array<string, mixed>>> $byUser
+     * @param array<string, string> $byReg
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeClassRoster(array $viewer, array $filters, array $byUser, array $byReg = []): array
+    {
+        $wantClass = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
+        if ($wantClass === '') {
+            return [];
+        }
+
+        $officer = new OfficerDataService();
+        $ctx = $this->directoryOfficerContext($viewer);
+        $programme = trim((string) ($filters['course'] ?? ''));
+        if ($programme === '') {
+            $programme = $this->programmeFromClass($wantClass);
+        } else {
+            $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        }
+
+        $roster = [];
+        if ($programme !== '') {
+            try {
+                $roster = $officer->listAesClassStudents($ctx, $programme, $wantClass, true);
+            } catch (\Throwable $e) {
+                error_log('[PMS coding class roster AES] ' . $e->getMessage());
+            }
+        }
+        try {
+            foreach ($officer->listLocalClassStudentsForBatch($ctx, $wantClass) as $row) {
+                $roster[] = $row;
+            }
+        } catch (\Throwable $e) {
+            error_log('[PMS coding class roster local] ' . $e->getMessage());
+        }
+
+        if ($byReg === []) {
+            foreach ($byUser as $uid => $hist) {
+                $sum = $this->summarizeDirectoryUser((string) $uid, is_array($hist) ? $hist : []);
+                foreach ($this->registerKeys($sum) as $key) {
+                    $byReg[$key] = (string) $uid;
+                }
+            }
+        }
+
+        $seenUid = [];
+        $seenReg = [];
+        $out = [];
+        foreach ($roster as $src) {
+            if (!is_array($src)) {
+                continue;
+            }
+            $uid = trim((string) ($src['userId'] ?? ''));
+            $userDoc = is_array($src['user'] ?? null) ? $src['user'] : [];
+            if ($uid === '') {
+                $uid = trim((string) ($userDoc['id'] ?? $userDoc['_id'] ?? ''));
+            }
+            $regKeys = $this->registerKeys($src);
+            if ($uid === '') {
+                foreach ($regKeys as $key) {
+                    if (isset($byReg[$key])) {
+                        $uid = $byReg[$key];
+                        break;
+                    }
+                }
+            }
+            if ($uid !== '' && isset($seenUid[$uid])) {
+                continue;
+            }
+            $primaryReg = strtoupper(trim((string) ($src['registerNumber'] ?? $src['admno'] ?? $src['studentCode'] ?? '')));
+            if ($primaryReg !== '' && isset($seenReg[$primaryReg])) {
+                continue;
+            }
+
+            $row = $uid !== ''
+                ? $this->summarizeDirectoryUser($uid, $byUser[$uid] ?? [])
+                : $this->emptyDirectoryRowFromRoster($src);
+            $name = trim((string) ($src['displayName'] ?? $src['name'] ?? ($userDoc['name'] ?? '')));
+            if ($name !== '') {
+                $row['name'] = $name;
+            }
+            if ($primaryReg !== '') {
+                $row['registerNumber'] = $primaryReg;
+                $row['studentCode'] = $primaryReg;
+            }
+            $classBatch = trim((string) ($src['classBatch'] ?? $src['stud_class'] ?? ''));
+            if ($classBatch !== '') {
+                $row['classBatch'] = $classBatch;
+            }
+            $course = $this->studentBranchLabel($src, $userDoc, $classBatch !== '' ? $classBatch : (string) ($row['classBatch'] ?? ''));
+            if ($course !== '') {
+                $row['course'] = $course;
+            }
+
+            $searchFilters = $filters;
+            $searchFilters['class'] = '';
+            $searchFilters['course'] = '';
+            $searchFilters['department'] = '';
+            if (!$this->directoryRowMatches($row, $searchFilters)) {
+                continue;
+            }
+
+            $out[] = $row;
+            if ($uid !== '') {
+                $seenUid[$uid] = true;
+            }
+            foreach ($regKeys as $key) {
+                $seenReg[$key] = true;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $viewer
+     * @return array<string, mixed>
+     */
+    private function directoryOfficerContext(array $viewer): array
+    {
+        $role = \PMS\Middleware\AuthMiddleware::resolvedRole($viewer);
+        if ($role === 'staff' || ($viewer['role'] ?? '') === 'staff') {
+            return StaffContext::officerCompatible(StaffContext::resolve($viewer));
+        }
+
+        return PlacementOfficerContext::resolve($viewer);
+    }
+
+    private function programmeFromClass(string $classBatch): string
+    {
+        $norm = DepartmentProgrammeCatalog::normalizeCode($classBatch);
+        if ($norm === '') {
+            return '';
+        }
+        $best = '';
+        foreach (DepartmentProgrammeCatalog::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                $code = DepartmentProgrammeCatalog::normalizeCode((string) ($programme['code'] ?? ''));
+                if ($code !== '' && str_starts_with($norm, $code) && strlen($code) > strlen($best)) {
+                    $best = (string) $programme['code'];
+                }
+                foreach (($programme['aliases'] ?? []) as $alias) {
+                    $aliasNorm = DepartmentProgrammeCatalog::normalizeCode((string) $alias);
+                    if ($aliasNorm !== '' && str_starts_with($norm, $aliasNorm) && strlen($aliasNorm) > strlen($best)) {
+                        $best = (string) $programme['code'];
+                    }
+                }
+            }
+        }
+        if ($best !== '') {
+            return DepartmentProgrammeCatalog::resolveProgrammeCode($best);
+        }
+        if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+            return 'INMCA';
+        }
+        if (str_starts_with($norm, 'MCA')) {
+            return 'MCA';
+        }
+        if (str_contains($norm, 'BCA')) {
+            return 'BCA';
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return list<string>
+     */
+    private function registerKeys(array $row): array
+    {
+        $keys = [];
+        foreach (['registerNumber', 'admno', 'registerno', 'studentCode', 'studentId'] as $field) {
+            $raw = strtoupper(trim((string) ($row[$field] ?? '')));
+            if ($raw === '') {
+                continue;
+            }
+            $keys[$raw] = true;
+            $compact = strtoupper((string) preg_replace('/[^A-Z0-9]/', '', $raw));
+            if ($compact !== '') {
+                $keys[$compact] = true;
+            }
+        }
+
+        return array_keys($keys);
+    }
+
+    /**
+     * @param array<string, mixed> $src
+     * @return array<string, mixed>
+     */
+    private function emptyDirectoryRowFromRoster(array $src): array
+    {
+        $reg = strtoupper(trim((string) ($src['registerNumber'] ?? $src['admno'] ?? $src['studentCode'] ?? '')));
+        $classBatch = trim((string) ($src['classBatch'] ?? $src['stud_class'] ?? ''));
+        $userDoc = is_array($src['user'] ?? null) ? $src['user'] : [];
+        $dept = is_array($src['department'] ?? null) ? $src['department'] : [];
+
+        return [
+            'userId' => '',
+            'name' => (string) ($src['displayName'] ?? $src['name'] ?? ($userDoc['name'] ?? 'Student')),
+            'userType' => 'student',
+            'registerNumber' => $reg,
+            'studentCode' => $reg,
+            'departmentId' => (string) ($src['departmentId'] ?? $dept['id'] ?? ''),
+            'classBatch' => $classBatch,
+            'course' => $this->studentBranchLabel($src, $userDoc, $classBatch),
+            'testsAttempted' => 0,
+            'averageScore' => 0,
+            'bestScore' => 0,
+            'accuracy' => 0,
+            'recentScore' => 0,
+            'categoryPerformance' => [],
+            'history' => [],
+        ];
     }
 
     private static function classLabelMatches(string $studentClass, string $want): bool

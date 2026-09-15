@@ -276,6 +276,11 @@
       const action = t.getAttribute('data-exam-action');
       if (action === 'start') beginExam();
       if (action === 'cancel') {
+        if (state.questions && state.questions.length && !state.submitted) {
+          if (!window.confirm('Leave this test and go back? Your answers so far will not be submitted.')) {
+            return;
+          }
+        }
         stopTimer();
         onExit();
       }

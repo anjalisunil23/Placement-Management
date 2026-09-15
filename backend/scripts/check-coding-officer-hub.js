@@ -17,8 +17,9 @@ const must = [
   'id="contestList"',
   'cod-role-officer',
   'codRoleHint',
-  'coding-page.js?v=20260914br',
+  'coding-page.js?v=20260915back',
   'id="fSearch"',
+  'id="fBatch"',
   'id="dirClassChart"',
   'id="contestArena"',
   '>Add</button>',
@@ -55,7 +56,7 @@ if (!page.includes("view === 'take' && access.canTake")) {
   console.error('Take panel is not gated on canTake');
   process.exit(1);
 }
-if (!page.includes('hasDirectoryLookup') || !page.includes('winnersPublished') || !page.includes('renderClassChart')) {
+if (!page.includes('hasDirectoryLookup') || !page.includes('dirFilterBatch') || !page.includes('winnersPublished') || !page.includes('renderClassChart')) {
   console.error('coding-page missing search/class chart or winner boards');
   process.exit(1);
 }
