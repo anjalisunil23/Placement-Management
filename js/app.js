@@ -546,37 +546,11 @@ function renderNavEntry(n, active, role) {
   </a>`;
 }
 
-function goToPreviousPage() {
-  if (leaveOpenExamIfAny()) return;
+function bindPageCrumbs() {
   const home = (typeof Auth.homePage === 'function' && Auth.homePage()) || 'dashboard.html';
-  const ref = document.referrer;
-  try {
-    if (ref) {
-      const from = new URL(ref);
-      const here = new URL(window.location.href);
-      const sameSite = from.origin === here.origin;
-      const samePath = from.pathname.replace(/\/+$/, '') === here.pathname.replace(/\/+$/, '');
-      if (sameSite && !samePath && window.history.length > 1) {
-        window.history.back();
-        return;
-      }
-    }
-  } catch {
-    /* ignore invalid referrer */
-  }
-  window.location.href = home;
-}
-
-function leaveOpenExamIfAny() {
-  const examShell = document.getElementById('examShell');
-  if (!examShell || examShell.classList.contains('d-none')) return false;
-  const visiblePanel = [...examShell.querySelectorAll('[data-cod-panel], [data-exam-panel]')]
-    .find((panel) => !panel.classList.contains('d-none'));
-  if (!visiblePanel) return false;
-  const btn = visiblePanel.querySelector('[data-cod-action="done"], [data-exam-action="done"], [data-cod-action="cancel"], [data-exam-action="cancel"]');
-  if (!btn) return false;
-  btn.click();
-  return true;
+  document.querySelectorAll('.ph-crumb-home').forEach((a) => {
+    a.setAttribute('href', home);
+  });
 }
 
 function renderShell(active) {
@@ -591,7 +565,6 @@ function renderShell(active) {
     ? 'Profile & Resumes'
     : (PAGE_LABELS[active] || PAGE_LABELS[activeBase] || BRAND.title);
   const showTopbarTitle = activeBase !== 'staff-recommend.html';
-  const showPageBack = activeBase !== 'dashboard.html' && activeBase !== 'index.html';
 
   if (sidebar) {
     const navItems = filteredNav();
@@ -645,7 +618,6 @@ function renderShell(active) {
         : (role === 'student' || role === 'staff' || role === 'alumni' || role === 'admin' || role === 'placement_officer' ? '' : `${ROLE_LABELS[role]} workspace`));
     topbar.innerHTML = `
       <button class="icon-btn d-lg-none" id="menuBtn" aria-label="Menu"><i class="bi bi-list"></i></button>
-      ${showPageBack ? `<button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" id="pageBackBtn" title="Go to previous page" aria-label="Go to previous page"><i class="bi bi-arrow-left"></i><span class="d-none d-sm-inline">Back</span></button>` : ''}
       ${showTopbarTitle ? `<div class="d-none d-md-block">
         <div class="fw-semibold" style="font-size:.95rem;line-height:1.2">${escapeAttr(topbarTitle)}</div>
         ${topbarSub ? `<div class="small text-muted-2">${escapeAttr(topbarSub)}</div>` : ''}
@@ -667,10 +639,7 @@ function renderShell(active) {
       </div>`;
   }
 
-  document.getElementById('pageBackBtn')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    goToPreviousPage();
-  });
+  bindPageCrumbs();
 
   const menuBtn = document.getElementById("menuBtn");
   const back = document.querySelector('.backdrop') || document.createElement("div");

@@ -782,7 +782,9 @@
         <td>${esc(r.testsAttempted ?? r.attempts ?? 0)}</td>
         <td>${esc(r.averageScore ?? r.percentage ?? 0)}%</td>
         <td>${esc(r.bestScore ?? 0)}%</td>
-        <td>${uid ? `<button type="button" class="btn btn-sm btn-outline-primary" data-detail="${esc(uid)}">View</button>` : ''}</td>
+        <td>${uid
+          ? `<button type="button" class="btn btn-sm btn-outline-primary" data-detail="${esc(uid)}">View</button>`
+          : `<span class="small text-muted-2" title="No PlaceHub login is linked, so coding history cannot be opened.">—</span>`}</td>
       </tr>`;
     }).join('') : `<tr><td colspan="7" class="text-muted-2 p-3">${emptyMsg}</td></tr>`;
     document.querySelectorAll('[data-detail]').forEach((btn) => {
@@ -1249,10 +1251,6 @@
     studentCodModal = document.getElementById('studentCodModal') ? new bootstrap.Modal(document.getElementById('studentCodModal')) : null;
     codAiModal = document.getElementById('codAiBankModal') ? new bootstrap.Modal(document.getElementById('codAiBankModal')) : null;
 
-    document.getElementById('codHubBack')?.addEventListener('click', () => {
-      if (typeof goToPreviousPage === 'function') goToPreviousPage();
-      else window.location.href = (typeof Auth.homePage === 'function' && Auth.homePage()) || 'dashboard.html';
-    });
     document.getElementById('codViewNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-view]');
       if (!link) return;

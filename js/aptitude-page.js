@@ -2758,10 +2758,6 @@
     const initialView = (location.hash || '').replace(/^#/, '') || defaultView();
     await applyView(initialView);
 
-    document.getElementById('aptHubBack')?.addEventListener('click', () => {
-      if (typeof goToPreviousPage === 'function') goToPreviousPage();
-      else window.location.href = (typeof Auth.homePage === 'function' && Auth.homePage()) || 'dashboard.html';
-    });
     window.addEventListener('hashchange', () => {
       const view = (location.hash || '').replace(/^#/, '') || defaultView();
       applyView(view).catch(() => {});

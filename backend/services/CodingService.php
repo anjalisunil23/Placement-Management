@@ -692,19 +692,29 @@ final class CodingService
             }
         }
 
-        $seenUid = [];
-        $seenReg = [];
-        $out = [];
         foreach ($roster as $src) {
             if (!is_array($src)) {
                 continue;
             }
-            $uid = trim((string) ($src['userId'] ?? ''));
-            $userDoc = is_array($src['user'] ?? null) ? $src['user'] : [];
-            if ($uid === '') {
-                $uid = trim((string) ($userDoc['id'] ?? $userDoc['_id'] ?? ''));
+            $fromRow = $this->rosterSourceUserId($src);
+            if ($fromRow === '') {
+                continue;
+            }
+            foreach ($this->registerKeys($src) as $key) {
+                $byReg[$key] = $fromRow;
+            }
+        }
+
+        $seenUid = [];
+        $seenReg = [];
+        $out = [];
+        $studentModel = new StudentModel();
+        foreach ($roster as $src) {
+            if (!is_array($src)) {
+                continue;
             }
             $regKeys = $this->registerKeys($src);
+            $uid = $this->rosterSourceUserId($src);
             if ($uid === '') {
                 foreach ($regKeys as $key) {
                     if (isset($byReg[$key])) {
@@ -713,33 +723,46 @@ final class CodingService
                     }
                 }
             }
-            if ($uid !== '' && isset($seenUid[$uid])) {
-                continue;
+            if ($uid === '') {
+                foreach ($regKeys as $key) {
+                    $local = $studentModel->findByRegisterNumber($key);
+                    $found = trim((string) ($local['userId'] ?? ''));
+                    if ($found !== '') {
+                        $uid = $found;
+                        $byReg[$key] = $found;
+                        break;
+                    }
+                }
             }
-            $primaryReg = strtoupper(trim((string) ($src['registerNumber'] ?? $src['admno'] ?? $src['studentCode'] ?? '')));
-            if ($primaryReg !== '' && isset($seenReg[$primaryReg])) {
+
+            $existingIdx = null;
+            if ($uid !== '' && isset($seenUid[$uid])) {
+                $existingIdx = $seenUid[$uid];
+            }
+            if ($existingIdx === null) {
+                foreach ($regKeys as $key) {
+                    if (isset($seenReg[$key])) {
+                        $existingIdx = $seenReg[$key];
+                        break;
+                    }
+                }
+            }
+            if ($existingIdx !== null) {
+                if ($uid !== '' && trim((string) ($out[$existingIdx]['userId'] ?? '')) === '') {
+                    $out[$existingIdx] = $this->applyRosterIdentity(
+                        $this->summarizeDirectoryUser($uid, $byUser[$uid] ?? []),
+                        $src,
+                        $out[$existingIdx]
+                    );
+                    $seenUid[$uid] = $existingIdx;
+                }
                 continue;
             }
 
             $row = $uid !== ''
                 ? $this->summarizeDirectoryUser($uid, $byUser[$uid] ?? [])
                 : $this->emptyDirectoryRowFromRoster($src);
-            $name = trim((string) ($src['displayName'] ?? $src['name'] ?? ($userDoc['name'] ?? '')));
-            if ($name !== '') {
-                $row['name'] = $name;
-            }
-            if ($primaryReg !== '') {
-                $row['registerNumber'] = $primaryReg;
-                $row['studentCode'] = $primaryReg;
-            }
-            $classBatch = trim((string) ($src['classBatch'] ?? $src['stud_class'] ?? ''));
-            if ($classBatch !== '') {
-                $row['classBatch'] = $classBatch;
-            }
-            $course = $this->studentBranchLabel($src, $userDoc, $classBatch !== '' ? $classBatch : (string) ($row['classBatch'] ?? ''));
-            if ($course !== '') {
-                $row['course'] = $course;
-            }
+            $row = $this->applyRosterIdentity($row, $src);
 
             $searchFilters = $filters;
             $searchFilters['class'] = '';
@@ -750,15 +773,67 @@ final class CodingService
             }
 
             $out[] = $row;
+            $idx = count($out) - 1;
             if ($uid !== '') {
-                $seenUid[$uid] = true;
+                $seenUid[$uid] = $idx;
             }
             foreach ($regKeys as $key) {
-                $seenReg[$key] = true;
+                $seenReg[$key] = $idx;
             }
         }
 
         return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $src
+     */
+    private function rosterSourceUserId(array $src): string
+    {
+        $uid = trim((string) ($src['userId'] ?? ''));
+        if ($uid !== '') {
+            return $uid;
+        }
+        $userDoc = is_array($src['user'] ?? null) ? $src['user'] : [];
+
+        return trim((string) ($userDoc['id'] ?? $userDoc['_id'] ?? ''));
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $src
+     * @param array<string, mixed>|null $previous
+     * @return array<string, mixed>
+     */
+    private function applyRosterIdentity(array $row, array $src, ?array $previous = null): array
+    {
+        if (is_array($previous)) {
+            foreach (['name', 'registerNumber', 'studentCode', 'classBatch', 'course'] as $field) {
+                if (trim((string) ($row[$field] ?? '')) === '' && trim((string) ($previous[$field] ?? '')) !== '') {
+                    $row[$field] = $previous[$field];
+                }
+            }
+        }
+        $userDoc = is_array($src['user'] ?? null) ? $src['user'] : [];
+        $name = trim((string) ($src['displayName'] ?? $src['name'] ?? ($userDoc['name'] ?? '')));
+        if ($name !== '') {
+            $row['name'] = $name;
+        }
+        $primaryReg = strtoupper(trim((string) ($src['registerNumber'] ?? $src['admno'] ?? $src['studentCode'] ?? '')));
+        if ($primaryReg !== '') {
+            $row['registerNumber'] = $primaryReg;
+            $row['studentCode'] = $primaryReg;
+        }
+        $classBatch = trim((string) ($src['classBatch'] ?? $src['stud_class'] ?? ''));
+        if ($classBatch !== '') {
+            $row['classBatch'] = $classBatch;
+        }
+        $course = $this->studentBranchLabel($src, $userDoc, $classBatch !== '' ? $classBatch : (string) ($row['classBatch'] ?? ''));
+        if ($course !== '') {
+            $row['course'] = $course;
+        }
+
+        return $row;
     }
 
     /**
