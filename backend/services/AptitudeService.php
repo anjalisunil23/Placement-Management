@@ -367,6 +367,57 @@ final class AptitudeService
 
     /**
      * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
+    public function getAiServiceStatus(array $admin): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        return (new AptitudeAiQuestionService())->checkStatus();
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
+    public function generateAiBankQuestions(array $admin, array $body): array
+    {
+        try {
+            return (new AptitudeAiQuestionService())->generateForUser($admin, $body);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 503);
+        } catch (\Throwable $e) {
+            error_log('[PMS Aptitude AI] generate failed: ' . $e->getMessage());
+            Response::error('AI question generation is temporarily unavailable. Please try again.', 503);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @param array<int, array<string, mixed>> $questions
+     * @return array<string, mixed>
+     */
+    public function saveAiBankQuestions(array $admin, array $questions, string $category = 'General Aptitude'): array
+    {
+        if ($questions === []) {
+            Response::error('No questions selected to save.', 422);
+        }
+
+        try {
+            return (new AptitudeAiQuestionService())->saveApprovedForUser($admin, $questions, $category);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            error_log('[PMS Aptitude AI] save failed: ' . $e->getMessage());
+            Response::error('Could not save AI questions. Please try again.', 500);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $admin
      */
     public function deleteBankQuestion(array $admin, string $id): void
     {

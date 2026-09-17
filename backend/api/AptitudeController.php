@@ -41,6 +41,8 @@ final class AptitudeController
             'questionTypes' => ['mcq'],
             'bulkExcelHeaders' => ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'marks', 'explanation', 'category'],
             'bulkFormats' => ['xlsx', 'xls'],
+            'aiTopicsByCategory' => \PMS\Services\AptitudeAiQuestionService::TOPICS_BY_CATEGORY,
+            'aiQuestionCountMax' => 50,
         ]);
     }
 
@@ -133,6 +135,36 @@ final class AptitudeController
         Response::success(
             $this->service->bulkAddToBank($user, $payload, $category),
             'Question bank updated.'
+        );
+    }
+
+    /** GET /api/aptitude/ai/status */
+    public function aiStatus(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->getAiServiceStatus($user));
+    }
+
+    /** POST /api/aptitude/ai/generate */
+    public function generateAiQuestions(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->service->generateAiBankQuestions($user, $this->body()),
+            'AI questions generated.'
+        );
+    }
+
+    /** POST /api/aptitude/ai/save */
+    public function saveAiQuestions(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $questions = is_array($body['questions'] ?? null) ? $body['questions'] : [];
+        $category = (string) ($body['category'] ?? 'General Aptitude');
+        Response::success(
+            $this->service->saveAiBankQuestions($user, $questions, $category),
+            'Selected AI questions saved to bank.'
         );
     }
 

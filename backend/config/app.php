@@ -127,4 +127,10 @@ return [
             'emails' => ['jubymathew@amaljyothi.ac.in', 'juby.mathew@amaljyothi.ac.in', 'jubym@amaljyothi.ac.in'],
         ],
     ],
+    'openai' => [
+        'api_key' => trim((string) ($_ENV['OPENAI_API_KEY'] ?? '')),
+        'model' => trim((string) ($_ENV['OPENAI_MODEL'] ?? 'gpt-4o-mini')),
+        'timeout' => (int) ($_ENV['OPENAI_TIMEOUT'] ?? 120),
+        'base_url' => rtrim((string) ($_ENV['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1'), '/'),
+    ],
 ];

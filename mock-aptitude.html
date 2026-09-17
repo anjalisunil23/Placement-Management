@@ -169,7 +169,10 @@
       <div id="manageBankPanel" class="d-none">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
           <p class="small text-muted-2 mb-0">Reusable MCQ bucket — store Easy, Medium, and Hard questions for tests and contests.</p>
-          <button type="button" class="btn btn-sm btn-primary" id="btnBankUploadPanel"><i class="bi bi-cloud-upload me-1"></i>Bulk upload to bank</button>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnBankAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btnBankUploadPanel"><i class="bi bi-cloud-upload me-1"></i>Bulk upload to bank</button>
+          </div>
         </div>
         <div class="row g-2 mb-3" id="bankStats"></div>
         <div class="row g-2 align-items-end mb-3">
@@ -288,6 +291,16 @@
             <label class="btn btn-outline-primary btn-sm" for="tfSourceManual">Manual</label>
             <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceRandom" value="random">
             <label class="btn btn-outline-primary btn-sm" for="tfSourceRandom">Random from bank</label>
+            <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceAi" value="ai">
+            <label class="btn btn-outline-primary btn-sm" for="tfSourceAi">AI Generate</label>
+          </div>
+        </div>
+
+        <div class="col-12 d-none" id="tfAiPanel">
+          <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
+            <p class="small text-muted-2 mb-2">Generate aptitude MCQs with OpenAI, review and edit them, then add to this test. Questions are not published until you save the test.</p>
+            <button type="button" class="btn btn-sm btn-primary" id="btnTfOpenAi"><i class="bi bi-stars me-1"></i>Generate questions</button>
+            <div id="tfAiAddedSummary" class="small mt-2 d-none"></div>
           </div>
         </div>
 
@@ -399,6 +412,49 @@
   </div>
 </div></div></div>
 
+<!-- AI question generation -->
+<div class="modal fade" id="aptAiModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="aptAiModalTitle">AI Generate Questions</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div id="aptAiFormPanel">
+      <p class="small text-muted-2 mb-3" id="aptAiStatusHint">Generate aptitude MCQs with OpenAI. Review and edit before saving — nothing is published automatically.</p>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiCategory">Category</label><select class="form-select" id="aptAiCategory"></select></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiTopic">Topic</label><input class="form-control" id="aptAiTopic" list="aptAiTopicList" placeholder="e.g. Percentage, Syllogism…"/><datalist id="aptAiTopicList"></datalist></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiDifficulty">Difficulty</label><select class="form-select" id="aptAiDifficulty"></select></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiCount">Number of questions</label><input class="form-control" type="number" id="aptAiCount" min="1" max="50" value="5"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiMarks">Marks per question</label><input class="form-control" type="number" id="aptAiMarks" min="0.25" step="0.25" value="1"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiLanguage">Language</label><input class="form-control" id="aptAiLanguage" value="English"/></div>
+        <div class="col-md-4"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="aptAiNegative"/><label class="form-check-label" for="aptAiNegative">Negative marking (per question)</label></div></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiNegativeMarks">Negative marks</label><input class="form-control" type="number" id="aptAiNegativeMarks" min="0" step="0.25" value="0"/></div>
+        <div class="col-12"><label class="form-label small fw-semibold" for="aptAiInstructions">Optional instructions</label><textarea class="form-control" id="aptAiInstructions" rows="2" placeholder="Generate questions suitable for campus placement aptitude tests."></textarea></div>
+      </div>
+      <div class="d-flex flex-wrap gap-2 mt-4">
+        <button type="button" class="btn btn-primary" id="btnAptAiRun"><i class="bi bi-stars me-1"></i>Generate Questions</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+      <div id="aptAiGenerateStatus" class="small text-muted-2 mt-3 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Generating questions… this may take a minute.</div>
+    </div>
+    <div id="aptAiPreviewPanel" class="d-none">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <p class="small mb-0 fw-semibold">AI Generated Questions (<span id="aptAiPreviewCount">0</span>)</p>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAptAiRegenerate">Generate Again</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAptAiSelectAll">Select all</button>
+        </div>
+      </div>
+      <div id="aptAiPreviewList" class="d-flex flex-column gap-3"></div>
+      <div class="d-flex flex-wrap gap-2 mt-4">
+        <button type="button" class="btn btn-primary d-none" id="btnAptAiAddToTest"><i class="bi bi-plus-lg me-1"></i>Add selected to test</button>
+        <button type="button" class="btn btn-primary" id="btnAptAiSaveBank"><i class="bi bi-database-add me-1"></i>Add selected to question bank</button>
+        <button type="button" class="btn btn-outline-secondary" id="btnAptAiBack">Back</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+      <div id="aptAiSaveStatus" class="small text-muted-2 mt-3 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Saving…</div>
+    </div>
+  </div>
+</div></div></div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
@@ -406,5 +462,5 @@
 <script src="js/api.js?v=20260911codpo2"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260915crumb"></script>
-<script src="js/aptitude-page.js?v=20260915crumb"></script>
+<script src="js/aptitude-page.js?v=20260917openai"></script>
 </body></html>
