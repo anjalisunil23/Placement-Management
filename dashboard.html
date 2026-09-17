@@ -299,15 +299,19 @@
       <!-- ===== STUDENT ===== -->
       <div data-roles="student">
         <div class="row g-3">
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-mortarboard-fill"></i></div></div>
             <div class="val"><span id="studentCgpa">—</span></div><div class="lbl">Current CGPA</div>
           </div></div>
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
+            <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-lightning-charge-fill"></i></div><span class="badge-soft muted" id="studentAptAttemptsBadge">0 attempts</span></div>
+            <div class="val"><span id="studentAptBest">—</span></div><div class="lbl">Best aptitude score</div>
+          </div></div>
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)"><i class="bi bi-send-check-fill"></i></div></div>
             <div class="val"><span class="counter" id="studentApps" data-target="0">0</span></div><div class="lbl">Applications</div>
           </div></div>
-          <div class="col-md-4 col-6"><div class="card-surface stat-card">
+          <div class="col-6 col-lg-3"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"><i class="bi bi-file-earmark-person-fill"></i></div><span class="badge-soft muted" id="studentResumeCount">0</span></div>
             <div class="val"><span class="counter" id="studentResumes" data-target="0">0</span></div><div class="lbl">Resumes uploaded</div>
           </div></div>
@@ -399,7 +403,7 @@
 </div>
 
 <script src="js/api.js?v=20260917admin"></script>
-<script src="js/app.js?v=20260917dash"></script>
+<script src="js/app.js?v=20260917apt"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -879,6 +883,7 @@ if (role === 'student') {
   (async () => {
     if (Auth.isDemo()) ResumeBucket.seed();
     let dashData = null;
+    let aptData = { testsAttempted: 0, bestScore: null };
 
     const formatCgpaLabel = (raw) => {
       const n = Number(raw);
@@ -887,9 +892,16 @@ if (role === 'student') {
       return rounded.toFixed(rounded % 1 ? 2 : 1);
     };
 
+    const formatAptBestLabel = (raw) => {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) return '—';
+      return `${Math.round(n * 10) / 10}%`;
+    };
+
     const paintStudent = (overrides = null) => {
       const liveUser = Auth.user() || user || {};
       const data = overrides || dashData || {};
+      const apt = overrides?.aptitude || aptData || {};
       const cgpaRaw = data.cgpa
         ?? (typeof resolveSessionCgpa === 'function' ? resolveSessionCgpa(liveUser) : null)
         ?? liveUser.cgpa
@@ -900,6 +912,14 @@ if (role === 'student') {
 
       const cgpaStat = document.getElementById('studentCgpa');
       if (cgpaStat) cgpaStat.textContent = formatCgpaLabel(cgpaRaw);
+
+      const aptAttempts = Number(apt.testsAttempted || 0);
+      const aptBestEl = document.getElementById('studentAptBest');
+      const aptBadgeEl = document.getElementById('studentAptAttemptsBadge');
+      if (aptBestEl) aptBestEl.textContent = formatAptBestLabel(apt.bestScore);
+      if (aptBadgeEl) {
+        aptBadgeEl.textContent = aptAttempts === 1 ? '1 attempt' : `${aptAttempts} attempts`;
+      }
 
       const appsCount = Number.isFinite(Number(data.applications))
         ? Number(data.applications)
@@ -924,8 +944,17 @@ if (role === 'student') {
     paintStudent();
     document.addEventListener('ph-user-updated', () => paintStudent());
 
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const dash = await api('/student/dashboard').catch(() => null);
+    if (Auth.isDemo() || !Auth.hasRealAuth()) {
+      try {
+        aptData = JSON.parse(localStorage.getItem('ph-aptitude-demo-progress') || '{}') || aptData;
+      } catch { /* ignore */ }
+      paintStudent({ aptitude: aptData });
+    } else {
+      const canTakeApt = typeof Auth.canTakeAptitudeMock === 'function' && Auth.canTakeAptitudeMock();
+      const [dash, apt] = await Promise.all([
+        api('/student/dashboard').catch(() => null),
+        canTakeApt ? api('/aptitude/me').catch(() => null) : Promise.resolve(null),
+      ]);
       if (dash?.success && dash.data) {
         dashData = dash.data;
         const n = Number(dash.data.cgpa);
@@ -938,8 +967,9 @@ if (role === 'student') {
           });
         }
       }
+      if (apt?.success && apt.data) aptData = apt.data;
       await StudentApps.fetch().catch(() => null);
-      paintStudent(dashData || undefined);
+      paintStudent({ ...(dashData || {}), aptitude: aptData });
     }
   })();
 }
