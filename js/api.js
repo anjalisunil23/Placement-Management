@@ -835,6 +835,7 @@ const Auth = {
       },
       'session'
     );
+    document.dispatchEvent(new CustomEvent('ph-user-updated'));
   },
   set(user, token) {
     if (user) localStorage.setItem('ph-user', JSON.stringify(user));

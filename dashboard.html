@@ -313,29 +313,6 @@
           </div></div>
         </div>
 
-        <div class="card-surface mt-3" id="studentAptCard">
-          <div class="p-3 p-md-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
-            <div class="d-flex align-items-start gap-3">
-              <div class="ic flex-shrink-0" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-lightning-charge-fill"></i></div>
-              <div>
-                <h6 class="fw-bold mb-1">Mock · Aptitude</h6>
-                <p class="small text-muted-2 mb-0" id="studentAptSub">Practice aptitude tests and track your scores.</p>
-              </div>
-            </div>
-            <div class="d-flex flex-wrap align-items-center gap-3">
-              <div class="text-center px-2"><div class="small text-muted-2">Attempts</div><strong id="studentAptAttempts">0</strong></div>
-              <div class="text-center px-2"><div class="small text-muted-2">Best score</div><strong id="studentAptBest">—</strong></div>
-              <a href="mock-aptitude.html" class="btn btn-primary btn-sm"><i class="bi bi-play-fill me-1"></i>Take a test</a>
-            </div>
-          </div>
-        </div>
-
-        <div class="card-surface mt-3">
-          <div class="p-3 p-md-4 pb-0">
-            <h6 class="fw-bold mb-0">My applications</h6>
-          </div>
-          <div class="p-3 p-md-4 pt-3" id="studentAppRows"></div>
-        </div>
       </div>
 
       <!-- ===== COMPANY ===== -->
@@ -421,8 +398,8 @@
   </div>
 </div>
 
-<script src="js/api.js?v=20260914cgpa"></script>
-<script src="js/app.js?v=20260914cgpa"></script>
+<script src="js/api.js?v=20260917admin"></script>
+<script src="js/app.js?v=20260917dash"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -901,82 +878,56 @@ async function initHodAssignPo() {
 if (role === 'student') {
   (async () => {
     if (Auth.isDemo()) ResumeBucket.seed();
-    const paintStudent = () => {
+    let dashData = null;
+
+    const formatCgpaLabel = (raw) => {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0 || n > 10) return '—';
+      const rounded = Math.round(n * 100) / 100;
+      return rounded.toFixed(rounded % 1 ? 2 : 1);
+    };
+
+    const paintStudent = (overrides = null) => {
       const liveUser = Auth.user() || user || {};
-      const apps = StudentApps.all();
-      const resumes = ResumeBucket.all();
-      const cgpaRaw = typeof resolveSessionCgpa === 'function'
-        ? resolveSessionCgpa(liveUser)
-        : (liveUser.cgpa ?? liveUser.academic?.cgpa);
-      const cgpaNum = Number(cgpaRaw);
-      const cgpaLabel = Number.isFinite(cgpaNum) && cgpaNum > 0
-        ? (Math.round(cgpaNum * 100) / 100).toFixed(cgpaNum % 1 ? 2 : 1)
-        : '—';
+      const data = overrides || dashData || {};
+      const cgpaRaw = data.cgpa
+        ?? (typeof resolveSessionCgpa === 'function' ? resolveSessionCgpa(liveUser) : null)
+        ?? liveUser.cgpa
+        ?? liveUser.academic?.cgpa;
 
       const titleEl = document.getElementById('dashTitle');
       if (titleEl && liveUser.name) titleEl.textContent = liveUser.name;
 
       const cgpaStat = document.getElementById('studentCgpa');
-      if (cgpaStat) cgpaStat.textContent = cgpaLabel;
+      if (cgpaStat) cgpaStat.textContent = formatCgpaLabel(cgpaRaw);
 
-      document.getElementById('studentApps').dataset.target = apps.length;
-      document.getElementById('studentResumes').dataset.target = resumes.length;
-      document.getElementById('studentResumeCount').textContent = resumes.length + ' file' + (resumes.length === 1 ? '' : 's');
-      ['studentApps', 'studentResumes'].forEach(id => {
+      const appsCount = Number.isFinite(Number(data.applications))
+        ? Number(data.applications)
+        : StudentApps.all().length;
+      const resumeCount = Number.isFinite(Number(data.resumeCount))
+        ? Number(data.resumeCount)
+        : ResumeBucket.all().length;
+
+      const appsEl = document.getElementById('studentApps');
+      const resumesEl = document.getElementById('studentResumes');
+      if (appsEl) appsEl.dataset.target = String(appsCount);
+      if (resumesEl) resumesEl.dataset.target = String(resumeCount);
+      const resumeBadge = document.getElementById('studentResumeCount');
+      if (resumeBadge) resumeBadge.textContent = resumeCount + ' file' + (resumeCount === 1 ? '' : 's');
+      ['studentApps', 'studentResumes'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.dataset.animated = '0';
       });
       animateCounters(document.querySelector('[data-roles="student"]'));
-
-      async function paintStudentAptitude() {
-        let p = { testsAttempted: 0, bestScore: null };
-        if (Auth.hasRealAuth() && !Auth.isDemo()) {
-          const res = await api('/aptitude/me').catch(() => null);
-          if (res?.success) p = res.data || p;
-        } else {
-          try {
-            p = JSON.parse(localStorage.getItem('ph-aptitude-demo-progress') || '{}');
-          } catch { /* ignore */ }
-        }
-        const attemptsEl = document.getElementById('studentAptAttempts');
-        const bestEl = document.getElementById('studentAptBest');
-        const subEl = document.getElementById('studentAptSub');
-        if (attemptsEl) attemptsEl.textContent = String(p.testsAttempted || 0);
-        if (bestEl) {
-          const best = Number(p.bestScore);
-          bestEl.textContent = Number.isFinite(best) && best > 0 ? `${best}%` : '—';
-        }
-        if (subEl) {
-          subEl.textContent = (p.testsAttempted || 0) > 0
-            ? 'Review scores or take another published mock test.'
-            : 'Practice aptitude tests and track your scores.';
-        }
-      }
-      await paintStudentAptitude();
-
-      document.getElementById('studentAppRows').innerHTML = apps.length ? `<div class="row g-3">${apps.map(a => `
-      <div class="col-md-6 col-xl-4">
-        <div class="border rounded-3 p-3 h-100" style="border-color:var(--border)!important;background:var(--surface-2,transparent)">
-          <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-            <div>
-              <div class="fw-bold">${a.company || '—'}</div>
-              <div class="small text-muted-2">${a.role || '—'}</div>
-            </div>
-            ${typeof appPlacementProgressHtml === 'function' ? appPlacementProgressHtml(a) : appStatusBadge(a.status)}
-          </div>
-          <div class="small text-muted-2">Resume · ${a.resumeLabel || '—'}</div>
-          <div class="small text-muted-2">Applied · ${formatDate(a.appliedAt)}</div>
-        </div>
-      </div>`).join('')}</div>`
-        : '<p class="text-muted-2 mb-0">No applications yet.</p>';
     };
 
-    // Paint from cache immediately, then refresh live apps and CGPA.
     paintStudent();
-    document.addEventListener('ph-user-updated', paintStudent);
+    document.addEventListener('ph-user-updated', () => paintStudent());
+
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
       const dash = await api('/student/dashboard').catch(() => null);
       if (dash?.success && dash.data) {
+        dashData = dash.data;
         const n = Number(dash.data.cgpa);
         if (Number.isFinite(n) && n > 0) {
           const live = Auth.user() || {};
@@ -988,7 +939,7 @@ if (role === 'student') {
         }
       }
       await StudentApps.fetch().catch(() => null);
-      paintStudent();
+      paintStudent(dashData || undefined);
     }
   })();
 }

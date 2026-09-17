@@ -131,6 +131,60 @@ final class StudentController
     return $profile;
   }
 
+  /**
+   * Resolve CGPA for dashboard cards — profile first, then live AES qualifications.
+   *
+   * @param array<string, mixed> $profile
+   */
+  private function resolveDashboardCgpa(array $profile): float
+  {
+    $aesApi = new AesApiService();
+    $resolved = $aesApi->resolveStudentCgpa($profile);
+    if ($resolved !== null && $resolved > 0) {
+      return $resolved;
+    }
+
+    $aes = new AesLoginService();
+    $sessionAes = Security::getSessionAesProfile();
+    $reg = (string) ($profile['registerNumber'] ?? '');
+    $qualAdmno = $aesApi->resolveQualificationAdmissionNumber($sessionAes, $reg);
+    if ($qualAdmno === '' || !ctype_digit($qualAdmno)) {
+      return 0.0;
+    }
+
+    try {
+      $qual = $aesApi->fetchStudentQualificationProfile([
+        'admno' => $qualAdmno,
+        'stud_admno' => $qualAdmno,
+      ]);
+    } catch (\Throwable) {
+      return 0.0;
+    }
+
+    if ($qual === []) {
+      return 0.0;
+    }
+
+    $academic = is_array($profile['academic'] ?? null) ? $profile['academic'] : [];
+    $qualRows = is_array($qual['qualifications'] ?? null) ? $qual['qualifications'] : [];
+    if ($qualRows !== []) {
+      $academic['qualifications'] = $qualRows;
+    }
+    $qualMapped = $aes->mapAesDetailsToUserFields($qual);
+    $merged = array_merge($profile, [
+      'academic' => $academic,
+      'qualifications' => $qualRows,
+      'programme' => (string) ($profile['programme'] ?? $profile['course'] ?? $profile['branch'] ?? ''),
+    ]);
+    if (!empty($qualMapped['cgpa']) && (float) $qualMapped['cgpa'] > 0) {
+      $merged['cgpa'] = (float) $qualMapped['cgpa'];
+    }
+
+    $fromAes = $aesApi->resolveStudentCgpa($merged);
+
+    return $fromAes ?? 0.0;
+  }
+
   /** GET /api/student/dashboard */
   public function dashboard(): void
   {
@@ -138,7 +192,7 @@ final class StudentController
     $profile = $this->getStudentProfile($user);
 
     $studentId = (string) $profile['_id'];
-    $cgpa = (new AesApiService())->resolveStudentCgpa($profile) ?? 0.0;
+    $cgpa = $this->resolveDashboardCgpa($profile);
 
     $applications = (new ApplicationModel())->count(['studentId' => Security::toObjectId($studentId)]);
     $resumeCount = !empty($profile['resume']) ? 1 : 0;
