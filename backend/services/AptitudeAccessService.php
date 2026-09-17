@@ -21,7 +21,8 @@ use PMS\Utils\Security;
  * Rules:
  * - student: take published mocks only
  * - placement_officer: add/manage tests and questions for their department
- * - admin / staff: browse scoped progress only (cannot take or add questions)
+ * - admin: institution-wide test/question management and progress
+ * - staff: browse scoped progress only (cannot take or add questions)
  * - alumni / company: no mock take or question management
  * - company progress: applicants linked via applications for the authenticated company only
  */
@@ -47,13 +48,17 @@ final class AptitudeAccessService
     }
 
     /**
-     * Only placement officers may add questions and manage mock tests.
+     * Admins and placement officers may add questions and manage mock tests.
      *
      * @param array<string, mixed> $user
      */
     public static function canManage(array $user): bool
     {
-        if (AuthMiddleware::resolvedRole($user) !== 'placement_officer') {
+        $role = AuthMiddleware::resolvedRole($user);
+        if ($role === 'admin') {
+            return true;
+        }
+        if ($role !== 'placement_officer') {
             return false;
         }
         $ctx = PlacementOfficerContext::resolve($user);
@@ -62,7 +67,7 @@ final class AptitudeAccessService
     }
 
     /**
-     * Weekly / monthly contests — department placement officer only.
+     * Weekly / monthly contests — admin (institution) or department placement officer.
      *
      * @param array<string, mixed> $user
      */
@@ -128,7 +133,7 @@ final class AptitudeAccessService
     public static function requireManager(array $user): void
     {
         if (!self::canManage($user)) {
-            Response::forbidden('Only placement officers can add mock test questions.');
+            Response::forbidden('Only admins and placement officers can add mock test questions.');
         }
     }
 

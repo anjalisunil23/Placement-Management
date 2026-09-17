@@ -153,10 +153,14 @@
       next.canTake = false;
       next.canManage = true;
       next.canViewDirectory = true;
-    } else if (role === 'admin' || role === 'staff') {
+    } else if (role === 'admin') {
       next.canTake = false;
+      next.canManage = true;
       next.canViewDirectory = true;
-      if (role === 'admin') next.canManage = false;
+    } else if (role === 'staff') {
+      next.canTake = false;
+      next.canManage = false;
+      next.canViewDirectory = true;
     } else if (role === 'student') {
       next.canTake = true;
       next.canManage = false;
@@ -181,7 +185,7 @@
     const views = allowedViews();
     const role = currentRole();
     if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
-    if (views.includes('manage') && role === 'placement_officer') return 'manage';
+    if (views.includes('manage') && (role === 'placement_officer' || role === 'admin')) return 'manage';
     if (views.includes('take')) return 'take';
     if (views.includes('progress')) return 'progress';
     return views[0] || (access.canViewDirectory ? 'progress' : 'take');

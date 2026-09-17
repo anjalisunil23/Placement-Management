@@ -966,13 +966,15 @@ const Auth = {
     const role = this.role();
     return role === 'admin' || role === 'placement_officer' || role === 'staff';
   },
-  /** Placement officers may add questions and manage mock tests. */
+  /** Admins and placement officers may add questions and manage mock tests. */
   canManageAptitudeMocks() {
-    return this.role() === 'placement_officer';
+    const role = this.role();
+    return role === 'admin' || role === 'placement_officer';
   },
-  /** Placement officers may configure weekly / monthly mock contests. */
+  /** Admins and placement officers may configure weekly / monthly mock contests. */
   canManageAptitudeContests() {
-    return this.role() === 'placement_officer';
+    const role = this.role();
+    return role === 'admin' || role === 'placement_officer';
   },
   canTakeCodingMock() { return this.canTakeAptitudeMock(); },
   canViewCodingDirectory() { return this.canViewAptitudeDirectory(); },
