@@ -873,7 +873,7 @@ final class AptitudeService
     }
 
     /**
-     * Flat attempt rows for Progress → Test results.
+     * One row per student/test with attempt count and final attempt score.
      *
      * @param array<string, mixed> $viewer
      * @param array<string, mixed> $filters
@@ -923,9 +923,13 @@ final class AptitudeService
         unset($group);
 
         $rows = [];
-        foreach ($completed as $attempt) {
-            $testId = (string) ($attempt['testId'] ?? '');
-            $uid = (string) ($attempt['userId'] ?? '');
+        foreach ($attemptsByUserTest as $key => $group) {
+            if ($group === []) {
+                continue;
+            }
+            $finalAttempt = $group[count($group) - 1];
+            $testId = (string) ($finalAttempt['testId'] ?? '');
+            $uid = (string) ($finalAttempt['userId'] ?? '');
             if ($testId === '' || $uid === '' || isset($contestTests[$testId])) {
                 continue;
             }
@@ -933,31 +937,22 @@ final class AptitudeService
                 continue;
             }
 
-            $profile = $profileCache[$uid] ?? $this->summarizeSubjectCached($uid, [$attempt], null, false);
+            $profile = $profileCache[$uid] ?? $this->summarizeSubjectCached($uid, $group, null, false);
             if (in_array($role, ['staff', 'placement_officer'], true) && ($profile['userType'] ?? '') !== 'student') {
                 continue;
             }
             if ($role !== 'admin' && ($profile['userType'] ?? '') === 'alumni') {
                 continue;
             }
-            if (!$this->matchesFilters($profile, [$attempt], $filters)) {
+            if (!$this->matchesFilters($profile, $group, $filters)) {
                 continue;
             }
 
             $test = $testCache[$testId] ?? $this->tests->findById($testId) ?: [];
-            $attemptId = (string) ($attempt['_id'] ?? '');
-            $key = $uid . '|' . $testId;
-            $attemptNumber = 1;
-            foreach ($attemptsByUserTest[$key] ?? [] as $i => $row) {
-                if ((string) ($row['_id'] ?? '') === $attemptId) {
-                    $attemptNumber = $i + 1;
-                    break;
-                }
-            }
-
-            $marksObtained = (float) ($attempt['marksObtained'] ?? $attempt['score'] ?? 0);
-            $totalMarks = (float) ($attempt['totalMarks'] ?? $test['totalMarks'] ?? 0);
-            $percentage = (float) ($attempt['percentage'] ?? 0);
+            $attemptId = (string) ($finalAttempt['_id'] ?? '');
+            $marksObtained = (float) ($finalAttempt['marksObtained'] ?? $finalAttempt['score'] ?? 0);
+            $totalMarks = (float) ($finalAttempt['totalMarks'] ?? $test['totalMarks'] ?? 0);
+            $percentage = (float) ($finalAttempt['percentage'] ?? 0);
 
             $rows[] = [
                 'attemptId' => $attemptId,
@@ -965,16 +960,15 @@ final class AptitudeService
                 'name' => (string) ($profile['name'] ?? 'User'),
                 'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
                 'studentCode' => (string) ($profile['studentCode'] ?? $profile['registerNumber'] ?? ''),
-                'classBatch' => (string) ($profile['classBatch'] ?? $attempt['classBatch'] ?? ''),
+                'classBatch' => (string) ($profile['classBatch'] ?? $finalAttempt['classBatch'] ?? ''),
                 'testId' => $testId,
                 'testTitle' => (string) ($test['title'] ?? 'Test'),
-                'attemptNumber' => $attemptNumber,
-                'attemptLabel' => 'Attempt ' . $attemptNumber,
+                'attemptCount' => count($group),
                 'marksObtained' => $marksObtained,
                 'totalMarks' => $totalMarks,
                 'score' => $marksObtained,
                 'percentage' => $percentage,
-                'completedAt' => $attempt['completedAt'] ?? null,
+                'completedAt' => $finalAttempt['completedAt'] ?? null,
             ];
         }
 

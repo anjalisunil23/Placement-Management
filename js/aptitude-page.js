@@ -477,26 +477,24 @@
     const rows = [];
     studentSummaries.forEach((s) => {
       const count = Number(s.testsAttempted) || 0;
-      for (let i = 0; i < count; i += 1) {
-        const pct = Math.max(40, Math.min(100, Number(s.averageScore) - (count - i - 1) * 4));
-        const totalMarks = 20;
-        const marksObtained = Math.round((pct / 100) * totalMarks);
-        rows.push({
-          attemptId: `demo-attempt-${s.userId}-${i}`,
-          userId: s.userId,
-          name: s.name,
-          registerNumber: s.registerNumber,
-          classBatch: s.classBatch,
-          attemptNumber: i + 1,
-          attemptLabel: `Attempt ${i + 1}`,
-          testTitle: titles[i % titles.length],
-          marksObtained,
-          totalMarks,
-          score: marksObtained,
-          percentage: pct,
-          completedAt: new Date(Date.now() - (i + 1) * 86400000).toISOString(),
-        });
-      }
+      if (count === 0) return;
+      const pct = Math.max(40, Math.min(100, Number(s.recentScore ?? s.averageScore) || 0));
+      const totalMarks = 20;
+      const marksObtained = Math.round((pct / 100) * totalMarks);
+      rows.push({
+        attemptId: `demo-attempt-${s.userId}-final`,
+        userId: s.userId,
+        name: s.name,
+        registerNumber: s.registerNumber,
+        classBatch: s.classBatch,
+        attemptCount: count,
+        testTitle: titles[0],
+        marksObtained,
+        totalMarks,
+        score: marksObtained,
+        percentage: pct,
+        completedAt: new Date().toISOString(),
+      });
     });
 
     const percentages = rows.map((r) => Number(r.percentage) || 0);
@@ -797,7 +795,7 @@
         <td class="fw-semibold">${esc(r.name || '—')}</td>
         <td>${esc(r.registerNumber || studentIdLabel(r))}</td>
         <td>${esc(r.classBatch || '—')}</td>
-        <td>${esc(r.attemptLabel || (r.attemptNumber ? `Attempt ${r.attemptNumber}` : '—'))}</td>
+        <td>${esc(r.attemptCount ?? '—')}</td>
         <td>${esc(formatAttemptScore(r))}</td>
         <td>${esc(r.testTitle || r.testName || '—')}</td>
         <td>${viewBtn}</td>
