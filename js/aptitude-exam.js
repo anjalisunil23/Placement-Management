@@ -54,21 +54,22 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  const ANSWER_FIELD_KEYS = [
-    'correctIndex', 'correct_answer', 'correctAnswer', 'correctAnswerIndex',
-    'correct', 'correctOption', 'correctOptionLetter', 'explanation', 'solution',
-    'lockCorrectIndex',
-  ];
-
-  function stripAnswerFields(q) {
+  function stripExamQuestion(q) {
     if (!q || typeof q !== 'object') return q;
-    const out = { ...q };
-    ANSWER_FIELD_KEYS.forEach((key) => { delete out[key]; });
-    return out;
+    const {
+      correctIndex,
+      correct_answer,
+      correctAnswer,
+      correctAnswerIndex,
+      explanation,
+      isCorrect,
+      ...safe
+    } = q;
+    return safe;
   }
 
-  function stripQuestionsForExam(questions) {
-    return (questions || []).map(stripAnswerFields);
+  function stripExamQuestions(list) {
+    return (list || []).map(stripExamQuestion);
   }
 
   function paletteState(idx, answers, marked, visited) {
@@ -126,26 +127,37 @@
       return state.questions[state.index] || null;
     }
 
+    function getSelectedIndex(qid) {
+      if (!Object.prototype.hasOwnProperty.call(state.answers, qid)) return null;
+      const picked = Number(state.answers[qid]);
+      return Number.isFinite(picked) && picked >= 0 ? picked : null;
+    }
+
+    function updateOptionHighlights(qid) {
+      const selected = getSelectedIndex(qid);
+      el('q-options')?.querySelectorAll('[data-opt-index]').forEach((row) => {
+        const idx = Number(row.getAttribute('data-opt-index'));
+        const on = selected !== null && idx === selected;
+        row.classList.toggle('border-primary', on);
+        row.classList.toggle('bg-light', on);
+        const input = row.querySelector('input[type="radio"]');
+        if (input) input.checked = on;
+      });
+    }
+
     function renderQuestion() {
-      const q = stripAnswerFields(currentQ());
+      const q = currentQ();
       if (!q) return;
       state.visited[q.id] = true;
       el('q-num').textContent = `Question ${state.index + 1} of ${state.questions.length}`;
       el('q-prompt').innerHTML = renderRichHtml(q.prompt || '');
       el('q-marks').textContent = `${q.marks ?? 1} mark${Number(q.marks) === 1 ? '' : 's'}`;
-      const selected = state.answers[q.id];
+      const selected = getSelectedIndex(q.id);
       el('q-options').innerHTML = (q.options || []).map((opt, i) => `
-        <label class="apt-option d-flex gap-2 align-items-start mb-2 p-2 border rounded-3 ${selected === i ? 'border-primary' : ''}">
-          <input type="radio" name="apt_opt" value="${i}" ${selected === i ? 'checked' : ''}/>
-          <span><strong class="me-1">${LETTERS[i] || i + 1}.</strong>${esc(opt)}</span>
+        <label class="apt-option d-flex gap-2 align-items-start mb-2 p-2 border rounded-3 ${selected === i ? 'border-primary bg-light' : ''}" data-opt-index="${i}">
+          <input type="radio" name="apt_opt_${esc(q.id)}" value="${i}" class="mt-1 flex-shrink-0" ${selected === i ? 'checked' : ''}/>
+          <span class="flex-grow-1"><strong class="me-1">${LETTERS[i] || i + 1}.</strong>${esc(opt)}</span>
         </label>`).join('');
-      el('q-options').querySelectorAll('input[name="apt_opt"]').forEach((input) => {
-        input.addEventListener('change', () => {
-          state.answers[q.id] = Number(input.value);
-          renderPalette();
-          renderQuestion();
-        });
-      });
       const marked = !!state.marked[q.id];
       el('btn-mark').classList.toggle('btn-warning', marked);
       el('btn-mark').classList.toggle('btn-outline-warning', !marked);
@@ -153,6 +165,21 @@
       el('btn-prev').disabled = state.index <= 0;
       el('btn-next').disabled = state.index >= state.questions.length - 1;
       renderPalette();
+    }
+
+    function bindOptionPicker() {
+      const box = el('q-options');
+      if (!box || box.dataset.bound === '1') return;
+      box.dataset.bound = '1';
+      box.addEventListener('change', (e) => {
+        const input = e.target.closest('input[type="radio"]');
+        if (!input || state?.submitted) return;
+        const q = currentQ();
+        if (!q) return;
+        state.answers[q.id] = Number(input.value);
+        updateOptionHighlights(q.id);
+        renderPalette();
+      });
     }
 
     function renderPalette() {
@@ -199,7 +226,7 @@
       } else if (opts.resolveDemoQuestions) {
         questions = opts.resolveDemoQuestions(state.test.id) || questions;
       }
-      questions = stripQuestionsForExam(questions);
+      questions = stripExamQuestions(questions);
       const durationMs = Math.max(1, Number(state.test.durationMinutes || 30)) * 60 * 1000;
       state.attemptId = attemptId;
       state.questions = questions;
@@ -209,8 +236,11 @@
       state.visited = {};
       state.startedAt = Date.now();
       state.endsAt = Date.now() + durationMs;
+      state.started = true;
+      state.submitted = false;
       showPanel('exam');
       el('exam-title').textContent = state.test.title || 'Examination';
+      bindOptionPicker();
       renderQuestion();
       startTimer();
     }
@@ -296,20 +326,40 @@
         </div>`).join('') : '<p class="text-muted-2 mb-0">No question analysis available.</p>';
     }
 
+    function activePanel() {
+      const panel = root.querySelector('[data-exam-panel]:not(.d-none)');
+      return panel?.getAttribute('data-exam-panel') || 'instructions';
+    }
+
+    async function exitExam(force = false) {
+      if (!force && state?.started && state.questions?.length && !state.submitted) {
+        const ok = typeof confirmAction === 'function'
+          ? await confirmAction({
+              title: 'Leave test',
+              message: 'Go back to the test list? Your answers so far will not be submitted.',
+              confirmText: 'Leave',
+              variant: 'danger',
+            })
+          : window.confirm('Go back to the test list? Your answers so far will not be submitted.');
+        if (!ok) return;
+      }
+      stopTimer();
+      onExit(state?.lastResult);
+    }
+
     root.addEventListener('click', (e) => {
       const t = e.target.closest('[data-exam-action]');
       if (!t) return;
       const action = t.getAttribute('data-exam-action');
       if (action === 'start') beginExam();
-      if (action === 'cancel') {
-        if (state.questions && state.questions.length && !state.submitted) {
-          if (!window.confirm('Leave this test and go back? Your answers so far will not be submitted.')) {
-            return;
-          }
+      if (action === 'back') {
+        if (activePanel() === 'instructions') {
+          exitExam(true);
+        } else {
+          exitExam(false);
         }
-        stopTimer();
-        onExit();
       }
+      if (action === 'cancel') exitExam(false);
       if (action === 'prev') {
         if (state.index > 0) {
           state.index -= 1;
@@ -337,23 +387,30 @@
         }
       }
       if (action === 'submit') submitExam(false);
-      if (action === 'done') {
-        stopTimer();
-        onExit(state?.lastResult);
-      }
+      if (action === 'done') exitExam(true);
     });
 
     return {
       open(test) {
         stopTimer();
         submitting = false;
-        const safeTest = test
-          ? { ...test, questions: stripQuestionsForExam(test.questions || []) }
-          : test;
-        state = { test: safeTest, questions: [], answers: {}, marked: {}, visited: {}, index: 0 };
-        if (el('result-summary')) el('result-summary').innerHTML = '';
-        if (el('result-analysis')) el('result-analysis').innerHTML = '';
+        const safeTest = {
+          ...test,
+          questions: stripExamQuestions(test?.questions || []),
+        };
+        state = {
+          test: safeTest,
+          questions: [],
+          answers: {},
+          marked: {},
+          visited: {},
+          index: 0,
+          started: false,
+          submitted: false,
+        };
+        bindOptionPicker();
         renderInstructions(safeTest);
+        showPanel('instructions');
         root.classList.remove('d-none');
       },
       hide() {
@@ -363,7 +420,7 @@
       showResult(result) {
         stopTimer();
         submitting = false;
-        state = { test: null, lastResult: result };
+        state = { test: null, lastResult: result, submitted: true, started: true };
         renderResult(result);
         showPanel('result');
         root.classList.remove('d-none');
@@ -371,5 +428,5 @@
     };
   }
 
-  global.AptitudeExam = { createExamController, formatTimer, esc, stripAnswerFields, stripQuestionsForExam };
+  global.AptitudeExam = { createExamController, formatTimer, esc, stripExamQuestion, stripExamQuestions };
 })(window);

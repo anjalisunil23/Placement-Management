@@ -6,8 +6,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260915crumb" rel="stylesheet"/>
 <style>
-  .apt-option{cursor:pointer}
-  .apt-option input{margin-top:.2rem}
+  .apt-option{cursor:pointer;transition:border-color .15s,background .15s}
+  .apt-option input{margin-top:.2rem;pointer-events:auto}
+  .apt-option:hover{border-color:color-mix(in srgb,var(--primary) 40%,var(--border))!important}
   .apt-stat .val{font-size:1.35rem;font-weight:700}
   .apt-pal{
     width:2.1rem;height:2.1rem;border-radius:.45rem;border:1px solid var(--border);
@@ -208,20 +209,24 @@
     </nav>
     <p class="page-sub mb-3">Review details, then start when ready. Correct answers are hidden until you submit.</p>
     <div data-exam="instr-body"></div>
-    <div class="mt-4 d-flex gap-2">
+    <div class="mt-4 d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-outline-secondary" data-exam-action="back"><i class="bi bi-arrow-left me-1"></i>Back to tests</button>
       <button type="button" class="btn btn-primary" data-exam-action="start"><i class="bi bi-play-fill me-1"></i>Start Test</button>
     </div>
   </div>
 
   <div data-exam-panel="exam" class="d-none">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-      <nav class="ph-breadcrumb mb-0" aria-label="Breadcrumb">
-        <a class="ph-crumb-home" href="dashboard.html">Home</a>
-        <span class="sep">›</span>
-        <button type="button" class="ph-crumb-link" data-exam-action="cancel">Aptitude Mock</button>
-        <span class="sep">›</span>
-        <span class="current" data-exam="exam-title">Examination</span>
-      </nav>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-exam-action="back"><i class="bi bi-arrow-left me-1"></i>Back</button>
+        <nav class="ph-breadcrumb mb-0" aria-label="Breadcrumb">
+          <a class="ph-crumb-home" href="dashboard.html">Home</a>
+          <span class="sep">›</span>
+          <button type="button" class="ph-crumb-link" data-exam-action="cancel">Aptitude Mock</button>
+          <span class="sep">›</span>
+          <span class="current" data-exam="exam-title">Examination</span>
+        </nav>
+      </div>
       <div class="exam-timer" data-exam="timer">00:00</div>
     </div>
     <div class="row g-3">
@@ -266,7 +271,10 @@
       <span class="sep">›</span>
       <span class="current">Result</span>
     </nav>
-    <h1 class="page-title mb-3">Result</h1>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h1 class="page-title mb-0">Result</h1>
+      <button type="button" class="btn btn-outline-secondary" data-exam-action="done"><i class="bi bi-arrow-left me-1"></i>Back to tests</button>
+    </div>
     <div class="card-surface p-3 p-md-4 mb-3" data-exam="result-summary"></div>
     <div class="card-surface p-3 p-md-4">
       <h6 class="fw-bold mb-3">Question-wise analysis</h6>
@@ -284,7 +292,7 @@
       <div class="row g-3">
         <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfQuestionCount">Total number of questions</label><input class="form-control bg-light" type="number" id="tfQuestionCount" min="0" readonly required tabindex="-1" aria-readonly="true"/><div class="form-text" id="tfQuestionCountHint">Auto-calculated from your selections below.</div></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfQuestionCount">Total number of questions</label><input class="form-control" type="number" id="tfQuestionCount" min="1" required/></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDuration">Total duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required/></div>
 
         <div class="col-12">
@@ -320,19 +328,30 @@
         </div>
 
         <div class="col-12" id="tfManualPanel">
-          <div class="small text-muted-2 mb-2" id="tfManualCountSummary">Add bank rules and/or MCQs below — total updates automatically.</div>
           <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" id="tfUseBankManual"/>
             <label class="form-check-label" for="tfUseBankManual">Select questions from question bank manually</label>
           </div>
           <div class="border rounded-3 p-3 mb-3 d-none" id="tfBankPicker">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <div class="small fw-semibold">Filter question bank</div>
-              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddBankFilterRule"><i class="bi bi-plus-lg me-1"></i>Add category</button>
+            <div class="small fw-semibold mb-2">Pick questions from bank</div>
+            <p class="small text-muted-2 mb-2">Set <strong>Total number of questions</strong> above, then tick exactly that many questions below (or fewer if you also add MCQs directly).</p>
+            <div class="row g-2 mb-2">
+              <div class="col-md-6">
+                <label class="form-label small mb-1" for="tfBankPickCategory">Filter by category</label>
+                <select class="form-select form-select-sm" id="tfBankPickCategory"><option value="">All categories</option></select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small mb-1" for="tfBankPickDifficulty">Filter by difficulty</label>
+                <select class="form-select form-select-sm" id="tfBankPickDifficulty">
+                  <option value="">All difficulties</option>
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                </select>
+              </div>
             </div>
-            <p class="small text-muted-2 mb-2">Add one or more rows — the same category can be used multiple times. Set how many questions you need from each category and difficulty.</p>
-            <div id="tfBankFilterRules" class="d-flex flex-column gap-2 mb-2"></div>
-            <div class="small text-muted-2 mb-0" id="tfBankPickSummary">0 selected · 0 shown · 0 needed</div>
+            <div class="small text-muted-2 mb-2" id="tfBankPickSummary">0 selected · 0 shown · 0 needed</div>
+            <div id="tfBankPickList" class="d-flex flex-column gap-1" style="max-height:280px;overflow-y:auto"></div>
           </div>
           <div id="tfManualMcqSection">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -465,6 +484,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
-<script src="js/aptitude-exam.js?v=20260918hideans"></script>
-<script src="js/aptitude-page.js?v=20260918hideans"></script>
+<script src="js/aptitude-exam.js?v=20260918examfix"></script>
+<script src="js/aptitude-page.js?v=20260918bankpick"></script>
 </body></html>
