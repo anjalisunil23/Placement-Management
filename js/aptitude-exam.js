@@ -264,8 +264,17 @@
             <div class="flex-grow-1"><strong>Q${i + 1}.</strong> ${renderRichHtml(a.question)}</div>
             <span class="badge-soft ${a.status === 'correct' ? 'success' : a.status === 'incorrect' ? 'danger' : 'muted'}">${esc(a.status)} · ${esc(a.marksObtained)}/${esc(a.marks)}</span>
           </div>
-          <div class="small">Your answer: <strong>${esc(a.studentAnswer ?? '—')}</strong></div>
-          <div class="small">Correct answer: <strong>${esc(a.correctAnswer ?? '—')}</strong></div>
+          ${(a.options || []).length ? `<div class="small mt-2 mb-1">${(a.options || []).map((o, oi) => {
+            const letters = ['A', 'B', 'C', 'D'];
+            const isCorrect = oi === a.correctAnswerIndex;
+            const isPicked = oi === a.studentAnswerIndex;
+            let cls = '';
+            if (isCorrect) cls = 'text-success fw-semibold';
+            else if (isPicked && a.status !== 'correct') cls = 'text-danger fw-semibold';
+            const mark = isCorrect ? ' ✓' : (isPicked ? ' (your choice)' : '');
+            return `<div class="${cls}">${letters[oi] || oi + 1}. ${esc(o)}${mark}</div>`;
+          }).join('')}</div>` : `<div class="small">Your answer: <strong>${esc(a.studentAnswer ?? '—')}</strong></div>
+          <div class="small">Correct answer: <strong>${esc(a.correctAnswer ?? '—')}</strong></div>`}
           ${a.explanation ? `<div class="small text-muted-2 mt-1 apt-rich">${sanitizeRichHtml(a.explanation)}</div>` : ''}
         </div>`).join('') : '<p class="text-muted-2 mb-0">No question analysis available.</p>';
     }

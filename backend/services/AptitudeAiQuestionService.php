@@ -422,12 +422,18 @@ PROMPT;
             return null;
         }
 
-        $correctIndex = $this->parseExplicitCorrectIndex($q);
-        if ($correctIndex === null) {
+        $explicitCorrect = $this->parseExplicitCorrectIndex($q);
+        if ($explicitCorrect !== null) {
+            $correctIndex = $explicitCorrect;
+        } else {
             $correctIndex = $this->resolveAiCorrectIndex($q, $options, $explanation);
-        }
-        if ($correctIndex === null) {
-            return null;
+            if ($correctIndex === null) {
+                return null;
+            }
+            $fromExplanation = AptitudeTestModel::findUniqueOptionInExplanation($options, $explanation);
+            if ($fromExplanation !== null) {
+                $correctIndex = $fromExplanation;
+            }
         }
 
         $topic = trim((string) ($q['topic'] ?? $fallbackTopic));
@@ -440,7 +446,7 @@ PROMPT;
             return null;
         }
 
-        return [
+        $row = [
             'prompt' => $prompt,
             'options' => $options,
             'correctIndex' => $correctIndex,
@@ -450,6 +456,11 @@ PROMPT;
             'difficulty' => $difficulty,
             'marks' => max(0.25, (float) ($q['marks'] ?? $defaultMarks)),
         ];
+        if ($explicitCorrect !== null) {
+            $row['lockCorrectIndex'] = true;
+        }
+
+        return $row;
     }
 
     private function parseExplicitCorrectIndex(array $q): ?int
@@ -494,6 +505,10 @@ PROMPT;
         if ($correctIndex === null) {
             return null;
         }
+        $fromExplanation = AptitudeTestModel::findUniqueOptionInExplanation($options, $explanation);
+        if ($fromExplanation !== null) {
+            $correctIndex = $fromExplanation;
+        }
 
         $topic = trim((string) ($q['topic'] ?? $fallbackTopic));
         if ($topic === '') {
@@ -537,7 +552,7 @@ PROMPT;
                     ];
                     foreach ($keys as $key) {
                         if (array_key_exists($key, $raw)) {
-                            $options[$i] = trim((string) $raw[$key]);
+                            $options[$i] = AptitudeTestModel::sanitizeOptionText((string) $raw[$key]);
                             break;
                         }
                     }
@@ -546,7 +561,7 @@ PROMPT;
                 $options = array_values($options);
             } else {
                 foreach ($raw as $opt) {
-                    $options[] = trim((string) $opt);
+                    $options[] = AptitudeTestModel::sanitizeOptionText((string) $opt);
                 }
             }
         }
@@ -563,7 +578,10 @@ PROMPT;
             }
         }
 
-        $options = array_values(array_map(static fn (string $o): string => trim($o), array_slice($options, 0, 4)));
+        $options = array_values(array_map(
+            static fn (string $o): string => AptitudeTestModel::sanitizeOptionText($o),
+            array_slice($options, 0, 4)
+        ));
         if (count($options) !== 4 || in_array('', $options, true)) {
             return null;
         }
@@ -581,51 +599,24 @@ PROMPT;
      */
     private function resolveAiCorrectIndex(array $q, array $options, string $explanation): ?int
     {
+        $explanationIndex = AptitudeTestModel::findUniqueOptionInExplanation($options, $explanation);
+        if ($explanationIndex !== null) {
+            return $explanationIndex;
+        }
+
         $letterIndex = $this->parseOptionLetterIndex(
             $q['correctOptionLetter'] ?? $q['correct_option_letter'] ?? $q['correctLetter'] ?? null
         );
-
-        $numericCandidates = $this->parseNumericCorrectCandidates($q);
-        $explanationIndex = $this->findOptionIndexInExplanation($options, $explanation);
-
         if ($letterIndex !== null) {
-            if ($numericCandidates !== [] && !in_array($letterIndex, $numericCandidates, true)) {
-                // Letter disagrees with numeric field — trust explanation when available.
-                if ($explanationIndex !== null && $explanationIndex === $letterIndex) {
-                    return $letterIndex;
-                }
-                if ($explanationIndex !== null) {
-                    return $explanationIndex;
-                }
-
-                return $letterIndex;
-            }
-
-            if ($explanationIndex !== null && $explanationIndex !== $letterIndex) {
-                return $explanationIndex;
-            }
-
             return $letterIndex;
         }
 
-        if ($numericCandidates !== []) {
-            if (count($numericCandidates) === 1) {
-                $candidate = $numericCandidates[0];
-                if ($explanationIndex !== null && $explanationIndex !== $candidate) {
-                    return $explanationIndex;
-                }
-
-                return $candidate;
-            }
-
-            if ($explanationIndex !== null && in_array($explanationIndex, $numericCandidates, true)) {
-                return $explanationIndex;
-            }
-
-            return null;
+        $numericCandidates = $this->parseNumericCorrectCandidates($q);
+        if (count($numericCandidates) === 1) {
+            return $numericCandidates[0];
         }
 
-        return $explanationIndex;
+        return null;
     }
 
     private function parseOptionLetterIndex(mixed $raw): ?int
@@ -671,52 +662,6 @@ PROMPT;
         }
 
         return $candidates;
-    }
-
-    /**
-     * @param list<string> $options
-     */
-    private function findOptionIndexInExplanation(array $options, string $explanation): ?int
-    {
-        $explanationNorm = strtolower($explanation);
-        $matches = [];
-
-        foreach ($options as $i => $opt) {
-            $optNorm = strtolower(trim($opt));
-            if ($optNorm === '' || strlen($optNorm) < 2) {
-                continue;
-            }
-            if (!$this->optionAppearsInExplanation($optNorm, $explanationNorm)) {
-                continue;
-            }
-            $matches[] = ['index' => $i, 'len' => strlen($optNorm)];
-        }
-
-        if ($matches === []) {
-            return null;
-        }
-
-        usort($matches, static fn (array $a, array $b): int => $b['len'] <=> $a['len']);
-
-        $best = $matches[0]['index'];
-        $bestLen = $matches[0]['len'];
-        $tied = array_filter($matches, static fn (array $m): bool => $m['len'] === $bestLen);
-        if (count($tied) > 1) {
-            return null;
-        }
-
-        return $best;
-    }
-
-    private function optionAppearsInExplanation(string $optNorm, string $explanationNorm): bool
-    {
-        if (preg_match('/^-?\d+(?:\.\d+)?%?$/', $optNorm) === 1) {
-            $pattern = '/(?<!\d)' . preg_quote($optNorm, '/') . '(?!\d)/u';
-
-            return @preg_match($pattern, $explanationNorm) === 1;
-        }
-
-        return str_contains($explanationNorm, $optNorm);
     }
 
     private function assertCooldown(string $userId): void

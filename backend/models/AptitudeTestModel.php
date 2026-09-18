@@ -177,28 +177,22 @@ class AptitudeTestModel extends BaseModel
     {
         $prompt = trim((string) ($q['prompt'] ?? $q['question'] ?? $q['question_text'] ?? ''));
         $options = array_values(array_filter(
-            array_map(static fn ($o) => trim((string) $o), (array) ($q['options'] ?? [])),
+            array_map(static fn ($o) => self::sanitizeOptionText((string) $o), (array) ($q['options'] ?? [])),
             static fn ($o) => $o !== ''
         ));
         if ($prompt === '' || count($options) < 2) {
             return null;
         }
-        $correctIndex = (int) ($q['correctIndex'] ?? $q['answerIndex'] ?? 0);
-        if (isset($q['correct_answer']) || isset($q['correctAnswer'])) {
-            $rawCorrect = $q['correct_answer'] ?? $q['correctAnswer'];
-            if (is_int($rawCorrect) || (is_string($rawCorrect) && ctype_digit($rawCorrect))) {
-                $correctIndex = (int) $rawCorrect;
-            } elseif (is_string($rawCorrect)) {
-                $letter = strtoupper(trim($rawCorrect));
-                if (strlen($letter) === 1 && $letter >= 'A' && $letter <= 'Z') {
-                    $correctIndex = ord($letter) - ord('A');
-                } else {
-                    foreach ($options as $i => $opt) {
-                        if (strcasecmp($opt, $rawCorrect) === 0) {
-                            $correctIndex = $i;
-                            break;
-                        }
-                    }
+        $correctIndex = self::resolveCorrectIndex($q, $options);
+        $explanation = trim((string) ($q['explanation'] ?? $q['solution'] ?? ''));
+        if (empty($q['lockCorrectIndex']) && $explanation !== '') {
+            $fromExplanation = self::findUniqueOptionInExplanation($options, $explanation);
+            if ($fromExplanation !== null && $fromExplanation !== $correctIndex) {
+                $currentOpt = strtolower(trim((string) ($options[$correctIndex] ?? '')));
+                $currentSupported = $currentOpt !== ''
+                    && self::optionAppearsInExplanation($currentOpt, strtolower($explanation));
+                if (!$currentSupported) {
+                    $correctIndex = $fromExplanation;
                 }
             }
         }
@@ -228,10 +222,135 @@ class AptitudeTestModel extends BaseModel
             'correct_answer' => $correctIndex,
             'marks' => $marks,
             'negative_marks' => $negativeMarks,
-            'explanation' => trim((string) ($q['explanation'] ?? $q['solution'] ?? '')),
+            'explanation' => $explanation,
             'category' => self::normalizeCategory((string) ($q['category'] ?? $fallbackCategory)),
             'difficulty' => self::normalizeDifficulty((string) ($q['difficulty'] ?? 'Medium')),
         ];
+    }
+
+    public static function sanitizeOptionText(string $value): string
+    {
+        $text = trim($value);
+        if ($text === '') {
+            return '';
+        }
+        $text = preg_replace('/^[A-Da-d][\).\:\-\s]+/u', '', $text) ?? $text;
+
+        return trim($text);
+    }
+
+    /**
+     * @param list<string> $options
+     */
+    private static function resolveCorrectIndex(array $q, array $options): int
+    {
+        $count = count($options);
+        if ($count === 0) {
+            return 0;
+        }
+
+        if (array_key_exists('correctIndex', $q) && $q['correctIndex'] !== '' && $q['correctIndex'] !== null) {
+            $idx = (int) $q['correctIndex'];
+            if ($idx >= 0 && $idx < $count) {
+                return $idx;
+            }
+        }
+
+        if (isset($q['answerIndex']) && $q['answerIndex'] !== '' && $q['answerIndex'] !== null) {
+            $idx = (int) $q['answerIndex'];
+            if ($idx >= 0 && $idx < $count) {
+                return $idx;
+            }
+        }
+
+        if (isset($q['correct_answer']) || isset($q['correctAnswer'])) {
+            $rawCorrect = $q['correct_answer'] ?? $q['correctAnswer'];
+            if (is_int($rawCorrect) || (is_string($rawCorrect) && ctype_digit($rawCorrect))) {
+                $idx = (int) $rawCorrect;
+                if ($idx >= 1 && $idx <= $count) {
+                    return $idx - 1;
+                }
+                if ($idx >= 0 && $idx < $count) {
+                    return $idx;
+                }
+            } elseif (is_string($rawCorrect)) {
+                $letter = strtoupper(trim($rawCorrect));
+                if (strlen($letter) === 1 && $letter >= 'A' && $letter <= 'Z') {
+                    $idx = ord($letter) - ord('A');
+                    if ($idx >= 0 && $idx < $count) {
+                        return $idx;
+                    }
+                }
+                foreach ($options as $i => $opt) {
+                    if (strcasecmp($opt, trim($rawCorrect)) === 0) {
+                        return (int) $i;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param list<string> $options
+     */
+    public static function findUniqueOptionInExplanation(array $options, string $explanation): ?int
+    {
+        $letterIndex = self::parseLetterFromExplanation($explanation);
+        if ($letterIndex !== null && isset($options[$letterIndex])) {
+            return $letterIndex;
+        }
+
+        $explanationNorm = strtolower($explanation);
+        $matches = [];
+        foreach ($options as $i => $opt) {
+            $optNorm = strtolower(trim($opt));
+            if ($optNorm === '' || strlen($optNorm) < 2) {
+                continue;
+            }
+            if (!self::optionAppearsInExplanation($optNorm, $explanationNorm)) {
+                continue;
+            }
+            $matches[] = ['index' => $i, 'len' => strlen($optNorm)];
+        }
+
+        if ($matches === []) {
+            return null;
+        }
+
+        usort($matches, static fn (array $a, array $b): int => $b['len'] <=> $a['len']);
+        $best = $matches[0]['index'];
+        $bestLen = $matches[0]['len'];
+        $tied = array_filter($matches, static fn (array $m): bool => $m['len'] === $bestLen);
+        if (count($tied) > 1) {
+            return null;
+        }
+
+        return $best;
+    }
+
+    private static function parseLetterFromExplanation(string $explanation): ?int
+    {
+        if (preg_match('/\b(?:option|choice|answer)\s*([A-Da-d])\b/i', $explanation, $m) === 1) {
+            return ord(strtoupper($m[1])) - ord('A');
+        }
+        if (preg_match('/\b([A-Da-d])\s+(?:is|are)\s+(?:correct|the correct|right)\b/i', $explanation, $m) === 1) {
+            return ord(strtoupper($m[1])) - ord('A');
+        }
+
+        return null;
+    }
+
+    private static function optionAppearsInExplanation(string $optNorm, string $explanationNorm): bool
+    {
+        if (preg_match('/^-?\d+(?:\.\d+)?%?$/', $optNorm) === 1) {
+            $pattern = '/(?<!\d)' . preg_quote($optNorm, '/') . '(?!\d)/u';
+
+            return @preg_match($pattern, $explanationNorm) === 1;
+        }
+
+        return str_contains($explanationNorm, $optNorm);
     }
 
     /**

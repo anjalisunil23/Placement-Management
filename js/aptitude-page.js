@@ -1115,6 +1115,29 @@
     return { questions, requested: n, received: n, demo: true };
   }
 
+  function sanitizeAiOptionText(value) {
+    return String(value ?? '').trim().replace(/^[A-Da-d][\).\:\-\s]+/, '').trim();
+  }
+
+  function explanationSupportsOption(explanation, optionText) {
+    const exp = String(explanation ?? '').toLowerCase();
+    const opt = sanitizeAiOptionText(optionText).toLowerCase();
+    if (!exp || !opt || opt.length < 2) return true;
+    if (/^-?\d+(?:\.\d+)?%?$/.test(opt)) {
+      const re = new RegExp(`(?<!\\d)${opt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`);
+      return re.test(exp);
+    }
+    return exp.includes(opt);
+  }
+
+  function reconcileAiPreviewQuestion(q) {
+    if (!q || typeof q !== 'object') return q;
+    const options = (q.options || []).slice(0, 4).map((o) => sanitizeAiOptionText(o));
+    q.options = options;
+    q.correctIndex = resolveAiPreviewCorrectIndex({ ...q, options });
+    return q;
+  }
+
   function resolveAiPreviewCorrectIndex(q) {
     if (q?.correctIndex != null && q.correctIndex !== '') {
       const idx = Number(q.correctIndex);
@@ -1142,6 +1165,7 @@
     q.prompt = card.querySelector('[data-ai-field="prompt"]')?.value || '';
     q.options = [0, 1, 2, 3].map((oi) => String(card.querySelector(`[data-ai-field="opt${oi}"]`)?.value || '').trim());
     q.correctIndex = Number(card.querySelector('[data-ai-field="correct"]')?.value || 0);
+    q.lockCorrectIndex = true;
     q.marks = Number(card.querySelector('[data-ai-field="marks"]')?.value || 1);
     q.explanation = card.querySelector('[data-ai-field="explanation"]')?.value || '';
     delete q._editing;
@@ -1197,6 +1221,7 @@
         const val = Number(pick.value);
         if (aiPreviewQuestions[idx] && Number.isInteger(val) && val >= 0 && val <= 3) {
           aiPreviewQuestions[idx].correctIndex = val;
+          aiPreviewQuestions[idx].lockCorrectIndex = true;
           renderAptAiPreview();
         }
         return;
@@ -1221,6 +1246,10 @@
       const opts = (q.options || []).slice(0, 4);
       const correct = resolveAiPreviewCorrectIndex(q);
       q.correctIndex = correct;
+      const mismatch = !explanationSupportsOption(q.explanation, opts[correct]);
+      const mismatchWarn = mismatch
+        ? '<div class="small text-warning mt-1">Marked answer may not match the explanation — pick the correct option below or edit.</div>'
+        : '';
       const dup = q.duplicateMessage ? `<div class="small text-warning mt-1">${esc(q.duplicateMessage)}</div>` : '';
       const editing = q._editing;
       if (editing) {
@@ -1251,6 +1280,7 @@
             </div>
             <div class="small text-muted-2">${esc(q.category || '')} · ${esc(q.topic || '')} · ${esc(q.difficulty || '')} · ${esc(q.marks ?? 1)} mark(s)</div>
             <div class="small mt-1"><span class="fw-semibold">Explanation:</span> ${esc(q.explanation || '')}</div>
+            ${mismatchWarn}
             ${dup}
             <div class="d-flex flex-wrap gap-2 mt-2">
               <button type="button" class="btn btn-sm btn-outline-primary" data-ai-edit-btn="${i}">Edit</button>
@@ -1287,7 +1317,7 @@
         if (!res?.success) throw new Error(res?.message || 'AI generation failed.');
         data = res.data || {};
       }
-      aiPreviewQuestions = (data.questions || []).map((q) => ({ ...q, selected: q.selected !== false }));
+      aiPreviewQuestions = (data.questions || []).map((q) => reconcileAiPreviewQuestion({ ...q, selected: q.selected !== false }));
       aiLastFormParams = params;
       if (!aiPreviewQuestions.length) {
         toast('No questions were generated.', 'error');
