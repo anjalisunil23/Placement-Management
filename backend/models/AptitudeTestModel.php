@@ -92,8 +92,8 @@ class AptitudeTestModel extends BaseModel
                 return $now <= $end ? 'ACTIVE' : 'COMPLETED';
             }
             $daysSince = ($today - $want + 7) % 7;
-
-            return ($daysSince > 0 && $daysSince < 7) ? 'COMPLETED' : 'UPCOMING';
+            // 1–3 days after the contest weekday: finished for this cycle. 4–6: upcoming again.
+            return ($daysSince >= 1 && $daysSince <= 3) ? 'COMPLETED' : 'UPCOMING';
         }
         $want = (int) ($test['contestMonthDay'] ?? 0);
         if ($want < 1 || $want > 28) {

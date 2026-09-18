@@ -1289,23 +1289,30 @@
   }
 
   function contestStatusClient(test) {
-    if (test?.contestStatus) return String(test.contestStatus);
-    if (!isContestTest(test)) return 'ACTIVE';
+    if (!isContestTest(test)) {
+      return test?.contestStatus ? String(test.contestStatus) : 'ACTIVE';
+    }
     const type = String(test?.contestType || 'none');
     const now = new Date();
     if (type === 'weekly') {
       const want = Number(test?.contestWeekday);
       if (!Number.isFinite(want) || want < 1 || want > 7) return 'UPCOMING';
       const today = now.getDay() === 0 ? 7 : now.getDay();
-      if (today === want) return 'ACTIVE';
+      if (today === want) {
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        return now <= end ? 'ACTIVE' : 'COMPLETED';
+      }
       const daysSince = (today - want + 7) % 7;
-      return daysSince > 0 && daysSince < 7 ? 'COMPLETED' : 'UPCOMING';
+      return daysSince >= 1 && daysSince <= 3 ? 'COMPLETED' : 'UPCOMING';
     }
     if (type === 'monthly') {
       const want = Number(test?.contestMonthDay);
       if (!Number.isFinite(want) || want < 1 || want > 28) return 'UPCOMING';
       const dom = now.getDate();
-      if (dom === want) return 'ACTIVE';
+      if (dom === want) {
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        return now <= end ? 'ACTIVE' : 'COMPLETED';
+      }
       return dom > want ? 'COMPLETED' : 'UPCOMING';
     }
     return 'UPCOMING';
@@ -2401,9 +2408,14 @@
     if (!show && managePanel === 'contests') applyManagePanel('tests');
   }
 
+  function isContestManageActive(test) {
+    const status = contestStatusClient(test);
+    return status === 'ACTIVE' || status === 'UPCOMING';
+  }
+
   function renderManageContestSections(contestType, listRoot) {
     const all = tests.filter((t) => String(t.contestType) === contestType);
-    const active = all.filter((t) => contestStatusClient(t) !== 'COMPLETED');
+    const active = all.filter((t) => isContestManageActive(t));
     const label = contestType === 'monthly' ? 'monthly' : 'weekly';
 
     if (!listRoot) return;
