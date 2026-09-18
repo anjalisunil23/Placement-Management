@@ -39,6 +39,28 @@ class AptitudeTestModel extends BaseModel
     /**
      * @param array<string, mixed> $test
      */
+    public static function isContest(array $test): bool
+    {
+        return in_array(self::normalizeContestType((string) ($test['contestType'] ?? 'none')), ['weekly', 'monthly'], true);
+    }
+
+    /**
+     * Regular tests always expose results. Contests stay hidden until published.
+     *
+     * @param array<string, mixed> $test
+     */
+    public static function resultsPublished(array $test): bool
+    {
+        if (!self::isContest($test)) {
+            return true;
+        }
+
+        return filter_var($test['resultsPublished'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
     public static function isContestOpen(array $test, ?\DateTimeInterface $now = null): bool
     {
         $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
@@ -490,6 +512,9 @@ class AptitudeTestModel extends BaseModel
             'questions' => $questions,
         ];
         $contestType = $payload['contestType'];
+        $payload['resultsPublished'] = $contestType === 'none'
+            ? true
+            : filter_var($data['resultsPublished'] ?? false, FILTER_VALIDATE_BOOLEAN);
         if ($contestType === 'weekly') {
             $payload['contestWeekday'] = max(1, min(7, (int) ($data['contestWeekday'] ?? 1)));
         } elseif ($contestType === 'monthly') {
@@ -652,6 +677,7 @@ class AptitudeTestModel extends BaseModel
             'contestMonthDay' => isset($test['contestMonthDay']) ? (int) $test['contestMonthDay'] : null,
             'contestScheduleLabel' => self::contestScheduleLabel($test),
             'contestOpen' => self::isContestOpen($test),
+            'resultsPublished' => self::resultsPublished($test),
             'questionSource' => in_array((string) ($test['questionSource'] ?? 'manual'), ['random'], true)
                 ? 'random'
                 : 'manual',

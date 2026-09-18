@@ -54,6 +54,7 @@ final class AptitudeService
                     'correctIndex' => 1,
                     'marks' => 1,
                     'category' => 'Quantitative Aptitude',
+                    'explanation' => '15% of 240 = 0.15 × 240 = 36.',
                 ],
                 [
                     'id' => 'q2',
@@ -63,6 +64,7 @@ final class AptitudeService
                     'correctIndex' => 0,
                     'marks' => 1,
                     'category' => 'Quantitative Aptitude',
+                    'explanation' => 'A:B = 2:3 and B:C = 4:5. Make B common: A:B = 8:12 and B:C = 12:15, so A:C = 8:15.',
                 ],
                 [
                     'id' => 'q3',
@@ -72,6 +74,7 @@ final class AptitudeService
                     'correctIndex' => 2,
                     'marks' => 1,
                     'category' => 'Quantitative Aptitude',
+                    'explanation' => 'Average speed = distance / time = 120 / 2 = 60 km/h.',
                 ],
             ],
         ]);
@@ -95,6 +98,7 @@ final class AptitudeService
                     'correctIndex' => 1,
                     'marks' => 1,
                     'category' => 'Logical Reasoning',
+                    'explanation' => 'The differences increase by 2 each time: +4, +6, +8, then +10. 20 + 10 = 30.',
                 ],
                 [
                     'id' => 'l2',
@@ -109,6 +113,7 @@ final class AptitudeService
                     'correctIndex' => 1,
                     'marks' => 1,
                     'category' => 'Logical Reasoning',
+                    'explanation' => 'All roses are flowers, and some flowers fade quickly, so some roses may fade quickly. It is not true that all roses fade.',
                 ],
             ],
         ]);
@@ -132,17 +137,59 @@ final class AptitudeService
     public function listPublishedForUser(array $user, bool $includeAnswers = false): array
     {
         $this->ensureSeeded();
+        $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
+        $completedIds = [];
+        $inProgressIds = [];
+        if ($userId !== '') {
+            foreach ($this->attempts->forUser($userId, 200) as $attempt) {
+                $tid = (string) ($attempt['testId'] ?? '');
+                if ($tid === '') {
+                    continue;
+                }
+                if (($attempt['status'] ?? '') === 'completed') {
+                    $completedIds[$tid] = true;
+                }
+                if (($attempt['status'] ?? '') === 'in_progress') {
+                    $inProgressIds[$tid] = true;
+                }
+            }
+        }
         $rows = array_values(array_filter(
             $this->tests->published(200),
-            static function ($t) use ($user): bool {
-                return AptitudeAccessService::testVisibleToTaker($user, $t);
+            static function ($t) use ($user, $completedIds, $inProgressIds): bool {
+                if (!AptitudeAccessService::testVisibleToTaker($user, $t)) {
+                    return false;
+                }
+                if (!AptitudeTestModel::isContest($t)) {
+                    return true;
+                }
+                $id = (string) ($t['_id'] ?? '');
+                if (isset($completedIds[$id])) {
+                    return false;
+                }
+                if (!AptitudeTestModel::isContestOpen($t)) {
+                    return false;
+                }
+
+                return true;
             }
         ));
 
-        return $this->attachListStats(array_map(
+        $tests = $this->attachListStats(array_map(
             static fn ($t) => AptitudeTestModel::publicView($t, $includeAnswers),
             $rows
         ));
+        foreach ($tests as &$test) {
+            $id = (string) ($test['id'] ?? '');
+            $test['alreadyAttempted'] = isset($completedIds[$id]);
+            $test['attemptInProgress'] = isset($inProgressIds[$id]);
+            if (AptitudeTestModel::isContest($test) && !AptitudeTestModel::resultsPublished($test)) {
+                $test['averagePercentage'] = null;
+            }
+        }
+        unset($test);
+
+        return $tests;
     }
 
     /**
@@ -230,12 +277,43 @@ final class AptitudeService
         if (!AptitudeTestModel::isContestOpen($test)) {
             Response::forbidden('This contest is not open today. Check the weekly or monthly schedule.');
         }
+        $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
+        $examQuestions = [];
+        if (AptitudeTestModel::isContest($test)) {
+            $existing = $this->attempts->forUserAndTest($userId, $testId, 20);
+            foreach ($existing as $row) {
+                if (($row['status'] ?? '') === 'completed') {
+                    Response::forbidden('You can take this contest only once.');
+                }
+            }
+            foreach ($existing as $row) {
+                if (($row['status'] ?? '') === 'in_progress') {
+                    $stored = array_values((array) ($row['examQuestions'] ?? []));
+                    $examTest = $this->examViewFromQuestions($test, $stored);
+
+                    return [
+                        'attemptId' => (string) ($row['_id'] ?? ''),
+                        'test' => $examTest,
+                    ];
+                }
+            }
+            try {
+                $examQuestions = $this->contestQuestionsFromBank($test);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            if ($examQuestions === []) {
+                Response::error('This contest has no questions in the question bank yet.', 422);
+            }
+        }
         $ctx = AptitudeAccessService::subjectContext($user);
-        $examTest = AptitudeTestModel::publicView($test, false);
-        $examQuestions = array_values((array) ($examTest['questions'] ?? []));
+        $examTest = $examQuestions !== []
+            ? $this->examViewFromQuestions($test, $examQuestions)
+            : AptitudeTestModel::publicView($test, false);
+        $clientQuestions = array_values((array) ($examTest['questions'] ?? []));
         $attemptId = $this->attempts->startAttempt([
             'testId' => $testId,
-            'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
+            'userId' => $userId,
             'subjectType' => $ctx['subjectType'],
             'studentId' => $ctx['studentId'],
             'alumniId' => $ctx['alumniId'],
@@ -244,8 +322,8 @@ final class AptitudeService
             'course' => $ctx['course'],
             'semester' => $ctx['semester'],
             'batch' => $ctx['batch'],
-            'totalQuestions' => count($examQuestions),
-            'examQuestions' => $examQuestions,
+            'totalQuestions' => count($clientQuestions),
+            'examQuestions' => $examQuestions !== [] ? $examQuestions : $clientQuestions,
         ]);
 
         return [
@@ -276,7 +354,7 @@ final class AptitudeService
             Response::notFound('Aptitude test not found.');
         }
         if (($attempt['status'] ?? '') === 'completed') {
-            return $this->buildResultPayload($attempt, $test);
+            return $this->buildResultPayload($attempt, $test, $user);
         }
 
         $durationSec = max(60, (int) ($test['durationMinutes'] ?? 30) * 60);
@@ -289,7 +367,7 @@ final class AptitudeService
             $timeTaken = $durationSec;
         }
 
-        $scored = $this->scoreAttempt($test, $answers);
+        $scored = $this->scoreAttempt($test, $answers, $this->attemptExamQuestions($attempt));
         $scored['markedForReview'] = array_values(array_filter(
             array_map('strval', (array) ($meta['markedForReview'] ?? []))
         ));
@@ -307,7 +385,7 @@ final class AptitudeService
             $fresh['rank'] = $rankInfo['rank'];
             $fresh['percentile'] = $rankInfo['percentile'];
         }
-        return $this->buildResultPayload($fresh, $test);
+        return $this->buildResultPayload($fresh, $test, $user);
     }
 
     /**
@@ -332,7 +410,7 @@ final class AptitudeService
         }
         // Rebuild analysis if missing (older attempts)
         if (empty($attempt['questionAnalysis'])) {
-            $scored = $this->scoreAttempt($test, (array) ($attempt['answers'] ?? []));
+            $scored = $this->scoreAttempt($test, (array) ($attempt['answers'] ?? []), $this->attemptExamQuestions($attempt));
             $attempt = array_merge($attempt, [
                 'questionAnalysis' => $scored['questionAnalysis'],
                 'wrongCount' => $scored['wrongCount'],
@@ -341,7 +419,7 @@ final class AptitudeService
                 'marksObtained' => $scored['marksObtained'],
             ]);
         }
-        return $this->buildResultPayload($attempt, $test);
+        return $this->buildResultPayload($attempt, $test, $user);
     }
 
     /**
@@ -493,6 +571,69 @@ final class AptitudeService
 
     /**
      * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
+    public function publishContestResults(array $admin, string $id, bool $published): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid aptitude test id.', 400);
+        }
+        $test = $this->tests->findById($id);
+        if (!$test) {
+            Response::notFound('Aptitude test not found.');
+        }
+        AptitudeAccessService::assertTestManageable($admin, $test);
+        if (!AptitudeTestModel::isContest($test)) {
+            Response::error('Results can only be published for weekly or monthly contests.', 422);
+        }
+        if (!$this->tests->updateTest($id, ['resultsPublished' => $published])) {
+            Response::error('Could not update contest results visibility.', 500);
+        }
+        $fresh = $this->tests->findById($id) ?: $test;
+
+        return AptitudeTestModel::publicView($fresh, true);
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @param array<string, mixed> $patch
+     * @return array<string, mixed>
+     */
+    public function updateContestSchedule(array $admin, string $id, array $patch): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!AptitudeAccessService::canManageContests($admin)) {
+            Response::forbidden('You cannot manage contest schedules.');
+        }
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid aptitude test id.', 400);
+        }
+        $test = $this->tests->findById($id);
+        if (!$test) {
+            Response::notFound('Aptitude test not found.');
+        }
+        AptitudeAccessService::assertTestManageable($admin, $test);
+        if (!AptitudeTestModel::isContest($test)) {
+            Response::error('Schedule can only be set for weekly or monthly contests.', 422);
+        }
+        $type = AptitudeTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        $data = ['contestType' => $type];
+        if ($type === 'weekly') {
+            $data['contestWeekday'] = max(1, min(7, (int) ($patch['contestWeekday'] ?? $test['contestWeekday'] ?? 1)));
+        } else {
+            $data['contestMonthDay'] = max(1, min(28, (int) ($patch['contestMonthDay'] ?? $test['contestMonthDay'] ?? 1)));
+        }
+        if (!$this->tests->updateTest($id, $data)) {
+            Response::error('Could not update contest schedule.', 500);
+        }
+        $fresh = $this->tests->findById($id) ?: $test;
+
+        return AptitudeTestModel::publicView($fresh, true);
+    }
+
+    /**
+     * @param array<string, mixed> $admin
      * @param string[] $bankIds
      * @return array<string, mixed>
      */
@@ -539,7 +680,7 @@ final class AptitudeService
             Response::forbidden('Invalid session.');
         }
         $rows = $this->attempts->forUser($userId, 200);
-        return $this->summarizeSubject($userId, $rows, true);
+        return $this->summarizeSubject($userId, $rows, true, $user);
     }
 
     /**
@@ -1360,6 +1501,7 @@ final class AptitudeService
         AptitudeAccessService::requireManager($admin);
         $data = AptitudeAccessService::applyTestDepartmentScope($admin, $data);
         $data = AptitudeAccessService::sanitizeContestFields($admin, $data);
+        $data = $this->requireContestBankSource($data);
         $data = $this->resolveTestQuestions($data);
         $id = $this->tests->createTest(array_merge($data, [
             'createdBy' => (string) ($admin['_id'] ?? $admin['id'] ?? ''),
@@ -1385,10 +1527,87 @@ final class AptitudeService
         }
         AptitudeAccessService::assertTestManageable($admin, $existing);
         $data = AptitudeAccessService::sanitizeTestUpdate($admin, $data);
+        $merged = array_merge($existing, $data);
+        if (AptitudeTestModel::isContest($merged)) {
+            $data = $this->requireContestBankSource($merged);
+        }
         $data = $this->resolveTestQuestions($data);
         $this->tests->updateTest($id, $data);
         $doc = $this->tests->findById($id);
         return AptitudeTestModel::publicView($doc ?: [], true);
+    }
+
+    /**
+     * Contests always draw from the question bank via random rules.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function requireContestBankSource(array $data): array
+    {
+        if (!AptitudeTestModel::isContest($data)) {
+            return $data;
+        }
+        $data['questionSource'] = 'random';
+        $rules = array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array'));
+        if ($rules === []) {
+            Response::error('Contest questions must be generated from the question bank. Add at least one category and difficulty rule.', 422);
+        }
+        $data['randomRules'] = $rules;
+        $data['bankQuestionIds'] = [];
+
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @return array<int, array<string, mixed>>
+     */
+    private function contestQuestionsFromBank(array $test): array
+    {
+        $bank = new AptitudeQuestionBankModel();
+        $rules = array_values(array_filter((array) ($test['randomRules'] ?? []), 'is_array'));
+        if ($rules !== []) {
+            return $bank->pickRandomByRules($rules);
+        }
+        $ids = array_values(array_filter(array_map(
+            static fn ($id) => trim((string) $id),
+            (array) ($test['bankQuestionIds'] ?? [])
+        )));
+        if ($ids !== []) {
+            return $bank->questionsByIds($ids);
+        }
+
+        return AptitudeTestModel::normalizedQuestions($test);
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @param array<int, array<string, mixed>> $questions
+     * @return array<string, mixed>
+     */
+    private function examViewFromQuestions(array $test, array $questions): array
+    {
+        return AptitudeTestModel::publicView(array_merge($test, [
+            'questions' => $questions,
+            'questionCount' => count($questions),
+        ]), false);
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function attemptExamQuestions(array $attempt): ?array
+    {
+        $rows = array_values(array_filter((array) ($attempt['examQuestions'] ?? []), 'is_array'));
+        foreach ($rows as $q) {
+            if (array_key_exists('correctIndex', $q) || array_key_exists('explanation', $q)) {
+                return $rows;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1528,16 +1747,67 @@ final class AptitudeService
     }
 
     /**
-     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $user
      * @param array<string, mixed> $test
+     */
+    private function resultVisibilityForUser(array $user, array $test): string
+    {
+        if (!AptitudeTestModel::isContest($test)) {
+            return 'full';
+        }
+        if (AptitudeAccessService::canManage($user) || AptitudeAccessService::canViewDirectory($user)) {
+            return 'full';
+        }
+
+        return AptitudeTestModel::resultsPublished($test) ? 'score' : 'pending';
+    }
+
+    /**
+     * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    private function buildResultPayload(array $attempt, array $test): array
+    private function applyResultVisibility(array $payload, string $mode): array
+    {
+        $payload['resultVisibility'] = $mode;
+        if ($mode === 'full') {
+            return $payload;
+        }
+        $payload['questionAnalysis'] = [];
+        $payload['categoryScores'] = [];
+        $payload['rank'] = null;
+        $payload['percentile'] = null;
+        if ($mode === 'pending') {
+            $payload['score'] = null;
+            $payload['marksObtained'] = null;
+            $payload['percentage'] = null;
+            $payload['accuracy'] = null;
+            $payload['correctAnswers'] = null;
+            $payload['correctCount'] = null;
+            $payload['incorrectAnswers'] = null;
+            $payload['wrongCount'] = null;
+            $payload['unansweredQuestions'] = null;
+            $payload['unansweredCount'] = null;
+            $payload['rank'] = null;
+            $payload['percentile'] = null;
+            $payload['message'] = 'Your attempt is submitted. The score will appear after the admin publishes contest results.';
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $test
+     * @param array<string, mixed>|null $viewer
+     * @return array<string, mixed>
+     */
+    private function buildResultPayload(array $attempt, array $test, ?array $viewer = null): array
     {
         $base = $this->publicAttempt(
             $attempt,
             (string) ($test['title'] ?? ''),
-            (string) ($test['category'] ?? '')
+            (string) ($test['category'] ?? ''),
+            $viewer
         );
         $durationSec = max(60, (int) ($test['durationMinutes'] ?? 30) * 60);
         $timeTaken = (int) ($attempt['timeTakenSeconds'] ?? 0);
@@ -1549,7 +1819,7 @@ final class AptitudeService
             }
         }
 
-        return array_merge($base, [
+        $payload = array_merge($base, [
             'testName' => (string) ($test['title'] ?? ''),
             'maximumScore' => (float) ($attempt['totalMarks'] ?? $test['totalMarks'] ?? 0),
             'score' => (float) ($attempt['marksObtained'] ?? $attempt['score'] ?? 0),
@@ -1562,10 +1832,82 @@ final class AptitudeService
             'rank' => $attempt['rank'] ?? null,
             'percentile' => $attempt['percentile'] ?? null,
             'autoSubmitted' => !empty($attempt['autoSubmitted']),
-            'questionAnalysis' => array_values((array) ($attempt['questionAnalysis'] ?? [])),
+            'questionAnalysis' => $this->withQuestionExplanations(
+                array_values((array) ($attempt['questionAnalysis'] ?? [])),
+                $test
+            ),
             'negativeMarking' => filter_var($test['negativeMarking'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'negativeMarks' => (float) ($test['negativeMarks'] ?? 0),
+            'resultsPublished' => AptitudeTestModel::resultsPublished($test),
         ]);
+
+        $mode = $viewer ? $this->resultVisibilityForUser($viewer, $test) : 'full';
+
+        return $this->applyResultVisibility($payload, $mode);
+    }
+
+    /**
+     * Fill missing analysis explanations from the test, or a correct-option fallback.
+     *
+     * @param array<int, mixed> $analysis
+     * @param array<string, mixed> $test
+     * @return array<int, array<string, mixed>>
+     */
+    private function withQuestionExplanations(array $analysis, array $test): array
+    {
+        $questions = AptitudeTestModel::normalizedQuestions($test);
+        $byId = [];
+        foreach ($questions as $i => $q) {
+            $qid = (string) ($q['id'] ?? '');
+            if ($qid !== '') {
+                $byId[$qid] = $q;
+            }
+            $bankId = trim((string) ($q['bankId'] ?? ''));
+            if ($bankId !== '') {
+                $byId[$bankId] = $q;
+            }
+            $byId['#' . $i] = $q;
+        }
+        $letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+        $out = [];
+        foreach ($analysis as $i => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $exp = $this->explanationText($row['explanation'] ?? $row['solution'] ?? '');
+            if ($exp === '') {
+                $qid = (string) ($row['id'] ?? $row['questionId'] ?? '');
+                $q = ($qid !== '' && isset($byId[$qid])) ? $byId[$qid] : ($questions[$i] ?? null);
+                $exp = is_array($q) ? $this->explanationText($q['explanation'] ?? $q['solution'] ?? '') : '';
+            }
+            if ($exp === '') {
+                $idx = isset($row['correctAnswerIndex']) && is_numeric($row['correctAnswerIndex'])
+                    ? (int) $row['correctAnswerIndex']
+                    : null;
+                $ans = trim((string) ($row['correctAnswer'] ?? ''));
+                $letter = $idx !== null && isset($letters[$idx]) ? $letters[$idx] : '';
+                if ($letter !== '' && $ans !== '') {
+                    $exp = 'The correct option is ' . $letter . '. ' . $ans . '.';
+                } elseif ($ans !== '') {
+                    $exp = 'The correct answer is ' . $ans . '.';
+                }
+            }
+            $row['explanation'] = $exp;
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    private function explanationText(mixed $value): string
+    {
+        $html = trim((string) $value);
+        if ($html === '') {
+            return '';
+        }
+        $text = trim(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+        return $text === '' ? '' : $html;
     }
 
     /**
@@ -1766,7 +2108,7 @@ final class AptitudeService
      * @param array<string, mixed> $attempt
      * @return array<string, mixed>
      */
-    private function publicAttempt(array $attempt, string $title = '', string $category = ''): array
+    private function publicAttempt(array $attempt, string $title = '', string $category = '', ?array $viewer = null): array
     {
         $test = $this->tests->findById((string) ($attempt['testId'] ?? '')) ?: [];
         if ($title === '') {
@@ -1787,7 +2129,7 @@ final class AptitudeService
         $totalMarks = (float) ($attempt['totalMarks'] ?? 0);
         $marksObtained = (float) ($attempt['marksObtained'] ?? $attempt['score'] ?? 0);
 
-        return [
+        $payload = [
             'id' => (string) ($attempt['_id'] ?? ''),
             'attemptId' => (string) ($attempt['_id'] ?? ''),
             'testId' => (string) ($attempt['testId'] ?? ''),
@@ -1811,7 +2153,13 @@ final class AptitudeService
             'timeTakenLabel' => $this->formatDuration($timeTaken),
             'startedAt' => $attempt['startedAt'] ?? null,
             'completedAt' => $attempt['completedAt'] ?? null,
+            'resultsPublished' => AptitudeTestModel::resultsPublished($test),
         ];
+        if ($viewer) {
+            $payload = $this->applyResultVisibility($payload, $this->resultVisibilityForUser($viewer, $test));
+        }
+
+        return $payload;
     }
 
     /**
@@ -1889,10 +2237,12 @@ final class AptitudeService
         return -1;
     }
 
-    private function scoreAttempt(array $test, array $answers): array
+    private function scoreAttempt(array $test, array $answers, ?array $examQuestions = null): array
     {
         $category = AptitudeTestModel::normalizeCategory((string) ($test['category'] ?? 'General Aptitude'));
-        $questions = AptitudeTestModel::normalizedQuestions($test);
+        $questions = $examQuestions
+            ? AptitudeTestModel::normalizedQuestions(['questions' => $examQuestions, 'category' => $category])
+            : AptitudeTestModel::normalizedQuestions($test);
         $parsedAnswers = $this->parseSubmittedAnswers($answers);
 
         $total = count($questions);
@@ -2004,18 +2354,29 @@ final class AptitudeService
      * @param array<int, array<string, mixed>> $attempts
      * @return array<string, mixed>
      */
-    private function summarizeSubject(string $userId, array $attempts, bool $includeHistory): array
+    private function summarizeSubject(string $userId, array $attempts, bool $includeHistory, ?array $historyViewer = null): array
     {
         $completed = array_values(array_filter(
             $attempts,
             static fn ($a) => ($a['status'] ?? '') === 'completed'
         ));
-        $percentages = array_map(static fn ($a) => (float) ($a['percentage'] ?? 0), $completed);
+        $scoredForStats = $completed;
+        if ($historyViewer) {
+            $scoredForStats = array_values(array_filter(
+                $completed,
+                function (array $a) use ($historyViewer): bool {
+                    $test = $this->tests->findById((string) ($a['testId'] ?? '')) ?: [];
+
+                    return $this->resultVisibilityForUser($historyViewer, $test) !== 'pending';
+                }
+            ));
+        }
+        $percentages = array_map(static fn ($a) => (float) ($a['percentage'] ?? 0), $scoredForStats);
         $best = $percentages === [] ? 0.0 : max($percentages);
         $avg = $percentages === [] ? 0.0 : round(array_sum($percentages) / count($percentages), 1);
 
         $categoryAgg = [];
-        foreach ($completed as $a) {
+        foreach ($scoredForStats as $a) {
             foreach ((array) ($a['categoryScores'] ?? []) as $cat => $stats) {
                 if (!is_array($stats)) {
                     continue;
@@ -2056,7 +2417,7 @@ final class AptitudeService
         }
 
         $accuracies = [];
-        foreach ($completed as $a) {
+        foreach ($scoredForStats as $a) {
             if (isset($a['accuracy']) && $a['accuracy'] !== null) {
                 $accuracies[] = (float) $a['accuracy'];
             } elseif (isset($a['correctCount'], $a['wrongCount'])) {
@@ -2072,11 +2433,11 @@ final class AptitudeService
         $history = [];
         if ($includeHistory) {
             foreach ($completed as $a) {
-                $history[] = $this->publicAttempt($a);
+                $history[] = $this->publicAttempt($a, '', '', $historyViewer);
             }
         }
 
-        $recent = $completed[0] ?? null;
+        $recent = $scoredForStats[0] ?? null;
         $first = $completed[0] ?? [];
 
         $deptName = AptitudeAccessService::departmentDisplayName(

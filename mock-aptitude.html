@@ -6,23 +6,27 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260915crumb" rel="stylesheet"/>
 <style>
-  .apt-option{cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
-  .apt-option:hover{border-color:color-mix(in srgb,var(--primary) 40%,var(--border))!important}
-  .apt-option[aria-pressed="true"]{border-color:var(--primary)!important}
+  .apt-option{cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s,color .15s}
+  .apt-option:hover{border-color:#334155!important}
+  .apt-option.is-selected,.apt-option[aria-pressed="true"]{
+    background:#1e293b!important;border-color:#0f172a!important;color:#fff;
+  }
+  .apt-option.is-selected .text-muted-2,.apt-option[aria-pressed="true"] .text-muted-2{color:#cbd5e1!important}
   .apt-stat .val{font-size:1.35rem;font-weight:700}
   .apt-pal{
-    width:2.1rem;height:2.1rem;border-radius:.45rem;border:1px solid var(--border);
-    background:#fff;font-size:.8rem;font-weight:600;margin:.15rem;
+    width:2.1rem;height:2.1rem;border-radius:.45rem;border:1px solid #1e293b;
+    background:#334155;color:#e2e8f0;font-size:.8rem;font-weight:600;margin:.15rem;
   }
-  .apt-pal.is-current{outline:2px solid var(--primary);outline-offset:1px}
-  .apt-pal-not-visited{background:#f1f5f9;color:#64748b}
-  .apt-pal-not-answered{background:#fff7ed;border-color:#fdba74;color:#c2410c}
-  .apt-pal-answered{background:#dcfce7;border-color:#86efac;color:#166534}
-  .apt-pal-review{background:#ede9fe;border-color:#c4b5fd;color:#5b21b6}
-  .apt-pal-answered-review{background:linear-gradient(135deg,#dcfce7 50%,#ede9fe 50%);border-color:#a78bfa;color:#1e293b}
+  .apt-pal.is-current{outline:2px solid #0f172a;outline-offset:1px}
+  .apt-pal-not-visited{background:#334155;border-color:#1e293b;color:#cbd5e1}
+  .apt-pal-not-answered{background:#7c2d12;border-color:#431407;color:#ffedd5}
+  .apt-pal-answered{background:#0f172a;border-color:#020617;color:#fff}
+  .apt-pal-review{background:#3b0764;border-color:#1e1b4b;color:#f3e8ff}
+  .apt-pal-answered-review{background:#020617;border-color:#000;color:#fff;box-shadow:inset 0 0 0 2px #4c1d95}
   .apt-legend span{display:inline-flex;align-items:center;gap:.35rem;margin-right:.85rem;font-size:.75rem;color:var(--muted)}
   .apt-legend i{width:.75rem;height:.75rem;border-radius:.2rem;display:inline-block}
   #examShell .exam-timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.15rem}
+  #examShell .exam-timer-wrap{display:flex;align-items:center;gap:.75rem}
   .mcq-quill-wrap .ql-toolbar.ql-snow{border-radius:.375rem .375rem 0 0;border-color:var(--border,#dee2e6);background:#f8fafc}
   .mcq-quill-wrap .ql-container.ql-snow{border-radius:0 0 .375rem .375rem;border-color:var(--border,#dee2e6);font-size:.875rem;min-height:5.5rem}
   .mcq-quill-wrap.mcq-quill-sm .ql-container.ql-snow{min-height:3.75rem}
@@ -182,7 +186,7 @@
 
       <div id="manageContestsPanel" class="d-none">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Weekly and monthly contests — visible to students only on the scheduled day.</p>
+          <p class="small text-muted-2 mb-0">Weekly and monthly contests — set the day here. Students see a contest only on that scheduled day while it is published.</p>
           <div class="d-flex flex-wrap gap-2">
             <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewWeeklyContest"><i class="bi bi-calendar-week me-1"></i>Weekly contest</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewMonthlyContest"><i class="bi bi-calendar-month me-1"></i>Monthly contest</button>
@@ -248,7 +252,10 @@
           <span class="current" data-exam="exam-title">Examination</span>
         </nav>
       </div>
-      <div class="exam-timer" data-exam="timer">00:00</div>
+      <div class="exam-timer-wrap">
+        <div class="exam-timer" data-exam="timer">00:00</div>
+        <button type="button" class="btn btn-primary" data-exam-action="submit">Submit</button>
+      </div>
     </div>
     <div class="row g-3">
       <div class="col-lg-8">
@@ -264,7 +271,6 @@
             <button type="button" class="btn btn-outline-secondary" data-exam-action="next" data-exam="btn-next">Next</button>
             <button type="button" class="btn btn-outline-secondary" data-exam-action="clear">Clear answer</button>
             <button type="button" class="btn btn-outline-warning" data-exam-action="mark" data-exam="btn-mark">Mark for review</button>
-            <button type="button" class="btn btn-primary ms-auto" data-exam-action="submit">Submit Test</button>
           </div>
         </div>
       </div>
@@ -272,11 +278,11 @@
         <div class="card-surface p-3">
           <h6 class="fw-bold mb-2">Question palette</h6>
           <div class="apt-legend mb-2">
-            <span><i style="background:#f1f5f9;border:1px solid #cbd5e1"></i>Not visited</span>
-            <span><i style="background:#fff7ed;border:1px solid #fdba74"></i>Not answered</span>
-            <span><i style="background:#dcfce7;border:1px solid #86efac"></i>Answered</span>
-            <span><i style="background:#ede9fe;border:1px solid #c4b5fd"></i>Review</span>
-            <span><i style="background:linear-gradient(135deg,#dcfce7 50%,#ede9fe 50%);border:1px solid #a78bfa"></i>Answered + review</span>
+            <span><i style="background:#334155;border:1px solid #1e293b"></i>Not visited</span>
+            <span><i style="background:#7c2d12;border:1px solid #431407"></i>Not answered</span>
+            <span><i style="background:#0f172a;border:1px solid #020617"></i>Answered</span>
+            <span><i style="background:#3b0764;border:1px solid #1e1b4b"></i>Review</span>
+            <span><i style="background:#020617;border:1px solid #4c1d95"></i>Answered + review</span>
           </div>
           <div data-exam="palette" class="d-flex flex-wrap"></div>
         </div>
@@ -318,7 +324,8 @@
 
         <div class="col-12">
           <label class="form-label small fw-semibold d-block mb-2">Question selection</label>
-          <div class="btn-group" role="group" aria-label="Question selection">
+          <p class="small text-muted-2 mb-2 d-none" id="tfContestBankHint">Contest questions are generated from the question bank when a student starts. Add category and difficulty rules below. Each student can take the contest only once, and only on the scheduled day.</p>
+          <div class="btn-group" role="group" aria-label="Question selection" id="tfSourceGroup">
             <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceManual" value="manual" checked>
             <label class="btn btn-outline-primary btn-sm" for="tfSourceManual">Manual</label>
             <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceRandom" value="random">
@@ -391,39 +398,9 @@
         <div class="col-md-6"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="tfNegative"/><label class="form-check-label" for="tfNegative">Negative marking</label></div></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfNegativeMarks">Negative marks (per wrong)</label><input class="form-control" type="number" id="tfNegativeMarks" min="0" step="0.25" value="0"/></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfStatus">Status</label><select class="form-select" id="tfStatus"><option value="published">Published (visible to students)</option><option value="unpublished">Unpublished (draft)</option></select><div class="form-text">Students only see published tests in Available tests.</div></div>
-
-        <div class="col-12 d-none" id="tfContestWrap">
-          <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 4%,transparent)">
-            <div class="small fw-semibold text-primary mb-2"><i class="bi bi-trophy me-1"></i>Contest schedule</div>
-            <div class="row g-3">
-              <div class="col-md-4">
-                <label class="form-label small fw-semibold" for="tfContestType">Contest type</label>
-                <select class="form-select" id="tfContestType">
-                  <option value="none">Regular mock (always available)</option>
-                  <option value="weekly">Weekly contest</option>
-                  <option value="monthly">Monthly contest</option>
-                </select>
-              </div>
-              <div class="col-md-4 d-none" id="tfContestWeekdayWrap">
-                <label class="form-label small fw-semibold" for="tfContestWeekday">Runs every</label>
-                <select class="form-select" id="tfContestWeekday">
-                  <option value="1">Monday</option>
-                  <option value="2">Tuesday</option>
-                  <option value="3">Wednesday</option>
-                  <option value="4">Thursday</option>
-                  <option value="5">Friday</option>
-                  <option value="6">Saturday</option>
-                  <option value="7">Sunday</option>
-                </select>
-              </div>
-              <div class="col-md-4 d-none" id="tfContestMonthDayWrap">
-                <label class="form-label small fw-semibold" for="tfContestMonthDay">Day of month</label>
-                <select class="form-select" id="tfContestMonthDay"></select>
-              </div>
-            </div>
-            <p class="small text-muted-2 mb-0 mt-2" id="tfContestHint">Contests with random selection draw questions from the bank when saved. Students see them on the scheduled day while published.</p>
-          </div>
-        </div>
+        <input type="hidden" id="tfContestType" value="none"/>
+        <input type="hidden" id="tfContestWeekday" value="1"/>
+        <input type="hidden" id="tfContestMonthDay" value="1"/>
       </div>
     </div>
     <div class="modal-footer">
@@ -505,6 +482,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
-<script src="js/aptitude-exam.js?v=20260918catfix"></script>
-<script src="js/aptitude-page.js?v=20260918cres"></script>
+<script src="js/aptitude-exam.js?v=20260918exp"></script>
+<script src="js/aptitude-page.js?v=20260918once"></script>
 </body></html>

@@ -471,6 +471,8 @@ $routes = [
     ['POST', '/aptitude/media',               [AptitudeController::class, 'uploadMedia']],
     ['PUT',  '/aptitude/tests/{id}',          [AptitudeController::class, 'updateTest']],
     ['DELETE','/aptitude/tests/{id}',          [AptitudeController::class, 'deleteTest']],
+    ['POST', '/aptitude/tests/{id}/publish-results', [AptitudeController::class, 'publishResults']],
+    ['POST', '/aptitude/tests/{id}/schedule', [AptitudeController::class, 'updateSchedule']],
     ['POST', '/aptitude/tests/{id}/questions/bulk', [AptitudeController::class, 'bulkQuestions']],
     ['POST', '/aptitude/tests/{id}/questions/from-bank', [AptitudeController::class, 'fromBank']],
     ['GET',  '/aptitude/question-bank',       [AptitudeController::class, 'listBank']],

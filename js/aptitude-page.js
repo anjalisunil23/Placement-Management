@@ -808,6 +808,50 @@
     return isContestTest(resolveHistoryTest(h));
   }
 
+  function historyResultMode(h) {
+    const row = h && typeof h === 'object' ? h : {};
+    if (row.resultVisibility) return String(row.resultVisibility);
+    if (access.canManage || access.canViewDirectory) return 'full';
+    if (!historyEntryIsContest(row)) return 'full';
+    const test = resolveHistoryTest(row);
+    if (test && Object.prototype.hasOwnProperty.call(test, 'resultsPublished')) {
+      return test.resultsPublished ? 'score' : 'pending';
+    }
+    return row.resultsPublished ? 'score' : 'pending';
+  }
+
+  function applyContestResultView(test, result) {
+    if (!isContestTest(test) || access.canManage || access.canViewDirectory) {
+      return { ...result, resultVisibility: 'full', resultsPublished: true };
+    }
+    if (test.resultsPublished) {
+      return {
+        ...result,
+        resultVisibility: 'score',
+        resultsPublished: true,
+        questionAnalysis: [],
+        rank: null,
+        percentile: null,
+      };
+    }
+    return {
+      ...result,
+      resultVisibility: 'pending',
+      resultsPublished: false,
+      score: null,
+      marksObtained: null,
+      percentage: null,
+      accuracy: null,
+      correctAnswers: null,
+      incorrectAnswers: null,
+      unansweredQuestions: null,
+      rank: null,
+      percentile: null,
+      questionAnalysis: [],
+      message: 'Your attempt is submitted. The score will appear after the admin publishes contest results.',
+    };
+  }
+
   function bindDirFilterEvents() {
     if (dirFiltersBound) return;
     dirFiltersBound = true;
@@ -1007,13 +1051,115 @@
     renderManage();
   }
 
+  async function setContestResultsPublished(id, published) {
+    if (!id) return;
+    const msg = published
+      ? 'Publish contest scores to students? They will see the score only, not question-wise answers.'
+      : 'Hide contest scores from students again?';
+    if (!confirm(msg)) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      if (!Auth.isDemo() || !access.canManage) {
+        toast('Publishing results requires a live session with manage access.', 'info');
+        return;
+      }
+      const store = loadDemoTestsStore();
+      const idx = store.findIndex((t) => String(t.id) === String(id));
+      if (idx < 0) {
+        toast('Contest not found.', 'error');
+        return;
+      }
+      store[idx] = { ...store[idx], resultsPublished: !!published };
+      saveDemoTestsStore(store);
+      toast(published ? 'Contest scores published (demo).' : 'Contest scores hidden (demo).', 'success');
+      await loadTests();
+      renderTestList();
+      renderManage();
+      if (access.canTake) loadMyProgress();
+      return;
+    }
+    if (!isLiveAptitudeId(id)) {
+      toast('This contest is not on the server. Refresh the page and try again.', 'error');
+      return;
+    }
+    const res = await api(`/aptitude/tests/${encodeURIComponent(id)}/publish-results`, {
+      method: 'POST',
+      body: JSON.stringify({ published: !!published }),
+    }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not update contest results.', 'error');
+      return;
+    }
+    toast(res.message || (published ? 'Contest scores published.' : 'Contest scores hidden.'), 'success');
+    await loadTests();
+    renderTestList();
+    renderManage();
+    if (access.canTake) loadMyProgress();
+  }
+
+  async function saveContestSchedule(id, field, value) {
+    if (!id || (field !== 'contestWeekday' && field !== 'contestMonthDay')) return;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      if (!Auth.isDemo() || !access.canManage) {
+        toast('Updating the contest day requires a live session with manage access.', 'info');
+        return;
+      }
+      const store = loadDemoTestsStore();
+      const idx = store.findIndex((t) => String(t.id) === String(id));
+      if (idx < 0) {
+        toast('Contest not found.', 'error');
+        return;
+      }
+      store[idx] = { ...store[idx], [field]: n };
+      saveDemoTestsStore(store);
+      toast('Contest day updated (demo).', 'success');
+      await loadTests();
+      renderTestList();
+      renderManage();
+      return;
+    }
+    if (!isLiveAptitudeId(id)) {
+      toast('This contest is not on the server. Refresh the page and try again.', 'error');
+      return;
+    }
+    const res = await api(`/aptitude/tests/${encodeURIComponent(id)}/schedule`, {
+      method: 'POST',
+      body: JSON.stringify({ [field]: n }),
+    }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not update contest schedule.', 'error');
+      return;
+    }
+    toast(res.message || 'Contest day updated.', 'success');
+    await loadTests();
+    renderTestList();
+    renderManage();
+  }
+
   function getQuestionSource() {
+    if (formIsContest()) return 'random';
     if (document.getElementById('tfSourceRandom')?.checked) return 'random';
     if (document.getElementById('tfSourceAi')?.checked) return 'ai';
     return 'manual';
   }
 
+  function formIsContest() {
+    const type = String(document.getElementById('tfContestType')?.value || 'none');
+    return type === 'weekly' || type === 'monthly';
+  }
+
   function syncQuestionSourcePanels() {
+    const contest = formIsContest();
+    document.getElementById('tfSourceGroup')?.classList.toggle('d-none', contest);
+    document.getElementById('tfContestBankHint')?.classList.toggle('d-none', !contest);
+    if (contest) {
+      document.getElementById('tfSourceRandom').checked = true;
+      document.getElementById('tfSourceManual').checked = false;
+      document.getElementById('tfSourceAi').checked = false;
+    }
     const source = getQuestionSource();
     const random = source === 'random';
     const ai = source === 'ai';
@@ -1719,23 +1865,6 @@
     return typeof Auth.canManageAptitudeContests === 'function' && Auth.canManageAptitudeContests();
   }
 
-  function initContestMonthDaySelect() {
-    const el = document.getElementById('tfContestMonthDay');
-    if (!el || el.options.length > 0) return;
-    el.innerHTML = Array.from({ length: 28 }, (_, i) => {
-      const day = i + 1;
-      return `<option value="${day}">${day}</option>`;
-    }).join('');
-  }
-
-  function syncContestFormFields() {
-    const wrap = document.getElementById('tfContestWrap');
-    const type = document.getElementById('tfContestType')?.value || 'none';
-    wrap?.classList.toggle('d-none', !canManageContests());
-    document.getElementById('tfContestWeekdayWrap')?.classList.toggle('d-none', type !== 'weekly');
-    document.getElementById('tfContestMonthDayWrap')?.classList.toggle('d-none', type !== 'monthly');
-  }
-
   let managePanel = 'tests';
 
   function isContestTest(t) {
@@ -1762,16 +1891,49 @@
     if (!show && managePanel === 'contests') applyManagePanel('tests');
   }
 
+  function contestScheduleControls(t) {
+    const type = String(t?.contestType || 'none');
+    const id = esc(t.id);
+    if (type === 'weekly') {
+      const current = Number(t.contestWeekday) || 1;
+      const opts = CONTEST_WEEKDAYS.map((d) =>
+        `<option value="${d.value}" ${d.value === current ? 'selected' : ''}>${esc(d.label)}</option>`
+      ).join('');
+      return `<div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+        <label class="small text-muted-2 mb-0" for="contest-day-${id}">Runs every</label>
+        <select class="form-select form-select-sm" id="contest-day-${id}" style="width:auto;min-width:9rem" data-contest-schedule="${id}" data-schedule-field="contestWeekday">${opts}</select>
+      </div>`;
+    }
+    if (type === 'monthly') {
+      const current = Number(t.contestMonthDay) || 1;
+      const opts = Array.from({ length: 28 }, (_, i) => {
+        const day = i + 1;
+        return `<option value="${day}" ${day === current ? 'selected' : ''}>${day}</option>`;
+      }).join('');
+      return `<div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+        <label class="small text-muted-2 mb-0" for="contest-day-${id}">Day of month</label>
+        <select class="form-select form-select-sm" id="contest-day-${id}" style="width:auto;min-width:6rem" data-contest-schedule="${id}" data-schedule-field="contestMonthDay">${opts}</select>
+      </div>`;
+    }
+    return '';
+  }
+
   function renderManageRow(t, { showContestBadge = false } = {}) {
+    const resultsBtn = showContestBadge
+      ? (t.resultsPublished
+        ? `<button type="button" class="btn btn-sm btn-outline-warning" data-unpublish-results="${esc(t.id)}">Hide results</button>`
+        : `<button type="button" class="btn btn-sm btn-success" data-publish-results="${esc(t.id)}">Publish results</button>`)
+      : '';
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div>
           <strong>${esc(t.title)}</strong>
           <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
           ${showContestBadge ? contestBadgeHtml(t) : ''}
+          ${showContestBadge ? contestScheduleControls(t) : ''}
         </div>
         <div class="d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk="${esc(t.id)}">Bulk questions</button>
+          ${resultsBtn}
           <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
           <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
         </div>
@@ -1786,11 +1948,23 @@
         if (t) openTestForm(t);
       });
     });
-    root.querySelectorAll('[data-bulk]').forEach((btn) => {
-      btn.addEventListener('click', () => openBulk('test', btn.getAttribute('data-bulk')));
-    });
     root.querySelectorAll('[data-delete-test]').forEach((btn) => {
       btn.addEventListener('click', () => deleteTest(btn.getAttribute('data-delete-test')));
+    });
+    root.querySelectorAll('[data-publish-results]').forEach((btn) => {
+      btn.addEventListener('click', () => setContestResultsPublished(btn.getAttribute('data-publish-results'), true));
+    });
+    root.querySelectorAll('[data-unpublish-results]').forEach((btn) => {
+      btn.addEventListener('click', () => setContestResultsPublished(btn.getAttribute('data-unpublish-results'), false));
+    });
+    root.querySelectorAll('[data-contest-schedule]').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        saveContestSchedule(
+          sel.getAttribute('data-contest-schedule'),
+          sel.getAttribute('data-schedule-field'),
+          sel.value
+        );
+      });
     });
   }
 
@@ -1827,12 +2001,26 @@
   }
 
   function collectContestPayload() {
-    const type = document.getElementById('tfContestType')?.value || 'none';
+    const id = document.getElementById('tfId')?.value.trim() || '';
+    const existing = (id && tests.find((t) => String(t.id) === String(id)))
+      || (id && loadDemoTestsStore().find((t) => String(t.id) === String(id)))
+      || null;
+    const type = existing && isContestTest(existing)
+      ? String(existing.contestType)
+      : (document.getElementById('tfContestType')?.value || 'none');
     const payload = { contestType: type };
     if (type === 'weekly') {
-      payload.contestWeekday = Number(document.getElementById('tfContestWeekday')?.value || 1);
+      payload.contestWeekday = Number(
+        existing?.contestWeekday
+        || document.getElementById('tfContestWeekday')?.value
+        || 1
+      );
     } else if (type === 'monthly') {
-      payload.contestMonthDay = Number(document.getElementById('tfContestMonthDay')?.value || 1);
+      payload.contestMonthDay = Number(
+        existing?.contestMonthDay
+        || document.getElementById('tfContestMonthDay')?.value
+        || 1
+      );
     }
     return payload;
   }
@@ -1840,11 +2028,13 @@
   function contestBadgeHtml(t) {
     const type = String(t?.contestType || 'none');
     if (type === 'none') return '';
-    const label = contestScheduleLabel(t);
     const open = isContestOpenClient(t);
     const stateCls = open ? 'success' : 'muted';
     const state = open ? 'Open today' : 'Scheduled';
-    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(label || type)}</span><span class="badge-soft ${stateCls}">${state}</span></div>`;
+    const results = t.resultsPublished
+      ? '<span class="badge-soft success">Results published</span>'
+      : '<span class="badge-soft muted">Results hidden</span>';
+    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(type === 'monthly' ? 'Monthly contest' : 'Weekly contest')}</span><span class="badge-soft ${stateCls}">${state}</span>${results}</div>`;
   }
 
   function testMetaLine(t) {
@@ -1917,6 +2107,14 @@
   function formatHistoryMeta(h) {
     const row = enrichHistoryEntry(h);
     const bits = [];
+    if (historyEntryIsContest(row)) {
+      bits.push(row.contestScheduleLabel || (row.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest'));
+    }
+    const mode = historyResultMode(row);
+    if (mode === 'pending') {
+      bits.push('Results pending');
+      return bits.join(' · ');
+    }
     const sec = Number(row.timeTakenSeconds);
     if (row.timeTakenLabel) {
       bits.push(String(row.timeTakenLabel));
@@ -1933,9 +2131,6 @@
       bits.push(Number.isFinite(pct) ? `Score ${markStr} (${pct}%)` : `Score ${markStr}`);
     } else if (Number.isFinite(pct)) {
       bits.push(`Score ${pct}%`);
-    }
-    if (historyEntryIsContest(row)) {
-      bits.unshift(row.contestScheduleLabel || (row.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest'));
     }
     return bits.length ? bits.join(' · ') : '—';
   }
@@ -2053,7 +2248,7 @@
     p.percentage = scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : 0;
     p.accuracy = p.percentage;
     saveDemoProgress(p);
-    return result;
+    return applyContestResultView(test, result);
   }
 
   function allowedViews() {
@@ -2300,8 +2495,9 @@
     document.getElementById('myHistory').innerHTML = filtered.length
       ? filtered.slice(0, 8).map((h) => {
           const attemptId = h.attemptId || h.id;
-          const viewBtn = canReview && attemptId && Auth.hasRealAuth() && !Auth.isDemo()
-            ? `<button type="button" class="btn btn-link btn-sm p-0" data-view-attempt="${esc(attemptId)}">View</button>`
+          const mode = historyResultMode(h);
+          const viewBtn = canReview && attemptId && Auth.hasRealAuth() && !Auth.isDemo() && mode !== 'pending'
+            ? `<button type="button" class="btn btn-link btn-sm p-0" data-view-attempt="${esc(attemptId)}">${mode === 'score' ? 'Score' : 'View'}</button>`
             : '';
           return `<div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
             <div class="min-w-0">
@@ -2350,8 +2546,14 @@
   }
 
   function formatListPercentage(t, mine) {
-    const minePct = Number(mine?.percentage);
-    if (Number.isFinite(minePct)) return `${minePct}%`;
+    if (isContestTest(t) && !t.resultsPublished && !access.canManage && !access.canViewDirectory) {
+      return '—';
+    }
+    if (mine && historyResultMode({ ...mine, contestType: t.contestType, testId: t.id }) !== 'pending') {
+      const minePct = Number(mine.percentage);
+      if (Number.isFinite(minePct)) return `${minePct}%`;
+    }
+    if (isContestTest(t) && !t.resultsPublished && !access.canManage) return '—';
     const avg = Number(t.averagePercentage);
     if (Number.isFinite(avg)) return `${avg}%`;
     return '—';
@@ -2365,11 +2567,19 @@
       const isContest = isContestTest(t);
       if (wantContests !== isContest) return false;
       if (access.canManage) return true;
-      return (t.status || 'published') === 'published';
+      if ((t.status || 'published') !== 'published') return false;
+      if (isContest) {
+        if (!isContestOpenClient(t)) return false;
+        if (t.alreadyAttempted) return false;
+        if (bestHistoryForTest(t.id) && !t.attemptInProgress) return false;
+      }
+      return true;
     });
     if (!visible.length) {
       const msg = wantContests
-        ? 'No aptitude contests are available yet.'
+        ? (Auth.role() === 'student'
+          ? 'No contests are open today, or you have already taken them.'
+          : 'No aptitude contests are available yet.')
         : (Auth.role() === 'student'
           ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
           : 'No published aptitude tests yet.');
@@ -2382,7 +2592,8 @@
       const diff = difficultyListLabel(t.difficulty);
       const published = (t.status || 'published') === 'published';
       const openNow = !isContestTest(t) || isContestOpenClient(t);
-      const canOpen = access.canTake && published && openNow;
+      const alreadyDone = isContestTest(t) && (t.alreadyAttempted || (!!mine && !t.attemptInProgress));
+      const canOpen = access.canTake && published && openNow && !alreadyDone;
       const tag = canOpen ? 'button' : 'div';
       const extra = canOpen ? ` type="button" data-open-test="${esc(t.id)}"` : '';
       const title = isContestTest(t) && !openNow
@@ -2404,6 +2615,16 @@
   }
 
   function openExam(test) {
+    if (access.canTake && isContestTest(test)) {
+      if (!isContestOpenClient(test)) {
+        toast('This contest is not open today.', 'info');
+        return;
+      }
+      if (test.alreadyAttempted || (bestHistoryForTest(test.id) && !test.attemptInProgress)) {
+        toast('You can take this contest only once.', 'info');
+        return;
+      }
+    }
     document.getElementById('hubView').classList.add('d-none');
     exam.open(test);
   }
@@ -2604,7 +2825,9 @@
 
     let source = test?.questionSource === 'random' ? 'random' : 'manual';
     aiTestQuestions = [];
-    if (test && source !== 'random') {
+    if (isContest) {
+      source = 'random';
+    } else if (test && source !== 'random') {
       const aiQs = (test.questions || []).filter((q) => q.source === 'AI' || String(q.id || '').startsWith('ai-'));
       const manualQs = (test.questions || []).filter((q) => !q.bankId && !aiQs.includes(q));
       if (aiQs.length && !manualQs.length && !(test.bankQuestionIds || []).length) {
@@ -2630,12 +2853,10 @@
 
     initBankPickFilters();
 
-    initContestMonthDaySelect();
     const contestType = test?.contestType || preset?.contestType || 'none';
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
     document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
     document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
-    syncContestFormFields();
     syncQuestionSourcePanels();
     document.getElementById('tfBulkFile').value = '';
     document.getElementById('mcqList').innerHTML = '';
@@ -2792,7 +3013,15 @@
     if (Array.isArray(p.history)) {
       p.history = p.history.map((h) => enrichHistoryEntry(h));
     }
-    if (Auth.isDemo()) saveDemoProgress(p);
+    if (Auth.isDemo() || !(Auth.hasRealAuth() && !Auth.isDemo())) {
+      const scored = (p.history || []).filter((h) => historyResultMode(h) !== 'pending');
+      const scores = scored.map((h) => Number(h.percentage)).filter((n) => Number.isFinite(n));
+      p.testsAttempted = (p.history || []).length;
+      p.bestScore = scores.length ? Math.max(...scores) : 0;
+      p.percentage = scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : 0;
+      p.recentPerformance = scores[0] ?? 0;
+      saveDemoProgress({ ...p, history: p.history });
+    }
     myProgress = p;
     renderMyStats(p);
     renderHistory(p);
@@ -2857,7 +3086,6 @@
 
     studentAptModal = new bootstrap.Modal(document.getElementById('studentAptModal'));
     await loadAccess();
-    initContestMonthDaySelect();
     syncManageContestActions();
     const any = access.canTake || access.canManage || access.canViewDirectory;
     if (!any) {
@@ -2972,7 +3200,6 @@
       e.preventDefault();
       applyManagePanel(link.getAttribute('data-manage-view'));
     });
-    document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal('bank'));
     document.getElementById('btnTfOpenAi')?.addEventListener('click', () => openAptAiModal('test'));
@@ -3073,8 +3300,16 @@
         const id = document.getElementById('tfId').value.trim() || `demo-${Date.now()}`;
         const next = { ...payload, id };
         const idx = store.findIndex((t) => String(t.id) === String(id));
-        if (idx >= 0) store[idx] = { ...store[idx], ...next };
-        else store.push(next);
+        if (idx >= 0) {
+          const prev = store[idx];
+          store[idx] = {
+            ...prev,
+            ...next,
+            resultsPublished: isContestTest(next) ? !!prev.resultsPublished : true,
+          };
+        } else {
+          store.push({ ...next, resultsPublished: isContestTest(next) ? false : true });
+        }
         saveDemoTestsStore(store);
         toast('Test saved (demo).', 'success');
         testFormModal.hide();

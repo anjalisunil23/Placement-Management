@@ -104,6 +104,30 @@ final class AptitudeController
         Response::success(null, 'Aptitude test deleted.');
     }
 
+    /** POST /api/aptitude/tests/{id}/publish-results */
+    public function publishResults(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $published = array_key_exists('published', $body)
+            ? filter_var($body['published'], FILTER_VALIDATE_BOOLEAN)
+            : true;
+        Response::success(
+            $this->service->publishContestResults($user, $id, $published),
+            $published ? 'Contest results published.' : 'Contest results hidden from students.'
+        );
+    }
+
+    /** POST /api/aptitude/tests/{id}/schedule */
+    public function updateSchedule(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->service->updateContestSchedule($user, $id, $this->body()),
+            'Contest schedule updated.'
+        );
+    }
+
     /** POST /api/aptitude/tests/{id}/questions/bulk */
     public function bulkQuestions(string $id): void
     {

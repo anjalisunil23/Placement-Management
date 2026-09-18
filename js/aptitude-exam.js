@@ -166,8 +166,9 @@
       el('q-options')?.querySelectorAll('[data-opt-select]').forEach((row) => {
         const idx = Number(row.getAttribute('data-opt-select'));
         const on = selected !== null && idx === selected;
+        row.classList.toggle('is-selected', on);
         row.classList.toggle('border-primary', on);
-        row.classList.toggle('bg-light', on);
+        row.classList.toggle('bg-light', false);
         row.classList.toggle('shadow-sm', on);
         row.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
@@ -184,7 +185,7 @@
       const selected = getSelectedIndex(q);
       el('q-options').innerHTML = (q.options || []).map((opt, i) => `
         <button type="button"
-          class="apt-option w-100 text-start d-flex gap-2 align-items-start mb-2 p-2 border rounded-3 bg-white ${selected === i ? 'border-primary bg-light shadow-sm' : ''}"
+          class="apt-option w-100 text-start d-flex gap-2 align-items-start mb-2 p-2 border rounded-3 ${selected === i ? 'is-selected shadow-sm' : 'bg-white'}"
           data-opt-select="${i}"
           aria-pressed="${selected === i ? 'true' : 'false'}">
           <span class="flex-shrink-0 fw-semibold text-muted-2">${LETTERS[i] || i + 1}.</span>
@@ -340,19 +341,52 @@
       renderResult(result);
     }
 
+    function resultVisibility(result) {
+      if (result?.resultVisibility) return String(result.resultVisibility);
+      const contest = result?.contestType === 'weekly' || result?.contestType === 'monthly';
+      if (!contest) return 'full';
+      return result?.resultsPublished ? 'score' : 'pending';
+    }
+
+    function explanationFromAnalysis(a) {
+      const raw = String(a?.explanation || a?.solution || '').trim();
+      const text = raw.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
+      if (text) return raw;
+      const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+      const idx = Number(a?.correctAnswerIndex);
+      const ans = String(a?.correctAnswer || '').trim();
+      const letter = Number.isFinite(idx) && idx >= 0 ? (letters[idx] || '') : '';
+      if (letter && ans) return `The correct option is ${letter}. ${ans}.`;
+      if (ans) return `The correct answer is ${ans}.`;
+      return '';
+    }
+
     function renderResult(result) {
       showPanel('result');
+      const mode = resultVisibility(result);
+      if (mode === 'pending') {
+        el('result-summary').innerHTML = `
+          <div class="alert alert-info mb-0">${esc(result.message || 'Your attempt is submitted. The score will appear after the admin publishes contest results.')}</div>`;
+        el('result-analysis').innerHTML = '';
+        return;
+      }
+      const score = result.score ?? result.marksObtained ?? 0;
+      const maxScore = result.maximumScore ?? result.totalMarks ?? 0;
       el('result-summary').innerHTML = `
         <div class="row g-2 mb-3">
-          <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Score</div><strong>${esc(result.score ?? result.marksObtained ?? 0)} / ${esc(result.maximumScore ?? result.totalMarks ?? 0)}</strong></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Score</div><strong>${esc(score)} / ${esc(maxScore)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Percentage</div><strong>${esc(result.percentage ?? 0)}%</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Accuracy</div><strong>${esc(result.accuracy ?? 0)}%</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Time taken</div><strong>${esc(result.timeTakenLabel || formatTimer(result.timeTakenSeconds || 0))}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Correct</div><strong class="text-success">${esc(result.correctAnswers ?? result.correctCount ?? 0)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Incorrect</div><strong class="text-danger">${esc(result.incorrectAnswers ?? result.wrongCount ?? 0)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Unanswered</div><strong>${esc(result.unansweredQuestions ?? result.unansweredCount ?? 0)}</strong></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Rank / Percentile</div><strong>${result.rank != null ? `#${esc(result.rank)}` : '—'} ${result.percentile != null ? `(${esc(result.percentile)}%)` : ''}</strong></div></div>
+          ${mode === 'full' ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Rank / Percentile</div><strong>${result.rank != null ? `#${esc(result.rank)}` : '—'} ${result.percentile != null ? `(${esc(result.percentile)}%)` : ''}</strong></div></div>` : ''}
         </div>`;
+      if (mode === 'score') {
+        el('result-analysis').innerHTML = '<p class="text-muted-2 mb-0">Question-level review is hidden for contest attempts. Only your score is shown.</p>';
+        return;
+      }
       const analysis = result.questionAnalysis || [];
       el('result-analysis').innerHTML = analysis.length ? analysis.map((a, i) => `
         <div class="border rounded-3 p-3 mb-2">
@@ -371,7 +405,15 @@
             return `<div class="${cls}">${letters[oi] || oi + 1}. ${esc(o)}${mark}</div>`;
           }).join('')}</div>` : `<div class="small">Your answer: <strong>${esc(a.studentAnswer ?? '—')}</strong></div>
           <div class="small">Correct answer: <strong>${esc(a.correctAnswer ?? '—')}</strong></div>`}
-          ${a.explanation ? `<div class="small text-muted-2 mt-1 apt-rich">${sanitizeRichHtml(a.explanation)}</div>` : ''}
+          ${(() => {
+            const exp = explanationFromAnalysis(a);
+            return exp
+              ? `<div class="mt-2 pt-2 border-top">
+                  <div class="small fw-semibold mb-1">Explanation</div>
+                  <div class="small apt-rich">${sanitizeRichHtml(exp)}</div>
+                </div>`
+              : '';
+          })()}
         </div>`).join('') : '<p class="text-muted-2 mb-0">No question analysis available.</p>';
     }
 

@@ -122,6 +122,25 @@ class AptitudeAttemptModel extends BaseModel
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function forUserAndTest(string $userId, string $testId, int $limit = 20): array
+    {
+        $userOid = Security::toObjectId($userId);
+        $testOid = Security::toObjectId($testId);
+        if ($userOid === null || $testOid === null) {
+            return [];
+        }
+
+        return $this->findAll(
+            ['userId' => $userOid, 'testId' => $testOid],
+            $limit,
+            0,
+            ['createdAt' => -1]
+        );
+    }
+
+    /**
      * @param array<string, mixed> $filter
      * @return array<int, array<string, mixed>>
      */
