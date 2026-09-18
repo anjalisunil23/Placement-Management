@@ -175,7 +175,8 @@
 
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
-        <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
+        <li class="nav-item d-none" id="manageWeeklyContestNavItem"><a class="nav-link" href="#" data-manage-view="weekly-contests">Weekly</a></li>
+        <li class="nav-item d-none" id="manageMonthlyContestNavItem"><a class="nav-link" href="#" data-manage-view="monthly-contests">Monthly</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
       </ul>
 
@@ -187,12 +188,26 @@
         <div id="manageTestsList" class="d-flex flex-column gap-2"></div>
       </div>
 
-      <div id="manageContestsPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
-          <button type="button" class="btn btn-sm btn-primary" id="btnNewWeeklyContest"><i class="bi bi-calendar-week me-1"></i>Weekly</button>
-          <button type="button" class="btn btn-sm btn-primary" id="btnNewMonthlyContest"><i class="bi bi-calendar-month me-1"></i>Monthly</button>
+      <div id="manageWeeklyContestsPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">Weekly contests — students get one attempt on the scheduled weekday.</p>
+          <button type="button" class="btn btn-sm btn-primary" id="btnNewWeeklyContest"><i class="bi bi-plus-lg me-1"></i>Create weekly contest</button>
         </div>
-        <div id="manageContestsList" class="d-flex flex-column gap-2"></div>
+        <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Active &amp; upcoming</h6>
+        <div id="manageWeeklyContestsList" class="d-flex flex-column gap-2 mb-4"></div>
+        <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Results</h6>
+        <div id="manageWeeklyContestsResults" class="d-flex flex-column gap-3"></div>
+      </div>
+
+      <div id="manageMonthlyContestsPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">Monthly contests — students get one attempt on the scheduled day of the month.</p>
+          <button type="button" class="btn btn-sm btn-primary" id="btnNewMonthlyContest"><i class="bi bi-plus-lg me-1"></i>Create monthly contest</button>
+        </div>
+        <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Active &amp; upcoming</h6>
+        <div id="manageMonthlyContestsList" class="d-flex flex-column gap-2 mb-4"></div>
+        <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Results</h6>
+        <div id="manageMonthlyContestsResults" class="d-flex flex-column gap-3"></div>
       </div>
 
       <div id="manageBankPanel" class="d-none">
@@ -488,5 +503,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260918bankfix"></script>
+<script src="js/aptitude-page.js?v=20260918contestsplit"></script>
 </body></html>

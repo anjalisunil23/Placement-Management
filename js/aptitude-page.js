@@ -1595,6 +1595,8 @@
   function showAptAiPreviewPanel() {
     document.getElementById('aptAiFormPanel')?.classList.add('d-none');
     document.getElementById('aptAiPreviewPanel')?.classList.remove('d-none');
+    document.getElementById('aptAiModalTitle').textContent = 'Review generated questions';
+    document.getElementById('aptAiModal')?.querySelector('.modal-body')?.scrollTo(0, 0);
   }
 
   function openAptAiModal() {
@@ -1864,6 +1866,20 @@
     if (countEl) countEl.textContent = String(aiPreviewQuestions.length);
     if (!list) return;
     bindAptAiPreviewEvents();
+    if (!aiPreviewQuestions.length) {
+      list.innerHTML = `<p class="text-muted-2 mb-0">No questions in preview. Generate again or close this dialog.</p>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button type="button" class="btn btn-sm btn-primary" id="btnAptAiGenerateMore"><i class="bi bi-stars me-1"></i>Generate more</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAptAiViewBank">View question bank</button>
+        </div>`;
+      document.getElementById('btnAptAiGenerateMore')?.addEventListener('click', () => showAptAiFormPanel());
+      document.getElementById('btnAptAiViewBank')?.addEventListener('click', () => {
+        aptAiModal?.hide();
+        applyManagePanel('bank');
+        applyView('manage').catch(() => {});
+      });
+      return;
+    }
     const letters = ['A', 'B', 'C', 'D'];
     list.innerHTML = aiPreviewQuestions.map((q, i) => {
       const opts = (q.options || []).slice(0, 4);
@@ -2006,6 +2022,7 @@
         });
         saveDemoBankStore(bank);
         toast(`Saved ${selected.length} question(s) to demo bank.`, 'success');
+        await loadQuestionBank();
       } else {
         const res = await api('/aptitude/ai/save', {
           method: 'POST',
@@ -2015,7 +2032,10 @@
         toast(`Saved ${res.data?.added ?? selected.length} question(s) to the bank.`, 'success');
         await loadQuestionBank();
       }
-      aptAiModal?.hide();
+      aiPreviewQuestions = aiPreviewQuestions.filter((q) => q.selected === false);
+      applyManagePanel('bank');
+      showAptAiPreviewPanel();
+      renderAptAiPreview();
     } catch (err) {
       toast(err?.message || 'Could not save AI questions.', 'error');
     } finally {
@@ -2322,12 +2342,22 @@
     return type === 'weekly' || type === 'monthly';
   }
 
+  function isManageContestPanel(panel) {
+    return panel === 'weekly-contests' || panel === 'monthly-contests';
+  }
+
+  function managePanelForContestType(type) {
+    return String(type) === 'monthly' ? 'monthly-contests' : 'weekly-contests';
+  }
+
   function applyManagePanel(panel) {
-    if (panel === 'contests' && canManageContests()) managePanel = 'contests';
+    if (panel === 'weekly-contests' && canManageContests()) managePanel = 'weekly-contests';
+    else if (panel === 'monthly-contests' && canManageContests()) managePanel = 'monthly-contests';
     else if (panel === 'bank') managePanel = 'bank';
     else managePanel = 'tests';
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
-    document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
+    document.getElementById('manageWeeklyContestsPanel')?.classList.toggle('d-none', managePanel !== 'weekly-contests');
+    document.getElementById('manageMonthlyContestsPanel')?.classList.toggle('d-none', managePanel !== 'monthly-contests');
     document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-manage-view') === managePanel);
@@ -2337,8 +2367,45 @@
 
   function syncManageContestActions() {
     const show = canManageContests();
-    document.getElementById('manageContestNavItem')?.classList.toggle('d-none', !show);
-    if (!show && managePanel === 'contests') applyManagePanel('tests');
+    document.getElementById('manageWeeklyContestNavItem')?.classList.toggle('d-none', !show);
+    document.getElementById('manageMonthlyContestNavItem')?.classList.toggle('d-none', !show);
+    if (!show && isManageContestPanel(managePanel)) applyManagePanel('tests');
+  }
+
+  function contestResultRowFromTest(t) {
+    const window = contestWindowClient(t);
+    return {
+      ...t,
+      testId: t.id,
+      id: t.id,
+      contestStartAt: window.start,
+      contestEndAt: window.end,
+      resultStatus: t.resultsPublished ? 'PUBLISHED' : 'PENDING',
+      participants: [],
+      participantCount: Number(t.attemptCount ?? 0),
+    };
+  }
+
+  function renderManageContestSections(contestType, listRoot, resultsRoot) {
+    const all = tests.filter((t) => String(t.contestType) === contestType);
+    const active = all.filter((t) => contestStatusClient(t) !== 'COMPLETED');
+    const completed = all.filter((t) => contestStatusClient(t) === 'COMPLETED');
+    const label = contestType === 'monthly' ? 'monthly' : 'weekly';
+
+    if (listRoot) {
+      listRoot.innerHTML = active.length
+        ? active.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
+        : `<p class="text-muted-2 mb-0">No active ${label} contests.</p>`;
+      bindManageListActions(listRoot);
+    }
+
+    if (resultsRoot) {
+      const resultRows = completed.map((t) => contestResultRowFromTest(t));
+      resultsRoot.innerHTML = resultRows.length
+        ? resultRows.map((c) => renderProgressContestCard(c)).join('')
+        : `<p class="text-muted-2 mb-0">No completed ${label} contests yet.</p>`;
+      bindDirContestActions(resultsRoot);
+    }
   }
 
   function contestScheduleControls(t) {
@@ -3411,22 +3478,25 @@
     applyManagePanel(managePanel);
 
     const regular = tests.filter((t) => !isContestTest(t));
-    const contests = tests.filter((t) => isContestTest(t) && contestStatusClient(t) !== 'COMPLETED');
 
     const testsRoot = document.getElementById('manageTestsList');
-    const contestsRoot = document.getElementById('manageContestsList');
     if (testsRoot) {
       testsRoot.innerHTML = regular.length
         ? regular.map((t) => renderManageRow(t)).join('')
         : '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
       bindManageListActions(testsRoot);
     }
-    if (contestsRoot) {
-      contestsRoot.innerHTML = contests.length
-        ? contests.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
-        : '<p class="text-muted-2 mb-0">No active contests. Completed contests move to Progress → Contest results.</p>';
-      bindManageListActions(contestsRoot);
-    }
+
+    renderManageContestSections(
+      'weekly',
+      document.getElementById('manageWeeklyContestsList'),
+      document.getElementById('manageWeeklyContestsResults')
+    );
+    renderManageContestSections(
+      'monthly',
+      document.getElementById('manageMonthlyContestsList'),
+      document.getElementById('manageMonthlyContestsResults')
+    );
   }
 
   async function loadMyProgress() {
@@ -3616,7 +3686,7 @@
       openTestForm(null, { contestType: 'none' });
     });
     document.getElementById('btnNewWeeklyContest')?.addEventListener('click', () => {
-      applyManagePanel('contests');
+      applyManagePanel('weekly-contests');
       openTestForm(null, {
         contestType: 'weekly',
         contestWeekday: new Date().getDay() === 0 ? 7 : new Date().getDay(),
@@ -3624,7 +3694,7 @@
       });
     });
     document.getElementById('btnNewMonthlyContest')?.addEventListener('click', () => {
-      applyManagePanel('contests');
+      applyManagePanel('monthly-contests');
       openTestForm(null, {
         contestType: 'monthly',
         contestMonthDay: Math.min(28, new Date().getDate()),
@@ -3714,7 +3784,9 @@
         payload.questionCount = target;
       }
       payload.totalMarks = 0;
-      if (canManageContests()) applyManagePanel(isContestTest(payload) ? 'contests' : 'tests');
+      if (canManageContests()) {
+        applyManagePanel(isContestTest(payload) ? managePanelForContestType(payload.contestType) : 'tests');
+      }
       const live = Auth.hasRealAuth() && !Auth.isDemo();
       if (!live) {
         if (!Auth.isDemo() || !access.canManage) {
