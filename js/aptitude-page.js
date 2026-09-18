@@ -2342,43 +2342,75 @@
     return '—';
   }
 
-  function renderTestList() {
-    const root = document.getElementById('testList');
-    if (!root) return;
-    let visible = access.canManage
-      ? tests
-      : tests.filter((t) => {
-        if ((t.status || 'published') !== 'published') return false;
-        const contestType = String(t.contestType || 'none');
-        return contestType === 'none' || isContestOpenClient(t);
-      });
-    if (!visible.length) {
-      const msg = Auth.role() === 'student'
-        ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
-        : 'No published aptitude tests yet.';
-      root.innerHTML = `<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">${msg}</p>`;
-      return;
+  function publishedVisibleTests() {
+    return (tests || []).filter((t) => {
+      if ((t.status || 'published') !== 'published') return false;
+      if (access.canManage) return true;
+      return true;
+    });
+  }
+
+  function renderProblemRows(items, emptyMessage, opts = {}) {
+    if (!items.length) {
+      return `<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">${emptyMessage}</p>`;
     }
-    root.innerHTML = `<div class="apt-prob-list">${visible.map((t, i) => {
+    return `<div class="apt-prob-list">${items.map((t, i) => {
       const mine = bestHistoryForTest(t.id);
       const solved = !!mine;
       const diff = difficultyListLabel(t.difficulty);
-      const canOpen = access.canTake && (t.status || 'published') === 'published';
+      const contest = isContestTest(t);
+      const open = !contest || isContestOpenClient(t);
+      const canOpen = access.canTake && (t.status || 'published') === 'published' && open;
       const tag = canOpen ? 'button' : 'div';
       const extra = canOpen ? ` type="button" data-open-test="${esc(t.id)}"` : '';
-      return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : ''}"${extra}>
+      const schedule = contest ? (contestScheduleLabel(t) || (t.contestType === 'weekly' ? 'Weekly contest' : 'Monthly contest')) : '';
+      const state = contest ? (open ? 'Open today' : 'Scheduled') : '';
+      const sub = [schedule, state].filter(Boolean).join(' · ');
+      return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : (contest && !open ? 'is-locked' : '')}"${extra}>
         <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
-        <span class="apt-prob-title">${i + 1}. ${esc(t.title)}</span>
+        <span class="min-w-0">
+          <span class="apt-prob-title d-block">${i + 1}. ${esc(t.title)}</span>
+          ${opts.showSchedule && sub ? `<span class="apt-prob-sub">${esc(sub)}</span>` : ''}
+        </span>
         <span class="apt-prob-pct">${esc(formatListPercentage(t, mine))}</span>
         <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
       </${tag}>`;
     }).join('')}</div>`;
-    root.querySelectorAll('[data-open-test]').forEach((btn) => {
+  }
+
+  function bindOpenTestButtons(root) {
+    root?.querySelectorAll('[data-open-test]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = tests.find((x) => String(x.id) === String(btn.getAttribute('data-open-test')));
         if (t) openExam(t);
       });
     });
+  }
+
+  function renderTestList() {
+    const testRoot = document.getElementById('testList');
+    const contestRoot = document.getElementById('contestList');
+    const visible = publishedVisibleTests();
+    const regular = visible.filter((t) => !isContestTest(t));
+    const contests = visible.filter((t) => isContestTest(t));
+
+    if (testRoot) {
+      testRoot.innerHTML = renderProblemRows(
+        regular,
+        Auth.role() === 'student'
+          ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
+          : 'No published aptitude tests yet.'
+      );
+      bindOpenTestButtons(testRoot);
+    }
+    if (contestRoot) {
+      contestRoot.innerHTML = renderProblemRows(
+        contests,
+        'No contests are available right now.',
+        { showSchedule: true }
+      );
+      bindOpenTestButtons(contestRoot);
+    }
   }
 
   function openExam(test) {

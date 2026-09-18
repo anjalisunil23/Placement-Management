@@ -135,12 +135,7 @@ final class AptitudeService
         $rows = array_values(array_filter(
             $this->tests->published(200),
             static function ($t) use ($user): bool {
-                if (!AptitudeAccessService::testVisibleToTaker($user, $t)) {
-                    return false;
-                }
-                $contestType = AptitudeTestModel::normalizeContestType((string) ($t['contestType'] ?? 'none'));
-
-                return $contestType === 'none' || AptitudeTestModel::isContestOpen($t);
+                return AptitudeAccessService::testVisibleToTaker($user, $t);
             }
         ));
 
