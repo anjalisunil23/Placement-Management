@@ -560,16 +560,151 @@
     });
   }
 
-  function renderContestResults(contests, summary, scope = {}) {
+  function contestResultStatusLabel(contest) {
+    const status = contest?.resultStatus || (contest?.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    return status === 'PUBLISHED' ? 'Published' : 'Not published';
+  }
+
+  function mergeCompletedContestRows(apiContests = [], completedContests = []) {
+    const byId = new Map();
+    (completedContests || []).forEach((c) => {
+      const id = String(c.id || c.testId || '');
+      if (id) byId.set(id, { ...c, testId: id, id });
+    });
+    (apiContests || []).forEach((c) => {
+      const id = String(c.testId || c.id || '');
+      if (!id) return;
+      const prev = byId.get(id) || {};
+      byId.set(id, {
+        ...prev,
+        ...c,
+        testId: id,
+        id,
+        participants: c.participants || prev.participants || [],
+        participantCount: c.participantCount ?? prev.participantCount ?? (c.participants || prev.participants || []).length,
+      });
+    });
+    if (byId.size === 0) {
+      tests.filter((t) => isContestTest(t) && contestStatusClient(t) === 'COMPLETED').forEach((t) => {
+        const id = String(t.id);
+        byId.set(id, {
+          ...t,
+          testId: id,
+          id,
+          participants: [],
+          participantCount: Number(t.attemptCount ?? 0),
+        });
+      });
+    }
+    return [...byId.values()].sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+  }
+
+  function bindDirContestActions(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-view-contest-results]').forEach((btn) => {
+      btn.addEventListener('click', () => openContestResultsPreview(btn.getAttribute('data-view-contest-results')));
+    });
+    root.querySelectorAll('[data-publish-results]').forEach((btn) => {
+      btn.addEventListener('click', () => setContestResultsPublished(btn.getAttribute('data-publish-results'), true));
+    });
+    root.querySelectorAll('[data-unpublish-results]').forEach((btn) => {
+      btn.addEventListener('click', () => setContestResultsPublished(btn.getAttribute('data-unpublish-results'), false));
+    });
+    root.querySelectorAll('[data-view-attempt]').forEach((btn) => {
+      btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt')));
+    });
+    root.querySelectorAll('[data-detail]').forEach((btn) => {
+      btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
+    });
+  }
+
+  function renderProgressContestCard(c) {
+    const id = String(c.testId || c.id || '');
+    const window = {
+      start: c.contestStartAt || c.contestWindow?.start,
+      end: c.contestEndAt || c.contestWindow?.end,
+    };
+    const resultStatus = c.resultStatus || (c.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    const resultLabel = contestResultStatusLabel(c);
+    const resultCls = resultStatus === 'PUBLISHED' ? 'success' : 'warning';
+    const participants = Number(c.participantCount ?? (c.participants || []).length ?? 0);
+    const canManageResults = access.canManage;
+    const publishBtn = !canManageResults
+      ? ''
+      : (resultStatus === 'PUBLISHED'
+        ? `<button type="button" class="btn btn-sm btn-outline-warning" data-unpublish-results="${esc(id)}">Hide results</button>`
+        : `<button type="button" class="btn btn-sm btn-success" data-publish-results="${esc(id)}">Publish Result</button>`);
+    const badge = c.contestScheduleLabel
+      ? `<span class="badge-soft info ms-2">${esc(c.contestScheduleLabel)}</span>`
+      : '';
+    const publishedAt = c.resultPublishedAt
+      ? `<div class="small text-muted-2 mt-1">Published on ${esc(formatContestDateTime(c.resultPublishedAt))}</div>`
+      : '';
+
+    return `<div class="card-surface p-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+        <div>
+          <div class="fw-bold">${esc(c.title || 'Contest')}${badge}</div>
+          <div class="small text-muted-2">${esc(contestScheduleLabel(c))}</div>
+          <div class="small text-muted-2 mt-1">
+            ${window.start ? `Start: ${esc(formatContestDateTime(window.start))}` : ''}
+            ${window.end ? `${window.start ? ' · ' : ''}End: ${esc(formatContestDateTime(window.end))}` : ''}
+          </div>
+          <div class="mt-2 d-flex flex-wrap gap-1">
+            <span class="badge-soft muted">Completed</span>
+            <span class="badge-soft ${resultCls}">${esc(resultLabel)}</span>
+            <span class="badge-soft info">${esc(participants)} participant(s)</span>
+          </div>
+          ${publishedAt}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" data-view-contest-results="${esc(id)}">View Results</button>
+          ${publishBtn}
+        </div>
+      </div>
+      ${renderContestParticipantTable(c)}
+    </div>`;
+  }
+
+  function renderContestParticipantTable(c) {
+    const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
+    const rows = (c.participants || []).map((p) => {
+      const viewBtn = canViewDetail && (p.attemptId || p.id)
+        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(p.attemptId || p.id)}">View</button>`
+        : `<button type="button" class="btn btn-sm btn-outline-secondary" data-detail="${esc(p.userId || '')}">Profile</button>`;
+      return `<tr>
+        <td class="text-muted-2">${esc(p.rank ?? '—')}</td>
+        <td class="fw-semibold">${esc(p.name || '—')}</td>
+        <td>${esc(p.registerNumber || studentIdLabel(p))}</td>
+        <td>${esc(p.correctCount ?? '—')}</td>
+        <td>${esc(p.wrongCount ?? '—')}</td>
+        <td>${esc(formatContestScore(p))}</td>
+        <td>${esc(p.timeTakenLabel || '—')}</td>
+        <td>${viewBtn}</td>
+      </tr>`;
+    }).join('');
+    if (!(c.participants || []).length) {
+      return '<p class="text-muted-2 mb-0 small">No participants in the current filter scope.</p>';
+    }
+    return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
+      <th>Rank</th><th>Student</th><th>Register No.</th><th>Correct</th><th>Wrong</th><th>Score</th><th>Time</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function renderContestResults(contests, summary, scope = {}, completedContests = []) {
     document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
 
+    const merged = mergeCompletedContestRows(contests, completedContests);
+    const publishedCount = summary.publishedCount ?? merged.filter((c) => contestResultStatusLabel(c) === 'Published').length;
+    const pendingCount = summary.pendingCount ?? Math.max(0, merged.length - publishedCount);
+
     document.getElementById('dirStats').innerHTML = [
-      ['Contests', summary.contestCount ?? 0],
+      ['Completed', merged.length],
+      ['Published', publishedCount],
+      ['Not published', pendingCount],
       ['Participants', summary.totalParticipants ?? 0],
-      ['Unique students', summary.uniqueParticipants ?? 0],
       ['Avg score', `${summary.avgPercentage ?? 0}%`],
-      ['Top score', `${summary.highestScore ?? 0}%`],
     ].map(([lbl, val]) =>
       `<div class="col-6 col-md"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
     ).join('');
@@ -577,58 +712,18 @@
     const role = Auth.role();
     const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
       ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
-      : 'No contest attempts in your authorized scope yet.';
+      : 'No completed contests yet. Finished contests will appear here after their scheduled day ends.';
 
     const root = document.getElementById('dirContestSections');
     if (!root) return;
 
-    if (!contests.length) {
+    if (!merged.length) {
       root.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
       return;
     }
 
-    const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
-    root.innerHTML = contests.map((c) => {
-      const badge = c.contestScheduleLabel
-        ? `<span class="badge-soft info ms-2">${esc(c.contestScheduleLabel)}</span>`
-        : '';
-      const cat = c.category ? `<span class="text-muted-2 ms-2">${esc(c.category)}</span>` : '';
-      const rows = (c.participants || []).map((p) => {
-        const viewBtn = canViewDetail && (p.attemptId || p.id)
-          ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(p.attemptId || p.id)}">View</button>`
-          : `<button type="button" class="btn btn-sm btn-outline-secondary" data-detail="${esc(p.userId || '')}">Profile</button>`;
-        return `<tr>
-          <td class="text-muted-2">${esc(p.rank ?? '—')}</td>
-          <td class="fw-semibold">${esc(p.name || '—')}</td>
-          <td>${esc(studentIdLabel(p))}</td>
-          <td>${esc(p.classBatch || '—')}</td>
-          <td>${esc(formatContestScore(p))}</td>
-          <td>${esc(p.timeTakenLabel || '—')}</td>
-          <td class="small">${esc(formatContestBreakdown(p))}</td>
-          <td class="small text-muted-2">${esc(formatCompletedAt(p.completedAt))}</td>
-          <td>${viewBtn}</td>
-        </tr>`;
-      }).join('');
-
-      return `<div class="card-surface p-3">
-        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-          <div>
-            <div class="fw-bold">${esc(c.title || 'Contest')}${badge}${cat}</div>
-            <div class="small text-muted-2">${esc(c.participantCount ?? (c.participants || []).length)} participant(s)</div>
-          </div>
-        </div>
-        <div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
-          <th>Rank</th><th>Name</th><th>Student ID</th><th>Class</th><th>Score</th><th>Time</th><th>Breakdown</th><th>Submitted</th><th></th>
-        </tr></thead><tbody>${rows || `<tr><td colspan="9" class="text-muted-2 p-3">No participants yet.</td></tr>`}</tbody></table></div>
-      </div>`;
-    }).join('');
-
-    root.querySelectorAll('[data-view-attempt]').forEach((btn) => {
-      btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt')));
-    });
-    root.querySelectorAll('[data-detail]').forEach((btn) => {
-      btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
-    });
+    root.innerHTML = merged.map((c) => renderProgressContestCard(c)).join('');
+    bindDirContestActions(root);
   }
 
   function renderDirectoryTable(rows, summary, scope = {}) {
@@ -1135,6 +1230,9 @@
     if (contestPreviewId && String(contestPreviewId) === String(id)) {
       openContestResultsPreview(id).catch(() => {});
     }
+    if (access.canViewDirectory && progressPanel === 'contests') {
+      loadDirectory().catch(() => {});
+    }
     if (access.canTake) loadMyProgress();
   }
 
@@ -1280,12 +1378,13 @@
       end: c.contestEndAt || c.contestWindow?.end,
     };
     const resultStatus = c.resultStatus || (c.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    const resultLabel = contestResultStatusLabel(c);
     if (metaEl) {
       metaEl.innerHTML = [
         window.start ? `Start: ${formatContestDateTime(window.start)}` : '',
         window.end ? `End: ${formatContestDateTime(window.end)}` : '',
         `${data.summary?.participantCount ?? c.participantCount ?? 0} participant(s)`,
-        `Result status: ${resultStatus}`,
+        `Result: ${resultLabel}`,
         c.resultPublishedAt ? `Published: ${formatContestDateTime(c.resultPublishedAt)}` : '',
       ].filter(Boolean).join(' · ');
     }
@@ -1301,35 +1400,6 @@
         setContestResultsPublished(id, true);
       });
     }
-  }
-
-  function renderCompletedContestRow(t) {
-    const window = contestWindowClient(t);
-    const status = contestStatusClient(t);
-    const resultStatus = t.resultStatus || (t.resultsPublished ? 'PUBLISHED' : 'PENDING');
-    const participants = Number(t.participantCount ?? t.attemptCount ?? 0);
-    const publishBtn = resultStatus === 'PUBLISHED'
-      ? `<span class="badge-soft success align-self-center">Published${t.resultPublishedAt ? ` · ${esc(formatContestDateTime(t.resultPublishedAt))}` : ''}</span>`
-      : `<button type="button" class="btn btn-sm btn-success" data-publish-results="${esc(t.id)}">Publish Result</button>`;
-    return `<div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
-      <div>
-        <strong>${esc(t.title)}</strong>
-        <div class="small text-muted-2">${esc(contestScheduleLabel(t))}</div>
-        <div class="small text-muted-2 mt-1">
-          ${window.start ? `Start: ${esc(formatContestDateTime(window.start))}` : ''}
-          ${window.end ? ` · End: ${esc(formatContestDateTime(window.end))}` : ''}
-        </div>
-        <div class="mt-1 d-flex flex-wrap gap-1">
-          <span class="badge-soft muted">${esc(status)}</span>
-          <span class="badge-soft ${resultStatus === 'PUBLISHED' ? 'success' : 'warning'}">${esc(resultStatus)}</span>
-          <span class="badge-soft info">${esc(participants)} participant(s)</span>
-        </div>
-      </div>
-      <div class="d-flex flex-wrap gap-2">
-        <button type="button" class="btn btn-sm btn-outline-primary" data-view-contest-results="${esc(t.id)}">View Results</button>
-        ${publishBtn}
-      </div>
-    </div>`;
   }
 
   async function saveContestSchedule(id, field, value) {
@@ -2154,12 +2224,6 @@
   }
 
   function renderManageRow(t, { showContestBadge = false } = {}) {
-    const life = contestStatusClient(t);
-    const resultsBtn = showContestBadge && life === 'COMPLETED'
-      ? (t.resultsPublished || t.resultStatus === 'PUBLISHED'
-        ? `<button type="button" class="btn btn-sm btn-outline-warning" data-unpublish-results="${esc(t.id)}">Hide results</button>`
-        : `<button type="button" class="btn btn-sm btn-outline-primary" data-view-contest-results="${esc(t.id)}">View Results</button>`)
-      : '';
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div>
@@ -2169,7 +2233,6 @@
           ${showContestBadge ? contestScheduleControls(t) : ''}
         </div>
         <div class="d-flex flex-wrap gap-2">
-          ${resultsBtn}
           <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
           <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
         </div>
@@ -2257,12 +2320,10 @@
     if (type === 'none') return '';
     const life = contestStatusClient(t);
     const lifeCls = life === 'ACTIVE' ? 'success' : (life === 'COMPLETED' ? 'warning' : 'muted');
-    const resultStatus = t.resultStatus || (t.resultsPublished ? 'PUBLISHED' : 'PENDING');
-    const resultsCls = resultStatus === 'PUBLISHED' ? 'success' : 'warning';
+    const lifeLabel = life === 'ACTIVE' ? 'Active' : (life === 'COMPLETED' ? 'Completed' : 'Upcoming');
     return `<div class="mt-1 d-flex flex-wrap gap-1">
       <span class="badge-soft info">${esc(type === 'monthly' ? 'Monthly contest' : 'Weekly contest')}</span>
-      <span class="badge-soft ${lifeCls}">${esc(life)}</span>
-      <span class="badge-soft ${resultsCls}">${esc(resultStatus)}</span>
+      <span class="badge-soft ${lifeCls}">${esc(lifeLabel)}</span>
     </div>`;
   }
 
@@ -3223,12 +3284,10 @@
     applyManagePanel(managePanel);
 
     const regular = tests.filter((t) => !isContestTest(t));
-    const contests = tests.filter((t) => isContestTest(t));
-    const completed = contests.filter((t) => contestStatusClient(t) === 'COMPLETED');
+    const contests = tests.filter((t) => isContestTest(t) && contestStatusClient(t) !== 'COMPLETED');
 
     const testsRoot = document.getElementById('manageTestsList');
     const contestsRoot = document.getElementById('manageContestsList');
-    const completedRoot = document.getElementById('manageCompletedContestsList');
     if (testsRoot) {
       testsRoot.innerHTML = regular.length
         ? regular.map((t) => renderManageRow(t)).join('')
@@ -3238,14 +3297,8 @@
     if (contestsRoot) {
       contestsRoot.innerHTML = contests.length
         ? contests.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
-        : '<p class="text-muted-2 mb-0">No weekly or monthly contests yet.</p>';
+        : '<p class="text-muted-2 mb-0">No active contests. Completed contests move to Progress → Contest results.</p>';
       bindManageListActions(contestsRoot);
-    }
-    if (completedRoot) {
-      completedRoot.innerHTML = completed.length
-        ? completed.map((t) => renderCompletedContestRow(t)).join('')
-        : '<p class="text-muted-2 mb-0">No completed contests yet. Contests appear here after their scheduled day ends.</p>';
-      bindManageListActions(completedRoot);
     }
   }
 
@@ -3288,7 +3341,8 @@
       updateDirScopeHint(scope);
       if (progressPanel === 'contests') {
         const demo = demoContestResults();
-        renderContestResults(demo.contests || [], demo.summary || {}, scope);
+        const completed = tests.filter((t) => isContestTest(t) && contestStatusClient(t) === 'COMPLETED');
+        renderContestResults(demo.contests || [], demo.summary || {}, scope, completed);
       } else {
         const demo = demoDirectoryRows(progressPanel);
         renderDirectoryTable(demo.rows || [], demo.summary || {}, scope);
@@ -3309,7 +3363,12 @@
     }
     updateDirScopeHint(scope);
     if (progressPanel === 'contests' || res?.data?.view === 'contests') {
-      renderContestResults(res?.data?.contests || [], summary, scope);
+      renderContestResults(
+        res?.data?.contests || [],
+        summary,
+        scope,
+        res?.data?.completedContests || []
+      );
       return;
     }
     renderDirectoryTable(res?.data?.rows || [], summary, scope);

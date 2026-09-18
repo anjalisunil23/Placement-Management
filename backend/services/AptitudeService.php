@@ -644,7 +644,7 @@ final class AptitudeService
      */
     public function listCompletedContests(array $admin): array
     {
-        AptitudeAccessService::requireManager($admin);
+        AptitudeAccessService::requireDirectoryViewer($admin);
         $rows = [];
         foreach ($this->listAllForAdmin($admin) as $test) {
             if (!AptitudeTestModel::isContest($test)) {
@@ -1460,34 +1460,107 @@ final class AptitudeService
             }
             unset($participant);
 
-            $contests[] = [
-                'testId' => $testId,
-                'title' => (string) ($test['title'] ?? 'Contest'),
-                'category' => (string) ($test['category'] ?? ''),
-                'contestType' => AptitudeTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none')),
-                'contestScheduleLabel' => AptitudeTestModel::contestScheduleLabel($test),
-                'participantCount' => count($participants),
-                'participants' => $participants,
-            ];
+            $window = AptitudeTestModel::contestWindow($test);
+            $contests[] = $this->contestDirectoryEntry($test, $testId, $participants, $window);
         }
+
+        $contests = $this->mergeCompletedContestsIntoDirectory($viewer, $contests, $testCache);
 
         usort($contests, static fn (array $a, array $b): int => strcmp((string) ($a['title'] ?? ''), (string) ($b['title'] ?? '')));
 
         $percentages = array_map(static fn (array $p): float => (float) ($p['percentage'] ?? 0), $allParticipants);
+        $publishedCount = count(array_filter(
+            $contests,
+            static fn (array $c): bool => AptitudeTestModel::resultsPublished($c)
+                || strtoupper((string) ($c['resultStatus'] ?? '')) === 'PUBLISHED'
+        ));
 
         return [
             'view' => 'contests',
             'contests' => $contests,
+            'completedContests' => $contests,
             'rows' => [],
             'scope' => AptitudeAccessService::scopeInfo($viewer),
             'summary' => [
                 'contestCount' => count($contests),
+                'publishedCount' => $publishedCount,
+                'pendingCount' => max(0, count($contests) - $publishedCount),
                 'totalParticipants' => count($allParticipants),
                 'uniqueParticipants' => count($uniqueUsers),
                 'avgPercentage' => $percentages === [] ? 0 : round(array_sum($percentages) / count($percentages), 1),
                 'highestScore' => $percentages === [] ? 0 : max($percentages),
             ],
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @param array<int, array<string, mixed>> $participants
+     * @param array{start:?string,end:?string} $window
+     * @return array<string, mixed>
+     */
+    private function contestDirectoryEntry(array $test, string $testId, array $participants, array $window): array
+    {
+        return [
+            'testId' => $testId,
+            'id' => $testId,
+            'title' => (string) ($test['title'] ?? 'Contest'),
+            'category' => (string) ($test['category'] ?? ''),
+            'contestType' => AptitudeTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none')),
+            'contestScheduleLabel' => AptitudeTestModel::contestScheduleLabel($test),
+            'contestStatus' => AptitudeTestModel::contestStatus($test),
+            'contestStartAt' => $window['start'] ?? null,
+            'contestEndAt' => $window['end'] ?? null,
+            'resultsPublished' => AptitudeTestModel::resultsPublished($test),
+            'resultStatus' => AptitudeTestModel::resultStatus($test),
+            'resultPublishedAt' => AptitudeTestModel::resultPublishedAt($test),
+            'participantCount' => count($participants),
+            'participants' => $participants,
+        ];
+    }
+
+    /**
+     * Ensure every completed contest appears even when filters yield zero attempts.
+     *
+     * @param array<string, mixed> $viewer
+     * @param array<int, array<string, mixed>> $contests
+     * @param array<string, array<string, mixed>> $testCache
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeCompletedContestsIntoDirectory(array $viewer, array $contests, array $testCache): array
+    {
+        $byId = [];
+        foreach ($contests as $contest) {
+            $id = (string) ($contest['testId'] ?? $contest['id'] ?? '');
+            if ($id !== '') {
+                $byId[$id] = $contest;
+            }
+        }
+
+        foreach ($this->listCompletedContests($viewer) as $completed) {
+            $id = (string) ($completed['id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            if (isset($byId[$id])) {
+                $byId[$id] = array_merge($completed, [
+                    'participants' => $byId[$id]['participants'] ?? [],
+                    'participantCount' => (int) ($byId[$id]['participantCount'] ?? count($byId[$id]['participants'] ?? [])),
+                ]);
+                continue;
+            }
+            $test = $testCache[$id] ?? $this->tests->findById($id) ?: [];
+            $window = AptitudeTestModel::contestWindow($test);
+            $byId[$id] = $this->contestDirectoryEntry($test, $id, [], $window);
+            if ($completed !== []) {
+                $byId[$id] = array_merge($byId[$id], $completed, [
+                    'participants' => [],
+                    'participantCount' => (int) ($completed['participantCount'] ?? 0),
+                ]);
+            }
+        }
+
+        return array_values($byId);
     }
 
     /**

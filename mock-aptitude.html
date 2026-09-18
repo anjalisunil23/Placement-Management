@@ -155,7 +155,10 @@
       <div class="table-wrap" id="dirTestResultsWrap"><table class="table-modern"><thead><tr>
         <th>Name</th><th>Student ID</th><th>Class</th><th>Attempts</th><th>Avg</th><th>Best</th><th>Accuracy</th><th>Recent</th><th>Categories</th><th></th>
       </tr></thead><tbody id="dirRows"></tbody></table></div>
-      <div class="d-none" id="dirContestResultsWrap"><div id="dirContestSections" class="d-flex flex-column gap-3"></div></div>
+      <div class="d-none" id="dirContestResultsWrap">
+        <p class="small text-muted-2 mb-3" id="dirContestIntro">Review completed contests, publish results for students, and browse participant scores.</p>
+        <div id="dirContestSections" class="d-flex flex-column gap-3"></div>
+      </div>
     </div>
   </div>
 
@@ -193,11 +196,6 @@
           </div>
         </div>
         <div id="manageContestsList" class="d-flex flex-column gap-2"></div>
-        <div class="mt-4 pt-3 border-top">
-          <h6 class="fw-bold mb-2">Completed contests</h6>
-          <p class="small text-muted-2 mb-3">Review participant scores after a contest ends, then publish results for students.</p>
-          <div id="manageCompletedContestsList" class="d-flex flex-column gap-2"></div>
-        </div>
       </div>
 
       <div id="manageBankPanel" class="d-none">
@@ -502,5 +500,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260918pub"></script>
+<script src="js/aptitude-page.js?v=20260918prog"></script>
 </body></html>
