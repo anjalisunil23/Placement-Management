@@ -817,8 +817,10 @@
     const assigned = role === 'staff' && typeof staffClassInchargeBatches === 'function'
       ? staffClassInchargeBatches()
       : (Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : []);
-    const batches = assigned.length ? assigned : (role === 'staff' ? [] : ['MCAINT2022-27']);
-    const branches = ['INMCA', 'Integrated MCA', 'MCA'];
+    const batches = assigned.length
+      ? assigned
+      : (role === 'staff' ? [] : ['MCAINT2022-27-S9', 'MCA2025-27-S3']);
+    const branches = ['INMCA', 'MCA', 'BCA'];
     const types = role === 'admin'
       ? [{ value: 'student', label: 'Students' }, { value: 'alumni', label: 'Alumni' }]
       : [{ value: 'student', label: 'Students' }];

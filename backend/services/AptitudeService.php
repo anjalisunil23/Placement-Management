@@ -1012,7 +1012,7 @@ final class AptitudeService
     }
 
     /**
-     * Filter dropdown values from local departments / students tables (scoped by RBAC).
+     * Filter dropdown values from AES placement data (scoped by RBAC).
      *
      * @param array<string, mixed> $viewer
      * @param array<string, mixed> $filters
@@ -1023,6 +1023,7 @@ final class AptitudeService
         AptitudeAccessService::requireDirectoryViewer($viewer);
         $role = \PMS\Middleware\AuthMiddleware::resolvedRole($viewer);
         $filters = AptitudeAccessService::sanitizeDirectoryFilters($viewer, $filters);
+        $this->ensureAesDepartmentsFresh();
 
         $departmentId = trim((string) ($filters['department'] ?? ''));
         $branch = trim((string) ($filters['course'] ?? ''));
@@ -1044,17 +1045,6 @@ final class AptitudeService
             $batchSource = $branch !== '' ? $branch : '';
             foreach ($filterSvc->fetchBatchOptions($filterCtx, $batchSource, '', $finalYearOnly) as $batch) {
                 $batch = trim((string) $batch);
-                if ($batch !== '') {
-                    $batchSet[$batch] = true;
-                }
-            }
-        } else {
-            foreach ($this->studentsForProgressFilters($viewer, $role, $filters) as $student) {
-                $label = self::studentBranchLabelStatic($student);
-                if ($label !== '') {
-                    $branchSet[$label] = true;
-                }
-                $batch = StaffContext::studentClassBatch($student);
                 if ($batch !== '') {
                     $batchSet[$batch] = true;
                 }
@@ -1159,12 +1149,28 @@ final class AptitudeService
         return strcasecmp($leftNorm, $rightNorm) === 0;
     }
 
+    private function ensureAesDepartmentsFresh(): void
+    {
+        $stampFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_dept_sync_stamp';
+        $ttlSeconds = 3600;
+        $stampAge = is_file($stampFile) ? (time() - (int) @file_get_contents($stampFile)) : PHP_INT_MAX;
+        if ($stampAge >= $ttlSeconds) {
+            try {
+                (new AesApiService())->syncDepartmentsToLocal();
+                @file_put_contents($stampFile, (string) time());
+            } catch (\Throwable) {
+                // Serve already-synced local departments when AES is unreachable.
+            }
+        }
+    }
+
     /**
      * @return array<int, array{id:string,code:string,name:string}>
      */
     private function loadProgressDepartments(array $viewer, string $role): array
     {
         if ($role === 'admin') {
+            $this->ensureAesDepartmentsFresh();
             $rows = [];
             $seen = [];
             foreach ((new DepartmentModel())->findAll([], 300) as $dept) {

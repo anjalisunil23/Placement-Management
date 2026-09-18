@@ -189,6 +189,45 @@ final class PlacementFilterService
             $batches[] = $batch;
         }
 
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+        if ($deptAesId !== '') {
+            try {
+                $aesApi = new AesApiService();
+                $batches = array_merge(
+                    $batches,
+                    $aesApi->fetchPlacementClassBatches($deptAesId, $program, $branch)
+                );
+                foreach ($aesApi->fetchAllStudInfo4Placement(['stud_deptcode' => $deptAesId]) as $record) {
+                    $recordDept = trim((string) ($record['stud_deptcode'] ?? ''));
+                    if ($recordDept !== '' && strcasecmp($recordDept, $deptAesId) !== 0) {
+                        continue;
+                    }
+                    $batchLabel = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+                    if ($batchLabel === '') {
+                        continue;
+                    }
+                    $course = $this->normalizeProgrammeForClass(
+                        (string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? ''),
+                        $batchLabel
+                    );
+                    $row = [
+                        'stud_course' => $course,
+                        'stud_branch' => trim((string) ($record['stud_branch'] ?? '')) ?: 'Regular',
+                        'stud_class' => $batchLabel,
+                    ];
+                    if (!$this->rowMatchesProgramme($row, $program)) {
+                        continue;
+                    }
+                    if ($branch !== '' && strcasecmp($row['stud_branch'], $branch) !== 0) {
+                        continue;
+                    }
+                    $batches[] = $batchLabel;
+                }
+            } catch (\Throwable) {
+                // Keep scoped rows when AES is temporarily unavailable.
+            }
+        }
+
         $batches = $this->sortLabels(array_values(array_unique($batches)));
         if (!$finalYearOnly) {
             return $batches;
@@ -325,7 +364,7 @@ final class PlacementFilterService
     private function collectScopedStudInfoRows(array $ctx): array
     {
         $cacheKey = (string) ($ctx['departmentId'] ?? '');
-        if ($cacheKey !== '' && isset(self::$scopedRowsCache[$cacheKey])) {
+        if ($cacheKey !== '' && isset(self::$scopedRowsCache[$cacheKey]) && self::$scopedRowsCache[$cacheKey] !== []) {
             return self::$scopedRowsCache[$cacheKey];
         }
 
