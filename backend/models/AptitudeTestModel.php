@@ -481,7 +481,7 @@ class AptitudeTestModel extends BaseModel
             'negativeMarking' => $negativeMarking,
             'negativeMarks' => $negativeMarks,
             'instructions' => trim((string) ($data['instructions'] ?? '')),
-            'status' => self::normalizeStatus((string) ($data['status'] ?? 'unpublished')),
+            'status' => self::normalizeStatus((string) ($data['status'] ?? 'published')),
             'contestType' => self::normalizeContestType((string) ($data['contestType'] ?? 'none')),
             'questionSource' => $questionSource,
             'randomRules' => $questionSource === 'random' ? $randomRules : [],
@@ -532,6 +532,30 @@ class AptitudeTestModel extends BaseModel
     }
 
     /**
+     * Remove answer fields from a normalized MCQ row (exam / student list).
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    public static function stripAnswerFields(array $row): array
+    {
+        unset(
+            $row['correctIndex'],
+            $row['correct_answer'],
+            $row['correctAnswer'],
+            $row['correctAnswerIndex'],
+            $row['correct'],
+            $row['correctOption'],
+            $row['correctOptionLetter'],
+            $row['explanation'],
+            $row['solution'],
+            $row['lockCorrectIndex']
+        );
+
+        return $row;
+    }
+
+    /**
      * Public-safe test shape (no correct answers unless requested).
      *
      * @param array<string, mixed> $test
@@ -560,6 +584,8 @@ class AptitudeTestModel extends BaseModel
             if ($includeAnswers) {
                 $row['correctIndex'] = $norm['correctIndex'];
                 $row['explanation'] = $norm['explanation'];
+            } else {
+                $row = self::stripAnswerFields($row);
             }
             $questions[] = $row;
         }

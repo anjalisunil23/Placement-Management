@@ -28,6 +28,9 @@
   .mcq-quill-wrap .ql-editor{min-height:5.5rem}
   .mcq-quill-wrap.mcq-quill-sm .ql-editor{min-height:3.75rem}
   .mcq-quill-wrap .ql-editor img,.apt-rich img{max-width:100%;height:auto;border-radius:.375rem;margin:.35rem 0}
+  .apt-q-card{overflow:hidden;max-width:100%}
+  .apt-q-card-text{white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.45}
+  #bankQuestionsList,#aptAiPreviewList{max-width:100%;overflow-x:hidden}
   .apt-rich p:last-child,.apt-rich ul:last-child,.apt-rich ol:last-child{margin-bottom:0}
 </style>
 <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet"/>
@@ -281,7 +284,7 @@
       <div class="row g-3">
         <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfQuestionCount">Total number of questions</label><input class="form-control" type="number" id="tfQuestionCount" min="1" required/></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfQuestionCount">Total number of questions</label><input class="form-control bg-light" type="number" id="tfQuestionCount" min="0" readonly required tabindex="-1" aria-readonly="true"/><div class="form-text" id="tfQuestionCountHint">Auto-calculated from your selections below.</div></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDuration">Total duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required/></div>
 
         <div class="col-12">
@@ -317,6 +320,7 @@
         </div>
 
         <div class="col-12" id="tfManualPanel">
+          <div class="small text-muted-2 mb-2" id="tfManualCountSummary">Add bank rules and/or MCQs below — total updates automatically.</div>
           <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" id="tfUseBankManual"/>
             <label class="form-check-label" for="tfUseBankManual">Select questions from question bank manually</label>
@@ -346,7 +350,7 @@
 
         <div class="col-md-6"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="tfNegative"/><label class="form-check-label" for="tfNegative">Negative marking</label></div></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfNegativeMarks">Negative marks (per wrong)</label><input class="form-control" type="number" id="tfNegativeMarks" min="0" step="0.25" value="0"/></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfStatus">Status</label><select class="form-select" id="tfStatus"><option value="unpublished">Unpublished</option><option value="published">Published</option></select></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfStatus">Status</label><select class="form-select" id="tfStatus"><option value="published">Published (visible to students)</option><option value="unpublished">Unpublished (draft)</option></select><div class="form-text">Students only see published tests in Available tests.</div></div>
 
         <div class="col-12 d-none" id="tfContestWrap">
           <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 4%,transparent)">
@@ -461,6 +465,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
-<script src="js/aptitude-exam.js?v=20260918align"></script>
-<script src="js/aptitude-page.js?v=20260918align"></script>
+<script src="js/aptitude-exam.js?v=20260918hideans"></script>
+<script src="js/aptitude-page.js?v=20260918hideans"></script>
 </body></html>

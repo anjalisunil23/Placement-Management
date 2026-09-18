@@ -148,14 +148,28 @@ final class AptitudeAccessService
         if (!self::canTake($user)) {
             return false;
         }
-        $testDept = (string) ($test['departmentId'] ?? '');
+        $testDept = self::normalizeDepartmentId($test['departmentId'] ?? '');
         if ($testDept === '') {
             return true;
         }
         $ctx = self::subjectContext($user);
-        $viewerDept = (string) ($ctx['departmentId'] ?? '');
+        $viewerDept = self::normalizeDepartmentId($ctx['departmentId'] ?? '');
+        if ($viewerDept === '') {
+            $viewerDept = self::normalizeDepartmentId($user['departmentId'] ?? '');
+        }
 
         return $viewerDept !== '' && $viewerDept === $testDept;
+    }
+
+    public static function normalizeDepartmentId(mixed $id): string
+    {
+        $raw = trim((string) $id);
+        if ($raw === '') {
+            return '';
+        }
+        $oid = Security::toObjectId($raw);
+
+        return $oid ?? strtolower($raw);
     }
 
     /**

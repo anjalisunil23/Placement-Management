@@ -54,6 +54,23 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  const ANSWER_FIELD_KEYS = [
+    'correctIndex', 'correct_answer', 'correctAnswer', 'correctAnswerIndex',
+    'correct', 'correctOption', 'correctOptionLetter', 'explanation', 'solution',
+    'lockCorrectIndex',
+  ];
+
+  function stripAnswerFields(q) {
+    if (!q || typeof q !== 'object') return q;
+    const out = { ...q };
+    ANSWER_FIELD_KEYS.forEach((key) => { delete out[key]; });
+    return out;
+  }
+
+  function stripQuestionsForExam(questions) {
+    return (questions || []).map(stripAnswerFields);
+  }
+
   function paletteState(idx, answers, marked, visited) {
     const qid = answers._order?.[idx];
     const answered = qid != null && answers[qid] != null && answers[qid] >= 0;
@@ -110,7 +127,7 @@
     }
 
     function renderQuestion() {
-      const q = currentQ();
+      const q = stripAnswerFields(currentQ());
       if (!q) return;
       state.visited[q.id] = true;
       el('q-num').textContent = `Question ${state.index + 1} of ${state.questions.length}`;
@@ -179,11 +196,10 @@
         }
         attemptId = res.data.attemptId;
         questions = (res.data.test && res.data.test.questions) || questions;
-        // Ensure no answers leaked
-        questions = questions.map(({ correctIndex, explanation, ...q }) => q);
       } else if (opts.resolveDemoQuestions) {
         questions = opts.resolveDemoQuestions(state.test.id) || questions;
       }
+      questions = stripQuestionsForExam(questions);
       const durationMs = Math.max(1, Number(state.test.durationMinutes || 30)) * 60 * 1000;
       state.attemptId = attemptId;
       state.questions = questions;
@@ -240,6 +256,7 @@
         result = { score: 0, maximumScore: 0, percentage: 0, questionAnalysis: [] };
       }
       submitting = false;
+      state.submitted = true;
       if (auto) toast('Time is up — test submitted automatically.', 'info');
       renderResult(result);
     }
@@ -330,8 +347,13 @@
       open(test) {
         stopTimer();
         submitting = false;
-        state = { test, questions: [], answers: {}, marked: {}, visited: {}, index: 0 };
-        renderInstructions(test);
+        const safeTest = test
+          ? { ...test, questions: stripQuestionsForExam(test.questions || []) }
+          : test;
+        state = { test: safeTest, questions: [], answers: {}, marked: {}, visited: {}, index: 0 };
+        if (el('result-summary')) el('result-summary').innerHTML = '';
+        if (el('result-analysis')) el('result-analysis').innerHTML = '';
+        renderInstructions(safeTest);
         root.classList.remove('d-none');
       },
       hide() {
@@ -349,5 +371,5 @@
     };
   }
 
-  global.AptitudeExam = { createExamController, formatTimer, esc };
+  global.AptitudeExam = { createExamController, formatTimer, esc, stripAnswerFields, stripQuestionsForExam };
 })(window);

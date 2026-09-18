@@ -66,7 +66,9 @@ final class AptitudeController
     public function listTests(): void
     {
         $user = AptitudeAccessService::requirePortalUser();
-        $includeAnswers = AptitudeAccessService::canManage($user);
+        // Students must never receive correct answers in the test list.
+        $includeAnswers = AptitudeAccessService::canManage($user)
+            && !AptitudeAccessService::canTake($user);
         $tests = $includeAnswers
             ? $this->service->listAllForAdmin($user)
             : $this->service->listPublishedForUser($user, false);

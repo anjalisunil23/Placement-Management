@@ -920,12 +920,12 @@
 
     root.innerHTML = bankQuestions.slice(0, 100).map((q) => {
       const id = String(q.id || q.bankId || '');
-      const prompt = stripHtml(q.prompt).slice(0, 160) || 'Question';
-      return `<div class="border rounded-3 p-3">
-        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-          <div class="min-w-0 flex-grow-1">
-            <div class="fw-medium text-truncate">${esc(prompt)}</div>
-            <div class="small text-muted-2">${esc(q.category || 'General Aptitude')} · ${esc(q.difficulty || '')}${q.source ? ` · ${esc(q.source)}` : ''} · ${esc(q.options?.length || 0)} options · ${esc(q.marks ?? 1)} mark(s)</div>
+      const prompt = stripHtml(q.prompt) || 'Question';
+      return `<div class="border rounded-3 p-3 apt-q-card">
+        <div class="d-flex align-items-start justify-content-between gap-2">
+          <div class="min-w-0 flex-grow-1 pe-1">
+            <div class="fw-medium apt-q-card-text">${esc(prompt)}</div>
+            <div class="small text-muted-2 mt-1">${esc(q.category || 'General Aptitude')} · ${esc(q.difficulty || '')}${q.source ? ` · ${esc(q.source)}` : ''} · ${esc(q.options?.length || 0)} options · ${esc(q.marks ?? 1)} mark(s)</div>
           </div>
           <div class="d-flex align-items-center gap-2 flex-shrink-0">
             ${bankDifficultyBadge(q.difficulty)}
@@ -1012,10 +1012,27 @@
     document.getElementById('tfManualPanel')?.classList.toggle('d-none', random || ai);
     document.getElementById('tfAiPanel')?.classList.toggle('d-none', !ai);
     const countEl = document.getElementById('tfQuestionCount');
+    const manual = source === 'manual';
     if (countEl) {
-      countEl.readOnly = random || ai;
+      const autoCount = random || ai || manual;
+      countEl.readOnly = autoCount;
+      countEl.classList.toggle('bg-light', autoCount);
+      countEl.tabIndex = autoCount ? -1 : 0;
+      const hint = document.getElementById('tfQuestionCountHint');
+      if (hint) {
+        if (manual) {
+          hint.textContent = 'Auto-calculated from bank rules and MCQs added below.';
+        } else if (random) {
+          hint.textContent = 'Auto-calculated from random rules below.';
+        } else if (ai) {
+          hint.textContent = 'Auto-calculated from AI questions added to this test.';
+        } else {
+          hint.textContent = 'Auto-calculated from your selections below.';
+        }
+      }
       if (random) updateRandomSummary();
-      if (ai && aiTestQuestions.length) countEl.value = String(aiTestQuestions.length);
+      else if (ai && aiTestQuestions.length) countEl.value = String(aiTestQuestions.length);
+      else if (manual) updateManualQuestionCount();
     }
     syncAiAddedSummary();
   }
@@ -1267,13 +1284,13 @@
           <div class="d-flex gap-2"><button type="button" class="btn btn-sm btn-primary" data-ai-save-edit="${i}">Save</button><button type="button" class="btn btn-sm btn-outline-secondary" data-ai-cancel-edit="${i}">Cancel</button></div>
         </div>`;
       }
-      return `<div class="border rounded-3 p-3" data-ai-card="${i}">
+      return `<div class="border rounded-3 p-3 apt-q-card" data-ai-card="${i}">
         <div class="d-flex gap-2 align-items-start">
-          <input class="form-check-input mt-1" type="checkbox" data-ai-idx="${i}" ${q.selected !== false ? 'checked' : ''}/>
+          <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-ai-idx="${i}" ${q.selected !== false ? 'checked' : ''}/>
           <div class="flex-grow-1 min-w-0">
             <div class="fw-semibold mb-1">Question ${i + 1}</div>
-            <div class="mb-2">${esc(q.prompt || '')}</div>
-            <div class="small mb-2">${opts.map((o, oi) => `<div>${letters[oi]}. ${esc(o)}${oi === correct ? ' <span class="text-success fw-semibold">✓</span>' : ''}</div>`).join('')}</div>
+            <div class="mb-2 apt-q-card-text">${esc(q.prompt || '')}</div>
+            <div class="small mb-2">${opts.map((o, oi) => `<div class="apt-q-card-text">${letters[oi]}. ${esc(o)}${oi === correct ? ' <span class="text-success fw-semibold">✓</span>' : ''}</div>`).join('')}</div>
             <div class="small mb-2">
               <span class="fw-semibold">Correct answer:</span>
               ${[0, 1, 2, 3].map((oi) => `<label class="form-check form-check-inline ms-2"><input class="form-check-input" type="radio" name="ai-correct-${i}" data-ai-set-correct="${i}" value="${oi}" ${correct === oi ? 'checked' : ''}/> ${letters[oi]}</label>`).join('')}
@@ -1525,10 +1542,12 @@
     row.querySelector('[data-remove-bank-rule]')?.addEventListener('click', () => {
       outer.remove();
       loadBankPickerQuestions().catch(() => renderBankPicker());
+      updateManualQuestionCount();
     });
     row.querySelectorAll('[data-f]').forEach((el) => {
       el.addEventListener('change', () => {
         loadBankPickerQuestions().catch(() => renderBankPicker());
+        updateManualQuestionCount();
       });
       el.addEventListener('input', () => {
         updateBankPickSummary();
@@ -1591,11 +1610,11 @@
   function renderBankPickerQuestionRow(q) {
     const id = String(q.id || q.bankId || '');
     const checked = selectedBankIds.has(id) ? 'checked' : '';
-    const prompt = stripHtml(q.prompt).slice(0, 160) || 'Question';
-    return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0 bg-white">
-      <input type="checkbox" class="form-check-input mt-1" data-bank-pick="${esc(id)}" ${checked}/>
+    const prompt = stripHtml(q.prompt) || 'Question';
+    return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0 bg-white apt-q-card">
+      <input type="checkbox" class="form-check-input mt-1 flex-shrink-0" data-bank-pick="${esc(id)}" ${checked}/>
       <span class="small min-w-0 flex-grow-1">
-        <span class="d-block">${esc(prompt)}</span>
+        <span class="d-block apt-q-card-text">${esc(prompt)}</span>
         <span class="text-muted-2">${esc(normalizeDifficulty(q.difficulty))} · ${Number(q.marks ?? 1)} mark(s)</span>
       </span>
     </label>`;
@@ -1655,8 +1674,18 @@
     const mcqCount = collectMcqs().length;
     const useBank = document.getElementById('tfUseBankManual')?.checked;
     const bankPart = useBank ? bankFilterRulesNeeded() : 0;
+    const total = mcqCount + bankPart;
     const countEl = document.getElementById('tfQuestionCount');
-    if (countEl) countEl.value = String(Math.max(mcqCount + bankPart, 1));
+    if (countEl) countEl.value = String(total);
+    const summary = document.getElementById('tfManualCountSummary');
+    if (summary) {
+      const parts = [];
+      if (useBank && bankPart > 0) parts.push(`${bankPart} from bank rules`);
+      if (mcqCount > 0) parts.push(`${mcqCount} direct MCQ(s)`);
+      summary.textContent = total > 0
+        ? `Total: ${total} question(s)${parts.length ? ` (${parts.join(' + ')})` : ''}`
+        : 'Add bank rules and/or MCQs below — total updates automatically.';
+    }
   }
 
   function demoResolveBankWithPreferred(rules, preferredIds = []) {
@@ -1814,7 +1843,7 @@
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div>
           <strong>${esc(t.title)}</strong>
-          <div class="small text-muted-2">${esc(t.status || 'unpublished')} · ${testMetaLine(t)}</div>
+          <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
           ${showContestBadge ? contestBadgeHtml(t) : ''}
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -2115,7 +2144,11 @@
       link.classList.toggle('active', link.getAttribute('data-view') === view);
     });
 
-    if (view === 'take' && access.canTake) await loadMyProgress();
+    if (view === 'take' && access.canTake) {
+      await loadTests();
+      renderTestList();
+      await loadMyProgress();
+    }
     if (view === 'progress' && access.canViewDirectory) {
       await initDirFilters();
       await loadDirectory();
@@ -2236,11 +2269,27 @@
     body.innerHTML = renderProgressDetail(res.data || {});
   }
 
+  function stripQuestionsForStudent(questions) {
+    if (typeof AptitudeExam !== 'undefined' && AptitudeExam.stripQuestionsForExam) {
+      return AptitudeExam.stripQuestionsForExam(questions);
+    }
+    return (questions || []).map(({
+      correctIndex, explanation, correct_answer, correctAnswer, correctAnswerIndex, solution, ...q
+    }) => q);
+  }
+
+  function sanitizeTestForStudent(test) {
+    if (!test) return test;
+    return { ...test, questions: stripQuestionsForStudent(test.questions || []) };
+  }
+
   async function loadTests() {
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
       const res = await api('/aptitude/tests').catch(() => null);
       if (res?.success) {
-        tests = res.data?.tests || [];
+        tests = (res.data?.tests || []).map((t) => (
+          access.canTake ? sanitizeTestForStudent(t) : t
+        ));
         return;
       }
       tests = [];
@@ -2249,8 +2298,8 @@
     }
     tests = loadDemoTestsStore().map((t) => {
       const copy = JSON.parse(JSON.stringify(t));
-      if (!access.canManage) {
-        copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
+      if (access.canTake || !access.canManage) {
+        return sanitizeTestForStudent(copy);
       }
       return copy;
     });
@@ -2341,7 +2390,11 @@
     const root = document.getElementById('testList');
     let visible = access.canManage
       ? tests
-      : tests.filter((t) => (t.status || 'published') === 'published' && isContestOpenClient(t));
+      : tests.filter((t) => {
+        if ((t.status || 'published') !== 'published') return false;
+        const contestType = String(t.contestType || 'none');
+        return contestType === 'none' || isContestOpenClient(t);
+      });
     if (!visible.length) {
       const msg = Auth.role() === 'student'
         ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
@@ -2376,7 +2429,7 @@
 
   function openExam(test) {
     document.getElementById('hubView').classList.add('d-none');
-    exam.open(test);
+    exam.open(access.canTake ? sanitizeTestForStudent(test) : test);
   }
 
   function closeExam() {
@@ -2565,11 +2618,15 @@
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
-    document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 10;
+    document.getElementById('tfQuestionCount').value = String(
+      test?.questionCount || (test?.questions || []).length || 0
+    );
     document.getElementById('tfDuration').value = test?.durationMinutes || 30;
     document.getElementById('tfNegative').checked = !!test?.negativeMarking;
     document.getElementById('tfNegativeMarks').value = test?.negativeMarks ?? 0;
-    document.getElementById('tfStatus').value = test?.status === 'published' ? 'published' : 'unpublished';
+    document.getElementById('tfStatus').value = test
+      ? (test.status === 'unpublished' ? 'unpublished' : 'published')
+      : 'published';
 
     let source = test?.questionSource === 'random' ? 'random' : 'manual';
     aiTestQuestions = [];
@@ -2618,6 +2675,7 @@
     const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId) : [];
     if (qs.length) qs.forEach((q) => addMcqRow(q));
     loadBankPickerQuestions().catch(() => renderBankPicker());
+    updateManualQuestionCount();
     testFormModal.show();
   }
 
@@ -2811,7 +2869,7 @@
       onExit: () => closeExam(),
       resolveDemoQuestions: (id) => {
         const t = fullDemoTest(id);
-        return (t?.questions || []).map(({ correctIndex, explanation, ...q }) => q);
+        return stripQuestionsForStudent(t?.questions || []);
       },
       scoreLocally,
     });
@@ -2896,6 +2954,7 @@
       if (!file) return;
       try {
         const added = await importMcqsFromFormExcel(file);
+        updateManualQuestionCount();
         toast(`Imported ${added} question(s) into the form.`, 'success');
       } catch (err) {
         toast(err?.message || 'Could not import Excel file.', 'error');
@@ -3039,7 +3098,11 @@
         toast(res?.message || 'Could not save test.', 'error');
         return;
       }
-      toast('Test saved.', 'success');
+      if (payload.status !== 'published') {
+        toast('Test saved as unpublished. Set status to Published for students to see it.', 'info');
+      } else {
+        toast('Test saved.', 'success');
+      }
       testFormModal.hide();
       await loadTests();
       renderTestList();
