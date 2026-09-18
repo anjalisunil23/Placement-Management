@@ -697,7 +697,7 @@
       return `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
     }
     return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
-      <th>Title</th><th>Schedule</th><th>Status</th><th>Participants</th><th></th>
+      <th>Title</th><th>Schedule</th><th>Status</th><th>Participants</th><th>Actions</th>
     </tr></thead><tbody>${contests.map((c) => renderProgressContestRow(c)).join('')}</tbody></table></div>`;
   }
 
@@ -2401,41 +2401,16 @@
     if (!show && managePanel === 'contests') applyManagePanel('tests');
   }
 
-  function contestResultRowFromTest(t) {
-    const window = contestWindowClient(t);
-    return {
-      ...t,
-      testId: t.id,
-      id: t.id,
-      contestStartAt: window.start,
-      contestEndAt: window.end,
-      resultStatus: t.resultsPublished ? 'PUBLISHED' : 'PENDING',
-      participants: [],
-      participantCount: Number(t.attemptCount ?? 0),
-    };
-  }
-
-  function renderManageContestSections(contestType, listRoot, resultsRoot) {
+  function renderManageContestSections(contestType, listRoot) {
     const all = tests.filter((t) => String(t.contestType) === contestType);
     const active = all.filter((t) => contestStatusClient(t) !== 'COMPLETED');
-    const completed = all.filter((t) => contestStatusClient(t) === 'COMPLETED');
     const label = contestType === 'monthly' ? 'monthly' : 'weekly';
 
-    if (listRoot) {
-      listRoot.innerHTML = active.length
-        ? active.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
-        : `<p class="text-muted-2 mb-0">No active ${label} contests.</p>`;
-      bindManageListActions(listRoot);
-    }
-
-    if (resultsRoot) {
-      const resultRows = completed.map((t) => contestResultRowFromTest(t));
-      resultsRoot.innerHTML = renderProgressContestTable(
-        resultRows,
-        `No completed ${label} contests yet.`
-      );
-      bindDirContestActions(resultsRoot);
-    }
+    if (!listRoot) return;
+    listRoot.innerHTML = active.length
+      ? active.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
+      : `<p class="text-muted-2 mb-0">No active ${label} contests.</p>`;
+    bindManageListActions(listRoot);
   }
 
   function contestScheduleControls(t) {
@@ -3523,16 +3498,8 @@
       bindManageListActions(testsRoot);
     }
 
-    renderManageContestSections(
-      'weekly',
-      document.getElementById('manageWeeklyContestsList'),
-      document.getElementById('manageWeeklyContestsResults')
-    );
-    renderManageContestSections(
-      'monthly',
-      document.getElementById('manageMonthlyContestsList'),
-      document.getElementById('manageMonthlyContestsResults')
-    );
+    renderManageContestSections('weekly', document.getElementById('manageWeeklyContestsList'));
+    renderManageContestSections('monthly', document.getElementById('manageMonthlyContestsList'));
   }
 
   async function loadMyProgress() {
