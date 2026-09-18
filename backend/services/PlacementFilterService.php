@@ -189,45 +189,6 @@ final class PlacementFilterService
             $batches[] = $batch;
         }
 
-        $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId !== '') {
-            try {
-                $aesApi = new AesApiService();
-                $batches = array_merge(
-                    $batches,
-                    $aesApi->fetchPlacementClassBatches($deptAesId, $program, $branch)
-                );
-                foreach ($aesApi->fetchAllStudInfo4Placement(['stud_deptcode' => $deptAesId]) as $record) {
-                    $recordDept = trim((string) ($record['stud_deptcode'] ?? ''));
-                    if ($recordDept !== '' && strcasecmp($recordDept, $deptAesId) !== 0) {
-                        continue;
-                    }
-                    $batchLabel = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
-                    if ($batchLabel === '') {
-                        continue;
-                    }
-                    $course = $this->normalizeProgrammeForClass(
-                        (string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? ''),
-                        $batchLabel
-                    );
-                    $row = [
-                        'stud_course' => $course,
-                        'stud_branch' => trim((string) ($record['stud_branch'] ?? '')) ?: 'Regular',
-                        'stud_class' => $batchLabel,
-                    ];
-                    if (!$this->rowMatchesProgramme($row, $program)) {
-                        continue;
-                    }
-                    if ($branch !== '' && strcasecmp($row['stud_branch'], $branch) !== 0) {
-                        continue;
-                    }
-                    $batches[] = $batchLabel;
-                }
-            } catch (\Throwable) {
-                // Keep scoped rows when AES is temporarily unavailable.
-            }
-        }
-
         $batches = $this->sortLabels(array_values(array_unique($batches)));
         if (!$finalYearOnly) {
             return $batches;
@@ -406,40 +367,44 @@ final class PlacementFilterService
                 // Continue with session/local rows when the directory is unavailable.
             }
         }
-        $aesCalls = 0;
-        $maxAesCalls = 800;
 
-        try {
-            $filter = StaffContext::studentCollectionFilter($ctx);
-        } catch (\Throwable) {
-            $filter = [];
-        }
+        $filterMode = !empty($ctx['filterMode']);
+        if (!$filterMode) {
+            $aesCalls = 0;
+            $maxAesCalls = 800;
 
-        try {
-            $students = (new StudentModel())->findAll($filter, 5000);
-        } catch (\Throwable) {
-            $students = [];
-        }
-
-        foreach ($students as $student) {
-            if (!$this->studentInDepartment($student, $ctx)) {
-                continue;
+            try {
+                $filter = StaffContext::studentCollectionFilter($ctx);
+            } catch (\Throwable) {
+                $filter = [];
             }
 
-            $row = $this->studInfoRowFromStudent($student, $api, $aesCalls, $maxAesCalls);
-            if ($row === null) {
-                continue;
+            try {
+                $students = (new StudentModel())->findAll($filter, 5000);
+            } catch (\Throwable) {
+                $students = [];
             }
 
-            $key = strtolower(implode('|', [$row['stud_course'], $row['stud_branch'], $row['stud_class']]));
-            if (isset($seen[$key])) {
-                continue;
+            foreach ($students as $student) {
+                if (!$this->studentInDepartment($student, $ctx)) {
+                    continue;
+                }
+
+                $row = $this->studInfoRowFromStudent($student, $api, $aesCalls, $maxAesCalls);
+                if ($row === null) {
+                    continue;
+                }
+
+                $key = strtolower(implode('|', [$row['stud_course'], $row['stud_branch'], $row['stud_class']]));
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = $row;
             }
-            $seen[$key] = true;
-            $rows[] = $row;
         }
 
-        if ($cacheKey !== '') {
+        if ($cacheKey !== '' && $rows !== []) {
             self::$scopedRowsCache[$cacheKey] = $rows;
         }
 

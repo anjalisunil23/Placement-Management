@@ -865,10 +865,6 @@ final class AptitudeService
                 'students' => count($studentIds),
                 'avgPercentage' => $percentages === [] ? 0 : round(array_sum($percentages) / count($percentages), 1),
             ],
-            'tests' => array_map(
-                static fn ($t) => ['id' => $t['id'], 'title' => $t['title'], 'category' => $t['category']],
-                $this->listPublished(false)
-            ),
         ];
     }
 
@@ -1035,6 +1031,7 @@ final class AptitudeService
 
         $filterCtx = $this->progressPlacementFilterCtx($viewer, $role, $departmentId);
         if ($filterCtx !== null) {
+            $filterCtx['filterMode'] = true;
             $filterSvc = new PlacementFilterService();
             foreach ($filterSvc->fetchProgramOptions($filterCtx) as $program) {
                 $program = trim((string) $program);
@@ -1042,32 +1039,17 @@ final class AptitudeService
                     $branchSet[$program] = true;
                 }
             }
-            if ($branch !== '') {
-                foreach ($filterSvc->fetchBatchOptions($filterCtx, $branch, '', $finalYearOnly) as $batch) {
-                    $batch = trim((string) $batch);
-                    if ($batch !== '') {
-                        $batchSet[$batch] = true;
-                    }
-                }
-            } else {
-                foreach ($filterSvc->fetchBatchOptions($filterCtx, '', '', $finalYearOnly) as $batch) {
-                    $batch = trim((string) $batch);
-                    if ($batch !== '') {
-                        $batchSet[$batch] = true;
-                    }
-                }
-                foreach (array_keys($branchSet) as $program) {
-                    foreach ($filterSvc->fetchBatchOptions($filterCtx, $program, '', $finalYearOnly) as $batch) {
-                        $batch = trim((string) $batch);
-                        if ($batch !== '') {
-                            $batchSet[$batch] = true;
-                        }
-                    }
+            foreach ($filterSvc->fetchBatchOptions($filterCtx, $branch, '', $finalYearOnly) as $batch) {
+                $batch = trim((string) $batch);
+                if ($batch !== '') {
+                    $batchSet[$batch] = true;
                 }
             }
         }
 
-        $this->mergeLocalStudentFilterOptions($viewer, $role, $filters, $branchSet, $batchSet, $branch);
+        if ($batchSet === []) {
+            $this->mergeLocalStudentFilterOptions($viewer, $role, $filters, $branchSet, $batchSet, $branch);
+        }
 
         if ($role === 'staff') {
             $ctx = StaffContext::resolve($viewer);
@@ -1529,10 +1511,6 @@ final class AptitudeService
                 'totalAttempts' => 0,
                 'withAttempts' => 0,
             ],
-            'tests' => array_map(
-                static fn ($t) => ['id' => $t['id'], 'title' => $t['title'], 'category' => $t['category']],
-                $this->listPublished(false)
-            ),
         ];
     }
 
@@ -1583,94 +1561,114 @@ final class AptitudeService
             return $this->emptyContestDirectory($viewer);
         }
 
-        $completed = $this->attempts->completed(
-            array_merge(
-                array_diff_key($dbFilter, ['status' => true]),
-                $this->attemptFiltersFromDirectoryFilters($filters),
-                ['testId' => ['$in' => $testOids]]
-            ),
-            2000
+        $testCache = $this->tests->findByIds($contestTestIds);
+        $attemptFilter = array_merge(
+            array_diff_key($dbFilter, ['status' => true]),
+            $this->attemptFiltersFromDirectoryFilters($filters),
+            ['testId' => ['$in' => $testOids]]
         );
 
-        $testCache = $this->tests->findByIds($contestTestIds);
-        $userIds = [];
-        foreach ($completed as $attempt) {
-            $uid = (string) ($attempt['userId'] ?? '');
-            if ($uid !== '') {
-                $userIds[$uid] = true;
-            }
-        }
-        $userCache = $this->batchDirectoryProfiles(array_keys($userIds));
+        /** @var array<string, int> $countsByTest */
+        $countsByTest = [];
+        $uniqueUsers = [];
+        $percentageSum = 0.0;
+        $percentageCount = 0;
+        $highestScore = 0.0;
+        $hasParticipantFilters = $this->directoryHasParticipantFilters($filters);
 
-        /** @var array<string, array<int, array<string, mixed>>> $byTest */
-        $byTest = [];
-
-        foreach ($completed as $attempt) {
-            if (($attempt['status'] ?? '') !== 'completed') {
-                continue;
+        if ($hasParticipantFilters) {
+            $completed = $this->attempts->completed($attemptFilter, 2000);
+            $userIds = [];
+            foreach ($completed as $attempt) {
+                $uid = (string) ($attempt['userId'] ?? '');
+                if ($uid !== '') {
+                    $userIds[$uid] = true;
+                }
             }
-            $uid = (string) ($attempt['userId'] ?? '');
-            if ($uid === '' || !AptitudeAccessService::canViewSubject($viewer, $uid)) {
-                continue;
+            $userCache = $this->batchDirectoryProfiles(array_keys($userIds));
+            foreach ($completed as $attempt) {
+                $uid = (string) ($attempt['userId'] ?? '');
+                $testId = (string) ($attempt['testId'] ?? '');
+                if ($uid === '' || $testId === '' || !AptitudeAccessService::canViewSubject($viewer, $uid)) {
+                    continue;
+                }
+                $profile = $userCache[$uid] ?? null;
+                if ($profile === null) {
+                    continue;
+                }
+                if (in_array($role, ['staff', 'placement_officer'], true) && ($profile['userType'] ?? '') !== 'student') {
+                    continue;
+                }
+                if ($role !== 'admin' && ($profile['userType'] ?? '') === 'alumni') {
+                    continue;
+                }
+                if (!$this->matchesFilters($profile, [$attempt], $filters)) {
+                    continue;
+                }
+                $countsByTest[$testId] = ($countsByTest[$testId] ?? 0) + 1;
+                $uniqueUsers[$uid] = true;
+                $pct = (float) ($attempt['percentage'] ?? 0);
+                $percentageSum += $pct;
+                $percentageCount++;
+                if ($pct > $highestScore) {
+                    $highestScore = $pct;
+                }
             }
-
-            $testId = (string) ($attempt['testId'] ?? '');
-            if ($testId === '') {
-                continue;
+        } else {
+            foreach ($this->attempts->completed($attemptFilter, 5000) as $attempt) {
+                $uid = (string) ($attempt['userId'] ?? '');
+                $testId = (string) ($attempt['testId'] ?? '');
+                if ($uid === '' || $testId === '' || !AptitudeAccessService::canViewSubject($viewer, $uid)) {
+                    continue;
+                }
+                $countsByTest[$testId] = ($countsByTest[$testId] ?? 0) + 1;
+                $uniqueUsers[$uid] = true;
+                $pct = (float) ($attempt['percentage'] ?? 0);
+                $percentageSum += $pct;
+                $percentageCount++;
+                if ($pct > $highestScore) {
+                    $highestScore = $pct;
+                }
             }
-
-            $test = $testCache[$testId] ?? null;
-            if (!$test) {
-                continue;
-            }
-
-            $profile = $userCache[$uid] ?? $this->summarizeSubjectCached($uid, [$attempt], null, false);
-
-            if (in_array($role, ['staff', 'placement_officer'], true) && ($profile['userType'] ?? '') !== 'student') {
-                continue;
-            }
-            if ($role !== 'admin' && ($profile['userType'] ?? '') === 'alumni') {
-                continue;
-            }
-            if (!$this->matchesFilters($profile, [$attempt], $filters)) {
-                continue;
-            }
-
-            $byTest[$testId][] = $this->contestParticipantRow($attempt, $test, $profile);
         }
 
         $contests = [];
-        $allParticipants = [];
-        $uniqueUsers = [];
-
-        foreach ($byTest as $testId => $participants) {
-            $test = $testCache[$testId] ?? [];
-            usort($participants, static function (array $a, array $b): int {
-                $pa = (float) ($a['percentage'] ?? 0);
-                $pb = (float) ($b['percentage'] ?? 0);
-                if ($pb !== $pa) {
-                    return $pb <=> $pa;
-                }
-                $ta = (int) ($a['timeTakenSeconds'] ?? PHP_INT_MAX);
-                $tb = (int) ($b['timeTakenSeconds'] ?? PHP_INT_MAX);
-                return $ta <=> $tb;
-            });
-            foreach ($participants as $i => &$participant) {
-                $participant['rank'] = $i + 1;
-                $allParticipants[] = $participant;
-                $uniqueUsers[(string) ($participant['userId'] ?? '')] = true;
+        $listed = [];
+        foreach ($countsByTest as $testId => $count) {
+            if ($count <= 0) {
+                continue;
             }
-            unset($participant);
-
+            $test = $testCache[$testId] ?? $this->tests->findById($testId) ?: [];
+            if ($test === [] || !AptitudeTestModel::isContest($test)) {
+                continue;
+            }
+            if (AptitudeTestModel::contestStatus($test) !== 'COMPLETED') {
+                continue;
+            }
             $window = AptitudeTestModel::contestWindow($test);
-            $contests[] = $this->contestDirectoryEntry($test, $testId, $participants, $window);
+            $entry = $this->contestDirectoryEntry($test, $testId, [], $window);
+            $entry['participantCount'] = $count;
+            $contests[] = $entry;
+            $listed[$testId] = true;
         }
 
-        $contests = $this->mergeCompletedContestsIntoDirectory($viewer, $contests, $testCache);
+        foreach ($testCache as $testId => $test) {
+            if (isset($listed[$testId]) || $test === [] || !AptitudeTestModel::isContest($test)) {
+                continue;
+            }
+            if (AptitudeTestModel::contestStatus($test) !== 'COMPLETED') {
+                continue;
+            }
+            if ($hasParticipantFilters) {
+                continue;
+            }
+            $window = AptitudeTestModel::contestWindow($test);
+            $contests[] = $this->contestDirectoryEntry($test, $testId, [], $window);
+        }
 
         usort($contests, static fn (array $a, array $b): int => strcmp((string) ($a['title'] ?? ''), (string) ($b['title'] ?? '')));
 
-        $percentages = array_map(static fn (array $p): float => (float) ($p['percentage'] ?? 0), $allParticipants);
+        $totalParticipants = array_sum($countsByTest);
         $publishedCount = count(array_filter(
             $contests,
             static fn (array $c): bool => AptitudeTestModel::resultsPublished($c)
@@ -1687,10 +1685,10 @@ final class AptitudeService
                 'contestCount' => count($contests),
                 'publishedCount' => $publishedCount,
                 'pendingCount' => max(0, count($contests) - $publishedCount),
-                'totalParticipants' => count($allParticipants),
+                'totalParticipants' => $totalParticipants,
                 'uniqueParticipants' => count($uniqueUsers),
-                'avgPercentage' => $percentages === [] ? 0 : round(array_sum($percentages) / count($percentages), 1),
-                'highestScore' => $percentages === [] ? 0 : max($percentages),
+                'avgPercentage' => $percentageCount === 0 ? 0 : round($percentageSum / $percentageCount, 1),
+                'highestScore' => $highestScore,
             ],
         ];
     }
@@ -2869,12 +2867,56 @@ final class AptitudeService
      */
     private function attemptFiltersFromDirectoryFilters(array $filters): array
     {
+        $out = [];
         $classBatch = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
-        if ($classBatch === '') {
-            return [];
+        if ($classBatch !== '') {
+            $out['classBatch'] = $classBatch;
         }
 
-        return ['classBatch' => $classBatch];
+        $departmentId = trim((string) ($filters['department'] ?? $filters['departmentId'] ?? ''));
+        if ($departmentId !== '') {
+            $deptOid = Security::toObjectId($departmentId);
+            if ($deptOid !== null) {
+                $out['departmentId'] = $deptOid;
+            }
+        }
+
+        $course = trim((string) ($filters['course'] ?? ''));
+        if ($course !== '') {
+            $codes = array_values(array_unique(array_filter([
+                $course,
+                DepartmentProgrammeCatalog::resolveProgrammeCode($course),
+            ], static fn (string $code) => $code !== '')));
+            if (count($codes) === 1) {
+                $out['course'] = $codes[0];
+            } elseif ($codes !== []) {
+                $out['course'] = ['$in' => $codes];
+            }
+        }
+
+        $testId = trim((string) ($filters['test'] ?? $filters['testId'] ?? ''));
+        if ($testId !== '') {
+            $testOid = Security::toObjectId($testId);
+            if ($testOid !== null) {
+                $out['testId'] = $testOid;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function directoryHasParticipantFilters(array $filters): bool
+    {
+        foreach (['class', 'classBatch', 'batch', 'course', 'department', 'departmentId', 'semester', 'userType'] as $key) {
+            if (trim((string) ($filters[$key] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2907,12 +2949,17 @@ final class AptitudeService
             }
         }
 
+        $deptNameCache = [];
         $profiles = [];
         foreach ($userIds as $uid) {
             $user = $users[$uid] ?? [];
             $student = $studentsByUser[$uid] ?? null;
             if ($student) {
                 $register = (string) ($student['registerNumber'] ?? '');
+                $deptId = (string) ($student['departmentId'] ?? '');
+                if ($deptId !== '' && !isset($deptNameCache[$deptId])) {
+                    $deptNameCache[$deptId] = AptitudeAccessService::departmentDisplayName($deptId, $student);
+                }
                 $profiles[$uid] = [
                     'userId' => $uid,
                     'studentId' => (string) ($student['_id'] ?? ''),
@@ -2920,11 +2967,8 @@ final class AptitudeService
                     'userType' => 'student',
                     'registerNumber' => $register,
                     'studentCode' => $register,
-                    'departmentId' => (string) ($student['departmentId'] ?? ''),
-                    'departmentName' => AptitudeAccessService::departmentDisplayName(
-                        (string) ($student['departmentId'] ?? ''),
-                        $student
-                    ),
+                    'departmentId' => $deptId,
+                    'departmentName' => $deptId !== '' ? ($deptNameCache[$deptId] ?? '') : '',
                     'classBatch' => StaffContext::studentClassBatch($student),
                     'course' => self::studentBranchLabelStatic($student),
                     'programme' => self::studentProgrammeLabelStatic($student),

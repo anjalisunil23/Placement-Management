@@ -236,6 +236,10 @@
   let dirFiltersBound = false;
   let dirLoadTimer = null;
   let dirLoadSeq = 0;
+  let dirFilterCacheKey = '';
+  let dirFilterCache = null;
+  let dirResultsCacheKey = '';
+  let dirResultsCache = null;
   let deptStorePrimed = false;
   let progressPanel = 'tests';
   let myResultsPanel = 'tests';
@@ -869,6 +873,8 @@
         dirFilterBatch = '';
       }
       if (changed === 'fBranch') dirFilterBatch = '';
+      dirResultsCacheKey = '';
+      dirResultsCache = null;
     }
 
     let data = null;
@@ -877,11 +883,21 @@
         await DepartmentStore.fetch().catch(() => {});
         deptStorePrimed = true;
       }
-      data = await fetchProgressFilterOptions({
+      const filterParams = {
         department: document.getElementById('fDepartment')?.value || '',
         course: changed === 'fDepartmentSelect' ? '' : dirFilterBranch,
         class: (changed === 'fDepartmentSelect' || changed === 'fBranch') ? '' : dirFilterBatch,
-      });
+      };
+      const cacheKey = JSON.stringify(filterParams);
+      if (cacheKey === dirFilterCacheKey && dirFilterCache) {
+        data = dirFilterCache;
+      } else {
+        data = await fetchProgressFilterOptions(filterParams);
+        if (data) {
+          dirFilterCacheKey = cacheKey;
+          dirFilterCache = data;
+        }
+      }
     }
     if (!data) {
       data = demoProgressFilterOptions();
@@ -1031,11 +1047,15 @@
 
     document.getElementById('fBatch')?.addEventListener('change', (e) => {
       dirFilterBatch = e.target.value || '';
+      dirResultsCacheKey = '';
+      dirResultsCache = null;
       showDirectoryLoading();
       scheduleLoadDirectory(120);
     });
 
     document.getElementById('fType')?.addEventListener('change', () => {
+      dirResultsCacheKey = '';
+      dirResultsCache = null;
       showDirectoryLoading();
       scheduleLoadDirectory(120);
     });
@@ -2917,8 +2937,7 @@
       renderTestList();
     }
     if (view === 'progress' && access.canViewDirectory) {
-      await initDirFilters();
-      await loadDirectory();
+      await Promise.all([initDirFilters(), loadDirectory()]);
     }
     if (view === 'manage' && access.canManage) renderManage();
 
@@ -3653,10 +3672,22 @@
       return;
     }
     const qs = buildDirectoryQuery();
-    const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
+    const cacheKey = qs.toString();
+    let data = null;
+    if (cacheKey === dirResultsCacheKey && dirResultsCache) {
+      data = dirResultsCache;
+    } else {
+      const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
+      if (seq !== dirLoadSeq) return;
+      data = res?.success ? res.data : null;
+      if (data) {
+        dirResultsCacheKey = cacheKey;
+        dirResultsCache = data;
+      }
+    }
     if (seq !== dirLoadSeq) return;
-    const summary = res?.data?.summary || {};
-    const scope = res?.data?.scope || access.scope || {};
+    const summary = data?.summary || {};
+    const scope = data?.scope || access.scope || {};
     access.scope = scope;
     if (scope.departmentId || scope.departmentName) {
       applyDirDepartmentFromData([{
@@ -3665,16 +3696,16 @@
       }]);
     }
     updateDirScopeHint(scope);
-    if (progressPanel === 'contests' || res?.data?.view === 'contests') {
+    if (progressPanel === 'contests' || data?.view === 'contests') {
       renderContestResults(
-        res?.data?.contests || [],
+        data?.contests || [],
         summary,
         scope,
-        res?.data?.completedContests || []
+        data?.completedContests || []
       );
       return;
     }
-    renderDirectoryTable(res?.data?.rows || [], summary, scope);
+    renderDirectoryTable(data?.rows || [], summary, scope);
   }
 
   onAppReady(async () => {
