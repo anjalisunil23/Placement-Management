@@ -1924,6 +1924,27 @@
     return bits.length ? bits.join(' · ') : '—';
   }
 
+  function resolveLocalAnswer(answers, qid, q, pos) {
+    const keys = [String(qid), String(q?.bankId || ''), `q${pos + 1}`].filter(Boolean);
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(answers, key)) continue;
+      const raw = answers[key];
+      if (raw != null && typeof raw === 'object') {
+        if (Number.isFinite(Number(raw.index))) return Number(raw.index);
+        const text = String(raw.option || '').trim().toLowerCase();
+        if (text) {
+          const opts = q.options || [];
+          const hit = opts.findIndex((o) => String(o).trim().toLowerCase() === text);
+          if (hit >= 0) return hit;
+        }
+        continue;
+      }
+      const idx = Number(raw);
+      if (Number.isFinite(idx) && idx >= 0) return idx;
+    }
+    return -1;
+  }
+
   function scoreLocally(test, questions, answers, metaPayload) {
     let marks = 0;
     let total = 0;
@@ -1932,11 +1953,16 @@
     let unanswered = 0;
     const neg = test.negativeMarking ? Number(test.negativeMarks || 0) : 0;
     const analysis = [];
-    (questions || []).forEach((q) => {
-      const full = (fullDemoTest(test.id)?.questions || []).find((x) => x.id === q.id) || q;
+    const fullQuestions = fullDemoTest(test.id)?.questions || [];
+    (questions || []).forEach((q, pos) => {
+      const qid = String(q.id || q.bankId || `q${pos + 1}`);
+      const full = fullQuestions.find((x) => String(x.id) === qid)
+        || fullQuestions.find((x) => String(x.bankId || '') === String(q.bankId || ''))
+        || fullQuestions[pos]
+        || q;
       const qMarks = Number(full.marks ?? 1);
       total += qMarks;
-      const picked = Object.prototype.hasOwnProperty.call(answers, q.id) ? Number(answers[q.id]) : -1;
+      const picked = resolveLocalAnswer(answers, qid, q, pos);
       const opts = full.options || q.options || [];
       const correctIndex = Number(full.correctIndex);
       let status = 'unanswered';
@@ -2764,9 +2790,9 @@
       resolveDemoQuestions: (id) => {
         const t = fullDemoTest(id);
         const qs = t?.questions || [];
-        return typeof AptitudeExam !== 'undefined' && AptitudeExam.stripExamQuestions
-          ? AptitudeExam.stripExamQuestions(qs)
-          : qs.map(({ correctIndex, explanation, ...q }) => q);
+        return typeof AptitudeExam !== 'undefined' && AptitudeExam.normalizeExamQuestions
+          ? AptitudeExam.normalizeExamQuestions(qs)
+          : qs.map(({ correctIndex, explanation, ...q }, i) => ({ ...q, id: String(q.id || q.bankId || `q${i + 1}`) }));
       },
       scoreLocally,
     });

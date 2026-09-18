@@ -68,6 +68,7 @@ class AptitudeAttemptModel extends BaseModel
             'accuracy' => null,
             'correctCount' => null,
             'totalQuestions' => (int) ($data['totalQuestions'] ?? 0),
+            'examQuestions' => array_values((array) ($data['examQuestions'] ?? [])),
             'categoryScores' => [],
             'questionAnalysis' => [],
             'markedForReview' => [],

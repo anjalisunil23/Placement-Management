@@ -6,9 +6,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260915crumb" rel="stylesheet"/>
 <style>
-  .apt-option{cursor:pointer;transition:border-color .15s,background .15s}
-  .apt-option input{margin-top:.2rem;pointer-events:auto}
+  .apt-option{cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
   .apt-option:hover{border-color:color-mix(in srgb,var(--primary) 40%,var(--border))!important}
+  .apt-option[aria-pressed="true"]{border-color:var(--primary)!important}
   .apt-stat .val{font-size:1.35rem;font-weight:700}
   .apt-pal{
     width:2.1rem;height:2.1rem;border-radius:.45rem;border:1px solid var(--border);
@@ -484,6 +484,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
-<script src="js/aptitude-exam.js?v=20260918examfix"></script>
-<script src="js/aptitude-page.js?v=20260918bankpick"></script>
+<script src="js/aptitude-exam.js?v=20260918ansfix"></script>
+<script src="js/aptitude-page.js?v=20260918ansfix"></script>
 </body></html>

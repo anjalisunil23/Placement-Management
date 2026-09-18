@@ -54,22 +54,32 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  const ANSWER_FIELD_KEYS = [
+    'correctIndex', 'correct_answer', 'correctAnswer', 'correctAnswerIndex',
+    'correct', 'correctOption', 'correctOptionLetter', 'explanation', 'solution',
+    'lockCorrectIndex', 'isCorrect', 'answerIndex',
+  ];
+
   function stripExamQuestion(q) {
     if (!q || typeof q !== 'object') return q;
-    const {
-      correctIndex,
-      correct_answer,
-      correctAnswer,
-      correctAnswerIndex,
-      explanation,
-      isCorrect,
-      ...safe
-    } = q;
+    const safe = { ...q };
+    ANSWER_FIELD_KEYS.forEach((key) => { delete safe[key]; });
     return safe;
   }
 
   function stripExamQuestions(list) {
     return (list || []).map(stripExamQuestion);
+  }
+
+  function normalizeExamQuestions(list) {
+    return stripExamQuestions(list).map((q, i) => ({
+      ...q,
+      id: String(q.id || q.bankId || `q${i + 1}`),
+    }));
+  }
+
+  function questionKey(q) {
+    return String(q?.id || '');
   }
 
   function paletteState(idx, answers, marked, visited) {
@@ -127,38 +137,53 @@
       return state.questions[state.index] || null;
     }
 
-    function getSelectedIndex(qid) {
-      if (!Object.prototype.hasOwnProperty.call(state.answers, qid)) return null;
+    function getSelectedIndex(q) {
+      const qid = questionKey(q);
+      if (!qid || !Object.prototype.hasOwnProperty.call(state.answers, qid)) return null;
       const picked = Number(state.answers[qid]);
       return Number.isFinite(picked) && picked >= 0 ? picked : null;
     }
 
-    function updateOptionHighlights(qid) {
-      const selected = getSelectedIndex(qid);
-      el('q-options')?.querySelectorAll('[data-opt-index]').forEach((row) => {
-        const idx = Number(row.getAttribute('data-opt-index'));
+    function selectOption(q, idx) {
+      if (state?.submitted || idx < 0) return;
+      const qid = questionKey(q);
+      if (!qid) return;
+      state.answers[qid] = idx;
+      updateOptionHighlights(q);
+      renderPalette();
+    }
+
+    function updateOptionHighlights(q) {
+      const qid = questionKey(q);
+      const selected = getSelectedIndex(q);
+      el('q-options')?.querySelectorAll('[data-opt-select]').forEach((row) => {
+        const idx = Number(row.getAttribute('data-opt-select'));
         const on = selected !== null && idx === selected;
         row.classList.toggle('border-primary', on);
         row.classList.toggle('bg-light', on);
-        const input = row.querySelector('input[type="radio"]');
-        if (input) input.checked = on;
+        row.classList.toggle('shadow-sm', on);
+        row.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
     }
 
     function renderQuestion() {
       const q = currentQ();
       if (!q) return;
-      state.visited[q.id] = true;
+      const qid = questionKey(q);
+      state.visited[qid] = true;
       el('q-num').textContent = `Question ${state.index + 1} of ${state.questions.length}`;
       el('q-prompt').innerHTML = renderRichHtml(q.prompt || '');
       el('q-marks').textContent = `${q.marks ?? 1} mark${Number(q.marks) === 1 ? '' : 's'}`;
-      const selected = getSelectedIndex(q.id);
+      const selected = getSelectedIndex(q);
       el('q-options').innerHTML = (q.options || []).map((opt, i) => `
-        <label class="apt-option d-flex gap-2 align-items-start mb-2 p-2 border rounded-3 ${selected === i ? 'border-primary bg-light' : ''}" data-opt-index="${i}">
-          <input type="radio" name="apt_opt_${esc(q.id)}" value="${i}" class="mt-1 flex-shrink-0" ${selected === i ? 'checked' : ''}/>
-          <span class="flex-grow-1"><strong class="me-1">${LETTERS[i] || i + 1}.</strong>${esc(opt)}</span>
-        </label>`).join('');
-      const marked = !!state.marked[q.id];
+        <button type="button"
+          class="apt-option w-100 text-start d-flex gap-2 align-items-start mb-2 p-2 border rounded-3 bg-white ${selected === i ? 'border-primary bg-light shadow-sm' : ''}"
+          data-opt-select="${i}"
+          aria-pressed="${selected === i ? 'true' : 'false'}">
+          <span class="flex-shrink-0 fw-semibold text-muted-2">${LETTERS[i] || i + 1}.</span>
+          <span class="flex-grow-1">${esc(opt)}</span>
+        </button>`).join('');
+      const marked = !!state.marked[qid];
       el('btn-mark').classList.toggle('btn-warning', marked);
       el('btn-mark').classList.toggle('btn-outline-warning', !marked);
       el('btn-mark').textContent = marked ? 'Marked for review' : 'Mark for review';
@@ -167,25 +192,42 @@
       renderPalette();
     }
 
+    function buildSubmitAnswers() {
+      const out = {};
+      (state.questions || []).forEach((q, pos) => {
+        const qid = questionKey(q) || `q${pos + 1}`;
+        if (!Object.prototype.hasOwnProperty.call(state.answers, qid)) return;
+        const idx = Number(state.answers[qid]);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const opts = q.options || [];
+        out[qid] = {
+          index: idx,
+          option: opts[idx] != null ? String(opts[idx]) : '',
+        };
+      });
+      return out;
+    }
+
     function bindOptionPicker() {
       const box = el('q-options');
       if (!box || box.dataset.bound === '1') return;
       box.dataset.bound = '1';
-      box.addEventListener('change', (e) => {
-        const input = e.target.closest('input[type="radio"]');
-        if (!input || state?.submitted) return;
+      box.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-opt-select]');
+        if (!btn || state?.submitted) return;
+        e.preventDefault();
         const q = currentQ();
         if (!q) return;
-        state.answers[q.id] = Number(input.value);
-        updateOptionHighlights(q.id);
-        renderPalette();
+        const idx = Number(btn.getAttribute('data-opt-select'));
+        if (!Number.isFinite(idx)) return;
+        selectOption(q, idx);
       });
     }
 
     function renderPalette() {
       const box = el('palette');
       box.innerHTML = state.questions.map((q, i) => {
-        const st = paletteState(i, { ...state.answers, _order: state.questions.map((x) => x.id) }, state.marked, state.visited);
+        const st = paletteState(i, { ...state.answers, _order: state.questions.map((x) => questionKey(x)) }, state.marked, state.visited);
         return `<button type="button" class="apt-pal apt-pal-${st} ${i === state.index ? 'is-current' : ''}" data-goto="${i}" title="Q${i + 1}">${i + 1}</button>`;
       }).join('');
       box.querySelectorAll('[data-goto]').forEach((btn) => {
@@ -226,7 +268,7 @@
       } else if (opts.resolveDemoQuestions) {
         questions = opts.resolveDemoQuestions(state.test.id) || questions;
       }
-      questions = stripExamQuestions(questions);
+      questions = normalizeExamQuestions(questions);
       const durationMs = Math.max(1, Number(state.test.durationMinutes || 30)) * 60 * 1000;
       state.attemptId = attemptId;
       state.questions = questions;
@@ -262,7 +304,7 @@
       stopTimer();
       const timeTakenSeconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
       const payload = {
-        answers: state.answers,
+        answers: buildSubmitAnswers(),
         markedForReview: Object.keys(state.marked).filter((k) => state.marked[k]),
         timeTakenSeconds,
         autoSubmitted: !!auto,
@@ -281,7 +323,7 @@
         }
         result = res.data;
       } else if (opts.scoreLocally) {
-        result = opts.scoreLocally(state.test, state.questions, state.answers, payload);
+        result = opts.scoreLocally(state.test, state.questions, payload.answers, payload);
       } else {
         result = { score: 0, maximumScore: 0, percentage: 0, questionAnalysis: [] };
       }
@@ -375,14 +417,15 @@
       if (action === 'clear') {
         const q = currentQ();
         if (q) {
-          delete state.answers[q.id];
+          delete state.answers[questionKey(q)];
           renderQuestion();
         }
       }
       if (action === 'mark') {
         const q = currentQ();
         if (q) {
-          state.marked[q.id] = !state.marked[q.id];
+          const qid = questionKey(q);
+          state.marked[qid] = !state.marked[qid];
           renderQuestion();
         }
       }
@@ -396,7 +439,7 @@
         submitting = false;
         const safeTest = {
           ...test,
-          questions: stripExamQuestions(test?.questions || []),
+          questions: normalizeExamQuestions(test?.questions || []),
         };
         state = {
           test: safeTest,
@@ -428,5 +471,12 @@
     };
   }
 
-  global.AptitudeExam = { createExamController, formatTimer, esc, stripExamQuestion, stripExamQuestions };
+  global.AptitudeExam = {
+    createExamController,
+    formatTimer,
+    esc,
+    stripExamQuestion,
+    stripExamQuestions,
+    normalizeExamQuestions,
+  };
 })(window);

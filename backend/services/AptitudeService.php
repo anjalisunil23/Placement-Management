@@ -206,6 +206,8 @@ final class AptitudeService
             Response::forbidden('This contest is not open today. Check the weekly or monthly schedule.');
         }
         $ctx = AptitudeAccessService::subjectContext($user);
+        $examTest = AptitudeTestModel::publicView($test, false);
+        $examQuestions = array_values((array) ($examTest['questions'] ?? []));
         $attemptId = $this->attempts->startAttempt([
             'testId' => $testId,
             'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
@@ -217,12 +219,13 @@ final class AptitudeService
             'course' => $ctx['course'],
             'semester' => $ctx['semester'],
             'batch' => $ctx['batch'],
-            'totalQuestions' => count((array) ($test['questions'] ?? [])),
+            'totalQuestions' => count($examQuestions),
+            'examQuestions' => $examQuestions,
         ]);
 
         return [
             'attemptId' => $attemptId,
-            'test' => AptitudeTestModel::publicView($test, false),
+            'test' => $examTest,
         ];
     }
 
@@ -1780,19 +1783,81 @@ final class AptitudeService
      * @param array<string, mixed> $answers
      * @return array<string, mixed>
      */
+    /**
+     * @param array<string, mixed> $answers
+     * @return array<string, int|string>
+     */
+    private function parseSubmittedAnswers(array $answers): array
+    {
+        $parsed = [];
+        foreach ($answers as $key => $value) {
+            $k = (string) $key;
+            if (is_array($value)) {
+                if (isset($value['index']) && is_numeric($value['index'])) {
+                    $parsed[$k] = (int) $value['index'];
+                }
+                if (!empty($value['option'])) {
+                    $parsed[$k . '__opt'] = AptitudeTestModel::sanitizeOptionText((string) $value['option']);
+                }
+                continue;
+            }
+            if (is_numeric($value)) {
+                $parsed[$k] = (int) $value;
+            }
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param array<string, int|string> $parsed
+     * @param array<string, mixed> $q
+     */
+    private function resolvePickedIndex(array $parsed, array $q, int $position): int
+    {
+        $keys = [];
+        foreach ([
+            (string) ($q['id'] ?? ''),
+            (string) ($q['bankId'] ?? ''),
+            'q' . ($position + 1),
+            (string) $position,
+        ] as $candidate) {
+            if ($candidate !== '' && !in_array($candidate, $keys, true)) {
+                $keys[] = $candidate;
+            }
+        }
+
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $parsed) && is_int($parsed[$key]) && $parsed[$key] >= 0) {
+                return $parsed[$key];
+            }
+        }
+
+        $options = array_values(array_map(
+            static fn ($o) => AptitudeTestModel::sanitizeOptionText((string) $o),
+            (array) ($q['options'] ?? [])
+        ));
+        foreach ($keys as $key) {
+            $optKey = $key . '__opt';
+            if (!array_key_exists($optKey, $parsed)) {
+                continue;
+            }
+            $want = strtolower((string) $parsed[$optKey]);
+            foreach ($options as $oi => $opt) {
+                if (strtolower($opt) === $want) {
+                    return (int) $oi;
+                }
+            }
+        }
+
+        return -1;
+    }
+
     private function scoreAttempt(array $test, array $answers): array
     {
         $category = AptitudeTestModel::normalizeCategory((string) ($test['category'] ?? 'General Aptitude'));
-        $questions = [];
-        foreach (array_values((array) ($test['questions'] ?? [])) as $i => $q) {
-            if (!is_array($q)) {
-                continue;
-            }
-            $norm = AptitudeTestModel::normalizeMcq($q, $category, (int) $i);
-            if ($norm !== null) {
-                $questions[] = $norm;
-            }
-        }
+        $questions = AptitudeTestModel::normalizedQuestions($test);
+        $parsedAnswers = $this->parseSubmittedAnswers($answers);
 
         $total = count($questions);
         $correct = 0;
@@ -1808,13 +1873,13 @@ final class AptitudeService
         $normalized = [];
         $analysis = [];
 
-        foreach ($questions as $q) {
+        foreach ($questions as $position => $q) {
             $qid = (string) ($q['id'] ?? '');
             $cat = (string) ($q['category'] ?? $category);
             $qMarks = (float) ($q['marks'] ?? 1);
             $totalMarks += $qMarks;
             $categoryTotals[$cat] = ($categoryTotals[$cat] ?? 0) + 1;
-            $picked = array_key_exists($qid, $answers) ? (int) $answers[$qid] : -1;
+            $picked = $this->resolvePickedIndex($parsedAnswers, $q, (int) $position);
             $normalized[$qid] = $picked;
             $options = array_values((array) ($q['options'] ?? []));
             $correctIndex = (int) ($q['correctIndex'] ?? -1);

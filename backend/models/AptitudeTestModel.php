@@ -207,7 +207,7 @@ class AptitudeTestModel extends BaseModel
         if ($negativeMarks < 0) {
             $negativeMarks = abs($negativeMarks);
         }
-        $id = trim((string) ($q['id'] ?? ''));
+        $id = trim((string) ($q['id'] ?? $q['bankId'] ?? $q['_id'] ?? ''));
         if ($id === '') {
             $id = 'q' . ($index + 1);
         }
@@ -556,16 +556,17 @@ class AptitudeTestModel extends BaseModel
     }
 
     /**
-     * Public-safe test shape (no correct answers unless requested).
+     * Normalize all MCQs on a test with stable unique ids (fixes legacy duplicate q1 ids).
      *
      * @param array<string, mixed> $test
-     * @return array<string, mixed>
+     * @return array<int, array<string, mixed>>
      */
-    public static function publicView(array $test, bool $includeAnswers = false): array
+    public static function normalizedQuestions(array $test): array
     {
         $category = self::normalizeCategory((string) ($test['category'] ?? 'General Aptitude'));
+        $usedIds = [];
         $questions = [];
-        foreach ((array) ($test['questions'] ?? []) as $i => $q) {
+        foreach (array_values((array) ($test['questions'] ?? [])) as $i => $q) {
             if (!is_array($q)) {
                 continue;
             }
@@ -573,6 +574,35 @@ class AptitudeTestModel extends BaseModel
             if ($norm === null) {
                 continue;
             }
+            $bankId = trim((string) ($norm['bankId'] ?? $q['bankId'] ?? ''));
+            $qid = trim((string) ($norm['id'] ?? ''));
+            if ($qid === '' || isset($usedIds[$qid])) {
+                $qid = $bankId !== '' ? $bankId : ('q' . ($i + 1));
+            }
+            while (isset($usedIds[$qid])) {
+                $qid = ($bankId !== '' ? $bankId : ('q' . ($i + 1))) . '_' . count($usedIds);
+            }
+            $norm['id'] = $qid;
+            if ($bankId !== '') {
+                $norm['bankId'] = $bankId;
+            }
+            $usedIds[$qid] = true;
+            $questions[] = $norm;
+        }
+
+        return $questions;
+    }
+
+    /**
+     * Public-safe test shape (no correct answers unless requested).
+     *
+     * @param array<string, mixed> $test
+     * @return array<string, mixed>
+     */
+    public static function publicView(array $test, bool $includeAnswers = false): array
+    {
+        $questions = [];
+        foreach (self::normalizedQuestions($test) as $norm) {
             $row = [
                 'id' => $norm['id'],
                 'type' => 'mcq',

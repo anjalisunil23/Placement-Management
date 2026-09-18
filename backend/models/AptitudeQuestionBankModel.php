@@ -342,14 +342,20 @@ class AptitudeQuestionBankModel extends BaseModel
     {
         $map = $this->findByIds($ids);
         $out = [];
-        foreach ($ids as $id) {
+        foreach (array_values($ids) as $i => $id) {
             $row = $map[$id] ?? null;
             if (!$row) {
                 continue;
             }
-            $norm = AptitudeTestModel::normalizeMcq($row, (string) ($row['category'] ?? 'General Aptitude'));
+            $bankId = (string) ($row['_id'] ?? $id);
+            $norm = AptitudeTestModel::normalizeMcq(
+                array_merge($row, ['bankId' => $bankId, 'id' => $bankId]),
+                (string) ($row['category'] ?? 'General Aptitude'),
+                $i
+            );
             if ($norm !== null) {
-                $norm['bankId'] = (string) ($row['_id'] ?? $id);
+                $norm['bankId'] = $bankId;
+                $norm['id'] = $bankId;
                 $out[] = $norm;
             }
         }
