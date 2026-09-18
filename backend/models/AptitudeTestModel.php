@@ -67,6 +67,76 @@ class AptitudeTestModel extends BaseModel
     }
 
     /**
+     * @param array<string, mixed> $test
+     */
+    private static function contestCreatedAt(array $test): ?\DateTimeImmutable
+    {
+        $raw = $test['createdAt'] ?? null;
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        try {
+            return new \DateTimeImmutable((string) $raw);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private static function lastWeeklyOccurrenceStart(int $want, \DateTimeImmutable $now): \DateTimeImmutable
+    {
+        $today = (int) $now->format('N');
+        $daysSince = ($today - $want + 7) % 7;
+
+        return $now->setTime(0, 0, 0)->modify("-{$daysSince} days");
+    }
+
+    private static function nextWeeklyOccurrenceStart(int $want, \DateTimeImmutable $now): \DateTimeImmutable
+    {
+        $today = (int) $now->format('N');
+        $daysUntil = ($want - $today + 7) % 7;
+        if ($daysUntil === 0) {
+            $end = $now->setTime(23, 59, 59);
+            if ($now > $end) {
+                $daysUntil = 7;
+            }
+        }
+
+        return $now->setTime(0, 0, 0)->modify("+{$daysUntil} days");
+    }
+
+    private static function lastMonthlyOccurrenceStart(int $want, \DateTimeImmutable $now): \DateTimeImmutable
+    {
+        $year = (int) $now->format('Y');
+        $month = (int) $now->format('n');
+        $dom = (int) $now->format('j');
+        if ($dom < $want) {
+            $month--;
+            if ($month < 1) {
+                $month = 12;
+                $year--;
+            }
+        }
+
+        return new \DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $want));
+    }
+
+    private static function nextMonthlyOccurrenceStart(int $want, \DateTimeImmutable $now): \DateTimeImmutable
+    {
+        $year = (int) $now->format('Y');
+        $month = (int) $now->format('n');
+        $dom = (int) $now->format('j');
+        if ($dom > $want) {
+            $month++;
+            if ($month > 12) {
+                $month = 1;
+                $year++;
+            }
+        }
+
+        return new \DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $want));
+    }
+
+    /**
      * Lifecycle for scheduled contests: UPCOMING → ACTIVE → COMPLETED (per occurrence).
      *
      * @param array<string, mixed> $test
@@ -79,6 +149,7 @@ class AptitudeTestModel extends BaseModel
         $now = $now instanceof \DateTimeInterface
             ? \DateTimeImmutable::createFromInterface($now)
             : new \DateTimeImmutable('now');
+        $created = self::contestCreatedAt($test);
         $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
         if ($type === 'weekly') {
             $want = (int) ($test['contestWeekday'] ?? 0);
@@ -92,8 +163,16 @@ class AptitudeTestModel extends BaseModel
                 return $now <= $end ? 'ACTIVE' : 'COMPLETED';
             }
             $daysSince = ($today - $want + 7) % 7;
-            // 1–3 days after the contest weekday: finished for this cycle. 4–6: upcoming again.
-            return ($daysSince >= 1 && $daysSince <= 3) ? 'COMPLETED' : 'UPCOMING';
+            if ($daysSince >= 1 && $daysSince <= 3) {
+                $lastOcc = self::lastWeeklyOccurrenceStart($want, $now);
+                if ($created !== null && $created <= $lastOcc) {
+                    return 'COMPLETED';
+                }
+
+                return 'UPCOMING';
+            }
+
+            return 'UPCOMING';
         }
         $want = (int) ($test['contestMonthDay'] ?? 0);
         if ($want < 1 || $want > 28) {
@@ -105,8 +184,16 @@ class AptitudeTestModel extends BaseModel
 
             return $now <= $end ? 'ACTIVE' : 'COMPLETED';
         }
+        if ($todayDom > $want) {
+            $lastOcc = self::lastMonthlyOccurrenceStart($want, $now);
+            if ($created !== null && $created <= $lastOcc) {
+                return 'COMPLETED';
+            }
 
-        return $todayDom > $want ? 'COMPLETED' : 'UPCOMING';
+            return 'UPCOMING';
+        }
+
+        return 'UPCOMING';
     }
 
     /**
@@ -149,20 +236,15 @@ class AptitudeTestModel extends BaseModel
             ? \DateTimeImmutable::createFromInterface($now)
             : new \DateTimeImmutable('now');
         $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        $status = self::contestStatus($test, $now);
         if ($type === 'weekly') {
             $want = (int) ($test['contestWeekday'] ?? 0);
             if ($want < 1 || $want > 7) {
                 return ['start' => null, 'end' => null];
             }
-            $today = (int) $now->format('N');
-            $delta = $today - $want;
-            if ($delta > 0) {
-                $occurrence = $now->modify("-{$delta} days");
-            } elseif ($delta < 0) {
-                $occurrence = $now->modify('+' . (-$delta) . ' days');
-            } else {
-                $occurrence = $now;
-            }
+            $occurrence = $status === 'UPCOMING'
+                ? self::nextWeeklyOccurrenceStart($want, $now)
+                : self::lastWeeklyOccurrenceStart($want, $now);
             $start = $occurrence->setTime(0, 0, 0);
             $end = $occurrence->setTime(23, 59, 59);
 
@@ -175,16 +257,10 @@ class AptitudeTestModel extends BaseModel
         if ($want < 1 || $want > 28) {
             return ['start' => null, 'end' => null];
         }
-        $year = (int) $now->format('Y');
-        $month = (int) $now->format('n');
-        $todayDom = (int) $now->format('j');
-        if ($todayDom > $want) {
-            // Current month's occurrence already passed.
-        } elseif ($todayDom < $want) {
-            // Upcoming this month — still show this month's scheduled window.
-        }
         try {
-            $occurrence = new \DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $want));
+            $occurrence = $status === 'UPCOMING'
+                ? self::nextMonthlyOccurrenceStart($want, $now)
+                : self::lastMonthlyOccurrenceStart($want, $now);
         } catch (\Throwable) {
             return ['start' => null, 'end' => null];
         }

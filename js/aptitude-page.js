@@ -1288,12 +1288,76 @@
     });
   }
 
+  function parseContestCreatedAt(test) {
+    const raw = test?.createdAt;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function lastWeeklyOccurrenceStart(want, now = new Date()) {
+    const today = now.getDay() === 0 ? 7 : now.getDay();
+    const daysSince = (today - want + 7) % 7;
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - daysSince);
+    return d;
+  }
+
+  function nextWeeklyOccurrenceStart(want, now = new Date()) {
+    const today = now.getDay() === 0 ? 7 : now.getDay();
+    let daysUntil = (want - today + 7) % 7;
+    if (daysUntil === 0) {
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+      if (now > end) daysUntil = 7;
+    }
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + daysUntil);
+    return d;
+  }
+
+  function lastMonthlyOccurrenceStart(want, now = new Date()) {
+    const dom = now.getDate();
+    let year = now.getFullYear();
+    let month = now.getMonth();
+    if (dom < want) {
+      month -= 1;
+      if (month < 0) {
+        month = 11;
+        year -= 1;
+      }
+    }
+    return new Date(year, month, want, 0, 0, 0);
+  }
+
+  function nextMonthlyOccurrenceStart(want, now = new Date()) {
+    const dom = now.getDate();
+    let year = now.getFullYear();
+    let month = now.getMonth();
+    if (dom > want) {
+      month += 1;
+      if (month > 11) {
+        month = 0;
+        year += 1;
+      }
+    }
+    return new Date(year, month, want, 0, 0, 0);
+  }
+
+  function contestOccurrenceWindowFromStart(start) {
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
   function contestStatusClient(test) {
     if (!isContestTest(test)) {
       return test?.contestStatus ? String(test.contestStatus) : 'ACTIVE';
     }
     const type = String(test?.contestType || 'none');
     const now = new Date();
+    const created = parseContestCreatedAt(test);
     if (type === 'weekly') {
       const want = Number(test?.contestWeekday);
       if (!Number.isFinite(want) || want < 1 || want > 7) return 'UPCOMING';
@@ -1303,7 +1367,12 @@
         return now <= end ? 'ACTIVE' : 'COMPLETED';
       }
       const daysSince = (today - want + 7) % 7;
-      return daysSince >= 1 && daysSince <= 3 ? 'COMPLETED' : 'UPCOMING';
+      if (daysSince >= 1 && daysSince <= 3) {
+        const lastOcc = lastWeeklyOccurrenceStart(want, now);
+        if (created && created <= lastOcc) return 'COMPLETED';
+        return 'UPCOMING';
+      }
+      return 'UPCOMING';
     }
     if (type === 'monthly') {
       const want = Number(test?.contestMonthDay);
@@ -1313,7 +1382,12 @@
         const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
         return now <= end ? 'ACTIVE' : 'COMPLETED';
       }
-      return dom > want ? 'COMPLETED' : 'UPCOMING';
+      if (dom > want) {
+        const lastOcc = lastMonthlyOccurrenceStart(want, now);
+        if (created && created <= lastOcc) return 'COMPLETED';
+        return 'UPCOMING';
+      }
+      return 'UPCOMING';
     }
     return 'UPCOMING';
   }
@@ -1322,23 +1396,22 @@
     if (test?.contestWindow?.start || test?.contestWindow?.end) return test.contestWindow;
     const now = new Date();
     const type = String(test?.contestType || 'none');
+    const status = contestStatusClient(test);
     if (type === 'weekly') {
       const want = Number(test?.contestWeekday);
       if (!Number.isFinite(want)) return { start: null, end: null };
-      const today = now.getDay() === 0 ? 7 : now.getDay();
-      const delta = today - want;
-      const occ = new Date(now);
-      occ.setDate(now.getDate() - delta);
-      const start = new Date(occ.getFullYear(), occ.getMonth(), occ.getDate(), 0, 0, 0);
-      const end = new Date(occ.getFullYear(), occ.getMonth(), occ.getDate(), 23, 59, 59);
-      return { start: start.toISOString(), end: end.toISOString() };
+      const start = status === 'UPCOMING'
+        ? nextWeeklyOccurrenceStart(want, now)
+        : lastWeeklyOccurrenceStart(want, now);
+      return contestOccurrenceWindowFromStart(start);
     }
     if (type === 'monthly') {
       const want = Number(test?.contestMonthDay);
       if (!Number.isFinite(want)) return { start: null, end: null };
-      const start = new Date(now.getFullYear(), now.getMonth(), want, 0, 0, 0);
-      const end = new Date(now.getFullYear(), now.getMonth(), want, 23, 59, 59);
-      return { start: start.toISOString(), end: end.toISOString() };
+      const start = status === 'UPCOMING'
+        ? nextMonthlyOccurrenceStart(want, now)
+        : lastMonthlyOccurrenceStart(want, now);
+      return contestOccurrenceWindowFromStart(start);
     }
     return { start: null, end: null };
   }
@@ -3890,7 +3963,11 @@
             resultsPublished: isContestTest(next) ? !!prev.resultsPublished : true,
           };
         } else {
-          store.push({ ...next, resultsPublished: isContestTest(next) ? false : true });
+          store.push({
+            ...next,
+            createdAt: new Date().toISOString(),
+            resultsPublished: isContestTest(next) ? false : true,
+          });
         }
         saveDemoTestsStore(store);
         toast('Test saved (demo).', 'success');
