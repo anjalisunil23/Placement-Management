@@ -1768,11 +1768,14 @@ final class AptitudeService
      */
     private function publicAttempt(array $attempt, string $title = '', string $category = ''): array
     {
+        $test = $this->tests->findById((string) ($attempt['testId'] ?? '')) ?: [];
         if ($title === '') {
-            $test = $this->tests->findById((string) ($attempt['testId'] ?? ''));
             $title = (string) ($test['title'] ?? '');
             $category = (string) ($test['category'] ?? '');
         }
+        $contestType = AptitudeTestModel::normalizeContestType(
+            (string) ($attempt['contestType'] ?? $test['contestType'] ?? 'none')
+        );
         $timeTaken = (int) ($attempt['timeTakenSeconds'] ?? 0);
         if ($timeTaken <= 0) {
             $started = $this->parseTime($attempt['startedAt'] ?? null);
@@ -1790,6 +1793,8 @@ final class AptitudeService
             'testId' => (string) ($attempt['testId'] ?? ''),
             'testTitle' => $title,
             'category' => $category,
+            'contestType' => $contestType,
+            'contestScheduleLabel' => AptitudeTestModel::contestScheduleLabel($test),
             'status' => (string) ($attempt['status'] ?? ''),
             'score' => $attempt['score'] ?? null,
             'marksObtained' => $marksObtained,

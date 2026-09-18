@@ -798,17 +798,14 @@
     document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
     });
-    applyMyResultsPanel(takeListPanel);
     renderTestList();
-    renderHistory(myProgress);
   }
 
   function historyEntryIsContest(h) {
-    const type = String(h?.contestType || '');
+    const type = String(h?.contestType || '').toLowerCase();
     if (type === 'weekly' || type === 'monthly') return true;
     if (type === 'none') return false;
-    const test = resolveHistoryTest(h);
-    return test ? isContestTest(test) : false;
+    return isContestTest(resolveHistoryTest(h));
   }
 
   function bindDirFilterEvents() {
@@ -1875,13 +1872,17 @@
   }
 
   function resolveHistoryTest(h) {
-    if (h.testId) {
-      const byId = fullDemoTest(h.testId) || loadDemoTestsStore().find((t) => String(t.id) === String(h.testId));
+    const id = String(h?.testId || '');
+    const title = String(h?.testTitle || h?.testName || '').trim();
+    const pools = [tests, loadDemoTestsStore()];
+    for (const pool of pools) {
+      if (!Array.isArray(pool)) continue;
+      const byId = id ? pool.find((t) => String(t.id) === id) : null;
       if (byId) return byId;
+      const byTitle = title ? pool.find((t) => String(t.title || '') === title) : null;
+      if (byTitle) return byTitle;
     }
-    const title = String(h.testTitle || h.testName || '').trim();
-    if (!title) return null;
-    return loadDemoTestsStore().find((t) => String(t.title || '') === title) || null;
+    return null;
   }
 
   function enrichHistoryEntry(h) {
@@ -1932,6 +1933,9 @@
       bits.push(Number.isFinite(pct) ? `Score ${markStr} (${pct}%)` : `Score ${markStr}`);
     } else if (Number.isFinite(pct)) {
       bits.push(`Score ${pct}%`);
+    }
+    if (historyEntryIsContest(row)) {
+      bits.unshift(row.contestScheduleLabel || (row.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest'));
     }
     return bits.length ? bits.join(' · ') : '—';
   }
@@ -2896,7 +2900,8 @@
       const link = e.target.closest('[data-results-view]');
       if (!link) return;
       e.preventDefault();
-      applyTakeListPanel(link.getAttribute('data-results-view'));
+      applyMyResultsPanel(link.getAttribute('data-results-view'));
+      renderHistory(myProgress);
     });
 
     document.getElementById('btnAddMcq')?.addEventListener('click', () => {
