@@ -54,6 +54,20 @@ $cases = [
         'expectIndex' => 2,
     ],
     [
+        'name' => 'profit question aligns option with computed explanation answer',
+        'q' => [
+            'question' => 'A vendor sells a laptop for $800, making a profit of 25%. What was the cost price of the laptop?',
+            'options' => ['$600', '$700', '$500', '$550'],
+            'correctAnswerIndex' => 0,
+            'correctOptionLetter' => 'A',
+            'explanation' => 'Let the Cost Price be x. Selling Price = x + 0.25x = 1.25x. Therefore, 1.25x = $800, so x = $800 / 1.25 = $640.',
+            'topic' => 'Profit and Loss',
+            'difficulty' => 'Easy',
+        ],
+        'expectIndex' => 0,
+        'expectOption' => '$640',
+    ],
+    [
         'name' => 'letter overrides wrong numeric',
         'q' => [
             'question' => 'Average of 10, 20, 30?',
@@ -74,9 +88,22 @@ foreach ($cases as $case) {
         ? $mapSave->invoke($svc, $case['q'], 'Quantitative Aptitude')
         : $map->invoke($svc, $case['q'], 'Quantitative Aptitude', 'Percentage', 'Medium', 1.0, 0.0);
     $ok = is_array($result) && (int) ($result['correctIndex'] ?? -1) === $case['expectIndex'];
+    if ($ok && isset($case['expectOption'])) {
+        $opts = is_array($result['options'] ?? null) ? $result['options'] : [];
+        $ok = (string) ($opts[$case['expectIndex']] ?? '') === $case['expectOption'];
+    }
     echo ($ok ? 'PASS' : 'FAIL') . ' - ' . $case['name'];
     if (!$ok) {
-        echo ' (got ' . json_encode($result['correctIndex'] ?? null) . ', expected ' . $case['expectIndex'] . ')';
+        echo ' (got index ' . json_encode($result['correctIndex'] ?? null);
+        if (isset($case['expectOption'])) {
+            $opts = is_array($result['options'] ?? null) ? $result['options'] : [];
+            echo ', option ' . json_encode($opts[$case['expectIndex']] ?? null);
+        }
+        echo ', expected index ' . $case['expectIndex'];
+        if (isset($case['expectOption'])) {
+            echo ' option ' . $case['expectOption'];
+        }
+        echo ')';
     }
     echo PHP_EOL;
     if ($ok) {

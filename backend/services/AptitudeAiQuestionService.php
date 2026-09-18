@@ -352,6 +352,7 @@ Use this exact JSON schema:
 Rules for correctAnswerIndex: MUST be 0-based — 0 = option A, 1 = B, 2 = C, 3 = D. Never use 1–4.
 correctOptionLetter MUST be A, B, C, or D and MUST match correctAnswerIndex.
 The explanation MUST clearly support the chosen option text.
+One of the four options MUST exactly match the final numeric answer shown in the explanation.
 Double-check every calculation before returning JSON.
 PROMPT;
     }
@@ -525,10 +526,9 @@ PROMPT;
         if ($correctIndex === null) {
             return null;
         }
-        $fromExplanation = AptitudeTestModel::findUniqueOptionInExplanation($options, $explanation);
-        if ($fromExplanation !== null) {
-            $correctIndex = $fromExplanation;
-        }
+        $aligned = AptitudeTestModel::alignOptionsWithExplanation($options, $explanation, $correctIndex);
+        $options = $aligned['options'];
+        $correctIndex = $aligned['correctIndex'];
 
         $topic = trim((string) ($q['topic'] ?? $fallbackTopic));
         if ($topic === '') {

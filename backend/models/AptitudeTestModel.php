@@ -425,6 +425,105 @@ class AptitudeTestModel extends BaseModel
         return 0;
     }
 
+    public static function parseOptionNumeric(string $option): ?float
+    {
+        $text = trim($option);
+        if ($text === '') {
+            return null;
+        }
+        $stripped = preg_replace('/[^\d.\-]/', '', str_replace(',', '', $text)) ?? '';
+        if ($stripped === '' || !is_numeric($stripped)) {
+            return null;
+        }
+
+        return (float) $stripped;
+    }
+
+    public static function extractComputedNumericFromExplanation(string $explanation): ?float
+    {
+        $explanation = trim($explanation);
+        if ($explanation === '') {
+            return null;
+        }
+        if (preg_match_all('/=\s*(?:\$|₹|Rs\.?\s*)?([\d,]+(?:\.\d+)?)/iu', $explanation, $matches) !== false && $matches[1] !== []) {
+            $last = (string) end($matches[1]);
+
+            return (float) str_replace(',', '', $last);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<string> $options
+     */
+    public static function formatNumericLikeOptions(float $value, array $options): string
+    {
+        $usesDollar = false;
+        foreach ($options as $opt) {
+            if (str_contains((string) $opt, '$')) {
+                $usesDollar = true;
+                break;
+            }
+        }
+        $rounded = abs($value - round($value)) < 0.001 ? (string) (int) round($value) : rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
+
+        return $usesDollar ? '$' . $rounded : $rounded;
+    }
+
+    /**
+     * Ensure one option matches the value derived from the explanation when possible.
+     *
+     * @param list<string> $options
+     * @return array{options:list<string>,correctIndex:int}
+     */
+    public static function alignOptionsWithExplanation(array $options, string $explanation, int $hintIndex = 0): array
+    {
+        $hintIndex = max(0, min(3, $hintIndex));
+        $options = array_values(array_slice($options, 0, 4));
+
+        $fromExplanation = self::findUniqueOptionInExplanation($options, $explanation);
+        if ($fromExplanation !== null) {
+            return ['options' => $options, 'correctIndex' => $fromExplanation];
+        }
+
+        $computed = self::extractComputedNumericFromExplanation($explanation);
+        if ($computed === null) {
+            return ['options' => $options, 'correctIndex' => $hintIndex];
+        }
+
+        foreach ($options as $i => $opt) {
+            $optNum = self::parseOptionNumeric($opt);
+            if ($optNum !== null && abs($optNum - $computed) < 0.01) {
+                return ['options' => $options, 'correctIndex' => $i];
+            }
+        }
+
+        $replaceIndex = $hintIndex;
+        $hintNum = self::parseOptionNumeric($options[$replaceIndex] ?? '');
+        if ($hintNum !== null && abs($hintNum - $computed) >= 0.01) {
+            $options[$replaceIndex] = self::formatNumericLikeOptions($computed, $options);
+        } else {
+            $bestIdx = $hintIndex;
+            $bestDiff = PHP_FLOAT_MAX;
+            foreach ($options as $i => $opt) {
+                $n = self::parseOptionNumeric($opt);
+                if ($n === null) {
+                    continue;
+                }
+                $diff = abs($n - $computed);
+                if ($diff < $bestDiff) {
+                    $bestDiff = $diff;
+                    $bestIdx = $i;
+                }
+            }
+            $replaceIndex = $bestIdx;
+            $options[$replaceIndex] = self::formatNumericLikeOptions($computed, $options);
+        }
+
+        return ['options' => $options, 'correctIndex' => $replaceIndex];
+    }
+
     /**
      * @param list<string> $options
      */
@@ -477,10 +576,30 @@ class AptitudeTestModel extends BaseModel
 
     private static function optionAppearsInExplanation(string $optNorm, string $explanationNorm): bool
     {
-        if (preg_match('/^-?\d+(?:\.\d+)?%?$/', $optNorm) === 1) {
-            $pattern = '/(?<!\d)' . preg_quote($optNorm, '/') . '(?!\d)/u';
+        $numeric = self::parseOptionNumeric($optNorm);
+        if ($numeric !== null) {
+            $formatted = self::formatNumericLikeOptions($numeric, [$optNorm]);
+            $candidates = array_unique(array_filter([
+                strtolower(trim($optNorm)),
+                strtolower(trim($formatted)),
+                strtolower(trim((string) (int) round($numeric))),
+                strtolower(trim(number_format($numeric, 2, '.', ''))),
+            ]));
+            foreach ($candidates as $candidate) {
+                if ($candidate === '') {
+                    continue;
+                }
+                if (preg_match('/^-?\d+(?:\.\d+)?%?$/', $candidate) === 1) {
+                    $pattern = '/(?<!\d)' . preg_quote($candidate, '/') . '(?!\d)/u';
+                    if (@preg_match($pattern, $explanationNorm) === 1) {
+                        return true;
+                    }
+                } elseif (str_contains($explanationNorm, $candidate)) {
+                    return true;
+                }
+            }
 
-            return @preg_match($pattern, $explanationNorm) === 1;
+            return false;
         }
 
         return str_contains($explanationNorm, $optNorm);

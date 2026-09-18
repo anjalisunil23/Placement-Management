@@ -1581,8 +1581,8 @@
       count: batches.reduce((sum, row) => sum + row.count, 0),
       marks: first.marks,
       language: (document.getElementById('aptAiLanguage')?.value || 'English').trim() || 'English',
-      negativeMarking: !!document.getElementById('aptAiNegative')?.checked,
-      negativeMarks: Number(document.getElementById('aptAiNegativeMarks')?.value || 0),
+      negativeMarking: false,
+      negativeMarks: 0,
       instructions: document.getElementById('aptAiInstructions')?.value || '',
     };
   }
@@ -1641,22 +1641,123 @@
     return String(value ?? '').trim().replace(/^[A-Da-d][\).\:\-\s]+/, '').trim();
   }
 
+  function parseAiOptionNumeric(option) {
+    const text = sanitizeAiOptionText(option);
+    const stripped = text.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    return stripped ? Number(stripped[0]) : null;
+  }
+
+  function extractComputedNumericFromExplanation(explanation) {
+    const text = String(explanation ?? '');
+    const matches = [...text.matchAll(/=\s*(?:\$|₹|Rs\.?\s*)?([\d,]+(?:\.\d+)?)/gi)];
+    if (!matches.length) return null;
+    const last = matches[matches.length - 1][1].replace(/,/g, '');
+    const n = Number(last);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatNumericLikeOptions(value, options) {
+    const usesDollar = (options || []).some((opt) => String(opt).includes('$'));
+    const rounded = Math.abs(value - Math.round(value)) < 0.001
+      ? String(Math.round(value))
+      : String(Math.round(value * 100) / 100);
+    return usesDollar ? `$${rounded}` : rounded;
+  }
+
+  function findUniqueOptionInExplanation(options, explanation) {
+    const exp = String(explanation ?? '').toLowerCase();
+    const matches = [];
+    (options || []).slice(0, 4).forEach((opt, i) => {
+      const optText = sanitizeAiOptionText(opt);
+      if (!optText) return;
+      if (explanationSupportsOption(explanation, optText)) {
+        matches.push({ index: i, len: optText.length });
+      }
+    });
+    if (!matches.length) return null;
+    matches.sort((a, b) => b.len - a.len);
+    const bestLen = matches[0].len;
+    const tied = matches.filter((m) => m.len === bestLen);
+    return tied.length === 1 ? tied[0].index : null;
+  }
+
+  function alignAiPreviewOptions(options, explanation, hintIndex = 0) {
+    const opts = (options || []).slice(0, 4).map((o) => sanitizeAiOptionText(o));
+    const hint = Math.max(0, Math.min(3, Number(hintIndex) || 0));
+    const fromExplanation = findUniqueOptionInExplanation(opts, explanation);
+    if (fromExplanation != null) {
+      return { options: opts, correctIndex: fromExplanation };
+    }
+    const computed = extractComputedNumericFromExplanation(explanation);
+    if (computed == null) {
+      return { options: opts, correctIndex: hint };
+    }
+    for (let i = 0; i < opts.length; i += 1) {
+      const optNum = parseAiOptionNumeric(opts[i]);
+      if (optNum != null && Math.abs(optNum - computed) < 0.01) {
+        return { options: opts, correctIndex: i };
+      }
+    }
+    let replaceIndex = hint;
+    const hintNum = parseAiOptionNumeric(opts[replaceIndex]);
+    if (hintNum != null && Math.abs(hintNum - computed) >= 0.01) {
+      opts[replaceIndex] = formatNumericLikeOptions(computed, opts);
+    } else {
+      let bestIdx = hint;
+      let bestDiff = Infinity;
+      opts.forEach((opt, i) => {
+        const n = parseAiOptionNumeric(opt);
+        if (n == null) return;
+        const diff = Math.abs(n - computed);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestIdx = i;
+        }
+      });
+      replaceIndex = bestIdx;
+      opts[replaceIndex] = formatNumericLikeOptions(computed, opts);
+    }
+    return { options: opts, correctIndex: replaceIndex };
+  }
+
   function explanationSupportsOption(explanation, optionText) {
     const exp = String(explanation ?? '').toLowerCase();
     const opt = sanitizeAiOptionText(optionText).toLowerCase();
     if (!exp || !opt || opt.length < 2) return true;
-    if (/^-?\d+(?:\.\d+)?%?$/.test(opt)) {
-      const re = new RegExp(`(?<!\\d)${opt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`);
-      return re.test(exp);
+    const numeric = parseAiOptionNumeric(optionText);
+    if (numeric != null) {
+      const candidates = new Set([
+        opt,
+        formatNumericLikeOptions(numeric, [optionText]).toLowerCase(),
+        String(Math.round(numeric)),
+        String(Math.round(numeric * 100) / 100),
+      ]);
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        if (/^-?\d+(?:\.\d+)?%?$/.test(candidate)) {
+          const re = new RegExp(`(?<!\\d)${candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`);
+          if (re.test(exp)) return true;
+        } else if (exp.includes(candidate)) {
+          return true;
+        }
+      }
+      return false;
     }
     return exp.includes(opt);
   }
 
   function reconcileAiPreviewQuestion(q) {
     if (!q || typeof q !== 'object') return q;
+    if (q.lockCorrectIndex) {
+      q.options = (q.options || []).slice(0, 4).map((o) => sanitizeAiOptionText(o));
+      q.correctIndex = resolveAiPreviewCorrectIndex({ ...q, options: q.options });
+      return q;
+    }
     const options = (q.options || []).slice(0, 4).map((o) => sanitizeAiOptionText(o));
-    q.options = options;
-    q.correctIndex = resolveAiPreviewCorrectIndex({ ...q, options });
+    const hintIndex = resolveAiPreviewCorrectIndex({ ...q, options });
+    const aligned = alignAiPreviewOptions(options, q.explanation || '', hintIndex);
+    q.options = aligned.options;
+    q.correctIndex = aligned.correctIndex;
     return q;
   }
 
@@ -1798,7 +1899,9 @@
             <div class="small mb-2">${opts.map((o, oi) => `<div class="apt-q-card-text">${letters[oi]}. ${esc(o)}${oi === correct ? ' <span class="text-success fw-semibold">✓</span>' : ''}</div>`).join('')}</div>
             <div class="small mb-2">
               <span class="fw-semibold">Correct answer:</span>
-              ${[0, 1, 2, 3].map((oi) => `<label class="form-check form-check-inline ms-2"><input class="form-check-input" type="radio" name="ai-correct-${i}" data-ai-set-correct="${i}" value="${oi}" ${correct === oi ? 'checked' : ''}/> ${letters[oi]}</label>`).join('')}
+              <span class="ms-1">${letters[correct]}. ${esc(opts[correct] || '—')}</span>
+              <span class="text-muted-2 ms-2">Change:</span>
+              ${[0, 1, 2, 3].map((oi) => `<label class="form-check form-check-inline ms-1"><input class="form-check-input" type="radio" name="ai-correct-${i}" data-ai-set-correct="${i}" value="${oi}" ${correct === oi ? 'checked' : ''}/> ${letters[oi]}</label>`).join('')}
             </div>
             <div class="small text-muted-2">${esc(q.category || '')} · ${esc(q.topic || '')} · ${esc(q.difficulty || '')} · ${esc(q.marks ?? 1)} mark(s)</div>
             <div class="small mt-1"><span class="fw-semibold">Explanation:</span> ${esc(q.explanation || '')}</div>
@@ -1911,7 +2014,6 @@
         if (!res?.success) throw new Error(res?.message || 'Could not save questions.');
         toast(`Saved ${res.data?.added ?? selected.length} question(s) to the bank.`, 'success');
         await loadQuestionBank();
-        renderBank();
       }
       aptAiModal?.hide();
     } catch (err) {
