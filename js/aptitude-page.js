@@ -249,8 +249,6 @@
   let aptAiModal;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
-  let aiModalTarget = 'bank';
-  let aiTestQuestions = [];
   const selectedBankIds = new Set();
 
   function dirOptionLabel(value) {
@@ -1475,7 +1473,6 @@
   function getQuestionSource() {
     if (formIsContest()) return 'random';
     if (document.getElementById('tfSourceRandom')?.checked) return 'random';
-    if (document.getElementById('tfSourceAi')?.checked) return 'ai';
     return 'manual';
   }
 
@@ -1491,33 +1488,16 @@
     if (contest) {
       document.getElementById('tfSourceRandom').checked = true;
       document.getElementById('tfSourceManual').checked = false;
-      document.getElementById('tfSourceAi').checked = false;
     }
     const source = getQuestionSource();
     const random = source === 'random';
-    const ai = source === 'ai';
     document.getElementById('tfRandomPanel')?.classList.toggle('d-none', !random);
-    document.getElementById('tfManualPanel')?.classList.toggle('d-none', random || ai);
-    document.getElementById('tfAiPanel')?.classList.toggle('d-none', !ai);
+    document.getElementById('tfManualPanel')?.classList.toggle('d-none', random);
     const countEl = document.getElementById('tfQuestionCount');
     if (countEl) {
-      countEl.readOnly = random || ai;
+      countEl.readOnly = random;
       if (random) updateRandomSummary();
-      if (ai && aiTestQuestions.length) countEl.value = String(aiTestQuestions.length);
     }
-    syncAiAddedSummary();
-  }
-
-  function syncAiAddedSummary() {
-    const el = document.getElementById('tfAiAddedSummary');
-    if (!el) return;
-    if (getQuestionSource() !== 'ai' || !aiTestQuestions.length) {
-      el.classList.add('d-none');
-      el.textContent = '';
-      return;
-    }
-    el.classList.remove('d-none');
-    el.textContent = `${aiTestQuestions.length} AI question(s) ready for this test. Open Generate to review or add more.`;
   }
 
   function fillAiTopicDatalist(category) {
@@ -1527,20 +1507,79 @@
     list.innerHTML = topics.map((t) => `<option value="${esc(t)}"></option>`).join('');
   }
 
-  function initAiFormFields() {
+  const AI_GEN_ROW_DEFAULTS = [
+    { difficulty: 'Easy', count: 5, marks: 1 },
+    { difficulty: 'Medium', count: 5, marks: 1 },
+  ];
+
+  function addAiGenRow(row = {}) {
+    const root = document.getElementById('aptAiGenRows');
+    if (!root) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'apt-ai-gen-row row g-2 align-items-end';
+    const difficulty = row.difficulty || 'Medium';
+    const count = row.count ?? 5;
+    const marks = row.marks ?? 1;
+    wrap.innerHTML = `
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold mb-1">Difficulty</label>
+        <select class="form-select form-select-sm" data-ai-gen="difficulty">
+          ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === difficulty ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold mb-1">Number of questions</label>
+        <input class="form-control form-control-sm" type="number" data-ai-gen="count" min="0" max="50" value="${esc(count)}"/>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-1">Marks per question</label>
+        <input class="form-control form-control-sm" type="number" data-ai-gen="marks" min="0.25" step="0.25" value="${esc(marks)}"/>
+      </div>
+      <div class="col-md-1">
+        <button type="button" class="btn btn-sm btn-outline-danger w-100" data-ai-gen-remove title="Remove row"><i class="bi bi-trash"></i></button>
+      </div>`;
+    wrap.querySelector('[data-ai-gen-remove]')?.addEventListener('click', () => {
+      if (root.querySelectorAll('.apt-ai-gen-row').length <= 1) {
+        toast('Keep at least one generation row.', 'error');
+        return;
+      }
+      wrap.remove();
+    });
+    root.appendChild(wrap);
+  }
+
+  function initAiGenRows(rows = AI_GEN_ROW_DEFAULTS) {
+    const root = document.getElementById('aptAiGenRows');
+    if (!root) return;
+    root.innerHTML = '';
+    (rows.length ? rows : AI_GEN_ROW_DEFAULTS).forEach((row) => addAiGenRow(row));
+  }
+
+  function collectAiGenRows() {
+    return [...document.querySelectorAll('.apt-ai-gen-row')].map((el) => ({
+      difficulty: el.querySelector('[data-ai-gen="difficulty"]')?.value || 'Medium',
+      count: Math.max(0, Math.min(50, Number(el.querySelector('[data-ai-gen="count"]')?.value || 0))),
+      marks: Math.max(0.25, Number(el.querySelector('[data-ai-gen="marks"]')?.value || 1)),
+    })).filter((row) => row.count > 0);
+  }
+
+  function initAiFormFields(rows = AI_GEN_ROW_DEFAULTS) {
     fillSelect(document.getElementById('aptAiCategory'), meta.categories || APTITUDE_CATEGORIES, 'Quantitative Aptitude');
-    fillSelect(document.getElementById('aptAiDifficulty'), APTITUDE_DIFFICULTIES, 'Medium');
+    initAiGenRows(rows);
     const cat = document.getElementById('aptAiCategory')?.value || 'Quantitative Aptitude';
     fillAiTopicDatalist(cat);
   }
 
   function collectAiFormParams() {
+    const batches = collectAiGenRows();
+    const first = batches[0] || { difficulty: 'Medium', count: 5, marks: 1 };
     return {
       category: document.getElementById('aptAiCategory')?.value || 'General Aptitude',
       topic: (document.getElementById('aptAiTopic')?.value || '').trim(),
-      difficulty: document.getElementById('aptAiDifficulty')?.value || 'Medium',
-      count: Math.max(1, Math.min(50, Number(document.getElementById('aptAiCount')?.value || 5))),
-      marks: Math.max(0.25, Number(document.getElementById('aptAiMarks')?.value || 1)),
+      batches,
+      difficulty: first.difficulty,
+      count: batches.reduce((sum, row) => sum + row.count, 0),
+      marks: first.marks,
       language: (document.getElementById('aptAiLanguage')?.value || 'English').trim() || 'English',
       negativeMarking: !!document.getElementById('aptAiNegative')?.checked,
       negativeMarks: Number(document.getElementById('aptAiNegativeMarks')?.value || 0),
@@ -1558,13 +1597,8 @@
     document.getElementById('aptAiPreviewPanel')?.classList.remove('d-none');
   }
 
-  function openAptAiModal(target = 'bank') {
-    aiModalTarget = target === 'test' ? 'test' : 'bank';
-    document.getElementById('aptAiModalTitle').textContent = aiModalTarget === 'test'
-      ? 'AI Generate — add to test'
-      : 'AI Generate — question bank';
-    document.getElementById('btnAptAiAddToTest')?.classList.toggle('d-none', aiModalTarget !== 'test');
-    document.getElementById('btnAptAiSaveBank')?.classList.toggle('d-none', false);
+  function openAptAiModal() {
+    document.getElementById('aptAiModalTitle').textContent = 'AI Generate — question bank';
     initAiFormFields();
     showAptAiFormPanel();
     document.getElementById('aptAiPreviewList').innerHTML = '';
@@ -1787,6 +1821,10 @@
       toast('Enter a topic.', 'error');
       return;
     }
+    if (!params.batches?.length) {
+      toast('Add at least one generation row with a question count.', 'error');
+      return;
+    }
     const status = document.getElementById('aptAiGenerateStatus');
     const btn = document.getElementById('btnAptAiRun');
     status?.classList.remove('d-none');
@@ -1798,7 +1836,12 @@
           toast('Sign in as a placement officer to generate questions.', 'info');
           return;
         }
-        data = demoGenerateAiQuestions(params);
+        const merged = [];
+        params.batches.forEach((batch) => {
+          const chunk = demoGenerateAiQuestions({ ...params, ...batch });
+          merged.push(...(chunk.questions || []));
+        });
+        data = { questions: merged, requested: params.count, received: merged.length };
         toast('Demo AI preview (no OpenAI call).', 'info');
       } else {
         const res = await api('/aptitude/ai/generate', { method: 'POST', body: JSON.stringify(params) });
@@ -1877,34 +1920,6 @@
       status?.classList.add('d-none');
       btn?.removeAttribute('disabled');
     }
-  }
-
-  function addAptAiToTest() {
-    const selected = selectedAiPreviewQuestions();
-    if (!selected.length) {
-      toast('Select at least one question to add.', 'error');
-      return;
-    }
-    selected.forEach((q) => {
-      aiTestQuestions.push({
-        id: `ai-${aiTestQuestions.length + 1}`,
-        type: 'mcq',
-        prompt: q.prompt,
-        options: q.options,
-        correctIndex: q.correctIndex,
-        marks: q.marks || 1,
-        explanation: q.explanation || '',
-        category: q.category,
-        topic: q.topic,
-        difficulty: q.difficulty,
-        source: 'AI',
-      });
-    });
-    const countEl = document.getElementById('tfQuestionCount');
-    if (countEl) countEl.value = String(aiTestQuestions.length);
-    syncAiAddedSummary();
-    aptAiModal?.hide();
-    toast(`Added ${selected.length} question(s) to this test. Save the test when ready.`, 'success');
   }
 
   function addRandomRuleRow(rule = {}) {
@@ -3151,20 +3166,11 @@
       : 'published';
 
     let source = test?.questionSource === 'random' ? 'random' : 'manual';
-    aiTestQuestions = [];
     if (isContest) {
       source = 'random';
-    } else if (test && source !== 'random') {
-      const aiQs = (test.questions || []).filter((q) => q.source === 'AI' || String(q.id || '').startsWith('ai-'));
-      const manualQs = (test.questions || []).filter((q) => !q.bankId && !aiQs.includes(q));
-      if (aiQs.length && !manualQs.length && !(test.bankQuestionIds || []).length) {
-        source = 'ai';
-        aiTestQuestions = aiQs.map((q) => ({ ...q }));
-      }
     }
     document.getElementById('tfSourceManual').checked = source === 'manual';
     document.getElementById('tfSourceRandom').checked = source === 'random';
-    document.getElementById('tfSourceAi').checked = source === 'ai';
 
     selectedBankIds.clear();
     (test?.bankQuestionIds || []).forEach((id) => selectedBankIds.add(String(id)));
@@ -3203,22 +3209,13 @@
       negativeMarking: document.getElementById('tfNegative').checked,
       negativeMarks: Number(document.getElementById('tfNegativeMarks').value || 0),
       status: document.getElementById('tfStatus').value,
-      questionSource: source === 'ai' ? 'manual' : source,
+      questionSource: source,
       instructions: '',
     };
     if (source === 'random') {
       payload.randomRules = collectRandomRules();
       payload.questions = [];
       payload.bankQuestionIds = [];
-    } else if (source === 'ai') {
-      payload.randomRules = [];
-      payload.bankQuestionIds = [];
-      payload.bankFilterRules = [];
-      payload.questions = aiTestQuestions.map((q, i) => ({
-        ...q,
-        id: q.id || `q${i + 1}`,
-        type: 'mcq',
-      }));
     } else {
       payload.randomRules = [];
       const useBank = document.getElementById('tfUseBankManual')?.checked;
@@ -3539,8 +3536,8 @@
       applyManagePanel(link.getAttribute('data-manage-view'));
     });
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
-    document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal('bank'));
-    document.getElementById('btnTfOpenAi')?.addEventListener('click', () => openAptAiModal('test'));
+    document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal());
+    document.getElementById('btnAptAiAddRow')?.addEventListener('click', () => addAiGenRow());
     document.getElementById('aptAiCategory')?.addEventListener('change', (e) => fillAiTopicDatalist(e.target.value));
     document.getElementById('btnAptAiRun')?.addEventListener('click', () => runAptAiGenerate());
     document.getElementById('btnAptAiRegenerate')?.addEventListener('click', () => {
@@ -3548,9 +3545,11 @@
       if (aiLastFormParams) {
         document.getElementById('aptAiCategory').value = aiLastFormParams.category || '';
         document.getElementById('aptAiTopic').value = aiLastFormParams.topic || '';
-        document.getElementById('aptAiDifficulty').value = aiLastFormParams.difficulty || 'Medium';
-        document.getElementById('aptAiCount').value = String(aiLastFormParams.count || 5);
-        document.getElementById('aptAiMarks').value = String(aiLastFormParams.marks || 1);
+        initAiGenRows(
+          aiLastFormParams.batches?.length
+            ? aiLastFormParams.batches
+            : [{ difficulty: aiLastFormParams.difficulty || 'Medium', count: aiLastFormParams.count || 5, marks: aiLastFormParams.marks || 1 }]
+        );
       }
     });
     document.getElementById('btnAptAiSelectAll')?.addEventListener('click', () => {
@@ -3559,7 +3558,6 @@
     });
     document.getElementById('btnAptAiBack')?.addEventListener('click', showAptAiFormPanel);
     document.getElementById('btnAptAiSaveBank')?.addEventListener('click', () => saveAptAiToBank());
-    document.getElementById('btnAptAiAddToTest')?.addEventListener('click', () => addAptAiToTest());
 
     document.getElementById('bankFilterCategory')?.addEventListener('change', () => {
       bankCategoryFilter = document.getElementById('bankFilterCategory')?.value || '';
@@ -3580,13 +3578,7 @@
         toast('Enter a test title.', 'error');
         return;
       }
-      if (getQuestionSource() === 'ai') {
-        if (!aiTestQuestions.length) {
-          toast('Generate and add AI questions before saving.', 'error');
-          return;
-        }
-        payload.questionCount = aiTestQuestions.length;
-      } else if (payload.questionSource === 'random') {
+      if (payload.questionSource === 'random') {
         if (!payload.randomRules?.length) {
           toast('Add at least one random rule.', 'error');
           return;

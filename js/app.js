@@ -157,7 +157,7 @@ const PAGE_LABELS = {
   'mock-aptitude.html': 'Mock · Aptitude',
   'mock-aptitude.html#take': 'Mock · Aptitude · Take test',
   'mock-aptitude.html#progress': 'Mock · Aptitude · Progress',
-  'mock-aptitude.html#manage': 'Mock · Aptitude · Manage tests',
+  'mock-aptitude.html#manage': 'Mock · Aptitude · Manage',
   'mock-coding.html': 'Mock · Coding Practice',
   'mock-coding.html#take': 'Mock · Coding Practice · Take test',
   'mock-coding.html#progress': 'Mock · Coding Practice · Progress',

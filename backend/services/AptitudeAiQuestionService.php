@@ -67,26 +67,46 @@ final class AptitudeAiQuestionService
 
         $category = AptitudeTestModel::normalizeCategory((string) ($body['category'] ?? 'General Aptitude'));
         $topic = trim((string) ($body['topic'] ?? ''));
-        $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($body['difficulty'] ?? 'Medium'));
-        $count = max(1, min(self::MAX_COUNT, (int) ($body['count'] ?? 5)));
-        $marks = max(0.25, min(100, (float) ($body['marks'] ?? 1)));
         $language = trim((string) ($body['language'] ?? 'English')) ?: 'English';
         $instructions = trim((string) ($body['instructions'] ?? ''));
 
         if ($topic === '') {
             throw new \InvalidArgumentException('Topic is required.');
         }
-        if (!in_array($difficulty, AptitudeTestModel::DIFFICULTIES, true)) {
-            throw new \InvalidArgumentException('Invalid difficulty.');
-        }
 
         $negativeMarking = filter_var($body['negativeMarking'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $negativeMarks = $negativeMarking ? max(0, (float) ($body['negativeMarks'] ?? 0)) : 0.0;
 
-        $result = $this->generate($category, $topic, $difficulty, $count, $marks, $language, $instructions, $negativeMarks);
-        $this->logGeneration($admin, $category, $topic, $difficulty, $count, true);
+        $batches = $this->normalizeGenerationBatches($body);
+        if ($batches === []) {
+            throw new \InvalidArgumentException('Add at least one generation row with a question count.');
+        }
 
-        return $result;
+        $merged = [];
+        $requested = 0;
+        foreach ($batches as $batch) {
+            $result = $this->generate(
+                $category,
+                $topic,
+                $batch['difficulty'],
+                $batch['count'],
+                $batch['marks'],
+                $language,
+                $instructions,
+                $negativeMarks
+            );
+            $requested += $batch['count'];
+            foreach ($result['questions'] ?? [] as $question) {
+                $merged[] = $question;
+            }
+            $this->logGeneration($admin, $category, $topic, $batch['difficulty'], $batch['count'], true);
+        }
+
+        return [
+            'questions' => $merged,
+            'requested' => $requested,
+            'received' => count($merged),
+        ];
     }
 
     /**
@@ -662,6 +682,57 @@ PROMPT;
         }
 
         return $candidates;
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     * @return list<array{difficulty:string,count:int,marks:float}>
+     */
+    private function normalizeGenerationBatches(array $body): array
+    {
+        $rawBatches = $body['batches'] ?? null;
+        if (!is_array($rawBatches) || $rawBatches === []) {
+            $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($body['difficulty'] ?? 'Medium'));
+            $count = max(1, min(self::MAX_COUNT, (int) ($body['count'] ?? 5)));
+            $marks = max(0.25, min(100, (float) ($body['marks'] ?? 1)));
+            if (!in_array($difficulty, AptitudeTestModel::DIFFICULTIES, true)) {
+                throw new \InvalidArgumentException('Invalid difficulty.');
+            }
+
+            return [[
+                'difficulty' => $difficulty,
+                'count' => $count,
+                'marks' => $marks,
+            ]];
+        }
+
+        $batches = [];
+        $totalCount = 0;
+        foreach ($rawBatches as $batch) {
+            if (!is_array($batch)) {
+                continue;
+            }
+            $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($batch['difficulty'] ?? 'Medium'));
+            $count = max(0, min(self::MAX_COUNT, (int) ($batch['count'] ?? 0)));
+            $marks = max(0.25, min(100, (float) ($batch['marks'] ?? 1)));
+            if ($count <= 0) {
+                continue;
+            }
+            if (!in_array($difficulty, AptitudeTestModel::DIFFICULTIES, true)) {
+                throw new \InvalidArgumentException('Invalid difficulty.');
+            }
+            $totalCount += $count;
+            if ($totalCount > self::MAX_COUNT) {
+                throw new \InvalidArgumentException('Total questions cannot exceed ' . self::MAX_COUNT . '.');
+            }
+            $batches[] = [
+                'difficulty' => $difficulty,
+                'count' => $count,
+                'marks' => $marks,
+            ];
+        }
+
+        return $batches;
     }
 
     private function assertCooldown(string $userId): void

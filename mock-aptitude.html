@@ -74,7 +74,7 @@
   <ul class="nav nav-pills gap-1 mb-3 flex-wrap d-none" id="aptViewNav">
     <li class="nav-item"><a class="nav-link" data-view="take" href="#take">Take test</a></li>
     <li class="nav-item"><a class="nav-link" data-view="progress" href="#progress">Progress</a></li>
-    <li class="nav-item"><a class="nav-link" data-view="manage" href="#manage">Manage tests</a></li>
+    <li class="nav-item"><a class="nav-link" data-view="manage" href="#manage">Manage</a></li>
   </ul>
 
   <div id="aptDenied" class="card-surface p-4 text-center d-none">
@@ -170,7 +170,7 @@
   <div id="aptManage" class="d-none mt-3">
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="mb-3">
-        <h6 class="fw-bold mb-0">Manage tests</h6>
+        <h6 class="fw-bold mb-0">Manage</h6>
       </div>
 
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
@@ -188,12 +188,9 @@
       </div>
 
       <div id="manageContestsPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Weekly and monthly contests — set the day here. Students see a contest only on that scheduled day while it is published.</p>
-          <div class="d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewWeeklyContest"><i class="bi bi-calendar-week me-1"></i>Weekly contest</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewMonthlyContest"><i class="bi bi-calendar-month me-1"></i>Monthly contest</button>
-          </div>
+        <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
+          <button type="button" class="btn btn-sm btn-primary" id="btnNewWeeklyContest"><i class="bi bi-calendar-week me-1"></i>Weekly</button>
+          <button type="button" class="btn btn-sm btn-primary" id="btnNewMonthlyContest"><i class="bi bi-calendar-month me-1"></i>Monthly</button>
         </div>
         <div id="manageContestsList" class="d-flex flex-column gap-2"></div>
       </div>
@@ -333,16 +330,6 @@
             <label class="btn btn-outline-primary btn-sm" for="tfSourceManual">Manual</label>
             <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceRandom" value="random">
             <label class="btn btn-outline-primary btn-sm" for="tfSourceRandom">Random from bank</label>
-            <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceAi" value="ai">
-            <label class="btn btn-outline-primary btn-sm" for="tfSourceAi">AI Generate</label>
-          </div>
-        </div>
-
-        <div class="col-12 d-none" id="tfAiPanel">
-          <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
-            <p class="small text-muted-2 mb-2">Generate aptitude MCQs with OpenAI, review and edit them, then add to this test. Questions are not published until you save the test.</p>
-            <button type="button" class="btn btn-sm btn-primary" id="btnTfOpenAi"><i class="bi bi-stars me-1"></i>Generate questions</button>
-            <div id="tfAiAddedSummary" class="small mt-2 d-none"></div>
           </div>
         </div>
 
@@ -445,9 +432,13 @@
       <div class="row g-3">
         <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiCategory">Category</label><select class="form-select" id="aptAiCategory"></select></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiTopic">Topic</label><input class="form-control" id="aptAiTopic" list="aptAiTopicList" placeholder="e.g. Percentage, Syllogism…"/><datalist id="aptAiTopicList"></datalist></div>
-        <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiDifficulty">Difficulty</label><select class="form-select" id="aptAiDifficulty"></select></div>
-        <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiCount">Number of questions</label><input class="form-control" type="number" id="aptAiCount" min="1" max="50" value="5"/></div>
-        <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiMarks">Marks per question</label><input class="form-control" type="number" id="aptAiMarks" min="0.25" step="0.25" value="1"/></div>
+        <div class="col-12">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <label class="form-label small fw-semibold mb-0">Question generation</label>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAptAiAddRow"><i class="bi bi-plus-lg me-1"></i>Add row</button>
+          </div>
+          <div id="aptAiGenRows" class="d-flex flex-column gap-2"></div>
+        </div>
         <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiLanguage">Language</label><input class="form-control" id="aptAiLanguage" value="English"/></div>
         <div class="col-md-4"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="aptAiNegative"/><label class="form-check-label" for="aptAiNegative">Negative marking (per question)</label></div></div>
         <div class="col-md-4"><label class="form-label small fw-semibold" for="aptAiNegativeMarks">Negative marks</label><input class="form-control" type="number" id="aptAiNegativeMarks" min="0" step="0.25" value="0"/></div>
@@ -469,7 +460,6 @@
       </div>
       <div id="aptAiPreviewList" class="d-flex flex-column gap-3"></div>
       <div class="d-flex flex-wrap gap-2 mt-4">
-        <button type="button" class="btn btn-primary d-none" id="btnAptAiAddToTest"><i class="bi bi-plus-lg me-1"></i>Add selected to test</button>
         <button type="button" class="btn btn-primary" id="btnAptAiSaveBank"><i class="bi bi-database-add me-1"></i>Add selected to question bank</button>
         <button type="button" class="btn btn-outline-secondary" id="btnAptAiBack">Back</button>
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -500,5 +490,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260918contest"></script>
+<script src="js/aptitude-page.js?v=20260918airows"></script>
 </body></html>
