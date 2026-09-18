@@ -240,6 +240,10 @@
   let progressPanel = 'tests';
   let myResultsPanel = 'tests';
   let takeListPanel = 'tests';
+  let takeContestType = 'weekly';
+  let myResultsContestType = 'weekly';
+  let progressContestType = 'weekly';
+  let manageContestType = 'weekly';
   let bankDifficultyFilter = '';
   let bankCategoryFilter = '';
   let bankQuestions = [];
@@ -726,18 +730,35 @@
     </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
+  function contestTypeOf(entry) {
+    const type = String(entry?.contestType || '').toLowerCase();
+    if (type === 'weekly' || type === 'monthly') return type;
+    const resolved = resolveHistoryTest(entry);
+    const resolvedType = String(resolved?.contestType || '').toLowerCase();
+    return resolvedType === 'monthly' ? 'monthly' : (resolvedType === 'weekly' ? 'weekly' : '');
+  }
+
+  function syncContestTypeNav(navId, type, attr) {
+    document.querySelectorAll(`#${navId} .nav-link`).forEach((link) => {
+      link.classList.toggle('active', link.getAttribute(attr) === type);
+    });
+  }
+
   function renderContestResults(contests, summary, scope = {}, completedContests = []) {
     document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirStats')?.classList.add('d-none');
     document.getElementById('dirStats').innerHTML = '';
+    document.getElementById('progressContestTypeNav')?.classList.remove('d-none');
 
-    const merged = mergeCompletedContestRows(contests, completedContests);
+    const merged = mergeCompletedContestRows(contests, completedContests)
+      .filter((c) => String(c.contestType || '') === progressContestType);
 
     const role = Auth.role();
+    const label = progressContestType === 'monthly' ? 'monthly' : 'weekly';
     const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
       ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
-      : 'No completed contests yet. Finished contests will appear here after their scheduled day ends.';
+      : `No completed ${label} contests yet. Finished contests will appear here after their scheduled day ends.`;
 
     const root = document.getElementById('dirContestSections');
     if (!root) return;
@@ -764,6 +785,7 @@
   function renderDirectoryTable(rows, summary, scope = {}) {
     document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
+    document.getElementById('progressContestTypeNav')?.classList.add('d-none');
     document.getElementById('dirStats')?.classList.add('d-none');
     document.getElementById('dirStats').innerHTML = '';
 
@@ -928,6 +950,14 @@
     document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
     });
+    document.getElementById('progressContestTypeNav')?.classList.toggle('d-none', progressPanel !== 'contests');
+    syncContestTypeNav('progressContestTypeNav', progressContestType, 'data-progress-contest-type');
+  }
+
+  function applyProgressContestType(type) {
+    progressContestType = type === 'monthly' ? 'monthly' : 'weekly';
+    syncContestTypeNav('progressContestTypeNav', progressContestType, 'data-progress-contest-type');
+    if (progressPanel === 'contests') loadDirectory().catch(() => {});
   }
 
   function applyMyResultsPanel(panel) {
@@ -935,6 +965,14 @@
     document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsPanel);
     });
+    document.getElementById('myResultsContestTypeNav')?.classList.toggle('d-none', myResultsPanel !== 'contests');
+    syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
+  }
+
+  function applyMyResultsContestType(type) {
+    myResultsContestType = type === 'monthly' ? 'monthly' : 'weekly';
+    syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
+    renderHistory(myProgress);
   }
 
   function applyTakeListPanel(panel) {
@@ -942,6 +980,14 @@
     document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
     });
+    document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
+    syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
+    renderTestList();
+  }
+
+  function applyTakeContestType(type) {
+    takeContestType = type === 'monthly' ? 'monthly' : 'weekly';
+    syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
     renderTestList();
   }
 
@@ -2342,34 +2388,46 @@
     return type === 'weekly' || type === 'monthly';
   }
 
-  function isManageContestPanel(panel) {
-    return panel === 'weekly-contests' || panel === 'monthly-contests';
+  function applyManageContestType(type) {
+    manageContestType = type === 'monthly' ? 'monthly' : 'weekly';
+    document.getElementById('manageWeeklyContestsSection')?.classList.toggle('d-none', manageContestType !== 'weekly');
+    document.getElementById('manageMonthlyContestsSection')?.classList.toggle('d-none', manageContestType !== 'monthly');
+    syncContestTypeNav('manageContestTypeNav', manageContestType, 'data-contest-type');
   }
 
-  function managePanelForContestType(type) {
-    return String(type) === 'monthly' ? 'monthly-contests' : 'weekly-contests';
+  function openManageContests(type = manageContestType) {
+    applyManagePanel('contests');
+    applyManageContestType(type);
   }
 
   function applyManagePanel(panel) {
-    if (panel === 'weekly-contests' && canManageContests()) managePanel = 'weekly-contests';
-    else if (panel === 'monthly-contests' && canManageContests()) managePanel = 'monthly-contests';
-    else if (panel === 'bank') managePanel = 'bank';
-    else managePanel = 'tests';
+    if (panel === 'weekly-contests' && canManageContests()) {
+      managePanel = 'contests';
+      manageContestType = 'weekly';
+    } else if (panel === 'monthly-contests' && canManageContests()) {
+      managePanel = 'contests';
+      manageContestType = 'monthly';
+    } else if (panel === 'contests' && canManageContests()) {
+      managePanel = 'contests';
+    } else if (panel === 'bank') {
+      managePanel = 'bank';
+    } else {
+      managePanel = 'tests';
+    }
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
-    document.getElementById('manageWeeklyContestsPanel')?.classList.toggle('d-none', managePanel !== 'weekly-contests');
-    document.getElementById('manageMonthlyContestsPanel')?.classList.toggle('d-none', managePanel !== 'monthly-contests');
+    document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
     document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-manage-view') === managePanel);
     });
+    if (managePanel === 'contests') applyManageContestType(manageContestType);
     if (managePanel === 'bank') loadQuestionBank().catch(() => {});
   }
 
   function syncManageContestActions() {
     const show = canManageContests();
-    document.getElementById('manageWeeklyContestNavItem')?.classList.toggle('d-none', !show);
-    document.getElementById('manageMonthlyContestNavItem')?.classList.toggle('d-none', !show);
-    if (!show && isManageContestPanel(managePanel)) applyManagePanel('tests');
+    document.getElementById('manageContestNavItem')?.classList.toggle('d-none', !show);
+    if (!show && managePanel === 'contests') applyManagePanel('tests');
   }
 
   function contestResultRowFromTest(t) {
@@ -2987,12 +3045,16 @@
 
   function renderHistory(p) {
     const hist = (p.history || []).map((h) => enrichHistoryEntry(h));
-    const filtered = hist.filter((h) => (
-      myResultsPanel === 'contests' ? historyEntryIsContest(h) : !historyEntryIsContest(h)
-    ));
+    const filtered = hist.filter((h) => {
+      if (myResultsPanel === 'contests') {
+        return historyEntryIsContest(h) && contestTypeOf(h) === myResultsContestType;
+      }
+      return !historyEntryIsContest(h);
+    });
     const canReview = access.canTake;
+    const contestLabel = myResultsContestType === 'monthly' ? 'monthly' : 'weekly';
     const emptyLabel = myResultsPanel === 'contests'
-      ? 'No contest attempts yet.'
+      ? `No ${contestLabel} contest attempts yet.`
       : 'No attempts yet. Select a test on the left to begin.';
     document.getElementById('myHistory').innerHTML = filtered.length
       ? filtered.slice(0, 8).map((h) => {
@@ -3068,6 +3130,7 @@
     let visible = tests.filter((t) => {
       const isContest = isContestTest(t);
       if (wantContests !== isContest) return false;
+      if (isContest && String(t.contestType || '') !== takeContestType) return false;
       if (access.canManage) return true;
       if ((t.status || 'published') !== 'published') return false;
       if (isContest) {
@@ -3078,10 +3141,11 @@
       return true;
     });
     if (!visible.length) {
+      const contestLabel = takeContestType === 'monthly' ? 'monthly' : 'weekly';
       const msg = wantContests
         ? (Auth.role() === 'student'
-          ? 'No contests are open today, or you have already taken them.'
-          : 'No aptitude contests are available yet.')
+          ? `No ${contestLabel} contests are open today, or you have already taken them.`
+          : `No ${contestLabel} aptitude contests are available yet.`)
         : (Auth.role() === 'student'
           ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
           : 'No published aptitude tests yet.');
@@ -3631,12 +3695,30 @@
       e.preventDefault();
       applyTakeListPanel(link.getAttribute('data-take-list'));
     });
+    document.getElementById('takeContestTypeNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-take-contest-type]');
+      if (!link) return;
+      e.preventDefault();
+      applyTakeContestType(link.getAttribute('data-take-contest-type'));
+    });
     document.getElementById('myResultsNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-results-view]');
       if (!link) return;
       e.preventDefault();
       applyMyResultsPanel(link.getAttribute('data-results-view'));
       renderHistory(myProgress);
+    });
+    document.getElementById('myResultsContestTypeNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-results-contest-type]');
+      if (!link) return;
+      e.preventDefault();
+      applyMyResultsContestType(link.getAttribute('data-results-contest-type'));
+    });
+    document.getElementById('progressContestTypeNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-progress-contest-type]');
+      if (!link) return;
+      e.preventDefault();
+      applyProgressContestType(link.getAttribute('data-progress-contest-type'));
     });
 
     document.getElementById('btnAddMcq')?.addEventListener('click', () => {
@@ -3686,7 +3768,7 @@
       openTestForm(null, { contestType: 'none' });
     });
     document.getElementById('btnNewWeeklyContest')?.addEventListener('click', () => {
-      applyManagePanel('weekly-contests');
+      openManageContests('weekly');
       openTestForm(null, {
         contestType: 'weekly',
         contestWeekday: new Date().getDay() === 0 ? 7 : new Date().getDay(),
@@ -3694,7 +3776,7 @@
       });
     });
     document.getElementById('btnNewMonthlyContest')?.addEventListener('click', () => {
-      applyManagePanel('monthly-contests');
+      openManageContests('monthly');
       openTestForm(null, {
         contestType: 'monthly',
         contestMonthDay: Math.min(28, new Date().getDate()),
@@ -3706,6 +3788,12 @@
       if (!link) return;
       e.preventDefault();
       applyManagePanel(link.getAttribute('data-manage-view'));
+    });
+    document.getElementById('manageContestTypeNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-contest-type]');
+      if (!link) return;
+      e.preventDefault();
+      applyManageContestType(link.getAttribute('data-contest-type'));
     });
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal());
@@ -3785,7 +3873,8 @@
       }
       payload.totalMarks = 0;
       if (canManageContests()) {
-        applyManagePanel(isContestTest(payload) ? managePanelForContestType(payload.contestType) : 'tests');
+        if (isContestTest(payload)) openManageContests(payload.contestType);
+        else applyManagePanel('tests');
       }
       const live = Auth.hasRealAuth() && !Auth.isDemo();
       if (!live) {

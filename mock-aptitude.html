@@ -90,7 +90,11 @@
           <div class="px-3 px-md-4 pt-3 pb-2">
             <ul class="nav nav-pills gap-1 flex-wrap" id="takeListNav">
               <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="tests">Available tests</a></li>
-              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Available contests</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Contests</a></li>
+            </ul>
+            <ul class="nav nav-pills gap-1 flex-wrap mt-2 d-none" id="takeContestTypeNav">
+              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-contest-type="weekly">Weekly</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-contest-type="monthly">Monthly</a></li>
             </ul>
           </div>
           <div id="testList"></div>
@@ -102,6 +106,10 @@
           <ul class="nav nav-pills gap-1 mb-2 flex-wrap" id="myResultsNav">
             <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test results</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest results</a></li>
+          </ul>
+          <ul class="nav nav-pills gap-1 mb-2 flex-wrap d-none" id="myResultsContestTypeNav">
+            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-contest-type="weekly">Weekly</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-contest-type="monthly">Monthly</a></li>
           </ul>
           <div id="myHistory" class="small text-muted-2">No attempts yet.</div>
         </div>
@@ -119,7 +127,11 @@
       </div>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="progressViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-progress-view="tests">Test results</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contest results</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contests</a></li>
+      </ul>
+      <ul class="nav nav-pills gap-1 mb-3 flex-wrap d-none" id="progressContestTypeNav">
+        <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-progress-contest-type="weekly">Weekly</a></li>
+        <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-progress-contest-type="monthly">Monthly</a></li>
       </ul>
       <div class="row g-2 mb-3" id="dirStats"></div>
       <div class="row g-2 align-items-end mb-3" id="dirFilterRow">
@@ -175,8 +187,7 @@
 
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
-        <li class="nav-item d-none" id="manageWeeklyContestNavItem"><a class="nav-link" href="#" data-manage-view="weekly-contests">Weekly</a></li>
-        <li class="nav-item d-none" id="manageMonthlyContestNavItem"><a class="nav-link" href="#" data-manage-view="monthly-contests">Monthly</a></li>
+        <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
       </ul>
 
@@ -188,26 +199,31 @@
         <div id="manageTestsList" class="d-flex flex-column gap-2"></div>
       </div>
 
-      <div id="manageWeeklyContestsPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Weekly contests — students get one attempt on the scheduled weekday.</p>
-          <button type="button" class="btn btn-sm btn-primary" id="btnNewWeeklyContest"><i class="bi bi-plus-lg me-1"></i>Create weekly contest</button>
+      <div id="manageContestsPanel" class="d-none">
+        <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageContestTypeNav">
+          <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-contest-type="weekly">Weekly</a></li>
+          <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-contest-type="monthly">Monthly</a></li>
+        </ul>
+        <div id="manageWeeklyContestsSection">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <p class="small text-muted-2 mb-0">Weekly contests — students get one attempt on the scheduled weekday.</p>
+            <button type="button" class="btn btn-sm btn-primary" id="btnNewWeeklyContest"><i class="bi bi-plus-lg me-1"></i>Create weekly contest</button>
+          </div>
+          <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Active &amp; upcoming</h6>
+          <div id="manageWeeklyContestsList" class="d-flex flex-column gap-2 mb-4"></div>
+          <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Results</h6>
+          <div id="manageWeeklyContestsResults" class="d-flex flex-column gap-3"></div>
         </div>
-        <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Active &amp; upcoming</h6>
-        <div id="manageWeeklyContestsList" class="d-flex flex-column gap-2 mb-4"></div>
-        <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Results</h6>
-        <div id="manageWeeklyContestsResults" class="d-flex flex-column gap-3"></div>
-      </div>
-
-      <div id="manageMonthlyContestsPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Monthly contests — students get one attempt on the scheduled day of the month.</p>
-          <button type="button" class="btn btn-sm btn-primary" id="btnNewMonthlyContest"><i class="bi bi-plus-lg me-1"></i>Create monthly contest</button>
+        <div id="manageMonthlyContestsSection" class="d-none">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <p class="small text-muted-2 mb-0">Monthly contests — students get one attempt on the scheduled day of the month.</p>
+            <button type="button" class="btn btn-sm btn-primary" id="btnNewMonthlyContest"><i class="bi bi-plus-lg me-1"></i>Create monthly contest</button>
+          </div>
+          <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Active &amp; upcoming</h6>
+          <div id="manageMonthlyContestsList" class="d-flex flex-column gap-2 mb-4"></div>
+          <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Results</h6>
+          <div id="manageMonthlyContestsResults" class="d-flex flex-column gap-3"></div>
         </div>
-        <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Active &amp; upcoming</h6>
-        <div id="manageMonthlyContestsList" class="d-flex flex-column gap-2 mb-4"></div>
-        <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Results</h6>
-        <div id="manageMonthlyContestsResults" class="d-flex flex-column gap-3"></div>
       </div>
 
       <div id="manageBankPanel" class="d-none">
@@ -503,5 +519,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260918contestsplit"></script>
+<script src="js/aptitude-page.js?v=20260918contestnest"></script>
 </body></html>
