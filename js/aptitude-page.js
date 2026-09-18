@@ -424,7 +424,7 @@
       'u-s3': { testsAttempted: 3, averageScore: 91, bestScore: 95, accuracy: 88, recentScore: 90 },
     };
 
-    const rows = students.map((s) => {
+    const studentSummaries = students.map((s) => {
       const stats = demoStats[s.id] || { testsAttempted: 0, averageScore: 0, bestScore: 0, accuracy: 0, recentScore: 0 };
       return {
         userId: s.id,
@@ -437,40 +437,79 @@
           ? { 'Quantitative Aptitude': { percentage: stats.averageScore } }
           : {},
       };
-    }).filter((r) => {
-      if (resultType === 'contests') {
-        return (r.testsAttempted || 0) > 0 && (r.userId === 'u-s2' || r.userId === 'u-s1');
-      }
-      return true;
-    }).map((r) => {
-      if (resultType !== 'contests') return r;
-      return {
+    });
+
+    if (resultType === 'contests') {
+      const rows = studentSummaries.filter((r) => (r.testsAttempted || 0) > 0 && (r.userId === 'u-s2' || r.userId === 'u-s1')).map((r) => ({
         ...r,
         testsAttempted: Math.min(Number(r.testsAttempted) || 0, 1),
         averageScore: r.userId === 'u-s2' ? 68 : 74,
         bestScore: r.userId === 'u-s2' ? 72 : 74,
         accuracy: r.userId === 'u-s2' ? 65 : 74,
         recentScore: r.userId === 'u-s2' ? 72 : 74,
+      }));
+      const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
+      const avg = (key) => {
+        if (!withAttempts.length) return 0;
+        const sum = withAttempts.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
+        return Math.round((sum / withAttempts.length) * 10) / 10;
       };
+      const bestScores = withAttempts.map((r) => Number(r.bestScore) || 0);
+      return {
+        rows,
+        summary: {
+          students: rows.length,
+          withAttempts: withAttempts.length,
+          totalAttempts: withAttempts.reduce((acc, r) => acc + (Number(r.testsAttempted) || 0), 0),
+          avgPercentage: avg('averageScore'),
+          avgBestScore: avg('bestScore'),
+          highestBestScore: bestScores.length ? Math.max(...bestScores) : 0,
+        },
+        noClass: false,
+      };
+    }
+
+    const titles = [
+      'Quantitative Aptitude — Basics',
+      'Logical Reasoning mock',
+      'Verbal Ability check',
+    ];
+    const rows = [];
+    studentSummaries.forEach((s) => {
+      const count = Number(s.testsAttempted) || 0;
+      for (let i = 0; i < count; i += 1) {
+        const pct = Math.max(40, Math.min(100, Number(s.averageScore) - (count - i - 1) * 4));
+        const totalMarks = 20;
+        const marksObtained = Math.round((pct / 100) * totalMarks);
+        rows.push({
+          attemptId: `demo-attempt-${s.userId}-${i}`,
+          userId: s.userId,
+          name: s.name,
+          registerNumber: s.registerNumber,
+          classBatch: s.classBatch,
+          attemptNumber: i + 1,
+          attemptLabel: `Attempt ${i + 1}`,
+          testTitle: titles[i % titles.length],
+          marksObtained,
+          totalMarks,
+          score: marksObtained,
+          percentage: pct,
+          completedAt: new Date(Date.now() - (i + 1) * 86400000).toISOString(),
+        });
+      }
     });
 
-    const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
-    const avg = (key) => {
-      if (!withAttempts.length) return 0;
-      const sum = withAttempts.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
-      return Math.round((sum / withAttempts.length) * 10) / 10;
-    };
-    const bestScores = withAttempts.map((r) => Number(r.bestScore) || 0);
+    const percentages = rows.map((r) => Number(r.percentage) || 0);
+    const studentIds = new Set(rows.map((r) => r.userId));
 
     return {
       rows,
       summary: {
-        students: rows.length,
-        withAttempts: withAttempts.length,
-        totalAttempts: withAttempts.reduce((acc, r) => acc + (Number(r.testsAttempted) || 0), 0),
-        avgPercentage: avg('averageScore'),
-        avgBestScore: avg('bestScore'),
-        highestBestScore: bestScores.length ? Math.max(...bestScores) : 0,
+        attemptCount: rows.length,
+        students: studentIds.size,
+        avgPercentage: percentages.length
+          ? Math.round((percentages.reduce((a, b) => a + b, 0) / percentages.length) * 10) / 10
+          : 0,
       },
       noClass: false,
     };
@@ -694,6 +733,7 @@
   function renderContestResults(contests, summary, scope = {}, completedContests = []) {
     document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
+    document.getElementById('dirStats')?.classList.remove('d-none');
 
     const merged = mergeCompletedContestRows(contests, completedContests);
     const publishedCount = summary.publishedCount ?? merged.filter((c) => contestResultStatusLabel(c) === 'Published').length;
@@ -726,48 +766,49 @@
     bindDirContestActions(root);
   }
 
+  function formatAttemptScore(row) {
+    const obtained = Number(row.marksObtained ?? row.score);
+    const total = Number(row.totalMarks ?? row.maximumScore);
+    const pct = Number(row.percentage);
+    if (Number.isFinite(obtained) && Number.isFinite(total) && total > 0) {
+      return Number.isFinite(pct) ? `${obtained}/${total} (${pct}%)` : `${obtained}/${total}`;
+    }
+    return Number.isFinite(pct) ? `${pct}%` : '—';
+  }
+
   function renderDirectoryTable(rows, summary, scope = {}) {
     document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
-
-    document.getElementById('dirStats').innerHTML = [
-      ['Students', summary.students ?? summary.subjects ?? 0],
-      ['With attempts', summary.withAttempts ?? 0],
-      ['Total attempts', summary.totalAttempts ?? 0],
-      ['Avg score', `${summary.avgPercentage ?? 0}%`],
-      ['Avg best', `${summary.avgBestScore ?? 0}%`],
-      ['Highest best', `${summary.highestBestScore ?? 0}%`],
-    ].map(([lbl, val]) =>
-      `<div class="col-6 col-md-2"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
-    ).join('');
+    document.getElementById('dirStats')?.classList.add('d-none');
+    document.getElementById('dirStats').innerHTML = '';
 
     const role = Auth.role();
-    const emptyMsg = progressPanel === 'contests'
-      ? (role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
-        ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
-        : 'No contest results in your authorized scope yet.')
-      : (role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
-        ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
-        : 'No test results in your authorized scope yet.');
+    const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+      ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
+      : 'No test results in your authorized scope yet.';
 
+    const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
-      const uid = String(r.userId || '');
+      const attemptId = String(r.attemptId || r.id || '');
+      const viewBtn = canViewDetail && attemptId
+        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(attemptId)}">View</button>`
+        : `<button type="button" class="btn btn-sm btn-outline-secondary" data-detail="${esc(r.userId || '')}">Profile</button>`;
       return `<tr>
-        <td class="fw-semibold">${esc(r.name)}</td>
-        <td>${esc(studentIdLabel(r))}</td>
+        <td class="fw-semibold">${esc(r.name || '—')}</td>
+        <td>${esc(r.registerNumber || studentIdLabel(r))}</td>
         <td>${esc(r.classBatch || '—')}</td>
-        <td>${esc(r.testsAttempted)}</td>
-        <td>${esc(r.averageScore ?? r.percentage ?? 0)}%</td>
-        <td>${esc(r.bestScore ?? 0)}%</td>
-        <td>${esc(r.accuracy ?? 0)}%</td>
-        <td>${esc(r.recentScore ?? r.recentPerformance ?? 0)}%</td>
-        <td class="small">${esc(categoryShort(r))}</td>
-        <td><button type="button" class="btn btn-sm btn-outline-primary" data-detail="${esc(uid)}">View</button></td>
+        <td>${esc(r.attemptLabel || (r.attemptNumber ? `Attempt ${r.attemptNumber}` : '—'))}</td>
+        <td>${esc(formatAttemptScore(r))}</td>
+        <td>${esc(r.testTitle || r.testName || '—')}</td>
+        <td>${viewBtn}</td>
       </tr>`;
     }).join('')
-      : `<tr><td colspan="10" class="text-muted-2 p-3">${emptyMsg}</td></tr>`;
+      : `<tr><td colspan="7" class="text-muted-2 p-3">${emptyMsg}</td></tr>`;
 
-    document.querySelectorAll('[data-detail]').forEach((btn) => {
+    document.getElementById('dirRows').querySelectorAll('[data-view-attempt]').forEach((btn) => {
+      btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt')));
+    });
+    document.getElementById('dirRows').querySelectorAll('[data-detail]').forEach((btn) => {
       btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
     });
   }
@@ -813,7 +854,7 @@
       return;
     }
     const rows = document.getElementById('dirRows');
-    if (rows) rows.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-3">Loading results…</td></tr>';
+    if (rows) rows.innerHTML = '<tr><td colspan="7" class="text-muted-2 p-3">Loading results…</td></tr>';
   }
 
   function scheduleLoadDirectory(delay = 180) {

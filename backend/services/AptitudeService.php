@@ -845,67 +845,150 @@ final class AptitudeService
             2000
         );
 
-        $byUser = [];
-        foreach ($completed as $attempt) {
-            $uid = (string) ($attempt['userId'] ?? '');
-            if ($uid === '') {
-                continue;
-            }
-            if (!AptitudeAccessService::canViewSubject($viewer, $uid)) {
-                continue;
-            }
-            $byUser[$uid][] = $attempt;
-        }
-
-        $profileCache = $this->batchDirectoryProfiles(array_keys($byUser));
-
-        $rows = [];
-        foreach ($byUser as $uid => $attempts) {
-            $attempts = $this->filterAttemptsByResultType($attempts, $resultType);
-            if ($attempts === []) {
-                continue;
-            }
-            $summary = $this->summarizeSubjectCached(
-                $uid,
-                $attempts,
-                $profileCache[$uid] ?? null,
-                false
-            );
-            if (in_array($role, ['staff', 'placement_officer'], true) && ($summary['userType'] ?? '') !== 'student') {
-                continue;
-            }
-            if ($role !== 'admin' && ($summary['userType'] ?? '') === 'alumni') {
-                continue;
-            }
-            if (!$this->matchesFilters($summary, $attempts, $filters)) {
-                continue;
-            }
-            $rows[] = $summary;
-        }
-
-        usort($rows, static fn ($a, $b) => strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? '')));
-
-        $bestScores = array_map(static fn ($r) => (float) ($r['bestScore'] ?? 0), $rows);
-        $avgScores = array_map(static fn ($r) => (float) ($r['percentage'] ?? 0), $rows);
+        $rows = $this->buildTestAttemptRows($viewer, $filters, $completed, $role);
         $scope = AptitudeAccessService::scopeInfo($viewer);
+        $percentages = array_map(static fn ($r) => (float) ($r['percentage'] ?? 0), $rows);
+        $studentIds = [];
+        foreach ($rows as $row) {
+            $uid = (string) ($row['userId'] ?? '');
+            if ($uid !== '') {
+                $studentIds[$uid] = true;
+            }
+        }
 
         return [
+            'view' => 'attempts',
             'rows' => $rows,
             'scope' => $scope,
             'summary' => [
-                'subjects' => count($rows),
-                'students' => count(array_filter($rows, static fn ($r) => ($r['userType'] ?? '') === 'student')),
-                'avgPercentage' => $avgScores === [] ? 0 : round(array_sum($avgScores) / count($avgScores), 1),
-                'avgBestScore' => $bestScores === [] ? 0 : round(array_sum($bestScores) / count($bestScores), 1),
-                'highestBestScore' => $bestScores === [] ? 0 : max($bestScores),
-                'totalAttempts' => array_sum(array_map(static fn ($r) => (int) ($r['testsAttempted'] ?? 0), $rows)),
-                'withAttempts' => count(array_filter($rows, static fn ($r) => (int) ($r['testsAttempted'] ?? 0) > 0)),
+                'attemptCount' => count($rows),
+                'students' => count($studentIds),
+                'avgPercentage' => $percentages === [] ? 0 : round(array_sum($percentages) / count($percentages), 1),
             ],
             'tests' => array_map(
                 static fn ($t) => ['id' => $t['id'], 'title' => $t['title'], 'category' => $t['category']],
                 $this->listPublished(false)
             ),
         ];
+    }
+
+    /**
+     * Flat attempt rows for Progress → Test results.
+     *
+     * @param array<string, mixed> $viewer
+     * @param array<string, mixed> $filters
+     * @param array<int, array<string, mixed>> $completed
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildTestAttemptRows(array $viewer, array $filters, array $completed, string $role): array
+    {
+        $contestTests = $this->contestTestIdSet();
+        $testIds = [];
+        $userIds = [];
+        foreach ($completed as $attempt) {
+            $testId = (string) ($attempt['testId'] ?? '');
+            if ($testId === '' || isset($contestTests[$testId])) {
+                continue;
+            }
+            $uid = (string) ($attempt['userId'] ?? '');
+            if ($uid === '') {
+                continue;
+            }
+            $testIds[$testId] = true;
+            $userIds[$uid] = true;
+        }
+
+        $testCache = $this->tests->findByIds(array_keys($testIds));
+        $profileCache = $this->batchDirectoryProfiles(array_keys($userIds));
+
+        /** @var array<string, array<int, array<string, mixed>>> $attemptsByUserTest */
+        $attemptsByUserTest = [];
+        foreach ($completed as $attempt) {
+            $testId = (string) ($attempt['testId'] ?? '');
+            $uid = (string) ($attempt['userId'] ?? '');
+            if ($testId === '' || $uid === '' || isset($contestTests[$testId])) {
+                continue;
+            }
+            $key = $uid . '|' . $testId;
+            $attemptsByUserTest[$key][] = $attempt;
+        }
+        foreach ($attemptsByUserTest as &$group) {
+            usort($group, static function (array $a, array $b): int {
+                $ta = strtotime((string) ($a['completedAt'] ?? $a['createdAt'] ?? '')) ?: 0;
+                $tb = strtotime((string) ($b['completedAt'] ?? $b['createdAt'] ?? '')) ?: 0;
+
+                return $ta <=> $tb;
+            });
+        }
+        unset($group);
+
+        $rows = [];
+        foreach ($completed as $attempt) {
+            $testId = (string) ($attempt['testId'] ?? '');
+            $uid = (string) ($attempt['userId'] ?? '');
+            if ($testId === '' || $uid === '' || isset($contestTests[$testId])) {
+                continue;
+            }
+            if (!AptitudeAccessService::canViewSubject($viewer, $uid)) {
+                continue;
+            }
+
+            $profile = $profileCache[$uid] ?? $this->summarizeSubjectCached($uid, [$attempt], null, false);
+            if (in_array($role, ['staff', 'placement_officer'], true) && ($profile['userType'] ?? '') !== 'student') {
+                continue;
+            }
+            if ($role !== 'admin' && ($profile['userType'] ?? '') === 'alumni') {
+                continue;
+            }
+            if (!$this->matchesFilters($profile, [$attempt], $filters)) {
+                continue;
+            }
+
+            $test = $testCache[$testId] ?? $this->tests->findById($testId) ?: [];
+            $attemptId = (string) ($attempt['_id'] ?? '');
+            $key = $uid . '|' . $testId;
+            $attemptNumber = 1;
+            foreach ($attemptsByUserTest[$key] ?? [] as $i => $row) {
+                if ((string) ($row['_id'] ?? '') === $attemptId) {
+                    $attemptNumber = $i + 1;
+                    break;
+                }
+            }
+
+            $marksObtained = (float) ($attempt['marksObtained'] ?? $attempt['score'] ?? 0);
+            $totalMarks = (float) ($attempt['totalMarks'] ?? $test['totalMarks'] ?? 0);
+            $percentage = (float) ($attempt['percentage'] ?? 0);
+
+            $rows[] = [
+                'attemptId' => $attemptId,
+                'userId' => $uid,
+                'name' => (string) ($profile['name'] ?? 'User'),
+                'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
+                'studentCode' => (string) ($profile['studentCode'] ?? $profile['registerNumber'] ?? ''),
+                'classBatch' => (string) ($profile['classBatch'] ?? $attempt['classBatch'] ?? ''),
+                'testId' => $testId,
+                'testTitle' => (string) ($test['title'] ?? 'Test'),
+                'attemptNumber' => $attemptNumber,
+                'attemptLabel' => 'Attempt ' . $attemptNumber,
+                'marksObtained' => $marksObtained,
+                'totalMarks' => $totalMarks,
+                'score' => $marksObtained,
+                'percentage' => $percentage,
+                'completedAt' => $attempt['completedAt'] ?? null,
+            ];
+        }
+
+        usort($rows, static function (array $a, array $b): int {
+            $ta = strtotime((string) ($a['completedAt'] ?? '')) ?: 0;
+            $tb = strtotime((string) ($b['completedAt'] ?? '')) ?: 0;
+            if ($tb !== $ta) {
+                return $tb <=> $ta;
+            }
+
+            return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+
+        return $rows;
     }
 
     /**
