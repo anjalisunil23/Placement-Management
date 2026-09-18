@@ -247,7 +247,7 @@
   let bankDifficultyFilter = '';
   let bankCategoryFilter = '';
   let bankQuestions = [];
-  let bankSummary = { Easy: 0, Medium: 0, Hard: 0, total: 0 };
+  let bankOverallTotal = 0;
   let bankPickerQuestions = [];
   let bankPickerAllQuestions = [];
   let aptAiModal;
@@ -906,16 +906,6 @@
     return qs;
   }
 
-  function progressDirTitle(role, panel = progressPanel) {
-    const contest = panel === 'contests';
-    const map = {
-      placement_officer: contest ? 'Department contest results' : 'Department test results',
-      staff: contest ? 'Class contest results' : 'Class test results',
-      admin: contest ? 'Institution contest results' : 'Institution test results',
-    };
-    return map[role] || (contest ? 'Contest results' : 'Test results');
-  }
-
   function applyProgressPanel(panel) {
     progressPanel = panel === 'contests' ? 'contests' : 'tests';
     document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
@@ -1078,16 +1068,6 @@
     return `<span class="badge bg-${cls}-subtle text-${cls} border border-${cls}-subtle">${esc(normalizeDifficulty(level))}</span>`;
   }
 
-  function demoBankSummary(questions) {
-    const summary = { Easy: 0, Medium: 0, Hard: 0, total: 0 };
-    (questions || []).forEach((q) => {
-      const level = normalizeDifficulty(q.difficulty);
-      summary[level] += 1;
-      summary.total += 1;
-    });
-    return summary;
-  }
-
   async function loadQuestionBank() {
     if (!access.canManage) return;
     const categoryEl = document.getElementById('bankFilterCategory');
@@ -1100,20 +1080,21 @@
       const qs = new URLSearchParams();
       if (bankCategoryFilter) qs.set('category', bankCategoryFilter);
       if (bankDifficultyFilter) qs.set('difficulty', bankDifficultyFilter);
-      const res = await api('/aptitude/question-bank' + (qs.toString() ? `?${qs}` : '')).catch(() => null);
+      const [res, totalRes] = await Promise.all([
+        api('/aptitude/question-bank' + (qs.toString() ? `?${qs}` : '')).catch(() => null),
+        api('/aptitude/question-bank').catch(() => null),
+      ]);
       bankQuestions = res?.data?.questions || [];
-      bankSummary = res?.data?.summary || demoBankSummary(bankQuestions);
+      bankOverallTotal = totalRes?.data?.summary?.total ?? res?.data?.summary?.total ?? 0;
     } else {
       ensureDemoBankSeed();
       const all = loadDemoBankStore();
+      bankOverallTotal = all.length;
       bankQuestions = all.filter((q) => {
         if (bankCategoryFilter && String(q.category || '') !== bankCategoryFilter) return false;
         if (bankDifficultyFilter && normalizeDifficulty(q.difficulty) !== bankDifficultyFilter) return false;
         return true;
       });
-      bankSummary = demoBankSummary(all.filter((q) => (
-        !bankCategoryFilter || String(q.category || '') === bankCategoryFilter
-      )));
     }
     renderQuestionBank();
   }
@@ -1121,14 +1102,7 @@
   function renderQuestionBank() {
     const statsRoot = document.getElementById('bankStats');
     if (statsRoot) {
-      statsRoot.innerHTML = [
-        ['Total in bank', bankSummary.total ?? 0],
-        ['Easy', bankSummary.Easy ?? 0],
-        ['Medium', bankSummary.Medium ?? 0],
-        ['Hard', bankSummary.Hard ?? 0],
-      ].map(([lbl, val]) =>
-        `<div class="col-6 col-md-3"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
-      ).join('');
+      statsRoot.innerHTML = `<div class="col-auto"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">Total in bank</div><div class="val" style="font-size:1.1rem">${esc(bankOverallTotal)}</div></div></div>`;
     }
 
     document.querySelectorAll('#bankDifficultyNav .nav-link').forEach((link) => {
@@ -3653,8 +3627,6 @@
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
     const seq = ++dirLoadSeq;
-    const role = Auth.role();
-    document.getElementById('dirTitle').textContent = progressDirTitle(role, progressPanel);
     if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
       const scope = {
         ...(access.scope || {}),

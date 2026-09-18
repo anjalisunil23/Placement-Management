@@ -119,12 +119,7 @@
 
   <div id="aptDirectory" class="d-none mt-3">
     <div class="card-surface p-3 p-md-4 mb-3">
-      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-        <div>
-          <h6 class="fw-bold mb-1" id="dirTitle">Progress directory</h6>
-          <p class="small text-muted-2 mb-0 d-none" id="dirScopeHint"></p>
-        </div>
-      </div>
+      <p class="small text-muted-2 mb-2 d-none" id="dirScopeHint"></p>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="progressViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-progress-view="tests">Test results</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contests</a></li>
@@ -181,10 +176,6 @@
 
   <div id="aptManage" class="d-none mt-3">
     <div class="card-surface p-3 p-md-4 mb-3">
-      <div class="mb-3">
-        <h6 class="fw-bold mb-0">Manage</h6>
-      </div>
-
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
@@ -222,8 +213,7 @@
       </div>
 
       <div id="manageBankPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Reusable MCQ bucket — store Easy, Medium, and Hard questions for tests and contests.</p>
+        <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
           <div class="d-flex flex-wrap gap-2">
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnBankAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate</button>
             <button type="button" class="btn btn-sm btn-primary" id="btnBankUploadPanel"><i class="bi bi-cloud-upload me-1"></i>Bulk upload to bank</button>
@@ -514,5 +504,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260918nextocc"></script>
+<script src="js/aptitude-page.js?v=20260918headings"></script>
 </body></html>
