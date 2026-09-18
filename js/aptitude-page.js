@@ -234,6 +234,7 @@
   let dirFiltersBound = false;
   let progressPanel = 'tests';
   let myResultsPanel = 'tests';
+  let takeListPanel = 'tests';
   let bankDifficultyFilter = '';
   let bankCategoryFilter = '';
   let bankQuestions = [];
@@ -790,6 +791,16 @@
     document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsPanel);
     });
+  }
+
+  function applyTakeListPanel(panel) {
+    takeListPanel = panel === 'contests' ? 'contests' : 'tests';
+    document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
+    });
+    applyMyResultsPanel(takeListPanel);
+    renderTestList();
+    renderHistory(myProgress);
   }
 
   function historyEntryIsContest(h) {
@@ -2342,75 +2353,50 @@
     return '—';
   }
 
-  function publishedVisibleTests() {
-    return (tests || []).filter((t) => {
-      if ((t.status || 'published') !== 'published') return false;
+  function renderTestList() {
+    const root = document.getElementById('testList');
+    if (!root) return;
+    const wantContests = takeListPanel === 'contests';
+    let visible = tests.filter((t) => {
+      const isContest = isContestTest(t);
+      if (wantContests !== isContest) return false;
       if (access.canManage) return true;
-      return true;
+      return (t.status || 'published') === 'published';
     });
-  }
-
-  function renderProblemRows(items, emptyMessage, opts = {}) {
-    if (!items.length) {
-      return `<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">${emptyMessage}</p>`;
+    if (!visible.length) {
+      const msg = wantContests
+        ? 'No aptitude contests are available yet.'
+        : (Auth.role() === 'student'
+          ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
+          : 'No published aptitude tests yet.');
+      root.innerHTML = `<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">${msg}</p>`;
+      return;
     }
-    return `<div class="apt-prob-list">${items.map((t, i) => {
+    root.innerHTML = `<div class="apt-prob-list">${visible.map((t, i) => {
       const mine = bestHistoryForTest(t.id);
       const solved = !!mine;
       const diff = difficultyListLabel(t.difficulty);
-      const contest = isContestTest(t);
-      const open = !contest || isContestOpenClient(t);
-      const canOpen = access.canTake && (t.status || 'published') === 'published' && open;
+      const published = (t.status || 'published') === 'published';
+      const openNow = !isContestTest(t) || isContestOpenClient(t);
+      const canOpen = access.canTake && published && openNow;
       const tag = canOpen ? 'button' : 'div';
       const extra = canOpen ? ` type="button" data-open-test="${esc(t.id)}"` : '';
-      const schedule = contest ? (contestScheduleLabel(t) || (t.contestType === 'weekly' ? 'Weekly contest' : 'Monthly contest')) : '';
-      const state = contest ? (open ? 'Open today' : 'Scheduled') : '';
-      const sub = [schedule, state].filter(Boolean).join(' · ');
-      return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : (contest && !open ? 'is-locked' : '')}"${extra}>
+      const title = isContestTest(t) && !openNow
+        ? `${t.title} · ${contestScheduleLabel(t)}`
+        : t.title;
+      return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : ''}"${extra}>
         <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
-        <span class="min-w-0">
-          <span class="apt-prob-title d-block">${i + 1}. ${esc(t.title)}</span>
-          ${opts.showSchedule && sub ? `<span class="apt-prob-sub">${esc(sub)}</span>` : ''}
-        </span>
+        <span class="apt-prob-title">${i + 1}. ${esc(title)}</span>
         <span class="apt-prob-pct">${esc(formatListPercentage(t, mine))}</span>
         <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
       </${tag}>`;
     }).join('')}</div>`;
-  }
-
-  function bindOpenTestButtons(root) {
-    root?.querySelectorAll('[data-open-test]').forEach((btn) => {
+    root.querySelectorAll('[data-open-test]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = tests.find((x) => String(x.id) === String(btn.getAttribute('data-open-test')));
         if (t) openExam(t);
       });
     });
-  }
-
-  function renderTestList() {
-    const testRoot = document.getElementById('testList');
-    const contestRoot = document.getElementById('contestList');
-    const visible = publishedVisibleTests();
-    const regular = visible.filter((t) => !isContestTest(t));
-    const contests = visible.filter((t) => isContestTest(t));
-
-    if (testRoot) {
-      testRoot.innerHTML = renderProblemRows(
-        regular,
-        Auth.role() === 'student'
-          ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
-          : 'No published aptitude tests yet.'
-      );
-      bindOpenTestButtons(testRoot);
-    }
-    if (contestRoot) {
-      contestRoot.innerHTML = renderProblemRows(
-        contests,
-        'No contests are available right now.',
-        { showSchedule: true }
-      );
-      bindOpenTestButtons(contestRoot);
-    }
   }
 
   function openExam(test) {
@@ -2900,21 +2886,17 @@
       applyProgressPanel(link.getAttribute('data-progress-view'));
       loadDirectory().catch(() => {});
     });
+    document.getElementById('takeListNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-take-list]');
+      if (!link) return;
+      e.preventDefault();
+      applyTakeListPanel(link.getAttribute('data-take-list'));
+    });
     document.getElementById('myResultsNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-results-view]');
       if (!link) return;
       e.preventDefault();
-      applyMyResultsPanel(link.getAttribute('data-results-view'));
-      if (access.canTake) {
-        const p = Auth.isDemo() ? demoProgress() : { history: [] };
-        if (Auth.hasRealAuth() && !Auth.isDemo()) {
-          api('/aptitude/me').then((res) => {
-            renderHistory(res?.success ? (res.data || p) : p);
-          }).catch(() => renderHistory(p));
-        } else {
-          renderHistory(p);
-        }
-      }
+      applyTakeListPanel(link.getAttribute('data-results-view'));
     });
 
     document.getElementById('btnAddMcq')?.addEventListener('click', () => {

@@ -44,8 +44,6 @@
   .apt-prob-row.is-clickable{cursor:pointer}
   .apt-prob-check{color:#22c55e;font-size:1rem;line-height:1}
   .apt-prob-title{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .apt-prob-sub{display:block;font-size:.75rem;color:#94a3b8;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .apt-prob-row.is-locked{opacity:.7;cursor:default}
   .apt-prob-pct{color:#94a3b8;font-size:.9rem;text-align:right;font-variant-numeric:tabular-nums}
   .apt-prob-diff{font-size:.9rem;font-weight:500;text-align:right}
   .apt-prob-diff.is-easy{color:#14b8a6}
@@ -83,18 +81,15 @@
   <div id="aptTake" class="d-none">
     <div class="row g-3 mb-3" id="myStatsRow"></div>
     <div class="row g-3">
-      <div class="col-lg-7 d-flex flex-column gap-3">
+      <div class="col-lg-7">
         <div class="card-surface p-0 overflow-hidden">
           <div class="px-3 px-md-4 pt-3 pb-2">
-            <h6 class="fw-bold mb-0">Available tests</h6>
+            <ul class="nav nav-pills gap-1 flex-wrap" id="takeListNav">
+              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="tests">Available tests</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Available contests</a></li>
+            </ul>
           </div>
           <div id="testList"></div>
-        </div>
-        <div class="card-surface p-0 overflow-hidden">
-          <div class="px-3 px-md-4 pt-3 pb-2">
-            <h6 class="fw-bold mb-0">Available contests</h6>
-          </div>
-          <div id="contestList"></div>
         </div>
       </div>
       <div class="col-lg-5">
@@ -511,5 +506,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918catfix"></script>
-<script src="js/aptitude-page.js?v=20260918lists"></script>
+<script src="js/aptitude-page.js?v=20260918takesw"></script>
 </body></html>
