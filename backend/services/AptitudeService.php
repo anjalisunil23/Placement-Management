@@ -1340,6 +1340,33 @@ final class AptitudeService
     /**
      * @param array<string, mixed> $student
      */
+    private static function studentProgrammeLabelStatic(array $student): string
+    {
+        $academic = is_array($student['academic'] ?? null) ? $student['academic'] : [];
+        $candidates = [
+            $student['stud_course'] ?? '',
+            $academic['course'] ?? '',
+            $student['programme'] ?? '',
+            $student['course'] ?? '',
+        ];
+        foreach ($candidates as $candidate) {
+            $value = trim((string) $candidate);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        $batch = StaffContext::studentClassBatch($student);
+        if ($batch !== '') {
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode($batch);
+            if ($code !== '') {
+                return $code;
+            }
+        }
+
+        return '';
+    }
+
     private static function studentBranchLabelStatic(array $student): string
     {
         $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
@@ -1349,10 +1376,10 @@ final class AptitudeService
             $student['branchName'] ?? '',
             $student['branch_name'] ?? '',
             $academic['branch'] ?? '',
-            $academic['course'] ?? '',
             $personal['course'] ?? '',
-            $student['course'] ?? '',
             $student['stud_course'] ?? '',
+            $academic['course'] ?? '',
+            $student['course'] ?? '',
             $student['programme'] ?? '',
         ];
         foreach ($candidates as $candidate) {
@@ -2802,6 +2829,7 @@ final class AptitudeService
                     ),
                     'classBatch' => StaffContext::studentClassBatch($student),
                     'course' => self::studentBranchLabelStatic($student),
+                    'programme' => self::studentProgrammeLabelStatic($student),
                     'semester' => trim((string) ($student['academic']['semester'] ?? $student['semester'] ?? '')),
                     'batch' => trim((string) ($student['batch'] ?? $student['academic']['batch'] ?? '')),
                 ];
@@ -2990,13 +3018,15 @@ final class AptitudeService
         $dept = (string) ($profile['departmentId'] ?? '');
         $classBatch = '';
         $course = '';
+        $programme = '';
         $semester = '';
         $batch = '';
         if (($profile['type'] ?? '') === 'student' && !empty($profile['student'])) {
             $st = $profile['student'];
             $register = (string) ($st['registerNumber'] ?? '');
             $classBatch = StaffContext::studentClassBatch($st);
-            $course = trim((string) ($st['academic']['course'] ?? $st['course'] ?? ''));
+            $course = self::studentBranchLabelStatic($st);
+            $programme = self::studentProgrammeLabelStatic($st);
             $semester = trim((string) ($st['academic']['semester'] ?? $st['semester'] ?? ''));
             $batch = trim((string) ($st['batch'] ?? $st['academic']['batch'] ?? ''));
             $name = (string) ($user['name'] ?? $st['name'] ?? $name);
@@ -3042,6 +3072,7 @@ final class AptitudeService
             'departmentName' => $deptName,
             'classBatch' => $classBatch !== '' ? $classBatch : (string) ($first['classBatch'] ?? ''),
             'course' => $course !== '' ? $course : (string) ($first['course'] ?? ''),
+            'programme' => $programme !== '' ? $programme : (string) ($first['programme'] ?? ''),
             'semester' => $semester !== '' ? $semester : (string) ($first['semester'] ?? ''),
             'batch' => $batch !== '' ? $batch : (string) ($first['batch'] ?? ''),
             'testsAttempted' => count($completed),
@@ -3056,6 +3087,60 @@ final class AptitudeService
             'categoryWise' => $categoryWise,
             'history' => $history,
         ];
+    }
+
+    private static function classLabelMatches(string $studentClass, string $want): bool
+    {
+        $studentClass = trim($studentClass);
+        $want = trim($want);
+        if ($studentClass === '' || $want === '') {
+            return false;
+        }
+        if (strcasecmp($studentClass, $want) === 0) {
+            return true;
+        }
+        $compactA = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $studentClass));
+        $compactB = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $want));
+        if ($compactA !== '' && $compactA === $compactB) {
+            return true;
+        }
+
+        return strcasecmp(ClassInchargeRegistry::cohortKey($studentClass), ClassInchargeRegistry::cohortKey($want)) === 0;
+    }
+
+    private static function courseLabelMatches(string $studentCourse, string $want, string $studentClass, string $programme = ''): bool
+    {
+        $want = trim($want);
+        if ($want === '') {
+            return true;
+        }
+        foreach ([$studentCourse, $programme] as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate !== '' && strcasecmp($candidate, $want) === 0) {
+                return true;
+            }
+        }
+        $wantCode = DepartmentProgrammeCatalog::resolveProgrammeCode($want);
+        foreach ([$studentCourse, $programme, $studentClass] as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate === '') {
+                continue;
+            }
+            $rowCode = DepartmentProgrammeCatalog::resolveProgrammeCode($candidate);
+            if ($wantCode !== '' && $rowCode !== '' && strcasecmp($wantCode, $rowCode) === 0) {
+                return true;
+            }
+        }
+        $compactWant = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $wantCode !== '' ? $wantCode : $want));
+        foreach ([$studentCourse, $programme] as $candidate) {
+            $compactCourse = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', trim($candidate)));
+            if ($compactCourse !== '' && $compactWant !== '' && (str_starts_with($compactCourse, $compactWant) || str_starts_with($compactWant, $compactCourse))) {
+                return true;
+            }
+        }
+        $compactClass = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $studentClass));
+
+        return $compactClass !== '' && $compactWant !== '' && str_starts_with($compactClass, $compactWant);
     }
 
     /**
@@ -3077,16 +3162,25 @@ final class AptitudeService
         if ($batch !== '' && strcasecmp((string) ($summary['batch'] ?? ''), $batch) !== 0) {
             return false;
         }
-        if ($classBatch !== '' && strcasecmp((string) ($summary['classBatch'] ?? ''), $classBatch) !== 0) {
-            return false;
-        }
-        if ($course !== '' && strcasecmp((string) ($summary['course'] ?? ''), $course) !== 0) {
-            return false;
+        if ($classBatch !== '') {
+            $rowClass = trim((string) ($summary['classBatch'] ?? ''));
+            if ($rowClass === '' || !self::classLabelMatches($rowClass, $classBatch)) {
+                return false;
+            }
+        } else {
+            if ($departmentId !== '' && !$this->idsEqual((string) ($summary['departmentId'] ?? ''), $departmentId)) {
+                return false;
+            }
+            if ($course !== '' && !self::courseLabelMatches(
+                (string) ($summary['course'] ?? ''),
+                $course,
+                (string) ($summary['classBatch'] ?? ''),
+                (string) ($summary['programme'] ?? '')
+            )) {
+                return false;
+            }
         }
         if ($semester !== '' && strcasecmp((string) ($summary['semester'] ?? ''), $semester) !== 0) {
-            return false;
-        }
-        if ($departmentId !== '' && (string) ($summary['departmentId'] ?? '') !== $departmentId) {
             return false;
         }
         if ($userType !== '' && strcasecmp((string) ($summary['userType'] ?? ''), $userType) !== 0) {

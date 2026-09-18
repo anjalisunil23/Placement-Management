@@ -721,7 +721,7 @@
       </tr>`;
     }).join('');
     if (!(c.participants || []).length) {
-      return '<p class="text-muted-2 mb-0 small">No participants in the current filter scope.</p>';
+      return '';
     }
     return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
       <th>Rank</th><th>Student</th><th>Register No.</th><th>Correct</th><th>Wrong</th><th>Score</th><th>Time</th><th></th>
@@ -731,21 +731,10 @@
   function renderContestResults(contests, summary, scope = {}, completedContests = []) {
     document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
-    document.getElementById('dirStats')?.classList.remove('d-none');
+    document.getElementById('dirStats')?.classList.add('d-none');
+    document.getElementById('dirStats').innerHTML = '';
 
     const merged = mergeCompletedContestRows(contests, completedContests);
-    const publishedCount = summary.publishedCount ?? merged.filter((c) => contestResultStatusLabel(c) === 'Published').length;
-    const pendingCount = summary.pendingCount ?? Math.max(0, merged.length - publishedCount);
-
-    document.getElementById('dirStats').innerHTML = [
-      ['Completed', merged.length],
-      ['Published', publishedCount],
-      ['Not published', pendingCount],
-      ['Participants', summary.totalParticipants ?? 0],
-      ['Avg score', `${summary.avgPercentage ?? 0}%`],
-    ].map(([lbl, val]) =>
-      `<div class="col-6 col-md"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
-    ).join('');
 
     const role = Auth.role();
     const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
