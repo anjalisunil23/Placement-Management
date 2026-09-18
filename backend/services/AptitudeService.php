@@ -1042,14 +1042,32 @@ final class AptitudeService
                     $branchSet[$program] = true;
                 }
             }
-            $batchSource = $branch !== '' ? $branch : '';
-            foreach ($filterSvc->fetchBatchOptions($filterCtx, $batchSource, '', $finalYearOnly) as $batch) {
-                $batch = trim((string) $batch);
-                if ($batch !== '') {
-                    $batchSet[$batch] = true;
+            if ($branch !== '') {
+                foreach ($filterSvc->fetchBatchOptions($filterCtx, $branch, '', $finalYearOnly) as $batch) {
+                    $batch = trim((string) $batch);
+                    if ($batch !== '') {
+                        $batchSet[$batch] = true;
+                    }
+                }
+            } else {
+                foreach ($filterSvc->fetchBatchOptions($filterCtx, '', '', $finalYearOnly) as $batch) {
+                    $batch = trim((string) $batch);
+                    if ($batch !== '') {
+                        $batchSet[$batch] = true;
+                    }
+                }
+                foreach (array_keys($branchSet) as $program) {
+                    foreach ($filterSvc->fetchBatchOptions($filterCtx, $program, '', $finalYearOnly) as $batch) {
+                        $batch = trim((string) $batch);
+                        if ($batch !== '') {
+                            $batchSet[$batch] = true;
+                        }
+                    }
                 }
             }
         }
+
+        $this->mergeLocalStudentFilterOptions($viewer, $role, $filters, $branchSet, $batchSet, $branch);
 
         if ($role === 'staff') {
             $ctx = StaffContext::resolve($viewer);
@@ -1065,10 +1083,6 @@ final class AptitudeService
         $batchList = array_keys($batchSet);
         sort($branchList, SORT_NATURAL | SORT_FLAG_CASE);
         sort($batchList, SORT_NATURAL | SORT_FLAG_CASE);
-
-        if ($branch !== '' && $filterCtx !== null) {
-            $batchList = (new PlacementFilterService())->fetchBatchOptions($filterCtx, $branch, '', $finalYearOnly);
-        }
 
         $types = [
             ['value' => 'student', 'label' => 'Students'],
@@ -1147,6 +1161,84 @@ final class AptitudeService
         $rightNorm = (string) (Security::toObjectId($right) ?: $right);
 
         return strcasecmp($leftNorm, $rightNorm) === 0;
+    }
+
+    /**
+     * @param array<string, true> $branchSet
+     * @param array<string, true> $batchSet
+     * @param array<string, mixed> $filters
+     */
+    private function mergeLocalStudentFilterOptions(
+        array $viewer,
+        string $role,
+        array $filters,
+        array &$branchSet,
+        array &$batchSet,
+        string $branchFilter
+    ): void {
+        foreach ($this->studentsForProgressFilters($viewer, $role, $filters) as $student) {
+            $programme = self::studentProgrammeCodeStatic($student);
+            if ($programme !== '') {
+                $branchSet[$programme] = true;
+            }
+            if ($branchFilter !== '') {
+                $targets = array_values(array_unique(array_filter([
+                    $branchFilter,
+                    DepartmentProgrammeCatalog::resolveProgrammeCode($branchFilter),
+                ], static fn (string $code) => $code !== '')));
+                $matched = false;
+                foreach ($targets as $target) {
+                    if ($programme !== '' && strcasecmp($programme, $target) === 0) {
+                        $matched = true;
+                        break;
+                    }
+                }
+                if (!$matched) {
+                    continue;
+                }
+            }
+            $batch = StaffContext::studentClassBatch($student);
+            if ($batch !== '') {
+                $batchSet[$batch] = true;
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     */
+    private static function studentProgrammeCodeStatic(array $student): string
+    {
+        $programme = self::studentProgrammeLabelStatic($student);
+        if ($programme !== '') {
+            $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+            if ($resolved !== '') {
+                return $resolved;
+            }
+        }
+
+        $batch = StaffContext::studentClassBatch($student);
+        if ($batch === '') {
+            return '';
+        }
+
+        $code = DepartmentProgrammeCatalog::resolveProgrammeCode($batch);
+        if ($code !== '') {
+            return $code;
+        }
+
+        $norm = DepartmentProgrammeCatalog::normalizeCode($batch);
+        if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+            return 'INMCA';
+        }
+        if (str_starts_with($norm, 'MCA')) {
+            return 'MCA';
+        }
+        if (str_contains($norm, 'BCA')) {
+            return 'BCA';
+        }
+
+        return '';
     }
 
     private function ensureAesDepartmentsFresh(): void

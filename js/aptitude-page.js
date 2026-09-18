@@ -819,7 +819,13 @@
       : (Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : []);
     const batches = assigned.length
       ? assigned
-      : (role === 'staff' ? [] : ['MCAINT2022-27-S9', 'MCA2025-27-S3']);
+      : (role === 'staff' ? [] : [
+        'MCAINT2022-27-S9',
+        'MCA2025-27-S3',
+        'BCAH2022-25-S5',
+        'BCAH2023-26-S3',
+        'BCA2024-27-S1',
+      ]);
     const branches = ['INMCA', 'MCA', 'BCA'];
     const types = role === 'admin'
       ? [{ value: 'student', label: 'Students' }, { value: 'alumni', label: 'Alumni' }]
@@ -890,7 +896,7 @@
     fillDirTypeSelect(data.types || []);
 
     const batchEl = document.getElementById('fBatch');
-    if (batchEl) batchEl.disabled = (data.branches || []).length > 0 && !dirFilterBranch;
+    if (batchEl) batchEl.disabled = !(data.batches || []).length;
     document.getElementById('fTypeWrap')?.classList.toggle('d-none', role !== 'admin');
   }
 

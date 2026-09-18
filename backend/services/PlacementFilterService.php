@@ -503,6 +503,11 @@ final class PlacementFilterService
             return 'INMCA';
         }
 
+        $fromBatch = $this->programmeCodeFromBatch($batch);
+        if ($fromBatch !== '') {
+            return $fromBatch;
+        }
+
         return DepartmentProgrammeCatalog::resolveProgrammeCode($course);
     }
 
@@ -627,6 +632,28 @@ final class PlacementFilterService
             }
             if (strcasecmp(
                 DepartmentProgrammeCatalog::normalizeCode($rowCourse),
+                DepartmentProgrammeCatalog::normalizeCode($target)
+            ) === 0) {
+                return true;
+            }
+        }
+
+        $batchLabel = trim((string) ($row['stud_class'] ?? ''));
+        if ($batchLabel === '') {
+            return false;
+        }
+
+        $inferred = $this->programmeCodeFromBatch($batchLabel);
+        if ($inferred === '') {
+            return false;
+        }
+
+        foreach ($targets as $target) {
+            if (strcasecmp($inferred, $target) === 0) {
+                return true;
+            }
+            if (strcasecmp(
+                DepartmentProgrammeCatalog::normalizeCode($inferred),
                 DepartmentProgrammeCatalog::normalizeCode($target)
             ) === 0) {
                 return true;
