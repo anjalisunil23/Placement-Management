@@ -2407,21 +2407,20 @@
     const label = contestType === 'monthly' ? 'monthly' : 'weekly';
 
     if (!listRoot) return;
-    listRoot.innerHTML = active.length
-      ? active.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
-      : `<p class="text-muted-2 mb-0">No active ${label} contests.</p>`;
+    listRoot.innerHTML = renderManageContestActiveTable(active, `No active ${label} contests.`);
     bindManageListActions(listRoot);
   }
 
-  function contestScheduleControls(t) {
+  function contestScheduleControls(t, { inline = false } = {}) {
     const type = String(t?.contestType || 'none');
     const id = esc(t.id);
+    const wrapCls = inline ? 'd-flex flex-wrap align-items-center gap-2' : 'd-flex flex-wrap align-items-center gap-2 mt-2';
     if (type === 'weekly') {
       const current = Number(t.contestWeekday) || 1;
       const opts = CONTEST_WEEKDAYS.map((d) =>
         `<option value="${d.value}" ${d.value === current ? 'selected' : ''}>${esc(d.label)}</option>`
       ).join('');
-      return `<div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+      return `<div class="${wrapCls}">
         <label class="small text-muted-2 mb-0" for="contest-day-${id}">Runs every</label>
         <select class="form-select form-select-sm" id="contest-day-${id}" style="width:auto;min-width:9rem" data-contest-schedule="${id}" data-schedule-field="contestWeekday">${opts}</select>
       </div>`;
@@ -2432,12 +2431,51 @@
         const day = i + 1;
         return `<option value="${day}" ${day === current ? 'selected' : ''}>${day}</option>`;
       }).join('');
-      return `<div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+      return `<div class="${wrapCls}">
         <label class="small text-muted-2 mb-0" for="contest-day-${id}">Day of month</label>
         <select class="form-select form-select-sm" id="contest-day-${id}" style="width:auto;min-width:6rem" data-contest-schedule="${id}" data-schedule-field="contestMonthDay">${opts}</select>
       </div>`;
     }
     return '';
+  }
+
+  function renderManageContestRow(t) {
+    const published = (t.status || 'unpublished') === 'published';
+    const publishLabel = published ? 'Published' : 'Unpublished';
+    const publishCls = published ? 'success' : 'warning';
+    const life = contestStatusClient(t);
+    const lifeCls = life === 'ACTIVE' ? 'success' : (life === 'COMPLETED' ? 'warning' : 'muted');
+    const lifeLabel = life === 'ACTIVE' ? 'Active' : (life === 'COMPLETED' ? 'Completed' : 'Upcoming');
+    const type = String(t.contestType || 'none');
+    const typeLabel = type === 'monthly' ? 'Monthly contest' : 'Weekly contest';
+
+    return `<tr>
+      <td class="fw-semibold">${esc(t.title)}</td>
+      <td class="small text-muted-2">${testMetaLine(t)}</td>
+      <td>
+        <div class="d-flex flex-wrap gap-1">
+          <span class="badge-soft ${publishCls}">${esc(publishLabel)}</span>
+          <span class="badge-soft info">${esc(typeLabel)}</span>
+          <span class="badge-soft ${lifeCls}">${esc(lifeLabel)}</span>
+        </div>
+      </td>
+      <td>${contestScheduleControls(t, { inline: true })}</td>
+      <td class="text-nowrap">
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  function renderManageContestActiveTable(contests, emptyMsg) {
+    if (!contests.length) {
+      return `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+    }
+    return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
+      <th>Title</th><th>Details</th><th>Status</th><th>Schedule</th><th>Actions</th>
+    </tr></thead><tbody>${contests.map((t) => renderManageContestRow(t)).join('')}</tbody></table></div>`;
   }
 
   function renderManageRow(t, { showContestBadge = false } = {}) {
