@@ -787,10 +787,12 @@ class AptitudeTestModel extends BaseModel
             if (!is_array($rule)) {
                 continue;
             }
+            $marks = (float) ($rule['marks'] ?? 1);
             $randomRules[] = [
                 'category' => self::normalizeCategory((string) ($rule['category'] ?? $category)),
                 'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
                 'count' => max(1, (int) ($rule['count'] ?? 1)),
+                'marks' => $marks > 0 ? max(0.5, $marks) : 1.0,
             ];
         }
         $bankQuestionIds = array_values(array_unique(array_filter(
@@ -1001,10 +1003,13 @@ class AptitudeTestModel extends BaseModel
                         return [];
                     }
 
+                    $marks = (float) ($rule['marks'] ?? 1);
+
                     return [
                         'category' => self::normalizeCategory((string) ($rule['category'] ?? 'General Aptitude')),
                         'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
                         'count' => max(1, (int) ($rule['count'] ?? 1)),
+                        'marks' => $marks > 0 ? max(0.5, $marks) : 1.0,
                     ];
                 },
                 (array) ($test['randomRules'] ?? [])

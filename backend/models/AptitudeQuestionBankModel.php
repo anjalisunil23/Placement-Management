@@ -245,6 +245,7 @@ class AptitudeQuestionBankModel extends BaseModel
                     continue;
                 }
                 $norm['bankId'] = $id;
+                $norm = self::applyRuleMarks($norm, $rule);
                 $picked[] = $norm;
             }
         }
@@ -295,7 +296,7 @@ class AptitudeQuestionBankModel extends BaseModel
                     continue;
                 }
                 $usedIds[] = $id;
-                $picked[] = $q;
+                $picked[] = self::applyRuleMarks($q, $rule);
             }
 
             $stillNeed = $count - count($ruleManual);
@@ -305,6 +306,7 @@ class AptitudeQuestionBankModel extends BaseModel
                         'category' => $rule['category'] ?? '',
                         'difficulty' => $rule['difficulty'] ?? 'Medium',
                         'count' => $stillNeed,
+                        'marks' => $rule['marks'] ?? null,
                     ],
                 ], $usedIds);
                 foreach ($extra as $q) {
@@ -360,5 +362,20 @@ class AptitudeQuestionBankModel extends BaseModel
             }
         }
         return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $question
+     * @param array<string, mixed> $rule
+     * @return array<string, mixed>
+     */
+    private static function applyRuleMarks(array $question, array $rule): array
+    {
+        $marks = (float) ($rule['marks'] ?? 0);
+        if ($marks > 0) {
+            $question['marks'] = max(0.5, $marks);
+        }
+
+        return $question;
     }
 }

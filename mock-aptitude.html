@@ -33,8 +33,13 @@
   .mcq-quill-wrap .ql-editor{min-height:5.5rem}
   .mcq-quill-wrap.mcq-quill-sm .ql-editor{min-height:3.75rem}
   .mcq-quill-wrap .ql-editor img,.apt-rich img{max-width:100%;height:auto;border-radius:.375rem;margin:.35rem 0}
-  .apt-q-card{overflow:hidden;max-width:100%}
+  .apt-q-card{max-width:100%}
   .apt-q-card-text{white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.45}
+  .apt-bank-pick-item{align-items:flex-start}
+  .apt-bank-pick-item .apt-q-card-text{font-size:.875rem}
+  #tfBankPickList{max-height:none;overflow:visible}
+  .tf-bank-cat-pill{font-size:.75rem;padding:.2rem .55rem;border-radius:999px;border:1px solid var(--border,#cbd5e1);background:#fff;cursor:pointer;user-select:none}
+  .tf-bank-cat-pill.is-active{background:#1e293b;border-color:#0f172a;color:#fff}
   #bankQuestionsList,#aptAiPreviewList{max-width:100%;overflow-x:hidden}
   .apt-rich p:last-child,.apt-rich ul:last-child,.apt-rich ol:last-child{margin-bottom:0}
   .apt-prob-list{border:1px solid var(--border,#e5e7eb);border-radius:.75rem;overflow:hidden;background:#fff}
@@ -219,7 +224,6 @@
             <button type="button" class="btn btn-sm btn-primary" id="btnBankUploadPanel"><i class="bi bi-cloud-upload me-1"></i>Bulk upload to bank</button>
           </div>
         </div>
-        <div class="row g-2 mb-3" id="bankStats"></div>
         <div class="row g-2 align-items-end mb-3">
           <div class="col-6 col-md-4">
             <label class="form-label small fw-semibold text-muted-2 mb-1" for="bankFilterCategory">Category</label>
@@ -327,7 +331,7 @@
 </div>
 
 <!-- Admin test form -->
-<div class="modal fade" id="testFormModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered"><div class="modal-content">
+<div class="modal fade" id="testFormModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title fw-bold" id="testFormTitle">New aptitude test</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <form id="testForm">
     <div class="modal-body">
@@ -355,7 +359,7 @@
               <div class="small fw-semibold">Random rules from question bank</div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRandomRule"><i class="bi bi-plus-lg me-1"></i>Add category</button>
             </div>
-            <p class="small text-muted-2 mb-2">Add one or more rows — the same category can be used multiple times. Each row picks random questions for that category and difficulty.</p>
+            <p class="small text-muted-2 mb-2">Add one or more rows — the same category can be used multiple times. Each row picks random questions for that category and difficulty, with its own marks per question.</p>
             <div id="tfRandomRules" class="d-flex flex-column gap-2 mb-2"></div>
             <div class="small text-muted-2" id="tfRandomSummary">0 questions from rules</div>
           </div>
@@ -370,9 +374,9 @@
             <div class="small fw-semibold mb-2">Pick questions from bank</div>
             <p class="small text-muted-2 mb-2">Set <strong>Total number of questions</strong> above, then tick exactly that many questions below (or fewer if you also add MCQs directly).</p>
             <div class="row g-2 mb-2">
-              <div class="col-md-6">
-                <label class="form-label small mb-1" for="tfBankPickCategory">Filter by category</label>
-                <select class="form-select form-select-sm" id="tfBankPickCategory"><option value="">All categories</option></select>
+              <div class="col-12">
+                <label class="form-label small mb-1 d-block">Filter by categories <span class="text-muted-2 fw-normal">(select one or more)</span></label>
+                <div id="tfBankPickCategories" class="d-flex flex-wrap gap-1"></div>
               </div>
               <div class="col-md-6">
                 <label class="form-label small mb-1" for="tfBankPickDifficulty">Filter by difficulty</label>
@@ -385,7 +389,7 @@
               </div>
             </div>
             <div class="small text-muted-2 mb-2" id="tfBankPickSummary">0 selected · 0 shown · 0 needed</div>
-            <div id="tfBankPickList" class="d-flex flex-column gap-1" style="max-height:280px;overflow-y:auto"></div>
+            <div id="tfBankPickList" class="d-flex flex-column gap-2"></div>
           </div>
           <div id="tfManualMcqSection">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -401,8 +405,6 @@
           </div>
         </div>
 
-        <div class="col-md-6"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="tfNegative"/><label class="form-check-label" for="tfNegative">Negative marking</label></div></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfNegativeMarks">Negative marks (per wrong)</label><input class="form-control" type="number" id="tfNegativeMarks" min="0" step="0.25" value="0"/></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfStatus">Status</label><select class="form-select" id="tfStatus"><option value="published">Published (visible to students)</option><option value="unpublished">Unpublished (draft)</option></select><div class="form-text">Students only see published tests in Available tests.</div></div>
         <input type="hidden" id="tfContestType" value="none"/>
         <input type="hidden" id="tfContestWeekday" value="1"/>
@@ -504,5 +506,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260918resultfast"></script>
+<script src="js/aptitude-page.js?v=20260918testform"></script>
 </body></html>

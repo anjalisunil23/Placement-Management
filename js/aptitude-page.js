@@ -251,9 +251,9 @@
   let bankDifficultyFilter = '';
   let bankCategoryFilter = '';
   let bankQuestions = [];
-  let bankOverallTotal = 0;
   let bankPickerQuestions = [];
   let bankPickerAllQuestions = [];
+  const bankPickCategories = new Set();
   let aptAiModal;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
@@ -1108,16 +1108,11 @@
       const qs = new URLSearchParams();
       if (bankCategoryFilter) qs.set('category', bankCategoryFilter);
       if (bankDifficultyFilter) qs.set('difficulty', bankDifficultyFilter);
-      const [res, totalRes] = await Promise.all([
-        api('/aptitude/question-bank' + (qs.toString() ? `?${qs}` : '')).catch(() => null),
-        api('/aptitude/question-bank').catch(() => null),
-      ]);
+      const res = await api('/aptitude/question-bank' + (qs.toString() ? `?${qs}` : '')).catch(() => null);
       bankQuestions = res?.data?.questions || [];
-      bankOverallTotal = totalRes?.data?.summary?.total ?? res?.data?.summary?.total ?? 0;
     } else {
       ensureDemoBankSeed();
       const all = loadDemoBankStore();
-      bankOverallTotal = all.length;
       bankQuestions = all.filter((q) => {
         if (bankCategoryFilter && String(q.category || '') !== bankCategoryFilter) return false;
         if (bankDifficultyFilter && normalizeDifficulty(q.difficulty) !== bankDifficultyFilter) return false;
@@ -1128,11 +1123,6 @@
   }
 
   function renderQuestionBank() {
-    const statsRoot = document.getElementById('bankStats');
-    if (statsRoot) {
-      statsRoot.innerHTML = `<div class="col-auto"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">Total in bank</div><div class="val" style="font-size:1.1rem">${esc(bankOverallTotal)}</div></div></div>`;
-    }
-
     document.querySelectorAll('#bankDifficultyNav .nav-link').forEach((link) => {
       link.classList.toggle('active', (link.getAttribute('data-bank-difficulty') || '') === bankDifficultyFilter);
     });
@@ -1607,8 +1597,8 @@
   }
 
   const AI_GEN_ROW_DEFAULTS = [
-    { difficulty: 'Easy', count: 5, marks: 1 },
-    { difficulty: 'Medium', count: 5, marks: 1 },
+    { difficulty: 'Easy', count: 5 },
+    { difficulty: 'Medium', count: 5 },
   ];
 
   function addAiGenRow(row = {}) {
@@ -1618,23 +1608,18 @@
     wrap.className = 'apt-ai-gen-row row g-2 align-items-end';
     const difficulty = row.difficulty || 'Medium';
     const count = row.count ?? 5;
-    const marks = row.marks ?? 1;
     wrap.innerHTML = `
-      <div class="col-md-4">
+      <div class="col-md-5">
         <label class="form-label small fw-semibold mb-1">Difficulty</label>
         <select class="form-select form-select-sm" data-ai-gen="difficulty">
           ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === difficulty ? 'selected' : ''}>${esc(d)}</option>`).join('')}
         </select>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-5">
         <label class="form-label small fw-semibold mb-1">Number of questions</label>
         <input class="form-control form-control-sm" type="number" data-ai-gen="count" min="0" max="50" value="${esc(count)}"/>
       </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold mb-1">Marks per question</label>
-        <input class="form-control form-control-sm" type="number" data-ai-gen="marks" min="0.25" step="0.25" value="${esc(marks)}"/>
-      </div>
-      <div class="col-md-1">
+      <div class="col-md-2">
         <button type="button" class="btn btn-sm btn-outline-danger w-100" data-ai-gen-remove title="Remove row"><i class="bi bi-trash"></i></button>
       </div>`;
     wrap.querySelector('[data-ai-gen-remove]')?.addEventListener('click', () => {
@@ -1658,7 +1643,7 @@
     return [...document.querySelectorAll('.apt-ai-gen-row')].map((el) => ({
       difficulty: el.querySelector('[data-ai-gen="difficulty"]')?.value || 'Medium',
       count: Math.max(0, Math.min(50, Number(el.querySelector('[data-ai-gen="count"]')?.value || 0))),
-      marks: Math.max(0.25, Number(el.querySelector('[data-ai-gen="marks"]')?.value || 1)),
+      marks: 1,
     })).filter((row) => row.count > 0);
   }
 
@@ -2154,11 +2139,11 @@
     ).join('');
     const diff = normalizeDifficulty(rule.difficulty || 'Medium');
     wrap.innerHTML = `
-      <div class="col-md-5">
+      <div class="col-md-4">
         <label class="form-label small mb-1">Category</label>
         <select class="form-select form-select-sm" data-f="category">${catOpts}</select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
         <label class="form-label small mb-1">Difficulty</label>
         <select class="form-select form-select-sm" data-f="difficulty">
           ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`).join('')}
@@ -2167,6 +2152,10 @@
       <div class="col-md-2">
         <label class="form-label small mb-1">No. of questions</label>
         <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 1)}"/>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Marks each</label>
+        <input class="form-control form-control-sm" type="number" min="0.5" step="0.5" data-f="marks" value="${esc(rule.marks ?? 1)}"/>
       </div>
       <div class="col-md-2">
         <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-rule>Remove</button>
@@ -2188,6 +2177,7 @@
       category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
       difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
       count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
+      marks: Math.max(0.5, Number(row.querySelector('[data-f="marks"]')?.value || 1)),
     }));
   }
 
@@ -2200,15 +2190,36 @@
     if (countEl && getQuestionSource() === 'random') countEl.value = String(total || 1);
   }
 
+  function renderBankPickCategoryPills() {
+    const root = document.getElementById('tfBankPickCategories');
+    if (!root) return;
+    const categories = meta.categories || APTITUDE_CATEGORIES;
+    const allActive = bankPickCategories.size === 0;
+    root.innerHTML = [
+      `<button type="button" class="tf-bank-cat-pill ${allActive ? 'is-active' : ''}" data-bank-cat="">All</button>`,
+      ...categories.map((c) =>
+        `<button type="button" class="tf-bank-cat-pill ${bankPickCategories.has(c) ? 'is-active' : ''}" data-bank-cat="${esc(c)}">${esc(c)}</button>`
+      ),
+    ].join('');
+    root.querySelectorAll('[data-bank-cat]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const cat = btn.getAttribute('data-bank-cat') || '';
+        if (!cat) {
+          bankPickCategories.clear();
+        } else if (bankPickCategories.has(cat)) {
+          bankPickCategories.delete(cat);
+        } else {
+          bankPickCategories.add(cat);
+        }
+        renderBankPickCategoryPills();
+        bankPickerQuestions = filterBankPickQuestions(bankPickerAllQuestions);
+        renderBankPicker();
+      });
+    });
+  }
+
   function initBankPickFilters() {
-    const catEl = document.getElementById('tfBankPickCategory');
-    if (catEl) {
-      const categories = meta.categories || APTITUDE_CATEGORIES;
-      const current = catEl.value || '';
-      catEl.innerHTML = `<option value="">All categories</option>${categories.map((c) =>
-        `<option value="${esc(c)}" ${c === current ? 'selected' : ''}>${esc(c)}</option>`
-      ).join('')}`;
-    }
+    renderBankPickCategoryPills();
   }
 
   function getBankPickNeededCount() {
@@ -2218,10 +2229,9 @@
   }
 
   function filterBankPickQuestions(all) {
-    const cat = document.getElementById('tfBankPickCategory')?.value || '';
     const diff = document.getElementById('tfBankPickDifficulty')?.value || '';
     return (all || []).filter((q) => {
-      if (cat && String(q.category || '') !== cat) return false;
+      if (bankPickCategories.size && !bankPickCategories.has(String(q.category || ''))) return false;
       if (diff && normalizeDifficulty(q.difficulty) !== normalizeDifficulty(diff)) return false;
       return true;
     });
@@ -2309,11 +2319,17 @@
       const checked = selectedBankIds.has(id);
       const disabled = atLimit && !checked;
       const prompt = stripHtml(q.prompt) || 'Question';
-      return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0 bg-white apt-q-card ${disabled ? 'opacity-50' : ''}">
+      const opts = Array.isArray(q.options) ? q.options.filter(Boolean) : [];
+      const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+      const optsHtml = opts.length
+        ? `<div class="small mt-2">${opts.map((o, oi) => `<div class="apt-q-card-text text-muted-2">${letters[oi] || oi + 1}. ${esc(stripHtml(o))}</div>`).join('')}</div>`
+        : '';
+      return `<label class="d-flex align-items-start gap-2 border rounded-2 p-3 mb-0 bg-white apt-q-card apt-bank-pick-item ${disabled ? 'opacity-50' : ''}">
         <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-bank-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
-        <span class="small min-w-0 flex-grow-1">
-          <span class="d-block apt-q-card-text">${esc(prompt)}</span>
-          <span class="text-muted-2">${esc(q.category || 'General Aptitude')} · ${esc(normalizeDifficulty(q.difficulty))} · ${Number(q.marks ?? 1)} mark(s)</span>
+        <span class="min-w-0 flex-grow-1">
+          <span class="d-block apt-q-card-text fw-medium">${esc(prompt)}</span>
+          ${optsHtml}
+          <span class="d-block small text-muted-2 mt-2">${esc(q.category || 'General Aptitude')} · ${esc(normalizeDifficulty(q.difficulty))} · ${Number(q.marks ?? 1)} mark(s)</span>
         </span>
       </label>`;
     }).join('');
@@ -2325,6 +2341,12 @@
     updateBankPickSummary();
     trimBankSelectionToLimit();
     renderBankPicker();
+  }
+
+  function applyRuleMarksToQuestion(q, rule) {
+    const marks = Math.max(0.5, Number(rule?.marks) || 0);
+    if (marks > 0) return { ...q, marks };
+    return q;
   }
 
   function demoResolveBankWithPreferred(rules, preferredIds = []) {
@@ -2350,7 +2372,7 @@
       ruleManual.forEach((q) => {
         const id = String(q.id || q.bankId || '');
         used.add(id);
-        picked.push({ ...q, bankId: id });
+        picked.push(applyRuleMarksToQuestion({ ...q, bankId: id }, rule));
       });
 
       const stillNeed = count - ruleManual.length;
@@ -2367,7 +2389,7 @@
         pool.forEach((q) => {
           const id = String(q.id || q.bankId || '');
           used.add(id);
-          picked.push({ ...q, bankId: id });
+          picked.push(applyRuleMarksToQuestion({ ...q, bankId: id }, rule));
         });
       }
     });
@@ -2395,7 +2417,7 @@
       pool.forEach((q) => {
         const id = String(q.id || q.bankId || '');
         used.add(id);
-        picked.push({ ...q, bankId: id });
+        picked.push(applyRuleMarksToQuestion({ ...q, bankId: id }, rule));
       });
     });
     return picked;
@@ -3463,8 +3485,6 @@
     document.getElementById('tfDescription').value = test?.description || '';
     document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 10;
     document.getElementById('tfDuration').value = test?.durationMinutes || 30;
-    document.getElementById('tfNegative').checked = !!test?.negativeMarking;
-    document.getElementById('tfNegativeMarks').value = test?.negativeMarks ?? 0;
     document.getElementById('tfStatus').value = test
       ? (test.status === 'unpublished' ? 'unpublished' : 'published')
       : 'published';
@@ -3480,10 +3500,13 @@
     (test?.bankQuestionIds || []).forEach((id) => selectedBankIds.add(String(id)));
 
     document.getElementById('tfRandomRules').innerHTML = '';
-    const rules = test?.randomRules?.length ? test.randomRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5 }];
+    const rules = test?.randomRules?.length
+      ? test.randomRules
+      : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }];
     if (source === 'random') rules.forEach((r) => addRandomRuleRow(r));
-    else addRandomRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5 });
+    else addRandomRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 });
 
+    bankPickCategories.clear();
     const useBank = (test?.bankQuestionIds || []).length > 0;
     document.getElementById('tfUseBankManual').checked = useBank;
     document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
@@ -3510,8 +3533,8 @@
       description: document.getElementById('tfDescription').value.trim(),
       questionCount: Number(document.getElementById('tfQuestionCount').value || 0),
       durationMinutes: Number(document.getElementById('tfDuration').value || 30),
-      negativeMarking: document.getElementById('tfNegative').checked,
-      negativeMarks: Number(document.getElementById('tfNegativeMarks').value || 0),
+      negativeMarking: false,
+      negativeMarks: 0,
       status: document.getElementById('tfStatus').value,
       questionSource: source,
       instructions: '',
@@ -3810,10 +3833,6 @@
         loadBankPickerQuestions().catch(() => renderBankPicker());
       }
       updateManualQuestionCount();
-    });
-    document.getElementById('tfBankPickCategory')?.addEventListener('change', () => {
-      bankPickerQuestions = filterBankPickQuestions(bankPickerAllQuestions);
-      renderBankPicker();
     });
     document.getElementById('tfBankPickDifficulty')?.addEventListener('change', () => {
       bankPickerQuestions = filterBankPickQuestions(bankPickerAllQuestions);
