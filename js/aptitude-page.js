@@ -572,16 +572,6 @@
     };
   }
 
-  function formatContestScore(p) {
-    const obtained = Number(p.marksObtained ?? p.score);
-    const total = Number(p.totalMarks ?? p.maximumScore);
-    const pct = Number(p.percentage);
-    if (Number.isFinite(obtained) && Number.isFinite(total) && total > 0) {
-      return Number.isFinite(pct) ? `${obtained}/${total} (${pct}%)` : `${obtained}/${total}`;
-    }
-    return Number.isFinite(pct) ? `${pct}%` : '—';
-  }
-
   function formatContestBreakdown(p) {
     const bits = [];
     if (p.correctCount != null) bits.push(`${p.correctCount} correct`);
@@ -657,7 +647,7 @@
     });
   }
 
-  function renderProgressContestCard(c) {
+  function renderProgressContestRow(c) {
     const id = String(c.testId || c.id || '');
     const window = {
       start: c.contestStartAt || c.contestWindow?.start,
@@ -673,61 +663,42 @@
       : (resultStatus === 'PUBLISHED'
         ? `<button type="button" class="btn btn-sm btn-outline-warning" data-unpublish-results="${esc(id)}">Hide results</button>`
         : `<button type="button" class="btn btn-sm btn-success" data-publish-results="${esc(id)}">Publish Result</button>`);
-    const badge = c.contestScheduleLabel
-      ? `<span class="badge-soft info ms-2">${esc(c.contestScheduleLabel)}</span>`
-      : '';
+    const scheduleLines = [
+      esc(contestScheduleLabel(c)),
+      window.start ? `Start: ${esc(formatContestDateTime(window.start))}` : '',
+      window.end ? `End: ${esc(formatContestDateTime(window.end))}` : '',
+    ].filter(Boolean);
     const publishedAt = c.resultPublishedAt
-      ? `<div class="small text-muted-2 mt-1">Published on ${esc(formatContestDateTime(c.resultPublishedAt))}</div>`
+      ? `<div class="small text-muted-2 mt-1">Published ${esc(formatContestDateTime(c.resultPublishedAt))}</div>`
       : '';
 
-    return `<div class="card-surface p-3">
-      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-        <div>
-          <div class="fw-bold">${esc(c.title || 'Contest')}${badge}</div>
-          <div class="small text-muted-2">${esc(contestScheduleLabel(c))}</div>
-          <div class="small text-muted-2 mt-1">
-            ${window.start ? `Start: ${esc(formatContestDateTime(window.start))}` : ''}
-            ${window.end ? `${window.start ? ' · ' : ''}End: ${esc(formatContestDateTime(window.end))}` : ''}
-          </div>
-          <div class="mt-2 d-flex flex-wrap gap-1">
-            <span class="badge-soft muted">Completed</span>
-            <span class="badge-soft ${resultCls}">${esc(resultLabel)}</span>
-            <span class="badge-soft info">${esc(participants)} participant(s)</span>
-          </div>
-          ${publishedAt}
+    return `<tr>
+      <td class="fw-semibold">${esc(c.title || 'Contest')}</td>
+      <td class="small text-muted-2">${scheduleLines.join('<br>')}</td>
+      <td>
+        <div class="d-flex flex-wrap gap-1">
+          <span class="badge-soft muted">Completed</span>
+          <span class="badge-soft ${resultCls}">${esc(resultLabel)}</span>
         </div>
+        ${publishedAt}
+      </td>
+      <td>${esc(participants)}</td>
+      <td class="text-nowrap">
         <div class="d-flex flex-wrap gap-2">
           <button type="button" class="btn btn-sm btn-outline-primary" data-view-contest-results="${esc(id)}">View Results</button>
           ${publishBtn}
         </div>
-      </div>
-      ${renderContestParticipantTable(c)}
-    </div>`;
+      </td>
+    </tr>`;
   }
 
-  function renderContestParticipantTable(c) {
-    const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
-    const rows = (c.participants || []).map((p) => {
-      const viewBtn = canViewDetail && (p.attemptId || p.id)
-        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(p.attemptId || p.id)}">View</button>`
-        : `<button type="button" class="btn btn-sm btn-outline-secondary" data-detail="${esc(p.userId || '')}">Profile</button>`;
-      return `<tr>
-        <td class="text-muted-2">${esc(p.rank ?? '—')}</td>
-        <td class="fw-semibold">${esc(p.name || '—')}</td>
-        <td>${esc(p.registerNumber || studentIdLabel(p))}</td>
-        <td>${esc(p.correctCount ?? '—')}</td>
-        <td>${esc(p.wrongCount ?? '—')}</td>
-        <td>${esc(formatContestScore(p))}</td>
-        <td>${esc(p.timeTakenLabel || '—')}</td>
-        <td>${viewBtn}</td>
-      </tr>`;
-    }).join('');
-    if (!(c.participants || []).length) {
-      return '';
+  function renderProgressContestTable(contests, emptyMsg) {
+    if (!contests.length) {
+      return `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
     }
     return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
-      <th>Rank</th><th>Student</th><th>Register No.</th><th>Correct</th><th>Wrong</th><th>Score</th><th>Time</th><th></th>
-    </tr></thead><tbody>${rows}</tbody></table></div>`;
+      <th>Title</th><th>Schedule</th><th>Status</th><th>Participants</th><th></th>
+    </tr></thead><tbody>${contests.map((c) => renderProgressContestRow(c)).join('')}</tbody></table></div>`;
   }
 
   function contestTypeOf(entry) {
@@ -768,7 +739,7 @@
       return;
     }
 
-    root.innerHTML = merged.map((c) => renderProgressContestCard(c)).join('');
+    root.innerHTML = renderProgressContestTable(merged, emptyMsg);
     bindDirContestActions(root);
   }
 
@@ -2459,9 +2430,10 @@
 
     if (resultsRoot) {
       const resultRows = completed.map((t) => contestResultRowFromTest(t));
-      resultsRoot.innerHTML = resultRows.length
-        ? resultRows.map((c) => renderProgressContestCard(c)).join('')
-        : `<p class="text-muted-2 mb-0">No completed ${label} contests yet.</p>`;
+      resultsRoot.innerHTML = renderProgressContestTable(
+        resultRows,
+        `No completed ${label} contests yet.`
+      );
       bindDirContestActions(resultsRoot);
     }
   }
