@@ -473,6 +473,8 @@ $routes = [
     ['DELETE','/aptitude/tests/{id}',          [AptitudeController::class, 'deleteTest']],
     ['POST', '/aptitude/tests/{id}/publish-results', [AptitudeController::class, 'publishResults']],
     ['POST', '/aptitude/tests/{id}/schedule', [AptitudeController::class, 'updateSchedule']],
+    ['GET',  '/aptitude/contests/completed',    [AptitudeController::class, 'listCompletedContests']],
+    ['GET',  '/aptitude/tests/{id}/contest-results', [AptitudeController::class, 'contestResultsPreview']],
     ['POST', '/aptitude/tests/{id}/questions/bulk', [AptitudeController::class, 'bulkQuestions']],
     ['POST', '/aptitude/tests/{id}/questions/from-bank', [AptitudeController::class, 'fromBank']],
     ['GET',  '/aptitude/question-bank',       [AptitudeController::class, 'listBank']],

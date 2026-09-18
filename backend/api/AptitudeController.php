@@ -128,6 +128,20 @@ final class AptitudeController
         );
     }
 
+    /** GET /api/aptitude/contests/completed */
+    public function listCompletedContests(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->listCompletedContests($user));
+    }
+
+    /** GET /api/aptitude/tests/{id}/contest-results */
+    public function contestResultsPreview(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->contestResultsPreview($user, $id));
+    }
+
     /** POST /api/aptitude/tests/{id}/questions/bulk */
     public function bulkQuestions(string $id): void
     {

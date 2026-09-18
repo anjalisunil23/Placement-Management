@@ -227,11 +227,16 @@
   let testFormModal;
   let bulkModal;
   let studentAptModal;
+  let contestResultsModal;
+  let contestPreviewId = '';
   let exam;
   let mcqCounter = 0;
   let dirFilterBranch = '';
   let dirFilterBatch = '';
   let dirFiltersBound = false;
+  let dirLoadTimer = null;
+  let dirLoadSeq = 0;
+  let deptStorePrimed = false;
   let progressPanel = 'tests';
   let myResultsPanel = 'tests';
   let takeListPanel = 'tests';
@@ -706,6 +711,23 @@
     return { departments, branches, batches, types };
   }
 
+  function showDirectoryLoading() {
+    if (progressPanel === 'contests') {
+      const root = document.getElementById('dirContestSections');
+      if (root) root.innerHTML = '<p class="text-muted-2 mb-0">Loading contest results…</p>';
+      return;
+    }
+    const rows = document.getElementById('dirRows');
+    if (rows) rows.innerHTML = '<tr><td colspan="10" class="text-muted-2 p-3">Loading results…</td></tr>';
+  }
+
+  function scheduleLoadDirectory(delay = 180) {
+    window.clearTimeout(dirLoadTimer);
+    dirLoadTimer = window.setTimeout(() => {
+      loadDirectory().catch(() => {});
+    }, delay);
+  }
+
   async function loadDirFilterOptions(changed = '') {
     const role = Auth.role();
     const labelInput = document.getElementById('fDepartmentLabel');
@@ -729,8 +751,9 @@
 
     let data = null;
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      if (typeof DepartmentStore !== 'undefined') {
+      if (typeof DepartmentStore !== 'undefined' && !deptStorePrimed) {
         await DepartmentStore.fetch().catch(() => {});
+        deptStorePrimed = true;
       }
       data = await fetchProgressFilterOptions({
         department: document.getElementById('fDepartment')?.value || '',
@@ -814,23 +837,27 @@
     if (access.canManage || access.canViewDirectory) return 'full';
     if (!historyEntryIsContest(row)) return 'full';
     const test = resolveHistoryTest(row);
-    if (test && Object.prototype.hasOwnProperty.call(test, 'resultsPublished')) {
-      return test.resultsPublished ? 'score' : 'pending';
+    if (test && (test.resultStatus === 'PUBLISHED' || test.resultsPublished)) {
+      return 'published';
     }
-    return row.resultsPublished ? 'score' : 'pending';
+    if (test && Object.prototype.hasOwnProperty.call(test, 'resultsPublished')) {
+      return test.resultsPublished ? 'published' : 'pending';
+    }
+    return row.resultsPublished ? 'published' : 'pending';
   }
 
   function applyContestResultView(test, result) {
     if (!isContestTest(test) || access.canManage || access.canViewDirectory) {
-      return { ...result, resultVisibility: 'full', resultsPublished: true };
+      return { ...result, resultVisibility: 'full', resultsPublished: true, resultStatus: 'PUBLISHED' };
     }
-    if (test.resultsPublished) {
+    if (test.resultsPublished || test.resultStatus === 'PUBLISHED') {
       return {
         ...result,
-        resultVisibility: 'score',
+        resultVisibility: 'published',
         resultsPublished: true,
+        resultStatus: 'PUBLISHED',
+        resultPublishedAt: test.resultPublishedAt || result.resultPublishedAt || null,
         questionAnalysis: [],
-        rank: null,
         percentile: null,
       };
     }
@@ -861,22 +888,28 @@
       dirFilterBatch = '';
       const batchEl = document.getElementById('fBatch');
       if (batchEl) batchEl.value = '';
+      showDirectoryLoading();
       await loadDirFilterOptions('fBranch');
-      loadDirectory();
+      scheduleLoadDirectory(0);
     });
 
     document.getElementById('fBatch')?.addEventListener('change', (e) => {
       dirFilterBatch = e.target.value || '';
-      loadDirectory();
+      showDirectoryLoading();
+      scheduleLoadDirectory(120);
     });
 
-    document.getElementById('fType')?.addEventListener('change', () => loadDirectory());
+    document.getElementById('fType')?.addEventListener('change', () => {
+      showDirectoryLoading();
+      scheduleLoadDirectory(120);
+    });
 
     document.getElementById('fDepartmentSelect')?.addEventListener('change', async (e) => {
       const hidden = document.getElementById('fDepartment');
       if (hidden) hidden.value = e.target.value || '';
+      showDirectoryLoading();
       await loadDirFilterOptions('fDepartmentSelect');
-      loadDirectory();
+      scheduleLoadDirectory(0);
     });
   }
 
@@ -1054,8 +1087,8 @@
   async function setContestResultsPublished(id, published) {
     if (!id) return;
     const msg = published
-      ? 'Publish contest scores to students? They will see the score only, not question-wise answers.'
-      : 'Hide contest scores from students again?';
+      ? 'Are you sure you want to publish this result? Students will be able to view their results after publication.'
+      : 'Hide contest results from students again?';
     if (!confirm(msg)) return;
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     if (!live) {
@@ -1069,9 +1102,14 @@
         toast('Contest not found.', 'error');
         return;
       }
-      store[idx] = { ...store[idx], resultsPublished: !!published };
+      store[idx] = {
+        ...store[idx],
+        resultsPublished: !!published,
+        resultStatus: published ? 'PUBLISHED' : 'PENDING',
+        resultPublishedAt: published ? new Date().toISOString() : null,
+      };
       saveDemoTestsStore(store);
-      toast(published ? 'Contest scores published (demo).' : 'Contest scores hidden (demo).', 'success');
+      toast(published ? 'Contest results published (demo).' : 'Contest results hidden (demo).', 'success');
       await loadTests();
       renderTestList();
       renderManage();
@@ -1090,11 +1128,208 @@
       toast(res?.message || 'Could not update contest results.', 'error');
       return;
     }
-    toast(res.message || (published ? 'Contest scores published.' : 'Contest scores hidden.'), 'success');
+    toast(res.message || (published ? 'Contest results published.' : 'Contest results hidden.'), 'success');
     await loadTests();
     renderTestList();
     renderManage();
+    if (contestPreviewId && String(contestPreviewId) === String(id)) {
+      openContestResultsPreview(id).catch(() => {});
+    }
     if (access.canTake) loadMyProgress();
+  }
+
+  function formatContestDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString(undefined, {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  function contestStatusClient(test) {
+    if (test?.contestStatus) return String(test.contestStatus);
+    if (!isContestTest(test)) return 'ACTIVE';
+    const type = String(test?.contestType || 'none');
+    const now = new Date();
+    if (type === 'weekly') {
+      const want = Number(test?.contestWeekday);
+      if (!Number.isFinite(want) || want < 1 || want > 7) return 'UPCOMING';
+      const today = now.getDay() === 0 ? 7 : now.getDay();
+      if (today === want) return 'ACTIVE';
+      const daysSince = (today - want + 7) % 7;
+      return daysSince > 0 && daysSince < 7 ? 'COMPLETED' : 'UPCOMING';
+    }
+    if (type === 'monthly') {
+      const want = Number(test?.contestMonthDay);
+      if (!Number.isFinite(want) || want < 1 || want > 28) return 'UPCOMING';
+      const dom = now.getDate();
+      if (dom === want) return 'ACTIVE';
+      return dom > want ? 'COMPLETED' : 'UPCOMING';
+    }
+    return 'UPCOMING';
+  }
+
+  function contestWindowClient(test) {
+    if (test?.contestWindow?.start || test?.contestWindow?.end) return test.contestWindow;
+    const now = new Date();
+    const type = String(test?.contestType || 'none');
+    if (type === 'weekly') {
+      const want = Number(test?.contestWeekday);
+      if (!Number.isFinite(want)) return { start: null, end: null };
+      const today = now.getDay() === 0 ? 7 : now.getDay();
+      const delta = today - want;
+      const occ = new Date(now);
+      occ.setDate(now.getDate() - delta);
+      const start = new Date(occ.getFullYear(), occ.getMonth(), occ.getDate(), 0, 0, 0);
+      const end = new Date(occ.getFullYear(), occ.getMonth(), occ.getDate(), 23, 59, 59);
+      return { start: start.toISOString(), end: end.toISOString() };
+    }
+    if (type === 'monthly') {
+      const want = Number(test?.contestMonthDay);
+      if (!Number.isFinite(want)) return { start: null, end: null };
+      const start = new Date(now.getFullYear(), now.getMonth(), want, 0, 0, 0);
+      const end = new Date(now.getFullYear(), now.getMonth(), want, 23, 59, 59);
+      return { start: start.toISOString(), end: end.toISOString() };
+    }
+    return { start: null, end: null };
+  }
+
+  function demoContestPreview(id) {
+    const test = tests.find((t) => String(t.id) === String(id)) || fullDemoTest(id);
+    if (!test) return null;
+    const hist = (myProgress.history || []).filter((h) => String(h.testId || '') === String(id));
+    const participants = hist.map((h, i) => ({
+      rank: i + 1,
+      name: Auth.user()?.name || 'Student',
+      registerNumber: Auth.user()?.registerNumber || Auth.user()?.studentCode || '—',
+      studentCode: Auth.user()?.studentCode || '—',
+      correctCount: h.correctCount ?? 0,
+      wrongCount: h.wrongCount ?? 0,
+      marksObtained: h.marksObtained ?? h.score ?? 0,
+      totalMarks: h.totalMarks ?? test.totalMarks ?? 0,
+      percentage: h.percentage ?? 0,
+      timeTakenLabel: h.timeTakenLabel || '—',
+      timeTakenSeconds: h.timeTakenSeconds ?? 0,
+    }));
+    const window = contestWindowClient(test);
+    return {
+      contest: {
+        ...test,
+        participantCount: participants.length,
+        contestStartAt: window.start,
+        contestEndAt: window.end,
+        resultStatus: test.resultsPublished ? 'PUBLISHED' : 'PENDING',
+        resultPublishedAt: test.resultPublishedAt || null,
+      },
+      participants,
+      summary: {
+        participantCount: participants.length,
+        resultStatus: test.resultsPublished ? 'PUBLISHED' : 'PENDING',
+        resultPublishedAt: test.resultPublishedAt || null,
+      },
+    };
+  }
+
+  function renderContestPreviewTable(participants) {
+    if (!participants.length) {
+      return '<p class="text-muted-2 mb-0">No participants submitted this contest yet.</p>';
+    }
+    const rows = participants.map((p) => `<tr>
+      <td>${esc(p.rank ?? '—')}</td>
+      <td class="fw-semibold">${esc(p.name || '—')}</td>
+      <td>${esc(p.registerNumber || p.studentCode || '—')}</td>
+      <td>${esc(p.correctCount ?? '—')}</td>
+      <td>${esc(p.wrongCount ?? '—')}</td>
+      <td>${esc(p.marksObtained ?? p.score ?? '—')} / ${esc(p.totalMarks ?? '—')}</td>
+      <td>${esc(p.percentage ?? '—')}%</td>
+      <td>${esc(p.timeTakenLabel || '—')}</td>
+    </tr>`).join('');
+    return `<div class="table-wrap"><table class="table-modern table-sm mb-0"><thead><tr>
+      <th>Rank</th><th>Student</th><th>Register No.</th><th>Correct</th><th>Wrong</th><th>Score</th><th>Percentage</th><th>Time Taken</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  async function openContestResultsPreview(id) {
+    if (!id) return;
+    contestPreviewId = id;
+    const titleEl = document.getElementById('contestResultsModalTitle');
+    const metaEl = document.getElementById('contestResultsModalMeta');
+    const bodyEl = document.getElementById('contestResultsModalBody');
+    const footerEl = document.getElementById('contestResultsModalFooter');
+    if (!bodyEl || !footerEl) return;
+    bodyEl.innerHTML = '<p class="text-muted-2 mb-0">Loading results…</p>';
+    footerEl.innerHTML = '';
+    contestResultsModal?.show();
+
+    let data = null;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api(`/aptitude/tests/${encodeURIComponent(id)}/contest-results`).catch(() => null);
+      data = res?.success ? res.data : null;
+    } else {
+      data = demoContestPreview(id);
+    }
+    if (!data?.contest) {
+      bodyEl.innerHTML = '<p class="text-danger mb-0">Could not load contest results.</p>';
+      return;
+    }
+    const c = data.contest;
+    if (titleEl) titleEl.textContent = c.title || 'Contest results';
+    const window = {
+      start: c.contestStartAt || c.contestWindow?.start,
+      end: c.contestEndAt || c.contestWindow?.end,
+    };
+    const resultStatus = c.resultStatus || (c.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    if (metaEl) {
+      metaEl.innerHTML = [
+        window.start ? `Start: ${formatContestDateTime(window.start)}` : '',
+        window.end ? `End: ${formatContestDateTime(window.end)}` : '',
+        `${data.summary?.participantCount ?? c.participantCount ?? 0} participant(s)`,
+        `Result status: ${resultStatus}`,
+        c.resultPublishedAt ? `Published: ${formatContestDateTime(c.resultPublishedAt)}` : '',
+      ].filter(Boolean).join(' · ');
+    }
+    bodyEl.innerHTML = renderContestPreviewTable(data.participants || []);
+    if (resultStatus === 'PUBLISHED') {
+      footerEl.innerHTML = `<span class="badge-soft success me-auto">Published${c.resultPublishedAt ? ` · ${esc(formatContestDateTime(c.resultPublishedAt))}` : ''}</span>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>`;
+    } else {
+      footerEl.innerHTML = `
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success" id="btnConfirmPublishContest"><i class="bi bi-megaphone me-1"></i>Publish Result</button>`;
+      document.getElementById('btnConfirmPublishContest')?.addEventListener('click', () => {
+        setContestResultsPublished(id, true);
+      });
+    }
+  }
+
+  function renderCompletedContestRow(t) {
+    const window = contestWindowClient(t);
+    const status = contestStatusClient(t);
+    const resultStatus = t.resultStatus || (t.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    const participants = Number(t.participantCount ?? t.attemptCount ?? 0);
+    const publishBtn = resultStatus === 'PUBLISHED'
+      ? `<span class="badge-soft success align-self-center">Published${t.resultPublishedAt ? ` · ${esc(formatContestDateTime(t.resultPublishedAt))}` : ''}</span>`
+      : `<button type="button" class="btn btn-sm btn-success" data-publish-results="${esc(t.id)}">Publish Result</button>`;
+    return `<div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
+      <div>
+        <strong>${esc(t.title)}</strong>
+        <div class="small text-muted-2">${esc(contestScheduleLabel(t))}</div>
+        <div class="small text-muted-2 mt-1">
+          ${window.start ? `Start: ${esc(formatContestDateTime(window.start))}` : ''}
+          ${window.end ? ` · End: ${esc(formatContestDateTime(window.end))}` : ''}
+        </div>
+        <div class="mt-1 d-flex flex-wrap gap-1">
+          <span class="badge-soft muted">${esc(status)}</span>
+          <span class="badge-soft ${resultStatus === 'PUBLISHED' ? 'success' : 'warning'}">${esc(resultStatus)}</span>
+          <span class="badge-soft info">${esc(participants)} participant(s)</span>
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-sm btn-outline-primary" data-view-contest-results="${esc(t.id)}">View Results</button>
+        ${publishBtn}
+      </div>
+    </div>`;
   }
 
   async function saveContestSchedule(id, field, value) {
@@ -1919,10 +2154,11 @@
   }
 
   function renderManageRow(t, { showContestBadge = false } = {}) {
-    const resultsBtn = showContestBadge
-      ? (t.resultsPublished
+    const life = contestStatusClient(t);
+    const resultsBtn = showContestBadge && life === 'COMPLETED'
+      ? (t.resultsPublished || t.resultStatus === 'PUBLISHED'
         ? `<button type="button" class="btn btn-sm btn-outline-warning" data-unpublish-results="${esc(t.id)}">Hide results</button>`
-        : `<button type="button" class="btn btn-sm btn-success" data-publish-results="${esc(t.id)}">Publish results</button>`)
+        : `<button type="button" class="btn btn-sm btn-outline-primary" data-view-contest-results="${esc(t.id)}">View Results</button>`)
       : '';
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
@@ -1942,6 +2178,9 @@
 
   function bindManageListActions(root) {
     if (!root) return;
+    root.querySelectorAll('[data-view-contest-results]').forEach((btn) => {
+      btn.addEventListener('click', () => openContestResultsPreview(btn.getAttribute('data-view-contest-results')));
+    });
     root.querySelectorAll('[data-edit]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = tests.find((x) => String(x.id) === String(btn.getAttribute('data-edit')));
@@ -1969,21 +2208,9 @@
   }
 
   function isContestOpenClient(test) {
+    if (test?.contestStatus) return String(test.contestStatus) === 'ACTIVE';
     if (test && typeof test.contestOpen === 'boolean') return test.contestOpen;
-    const type = String(test?.contestType || 'none');
-    if (type === 'none' || !type) return true;
-    const now = new Date();
-    if (type === 'weekly') {
-      const want = Number(test?.contestWeekday);
-      if (!Number.isFinite(want) || want < 1 || want > 7) return false;
-      const iso = now.getDay() === 0 ? 7 : now.getDay();
-      return iso === want;
-    }
-    if (type === 'monthly') {
-      const want = Number(test?.contestMonthDay);
-      return Number.isFinite(want) && want >= 1 && want <= 28 && now.getDate() === want;
-    }
-    return true;
+    return contestStatusClient(test) === 'ACTIVE';
   }
 
   function contestScheduleLabel(test) {
@@ -2028,13 +2255,15 @@
   function contestBadgeHtml(t) {
     const type = String(t?.contestType || 'none');
     if (type === 'none') return '';
-    const open = isContestOpenClient(t);
-    const stateCls = open ? 'success' : 'muted';
-    const state = open ? 'Open today' : 'Scheduled';
-    const results = t.resultsPublished
-      ? '<span class="badge-soft success">Results published</span>'
-      : '<span class="badge-soft muted">Results hidden</span>';
-    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(type === 'monthly' ? 'Monthly contest' : 'Weekly contest')}</span><span class="badge-soft ${stateCls}">${state}</span>${results}</div>`;
+    const life = contestStatusClient(t);
+    const lifeCls = life === 'ACTIVE' ? 'success' : (life === 'COMPLETED' ? 'warning' : 'muted');
+    const resultStatus = t.resultStatus || (t.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    const resultsCls = resultStatus === 'PUBLISHED' ? 'success' : 'warning';
+    return `<div class="mt-1 d-flex flex-wrap gap-1">
+      <span class="badge-soft info">${esc(type === 'monthly' ? 'Monthly contest' : 'Weekly contest')}</span>
+      <span class="badge-soft ${lifeCls}">${esc(life)}</span>
+      <span class="badge-soft ${resultsCls}">${esc(resultStatus)}</span>
+    </div>`;
   }
 
   function testMetaLine(t) {
@@ -2496,8 +2725,8 @@
       ? filtered.slice(0, 8).map((h) => {
           const attemptId = h.attemptId || h.id;
           const mode = historyResultMode(h);
-          const viewBtn = canReview && attemptId && Auth.hasRealAuth() && !Auth.isDemo() && mode !== 'pending'
-            ? `<button type="button" class="btn btn-link btn-sm p-0" data-view-attempt="${esc(attemptId)}">${mode === 'score' ? 'Score' : 'View'}</button>`
+          const viewBtn = canReview && attemptId && Auth.hasRealAuth() && !Auth.isDemo()
+            ? `<button type="button" class="btn btn-link btn-sm p-0" data-view-attempt="${esc(attemptId)}">${mode === 'pending' ? 'Status' : (mode === 'published' ? 'Result' : 'View')}</button>`
             : '';
           return `<div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
             <div class="min-w-0">
@@ -2616,6 +2845,15 @@
 
   function openExam(test) {
     if (access.canTake && isContestTest(test)) {
+      const life = contestStatusClient(test);
+      if (life === 'UPCOMING') {
+        toast('This contest is not open yet.', 'info');
+        return;
+      }
+      if (life === 'COMPLETED') {
+        toast('This contest has ended.', 'info');
+        return;
+      }
       if (!isContestOpenClient(test)) {
         toast('This contest is not open today.', 'info');
         return;
@@ -2986,9 +3224,11 @@
 
     const regular = tests.filter((t) => !isContestTest(t));
     const contests = tests.filter((t) => isContestTest(t));
+    const completed = contests.filter((t) => contestStatusClient(t) === 'COMPLETED');
 
     const testsRoot = document.getElementById('manageTestsList');
     const contestsRoot = document.getElementById('manageContestsList');
+    const completedRoot = document.getElementById('manageCompletedContestsList');
     if (testsRoot) {
       testsRoot.innerHTML = regular.length
         ? regular.map((t) => renderManageRow(t)).join('')
@@ -3000,6 +3240,12 @@
         ? contests.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
         : '<p class="text-muted-2 mb-0">No weekly or monthly contests yet.</p>';
       bindManageListActions(contestsRoot);
+    }
+    if (completedRoot) {
+      completedRoot.innerHTML = completed.length
+        ? completed.map((t) => renderCompletedContestRow(t)).join('')
+        : '<p class="text-muted-2 mb-0">No completed contests yet. Contests appear here after their scheduled day ends.</p>';
+      bindManageListActions(completedRoot);
     }
   }
 
@@ -3030,6 +3276,7 @@
 
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
+    const seq = ++dirLoadSeq;
     const role = Auth.role();
     document.getElementById('dirTitle').textContent = progressDirTitle(role, progressPanel);
     if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
@@ -3050,6 +3297,7 @@
     }
     const qs = buildDirectoryQuery();
     const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
+    if (seq !== dirLoadSeq) return;
     const summary = res?.data?.summary || {};
     const scope = res?.data?.scope || access.scope || {};
     access.scope = scope;
@@ -3085,6 +3333,9 @@
     });
 
     studentAptModal = new bootstrap.Modal(document.getElementById('studentAptModal'));
+    contestResultsModal = document.getElementById('contestResultsModal')
+      ? new bootstrap.Modal(document.getElementById('contestResultsModal'))
+      : null;
     await loadAccess();
     syncManageContestActions();
     const any = access.canTake || access.canManage || access.canViewDirectory;

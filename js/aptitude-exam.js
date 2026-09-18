@@ -345,7 +345,17 @@
       if (result?.resultVisibility) return String(result.resultVisibility);
       const contest = result?.contestType === 'weekly' || result?.contestType === 'monthly';
       if (!contest) return 'full';
-      return result?.resultsPublished ? 'score' : 'pending';
+      if (result?.resultStatus === 'PUBLISHED' || result?.resultsPublished) return 'published';
+      return 'pending';
+    }
+
+    function formatPublishedAt(value) {
+      if (!value) return '—';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return '—';
+      return d.toLocaleString(undefined, {
+        day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
     }
 
     function explanationFromAnalysis(a) {
@@ -366,25 +376,35 @@
       const mode = resultVisibility(result);
       if (mode === 'pending') {
         el('result-summary').innerHTML = `
-          <div class="alert alert-info mb-0">${esc(result.message || 'Your attempt is submitted. The score will appear after the admin publishes contest results.')}</div>`;
+          <div class="alert alert-info mb-0">
+            <div class="fw-semibold mb-1">Result Not Published</div>
+            <div>${esc(result.message || 'The contest has ended. The result will be available after the administrator publishes it.')}</div>
+          </div>`;
         el('result-analysis').innerHTML = '';
         return;
       }
       const score = result.score ?? result.marksObtained ?? 0;
       const maxScore = result.maximumScore ?? result.totalMarks ?? 0;
+      const contestTitle = result.testName || result.testTitle || 'Contest';
+      const publishedLine = mode === 'published' && result.resultPublishedAt
+        ? `<div class="small text-muted-2 mt-2">Result published on: ${esc(formatPublishedAt(result.resultPublishedAt))}</div>`
+        : '';
       el('result-summary').innerHTML = `
+        ${mode === 'published' ? `<h6 class="fw-bold mb-2">Contest Result</h6><p class="mb-3"><span class="text-muted-2">Contest Name:</span> <strong>${esc(contestTitle)}</strong></p>` : ''}
         <div class="row g-2 mb-3">
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Score</div><strong>${esc(score)} / ${esc(maxScore)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Percentage</div><strong>${esc(result.percentage ?? 0)}%</strong></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Accuracy</div><strong>${esc(result.accuracy ?? 0)}%</strong></div></div>
+          ${mode === 'full' ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Accuracy</div><strong>${esc(result.accuracy ?? 0)}%</strong></div></div>` : ''}
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Time taken</div><strong>${esc(result.timeTakenLabel || formatTimer(result.timeTakenSeconds || 0))}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Correct</div><strong class="text-success">${esc(result.correctAnswers ?? result.correctCount ?? 0)}</strong></div></div>
-          <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Incorrect</div><strong class="text-danger">${esc(result.incorrectAnswers ?? result.wrongCount ?? 0)}</strong></div></div>
+          <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Wrong</div><strong class="text-danger">${esc(result.incorrectAnswers ?? result.wrongCount ?? 0)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Unanswered</div><strong>${esc(result.unansweredQuestions ?? result.unansweredCount ?? 0)}</strong></div></div>
-          ${mode === 'full' ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Rank / Percentile</div><strong>${result.rank != null ? `#${esc(result.rank)}` : '—'} ${result.percentile != null ? `(${esc(result.percentile)}%)` : ''}</strong></div></div>` : ''}
-        </div>`;
-      if (mode === 'score') {
-        el('result-analysis').innerHTML = '<p class="text-muted-2 mb-0">Question-level review is hidden for contest attempts. Only your score is shown.</p>';
+          ${(mode === 'full' || mode === 'published') && result.rank != null ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Rank</div><strong>#${esc(result.rank)}</strong></div></div>` : ''}
+          ${mode === 'full' && result.percentile != null ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Percentile</div><strong>${esc(result.percentile)}%</strong></div></div>` : ''}
+        </div>
+        ${publishedLine}`;
+      if (mode === 'published' || mode === 'score') {
+        el('result-analysis').innerHTML = '<p class="text-muted-2 mb-0">Question-level review is hidden for contest attempts.</p>';
         return;
       }
       const analysis = result.questionAnalysis || [];

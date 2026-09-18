@@ -63,27 +63,138 @@ class AptitudeTestModel extends BaseModel
      */
     public static function isContestOpen(array $test, ?\DateTimeInterface $now = null): bool
     {
-        $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
-        if ($type === 'none') {
-            return true;
+        return self::contestStatus($test, $now) === 'ACTIVE';
+    }
+
+    /**
+     * Lifecycle for scheduled contests: UPCOMING → ACTIVE → COMPLETED (per occurrence).
+     *
+     * @param array<string, mixed> $test
+     */
+    public static function contestStatus(array $test, ?\DateTimeInterface $now = null): string
+    {
+        if (!self::isContest($test)) {
+            return 'ACTIVE';
         }
         $now = $now instanceof \DateTimeInterface
             ? \DateTimeImmutable::createFromInterface($now)
             : new \DateTimeImmutable('now');
+        $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
         if ($type === 'weekly') {
             $want = (int) ($test['contestWeekday'] ?? 0);
             if ($want < 1 || $want > 7) {
-                return false;
+                return 'UPCOMING';
             }
+            $today = (int) $now->format('N');
+            if ($today === $want) {
+                $end = $now->setTime(23, 59, 59);
 
-            return (int) $now->format('N') === $want;
+                return $now <= $end ? 'ACTIVE' : 'COMPLETED';
+            }
+            $daysSince = ($today - $want + 7) % 7;
+
+            return ($daysSince > 0 && $daysSince < 7) ? 'COMPLETED' : 'UPCOMING';
         }
         $want = (int) ($test['contestMonthDay'] ?? 0);
         if ($want < 1 || $want > 28) {
-            return false;
+            return 'UPCOMING';
+        }
+        $todayDom = (int) $now->format('j');
+        if ($todayDom === $want) {
+            $end = $now->setTime(23, 59, 59);
+
+            return $now <= $end ? 'ACTIVE' : 'COMPLETED';
         }
 
-        return (int) $now->format('j') === $want;
+        return $todayDom > $want ? 'COMPLETED' : 'UPCOMING';
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    public static function resultStatus(array $test): string
+    {
+        if (!self::isContest($test)) {
+            return 'PUBLISHED';
+        }
+
+        return self::resultsPublished($test) ? 'PUBLISHED' : 'PENDING';
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    public static function resultPublishedAt(array $test): ?string
+    {
+        $raw = trim((string) ($test['resultPublishedAt'] ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Start/end timestamps for the current contest occurrence window.
+     *
+     * @param array<string, mixed> $test
+     * @return array{start:?string,end:?string}
+     */
+    public static function contestWindow(array $test, ?\DateTimeInterface $now = null): array
+    {
+        if (!self::isContest($test)) {
+            return ['start' => null, 'end' => null];
+        }
+        $now = $now instanceof \DateTimeInterface
+            ? \DateTimeImmutable::createFromInterface($now)
+            : new \DateTimeImmutable('now');
+        $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        if ($type === 'weekly') {
+            $want = (int) ($test['contestWeekday'] ?? 0);
+            if ($want < 1 || $want > 7) {
+                return ['start' => null, 'end' => null];
+            }
+            $today = (int) $now->format('N');
+            $delta = $today - $want;
+            if ($delta > 0) {
+                $occurrence = $now->modify("-{$delta} days");
+            } elseif ($delta < 0) {
+                $occurrence = $now->modify('+' . (-$delta) . ' days');
+            } else {
+                $occurrence = $now;
+            }
+            $start = $occurrence->setTime(0, 0, 0);
+            $end = $occurrence->setTime(23, 59, 59);
+
+            return [
+                'start' => $start->format(DATE_ATOM),
+                'end' => $end->format(DATE_ATOM),
+            ];
+        }
+        $want = (int) ($test['contestMonthDay'] ?? 0);
+        if ($want < 1 || $want > 28) {
+            return ['start' => null, 'end' => null];
+        }
+        $year = (int) $now->format('Y');
+        $month = (int) $now->format('n');
+        $todayDom = (int) $now->format('j');
+        if ($todayDom > $want) {
+            // Current month's occurrence already passed.
+        } elseif ($todayDom < $want) {
+            // Upcoming this month — still show this month's scheduled window.
+        }
+        try {
+            $occurrence = new \DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $want));
+        } catch (\Throwable) {
+            return ['start' => null, 'end' => null];
+        }
+        $start = $occurrence->setTime(0, 0, 0);
+        $end = $occurrence->setTime(23, 59, 59);
+
+        return [
+            'start' => $start->format(DATE_ATOM),
+            'end' => $end->format(DATE_ATOM),
+        ];
     }
 
     /**
@@ -515,6 +626,10 @@ class AptitudeTestModel extends BaseModel
         $payload['resultsPublished'] = $contestType === 'none'
             ? true
             : filter_var($data['resultsPublished'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        if (array_key_exists('resultPublishedAt', $data)) {
+            $publishedAt = trim((string) ($data['resultPublishedAt'] ?? ''));
+            $payload['resultPublishedAt'] = $publishedAt !== '' ? $publishedAt : null;
+        }
         if ($contestType === 'weekly') {
             $payload['contestWeekday'] = max(1, min(7, (int) ($data['contestWeekday'] ?? 1)));
         } elseif ($contestType === 'monthly') {
@@ -677,7 +792,11 @@ class AptitudeTestModel extends BaseModel
             'contestMonthDay' => isset($test['contestMonthDay']) ? (int) $test['contestMonthDay'] : null,
             'contestScheduleLabel' => self::contestScheduleLabel($test),
             'contestOpen' => self::isContestOpen($test),
+            'contestStatus' => self::contestStatus($test),
+            'contestWindow' => self::contestWindow($test),
             'resultsPublished' => self::resultsPublished($test),
+            'resultStatus' => self::resultStatus($test),
+            'resultPublishedAt' => self::resultPublishedAt($test),
             'questionSource' => in_array((string) ($test['questionSource'] ?? 'manual'), ['random'], true)
                 ? 'random'
                 : 'manual',
