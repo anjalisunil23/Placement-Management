@@ -47,6 +47,13 @@
     return `<div class="apt-rich">${sanitizeRichHtml(html)}</div>`;
   }
 
+  function testCategoryLabel(test) {
+    const direct = String(test?.category || '').trim();
+    if (direct) return direct;
+    const fromQuestion = (test?.questions || []).map((q) => String(q?.category || '').trim()).find(Boolean);
+    return fromQuestion || 'General Aptitude';
+  }
+
   function formatTimer(sec) {
     sec = Math.max(0, Math.floor(sec));
     const m = Math.floor(sec / 60);
@@ -126,7 +133,7 @@
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Duration</div><strong>${esc(test.durationMinutes || 30)} min</strong></div></div>
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Total marks</div><strong>${esc(test.totalMarks || 0)}</strong></div></div>
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Negative marking</div><strong>${test.negativeMarking ? `Yes (−${esc(test.negativeMarks || 0)})` : 'No'}</strong></div></div>
-          <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Category</div><strong>${esc(test.category || '—')}</strong></div></div>
+          <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Category</div><strong>${esc(testCategoryLabel(test))}</strong></div></div>
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Difficulty</div><strong>${esc(test.difficulty || '—')}</strong></div></div>
         </div>
         <h6 class="fw-bold">Instructions</h6>

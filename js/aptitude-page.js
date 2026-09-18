@@ -222,6 +222,7 @@
 
   let access = { canTake: false, canManage: false, canViewDirectory: false, scope: null };
   let tests = [];
+  let myProgress = { history: [] };
   let meta = { categories: APTITUDE_CATEGORIES, difficulties: APTITUDE_DIFFICULTIES };
   let testFormModal;
   let bulkModal;
@@ -2090,8 +2091,8 @@
 
     if (view === 'take' && access.canTake) {
       await loadTests();
-      renderTestList();
       await loadMyProgress();
+      renderTestList();
     }
     if (view === 'progress' && access.canViewDirectory) {
       await initDirFilters();
@@ -2316,8 +2317,34 @@
     exam.showResult(res.data);
   }
 
+  function bestHistoryForTest(testId) {
+    const rows = (myProgress.history || []).filter((h) => String(h.testId || '') === String(testId));
+    if (!rows.length) return null;
+    return rows.reduce((best, h) => {
+      const pct = Number(h.percentage);
+      const bestPct = Number(best?.percentage);
+      return Number.isFinite(pct) && (!Number.isFinite(bestPct) || pct > bestPct) ? h : best;
+    }, rows[0]);
+  }
+
+  function difficultyListLabel(value) {
+    const d = String(value || 'Medium').toLowerCase();
+    if (d === 'easy') return { text: 'Easy', cls: 'is-easy' };
+    if (d === 'hard') return { text: 'Hard', cls: 'is-hard' };
+    return { text: 'Med.', cls: 'is-medium' };
+  }
+
+  function formatListPercentage(t, mine) {
+    const minePct = Number(mine?.percentage);
+    if (Number.isFinite(minePct)) return `${minePct}%`;
+    const avg = Number(t.averagePercentage);
+    if (Number.isFinite(avg)) return `${avg}%`;
+    return '—';
+  }
+
   function renderTestList() {
     const root = document.getElementById('testList');
+    if (!root) return;
     let visible = access.canManage
       ? tests
       : tests.filter((t) => {
@@ -2329,26 +2356,23 @@
       const msg = Auth.role() === 'student'
         ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
         : 'No published aptitude tests yet.';
-      root.innerHTML = `<p class="text-muted-2 mb-0">${msg}</p>`;
+      root.innerHTML = `<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">${msg}</p>`;
       return;
     }
-    root.innerHTML = visible.map((t) => {
-      const contestLine = String(t.contestType || 'none') !== 'none'
-        ? `<div class="small mt-1"><span class="badge-soft info">${esc(contestScheduleLabel(t))}</span></div>`
-        : '';
-      return `
-      <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-start gap-2">
-        <div class="flex-grow-1">
-          <div class="fw-semibold">${esc(t.title)}</div>
-          <div class="small text-muted-2">${testMetaLine(t)}</div>
-          ${contestLine}
-          <div class="small mt-1">${esc(t.description || '')}</div>
-        </div>
-        ${access.canTake && (t.status || 'published') === 'published'
-          ? `<button type="button" class="btn btn-sm btn-primary" data-open-test="${esc(t.id)}">Select</button>`
-          : ''}
-      </div>`;
-    }).join('');
+    root.innerHTML = `<div class="apt-prob-list">${visible.map((t, i) => {
+      const mine = bestHistoryForTest(t.id);
+      const solved = !!mine;
+      const diff = difficultyListLabel(t.difficulty);
+      const canOpen = access.canTake && (t.status || 'published') === 'published';
+      const tag = canOpen ? 'button' : 'div';
+      const extra = canOpen ? ` type="button" data-open-test="${esc(t.id)}"` : '';
+      return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : ''}"${extra}>
+        <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
+        <span class="apt-prob-title">${i + 1}. ${esc(t.title)}</span>
+        <span class="apt-prob-pct">${esc(formatListPercentage(t, mine))}</span>
+        <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
+      </${tag}>`;
+    }).join('')}</div>`;
     root.querySelectorAll('[data-open-test]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = tests.find((x) => String(x.id) === String(btn.getAttribute('data-open-test')));
@@ -2632,6 +2656,16 @@
       payload.bankFilterRules = [];
       payload.questions = collectMcqs();
     }
+    if (!payload.category) {
+      const fromQuestions = (payload.questions || []).map((q) => String(q.category || '').trim()).find(Boolean);
+      const fromBank = selectedBankIds.size
+        ? bankPickerAllQuestions.find((q) => selectedBankIds.has(String(q.id || q.bankId || '')))
+        : null;
+      payload.category = fromQuestions
+        || fromBank?.category
+        || (payload.randomRules?.[0]?.category)
+        || 'General Aptitude';
+    }
     if (canManageContests()) Object.assign(payload, collectContestPayload());
     return payload;
   }
@@ -2737,8 +2771,10 @@
       p.history = p.history.map((h) => enrichHistoryEntry(h));
     }
     if (Auth.isDemo()) saveDemoProgress(p);
+    myProgress = p;
     renderMyStats(p);
     renderHistory(p);
+    renderTestList();
   }
 
   async function loadDirectory() {

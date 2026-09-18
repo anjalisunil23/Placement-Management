@@ -601,8 +601,14 @@ class AptitudeTestModel extends BaseModel
      */
     public static function publicView(array $test, bool $includeAnswers = false): array
     {
+        $normalized = self::normalizedQuestions($test);
+        $category = trim((string) ($test['category'] ?? ''));
+        if ($category === '' && $normalized !== []) {
+            $category = (string) ($normalized[0]['category'] ?? '');
+        }
+        $category = self::normalizeCategory($category !== '' ? $category : 'General Aptitude');
         $questions = [];
-        foreach (self::normalizedQuestions($test) as $norm) {
+        foreach ($normalized as $norm) {
             $row = [
                 'id' => $norm['id'],
                 'type' => 'mcq',

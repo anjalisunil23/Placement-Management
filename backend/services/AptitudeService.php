@@ -144,10 +144,40 @@ final class AptitudeService
             }
         ));
 
-        return array_map(
+        return $this->attachListStats(array_map(
             static fn ($t) => AptitudeTestModel::publicView($t, $includeAnswers),
             $rows
-        );
+        ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $tests
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachListStats(array $tests): array
+    {
+        if ($tests === []) {
+            return $tests;
+        }
+        $sums = [];
+        $counts = [];
+        foreach ($this->attempts->completed([], 2000) as $attempt) {
+            $tid = (string) ($attempt['testId'] ?? '');
+            if ($tid === '') {
+                continue;
+            }
+            $sums[$tid] = ($sums[$tid] ?? 0.0) + (float) ($attempt['percentage'] ?? 0);
+            $counts[$tid] = ($counts[$tid] ?? 0) + 1;
+        }
+        foreach ($tests as &$test) {
+            $id = (string) ($test['id'] ?? '');
+            $n = (int) ($counts[$id] ?? 0);
+            $test['attemptCount'] = $n;
+            $test['averagePercentage'] = $n > 0 ? round($sums[$id] / $n, 1) : null;
+        }
+        unset($test);
+
+        return $tests;
     }
 
     /**
@@ -1456,6 +1486,12 @@ final class AptitudeService
         $data['questionCount'] = count($questions);
         $data['bankQuestionIds'] = $bankIds;
         $data['randomRules'] = [];
+        if (trim((string) ($data['category'] ?? '')) === '' && $questions !== []) {
+            $data['category'] = (string) ($questions[0]['category'] ?? 'General Aptitude');
+        }
+        if (trim((string) ($data['difficulty'] ?? '')) === '' && $questions !== []) {
+            $data['difficulty'] = (string) ($questions[0]['difficulty'] ?? 'Medium');
+        }
         return $data;
     }
 
