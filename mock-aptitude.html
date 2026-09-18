@@ -14,15 +14,15 @@
   .apt-option.is-selected .text-muted-2,.apt-option[aria-pressed="true"] .text-muted-2{color:#cbd5e1!important}
   .apt-stat .val{font-size:1.35rem;font-weight:700}
   .apt-pal{
-    width:2.1rem;height:2.1rem;border-radius:.45rem;border:1px solid #1e293b;
-    background:#334155;color:#e2e8f0;font-size:.8rem;font-weight:600;margin:.15rem;
+    width:2.1rem;height:2.1rem;border-radius:.45rem;border:1px solid #cbd5e1;
+    background:#fff;color:#64748b;font-size:.8rem;font-weight:600;margin:.15rem;
   }
   .apt-pal.is-current{outline:2px solid #0f172a;outline-offset:1px}
-  .apt-pal-not-visited{background:#334155;border-color:#1e293b;color:#cbd5e1}
-  .apt-pal-not-answered{background:#7c2d12;border-color:#431407;color:#ffedd5}
-  .apt-pal-answered{background:#0f172a;border-color:#020617;color:#fff}
-  .apt-pal-review{background:#3b0764;border-color:#1e1b4b;color:#f3e8ff}
-  .apt-pal-answered-review{background:#020617;border-color:#000;color:#fff;box-shadow:inset 0 0 0 2px #4c1d95}
+  .apt-pal-not-visited{background:#fff;border-color:#cbd5e1;color:#64748b}
+  .apt-pal-not-answered{background:#dbeafe;border-color:#93c5fd;color:#1e40af}
+  .apt-pal-answered{background:#22c55e;border-color:#16a34a;color:#fff}
+  .apt-pal-review{background:#ef4444;border-color:#dc2626;color:#fff}
+  .apt-pal-answered-review{background:#22c55e;border-color:#dc2626;color:#fff;box-shadow:inset 0 0 0 2px #ef4444}
   .apt-legend span{display:inline-flex;align-items:center;gap:.35rem;margin-right:.85rem;font-size:.75rem;color:var(--muted)}
   .apt-legend i{width:.75rem;height:.75rem;border-radius:.2rem;display:inline-block}
   #examShell .exam-timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.15rem}
@@ -278,11 +278,11 @@
         <div class="card-surface p-3">
           <h6 class="fw-bold mb-2">Question palette</h6>
           <div class="apt-legend mb-2">
-            <span><i style="background:#334155;border:1px solid #1e293b"></i>Not visited</span>
-            <span><i style="background:#7c2d12;border:1px solid #431407"></i>Not answered</span>
-            <span><i style="background:#0f172a;border:1px solid #020617"></i>Answered</span>
-            <span><i style="background:#3b0764;border:1px solid #1e1b4b"></i>Review</span>
-            <span><i style="background:#020617;border:1px solid #4c1d95"></i>Answered + review</span>
+            <span><i style="background:#fff;border:1px solid #cbd5e1"></i>Not visited</span>
+            <span><i style="background:#dbeafe;border:1px solid #93c5fd"></i>Not answered</span>
+            <span><i style="background:#22c55e;border:1px solid #16a34a"></i>Answered</span>
+            <span><i style="background:#ef4444;border:1px solid #dc2626"></i>Review</span>
+            <span><i style="background:#22c55e;border:1px solid #dc2626;box-shadow:inset 0 0 0 1px #ef4444"></i>Answered + review</span>
           </div>
           <div data-exam="palette" class="d-flex flex-wrap"></div>
         </div>
