@@ -318,7 +318,8 @@ Use this exact JSON schema:
     {
       "question": "string",
       "options": ["string", "string", "string", "string"],
-      "correctAnswer": 0,
+      "correctAnswerIndex": 0,
+      "correctOptionLetter": "A",
       "explanation": "string",
       "category": "{$category}",
       "topic": "{$topic}",
@@ -328,7 +329,10 @@ Use this exact JSON schema:
   ]
 }
 
-Rules for correctAnswer: 0 = option A, 1 = B, 2 = C, 3 = D.
+Rules for correctAnswerIndex: MUST be 0-based — 0 = option A, 1 = B, 2 = C, 3 = D. Never use 1–4.
+correctOptionLetter MUST be A, B, C, or D and MUST match correctAnswerIndex.
+The explanation MUST clearly support the chosen option text.
+Double-check every calculation before returning JSON.
 PROMPT;
     }
 
@@ -360,28 +364,69 @@ PROMPT;
         float $defaultMarks,
         float $negativeMarks
     ): ?array {
-        $norm = AptitudeTestModel::normalizeMcq($q, $fallbackCategory);
-        if ($norm === null) {
+        $mapped = $this->mapAiQuestionCore($q, $fallbackCategory, $fallbackTopic, $fallbackDifficulty, $defaultMarks);
+        if ($mapped === null) {
             return null;
         }
 
-        $options = array_values((array) ($norm['options'] ?? []));
-        if (count($options) !== 4) {
+        return array_merge($mapped, [
+            'negative_marks' => $negativeMarks > 0 ? $negativeMarks : 0,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $q
+     * @return array<string, mixed>|null
+     */
+    private function mapPreviewToRow(array $q, string $fallbackCategory): ?array
+    {
+        $mapped = $this->mapUserApprovedQuestion(
+            $q,
+            $fallbackCategory,
+            trim((string) ($q['topic'] ?? '')),
+            (string) ($q['difficulty'] ?? 'Medium'),
+            (float) ($q['marks'] ?? 1)
+        );
+        if ($mapped === null) {
             return null;
         }
 
-        $normOpts = array_map(static fn (string $o): string => strtolower(trim($o)), $options);
-        if (count($normOpts) !== count(array_unique($normOpts))) {
+        return array_merge($mapped, ['source' => 'AI']);
+    }
+
+    /**
+     * Trust PO-reviewed preview payload (including manually chosen correctIndex).
+     *
+     * @param array<string, mixed> $q
+     * @return array<string, mixed>|null
+     */
+    private function mapUserApprovedQuestion(
+        array $q,
+        string $fallbackCategory,
+        string $fallbackTopic,
+        string $fallbackDifficulty,
+        float $defaultMarks
+    ): ?array {
+        $prompt = trim((string) ($q['prompt'] ?? $q['question'] ?? $q['question_text'] ?? ''));
+        if ($prompt === '') {
             return null;
         }
 
-        $correctIndex = (int) ($norm['correctIndex'] ?? -1);
-        if ($correctIndex < 0 || $correctIndex > 3) {
+        $options = $this->normalizeAiOptions($q);
+        if ($options === null) {
             return null;
         }
 
-        $explanation = trim((string) ($norm['explanation'] ?? ''));
+        $explanation = trim((string) ($q['explanation'] ?? $q['solution'] ?? ''));
         if ($explanation === '') {
+            return null;
+        }
+
+        $correctIndex = $this->parseExplicitCorrectIndex($q);
+        if ($correctIndex === null) {
+            $correctIndex = $this->resolveAiCorrectIndex($q, $options, $explanation);
+        }
+        if ($correctIndex === null) {
             return null;
         }
 
@@ -395,64 +440,283 @@ PROMPT;
             return null;
         }
 
-        $marks = max(0.25, (float) ($q['marks'] ?? $defaultMarks));
-
         return [
-            'prompt' => $norm['prompt'],
+            'prompt' => $prompt,
             'options' => $options,
             'correctIndex' => $correctIndex,
             'explanation' => $explanation,
             'category' => AptitudeTestModel::normalizeCategory((string) ($q['category'] ?? $fallbackCategory)),
             'topic' => $topic,
             'difficulty' => $difficulty,
-            'marks' => $marks,
-            'negative_marks' => $negativeMarks > 0 ? $negativeMarks : 0,
+            'marks' => max(0.25, (float) ($q['marks'] ?? $defaultMarks)),
         ];
+    }
+
+    private function parseExplicitCorrectIndex(array $q): ?int
+    {
+        if (array_key_exists('correctIndex', $q) && $q['correctIndex'] !== '' && $q['correctIndex'] !== null) {
+            $idx = (int) $q['correctIndex'];
+            if ($idx >= 0 && $idx <= 3) {
+                return $idx;
+            }
+        }
+
+        return null;
     }
 
     /**
      * @param array<string, mixed> $q
      * @return array<string, mixed>|null
      */
-    private function mapPreviewToRow(array $q, string $fallbackCategory): ?array
-    {
-        $norm = AptitudeTestModel::normalizeMcq($q, $fallbackCategory);
-        if ($norm === null) {
+    private function mapAiQuestionCore(
+        array $q,
+        string $fallbackCategory,
+        string $fallbackTopic,
+        string $fallbackDifficulty,
+        float $defaultMarks
+    ): ?array {
+        $prompt = trim((string) ($q['prompt'] ?? $q['question'] ?? $q['question_text'] ?? ''));
+        if ($prompt === '') {
             return null;
         }
 
-        $options = array_values((array) ($norm['options'] ?? []));
-        if (count($options) !== 4 || in_array('', array_map('trim', $options), true)) {
+        $options = $this->normalizeAiOptions($q);
+        if ($options === null) {
             return null;
         }
 
-        $normOpts = array_map(static fn (string $o): string => strtolower(trim($o)), $options);
-        if (count($normOpts) !== count(array_unique($normOpts))) {
+        $explanation = trim((string) ($q['explanation'] ?? $q['solution'] ?? ''));
+        if ($explanation === '') {
             return null;
         }
 
-        $correctIndex = (int) ($norm['correctIndex'] ?? -1);
-        if ($correctIndex < 0 || $correctIndex > 3) {
+        $correctIndex = $this->resolveAiCorrectIndex($q, $options, $explanation);
+        if ($correctIndex === null) {
             return null;
         }
 
-        $topic = trim((string) ($q['topic'] ?? ''));
-        $explanation = trim((string) ($norm['explanation'] ?? ''));
-        if ($topic === '' || $explanation === '') {
+        $topic = trim((string) ($q['topic'] ?? $fallbackTopic));
+        if ($topic === '') {
+            return null;
+        }
+
+        $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($q['difficulty'] ?? $fallbackDifficulty));
+        if (!in_array($difficulty, AptitudeTestModel::DIFFICULTIES, true)) {
             return null;
         }
 
         return [
-            'prompt' => $norm['prompt'],
+            'prompt' => $prompt,
             'options' => $options,
             'correctIndex' => $correctIndex,
             'explanation' => $explanation,
             'category' => AptitudeTestModel::normalizeCategory((string) ($q['category'] ?? $fallbackCategory)),
             'topic' => $topic,
-            'difficulty' => AptitudeTestModel::normalizeDifficulty((string) ($q['difficulty'] ?? 'Medium')),
-            'marks' => max(0.25, (float) ($q['marks'] ?? $norm['marks'] ?? 1)),
-            'source' => 'AI',
+            'difficulty' => $difficulty,
+            'marks' => max(0.25, (float) ($q['marks'] ?? $defaultMarks)),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $q
+     * @return list<string>|null
+     */
+    private function normalizeAiOptions(array $q): ?array
+    {
+        $raw = $q['options'] ?? null;
+        $options = [];
+
+        if (is_array($raw)) {
+            if ($raw !== [] && array_keys($raw) !== range(0, count($raw) - 1)) {
+                $letters = ['A', 'B', 'C', 'D'];
+                for ($i = 0; $i < 4; $i++) {
+                    $keys = [
+                        $letters[$i],
+                        strtolower($letters[$i]),
+                        'option_' . strtolower($letters[$i]),
+                    ];
+                    foreach ($keys as $key) {
+                        if (array_key_exists($key, $raw)) {
+                            $options[$i] = trim((string) $raw[$key]);
+                            break;
+                        }
+                    }
+                }
+                ksort($options);
+                $options = array_values($options);
+            } else {
+                foreach ($raw as $opt) {
+                    $options[] = trim((string) $opt);
+                }
+            }
+        }
+
+        if (count($options) < 4) {
+            $fallback = [
+                trim((string) ($q['option_a'] ?? $q['optionA'] ?? '')),
+                trim((string) ($q['option_b'] ?? $q['optionB'] ?? '')),
+                trim((string) ($q['option_c'] ?? $q['optionC'] ?? '')),
+                trim((string) ($q['option_d'] ?? $q['optionD'] ?? '')),
+            ];
+            if (count(array_filter($fallback, static fn (string $o): bool => $o !== '')) === 4) {
+                $options = $fallback;
+            }
+        }
+
+        $options = array_values(array_map(static fn (string $o): string => trim($o), array_slice($options, 0, 4)));
+        if (count($options) !== 4 || in_array('', $options, true)) {
+            return null;
+        }
+
+        $normOpts = array_map(static fn (string $o): string => strtolower($o), $options);
+        if (count($normOpts) !== count(array_unique($normOpts))) {
+            return null;
+        }
+
+        return $options;
+    }
+
+    /**
+     * @param list<string> $options
+     */
+    private function resolveAiCorrectIndex(array $q, array $options, string $explanation): ?int
+    {
+        $letterIndex = $this->parseOptionLetterIndex(
+            $q['correctOptionLetter'] ?? $q['correct_option_letter'] ?? $q['correctLetter'] ?? null
+        );
+
+        $numericCandidates = $this->parseNumericCorrectCandidates($q);
+        $explanationIndex = $this->findOptionIndexInExplanation($options, $explanation);
+
+        if ($letterIndex !== null) {
+            if ($numericCandidates !== [] && !in_array($letterIndex, $numericCandidates, true)) {
+                // Letter disagrees with numeric field — trust explanation when available.
+                if ($explanationIndex !== null && $explanationIndex === $letterIndex) {
+                    return $letterIndex;
+                }
+                if ($explanationIndex !== null) {
+                    return $explanationIndex;
+                }
+
+                return $letterIndex;
+            }
+
+            if ($explanationIndex !== null && $explanationIndex !== $letterIndex) {
+                return $explanationIndex;
+            }
+
+            return $letterIndex;
+        }
+
+        if ($numericCandidates !== []) {
+            if (count($numericCandidates) === 1) {
+                $candidate = $numericCandidates[0];
+                if ($explanationIndex !== null && $explanationIndex !== $candidate) {
+                    return $explanationIndex;
+                }
+
+                return $candidate;
+            }
+
+            if ($explanationIndex !== null && in_array($explanationIndex, $numericCandidates, true)) {
+                return $explanationIndex;
+            }
+
+            return null;
+        }
+
+        return $explanationIndex;
+    }
+
+    private function parseOptionLetterIndex(mixed $raw): ?int
+    {
+        if (!is_string($raw) && !is_int($raw)) {
+            return null;
+        }
+
+        $letter = strtoupper(trim((string) $raw));
+        if (strlen($letter) !== 1 || $letter < 'A' || $letter > 'D') {
+            return null;
+        }
+
+        return ord($letter) - ord('A');
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function parseNumericCorrectCandidates(array $q): array
+    {
+        $raw = $q['correctAnswerIndex'] ?? $q['correctIndex'] ?? $q['correctAnswer'] ?? $q['correct_answer'] ?? null;
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        if (is_string($raw) && !ctype_digit($raw)) {
+            $letterIndex = $this->parseOptionLetterIndex($raw);
+            return $letterIndex !== null ? [$letterIndex] : [];
+        }
+
+        $n = (int) $raw;
+        $candidates = [];
+
+        if ($n >= 0 && $n <= 3) {
+            $candidates[] = $n;
+        }
+        if ($n >= 1 && $n <= 4) {
+            $oneBased = $n - 1;
+            if (!in_array($oneBased, $candidates, true)) {
+                $candidates[] = $oneBased;
+            }
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param list<string> $options
+     */
+    private function findOptionIndexInExplanation(array $options, string $explanation): ?int
+    {
+        $explanationNorm = strtolower($explanation);
+        $matches = [];
+
+        foreach ($options as $i => $opt) {
+            $optNorm = strtolower(trim($opt));
+            if ($optNorm === '' || strlen($optNorm) < 2) {
+                continue;
+            }
+            if (!$this->optionAppearsInExplanation($optNorm, $explanationNorm)) {
+                continue;
+            }
+            $matches[] = ['index' => $i, 'len' => strlen($optNorm)];
+        }
+
+        if ($matches === []) {
+            return null;
+        }
+
+        usort($matches, static fn (array $a, array $b): int => $b['len'] <=> $a['len']);
+
+        $best = $matches[0]['index'];
+        $bestLen = $matches[0]['len'];
+        $tied = array_filter($matches, static fn (array $m): bool => $m['len'] === $bestLen);
+        if (count($tied) > 1) {
+            return null;
+        }
+
+        return $best;
+    }
+
+    private function optionAppearsInExplanation(string $optNorm, string $explanationNorm): bool
+    {
+        if (preg_match('/^-?\d+(?:\.\d+)?%?$/', $optNorm) === 1) {
+            $pattern = '/(?<!\d)' . preg_quote($optNorm, '/') . '(?!\d)/u';
+
+            return @preg_match($pattern, $explanationNorm) === 1;
+        }
+
+        return str_contains($explanationNorm, $optNorm);
     }
 
     private function assertCooldown(string $userId): void

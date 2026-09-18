@@ -67,7 +67,7 @@ final class OpenAIService
                 ['role' => 'user', 'content' => $userPrompt],
             ],
             'response_format' => ['type' => 'json_object'],
-            'temperature' => 0.7,
+            'temperature' => 0.35,
         ];
 
         $raw = $this->post('/chat/completions', $payload);

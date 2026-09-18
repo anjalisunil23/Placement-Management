@@ -1115,29 +1115,126 @@
     return { questions, requested: n, received: n, demo: true };
   }
 
+  function resolveAiPreviewCorrectIndex(q) {
+    if (q?.correctIndex != null && q.correctIndex !== '') {
+      const idx = Number(q.correctIndex);
+      if (Number.isInteger(idx) && idx >= 0 && idx <= 3) return idx;
+    }
+    const raw = q?.correctAnswer ?? q?.correct_answer;
+    if (raw != null && raw !== '') {
+      if (typeof raw === 'string' && /^[A-Da-d]$/.test(raw.trim())) {
+        return raw.trim().toUpperCase().charCodeAt(0) - 65;
+      }
+      const n = Number(raw);
+      if (Number.isInteger(n)) {
+        if (n >= 0 && n <= 3) return n;
+        if (n >= 1 && n <= 4) return n - 1;
+      }
+    }
+    return 0;
+  }
+
+  function saveAiPreviewEdit(idx) {
+    const list = document.getElementById('aptAiPreviewList');
+    const card = list?.querySelector(`[data-ai-card="${idx}"]`);
+    const q = aiPreviewQuestions[idx];
+    if (!card || !q) return;
+    q.prompt = card.querySelector('[data-ai-field="prompt"]')?.value || '';
+    q.options = [0, 1, 2, 3].map((oi) => String(card.querySelector(`[data-ai-field="opt${oi}"]`)?.value || '').trim());
+    q.correctIndex = Number(card.querySelector('[data-ai-field="correct"]')?.value || 0);
+    q.marks = Number(card.querySelector('[data-ai-field="marks"]')?.value || 1);
+    q.explanation = card.querySelector('[data-ai-field="explanation"]')?.value || '';
+    delete q._editing;
+    renderAptAiPreview();
+  }
+
+  function bindAptAiPreviewEvents() {
+    const list = document.getElementById('aptAiPreviewList');
+    if (!list || list.dataset.aiPreviewBound === '1') return;
+    list.dataset.aiPreviewBound = '1';
+
+    list.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('[data-ai-edit-btn]');
+      if (editBtn) {
+        e.preventDefault();
+        const idx = Number(editBtn.getAttribute('data-ai-edit-btn'));
+        aiPreviewQuestions.forEach((item, i) => {
+          if (i !== idx && item?._editing) delete item._editing;
+        });
+        if (aiPreviewQuestions[idx]) aiPreviewQuestions[idx]._editing = true;
+        renderAptAiPreview();
+        return;
+      }
+
+      const saveBtn = e.target.closest('[data-ai-save-edit]');
+      if (saveBtn) {
+        e.preventDefault();
+        saveAiPreviewEdit(Number(saveBtn.getAttribute('data-ai-save-edit')));
+        return;
+      }
+
+      const cancelBtn = e.target.closest('[data-ai-cancel-edit]');
+      if (cancelBtn) {
+        e.preventDefault();
+        const idx = Number(cancelBtn.getAttribute('data-ai-cancel-edit'));
+        if (aiPreviewQuestions[idx]) delete aiPreviewQuestions[idx]._editing;
+        renderAptAiPreview();
+        return;
+      }
+
+      const deleteBtn = e.target.closest('[data-ai-delete]');
+      if (deleteBtn) {
+        e.preventDefault();
+        aiPreviewQuestions.splice(Number(deleteBtn.getAttribute('data-ai-delete')), 1);
+        renderAptAiPreview();
+      }
+    });
+
+    list.addEventListener('change', (e) => {
+      const pick = e.target.closest('[data-ai-set-correct]');
+      if (pick) {
+        const idx = Number(pick.getAttribute('data-ai-set-correct'));
+        const val = Number(pick.value);
+        if (aiPreviewQuestions[idx] && Number.isInteger(val) && val >= 0 && val <= 3) {
+          aiPreviewQuestions[idx].correctIndex = val;
+          renderAptAiPreview();
+        }
+        return;
+      }
+
+      const sel = e.target.closest('[data-ai-idx]');
+      if (sel) {
+        const idx = Number(sel.getAttribute('data-ai-idx'));
+        if (aiPreviewQuestions[idx]) aiPreviewQuestions[idx].selected = sel.checked;
+      }
+    });
+  }
+
   function renderAptAiPreview() {
     const list = document.getElementById('aptAiPreviewList');
     const countEl = document.getElementById('aptAiPreviewCount');
     if (countEl) countEl.textContent = String(aiPreviewQuestions.length);
     if (!list) return;
+    bindAptAiPreviewEvents();
     const letters = ['A', 'B', 'C', 'D'];
     list.innerHTML = aiPreviewQuestions.map((q, i) => {
       const opts = (q.options || []).slice(0, 4);
-      const correct = Number(q.correctIndex ?? 0);
+      const correct = resolveAiPreviewCorrectIndex(q);
+      q.correctIndex = correct;
       const dup = q.duplicateMessage ? `<div class="small text-warning mt-1">${esc(q.duplicateMessage)}</div>` : '';
       const editing = q._editing;
       if (editing) {
         return `<div class="border rounded-3 p-3" data-ai-card="${i}">
           <div class="fw-semibold mb-2">Edit question ${i + 1}</div>
           <label class="form-label small mb-1">Question</label>
-          <textarea class="form-control form-control-sm mb-2" data-ai-edit="prompt" rows="2">${esc(q.prompt || '')}</textarea>
-          ${[0, 1, 2, 3].map((oi) => `<label class="form-label small mb-1">Option ${letters[oi]}</label><input class="form-control form-control-sm mb-2" data-ai-edit="opt${oi}" value="${esc(opts[oi] || '')}"/>`).join('')}
+          <textarea class="form-control form-control-sm mb-2" data-ai-field="prompt" rows="2">${esc(q.prompt || '')}</textarea>
+          ${[0, 1, 2, 3].map((oi) => `<label class="form-label small mb-1">Option ${letters[oi]}</label><input class="form-control form-control-sm mb-2" data-ai-field="opt${oi}" value="${esc(opts[oi] || '')}"/>`).join('')}
           <div class="row g-2 mb-2">
-            <div class="col-md-4"><label class="form-label small mb-1">Correct</label><select class="form-select form-select-sm" data-ai-edit="correct">${[0, 1, 2, 3].map((oi) => `<option value="${oi}" ${correct === oi ? 'selected' : ''}>${letters[oi]}</option>`).join('')}</select></div>
-            <div class="col-md-4"><label class="form-label small mb-1">Marks</label><input class="form-control form-control-sm" type="number" min="0.25" step="0.25" data-ai-edit="marks" value="${esc(q.marks ?? 1)}"/></div>
+            <div class="col-md-4"><label class="form-label small mb-1">Correct answer</label><select class="form-select form-select-sm" data-ai-field="correct">${[0, 1, 2, 3].map((oi) => `<option value="${oi}" ${correct === oi ? 'selected' : ''}>${letters[oi]} — ${esc(opts[oi] || '')}</option>`).join('')}</select></div>
+            <div class="col-md-4"><label class="form-label small mb-1">Marks</label><input class="form-control form-control-sm" type="number" min="0.25" step="0.25" data-ai-field="marks" value="${esc(q.marks ?? 1)}"/></div>
           </div>
           <label class="form-label small mb-1">Explanation</label>
-          <textarea class="form-control form-control-sm mb-2" data-ai-edit="explanation" rows="2">${esc(q.explanation || '')}</textarea>
+          <textarea class="form-control form-control-sm mb-2" data-ai-field="explanation" rows="2">${esc(q.explanation || '')}</textarea>
           <div class="d-flex gap-2"><button type="button" class="btn btn-sm btn-primary" data-ai-save-edit="${i}">Save</button><button type="button" class="btn btn-sm btn-outline-secondary" data-ai-cancel-edit="${i}">Cancel</button></div>
         </div>`;
       }
@@ -1148,60 +1245,21 @@
             <div class="fw-semibold mb-1">Question ${i + 1}</div>
             <div class="mb-2">${esc(q.prompt || '')}</div>
             <div class="small mb-2">${opts.map((o, oi) => `<div>${letters[oi]}. ${esc(o)}${oi === correct ? ' <span class="text-success fw-semibold">✓</span>' : ''}</div>`).join('')}</div>
-            <div class="small text-muted-2">Correct: ${letters[correct] || 'A'} · ${esc(q.category || '')} · ${esc(q.topic || '')} · ${esc(q.difficulty || '')} · ${esc(q.marks ?? 1)} mark(s)</div>
+            <div class="small mb-2">
+              <span class="fw-semibold">Correct answer:</span>
+              ${[0, 1, 2, 3].map((oi) => `<label class="form-check form-check-inline ms-2"><input class="form-check-input" type="radio" name="ai-correct-${i}" data-ai-set-correct="${i}" value="${oi}" ${correct === oi ? 'checked' : ''}/> ${letters[oi]}</label>`).join('')}
+            </div>
+            <div class="small text-muted-2">${esc(q.category || '')} · ${esc(q.topic || '')} · ${esc(q.difficulty || '')} · ${esc(q.marks ?? 1)} mark(s)</div>
             <div class="small mt-1"><span class="fw-semibold">Explanation:</span> ${esc(q.explanation || '')}</div>
             ${dup}
             <div class="d-flex flex-wrap gap-2 mt-2">
-              <button type="button" class="btn btn-sm btn-outline-primary" data-ai-edit="${i}">Edit</button>
+              <button type="button" class="btn btn-sm btn-outline-primary" data-ai-edit-btn="${i}">Edit</button>
               <button type="button" class="btn btn-sm btn-outline-danger" data-ai-delete="${i}">Delete</button>
             </div>
           </div>
         </div>
       </div>`;
     }).join('');
-
-    list.querySelectorAll('[data-ai-idx]').forEach((el) => {
-      el.addEventListener('change', () => {
-        const idx = Number(el.getAttribute('data-ai-idx'));
-        if (aiPreviewQuestions[idx]) aiPreviewQuestions[idx].selected = el.checked;
-      });
-    });
-    list.querySelectorAll('[data-ai-edit]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.getAttribute('data-ai-edit'));
-        if (aiPreviewQuestions[idx]) aiPreviewQuestions[idx]._editing = true;
-        renderAptAiPreview();
-      });
-    });
-    list.querySelectorAll('[data-ai-delete]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.getAttribute('data-ai-delete'));
-        aiPreviewQuestions.splice(idx, 1);
-        renderAptAiPreview();
-      });
-    });
-    list.querySelectorAll('[data-ai-save-edit]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.getAttribute('data-ai-save-edit'));
-        const card = list.querySelector(`[data-ai-card="${idx}"]`);
-        const q = aiPreviewQuestions[idx];
-        if (!card || !q) return;
-        q.prompt = card.querySelector('[data-ai-edit="prompt"]')?.value || '';
-        q.options = [0, 1, 2, 3].map((oi) => String(card.querySelector(`[data-ai-edit="opt${oi}"]`)?.value || '').trim());
-        q.correctIndex = Number(card.querySelector('[data-ai-edit="correct"]')?.value || 0);
-        q.marks = Number(card.querySelector('[data-ai-edit="marks"]')?.value || 1);
-        q.explanation = card.querySelector('[data-ai-edit="explanation"]')?.value || '';
-        delete q._editing;
-        renderAptAiPreview();
-      });
-    });
-    list.querySelectorAll('[data-ai-cancel-edit]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.getAttribute('data-ai-cancel-edit'));
-        if (aiPreviewQuestions[idx]) delete aiPreviewQuestions[idx]._editing;
-        renderAptAiPreview();
-      });
-    });
   }
 
   async function runAptAiGenerate() {
