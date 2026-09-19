@@ -198,7 +198,7 @@
     }
     if (mode === 'bank') {
       const bank = loadDemoBankStore();
-      normalized.forEach((q, i) => bank.push({ ...q, id: `bank-${bank.length + i + 1}` }));
+      normalized.forEach((q, i) => bank.push({ ...q, id: `bank-${bank.length + i + 1}`, marks: 1 }));
       saveDemoBankStore(bank);
       return { added: normalized.length };
     }
@@ -251,9 +251,6 @@
   let bankDifficultyFilter = '';
   let bankCategoryFilter = '';
   let bankQuestions = [];
-  let bankPickerQuestions = [];
-  let bankPickerAllQuestions = [];
-  const bankPickCategories = new Set();
   let aptAiModal;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
@@ -1141,7 +1138,7 @@
         <div class="d-flex align-items-start justify-content-between gap-2">
           <div class="min-w-0 flex-grow-1 pe-1">
             <div class="fw-medium apt-q-card-text">${esc(prompt)}</div>
-            <div class="small text-muted-2 mt-1">${esc(q.category || 'General Aptitude')} · ${esc(q.difficulty || '')}${q.source ? ` · ${esc(q.source)}` : ''} · ${esc(q.options?.length || 0)} options · ${esc(q.marks ?? 1)} mark(s)</div>
+            <div class="small text-muted-2 mt-1">${esc(q.category || 'General Aptitude')} · ${esc(q.difficulty || '')}${q.source ? ` · ${esc(q.source)}` : ''} · ${esc(q.options?.length || 0)} options</div>
           </div>
           <div class="d-flex align-items-center gap-2 flex-shrink-0">
             ${bankDifficultyBadge(q.difficulty)}
@@ -1875,7 +1872,6 @@
     q.options = [0, 1, 2, 3].map((oi) => String(card.querySelector(`[data-ai-field="opt${oi}"]`)?.value || '').trim());
     q.correctIndex = Number(card.querySelector('[data-ai-field="correct"]')?.value || 0);
     q.lockCorrectIndex = true;
-    q.marks = Number(card.querySelector('[data-ai-field="marks"]')?.value || 1);
     q.explanation = card.querySelector('[data-ai-field="explanation"]')?.value || '';
     delete q._editing;
     renderAptAiPreview();
@@ -1981,9 +1977,9 @@
           <label class="form-label small mb-1">Question</label>
           <textarea class="form-control form-control-sm mb-2" data-ai-field="prompt" rows="2">${esc(q.prompt || '')}</textarea>
           ${[0, 1, 2, 3].map((oi) => `<label class="form-label small mb-1">Option ${letters[oi]}</label><input class="form-control form-control-sm mb-2" data-ai-field="opt${oi}" value="${esc(opts[oi] || '')}"/>`).join('')}
-          <div class="row g-2 mb-2">
-            <div class="col-md-4"><label class="form-label small mb-1">Correct answer</label><select class="form-select form-select-sm" data-ai-field="correct">${[0, 1, 2, 3].map((oi) => `<option value="${oi}" ${correct === oi ? 'selected' : ''}>${letters[oi]} — ${esc(opts[oi] || '')}</option>`).join('')}</select></div>
-            <div class="col-md-4"><label class="form-label small mb-1">Marks</label><input class="form-control form-control-sm" type="number" min="0.25" step="0.25" data-ai-field="marks" value="${esc(q.marks ?? 1)}"/></div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Correct answer</label>
+            <select class="form-select form-select-sm" data-ai-field="correct">${[0, 1, 2, 3].map((oi) => `<option value="${oi}" ${correct === oi ? 'selected' : ''}>${letters[oi]} — ${esc(opts[oi] || '')}</option>`).join('')}</select>
           </div>
           <label class="form-label small mb-1">Explanation</label>
           <textarea class="form-control form-control-sm mb-2" data-ai-field="explanation" rows="2">${esc(q.explanation || '')}</textarea>
@@ -2003,7 +1999,7 @@
               <span class="text-muted-2 ms-2">Change:</span>
               ${[0, 1, 2, 3].map((oi) => `<label class="form-check form-check-inline ms-1"><input class="form-check-input" type="radio" name="ai-correct-${i}" data-ai-set-correct="${i}" value="${oi}" ${correct === oi ? 'checked' : ''}/> ${letters[oi]}</label>`).join('')}
             </div>
-            <div class="small text-muted-2">${esc(q.category || '')} · ${esc(q.topic || '')} · ${esc(q.difficulty || '')} · ${esc(q.marks ?? 1)} mark(s)</div>
+            <div class="small text-muted-2">${esc(q.category || '')} · ${esc(q.topic || '')} · ${esc(q.difficulty || '')}</div>
             <div class="small mt-1"><span class="fw-semibold">Explanation:</span> ${esc(q.explanation || '')}</div>
             ${mismatchWarn}
             ${dup}
@@ -2099,7 +2095,6 @@
             explanation: q.explanation,
             category: q.category || category,
             difficulty: q.difficulty || 'Medium',
-            marks: q.marks || 1,
             topic: q.topic || '',
             source: 'AI',
           });
@@ -2128,11 +2123,11 @@
     }
   }
 
-  function addRandomRuleRow(rule = {}) {
-    const root = document.getElementById('tfRandomRules');
+  function addCategoryRuleRow(rootId, rule = {}, onChange = null) {
+    const root = document.getElementById(rootId);
     if (!root) return;
     const wrap = document.createElement('div');
-    wrap.className = 'tf-random-rule row g-2 align-items-end';
+    wrap.className = 'tf-category-rule row g-2 align-items-end';
     const categories = meta.categories || APTITUDE_CATEGORIES;
     const catOpts = categories.map((c) =>
       `<option value="${esc(c)}" ${c === (rule.category || categories[0]) ? 'selected' : ''}>${esc(c)}</option>`
@@ -2162,23 +2157,39 @@
       </div>`;
     wrap.querySelector('[data-remove-rule]')?.addEventListener('click', () => {
       wrap.remove();
-      updateRandomSummary();
+      if (onChange) onChange();
     });
     wrap.querySelectorAll('[data-f]').forEach((el) => {
-      el.addEventListener('change', updateRandomSummary);
-      el.addEventListener('input', updateRandomSummary);
+      el.addEventListener('change', () => { if (onChange) onChange(); });
+      el.addEventListener('input', () => { if (onChange) onChange(); });
     });
     root.appendChild(wrap);
-    updateRandomSummary();
+    if (onChange) onChange();
   }
 
-  function collectRandomRules() {
-    return [...document.querySelectorAll('#tfRandomRules .tf-random-rule')].map((row) => ({
+  function collectCategoryRules(rootId) {
+    return [...document.querySelectorAll(`#${rootId} .tf-category-rule`)].map((row) => ({
       category: row.querySelector('[data-f="category"]')?.value || 'General Aptitude',
       difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
       count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
       marks: Math.max(0.5, Number(row.querySelector('[data-f="marks"]')?.value || 1)),
     }));
+  }
+
+  function addRandomRuleRow(rule = {}) {
+    addCategoryRuleRow('tfRandomRules', rule, updateRandomSummary);
+  }
+
+  function addManualBankRuleRow(rule = {}) {
+    addCategoryRuleRow('tfManualBankRules', rule, updateManualBankSummary);
+  }
+
+  function collectRandomRules() {
+    return collectCategoryRules('tfRandomRules');
+  }
+
+  function collectManualBankRules() {
+    return collectCategoryRules('tfManualBankRules');
   }
 
   function updateRandomSummary() {
@@ -2190,157 +2201,35 @@
     if (countEl && getQuestionSource() === 'random') countEl.value = String(total || 1);
   }
 
-  function renderBankPickCategoryPills() {
-    const root = document.getElementById('tfBankPickCategories');
-    if (!root) return;
-    const categories = meta.categories || APTITUDE_CATEGORIES;
-    const allActive = bankPickCategories.size === 0;
-    root.innerHTML = [
-      `<button type="button" class="tf-bank-cat-pill ${allActive ? 'is-active' : ''}" data-bank-cat="">All</button>`,
-      ...categories.map((c) =>
-        `<button type="button" class="tf-bank-cat-pill ${bankPickCategories.has(c) ? 'is-active' : ''}" data-bank-cat="${esc(c)}">${esc(c)}</button>`
-      ),
-    ].join('');
-    root.querySelectorAll('[data-bank-cat]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const cat = btn.getAttribute('data-bank-cat') || '';
-        if (!cat) {
-          bankPickCategories.clear();
-        } else if (bankPickCategories.has(cat)) {
-          bankPickCategories.delete(cat);
-        } else {
-          bankPickCategories.add(cat);
-        }
-        renderBankPickCategoryPills();
-        bankPickerQuestions = filterBankPickQuestions(bankPickerAllQuestions);
-        renderBankPicker();
-      });
-    });
-  }
-
-  function initBankPickFilters() {
-    renderBankPickCategoryPills();
-  }
-
-  function getBankPickNeededCount() {
-    const total = Math.max(1, Number(document.getElementById('tfQuestionCount')?.value || 0));
-    const inline = getQuestionSource() === 'manual' ? collectMcqs().length : 0;
-    return Math.max(0, total - inline);
-  }
-
-  function filterBankPickQuestions(all) {
-    const diff = document.getElementById('tfBankPickDifficulty')?.value || '';
-    return (all || []).filter((q) => {
-      if (bankPickCategories.size && !bankPickCategories.has(String(q.category || ''))) return false;
-      if (diff && normalizeDifficulty(q.difficulty) !== normalizeDifficulty(diff)) return false;
-      return true;
-    });
-  }
-
-  function updateBankPickSummary() {
-    const summary = document.getElementById('tfBankPickSummary');
-    if (!summary) return;
-    const needed = getBankPickNeededCount();
-    const selected = selectedBankIds.size;
-    const shown = bankPickerQuestions.length;
-    const bankTotal = bankPickerAllQuestions.length;
-    const limitHit = needed > 0 && selected >= needed;
-    summary.innerHTML = `<span class="${selected === needed && needed > 0 ? 'text-success fw-semibold' : ''}">${selected} selected</span> · ${shown} shown · ${bankTotal} in bank · <strong>${needed} needed</strong>${limitHit ? ' · selection limit reached' : ''}`;
-  }
-
-  async function loadBankPickerQuestions() {
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/aptitude/question-bank').catch(() => null);
-      bankPickerAllQuestions = res?.data?.questions || [];
-    } else {
-      ensureDemoBankSeed();
-      bankPickerAllQuestions = loadDemoBankStore();
+  function updateManualBankSummary() {
+    const rules = collectManualBankRules();
+    const bankTotal = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const summary = document.getElementById('tfManualBankSummary');
+    if (summary) summary.textContent = `${bankTotal} question(s) from ${rules.length} rule(s)`;
+    const countEl = document.getElementById('tfQuestionCount');
+    if (countEl && getQuestionSource() === 'manual' && document.getElementById('tfUseBankManual')?.checked) {
+      const mcqCount = collectMcqs().length;
+      countEl.value = String(bankTotal + mcqCount || 1);
     }
-
-    bankPickerQuestions = filterBankPickQuestions(bankPickerAllQuestions);
-    trimBankSelectionToLimit();
-    updateBankPickSummary();
-    renderBankPicker();
   }
 
-  function trimBankSelectionToLimit() {
-    const needed = getBankPickNeededCount();
-    if (needed <= 0 || selectedBankIds.size <= needed) return;
-    const keep = [...selectedBankIds].slice(0, needed);
-    selectedBankIds.clear();
-    keep.forEach((id) => selectedBankIds.add(id));
-  }
-
-  function bindBankPickerCheckboxes(root) {
-    root.querySelectorAll('[data-bank-pick]').forEach((cb) => {
-      cb.addEventListener('change', () => {
-        const id = cb.getAttribute('data-bank-pick');
-        if (!id) return;
-        const needed = getBankPickNeededCount();
-        if (cb.checked) {
-          if (needed <= 0) {
-            cb.checked = false;
-            toast('Reduce direct MCQs or increase total questions to select more from the bank.', 'error');
-            return;
-          }
-          if (selectedBankIds.size >= needed && !selectedBankIds.has(id)) {
-            cb.checked = false;
-            toast(`You can select at most ${needed} question(s) from the bank for this test.`, 'error');
-            return;
-          }
-          selectedBankIds.add(id);
-        } else {
-          selectedBankIds.delete(id);
-        }
-        updateBankPickSummary();
-        renderBankPicker();
-      });
+  function inferBankRulesFromQuestions(questions) {
+    const groups = new Map();
+    (questions || []).filter((q) => q?.bankId).forEach((q) => {
+      const category = String(q.category || 'General Aptitude');
+      const difficulty = normalizeDifficulty(q.difficulty || 'Medium');
+      const key = `${category}|${difficulty}|${Number(q.marks ?? 1)}`;
+      if (!groups.has(key)) {
+        groups.set(key, { category, difficulty, count: 0, marks: Number(q.marks ?? 1) || 1 });
+      }
+      groups.get(key).count += 1;
     });
-  }
-
-  function renderBankPicker() {
-    const list = document.getElementById('tfBankPickList');
-    if (!list) return;
-    updateBankPickSummary();
-    const needed = getBankPickNeededCount();
-    const atLimit = needed > 0 && selectedBankIds.size >= needed;
-
-    if (!bankPickerAllQuestions.length) {
-      list.innerHTML = '<p class="small text-muted-2 mb-0">Question bank is empty. Open the <strong>Question bank</strong> tab and add questions first.</p>';
-      return;
-    }
-    if (!bankPickerQuestions.length) {
-      list.innerHTML = '<p class="small text-muted-2 mb-0">No questions match the current filters. Try All categories / All difficulties.</p>';
-      return;
-    }
-
-    list.innerHTML = bankPickerQuestions.map((q) => {
-      const id = String(q.id || q.bankId || '');
-      const checked = selectedBankIds.has(id);
-      const disabled = atLimit && !checked;
-      const prompt = stripHtml(q.prompt) || 'Question';
-      const opts = Array.isArray(q.options) ? q.options.filter(Boolean) : [];
-      const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
-      const optsHtml = opts.length
-        ? `<div class="small mt-2">${opts.map((o, oi) => `<div class="apt-q-card-text text-muted-2">${letters[oi] || oi + 1}. ${esc(stripHtml(o))}</div>`).join('')}</div>`
-        : '';
-      return `<label class="d-flex align-items-start gap-2 border rounded-2 p-3 mb-0 bg-white apt-q-card apt-bank-pick-item ${disabled ? 'opacity-50' : ''}">
-        <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-bank-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
-        <span class="min-w-0 flex-grow-1">
-          <span class="d-block apt-q-card-text fw-medium">${esc(prompt)}</span>
-          ${optsHtml}
-          <span class="d-block small text-muted-2 mt-2">${esc(q.category || 'General Aptitude')} · ${esc(normalizeDifficulty(q.difficulty))} · ${Number(q.marks ?? 1)} mark(s)</span>
-        </span>
-      </label>`;
-    }).join('');
-    bindBankPickerCheckboxes(list);
+    return [...groups.values()];
   }
 
   function updateManualQuestionCount() {
     if (getQuestionSource() !== 'manual') return;
-    updateBankPickSummary();
-    trimBankSelectionToLimit();
-    renderBankPicker();
+    updateManualBankSummary();
   }
 
   function applyRuleMarksToQuestion(q, rule) {
@@ -2446,7 +2335,8 @@
     const inline = payload.questions || [];
     payload.questions = [...fromBank, ...inline];
     payload.questionCount = payload.questions.length;
-    if (!payload.questions.length) throw new Error('Select bank questions or add MCQs.');
+    payload.bankQuestionIds = fromBank.map((q) => String(q.bankId || q.id || '')).filter(Boolean);
+    if (!payload.questions.length) throw new Error('Add bank category rules or add MCQs.');
     payload.category = fromBank[0]?.category || inline[0]?.category || 'General Aptitude';
     payload.difficulty = fromBank[0]?.difficulty || inline[0]?.difficulty || 'Medium';
     return payload;
@@ -3496,22 +3386,24 @@
     document.getElementById('tfSourceManual').checked = source === 'manual';
     document.getElementById('tfSourceRandom').checked = source === 'random';
 
-    selectedBankIds.clear();
-    (test?.bankQuestionIds || []).forEach((id) => selectedBankIds.add(String(id)));
-
     document.getElementById('tfRandomRules').innerHTML = '';
     const rules = test?.randomRules?.length
       ? test.randomRules
       : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }];
     if (source === 'random') rules.forEach((r) => addRandomRuleRow(r));
-    else addRandomRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 });
 
-    bankPickCategories.clear();
-    const useBank = (test?.bankQuestionIds || []).length > 0;
+    document.getElementById('tfManualBankRules').innerHTML = '';
+    let bankRules = test?.bankFilterRules?.length ? test.bankFilterRules : [];
+    if (!bankRules.length && source === 'manual' && (test?.bankQuestionIds || []).length) {
+      bankRules = inferBankRulesFromQuestions(test?.questions || []);
+    }
+    const useBank = bankRules.length > 0;
     document.getElementById('tfUseBankManual').checked = useBank;
     document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
-
-    initBankPickFilters();
+    if (useBank) {
+      (bankRules.length ? bankRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }])
+        .forEach((r) => addManualBankRuleRow(r));
+    }
 
     const contestType = test?.contestType || preset?.contestType || 'none';
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
@@ -3522,7 +3414,7 @@
     document.getElementById('mcqList').innerHTML = '';
     const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId) : [];
     if (qs.length) qs.forEach((q) => addMcqRow(q));
-    loadBankPickerQuestions().catch(() => renderBankPicker());
+    updateManualBankSummary();
     testFormModal.show();
   }
 
@@ -3546,17 +3438,14 @@
     } else {
       payload.randomRules = [];
       const useBank = document.getElementById('tfUseBankManual')?.checked;
-      payload.bankQuestionIds = useBank ? [...selectedBankIds] : [];
-      payload.bankFilterRules = [];
+      payload.bankFilterRules = useBank ? collectManualBankRules() : [];
+      payload.bankQuestionIds = [];
       payload.questions = collectMcqs();
     }
     if (!payload.category) {
       const fromQuestions = (payload.questions || []).map((q) => String(q.category || '').trim()).find(Boolean);
-      const fromBank = selectedBankIds.size
-        ? bankPickerAllQuestions.find((q) => selectedBankIds.has(String(q.id || q.bankId || '')))
-        : null;
       payload.category = fromQuestions
-        || fromBank?.category
+        || (payload.bankFilterRules?.[0]?.category)
         || (payload.randomRules?.[0]?.category)
         || 'General Aptitude';
     }
@@ -3571,30 +3460,44 @@
     document.getElementById('bulkCategoryWrap').classList.toggle('d-none', mode !== 'bank');
     document.getElementById('bulkDifficultyWrap').classList.toggle('d-none', mode !== 'bank');
     document.getElementById('bulkReplaceWrap').classList.toggle('d-none', mode !== 'test');
+    const help = document.getElementById('bulkHelpText');
+    if (help) {
+      help.innerHTML = mode === 'bank'
+        ? 'Upload an Excel workbook (.xlsx or .xls). First row must be headers: <code>prompt, optionA, optionB, optionC, optionD, correct, explanation, category, difficulty</code>. Marks are set when you build a test, not in the bank. Use sheets named <strong>Easy</strong>, <strong>Medium</strong>, and <strong>Hard</strong> for difficulty buckets, or set <code>difficulty</code> per row.'
+        : 'Upload an Excel workbook (.xlsx or .xls). First row must be headers: <code>prompt, optionA, optionB, optionC, optionD, correct, marks, explanation, category, difficulty</code>. Use sheets named <strong>Easy</strong>, <strong>Medium</strong>, and <strong>Hard</strong> for difficulty buckets, or set <code>difficulty</code> per row.';
+    }
     fillSelect(document.getElementById('bulkCategory'), meta.categories || APTITUDE_CATEGORIES, 'General Aptitude');
     document.getElementById('bulkFile').value = '';
     bulkModal.show();
   }
 
   const BULK_EXCEL_HEADERS = ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'marks', 'explanation', 'category', 'difficulty'];
+  const BANK_BULK_EXCEL_HEADERS = ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'explanation', 'category', 'difficulty'];
   const BULK_SHEET_DIFFICULTIES = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
-  function downloadExcelTemplate() {
+  function downloadExcelTemplate(forBank = false) {
     if (typeof XLSX === 'undefined') {
       toast('Excel library is still loading. Try again in a moment.', 'info');
       return;
     }
     const wb = XLSX.utils.book_new();
-    const samples = {
-      Easy: ['What is 2+2?', '3', '4', '5', '6', 'B', 1, 'Basic arithmetic', 'Quantitative Aptitude', 'Easy'],
-      Medium: ['If x+3=10, x=?', '5', '6', '7', '8', 'C', 2, 'Linear equation', 'Quantitative Aptitude', 'Medium'],
-      Hard: ['Train A 60km/h, B 90km/h, opposite. Total 450km. Meet in?', '2h', '3h', '4h', '5h', 'B', 3, 'Relative speed', 'Quantitative Aptitude', 'Hard'],
-    };
+    const headers = forBank ? BANK_BULK_EXCEL_HEADERS : BULK_EXCEL_HEADERS;
+    const samples = forBank
+      ? {
+        Easy: ['What is 2+2?', '3', '4', '5', '6', 'B', 'Basic arithmetic', 'Quantitative Aptitude', 'Easy'],
+        Medium: ['If x+3=10, x=?', '5', '6', '7', '8', 'C', 'Linear equation', 'Quantitative Aptitude', 'Medium'],
+        Hard: ['Train A 60km/h, B 90km/h, opposite. Total 450km. Meet in?', '2h', '3h', '4h', '5h', 'B', 'Relative speed', 'Quantitative Aptitude', 'Hard'],
+      }
+      : {
+        Easy: ['What is 2+2?', '3', '4', '5', '6', 'B', 1, 'Basic arithmetic', 'Quantitative Aptitude', 'Easy'],
+        Medium: ['If x+3=10, x=?', '5', '6', '7', '8', 'C', 2, 'Linear equation', 'Quantitative Aptitude', 'Medium'],
+        Hard: ['Train A 60km/h, B 90km/h, opposite. Total 450km. Meet in?', '2h', '3h', '4h', '5h', 'B', 3, 'Relative speed', 'Quantitative Aptitude', 'Hard'],
+      };
     Object.entries(samples).forEach(([sheetName, sample]) => {
-      const ws = XLSX.utils.aoa_to_sheet([BULK_EXCEL_HEADERS, sample]);
+      const ws = XLSX.utils.aoa_to_sheet([headers, sample]);
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     });
-    XLSX.writeFile(wb, 'aptitude-question-bank-template.xlsx');
+    XLSX.writeFile(wb, forBank ? 'aptitude-question-bank-template.xlsx' : 'aptitude-test-mcq-template.xlsx');
   }
 
   async function parseExcelFile(file) {
@@ -3825,21 +3728,20 @@
       el.addEventListener('change', syncQuestionSourcePanels);
     });
     document.getElementById('btnAddRandomRule')?.addEventListener('click', () => addRandomRuleRow());
+    document.getElementById('btnAddManualBankRule')?.addEventListener('click', () => addManualBankRuleRow());
     document.getElementById('tfUseBankManual')?.addEventListener('change', (e) => {
       const on = e.target.checked;
       document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
       if (on) {
-        initBankPickFilters();
-        loadBankPickerQuestions().catch(() => renderBankPicker());
+        const root = document.getElementById('tfManualBankRules');
+        if (root && !root.querySelector('.tf-category-rule')) {
+          addManualBankRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 });
+        }
       }
       updateManualQuestionCount();
     });
-    document.getElementById('tfBankPickDifficulty')?.addEventListener('change', () => {
-      bankPickerQuestions = filterBankPickQuestions(bankPickerAllQuestions);
-      renderBankPicker();
-    });
     document.getElementById('tfQuestionCount')?.addEventListener('input', () => updateManualQuestionCount());
-    document.getElementById('btnFormBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate());
+    document.getElementById('btnFormBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate(false));
     document.getElementById('btnFormBulkImport')?.addEventListener('click', () => {
       document.getElementById('tfBulkFile')?.click();
     });
@@ -3947,21 +3849,23 @@
           toast('Enter total number of questions.', 'error');
           return;
         }
+        const bankRules = useBank ? collectManualBankRules() : [];
+        const bankTotal = bankRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
         if (useBank) {
-          const needFromBank = Math.max(0, target - mcqCount);
-          if (needFromBank > 0 && selectedBankIds.size !== needFromBank) {
-            toast(`Select exactly ${needFromBank} question(s) from the bank (${selectedBankIds.size} selected).`, 'error');
+          if (!bankRules.length) {
+            toast('Add at least one category rule for the question bank.', 'error');
             return;
           }
         } else if (!mcqCount) {
-          toast('Add at least one MCQ or select questions from the bank.', 'error');
+          toast('Add at least one MCQ or add questions from the bank.', 'error');
           return;
         }
-        if (mcqCount + selectedBankIds.size !== target) {
-          toast(`Selected questions (${mcqCount + selectedBankIds.size}) must match total (${target}).`, 'error');
-          return;
+        if (bankTotal + mcqCount !== target) {
+          payload.questionCount = bankTotal + mcqCount;
+        } else {
+          payload.questionCount = target;
         }
-        payload.questionCount = target;
+        if (useBank) payload.bankFilterRules = bankRules;
       }
       payload.totalMarks = 0;
       if (canManageContests()) {
@@ -4030,7 +3934,7 @@
       renderManage();
     });
 
-    document.getElementById('btnBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate());
+    document.getElementById('btnBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate(true));
 
     document.getElementById('btnBulkUpload')?.addEventListener('click', async () => {
       const live = Auth.hasRealAuth() && !Auth.isDemo();
@@ -4055,7 +3959,10 @@
         || (meta.categories || APTITUDE_CATEGORIES)[0]
         || 'General Aptitude';
       const fallbackDifficulty = document.getElementById('bulkDifficulty')?.value || 'Medium';
-      const normalized = normalizeBulkRows(questions, fallbackCategory, fallbackDifficulty);
+      let normalized = normalizeBulkRows(questions, fallbackCategory, fallbackDifficulty);
+      if (mode === 'bank') {
+        normalized = normalized.map((q) => ({ ...q, marks: 1 }));
+      }
       if (!normalized.length) {
         toast('No valid questions found in the Excel file.', 'error');
         return;

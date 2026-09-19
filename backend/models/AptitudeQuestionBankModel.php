@@ -64,7 +64,7 @@ class AptitudeQuestionBankModel extends BaseModel
                 'prompt' => $norm['prompt'],
                 'options' => $norm['options'],
                 'correctIndex' => $norm['correctIndex'],
-                'marks' => $norm['marks'],
+                'marks' => 1.0,
                 'explanation' => $norm['explanation'],
                 'category' => $norm['category'],
                 'difficulty' => AptitudeTestModel::normalizeDifficulty((string) ($norm['difficulty'] ?? $q['difficulty'] ?? 'Medium')),

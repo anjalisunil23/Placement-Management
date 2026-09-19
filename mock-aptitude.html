@@ -35,11 +35,6 @@
   .mcq-quill-wrap .ql-editor img,.apt-rich img{max-width:100%;height:auto;border-radius:.375rem;margin:.35rem 0}
   .apt-q-card{max-width:100%}
   .apt-q-card-text{white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.45}
-  .apt-bank-pick-item{align-items:flex-start}
-  .apt-bank-pick-item .apt-q-card-text{font-size:.875rem}
-  #tfBankPickList{max-height:none;overflow:visible}
-  .tf-bank-cat-pill{font-size:.75rem;padding:.2rem .55rem;border-radius:999px;border:1px solid var(--border,#cbd5e1);background:#fff;cursor:pointer;user-select:none}
-  .tf-bank-cat-pill.is-active{background:#1e293b;border-color:#0f172a;color:#fff}
   #bankQuestionsList,#aptAiPreviewList{max-width:100%;overflow-x:hidden}
   .apt-rich p:last-child,.apt-rich ul:last-child,.apt-rich ol:last-child{margin-bottom:0}
   .apt-prob-list{border:1px solid var(--border,#e5e7eb);border-radius:.75rem;overflow:hidden;background:#fff}
@@ -368,27 +363,15 @@
         <div class="col-12" id="tfManualPanel">
           <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" id="tfUseBankManual"/>
-            <label class="form-check-label" for="tfUseBankManual">Select questions from question bank manually</label>
+            <label class="form-check-label" for="tfUseBankManual">Add questions from question bank</label>
           </div>
-          <div class="border rounded-3 p-3 mb-3 d-none" id="tfBankPicker">
-            <div class="small fw-semibold mb-2">Pick questions from bank</div>
-            <div class="row g-2 mb-2">
-              <div class="col-12">
-                <label class="form-label small mb-1 d-block">Add categories</label>
-                <div id="tfBankPickCategories" class="d-flex flex-wrap gap-1"></div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label small mb-1" for="tfBankPickDifficulty">Filter by difficulty</label>
-                <select class="form-select form-select-sm" id="tfBankPickDifficulty">
-                  <option value="">All difficulties</option>
-                  <option value="Easy">Easy</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Hard">Hard</option>
-                </select>
-              </div>
+          <div class="border rounded-3 p-3 mb-3 d-none" id="tfBankPicker" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div class="small fw-semibold">Pick questions from bank</div>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddManualBankRule"><i class="bi bi-plus-lg me-1"></i>Add category</button>
             </div>
-            <div class="small text-muted-2 mb-2" id="tfBankPickSummary">0 selected · 0 shown · 0 needed</div>
-            <div id="tfBankPickList" class="d-flex flex-column gap-2"></div>
+            <div id="tfManualBankRules" class="d-flex flex-column gap-2 mb-2"></div>
+            <div class="small text-muted-2" id="tfManualBankSummary">0 questions from rules</div>
           </div>
           <div id="tfManualMcqSection">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -423,9 +406,9 @@
   <div class="modal-body">
     <input type="hidden" id="bulkTestId" value=""/>
     <input type="hidden" id="bulkMode" value="test"/>
-    <p class="small text-muted-2 mb-2">Upload an Excel workbook (.xlsx or .xls). First row must be headers:
-      <code>prompt, optionA, optionB, optionC, optionD, correct, marks, explanation, category, difficulty</code>.
-      Use sheets named <strong>Easy</strong>, <strong>Medium</strong>, and <strong>Hard</strong> for difficulty buckets, or set <code>difficulty</code> per row.</p>
+    <p class="small text-muted-2 mb-2" id="bulkHelpText">Upload an Excel workbook (.xlsx or .xls). First row must be headers:
+      <code>prompt, optionA, optionB, optionC, optionD, correct, explanation, category, difficulty</code>.
+      Marks are set when you build a test, not in the bank. Use sheets named <strong>Easy</strong>, <strong>Medium</strong>, and <strong>Hard</strong> for difficulty buckets, or set <code>difficulty</code> per row.</p>
     <div class="mb-3">
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkTemplate"><i class="bi bi-download me-1"></i>Download Excel template</button>
     </div>
@@ -505,5 +488,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260918nobankhint"></script>
+<script src="js/aptitude-page.js?v=20260919nobankmarks"></script>
 </body></html>

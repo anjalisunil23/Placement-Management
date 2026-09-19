@@ -799,6 +799,19 @@ class AptitudeTestModel extends BaseModel
             array_map(static fn ($id) => trim((string) $id), (array) ($data['bankQuestionIds'] ?? [])),
             static fn ($id) => $id !== ''
         )));
+        $bankFilterRules = [];
+        foreach ((array) ($data['bankFilterRules'] ?? []) as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $marks = (float) ($rule['marks'] ?? 1);
+            $bankFilterRules[] = [
+                'category' => self::normalizeCategory((string) ($rule['category'] ?? $category)),
+                'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
+                'count' => max(1, (int) ($rule['count'] ?? 1)),
+                'marks' => $marks > 0 ? max(0.5, $marks) : 1.0,
+            ];
+        }
 
         $payload = [
             'title' => trim((string) ($data['title'] ?? 'Aptitude mock')) ?: 'Aptitude mock',
@@ -815,6 +828,7 @@ class AptitudeTestModel extends BaseModel
             'contestType' => self::normalizeContestType((string) ($data['contestType'] ?? 'none')),
             'questionSource' => $questionSource,
             'randomRules' => $questionSource === 'random' ? $randomRules : [],
+            'bankFilterRules' => $questionSource === 'manual' ? $bankFilterRules : [],
             'bankQuestionIds' => $questionSource === 'manual' ? $bankQuestionIds : [],
             'questionType' => 'mcq',
             'questions' => $questions,
@@ -1013,6 +1027,22 @@ class AptitudeTestModel extends BaseModel
                     ];
                 },
                 (array) ($test['randomRules'] ?? [])
+            )),
+            'bankFilterRules' => array_values(array_map(
+                static function ($rule): array {
+                    if (!is_array($rule)) {
+                        return [];
+                    }
+                    $marks = (float) ($rule['marks'] ?? 1);
+
+                    return [
+                        'category' => self::normalizeCategory((string) ($rule['category'] ?? 'General Aptitude')),
+                        'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
+                        'count' => max(1, (int) ($rule['count'] ?? 1)),
+                        'marks' => $marks > 0 ? max(0.5, $marks) : 1.0,
+                    ];
+                },
+                (array) ($test['bankFilterRules'] ?? [])
             )),
             'bankQuestionIds' => array_values(array_filter(array_map(
                 static fn ($id) => trim((string) $id),
