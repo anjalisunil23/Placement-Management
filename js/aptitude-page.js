@@ -262,6 +262,8 @@
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
   let aiJdUploadMeta = null;
+  let aiGenProgressTimer = null;
+  let aptAiIncompleteModal;
 
   const AI_CATEGORY_DEFAULT_INSTRUCTIONS = 'Generate questions suitable for campus placement aptitude tests.';
   const AI_JD_DEFAULT_INSTRUCTIONS = 'Generate questions relevant to the uploaded job description and suitable for campus placement assessment. Focus on the technical skills, concepts, tools, and responsibilities mentioned in the JD.';
@@ -2587,6 +2589,106 @@
     }).join('');
   }
 
+  function createAiProgressKey() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function updateAiGenerateProgressUi(progress) {
+    const textEl = document.getElementById('aptAiGenerateStatusText');
+    const barEl = document.getElementById('aptAiGenerateProgressBar');
+    const countEl = document.getElementById('aptAiGenerateProgressCount');
+    if (!progress) return;
+    const message = progress.message || 'Generating questions…';
+    const generated = Number(progress.generated || 0);
+    const requested = Number(progress.requested || 0);
+    const percent = requested > 0
+      ? Math.min(100, Math.max(0, Number(progress.percent ?? Math.round((generated / requested) * 100))))
+      : Number(progress.percent || 0);
+    if (textEl) textEl.textContent = message;
+    if (barEl) {
+      barEl.style.width = `${percent}%`;
+      barEl.setAttribute('aria-valuenow', String(percent));
+    }
+    if (countEl) {
+      countEl.textContent = requested > 0 ? `${generated} / ${requested} generated` : '';
+    }
+  }
+
+  function stopAiGenProgressPoll() {
+    if (aiGenProgressTimer) {
+      clearInterval(aiGenProgressTimer);
+      aiGenProgressTimer = null;
+    }
+  }
+
+  function startAiGenProgressPoll(progressKey) {
+    stopAiGenProgressPoll();
+    if (!progressKey) return;
+    aiGenProgressTimer = setInterval(async () => {
+      const res = await api(`/aptitude/ai/generate-progress?key=${encodeURIComponent(progressKey)}`).catch(() => null);
+      if (!res?.success || !res.data?.active) return;
+      updateAiGenerateProgressUi(res.data);
+      if (res.data.done) stopAiGenProgressPoll();
+    }, 800);
+  }
+
+  function showAiIncompleteDialog(data) {
+    return new Promise((resolve) => {
+      const modalEl = document.getElementById('aptAiIncompleteModal');
+      const bodyEl = document.getElementById('aptAiIncompleteBody');
+      const useBtn = document.getElementById('btnAptAiIncompleteUse');
+      const retryBtn = document.getElementById('btnAptAiIncompleteRetry');
+      if (!modalEl || !bodyEl || !useBtn || !retryBtn) {
+        resolve('use');
+        return;
+      }
+      const requested = Number(data.requested || 0);
+      const received = Number(data.received || 0);
+      const shortfall = Number(data.shortfall || Math.max(0, requested - received));
+      bodyEl.innerHTML = `<p class="mb-2">${esc(data.message || `We generated ${received} valid questions out of the requested ${requested}.`)}</p>
+        <p class="small text-muted-2 mb-0">The AI could not generate ${esc(String(shortfall))} additional unique question(s) from the available Job Description content after multiple attempts.</p>`;
+      aptAiIncompleteModal = aptAiIncompleteModal || new bootstrap.Modal(modalEl);
+      const cleanup = () => {
+        useBtn.removeEventListener('click', onUse);
+        retryBtn.removeEventListener('click', onRetry);
+        modalEl.removeEventListener('hidden.bs.modal', onHide);
+      };
+      const onUse = () => {
+        cleanup();
+        aptAiIncompleteModal.hide();
+        resolve('use');
+      };
+      const onRetry = () => {
+        cleanup();
+        aptAiIncompleteModal.hide();
+        resolve('retry');
+      };
+      const onHide = () => {
+        cleanup();
+        resolve('use');
+      };
+      useBtn.addEventListener('click', onUse);
+      retryBtn.addEventListener('click', onRetry);
+      modalEl.addEventListener('hidden.bs.modal', onHide, { once: true });
+      aptAiIncompleteModal.show();
+    });
+  }
+
+  function finishAiPreview(data, params) {
+    aiPreviewQuestions = (data.questions || []).map((q) => reconcileAiPreviewQuestion({ ...q, selected: q.selected !== false }));
+    aiLastFormParams = params;
+    if (!aiPreviewQuestions.length) {
+      toast('No questions were generated.', 'error');
+      return false;
+    }
+    showAptAiPreviewPanel();
+    renderAptAiPreview();
+    return true;
+  }
+
   async function runAptAiGenerate() {
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     const params = collectAiFormParams();
@@ -2608,7 +2710,10 @@
     const status = document.getElementById('aptAiGenerateStatus');
     const btn = document.getElementById('btnAptAiRun');
     status?.classList.remove('d-none');
+    updateAiGenerateProgressUi({ message: params.generationMode === 'jd' ? 'Analyzing Job Description…' : 'Generating questions…', generated: 0, requested: params.count, percent: 0 });
     btn?.setAttribute('disabled', 'disabled');
+    let progressKey = '';
+    let skipGenCleanup = false;
     try {
       let data;
       if (!live) {
@@ -2626,23 +2731,40 @@
         data = { questions: merged, requested: params.count, received: merged.length };
         toast('Demo AI preview (no OpenAI call).', 'info');
       } else {
+        if (params.generationMode === 'jd') {
+          progressKey = createAiProgressKey();
+          params.progressKey = progressKey;
+          startAiGenProgressPoll(progressKey);
+        }
         const res = await api('/aptitude/ai/generate', { method: 'POST', body: JSON.stringify(params) });
         if (!res?.success) throw new Error(res?.message || 'AI generation failed.');
         data = res.data || {};
       }
-      aiPreviewQuestions = (data.questions || []).map((q) => reconcileAiPreviewQuestion({ ...q, selected: q.selected !== false }));
-      aiLastFormParams = params;
-      if (!aiPreviewQuestions.length) {
-        toast('No questions were generated.', 'error');
-        return;
+      stopAiGenProgressPoll();
+      if (data.incomplete) {
+        const choice = await showAiIncompleteDialog(data);
+        if (choice === 'retry') {
+          skipGenCleanup = true;
+          setTimeout(() => runAptAiGenerate(), 50);
+          return;
+        }
+      } else {
+        const requested = Number(data.requested || params.count || 0);
+        const received = Number(data.received || (data.questions || []).length);
+        if (requested > 0 && received >= requested) {
+          toast(`✓ ${received} questions generated successfully`, 'success');
+        }
       }
-      showAptAiPreviewPanel();
-      renderAptAiPreview();
+      finishAiPreview(data, params);
     } catch (err) {
+      stopAiGenProgressPoll();
       toast(err?.message || 'AI question generation is temporarily unavailable. Please try again.', 'error');
     } finally {
-      status?.classList.add('d-none');
-      btn?.removeAttribute('disabled');
+      stopAiGenProgressPoll();
+      if (!skipGenCleanup) {
+        status?.classList.add('d-none');
+        btn?.removeAttribute('disabled');
+      }
     }
   }
 

@@ -194,6 +194,18 @@ final class AptitudeController
         );
     }
 
+    /** GET /api/aptitude/ai/generate-progress?key=... */
+    public function aiGenerateProgress(): void
+    {
+        AuthMiddleware::authenticate();
+        $key = (string) ($_GET['key'] ?? '');
+        $progress = $this->service->getAiGenerationProgress($key);
+        if ($progress === null) {
+            Response::success(['active' => false]);
+        }
+        Response::success(array_merge(['active' => true], $progress));
+    }
+
     /** POST /api/aptitude/ai/extract-jd — multipart field: jd */
     public function extractAiJobDescription(): void
     {

@@ -518,7 +518,16 @@
         <button type="button" class="btn btn-primary" id="btnAptAiRun"><i class="bi bi-stars me-1"></i>Generate Questions</button>
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
       </div>
-      <div id="aptAiGenerateStatus" class="small text-muted-2 mt-3 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Generating questions… this may take a minute.</div>
+      <div id="aptAiGenerateStatus" class="small text-muted-2 mt-3 d-none">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="spinner-border spinner-border-sm" role="status"></span>
+          <span id="aptAiGenerateStatusText">Generating questions…</span>
+        </div>
+        <div class="progress" style="height:6px" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" id="aptAiGenerateProgressBar" style="width:0%"></div>
+        </div>
+        <div class="mt-1" id="aptAiGenerateProgressCount"></div>
+      </div>
     </div>
     <div id="aptAiPreviewPanel" class="d-none">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -536,6 +545,18 @@
       </div>
       <div id="aptAiSaveStatus" class="small text-muted-2 mt-3 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Saving…</div>
     </div>
+  </div>
+</div></div></div>
+
+<div class="modal fade" id="aptAiIncompleteModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header">
+    <h5 class="modal-title fw-bold">Generation incomplete</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  </div>
+  <div class="modal-body" id="aptAiIncompleteBody"></div>
+  <div class="modal-footer flex-wrap gap-2">
+    <button type="button" class="btn btn-outline-secondary" id="btnAptAiIncompleteRetry">Try Again</button>
+    <button type="button" class="btn btn-primary" id="btnAptAiIncompleteUse">Use Available Questions</button>
   </div>
 </div></div></div>
 
@@ -560,5 +581,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919aigenopen"></script>
+<script src="js/aptitude-page.js?v=20260919jdbatch"></script>
 </body></html>

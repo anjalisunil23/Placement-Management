@@ -14,6 +14,9 @@ use PMS\Models\AptitudeTestModel;
 final class AptitudeAiQuestionService
 {
     private const MIN_COOLDOWN_SECONDS = 8;
+    private const JD_BATCH_SIZE = 10;
+    private const MAX_JD_BATCH_ATTEMPTS = 15;
+    private const MAX_EXISTING_PROMPT_HINTS = 25;
 
     /** @var array<string, list<string>> */
     public const TOPICS_BY_CATEGORY = [
@@ -107,10 +110,13 @@ final class AptitudeAiQuestionService
             $this->logGeneration($admin, $category, $topic, $batch['difficulty'], $batch['count'], true);
         }
 
+        $received = count($merged);
+
         return [
             'questions' => $merged,
             'requested' => $requested,
-            'received' => count($merged),
+            'received' => $received,
+            'partial' => $received < $requested,
         ];
     }
 
@@ -120,6 +126,8 @@ final class AptitudeAiQuestionService
      */
     public function generateFromJdForUser(array $admin, array $body): array
     {
+        @set_time_limit(600);
+
         $extractor = new JdTextExtractionService($this->openai);
         $jobDescription = $extractor->sanitizeText(
             (string) ($body['jobDescription'] ?? $body['jobDescriptionText'] ?? '')
@@ -141,31 +149,115 @@ final class AptitudeAiQuestionService
             throw new \InvalidArgumentException('Add at least one generation row with a question count.');
         }
 
+        $progressKey = $this->sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
+        $requested = array_sum(array_map(static fn (array $b): int => (int) ($b['count'] ?? 0), $batches));
+
+        $this->writeGenerationProgress($progressKey, [
+            'phase' => 'analyzing',
+            'message' => 'Analyzing Job Description…',
+            'generated' => 0,
+            'requested' => $requested,
+            'percent' => 0,
+            'done' => false,
+        ]);
+
+        $jdContext = $this->analyzeJdContext($jobDescription, $language);
+
+        $bank = new AptitudeQuestionBankModel();
+        $bankIndex = $bank->loadNormalizedPromptIndex();
+        /** @var array<string, true> $seenKeys */
+        $seenKeys = [];
+        /** @var list<string> $seenPromptTexts */
+        $seenPromptTexts = [];
         $merged = [];
-        $requested = 0;
+        $tempCounter = 0;
+
         foreach ($batches as $batch) {
-            $result = $this->generateFromJd(
+            $quota = $this->generateJdDifficultyQuota(
                 $jobDescription,
-                $batch['difficulty'],
-                $batch['count'],
-                $batch['marks'],
+                $jdContext,
+                $batch,
                 $language,
                 $instructions,
-                $negativeMarks
+                $negativeMarks,
+                $seenKeys,
+                $seenPromptTexts,
+                $bankIndex,
+                $progressKey,
+                $requested,
+                count($merged),
+                $tempCounter
             );
-            $requested += $batch['count'];
-            foreach ($result['questions'] ?? [] as $question) {
+            foreach ($quota['questions'] as $question) {
                 $merged[] = $question;
             }
-            $this->logGeneration($admin, 'General Aptitude', 'Job Description', $batch['difficulty'], $batch['count'], true);
+            $this->logGeneration(
+                $admin,
+                'General Aptitude',
+                'Job Description',
+                (string) ($batch['difficulty'] ?? 'Medium'),
+                (int) ($batch['count'] ?? 0),
+                (bool) ($quota['complete'] ?? false)
+            );
         }
 
-        return [
+        $received = count($merged);
+        $complete = $received >= $requested;
+
+        $this->writeGenerationProgress($progressKey, [
+            'phase' => $complete ? 'complete' : 'incomplete',
+            'message' => $complete
+                ? "{$received} / {$requested} completed"
+                : "Generated {$received} of {$requested} requested",
+            'generated' => $received,
+            'requested' => $requested,
+            'percent' => $requested > 0 ? min(100, (int) round(($received / $requested) * 100)) : 100,
+            'done' => true,
+        ]);
+
+        $base = [
             'questions' => $merged,
             'requested' => $requested,
-            'received' => count($merged),
+            'received' => $received,
             'generationMode' => 'jd',
         ];
+
+        if (!$complete) {
+            $shortfall = $requested - $received;
+
+            return array_merge($base, [
+                'partial' => true,
+                'incomplete' => true,
+                'shortfall' => $shortfall,
+                'message' => "We generated {$received} valid questions out of the requested {$requested}. "
+                    . "The AI could not generate {$shortfall} additional unique question(s) "
+                    . 'from the available Job Description content.',
+            ]);
+        }
+
+        return array_merge($base, [
+            'partial' => false,
+            'incomplete' => false,
+            'message' => "{$received} questions generated successfully",
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public static function readGenerationProgress(string $key): ?array
+    {
+        $key = trim($key);
+        if ($key === '' || !preg_match('/^[a-f0-9\-]{8,64}$/i', $key)) {
+            return null;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_apt_ai_prog_' . hash('sha256', $key) . '.json';
+        if (!is_readable($path)) {
+            return null;
+        }
+        $data = json_decode((string) file_get_contents($path), true);
+
+        return is_array($data) ? $data : null;
     }
 
     /**
@@ -182,80 +274,38 @@ final class AptitudeAiQuestionService
     ): array {
         $difficulty = AptitudeTestModel::normalizeDifficulty($difficulty);
         $count = max(1, $count);
-        $fallbackCategory = 'General Aptitude';
-        $fallbackTopic = 'Job Description';
+        $jdContext = $this->analyzeJdContext($jobDescription, $language);
+        $bankIndex = (new AptitudeQuestionBankModel())->loadNormalizedPromptIndex();
+        /** @var array<string, true> $seenKeys */
+        $seenKeys = [];
+        /** @var list<string> $seenPromptTexts */
+        $seenPromptTexts = [];
+        $tempCounter = 0;
 
-        $system = 'You are an aptitude question generator for a university placement preparation system. '
-            . 'Analyze job descriptions and generate relevant technical/aptitude MCQs. '
-            . 'Return ONLY valid JSON with no markdown or commentary.';
-        $user = $this->buildJdPrompt($jobDescription, $difficulty, $count, $marks, $language, $instructions);
+        $quota = $this->generateJdDifficultyQuota(
+            $jobDescription,
+            $jdContext,
+            ['difficulty' => $difficulty, 'count' => $count, 'marks' => $marks],
+            $language,
+            $instructions,
+            $negativeMarks,
+            $seenKeys,
+            $seenPromptTexts,
+            $bankIndex,
+            '',
+            $count,
+            0,
+            $tempCounter
+        );
 
-        try {
-            $raw = $this->openai->generateJson($system, $user);
-        } catch (\RuntimeException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            error_log('[PMS Aptitude AI] JD generate failed: ' . $e->getMessage());
-            throw new \RuntimeException('AI question generation is temporarily unavailable. Please try again.');
-        }
-
-        $questions = $this->extractQuestions($raw);
-        $validated = [];
-        $errors = [];
-        foreach ($questions as $i => $q) {
-            $mapped = $this->mapAiQuestion(
-                is_array($q) ? $q : [],
-                $fallbackCategory,
-                $fallbackTopic,
-                $difficulty,
-                $marks,
-                $negativeMarks
-            );
-            if ($mapped === null) {
-                $errors[] = 'Question ' . ($i + 1) . ' failed validation.';
-                continue;
-            }
-            $validated[] = $mapped;
-        }
-
-        if ($validated === []) {
-            $detail = $errors !== [] ? implode(' ', array_slice($errors, 0, 3)) : 'No valid questions in AI response.';
-            throw new \RuntimeException($detail);
-        }
-
-        if (count($validated) !== $count) {
-            throw new \RuntimeException(
-                'AI generated ' . count($validated) . ' valid question(s) but ' . $count . ' were requested. Please regenerate.'
-            );
-        }
-
-        $bank = new AptitudeQuestionBankModel();
-        $bankIndex = $bank->loadNormalizedPromptIndex();
-        $batchKeys = [];
-        $preview = [];
-
-        foreach ($validated as $i => $q) {
-            $key = AptitudeQuestionBankModel::normalizePromptKey((string) ($q['prompt'] ?? ''));
-            $duplicateInBank = isset($bankIndex[$key]);
-            $duplicateInBatch = isset($batchKeys[$key]);
-            $batchKeys[$key] = true;
-
-            $preview[] = array_merge($q, [
-                'tempId' => 'ai-jd-' . ($i + 1) . '-' . bin2hex(random_bytes(4)),
-                'source' => 'AI_JD',
-                'duplicateInBank' => $duplicateInBank,
-                'duplicateInBatch' => $duplicateInBatch,
-                'duplicateMessage' => $duplicateInBank
-                    ? 'This question already exists in the bank and will not be added if saved unchanged.'
-                    : ($duplicateInBatch ? 'Duplicate question within this AI batch.' : null),
-                'selected' => !$duplicateInBank && !$duplicateInBatch,
-            ]);
-        }
+        $received = count($quota['questions']);
 
         return [
-            'questions' => $preview,
+            'questions' => $quota['questions'],
             'requested' => $count,
-            'received' => count($preview),
+            'received' => $received,
+            'partial' => $received < $count,
+            'incomplete' => !($quota['complete'] ?? false),
         ];
     }
 
@@ -310,10 +360,9 @@ final class AptitudeAiQuestionService
             throw new \RuntimeException($detail);
         }
 
-        if (count($validated) !== $count) {
-            throw new \RuntimeException(
-                'AI generated ' . count($validated) . ' valid question(s) but ' . $count . ' were requested. Please regenerate.'
-            );
+        $received = count($validated);
+        if ($received !== $count) {
+            error_log('[PMS Aptitude AI] batch shortfall: requested ' . $count . ', received ' . $received);
         }
 
         $bank = new AptitudeQuestionBankModel();
@@ -342,7 +391,8 @@ final class AptitudeAiQuestionService
         return [
             'questions' => $preview,
             'requested' => $count,
-            'received' => count($preview),
+            'received' => $received,
+            'partial' => $received !== $count,
         ];
     }
 
@@ -564,6 +614,520 @@ correctOptionLetter MUST be A, B, C, or D and MUST match correctAnswerIndex.
 The explanation MUST clearly support the chosen option and include the exact text of the correct option.
 One of the four options MUST exactly match the final numeric answer shown in the explanation.
 Double-check every calculation before returning JSON.
+PROMPT;
+    }
+
+    private function sanitizeProgressKey(string $key): string
+    {
+        $key = trim($key);
+        if ($key === '' || !preg_match('/^[a-f0-9\-]{8,64}$/i', $key)) {
+            return '';
+        }
+
+        return $key;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function writeGenerationProgress(string $key, array $data): void
+    {
+        $key = $this->sanitizeProgressKey($key);
+        if ($key === '') {
+            return;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_apt_ai_prog_' . hash('sha256', $key) . '.json';
+        $payload = array_merge($data, ['updatedAt' => time()]);
+        @file_put_contents($path, json_encode($payload, JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * @return array{skills:list<array{name:string,weight:int}>,topics:list<string>,summary:string}
+     */
+    private function analyzeJdContext(string $jobDescription, string $language): array
+    {
+        $fallback = [
+            'skills' => [],
+            'topics' => [],
+            'summary' => mb_substr($jobDescription, 0, 800),
+        ];
+
+        if (!$this->openai->isConfigured()) {
+            return $fallback;
+        }
+
+        $excerpt = mb_strlen($jobDescription) > 12000
+            ? mb_substr($jobDescription, 0, 12000) . '…'
+            : $jobDescription;
+
+        try {
+            $raw = $this->openai->generateJson(
+                'You analyze job descriptions for campus placement aptitude test planning. Return ONLY valid JSON.',
+                <<<PROMPT
+Analyze this job description and return JSON with this schema:
+{
+  "skills": [{"name": "string", "weight": 1}],
+  "topics": ["string"],
+  "summary": "string"
+}
+
+Rules:
+- List 3-12 important technical skills/concepts from the JD.
+- weight is 1 (low) to 5 (high) based on emphasis in the JD.
+- topics are concise labels for question topics (e.g. "Java OOP", "SQL", "REST APIs").
+- summary is one short paragraph of what the role requires.
+- Language context: {$language}
+
+Job Description:
+{$excerpt}
+PROMPT
+            );
+        } catch (\Throwable $e) {
+            error_log('[PMS Aptitude AI] JD analysis failed: ' . $e->getMessage());
+
+            return $fallback;
+        }
+
+        $skills = [];
+        foreach ((array) ($raw['skills'] ?? []) as $skill) {
+            if (!is_array($skill)) {
+                continue;
+            }
+            $name = trim((string) ($skill['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $weight = max(1, min(5, (int) ($skill['weight'] ?? 3)));
+            $skills[] = ['name' => $name, 'weight' => $weight];
+        }
+
+        $topics = [];
+        foreach ((array) ($raw['topics'] ?? []) as $topic) {
+            $t = trim((string) $topic);
+            if ($t !== '') {
+                $topics[] = $t;
+            }
+        }
+
+        $summary = trim((string) ($raw['summary'] ?? ''));
+        if ($summary === '') {
+            $summary = $fallback['summary'];
+        }
+
+        return [
+            'skills' => $skills,
+            'topics' => $topics,
+            'summary' => $summary,
+        ];
+    }
+
+    /**
+     * @param array{skills:list<array{name:string,weight:int}>,topics:list<string>,summary:string} $jdContext
+     * @param array{difficulty:string,count:int,marks:float} $batchSpec
+     * @param array<string, true> $seenKeys
+     * @param list<string> $seenPromptTexts
+     * @param array<string, true> $bankIndex
+     * @return array{questions:list<array<string,mixed>>,received:int,target:int,complete:bool}
+     */
+    private function generateJdDifficultyQuota(
+        string $jobDescription,
+        array $jdContext,
+        array $batchSpec,
+        string $language,
+        string $instructions,
+        float $negativeMarks,
+        array &$seenKeys,
+        array &$seenPromptTexts,
+        array $bankIndex,
+        string $progressKey,
+        int $totalRequested,
+        int $totalGeneratedSoFar,
+        int &$tempCounter
+    ): array {
+        $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($batchSpec['difficulty'] ?? 'Medium'));
+        $target = max(1, (int) ($batchSpec['count'] ?? 1));
+        $marks = max(0.25, (float) ($batchSpec['marks'] ?? 1));
+        /** @var list<array<string, mixed>> $collected */
+        $collected = [];
+        $attempts = 0;
+
+        while (count($collected) < $target && $attempts < self::MAX_JD_BATCH_ATTEMPTS) {
+            $attempts++;
+            $remaining = $target - count($collected);
+            $batchSize = min(self::JD_BATCH_SIZE, $remaining);
+            $generatedTotal = $totalGeneratedSoFar + count($collected);
+
+            $this->writeGenerationProgress($progressKey, [
+                'phase' => 'generating',
+                'message' => "Generating {$difficulty} questions… ({$generatedTotal} / {$totalRequested})",
+                'generated' => $generatedTotal,
+                'requested' => $totalRequested,
+                'percent' => $totalRequested > 0
+                    ? min(99, (int) round(($generatedTotal / $totalRequested) * 100))
+                    : 0,
+                'done' => false,
+            ]);
+
+            $existingHints = $this->collectExistingPromptHints($seenPromptTexts);
+            $topicGuide = $this->buildTopicGuideForBatch($jdContext, $collected, $batchSize);
+
+            try {
+                $rawQuestions = $this->callJdBatchApi(
+                    $jobDescription,
+                    $jdContext,
+                    $difficulty,
+                    $batchSize,
+                    $marks,
+                    $language,
+                    $instructions,
+                    $existingHints,
+                    $topicGuide
+                );
+            } catch (\RuntimeException $e) {
+                if ($this->isRetryableAiError($e->getMessage())) {
+                    error_log('[PMS Aptitude AI] JD batch retry: ' . $e->getMessage());
+                    continue;
+                }
+                throw $e;
+            } catch (\Throwable $e) {
+                error_log('[PMS Aptitude AI] JD batch failed: ' . $e->getMessage());
+                continue;
+            }
+
+            $this->writeGenerationProgress($progressKey, [
+                'phase' => 'validating',
+                'message' => 'Validating questions…',
+                'generated' => $generatedTotal,
+                'requested' => $totalRequested,
+                'percent' => $totalRequested > 0
+                    ? min(99, (int) round(($generatedTotal / $totalRequested) * 100))
+                    : 0,
+                'done' => false,
+            ]);
+
+            $validated = $this->validateJdBatchToPreview(
+                $rawQuestions,
+                $difficulty,
+                $marks,
+                $negativeMarks,
+                $seenKeys,
+                $seenPromptTexts,
+                $bankIndex,
+                $tempCounter
+            );
+
+            $this->writeGenerationProgress($progressKey, [
+                'phase' => 'deduplicating',
+                'message' => 'Removing duplicates…',
+                'generated' => $generatedTotal,
+                'requested' => $totalRequested,
+                'percent' => $totalRequested > 0
+                    ? min(99, (int) round(($generatedTotal / $totalRequested) * 100))
+                    : 0,
+                'done' => false,
+            ]);
+
+            foreach ($validated as $question) {
+                if (count($collected) >= $target) {
+                    break;
+                }
+                $collected[] = $question;
+            }
+
+            if ($validated === [] && $attempts >= self::MAX_JD_BATCH_ATTEMPTS) {
+                break;
+            }
+
+            if (count($collected) < $target) {
+                $this->writeGenerationProgress($progressKey, [
+                    'phase' => 'generating_remaining',
+                    'message' => 'Generating remaining questions…',
+                    'generated' => $totalGeneratedSoFar + count($collected),
+                    'requested' => $totalRequested,
+                    'percent' => $totalRequested > 0
+                        ? min(99, (int) round((($totalGeneratedSoFar + count($collected)) / $totalRequested) * 100))
+                        : 0,
+                    'done' => false,
+                ]);
+            }
+        }
+
+        return [
+            'questions' => $collected,
+            'received' => count($collected),
+            'target' => $target,
+            'complete' => count($collected) >= $target,
+        ];
+    }
+
+    /**
+     * @param list<string> $existingHints
+     * @return list<array<string, mixed>>
+     */
+    private function callJdBatchApi(
+        string $jobDescription,
+        array $jdContext,
+        string $difficulty,
+        int $batchSize,
+        float $marks,
+        string $language,
+        string $instructions,
+        array $existingHints,
+        string $topicGuide
+    ): array {
+        $system = 'You are an aptitude question generator for a university placement preparation system. '
+            . 'Analyze job descriptions and generate relevant technical/aptitude MCQs. '
+            . 'Return ONLY valid JSON with no markdown or commentary.';
+        $user = $this->buildJdBatchPrompt(
+            $jobDescription,
+            $jdContext,
+            $difficulty,
+            $batchSize,
+            $marks,
+            $language,
+            $instructions,
+            $existingHints,
+            $topicGuide
+        );
+
+        $raw = $this->openai->generateJson($system, $user);
+
+        return $this->extractQuestions($raw);
+    }
+
+    private function isRetryableAiError(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return str_contains($lower, 'invalid json')
+            || str_contains($lower, 'empty response')
+            || str_contains($lower, 'temporarily unavailable');
+    }
+
+    /**
+     * @param list<string> $seenPromptTexts
+     * @return list<string>
+     */
+    private function collectExistingPromptHints(array $seenPromptTexts): array
+    {
+        if ($seenPromptTexts === []) {
+            return [];
+        }
+
+        return array_slice($seenPromptTexts, -self::MAX_EXISTING_PROMPT_HINTS);
+    }
+
+    /**
+     * @param array{skills:list<array{name:string,weight:int}>,topics:list<string>,summary:string} $jdContext
+     * @param list<array<string, mixed>> $collected
+     */
+    private function buildTopicGuideForBatch(array $jdContext, array $collected, int $batchSize): string
+    {
+        $topicCounts = [];
+        foreach ($collected as $q) {
+            $topic = trim((string) ($q['topic'] ?? ''));
+            if ($topic === '') {
+                continue;
+            }
+            $key = strtolower($topic);
+            $topicCounts[$key] = ($topicCounts[$key] ?? 0) + 1;
+        }
+
+        $skills = $jdContext['skills'] ?? [];
+        if ($skills === []) {
+            $topics = $jdContext['topics'] ?? [];
+            if ($topics === []) {
+                return "Generate {$batchSize} questions distributed across the main skills mentioned in the JD.";
+            }
+
+            return 'Prioritize these JD topics: ' . implode(', ', array_slice($topics, 0, 8))
+                . ". Generate {$batchSize} questions with balanced coverage.";
+        }
+
+        usort($skills, static function (array $a, array $b) use ($topicCounts): int {
+            $aKey = strtolower((string) ($a['name'] ?? ''));
+            $bKey = strtolower((string) ($b['name'] ?? ''));
+            $aCount = $topicCounts[$aKey] ?? 0;
+            $bCount = $topicCounts[$bKey] ?? 0;
+            if ($aCount !== $bCount) {
+                return $aCount <=> $bCount;
+            }
+
+            return ((int) ($b['weight'] ?? 1)) <=> ((int) ($a['weight'] ?? 1));
+        });
+
+        $focus = [];
+        foreach (array_slice($skills, 0, 6) as $skill) {
+            $focus[] = (string) ($skill['name'] ?? '');
+        }
+        $focus = array_values(array_filter($focus, static fn (string $s): bool => $s !== ''));
+
+        if ($focus === []) {
+            return "Generate {$batchSize} questions distributed across the main skills in the JD.";
+        }
+
+        return 'For this batch, prioritize underrepresented JD skills/topics: '
+            . implode(', ', $focus)
+            . ". Generate {$batchSize} questions with reasonable variety.";
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rawQuestions
+     * @param array<string, true> $seenKeys
+     * @param list<string> $seenPromptTexts
+     * @param array<string, true> $bankIndex
+     * @return list<array<string, mixed>>
+     */
+    private function validateJdBatchToPreview(
+        array $rawQuestions,
+        string $difficulty,
+        float $marks,
+        float $negativeMarks,
+        array &$seenKeys,
+        array &$seenPromptTexts,
+        array $bankIndex,
+        int &$tempCounter
+    ): array {
+        $fallbackCategory = 'General Aptitude';
+        $fallbackTopic = 'Job Description';
+        /** @var list<array<string, mixed>> $preview */
+        $preview = [];
+        /** @var array<string, true> $batchKeys */
+        $batchKeys = [];
+
+        foreach ($rawQuestions as $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            $mapped = $this->mapAiQuestion(
+                $q,
+                $fallbackCategory,
+                $fallbackTopic,
+                $difficulty,
+                $marks,
+                $negativeMarks
+            );
+            if ($mapped === null) {
+                continue;
+            }
+
+            $key = AptitudeQuestionBankModel::normalizePromptKey((string) ($mapped['prompt'] ?? ''));
+            if ($key === '' || isset($seenKeys[$key]) || isset($batchKeys[$key])) {
+                continue;
+            }
+
+            $seenKeys[$key] = true;
+            $batchKeys[$key] = true;
+            $seenPromptTexts[] = mb_substr((string) $mapped['prompt'], 0, 160);
+            $tempCounter++;
+
+            $duplicateInBank = isset($bankIndex[$key]);
+            $preview[] = array_merge($mapped, [
+                'tempId' => 'ai-jd-' . $tempCounter . '-' . bin2hex(random_bytes(4)),
+                'source' => 'AI_JD',
+                'duplicateInBank' => $duplicateInBank,
+                'duplicateInBatch' => false,
+                'duplicateMessage' => $duplicateInBank
+                    ? 'This question already exists in the bank and will not be added if saved unchanged.'
+                    : null,
+                'selected' => !$duplicateInBank,
+            ]);
+        }
+
+        return $preview;
+    }
+
+    /**
+     * @param array{skills:list<array{name:string,weight:int}>,topics:list<string>,summary:string} $jdContext
+     * @param list<string> $existingHints
+     */
+    private function buildJdBatchPrompt(
+        string $jobDescription,
+        array $jdContext,
+        string $difficulty,
+        int $count,
+        float $marks,
+        string $language,
+        string $instructions,
+        array $existingHints,
+        string $topicGuide
+    ): string {
+        $extra = trim($instructions);
+        $extraBlock = $extra !== '' ? "\nAdditional instructions:\n{$extra}\n" : '';
+
+        $contextBlock = trim((string) ($jdContext['summary'] ?? ''));
+        if ($contextBlock !== '') {
+            $contextBlock = "\nJD analysis summary (reuse for every question in this batch):\n{$contextBlock}\n";
+        }
+
+        $skills = $jdContext['skills'] ?? [];
+        if ($skills !== []) {
+            $skillLines = [];
+            foreach ($skills as $skill) {
+                $skillLines[] = '- ' . ($skill['name'] ?? '') . ' (emphasis: ' . ($skill['weight'] ?? 3) . '/5)';
+            }
+            $contextBlock .= "\nIdentified JD skills:\n" . implode("\n", $skillLines) . "\n";
+        }
+
+        $avoidBlock = '';
+        if ($existingHints !== []) {
+            $lines = [];
+            foreach (array_values($existingHints) as $i => $hint) {
+                $lines[] = ($i + 1) . '. ' . $hint;
+            }
+            $avoidBlock = "\nGenerate {$count} NEW questions.\n"
+                . "Do NOT repeat or closely paraphrase any of these already generated questions:\n"
+                . implode("\n", $lines) . "\n";
+        }
+
+        return <<<PROMPT
+You are generating campus placement aptitude/technical MCQs from a real company job description.
+
+{$contextBlock}
+{$topicGuide}
+
+Requirements:
+- Generate exactly {$count} questions at {$difficulty} difficulty.
+- Every question MUST be relevant to skills, concepts, or responsibilities in the JD.
+- Do NOT generate questions about technologies not mentioned in the JD unless explicitly requested.
+- When multiple skills are present, distribute questions across important ones based on JD emphasis.
+- Each question must have exactly four distinct options with only one correct answer.
+- Provide a short explanation that supports the correct option.
+- Set category to "General Aptitude" or a fitting aptitude category.
+- Set topic to the specific skill/concept tested (e.g. OOP, SQL, REST APIs, React).
+- Avoid duplicate, ambiguous, or trick questions unless requested.
+- Verify numerical calculations before returning JSON.
+- Language: {$language}
+- Return ONLY valid structured JSON with no markdown.
+{$avoidBlock}
+Job Description:
+{$jobDescription}
+
+Difficulty: {$difficulty}
+Number of questions in THIS batch: {$count}
+Marks per question: {$marks}
+{$extraBlock}
+Use this exact JSON schema:
+{
+  "questions": [
+    {
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
+      "correctAnswerIndex": 0,
+      "correctOptionLetter": "A",
+      "explanation": "string",
+      "category": "General Aptitude",
+      "topic": "specific skill from JD",
+      "difficulty": "{$difficulty}",
+      "marks": {$marks}
+    }
+  ]
+}
+
+Rules for correctAnswerIndex: MUST be 0-based — 0 = option A, 1 = B, 2 = C, 3 = D. Never use 1–4.
+correctOptionLetter MUST be A, B, C, or D and MUST match correctAnswerIndex.
+The explanation MUST clearly support the chosen option and include the exact text of the correct option.
+Double-check every answer key before returning JSON.
 PROMPT;
     }
 

@@ -514,6 +514,14 @@ final class AptitudeService
      * @param array<string, mixed> $admin
      * @return array<string, mixed>
      */
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function getAiGenerationProgress(string $key): ?array
+    {
+        return AptitudeAiQuestionService::readGenerationProgress($key);
+    }
+
     public function generateAiBankQuestions(array $admin, array $body): array
     {
         try {

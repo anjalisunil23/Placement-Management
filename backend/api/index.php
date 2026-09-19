@@ -482,6 +482,7 @@ $routes = [
     ['POST', '/aptitude/question-bank/bulk-delete', [AptitudeController::class, 'bulkDeleteBankQuestions']],
     ['GET',  '/aptitude/ai/status',           [AptitudeController::class, 'aiStatus']],
     ['POST', '/aptitude/ai/generate',         [AptitudeController::class, 'generateAiQuestions']],
+    ['GET',  '/aptitude/ai/generate-progress', [AptitudeController::class, 'aiGenerateProgress']],
     ['POST', '/aptitude/ai/extract-jd',       [AptitudeController::class, 'extractAiJobDescription']],
     ['POST', '/aptitude/ai/save',             [AptitudeController::class, 'saveAiQuestions']],
     ['POST', '/aptitude/ai/save-jd',          [AptitudeController::class, 'saveAiJdQuestions']],
