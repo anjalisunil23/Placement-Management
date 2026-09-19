@@ -1652,17 +1652,13 @@
     document.getElementById('jdBlockCompanyView')?.classList.remove('d-none');
   }
 
-  function renderJdCompanyGridHtml(blocks, { forStudent = false } = {}) {
+  function renderJdCompanyGridHtml(blocks) {
     return (blocks || []).map((block) => {
       const companyId = String(block.companyId || '_unassigned');
-      const meta = `${esc(block.setCount || 0)} JD title(s) · ${esc(block.questionCount || 0)} question(s)`;
       return `<div class="col-12 col-md-6 col-xl-4">
         <button type="button" class="card h-100 w-100 text-start border rounded-3 p-3 jd-company-card" data-jd-company-id="${esc(companyId)}">
-          <div class="d-flex align-items-start justify-content-between gap-2">
-            <div class="min-w-0">
-              <div class="fw-semibold">${esc(block.companyName || 'Company')}</div>
-              ${forStudent ? '' : `<div class="small text-muted-2 mt-2">${meta}</div>`}
-            </div>
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <div class="fw-semibold text-truncate">${esc(block.companyName || 'Company')}</div>
             <i class="bi bi-chevron-right text-muted-2 flex-shrink-0"></i>
           </div>
         </button>
@@ -1792,7 +1788,7 @@
       grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No Company Block entries are available yet. Check back later.</p></div>';
       return;
     }
-    grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks, { forStudent: true });
+    grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks);
     grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
       btn.addEventListener('click', () => showStudentJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
     });
