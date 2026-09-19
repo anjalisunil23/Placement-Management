@@ -1892,7 +1892,8 @@
     const el = document.getElementById('aptAiGenTotal');
     if (!el) return;
     const total = collectAiGenRows().reduce((sum, row) => sum + row.count, 0);
-    el.textContent = total > 0 ? `${total} question${total === 1 ? '' : 's'}` : '';
+    el.className = 'small text-muted-2 mt-2';
+    el.textContent = total > 0 ? `${total} question${total === 1 ? '' : 's'} total` : '';
   }
 
   function updateAiSourceModeUI() {
@@ -2069,7 +2070,7 @@
       </div>
       <div class="col-md-5">
         <label class="form-label small fw-semibold mb-1">Number of questions</label>
-        <input class="form-control form-control-sm" type="number" data-ai-gen="count" min="0" max="50" value="${esc(count)}"/>
+        <input class="form-control form-control-sm" type="number" data-ai-gen="count" min="0" value="${esc(count)}"/>
       </div>
       <div class="col-md-2">
         <button type="button" class="btn btn-sm btn-outline-danger w-100" data-ai-gen-remove title="Remove row"><i class="bi bi-trash"></i></button>
@@ -2098,7 +2099,7 @@
   function collectAiGenRows() {
     return [...document.querySelectorAll('.apt-ai-gen-row')].map((el) => ({
       difficulty: el.querySelector('[data-ai-gen="difficulty"]')?.value || 'Medium',
-      count: Math.max(0, Math.min(50, Number(el.querySelector('[data-ai-gen="count"]')?.value || 0))),
+      count: Math.max(0, Number(el.querySelector('[data-ai-gen="count"]')?.value || 0)),
       marks: 1,
     })).filter((row) => row.count > 0);
   }
@@ -2201,7 +2202,7 @@
   }
 
   function demoGenerateAiQuestions(params) {
-    const n = Math.min(50, Math.max(1, Number(params.count || 5)));
+    const n = Math.max(1, Number(params.count || 5));
     const questions = [];
     for (let i = 0; i < n; i += 1) {
       const pct = 10 + i * 5;
@@ -2239,7 +2240,7 @@
       return jd.includes(key) || jd.includes(key.split(' ')[0]);
     });
     const pool = relevant.length ? relevant : skillPool.slice(0, 4);
-    const n = Math.min(50, Math.max(1, Number(params.count || 5)));
+    const n = Math.max(1, Number(params.count || 5));
     const questions = [];
     for (let i = 0; i < n; i += 1) {
       const skill = pool[i % pool.length];

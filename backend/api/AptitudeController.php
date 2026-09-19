@@ -42,7 +42,6 @@ final class AptitudeController
             'bulkExcelHeaders' => ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'marks', 'explanation', 'category'],
             'bulkFormats' => ['xlsx', 'xls'],
             'aiTopicsByCategory' => \PMS\Services\AptitudeAiQuestionService::TOPICS_BY_CATEGORY,
-            'aiQuestionCountMax' => 50,
         ]);
     }
 
