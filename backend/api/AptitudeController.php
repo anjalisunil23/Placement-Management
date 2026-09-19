@@ -221,12 +221,62 @@ final class AptitudeController
         );
     }
 
+    /** POST /api/aptitude/ai/save-jd */
+    public function saveAiJdQuestions(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $questions = is_array($body['questions'] ?? null) ? $body['questions'] : [];
+        $jdTitle = (string) ($body['jdTitle'] ?? '');
+        $jdFilename = isset($body['jdFilename']) ? (string) $body['jdFilename'] : null;
+        Response::success(
+            $this->service->saveAiJdQuestionSet($user, $questions, $jdTitle, $jdFilename),
+            'JD questions saved.'
+        );
+    }
+
+    /** GET /api/aptitude/jd-sets */
+    public function listJdSets(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->listJdQuestionSets());
+    }
+
+    /** GET /api/aptitude/jd-sets/{id} */
+    public function getJdSet(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->getJdQuestionSet($id));
+    }
+
+    /** DELETE /api/aptitude/jd-sets/{id} */
+    public function deleteJdSet(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service->deleteJdQuestionSet($user, $id);
+        Response::success(null, 'JD question set deleted.');
+    }
+
     /** DELETE /api/aptitude/question-bank/{id} */
     public function deleteBankQuestion(string $id): void
     {
         $user = AuthMiddleware::authenticate();
         $this->service->deleteBankQuestion($user, $id);
         Response::success(null, 'Question deleted from bank.');
+    }
+
+    /** POST /api/aptitude/question-bank/bulk-delete */
+    public function bulkDeleteBankQuestions(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $ids = is_array($body['ids'] ?? null) ? $body['ids'] : [];
+        Response::success(
+            $this->service->bulkDeleteBankQuestions($user, $ids),
+            'Selected questions deleted from bank.'
+        );
     }
 
     /** POST /api/aptitude/tests/{id}/questions/from-bank */

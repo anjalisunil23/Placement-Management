@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Models\AptitudeJdQuestionSetModel;
 use PMS\Models\AptitudeQuestionBankModel;
 use PMS\Models\AptitudeTestModel;
 
@@ -415,6 +416,11 @@ final class AptitudeAiQuestionService
 
             $bankIndex[$key] = true;
             $source = trim((string) ($q['source'] ?? 'AI'));
+            if ($source === 'AI_JD') {
+                throw new \InvalidArgumentException(
+                    'JD-based questions must be saved to the JD library, not the general question bank.'
+                );
+            }
             $row['source'] = in_array($source, ['AI', 'AI_JD'], true) ? $source : 'AI';
             $toInsert[] = $row;
         }
@@ -430,6 +436,54 @@ final class AptitudeAiQuestionService
             'items' => $result['items'],
             'skipped' => $skipped,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @param array<int, array<string, mixed>> $questions
+     * @return array<string, mixed>
+     */
+    public function saveJdSetForUser(
+        array $admin,
+        array $questions,
+        string $jdTitle,
+        ?string $jdFilename = null
+    ): array {
+        AptitudeAccessService::requireManager($admin);
+        $jdTitle = trim($jdTitle);
+        if ($jdTitle === '') {
+            throw new \InvalidArgumentException('JD title is required.');
+        }
+        if ($questions === []) {
+            throw new \InvalidArgumentException('No questions selected to save.');
+        }
+
+        $toSave = [];
+        foreach (array_values($questions) as $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            if (array_key_exists('selected', $q) && empty($q['selected'])) {
+                continue;
+            }
+            $row = $this->mapPreviewToRow($q, 'General Aptitude');
+            if ($row === null) {
+                continue;
+            }
+            $row['source'] = 'AI_JD';
+            $toSave[] = $row;
+        }
+
+        if ($toSave === []) {
+            throw new \RuntimeException('No questions could be saved. Check validation errors.');
+        }
+
+        return (new AptitudeJdQuestionSetModel())->createSet(
+            $jdTitle,
+            $toSave,
+            (string) ($admin['_id'] ?? $admin['id'] ?? ''),
+            $jdFilename
+        );
     }
 
     private function buildPrompt(

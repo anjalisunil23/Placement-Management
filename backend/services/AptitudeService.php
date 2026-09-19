@@ -577,6 +577,65 @@ final class AptitudeService
 
     /**
      * @param array<string, mixed> $admin
+     * @param array<int, array<string, mixed>> $questions
+     * @return array<string, mixed>
+     */
+    public function saveAiJdQuestionSet(array $admin, array $questions, string $jdTitle, ?string $jdFilename = null): array
+    {
+        if ($questions === []) {
+            Response::error('No questions selected to save.', 422);
+        }
+
+        try {
+            return (new AptitudeAiQuestionService())->saveJdSetForUser($admin, $questions, $jdTitle, $jdFilename);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            error_log('[PMS Aptitude AI] JD save failed: ' . $e->getMessage());
+            Response::error('Could not save JD questions. Please try again.', 500);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listJdQuestionSets(): array
+    {
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+
+        return ['sets' => $model->listSummaries()];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getJdQuestionSet(string $id): array
+    {
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $set = $model->findById($id);
+        if ($set === null) {
+            Response::notFound('JD question set not found.');
+        }
+
+        return $model->publicDetail($set);
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     */
+    public function deleteJdQuestionSet(array $admin, string $id): void
+    {
+        AptitudeAccessService::requireManager($admin);
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        if (!$model->deleteSet($id)) {
+            Response::notFound('JD question set not found.');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $admin
      */
     public function deleteBankQuestion(array $admin, string $id): void
     {
@@ -591,6 +650,42 @@ final class AptitudeService
         if (!$bank->delete($id)) {
             Response::error('Could not delete question.', 500);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @param array<int, string> $ids
+     * @return array<string, mixed>
+     */
+    public function bulkDeleteBankQuestions(array $admin, array $ids): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        $bank = new AptitudeQuestionBankModel();
+        $deleted = 0;
+        $notFound = 0;
+
+        foreach (array_values(array_unique(array_filter(array_map('strval', $ids)))) as $id) {
+            if (!Security::isValidId($id)) {
+                $notFound++;
+                continue;
+            }
+            if (!$bank->findById($id)) {
+                $notFound++;
+                continue;
+            }
+            if ($bank->delete($id)) {
+                $deleted++;
+            }
+        }
+
+        if ($deleted === 0) {
+            Response::error('No questions were deleted.', 422);
+        }
+
+        return [
+            'deleted' => $deleted,
+            'notFound' => $notFound,
+        ];
     }
 
     /**
@@ -2056,8 +2151,20 @@ final class AptitudeService
         )));
         $inline = array_values(array_filter((array) ($data['questions'] ?? []), 'is_array'));
         $filterRules = array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array'));
+        $jdFilterRules = array_values(array_filter((array) ($data['jdFilterRules'] ?? []), 'is_array'));
         $questions = [];
         $bank = new AptitudeQuestionBankModel();
+
+        if ($source === 'manual' && $jdFilterRules !== []) {
+            try {
+                $jdQuestions = (new \PMS\Models\AptitudeJdQuestionSetModel())->resolveByRules($jdFilterRules);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            foreach ($jdQuestions as $q) {
+                $questions[] = $q;
+            }
+        }
 
         if ($source === 'manual' && $filterRules !== []) {
             try {

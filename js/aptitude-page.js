@@ -38,6 +38,7 @@
 
   const DEMO_TESTS_KEY = 'ph-aptitude-demo-tests';
   const DEMO_BANK_KEY = 'ph-aptitude-demo-bank';
+  const DEMO_JD_KEY = 'ph-aptitude-demo-jd-sets';
 
   function cloneDemoTests() {
     return DEMO_TESTS.map((t) => JSON.parse(JSON.stringify(t)));
@@ -253,6 +254,10 @@
   let bankQuestions = [];
   let manualBankAllQuestions = [];
   let manualBankRuleCounter = 0;
+  let manualJdSetSummaries = [];
+  let manualJdRuleCounter = 0;
+  let jdLibrarySets = [];
+  const jdSetDetailsCache = {};
   let aptAiModal;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
@@ -1126,24 +1131,77 @@
     renderQuestionBank();
   }
 
+  function visibleBankQuestions() {
+    return bankQuestions.slice(0, 100);
+  }
+
+  function updateBankSelectionToolbar() {
+    const count = selectedBankIds.size;
+    const countEl = document.getElementById('bankSelectedCount');
+    const deleteBtn = document.getElementById('btnBankDeleteSelected');
+    const selectAll = document.getElementById('bankSelectAllVisible');
+    if (countEl) countEl.textContent = `${count} selected`;
+    deleteBtn?.classList.toggle('d-none', count === 0);
+
+    const visible = visibleBankQuestions();
+    const visibleIds = visible.map((q) => String(q.id || q.bankId || '')).filter(Boolean);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedBankIds.has(id));
+    if (selectAll) {
+      selectAll.indeterminate = count > 0 && !allVisibleSelected;
+      selectAll.checked = allVisibleSelected;
+    }
+  }
+
+  function bindBankListEvents() {
+    const root = document.getElementById('bankQuestionsList');
+    if (!root || root.dataset.bankListBound === '1') return;
+    root.dataset.bankListBound = '1';
+
+    root.addEventListener('change', (e) => {
+      const pick = e.target.closest('[data-bank-select]');
+      if (!pick) return;
+      const id = pick.getAttribute('data-bank-select');
+      if (!id) return;
+      if (pick.checked) selectedBankIds.add(String(id));
+      else selectedBankIds.delete(String(id));
+      updateBankSelectionToolbar();
+    });
+
+    root.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-bank-delete]');
+      if (!btn) return;
+      e.preventDefault();
+      deleteBankQuestion(btn.getAttribute('data-bank-delete'));
+    });
+  }
+
   function renderQuestionBank() {
     document.querySelectorAll('#bankDifficultyNav .nav-link').forEach((link) => {
       link.classList.toggle('active', (link.getAttribute('data-bank-difficulty') || '') === bankDifficultyFilter);
     });
 
     const root = document.getElementById('bankQuestionsList');
+    const bulkBar = document.getElementById('bankBulkActions');
     if (!root) return;
+    bindBankListEvents();
+
     if (!bankQuestions.length) {
+      bulkBar?.classList.add('d-none');
       root.innerHTML = '<p class="text-muted-2 mb-0">No questions in this bucket yet. Use bulk upload to add Easy, Medium, and Hard MCQs.</p>';
+      updateBankSelectionToolbar();
       return;
     }
 
-    root.innerHTML = bankQuestions.slice(0, 100).map((q) => {
+    bulkBar?.classList.remove('d-none');
+    const visible = visibleBankQuestions();
+    root.innerHTML = visible.map((q) => {
       const id = String(q.id || q.bankId || '');
       const prompt = stripHtml(q.prompt) || 'Question';
+      const checked = selectedBankIds.has(id);
       return `<div class="border rounded-3 p-3 apt-q-card">
-        <div class="d-flex align-items-start justify-content-between gap-2">
-          <div class="min-w-0 flex-grow-1 pe-1">
+        <div class="d-flex align-items-start gap-2">
+          <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-bank-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select question"/>
+          <div class="min-w-0 flex-grow-1">
             <div class="fw-medium apt-q-card-text">${esc(prompt)}</div>
             <div class="small text-muted-2 mt-1">${esc(q.category || 'General Aptitude')} · ${esc(q.difficulty || '')}${q.source ? ` · ${esc(q.source)}` : ''} · ${esc(q.options?.length || 0)} options</div>
           </div>
@@ -1157,9 +1215,173 @@
       ? `<p class="small text-muted-2 mb-0">Showing first 100 of ${bankQuestions.length} questions.</p>`
       : '');
 
-    root.querySelectorAll('[data-bank-delete]').forEach((btn) => {
-      btn.addEventListener('click', () => deleteBankQuestion(btn.getAttribute('data-bank-delete')));
+    updateBankSelectionToolbar();
+  }
+
+  async function deleteSelectedBankQuestions() {
+    const ids = [...selectedBankIds];
+    if (!ids.length) {
+      toast('Select at least one question to delete.', 'error');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected question(s) from the bank?`)) return;
+
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      if (!Auth.isDemo() || !access.canManage) {
+        toast('Delete requires a live session with manage access.', 'info');
+        return;
+      }
+      const drop = new Set(ids.map(String));
+      saveDemoBankStore(loadDemoBankStore().filter((q) => !drop.has(String(q.id || q.bankId))));
+      ids.forEach((id) => selectedBankIds.delete(String(id)));
+      toast(`Deleted ${ids.length} question(s) (demo).`, 'success');
+      await loadQuestionBank();
+      return;
+    }
+
+    const res = await api('/aptitude/question-bank/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete selected questions.', 'error');
+      return;
+    }
+    const deleted = Number(res.data?.deleted || ids.length);
+    ids.forEach((id) => selectedBankIds.delete(String(id)));
+    toast(`Deleted ${deleted} question(s).`, 'success');
+    await loadQuestionBank();
+  }
+
+  function loadDemoJdStore() {
+    try {
+      const raw = localStorage.getItem(DEMO_JD_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveDemoJdStore(sets) {
+    localStorage.setItem(DEMO_JD_KEY, JSON.stringify(sets || []));
+    Object.keys(jdSetDetailsCache).forEach((k) => delete jdSetDetailsCache[k]);
+    manualJdSetSummaries = [];
+  }
+
+  async function ensureJdSetSummariesLoaded() {
+    if (manualJdSetSummaries.length) return;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/jd-sets').catch(() => null);
+      manualJdSetSummaries = res?.data?.sets || [];
+    } else {
+      manualJdSetSummaries = loadDemoJdStore().map((s) => ({
+        id: String(s.id || ''),
+        jdTitle: String(s.jdTitle || ''),
+        jdFilename: String(s.jdFilename || ''),
+        questionCount: Number(s.questionCount || s.questions?.length || 0),
+      }));
+    }
+  }
+
+  async function getJdSetDetail(setId) {
+    const id = String(setId || '');
+    if (!id) return null;
+    if (jdSetDetailsCache[id]) return jdSetDetailsCache[id];
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}`).catch(() => null);
+      if (res?.data) jdSetDetailsCache[id] = res.data;
+    } else {
+      const set = loadDemoJdStore().find((s) => String(s.id) === id);
+      if (set) jdSetDetailsCache[id] = set;
+    }
+    return jdSetDetailsCache[id] || null;
+  }
+
+  async function loadJdLibrary() {
+    if (!access.canManage) return;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/jd-sets').catch(() => null);
+      jdLibrarySets = res?.data?.sets || [];
+    } else {
+      jdLibrarySets = loadDemoJdStore().map((s) => ({
+        id: String(s.id || ''),
+        jdTitle: String(s.jdTitle || ''),
+        jdFilename: String(s.jdFilename || ''),
+        questionCount: Number(s.questionCount || s.questions?.length || 0),
+      }));
+    }
+    renderJdLibrary();
+  }
+
+  function renderJdLibrary() {
+    const root = document.getElementById('jdLibraryList');
+    if (!root) return;
+    if (!jdLibrarySets.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">No JD question sets yet. Use AI Generate → Job Description to create one.</p>';
+      return;
+    }
+    root.innerHTML = jdLibrarySets.map((set) => {
+      const id = String(set.id || '');
+      return `<div class="border rounded-3 p-3" data-jd-set-card="${esc(id)}">
+        <div class="d-flex align-items-start justify-content-between gap-2">
+          <div class="min-w-0">
+            <div class="fw-semibold">${esc(set.jdTitle || 'Untitled JD')}</div>
+            <div class="small text-muted-2 mt-1">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
+          </div>
+          <div class="d-flex gap-2 flex-shrink-0">
+            <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">View</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
+          </div>
+        </div>
+        <div class="d-none mt-3" data-jd-questions="${esc(id)}"></div>
+      </div>`;
+    }).join('');
+
+    root.querySelectorAll('[data-jd-view]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-jd-view');
+        const card = btn.closest('[data-jd-set-card]');
+        const panel = card?.querySelector('[data-jd-questions]');
+        if (!panel) return;
+        if (!panel.classList.contains('d-none')) {
+          panel.classList.add('d-none');
+          btn.textContent = 'View';
+          return;
+        }
+        const detail = await getJdSetDetail(id);
+        const qs = detail?.questions || [];
+        panel.innerHTML = qs.length
+          ? `<div class="d-flex flex-column gap-2">${qs.map((q, i) => `<div class="border rounded-2 p-2 small"><span class="fw-semibold">Q${i + 1}.</span> ${esc(stripHtml(q.prompt) || 'Question')} <span class="text-muted-2">· ${esc(q.topic || '')} · ${esc(q.difficulty || '')}</span></div>`).join('')}</div>`
+          : '<p class="small text-muted-2 mb-0">No questions in this set.</p>';
+        panel.classList.remove('d-none');
+        btn.textContent = 'Hide';
+      });
     });
+    root.querySelectorAll('[data-jd-delete]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteJdSet(btn.getAttribute('data-jd-delete')));
+    });
+  }
+
+  async function deleteJdSet(id) {
+    if (!id) return;
+    if (!confirm('Delete this JD question set and all its questions?')) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      saveDemoJdStore(loadDemoJdStore().filter((s) => String(s.id) !== String(id)));
+      toast('JD set deleted (demo).', 'success');
+      await loadJdLibrary();
+      return;
+    }
+    const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.success) {
+      toast(res?.message || 'Could not delete JD set.', 'error');
+      return;
+    }
+    delete jdSetDetailsCache[String(id)];
+    manualJdSetSummaries = manualJdSetSummaries.filter((s) => String(s.id) !== String(id));
+    toast('JD set deleted.', 'success');
+    await loadJdLibrary();
   }
 
   async function deleteBankQuestion(id) {
@@ -1831,6 +2053,7 @@
       const jobDescriptionUploaded = getJdUploadedText();
       return {
         ...base,
+        jdTitle: (document.getElementById('aptAiJdTitle')?.value || '').trim(),
         jobDescription: jobDescriptionPasted || jobDescriptionUploaded,
         jobDescriptionPasted,
         jobDescriptionUploaded,
@@ -1851,11 +2074,21 @@
     document.getElementById('aptAiPreviewPanel')?.classList.add('d-none');
   }
 
+  function updateAptAiSaveButtonLabel() {
+    const btn = document.getElementById('btnAptAiSaveBank');
+    if (!btn) return;
+    const isJd = getAiSourceMode() === 'jd' || aiLastFormParams?.generationMode === 'jd';
+    btn.innerHTML = isJd
+      ? '<i class="bi bi-briefcase me-1"></i>Save to JD library'
+      : '<i class="bi bi-database-add me-1"></i>Save to question bank';
+  }
+
   function showAptAiPreviewPanel() {
     document.getElementById('aptAiFormPanel')?.classList.add('d-none');
     document.getElementById('aptAiPreviewPanel')?.classList.remove('d-none');
     document.getElementById('aptAiModalTitle').textContent = 'Review generated questions';
     document.getElementById('aptAiModal')?.querySelector('.modal-body')?.scrollTo(0, 0);
+    updateAptAiSaveButtonLabel();
   }
 
   function openAptAiModal() {
@@ -1863,6 +2096,7 @@
     document.getElementById('aptAiModeCategory').checked = true;
     document.getElementById('aptAiModeJd').checked = false;
     document.getElementById('aptAiJdText').value = '';
+    document.getElementById('aptAiJdTitle').value = '';
     clearAptAiJdUpload();
     const instr = document.getElementById('aptAiInstructions');
     if (instr) {
@@ -2340,6 +2574,12 @@
       toast('Select at least one question to save.', 'error');
       return;
     }
+    const isJd = aiLastFormParams?.generationMode === 'jd';
+    const jdTitle = (document.getElementById('aptAiJdTitle')?.value || aiLastFormParams?.jdTitle || '').trim();
+    if (isJd && !jdTitle) {
+      toast('Enter a JD title before saving.', 'error');
+      return;
+    }
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     const status = document.getElementById('aptAiSaveStatus');
     const btn = document.getElementById('btnAptAiSaveBank');
@@ -2349,26 +2589,66 @@
       const category = aiLastFormParams?.category || selected[0]?.category || 'General Aptitude';
       if (!live) {
         if (!Auth.isDemo() || !access.canManage) {
-          toast('Saving to bank requires a live session.', 'info');
+          toast('Saving requires a live session.', 'info');
           return;
         }
-        const bank = loadDemoBankStore();
-        selected.forEach((q, i) => {
-          bank.push({
-            id: `demo-bank-ai-${Date.now()}-${i}`,
+        if (isJd) {
+          const setId = `demo-jd-${Date.now()}`;
+          const questions = selected.map((q, i) => ({
+            id: `jdq-${i + 1}-${Date.now()}`,
             prompt: q.prompt,
             options: q.options,
             correctIndex: q.correctIndex,
             explanation: q.explanation,
-            category: q.category || category,
+            category: q.category || 'General Aptitude',
             difficulty: q.difficulty || 'Medium',
             topic: q.topic || '',
-            source: q.source || 'AI',
+            source: 'AI_JD',
+          }));
+          const store = loadDemoJdStore();
+          store.unshift({
+            id: setId,
+            jdTitle,
+            jdFilename: aiLastFormParams?.jdUploadFilename || '',
+            questionCount: questions.length,
+            questions,
           });
+          saveDemoJdStore(store);
+          toast(`Saved ${questions.length} question(s) to JD library: ${jdTitle}`, 'success');
+          await loadJdLibrary();
+        } else {
+          const bank = loadDemoBankStore();
+          selected.forEach((q, i) => {
+            bank.push({
+              id: `demo-bank-ai-${Date.now()}-${i}`,
+              prompt: q.prompt,
+              options: q.options,
+              correctIndex: q.correctIndex,
+              explanation: q.explanation,
+              category: q.category || category,
+              difficulty: q.difficulty || 'Medium',
+              topic: q.topic || '',
+              source: q.source || 'AI',
+            });
+          });
+          saveDemoBankStore(bank);
+          toast(`Saved ${selected.length} question(s) to demo bank.`, 'success');
+          await loadQuestionBank();
+        }
+      } else if (isJd) {
+        const res = await api('/aptitude/ai/save-jd', {
+          method: 'POST',
+          body: JSON.stringify({
+            questions: selected,
+            jdTitle,
+            jdFilename: aiLastFormParams?.jdUploadFilename || '',
+          }),
         });
-        saveDemoBankStore(bank);
-        toast(`Saved ${selected.length} question(s) to demo bank.`, 'success');
-        await loadQuestionBank();
+        if (!res?.success) throw new Error(res?.message || 'Could not save JD questions.');
+        toast(`Saved ${res.data?.questionCount ?? selected.length} question(s) to JD library.`, 'success');
+        delete jdSetDetailsCache[String(res.data?.id || '')];
+        manualJdSetSummaries = [];
+        await loadJdLibrary();
       } else {
         const res = await api('/aptitude/ai/save', {
           method: 'POST',
@@ -2379,7 +2659,7 @@
         await loadQuestionBank();
       }
       aiPreviewQuestions = aiPreviewQuestions.filter((q) => q.selected === false);
-      applyManagePanel('bank');
+      applyManagePanel(isJd ? 'jd' : 'bank');
       showAptAiPreviewPanel();
       renderAptAiPreview();
     } catch (err) {
@@ -2706,6 +2986,302 @@
     return '';
   }
 
+  function inferJdRulesFromQuestions(questions) {
+    const groups = new Map();
+    (questions || []).filter((q) => q?.jdSetId).forEach((q) => {
+      const setId = String(q.jdSetId);
+      if (!groups.has(setId)) {
+        groups.set(setId, {
+          jdSetId: setId,
+          jdTitle: String(q.jdTitle || ''),
+          count: 0,
+          marks: Number(q.marks ?? 1) || 1,
+          selectedQuestionIds: [],
+        });
+      }
+      const g = groups.get(setId);
+      g.count += 1;
+      g.selectedQuestionIds.push(String(q.id || ''));
+    });
+    return [...groups.values()];
+  }
+
+  function demoResolveJdWithPreferred(rules) {
+    const all = loadDemoJdStore();
+    const picked = [];
+    rules.forEach((rule) => {
+      const set = all.find((s) => String(s.id) === String(rule.jdSetId));
+      if (!set) throw new Error(`JD set not found: ${rule.jdTitle || rule.jdSetId}`);
+      const selectedIds = (rule.selectedQuestionIds || []).map(String);
+      if (selectedIds.length !== Number(rule.count)) {
+        throw new Error(`Select exactly ${rule.count} question(s) for ${rule.jdTitle || set.jdTitle}.`);
+      }
+      selectedIds.forEach((qid) => {
+        const q = (set.questions || []).find((item) => String(item.id) === qid);
+        if (!q) throw new Error('Selected JD question not found.');
+        picked.push({
+          ...q,
+          marks: Number(rule.marks) || 1,
+          jdSetId: String(set.id),
+          jdTitle: set.jdTitle || rule.jdTitle || '',
+          source: 'AI_JD',
+        });
+      });
+    });
+    return picked;
+  }
+
+  function manualJdRuleFromWrap(wrap) {
+    const setId = wrap.querySelector('[data-f="jdSetId"]')?.value || '';
+    const selected = manualJdSetSummaries.find((s) => String(s.id) === String(setId));
+    return {
+      jdSetId: setId,
+      jdTitle: selected?.jdTitle || wrap.querySelector('[data-f="jdSetId"] option:checked')?.textContent?.trim() || '',
+      count: Math.max(1, Number(wrap.querySelector('[data-f="count"]')?.value || 1)),
+      marks: Math.max(0.5, Number(wrap.querySelector('[data-f="marks"]')?.value || 1)),
+    };
+  }
+
+  function getManualJdIdsUsedExcept(excludeWrap) {
+    const used = new Set();
+    document.querySelectorAll('.tf-manual-jd-block').forEach((wrap) => {
+      if (wrap === excludeWrap) return;
+      wrap._manualJdState?.selectedIds?.forEach((id) => used.add(String(id)));
+    });
+    return used;
+  }
+
+  function bindManualJdPicker(wrap, pool, needed) {
+    const state = wrap._manualJdState;
+    wrap.querySelectorAll('[data-jd-pick]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = cb.getAttribute('data-jd-pick');
+        if (!id) return;
+        if (cb.checked) {
+          if (state.selectedIds.size >= needed) {
+            cb.checked = false;
+            return;
+          }
+          state.selectedIds.add(String(id));
+        } else {
+          state.selectedIds.delete(String(id));
+          state.collapsed = false;
+        }
+        if (state.selectedIds.size === needed) {
+          state.editing = false;
+          state.collapsed = true;
+        }
+        refreshManualJdBlock(wrap);
+      });
+    });
+  }
+
+  function renderManualJdPicker(wrap, pool, criteria) {
+    const picker = wrap.querySelector('.manual-jd-picker');
+    if (!picker) return;
+    const state = wrap._manualJdState;
+    const needed = criteria.count;
+    const selected = state.selectedIds.size;
+    const atLimit = selected >= needed;
+    const usedElsewhere = getManualJdIdsUsedExcept(wrap);
+    if (!pool.length) {
+      picker.innerHTML = '<p class="small text-muted-2 mb-0">No questions in this JD set.</p>';
+      return;
+    }
+    picker.innerHTML = `
+      <div class="small fw-semibold mb-1">Select ${needed} question${needed === 1 ? '' : 's'} from ${esc(criteria.jdTitle || 'JD')}</div>
+      <div class="small mb-2 ${selected === needed ? 'text-success fw-semibold' : ''}">Selected: ${selected} / ${needed}</div>
+      <div class="d-flex flex-column gap-1">${pool.map((q, i) => {
+        const id = String(q.id || '');
+        const checked = state.selectedIds.has(id);
+        const disabled = (atLimit && !checked) || (usedElsewhere.has(id) && !checked);
+        return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0 bg-white ${disabled ? 'opacity-50' : ''}">
+          <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
+          <span class="small min-w-0 apt-q-card-text">Question ${i + 1}: ${esc(stripHtml(q.prompt) || 'Question')} <span class="text-muted-2">· ${esc(q.topic || '')}</span></span>
+        </label>`;
+      }).join('')}</div>`;
+    bindManualJdPicker(wrap, pool, needed);
+  }
+
+  function renderManualJdSummary(wrap, criteria) {
+    const summary = wrap.querySelector('.manual-jd-summary');
+    if (!summary) return;
+    summary.innerHTML = `
+      <div class="small text-success">
+        <div>✓ ${esc(criteria.jdTitle || 'JD set')}</div>
+        <div>✓ ${esc(criteria.count)} question${criteria.count === 1 ? '' : 's'} selected</div>
+      </div>
+      <button type="button" class="btn btn-sm btn-link p-0 mt-1" data-edit-jd-pick>Edit Questions</button>`;
+    summary.querySelector('[data-edit-jd-pick]')?.addEventListener('click', () => {
+      wrap._manualJdState.editing = true;
+      wrap._manualJdState.collapsed = false;
+      refreshManualJdBlock(wrap);
+    });
+  }
+
+  async function refreshManualJdBlock(wrap) {
+    if (!wrap?._manualJdState) return;
+    await ensureJdSetSummariesLoaded();
+    const state = wrap._manualJdState;
+    const criteria = manualJdRuleFromWrap(wrap);
+    const setId = criteria.jdSetId;
+    const errorEl = wrap.querySelector('.manual-jd-error');
+    const pickerEl = wrap.querySelector('.manual-jd-picker');
+    const summaryEl = wrap.querySelector('.manual-jd-summary');
+
+    if (state.criteriaKey && state.criteriaKey !== `${setId}|${criteria.count}`) {
+      state.selectedIds.clear();
+      state.collapsed = false;
+      state.editing = false;
+    }
+    state.criteriaKey = `${setId}|${criteria.count}`;
+
+    if (!setId) {
+      errorEl?.classList.remove('d-none');
+      if (errorEl) errorEl.textContent = 'Select a JD title.';
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.add('d-none');
+      updateManualJdSummary();
+      return;
+    }
+
+    const detail = await getJdSetDetail(setId);
+    const pool = detail?.questions || [];
+    if (pool.length < criteria.count) {
+      errorEl?.classList.remove('d-none');
+      if (errorEl) {
+        errorEl.textContent = pool.length
+          ? `Only ${pool.length} question(s) available in this JD set. Reduce the count.`
+          : 'This JD set has no questions.';
+      }
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.add('d-none');
+      state.collapsed = false;
+      updateManualJdSummary();
+      return;
+    }
+
+    errorEl?.classList.add('d-none');
+    const complete = state.selectedIds.size === criteria.count;
+    if (complete && !state.editing) state.collapsed = true;
+
+    if (state.collapsed && !state.editing) {
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.remove('d-none');
+      renderManualJdSummary(wrap, criteria);
+    } else {
+      summaryEl?.classList.add('d-none');
+      pickerEl?.classList.remove('d-none');
+      renderManualJdPicker(wrap, pool, criteria);
+    }
+    updateManualJdSummary();
+  }
+
+  async function populateManualJdSelect(wrap, selectedId = '') {
+    await ensureJdSetSummariesLoaded();
+    const sel = wrap.querySelector('[data-f="jdSetId"]');
+    if (!sel) return;
+    const opts = manualJdSetSummaries.length
+      ? manualJdSetSummaries.map((s) => `<option value="${esc(String(s.id))}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${esc(s.jdTitle || 'Untitled')} (${esc(s.questionCount || 0)})</option>`).join('')
+      : '<option value="">No JD sets available</option>';
+    sel.innerHTML = opts;
+  }
+
+  function addManualJdRuleRow(rule = {}) {
+    manualJdRuleCounter += 1;
+    const root = document.getElementById('tfManualJdRules');
+    if (!root) return;
+    const selectedIds = (rule.selectedQuestionIds || []).map(String);
+    const count = Math.max(1, Number(rule.count ?? 1));
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-manual-jd-block border rounded-3 p-3 mb-2 bg-white';
+    wrap.innerHTML = `
+      <div class="row g-2 align-items-end">
+        <div class="col-md-6">
+          <label class="form-label small mb-1">JD title</label>
+          <select class="form-select form-select-sm" data-f="jdSetId"><option value="">Loading…</option></select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">No. of questions</label>
+          <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(count)}"/>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">Marks each</label>
+          <input class="form-control form-control-sm" type="number" min="0.5" step="0.5" data-f="marks" value="${esc(rule.marks ?? 1)}"/>
+        </div>
+        <div class="col-md-2">
+          <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-jd-block>Remove</button>
+        </div>
+      </div>
+      <div class="manual-jd-error small text-danger mt-2 d-none"></div>
+      <div class="manual-jd-picker mt-2"></div>
+      <div class="manual-jd-summary border rounded-2 p-2 mt-2 d-none"></div>`;
+    wrap._manualJdState = {
+      selectedIds: new Set(selectedIds),
+      collapsed: selectedIds.length >= count && selectedIds.length > 0,
+      editing: false,
+      criteriaKey: '',
+    };
+    wrap.querySelector('[data-remove-jd-block]')?.addEventListener('click', () => {
+      wrap.remove();
+      updateManualJdSummary();
+    });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', () => refreshManualJdBlock(wrap));
+      el.addEventListener('input', () => refreshManualJdBlock(wrap));
+    });
+    root.appendChild(wrap);
+    populateManualJdSelect(wrap, rule.jdSetId || '').then(() => refreshManualJdBlock(wrap));
+  }
+
+  function collectManualJdRules() {
+    return [...document.querySelectorAll('.tf-manual-jd-block')].map((wrap) => ({
+      ...manualJdRuleFromWrap(wrap),
+      selectedQuestionIds: [...(wrap._manualJdState?.selectedIds || [])],
+    }));
+  }
+
+  function validateManualJdRulesComplete() {
+    const blocks = [...document.querySelectorAll('.tf-manual-jd-block')];
+    if (!blocks.length) return 'Add at least one JD rule.';
+    for (const wrap of blocks) {
+      const c = manualJdRuleFromWrap(wrap);
+      const state = wrap._manualJdState;
+      if (!c.jdSetId) return 'Select a JD title for each JD rule.';
+      if (!state || state.selectedIds.size !== c.count) {
+        return `Select exactly ${c.count} question(s) for ${c.jdTitle || 'the JD set'} (${state?.selectedIds.size || 0} selected).`;
+      }
+    }
+    return '';
+  }
+
+  function updateManualJdSummary() {
+    const rules = collectManualJdRules();
+    const jdTotal = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const complete = rules.filter((r, i) => {
+      const wrap = document.querySelectorAll('.tf-manual-jd-block')[i];
+      return wrap?._manualJdState?.selectedIds?.size === r.count;
+    }).length;
+    const summary = document.getElementById('tfManualJdSummary');
+    if (summary) {
+      summary.textContent = `${jdTotal} question(s) from ${rules.length} JD set${rules.length === 1 ? '' : 's'} · ${complete}/${rules.length} complete`;
+    }
+    updateTestFormQuestionCount();
+  }
+
+  function updateTestFormQuestionCount() {
+    if (getQuestionSource() !== 'manual') return;
+    const bankTotal = document.getElementById('tfUseBankManual')?.checked
+      ? collectManualBankRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0)
+      : 0;
+    const jdTotal = document.getElementById('tfUseJdManual')?.checked
+      ? collectManualJdRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0)
+      : 0;
+    const mcqCount = collectMcqs().length;
+    const countEl = document.getElementById('tfQuestionCount');
+    if (countEl) countEl.value = String(bankTotal + jdTotal + mcqCount || 1);
+  }
+
   function updateRandomSummary() {
     const rules = collectRandomRules();
     const total = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
@@ -2726,11 +3302,7 @@
     if (summary) {
       summary.textContent = `${bankTotal} question(s) from ${rules.length} categor${rules.length === 1 ? 'y' : 'ies'} · ${complete}/${rules.length} complete`;
     }
-    const countEl = document.getElementById('tfQuestionCount');
-    if (countEl && getQuestionSource() === 'manual' && document.getElementById('tfUseBankManual')?.checked) {
-      const mcqCount = collectMcqs().length;
-      countEl.value = String(bankTotal + mcqCount || 1);
-    }
+    updateTestFormQuestionCount();
   }
 
   function inferBankRulesFromQuestions(questions) {
@@ -2874,13 +3446,16 @@
     } else if (bankIds.length) {
       fromBank = bankIds.map((id) => all.find((q) => String(q.id) === String(id))).filter(Boolean);
     }
+    const jdRules = payload.jdFilterRules || [];
+    let fromJd = [];
+    if (jdRules.length) fromJd = demoResolveJdWithPreferred(jdRules);
     const inline = payload.questions || [];
-    payload.questions = [...fromBank, ...inline];
+    payload.questions = [...fromBank, ...fromJd, ...inline];
     payload.questionCount = payload.questions.length;
     payload.bankQuestionIds = fromBank.map((q) => String(q.bankId || q.id || '')).filter(Boolean);
-    if (!payload.questions.length) throw new Error('Add bank category rules or add MCQs.');
-    payload.category = fromBank[0]?.category || inline[0]?.category || 'General Aptitude';
-    payload.difficulty = fromBank[0]?.difficulty || inline[0]?.difficulty || 'Medium';
+    if (!payload.questions.length) throw new Error('Add bank rules, JD questions, or add MCQs.');
+    payload.category = fromBank[0]?.category || fromJd[0]?.category || inline[0]?.category || 'General Aptitude';
+    payload.difficulty = fromBank[0]?.difficulty || fromJd[0]?.difficulty || inline[0]?.difficulty || 'Medium';
     return payload;
   }
 
@@ -2918,17 +3493,21 @@
       managePanel = 'contests';
     } else if (panel === 'bank') {
       managePanel = 'bank';
+    } else if (panel === 'jd') {
+      managePanel = 'jd';
     } else {
       managePanel = 'tests';
     }
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
     document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
     document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
+    document.getElementById('manageJdPanel')?.classList.toggle('d-none', managePanel !== 'jd');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-manage-view') === managePanel);
     });
     if (managePanel === 'contests') applyManageContestType(manageContestType);
     if (managePanel === 'bank') loadQuestionBank().catch(() => {});
+    if (managePanel === 'jd') loadJdLibrary().catch(() => {});
   }
 
   function syncManageContestActions() {
@@ -3955,6 +4534,25 @@
       });
     }
 
+    document.getElementById('tfManualJdRules').innerHTML = '';
+    manualJdRuleCounter = 0;
+    manualJdSetSummaries = [];
+    let jdRules = test?.jdFilterRules?.length ? test.jdFilterRules : [];
+    if (!jdRules.length && source === 'manual' && (test?.questions || []).some((q) => q.jdSetId)) {
+      jdRules = inferJdRulesFromQuestions(test?.questions || []);
+    }
+    const useJd = jdRules.length > 0;
+    document.getElementById('tfUseJdManual').checked = useJd;
+    document.getElementById('tfJdPicker')?.classList.toggle('d-none', !useJd);
+    if (useJd) {
+      ensureJdSetSummariesLoaded().then(() => {
+        jdRules.forEach((r) => addManualJdRuleRow(r));
+        updateManualJdSummary();
+      }).catch(() => {
+        jdRules.forEach((r) => addManualJdRuleRow(r));
+      });
+    }
+
     const contestType = test?.contestType || preset?.contestType || 'none';
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
     document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
@@ -3962,7 +4560,7 @@
     syncQuestionSourcePanels();
     document.getElementById('tfBulkFile').value = '';
     document.getElementById('mcqList').innerHTML = '';
-    const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId) : [];
+    const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId && !q.jdSetId) : [];
     if (qs.length) qs.forEach((q) => addMcqRow(q));
     updateManualBankSummary();
     testFormModal.show();
@@ -3992,6 +4590,8 @@
       payload.bankQuestionIds = useBank
         ? payload.bankFilterRules.flatMap((r) => r.selectedQuestionIds || [])
         : [];
+      const useJd = document.getElementById('tfUseJdManual')?.checked;
+      payload.jdFilterRules = useJd ? collectManualJdRules() : [];
       payload.questions = collectMcqs();
     }
     if (!payload.category) {
@@ -4296,6 +4896,20 @@
         updateManualQuestionCount();
       }
     });
+    document.getElementById('tfUseJdManual')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      document.getElementById('tfJdPicker')?.classList.toggle('d-none', !on);
+      if (on) {
+        ensureJdSetSummariesLoaded().then(() => {
+          const root = document.getElementById('tfManualJdRules');
+          if (root && !root.querySelector('.tf-manual-jd-block')) addManualJdRuleRow();
+          updateManualJdSummary();
+        }).catch(() => updateManualJdSummary());
+      } else {
+        updateManualJdSummary();
+      }
+    });
+    document.getElementById('btnAddManualJdRule')?.addEventListener('click', () => addManualJdRuleRow());
     document.getElementById('tfQuestionCount')?.addEventListener('input', () => updateManualQuestionCount());
     document.getElementById('btnFormBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate(false));
     document.getElementById('btnFormBulkImport')?.addEventListener('click', () => {
@@ -4348,8 +4962,14 @@
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal());
     document.getElementById('btnAptAiAddRow')?.addEventListener('click', () => addAiGenRow());
-    document.getElementById('aptAiModeCategory')?.addEventListener('change', updateAiSourceModeUI);
-    document.getElementById('aptAiModeJd')?.addEventListener('change', updateAiSourceModeUI);
+    document.getElementById('aptAiModeCategory')?.addEventListener('change', () => {
+      updateAiSourceModeUI();
+      updateAptAiSaveButtonLabel();
+    });
+    document.getElementById('aptAiModeJd')?.addEventListener('change', () => {
+      updateAiSourceModeUI();
+      updateAptAiSaveButtonLabel();
+    });
     document.getElementById('aptAiInstructions')?.addEventListener('input', (e) => {
       if (e.target.value.trim()) e.target.dataset.userEdited = '1';
     });
@@ -4364,6 +4984,7 @@
         document.getElementById('aptAiModeCategory').checked = !jd;
         updateAiSourceModeUI();
         if (jd) {
+          document.getElementById('aptAiJdTitle').value = aiLastFormParams.jdTitle || '';
           document.getElementById('aptAiJdText').value = aiLastFormParams.jobDescriptionPasted || '';
           if (aiLastFormParams.jobDescriptionUploaded && aiLastFormParams.jdUploadFilename) {
             aiJdUploadMeta = {
@@ -4401,6 +5022,17 @@
       bankCategoryFilter = document.getElementById('bankFilterCategory')?.value || '';
       loadQuestionBank().catch(() => {});
     });
+    document.getElementById('bankSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      visibleBankQuestions().forEach((q) => {
+        const id = String(q.id || q.bankId || '');
+        if (!id) return;
+        if (on) selectedBankIds.add(id);
+        else selectedBankIds.delete(id);
+      });
+      renderQuestionBank();
+    });
+    document.getElementById('btnBankDeleteSelected')?.addEventListener('click', () => deleteSelectedBankQuestions());
     document.getElementById('bankDifficultyNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-bank-difficulty]');
       if (!link) return;
@@ -4428,13 +5060,16 @@
       } else {
         const mcqCount = payload.questions?.length || 0;
         const useBank = document.getElementById('tfUseBankManual')?.checked;
+        const useJd = document.getElementById('tfUseJdManual')?.checked;
         const target = Number(document.getElementById('tfQuestionCount')?.value || 0);
         if (!target || target < 1) {
           toast('Enter total number of questions.', 'error');
           return;
         }
         const bankRules = useBank ? collectManualBankRules() : [];
+        const jdRules = useJd ? collectManualJdRules() : [];
         const bankTotal = bankRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
+        const jdTotal = jdRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
         if (useBank) {
           await ensureManualBankQuestionsLoaded();
           const bankErr = validateManualBankRulesComplete();
@@ -4442,18 +5077,30 @@
             toast(bankErr, 'error');
             return;
           }
-        } else if (!mcqCount) {
-          toast('Add at least one MCQ or add questions from the bank.', 'error');
+        }
+        if (useJd) {
+          await ensureJdSetSummariesLoaded();
+          const jdErr = validateManualJdRulesComplete();
+          if (jdErr) {
+            toast(jdErr, 'error');
+            return;
+          }
+        }
+        if (!useBank && !useJd && !mcqCount) {
+          toast('Add questions from the bank, JD library, or add MCQs directly.', 'error');
           return;
         }
-        if (bankTotal + mcqCount !== target) {
-          payload.questionCount = bankTotal + mcqCount;
+        if (bankTotal + jdTotal + mcqCount !== target) {
+          payload.questionCount = bankTotal + jdTotal + mcqCount;
         } else {
           payload.questionCount = target;
         }
         if (useBank) {
           payload.bankFilterRules = bankRules;
           payload.bankQuestionIds = bankRules.flatMap((r) => r.selectedQuestionIds || []);
+        }
+        if (useJd) {
+          payload.jdFilterRules = jdRules;
         }
       }
       payload.totalMarks = 0;

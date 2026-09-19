@@ -182,6 +182,7 @@
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">JD library</a></li>
       </ul>
 
       <div id="manageTestsPanel">
@@ -233,7 +234,22 @@
           <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Medium">Medium</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Hard">Hard</a></li>
         </ul>
+        <div id="bankBulkActions" class="d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 pb-2 border-bottom">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="bankSelectAllVisible"/>
+            <label class="form-check-label small" for="bankSelectAllVisible">Select all shown</label>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="small text-muted-2" id="bankSelectedCount">0 selected</span>
+            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnBankDeleteSelected"><i class="bi bi-trash me-1"></i>Delete selected</button>
+          </div>
+        </div>
         <div id="bankQuestionsList" class="d-flex flex-column gap-2"></div>
+      </div>
+
+      <div id="manageJdPanel" class="d-none">
+        <p class="small text-muted-2 mb-3">JD-based questions are stored separately by job title. Generate them from AI Generate → Job Description.</p>
+        <div id="jdLibraryList" class="d-flex flex-column gap-3"></div>
       </div>
     </div>
   </div>
@@ -375,6 +391,18 @@
             <div id="tfManualBankRules" class="d-flex flex-column gap-2 mb-2"></div>
             <div class="small text-muted-2" id="tfManualBankSummary">0 questions from rules</div>
           </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="tfUseJdManual"/>
+            <label class="form-check-label" for="tfUseJdManual">Add questions from JD library</label>
+          </div>
+          <div class="border rounded-3 p-3 mb-3 d-none" id="tfJdPicker" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div class="small fw-semibold">Pick questions by JD title</div>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddManualJdRule"><i class="bi bi-plus-lg me-1"></i>Add JD</button>
+            </div>
+            <div id="tfManualJdRules" class="d-flex flex-column gap-2 mb-2"></div>
+            <div class="small text-muted-2" id="tfManualJdSummary">0 questions from JD sets</div>
+          </div>
           <div id="tfManualMcqSection">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
               <label class="form-label small fw-semibold mb-0">Or add MCQs directly</label>
@@ -452,6 +480,11 @@
           </div>
         </div>
         <div id="aptAiJdPanel" class="col-12 d-none">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="aptAiJdTitle">JD title</label>
+            <input class="form-control" id="aptAiJdTitle" maxlength="160" placeholder="e.g. Software Developer — Infosys"/>
+            <div class="small text-muted-2 mt-1">Used to group and find these questions in the JD library.</div>
+          </div>
           <label class="form-label small fw-semibold" for="aptAiJdText">Paste job description</label>
           <textarea class="form-control mb-3" id="aptAiJdText" rows="6" placeholder="Paste the complete job description here…"></textarea>
           <div class="text-center small text-muted-2 mb-2">OR</div>
@@ -497,7 +530,7 @@
       </div>
       <div id="aptAiPreviewList" class="d-flex flex-column gap-3"></div>
       <div class="d-flex flex-wrap gap-2 mt-4">
-        <button type="button" class="btn btn-primary" id="btnAptAiSaveBank"><i class="bi bi-database-add me-1"></i>Add selected to question bank</button>
+        <button type="button" class="btn btn-primary" id="btnAptAiSaveBank"><i class="bi bi-database-add me-1"></i>Save selected</button>
         <button type="button" class="btn btn-outline-secondary" id="btnAptAiBack">Back</button>
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
       </div>
@@ -527,5 +560,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919align"></script>
+<script src="js/aptitude-page.js?v=20260919bankbulk"></script>
 </body></html>

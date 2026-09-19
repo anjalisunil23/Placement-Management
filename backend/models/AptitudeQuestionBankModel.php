@@ -146,6 +146,9 @@ class AptitudeQuestionBankModel extends BaseModel
         $rows = $this->findAll($filter, $limit, 0, ['createdAt' => -1]);
         $out = [];
         foreach ($rows as $row) {
+            if (trim((string) ($row['source'] ?? '')) === 'AI_JD') {
+                continue;
+            }
             $out[] = [
                 'id' => (string) ($row['_id'] ?? ''),
                 'bankId' => (string) ($row['_id'] ?? ''),

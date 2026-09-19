@@ -837,6 +837,28 @@ class AptitudeTestModel extends BaseModel
                 'selectedQuestionIds' => $selectedQuestionIds,
             ];
         }
+        $jdFilterRules = [];
+        foreach ((array) ($data['jdFilterRules'] ?? []) as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $setId = trim((string) ($rule['jdSetId'] ?? ''));
+            if ($setId === '') {
+                continue;
+            }
+            $marks = (float) ($rule['marks'] ?? 1);
+            $selectedQuestionIds = array_values(array_unique(array_filter(
+                array_map(static fn ($id) => trim((string) $id), (array) ($rule['selectedQuestionIds'] ?? [])),
+                static fn ($id) => $id !== ''
+            )));
+            $jdFilterRules[] = [
+                'jdSetId' => $setId,
+                'jdTitle' => trim((string) ($rule['jdTitle'] ?? '')),
+                'count' => max(1, (int) ($rule['count'] ?? 1)),
+                'marks' => $marks > 0 ? max(0.5, $marks) : 1.0,
+                'selectedQuestionIds' => $selectedQuestionIds,
+            ];
+        }
 
         $payload = [
             'title' => trim((string) ($data['title'] ?? 'Aptitude mock')) ?: 'Aptitude mock',
@@ -855,6 +877,7 @@ class AptitudeTestModel extends BaseModel
             'randomRules' => $questionSource === 'random' ? $randomRules : [],
             'bankFilterRules' => $questionSource === 'manual' ? $bankFilterRules : [],
             'bankQuestionIds' => $questionSource === 'manual' ? $bankQuestionIds : [],
+            'jdFilterRules' => $questionSource === 'manual' ? $jdFilterRules : [],
             'questionType' => 'mcq',
             'questions' => $questions,
         ];
@@ -1077,6 +1100,26 @@ class AptitudeTestModel extends BaseModel
                 static fn ($id) => trim((string) $id),
                 (array) ($test['bankQuestionIds'] ?? [])
             ))),
+            'jdFilterRules' => array_values(array_map(
+                static function ($rule): array {
+                    if (!is_array($rule)) {
+                        return [];
+                    }
+                    $marks = (float) ($rule['marks'] ?? 1);
+
+                    return [
+                        'jdSetId' => trim((string) ($rule['jdSetId'] ?? '')),
+                        'jdTitle' => trim((string) ($rule['jdTitle'] ?? '')),
+                        'count' => max(1, (int) ($rule['count'] ?? 1)),
+                        'marks' => $marks > 0 ? max(0.5, $marks) : 1.0,
+                        'selectedQuestionIds' => array_values(array_filter(array_map(
+                            static fn ($id) => trim((string) $id),
+                            (array) ($rule['selectedQuestionIds'] ?? [])
+                        ))),
+                    ];
+                },
+                (array) ($test['jdFilterRules'] ?? [])
+            )),
             'questionType' => 'mcq',
             'questions' => $questions,
             'departmentId' => isset($test['departmentId']) ? (string) $test['departmentId'] : null,
