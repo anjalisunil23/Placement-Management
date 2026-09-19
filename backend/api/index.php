@@ -114,6 +114,7 @@ use PMS\Officer\OfficerController;
 use PMS\Staff\StaffController;
 use PMS\Student\ResumeBuilderController;
 use PMS\Student\StudentController;
+use PMS\Student\StudentPracticeController;
 use PMS\Utils\Response;
 
 $uri    = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
@@ -266,6 +267,13 @@ $routes = [
     ['GET',  '/student/drives',            [StudentController::class, 'listDrives']],
     ['GET',  '/student/open-drives',       [StudentController::class, 'openDrives']],
     ['GET',  '/student/drives/{id}',       [StudentController::class, 'driveDetails']],
+    ['GET',  '/student/jds',               [StudentPracticeController::class, 'listJds']],
+    ['GET',  '/student/jds/{id}/document', [StudentPracticeController::class, 'streamJdDocument']],
+    ['GET',  '/student/jds/{id}',          [StudentPracticeController::class, 'getJd']],
+    ['POST', '/student/ai-practice/generate', [StudentPracticeController::class, 'generatePractice']],
+    ['POST', '/student/ai-practice/submit',   [StudentPracticeController::class, 'submitPractice']],
+    ['GET',  '/student/ai-practice/history',  [StudentPracticeController::class, 'practiceHistory']],
+    ['GET',  '/student/ai-practice/{id}',     [StudentPracticeController::class, 'getPracticeSession']],
     ['POST', '/student/apply',             [StudentController::class, 'apply']],
     ['GET',  '/student/applications',      [StudentController::class, 'myApplications']],
     ['GET',  '/student/results',         [StudentController::class, 'myResults']],

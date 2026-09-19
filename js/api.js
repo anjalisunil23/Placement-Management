@@ -482,6 +482,7 @@ const PAGE_PERMS = {
   'public-stats.html':  ROLES,
   'settings.html':      ['admin','placement_officer','student','staff','alumni','company'],
   'get-placed.html':    ['student'],
+  'placement-jds.html': ['student'],
   'placement-registration.html': ['student'],
   'alumni-jobs.html':       ['alumni'],
   'alumni-referrals.html':  ['alumni'],
@@ -510,7 +511,7 @@ const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html',
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-aptitude.html', 'mock-coding.html'];
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
-const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'mock-aptitude.html', 'mock-coding.html'];
+const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'placement-jds.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'mock-aptitude.html', 'mock-coding.html'];
 
 /** Placement Cell guidelines version students must accept on first login. */
 const PLACEMENT_POLICY_VERSION = 'ajce-2026-v1';

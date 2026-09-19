@@ -1,0 +1,134 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Placement JDs · AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260919jds" rel="stylesheet"/>
+<style>
+  .jd-card{border:1px solid var(--border,#e5e7eb);border-radius:.75rem;padding:1rem 1.15rem;background:#fff}
+  .jd-skill{display:inline-block;font-size:.72rem;padding:.15rem .45rem;border-radius:999px;background:#f1f5f9;color:#475569;margin:.1rem .2rem .1rem 0}
+  .practice-option{cursor:pointer;transition:border-color .15s,background .15s}
+  .practice-option:hover{border-color:#334155!important}
+  .practice-option.is-selected{background:#1e293b!important;border-color:#0f172a!important;color:#fff}
+  .practice-option.is-selected .text-muted-2{color:#cbd5e1!important}
+  #practiceExamShell .exam-q{min-height:220px}
+</style>
+<script src="js/ph-role-guard.js"></script>
+</head>
+<body data-page="placement-jds.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Placement JDs</h1>
+    <p class="page-sub mb-0">Browse company job descriptions and practice with AI-generated questions.</p>
+  </div>
+</div>
+
+<ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="jdMainNav">
+  <li class="nav-item"><a class="nav-link active" href="#" data-jd-tab="jds">Job Descriptions</a></li>
+  <li class="nav-item"><a class="nav-link" href="#" data-jd-tab="practice">AI Practice</a></li>
+  <li class="nav-item"><a class="nav-link" href="#" data-jd-tab="history">My Practice History</a></li>
+</ul>
+
+<div id="jdListPanel">
+  <div id="jdCardsRoot" class="d-flex flex-column gap-3"></div>
+</div>
+
+<div id="jdPracticePanel" class="d-none">
+  <div class="card-surface p-3 p-md-4 mb-3">
+    <h5 class="fw-bold mb-1">AI Self Practice</h5>
+    <p class="small text-muted-2 mb-3">Practice for your placement preparation using topics or company job descriptions. Questions are for self-practice only — not official tests.</p>
+    <div class="mb-3">
+      <label class="form-label small fw-semibold">Question source</label>
+      <div class="d-flex flex-wrap gap-3">
+        <div class="form-check"><input class="form-check-input" type="radio" name="stuPracticeMode" id="stuModeTopic" value="topic" checked><label class="form-check-label" for="stuModeTopic">Topic</label></div>
+        <div class="form-check"><input class="form-check-input" type="radio" name="stuPracticeMode" id="stuModeJd" value="jd"><label class="form-check-label" for="stuModeJd">Job Description</label></div>
+        <div class="form-check"><input class="form-check-input" type="radio" name="stuPracticeMode" id="stuModeJdTopic" value="jd_topic"><label class="form-check-label" for="stuModeJdTopic">Topic + Job Description</label></div>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-6 d-none" id="stuJdSelectWrap">
+        <label class="form-label small fw-semibold" for="stuJdSelect">Job description</label>
+        <select class="form-select" id="stuJdSelect"><option value="">Select a published JD…</option></select>
+      </div>
+      <div class="col-md-6 d-none" id="stuTopicWrap">
+        <label class="form-label small fw-semibold" for="stuTopicInput">Topic</label>
+        <input class="form-control" id="stuTopicInput" list="stuTopicSuggestions" placeholder="e.g. SQL, Java OOP, Data Structures"/>
+        <datalist id="stuTopicSuggestions">
+          <option value="SQL"></option><option value="Java OOP"></option><option value="Python"></option>
+          <option value="Data Structures"></option><option value="DBMS"></option><option value="REST APIs"></option>
+          <option value="React"></option><option value="JavaScript"></option><option value="Aptitude"></option>
+        </datalist>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold" for="stuDifficulty">Difficulty</label>
+        <select class="form-select" id="stuDifficulty">
+          <option value="Easy">Easy</option><option value="Medium" selected>Medium</option><option value="Hard">Hard</option><option value="Mixed">Mixed</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold" for="stuQuestionCount">Number of questions</label>
+        <select class="form-select" id="stuQuestionCount">
+          <option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option><option value="25">25</option>
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label small fw-semibold" for="stuInstructions">Optional instructions</label>
+        <textarea class="form-control" id="stuInstructions" rows="2" placeholder="Generate questions suitable for campus placement preparation."></textarea>
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <button type="button" class="btn btn-primary" id="btnStuGenerate"><i class="bi bi-stars me-1"></i>Generate Questions</button>
+    </div>
+    <div id="stuGenerateStatus" class="small text-muted-2 mt-3 d-none"><span class="spinner-border spinner-border-sm me-2"></span><span id="stuGenerateStatusText">Generating questions…</span></div>
+  </div>
+  <div id="practiceExamShell" class="d-none card-surface p-3 p-md-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="fw-semibold">AI Practice Test · <span id="stuPracticeProgress">Question 1 of 10</span></div>
+      <span class="badge-soft muted">Self practice</span>
+    </div>
+    <div class="exam-q mb-3" id="stuPracticeQuestion"></div>
+    <div class="d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnStuPrev">Previous</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnStuNext">Next</button>
+      <button type="button" class="btn btn-primary btn-sm ms-auto" id="btnStuSubmitPractice">Submit practice</button>
+    </div>
+  </div>
+  <div id="practiceResultShell" class="d-none card-surface p-3 p-md-4">
+    <h5 class="fw-bold mb-2">Practice completed</h5>
+    <div class="row g-2 mb-3" id="stuResultStats"></div>
+    <div id="stuResultReview" class="d-flex flex-column gap-2 mb-3"></div>
+    <div class="d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-outline-primary btn-sm" id="btnStuTryAgain">Try again</button>
+      <button type="button" class="btn btn-primary btn-sm" id="btnStuNewQuestions">Generate new questions</button>
+    </div>
+  </div>
+</div>
+
+<div id="jdHistoryPanel" class="d-none">
+  <div class="table-wrap card-surface">
+    <table class="table-modern mb-0">
+      <thead><tr><th>Date</th><th>Source</th><th>Topic / JD</th><th>Questions</th><th>Score</th><th></th></tr></thead>
+      <tbody id="stuHistoryBody"></tbody>
+    </table>
+  </div>
+</div>
+
+</main></div></div>
+
+<div class="modal fade" id="jdViewModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="jdViewTitle">Job Description</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="jdViewBody"></div>
+  <div class="modal-footer">
+    <a href="#" class="btn btn-outline-secondary d-none" id="jdViewDownload" target="_blank" rel="noopener">Download</a>
+    <button type="button" class="btn btn-primary" id="jdViewPracticeBtn">Practice with JD</button>
+  </div>
+</div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=20260917admin"></script>
+<script src="js/app.js?v=20260919jds"></script>
+<script src="js/student-ai-practice.js?v=20260919jds"></script>
+</body></html>

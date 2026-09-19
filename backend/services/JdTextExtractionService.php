@@ -187,6 +187,45 @@ final class JdTextExtractionService
         return trim(implode(' ', $parts));
     }
 
+    public function extractTextFromStoredUri(string $uri, ?string $mimeHint = null): string
+    {
+        $storage = new ObjectStorageService();
+        $body = $storage->getContentsWithFallback($uri, ObjectStorageService::FOLDER_JD);
+        if ($body === '') {
+            return '';
+        }
+
+        $resolved = $storage->resolve($uri);
+        $filename = (string) ($resolved['filename'] ?? 'jd.pdf');
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        if ($ext === '' && $mimeHint !== null) {
+            $ext = match ($mimeHint) {
+                'application/pdf' => 'pdf',
+                'image/jpeg', 'image/jpg' => 'jpg',
+                'image/png' => 'png',
+                default => 'pdf',
+            };
+        }
+
+        $tmp = tempnam(sys_get_temp_dir(), 'pms_stu_jd_');
+        if ($tmp === false) {
+            throw new \RuntimeException('Unable to process document.');
+        }
+        file_put_contents($tmp, $body);
+
+        try {
+            $text = match ($ext) {
+                'pdf' => $this->extractPdfText($tmp),
+                'jpg', 'jpeg', 'png' => $this->extractImageText($tmp, $ext),
+                default => $this->extractPdfText($tmp),
+            };
+        } finally {
+            @unlink($tmp);
+        }
+
+        return $this->sanitizeText($text);
+    }
+
     private function extractImageText(string $path, string $ext): string
     {
         if (!$this->openai->isConfigured()) {

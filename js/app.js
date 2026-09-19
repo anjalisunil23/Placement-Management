@@ -88,6 +88,7 @@ const NAV = [
   { href: "drives.html", icon: "bi-briefcase-fill", label: "Placement Drives", roles: ['admin', 'placement_officer', 'staff'] },
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
   { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Placement details", roles: ['student'], studentOnly: true },
+  { href: "placement-jds.html", icon: "bi-file-earmark-text", label: "Placement JDs", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
   { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'], hideForStaffViewer: true },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
@@ -162,6 +163,7 @@ const PAGE_LABELS = {
   'mock-coding.html#take': 'Mock · Coding Practice · Take test',
   'mock-coding.html#progress': 'Mock · Coding Practice · Progress',
   'mock-coding.html#manage': 'Mock · Coding Practice · Manage tests',
+  'placement-jds.html': 'Placement JDs',
 };
 
 function initials(name = '') {
