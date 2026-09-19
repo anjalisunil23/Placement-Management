@@ -1681,12 +1681,6 @@
     document.querySelectorAll('#studentJdBlockViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-jd-block-view') === studentJdBlockView);
     });
-    const intro = document.getElementById('studentJdBlockIntro');
-    if (intro) {
-      intro.textContent = studentJdBlockView === 'bank'
-        ? 'Browse JD documents and practice questions grouped by company.'
-        : 'Take company-specific JD tests grouped by company.';
-    }
   }
 
   function applyStudentJdBlockView(view) {
@@ -1704,8 +1698,7 @@
     studentJdSelectedCompanyId = companyId;
     document.getElementById('studentJdBlockCompanyView')?.classList.add('d-none');
     document.getElementById('studentJdBlockCompanyDetail')?.classList.remove('d-none');
-    const titleEl = document.getElementById('studentJdBlockDetailTitle');
-    if (titleEl) titleEl.textContent = block?.companyName || 'Company';
+    document.getElementById('btnStudentJdBlockBack')?.classList.remove('d-none');
     const showTests = studentJdBlockView === 'tests';
     const testsRoot = document.getElementById('studentJdBlockCompanyTests');
     const bankSection = document.getElementById('studentJdBlockBankSection');
@@ -1732,6 +1725,7 @@
     studentJdSelectedCompanyId = null;
     document.getElementById('studentJdBlockCompanyDetail')?.classList.add('d-none');
     document.getElementById('studentJdBlockCompanyView')?.classList.remove('d-none');
+    document.getElementById('btnStudentJdBlockBack')?.classList.add('d-none');
   }
 
   function renderStudentJdBlock() {

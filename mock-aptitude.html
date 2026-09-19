@@ -104,17 +104,17 @@
           </div>
           <div id="testList"></div>
           <div id="studentJdBlockPanel" class="d-none px-3 px-md-4 pb-3">
-            <ul class="nav nav-pills gap-1 flex-wrap mb-2" id="studentJdBlockViewNav">
-              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-jd-block-view="tests">Tests</a></li>
-              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-jd-block-view="bank">Question bank</a></li>
-            </ul>
-            <p class="small text-muted-2 mb-3" id="studentJdBlockIntro">Take company-specific JD tests grouped by company.</p>
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+              <ul class="nav nav-pills gap-1 flex-wrap mb-0" id="studentJdBlockViewNav">
+                <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-jd-block-view="tests">Tests</a></li>
+                <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-jd-block-view="bank">Question bank</a></li>
+              </ul>
+              <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnStudentJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
+            </div>
             <div id="studentJdBlockCompanyView">
               <div id="studentJdBlockCompanyGrid" class="row g-3"></div>
             </div>
             <div id="studentJdBlockCompanyDetail" class="d-none">
-              <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="btnStudentJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
-              <h6 class="fw-semibold mb-3" id="studentJdBlockDetailTitle"></h6>
               <div id="studentJdBlockCompanyTests"></div>
               <div id="studentJdBlockBankSection">
                 <div id="studentJdBlockSetsList" class="d-flex flex-column gap-3"></div>
@@ -646,5 +646,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919jdname"></script>
+<script src="js/aptitude-page.js?v=20260919jdnav"></script>
 </body></html>
