@@ -1221,8 +1221,10 @@ final class AptitudeService
             }
 
             $profile = $profileCache[$uid] ?? $this->summarizeSubjectCached($uid, $group, null, false);
-            if (in_array($role, ['staff', 'placement_officer'], true) && ($profile['userType'] ?? '') !== 'student') {
-                continue;
+            if (($profile['userType'] ?? '') !== 'student') {
+                if ($resultType === 'company' || in_array($role, ['staff', 'placement_officer'], true)) {
+                    continue;
+                }
             }
             if ($role !== 'admin' && ($profile['userType'] ?? '') === 'alumni') {
                 continue;
@@ -3025,12 +3027,20 @@ final class AptitudeService
         $totalMarks = (float) ($attempt['totalMarks'] ?? 0);
         $marksObtained = (float) ($attempt['marksObtained'] ?? $attempt['score'] ?? 0);
 
+        $testKind = AptitudeTestModel::normalizeTestKind((string) ($test['testKind'] ?? ''));
+        if ($testKind !== 'company' && trim((string) ($test['companyId'] ?? '')) !== '') {
+            $testKind = 'company';
+        }
+
         $payload = [
             'id' => (string) ($attempt['_id'] ?? ''),
             'attemptId' => (string) ($attempt['_id'] ?? ''),
             'testId' => (string) ($attempt['testId'] ?? ''),
             'testTitle' => $title,
             'category' => $category,
+            'testKind' => $testKind,
+            'companyId' => trim((string) ($test['companyId'] ?? '')) !== '' ? (string) $test['companyId'] : null,
+            'companyName' => trim((string) ($test['companyName'] ?? '')) !== '' ? (string) $test['companyName'] : null,
             'contestType' => $contestType,
             'contestScheduleLabel' => AptitudeTestModel::contestScheduleLabel($test),
             'status' => (string) ($attempt['status'] ?? ''),

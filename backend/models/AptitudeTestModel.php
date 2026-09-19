@@ -68,7 +68,11 @@ class AptitudeTestModel extends BaseModel
      */
     public static function isCompanyTest(array $test): bool
     {
-        return self::normalizeTestKind((string) ($test['testKind'] ?? '')) === 'company';
+        if (self::normalizeTestKind((string) ($test['testKind'] ?? '')) === 'company') {
+            return true;
+        }
+
+        return trim((string) ($test['companyId'] ?? '')) !== '';
     }
 
     /**

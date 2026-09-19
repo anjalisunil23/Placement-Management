@@ -1064,7 +1064,12 @@
   }
 
   function historyEntryIsCompany(h) {
-    return isCompanyTest(resolveHistoryTest(h));
+    const row = h && typeof h === 'object' ? h : {};
+    const kind = String(row.testKind || '').toLowerCase();
+    if (kind === 'company') return true;
+    if (kind === 'regular') return false;
+    if (String(row.companyId || '').trim() !== '') return true;
+    return isCompanyTest(resolveHistoryTest(row));
   }
 
   function historyResultMode(h) {
@@ -4439,7 +4444,9 @@
   }
 
   function isCompanyTest(t) {
-    return String(t?.testKind || '') === 'company';
+    if (!t) return false;
+    if (String(t.testKind || '') === 'company') return true;
+    return String(t.companyId || '').trim() !== '';
   }
 
   function isRegularTest(t) {
@@ -4733,6 +4740,9 @@
     if (test) {
       copy.testId = copy.testId || test.id;
       if (!copy.contestType) copy.contestType = test.contestType || 'none';
+      if (!copy.testKind) copy.testKind = isCompanyTest(test) ? 'company' : 'regular';
+      if (!copy.companyId && test.companyId) copy.companyId = test.companyId;
+      if (!copy.companyName && test.companyName) copy.companyName = test.companyName;
       if (!copy.totalMarks && !copy.maximumScore) {
         const total = Number(test.totalMarks) || (Array.isArray(test.questions) ? test.questions.length : 0);
         if (total > 0) {
@@ -4879,6 +4889,9 @@
     p.history = [{
       testTitle: test.title,
       testId: test.id,
+      testKind: isCompanyTest(test) ? 'company' : 'regular',
+      companyId: test.companyId || null,
+      companyName: test.companyName || null,
       contestType: test.contestType || 'none',
       percentage: pct,
       category: test.category,
