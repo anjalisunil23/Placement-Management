@@ -1400,6 +1400,31 @@
     return /\.(jpg|jpeg|png)$/i.test(String(detail?.jdFilename || ''));
   }
 
+  function renderJdQuestionDetailHtml(q, index) {
+    const letters = ['A', 'B', 'C', 'D'];
+    const opts = (q.options || []).slice(0, 4);
+    const correct = Math.max(0, Math.min(3, Number(q.correctIndex ?? 0)));
+    const promptRaw = String(q.prompt || '').trim();
+    const promptBlock = /<[^>]+>/.test(promptRaw)
+      ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
+      : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
+    const meta = [q.topic, q.difficulty].filter(Boolean).map((v) => esc(String(v))).join(' · ');
+    const explanation = String(q.explanation || '').trim();
+    return `<div class="border rounded-2 p-3 bg-white">
+      <div class="fw-semibold mb-2">Q${index + 1}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
+      ${promptBlock}
+      <div class="small mb-2">${opts.length
+        ? opts.map((o, oi) => {
+          const label = esc(stripHtml(String(o || '')) || String(o || ''));
+          const isCorrect = oi === correct;
+          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${letters[oi]}. ${label}${isCorrect ? ' ✓' : ''}</div>`;
+        }).join('')
+        : '<div class="text-muted-2">No options</div>'}</div>
+      <div class="small mb-1"><span class="fw-semibold">Answer:</span> ${letters[correct]}. ${esc(stripHtml(String(opts[correct] || '')) || opts[correct] || '—')}</div>
+      ${explanation ? `<div class="small mt-2"><span class="fw-semibold">Explanation:</span> ${esc(explanation)}</div>` : ''}
+    </div>`;
+  }
+
   function renderJdDocumentPanel(detail) {
     const url = jdDocumentUrl(detail);
     if (!url) {
@@ -1476,7 +1501,7 @@
         const detail = await getJdSetDetail(id);
         const qs = detail?.questions || [];
         panel.innerHTML = qs.length
-          ? `<div class="d-flex flex-column gap-2">${qs.map((q, i) => `<div class="border rounded-2 p-2 small"><span class="fw-semibold">Q${i + 1}.</span> ${esc(stripHtml(q.prompt) || 'Question')} <span class="text-muted-2">· ${esc(q.topic || '')} · ${esc(q.difficulty || '')}</span></div>`).join('')}</div>`
+          ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderJdQuestionDetailHtml(q, i)).join('')}</div>`
           : '<p class="small text-muted-2 mb-0">No questions in this set.</p>';
         panel.classList.remove('d-none');
         btn.textContent = 'Hide';
