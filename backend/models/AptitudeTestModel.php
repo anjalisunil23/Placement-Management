@@ -805,11 +805,16 @@ class AptitudeTestModel extends BaseModel
                 continue;
             }
             $marks = (float) ($rule['marks'] ?? 1);
+            $selectedQuestionIds = array_values(array_unique(array_filter(
+                array_map(static fn ($id) => trim((string) $id), (array) ($rule['selectedQuestionIds'] ?? [])),
+                static fn ($id) => $id !== ''
+            )));
             $bankFilterRules[] = [
                 'category' => self::normalizeCategory((string) ($rule['category'] ?? $category)),
                 'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
                 'count' => max(1, (int) ($rule['count'] ?? 1)),
                 'marks' => $marks > 0 ? max(0.5, $marks) : 1.0,
+                'selectedQuestionIds' => $selectedQuestionIds,
             ];
         }
 
@@ -1040,6 +1045,10 @@ class AptitudeTestModel extends BaseModel
                         'difficulty' => self::normalizeDifficulty((string) ($rule['difficulty'] ?? 'Medium')),
                         'count' => max(1, (int) ($rule['count'] ?? 1)),
                         'marks' => $marks > 0 ? max(0.5, $marks) : 1.0,
+                        'selectedQuestionIds' => array_values(array_filter(array_map(
+                            static fn ($id) => trim((string) $id),
+                            (array) ($rule['selectedQuestionIds'] ?? [])
+                        ))),
                     ];
                 },
                 (array) ($test['bankFilterRules'] ?? [])

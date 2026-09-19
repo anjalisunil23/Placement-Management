@@ -251,6 +251,8 @@
   let bankDifficultyFilter = '';
   let bankCategoryFilter = '';
   let bankQuestions = [];
+  let manualBankAllQuestions = [];
+  let manualBankRuleCounter = 0;
   let aptAiModal;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
@@ -2180,16 +2182,263 @@
     addCategoryRuleRow('tfRandomRules', rule, updateRandomSummary);
   }
 
-  function addManualBankRuleRow(rule = {}) {
-    addCategoryRuleRow('tfManualBankRules', rule, updateManualBankSummary);
-  }
-
   function collectRandomRules() {
     return collectCategoryRules('tfRandomRules');
   }
 
+  async function ensureManualBankQuestionsLoaded() {
+    if (manualBankAllQuestions.length) return;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/question-bank').catch(() => null);
+      manualBankAllQuestions = res?.data?.questions || [];
+    } else {
+      ensureDemoBankSeed();
+      manualBankAllQuestions = loadDemoBankStore();
+    }
+  }
+
+  function manualRuleCriteriaFromWrap(wrap) {
+    return {
+      category: wrap.querySelector('[data-f="category"]')?.value || 'General Aptitude',
+      difficulty: wrap.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+      count: Math.max(1, Number(wrap.querySelector('[data-f="count"]')?.value || 1)),
+      marks: Math.max(0.5, Number(wrap.querySelector('[data-f="marks"]')?.value || 1)),
+    };
+  }
+
+  function manualRuleCriteriaKey(c) {
+    return `${c.category}|${c.difficulty}|${c.count}`;
+  }
+
+  function filterManualBankPool(criteria) {
+    return manualBankAllQuestions.filter((q) => bankQuestionMatchesRule(q, criteria));
+  }
+
+  function getManualBankIdsUsedExcept(excludeWrap) {
+    const used = new Set();
+    document.querySelectorAll('.tf-manual-bank-block').forEach((wrap) => {
+      if (wrap === excludeWrap) return;
+      wrap._manualRuleState?.selectedIds?.forEach((id) => used.add(String(id)));
+    });
+    return used;
+  }
+
+  function bindManualRulePicker(wrap, pool, needed) {
+    const state = wrap._manualRuleState;
+    wrap.querySelectorAll('[data-manual-pick]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = cb.getAttribute('data-manual-pick');
+        if (!id) return;
+        if (cb.checked) {
+          if (state.selectedIds.size >= needed) {
+            cb.checked = false;
+            return;
+          }
+          state.selectedIds.add(String(id));
+        } else {
+          state.selectedIds.delete(String(id));
+          state.collapsed = false;
+        }
+        if (state.selectedIds.size === needed) {
+          state.editing = false;
+          state.collapsed = true;
+        }
+        refreshManualBankBlock(wrap);
+      });
+    });
+  }
+
+  function renderManualRulePicker(wrap, pool, criteria) {
+    const picker = wrap.querySelector('.manual-bank-picker');
+    if (!picker) return;
+    const state = wrap._manualRuleState;
+    const needed = criteria.count;
+    const selected = state.selectedIds.size;
+    const atLimit = selected >= needed;
+    const usedElsewhere = getManualBankIdsUsedExcept(wrap);
+
+    if (!pool.length) {
+      picker.innerHTML = '<p class="small text-muted-2 mb-0">No questions available for this category and difficulty.</p>';
+      return;
+    }
+
+    picker.innerHTML = `
+      <div class="small fw-semibold mb-1">Select ${needed} question${needed === 1 ? '' : 's'}</div>
+      <div class="small mb-2 ${selected === needed ? 'text-success fw-semibold' : ''}">Selected: ${selected} / ${needed}</div>
+      <div class="d-flex flex-column gap-1 manual-bank-pick-list">
+        ${pool.map((q, i) => {
+          const id = String(q.id || q.bankId || '');
+          const checked = state.selectedIds.has(id);
+          const disabled = (atLimit && !checked) || (usedElsewhere.has(id) && !checked);
+          const prompt = stripHtml(q.prompt) || 'Question';
+          return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0 bg-white ${disabled ? 'opacity-50' : ''}">
+            <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manual-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
+            <span class="small min-w-0 apt-q-card-text">Question ${i + 1}: ${esc(prompt)}</span>
+          </label>`;
+        }).join('')}
+      </div>`;
+    bindManualRulePicker(wrap, pool, needed);
+  }
+
+  function renderManualRuleSummary(wrap, criteria) {
+    const summary = wrap.querySelector('.manual-bank-summary');
+    if (!summary) return;
+    summary.innerHTML = `
+      <div class="small text-success">
+        <div>✓ ${esc(criteria.category)}</div>
+        <div>✓ ${esc(criteria.difficulty)}</div>
+        <div>✓ ${esc(criteria.count)} question${criteria.count === 1 ? '' : 's'} selected</div>
+      </div>
+      <button type="button" class="btn btn-sm btn-link p-0 mt-1" data-edit-manual-pick>Edit Questions</button>`;
+    summary.querySelector('[data-edit-manual-pick]')?.addEventListener('click', () => {
+      wrap._manualRuleState.editing = true;
+      wrap._manualRuleState.collapsed = false;
+      refreshManualBankBlock(wrap);
+    });
+  }
+
+  async function refreshManualBankBlock(wrap) {
+    if (!wrap?._manualRuleState) return;
+    await ensureManualBankQuestionsLoaded();
+    const state = wrap._manualRuleState;
+    const criteria = manualRuleCriteriaFromWrap(wrap);
+    const key = manualRuleCriteriaKey(criteria);
+    const pool = filterManualBankPool(criteria);
+    const errorEl = wrap.querySelector('.manual-bank-error');
+    const pickerEl = wrap.querySelector('.manual-bank-picker');
+    const summaryEl = wrap.querySelector('.manual-bank-summary');
+
+    if (state.criteriaKey && state.criteriaKey !== key) {
+      state.selectedIds.clear();
+      state.collapsed = false;
+      state.editing = false;
+    }
+    state.criteriaKey = key;
+
+    [...state.selectedIds].forEach((id) => {
+      if (!pool.some((q) => String(q.id || q.bankId || '') === id)) {
+        state.selectedIds.delete(id);
+      }
+    });
+
+    if (pool.length < criteria.count) {
+      errorEl?.classList.remove('d-none');
+      if (errorEl) {
+        errorEl.textContent = pool.length
+          ? `Only ${pool.length} question${pool.length === 1 ? '' : 's'} ${pool.length === 1 ? 'is' : 'are'} available for ${criteria.category} — ${criteria.difficulty}. Please reduce the required number of questions or choose another category/difficulty.`
+          : `No questions available for ${criteria.category} — ${criteria.difficulty}. Please choose another category/difficulty.`;
+      }
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.add('d-none');
+      state.collapsed = false;
+      updateManualBankSummary();
+      return;
+    }
+
+    errorEl?.classList.add('d-none');
+
+    const complete = state.selectedIds.size === criteria.count;
+    if (complete && !state.editing) {
+      state.collapsed = true;
+    }
+
+    if (state.collapsed && !state.editing) {
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.remove('d-none');
+      renderManualRuleSummary(wrap, criteria);
+    } else {
+      summaryEl?.classList.add('d-none');
+      pickerEl?.classList.remove('d-none');
+      renderManualRulePicker(wrap, pool, criteria);
+    }
+    updateManualBankSummary();
+  }
+
+  function addManualBankRuleRow(rule = {}) {
+    manualBankRuleCounter += 1;
+    const root = document.getElementById('tfManualBankRules');
+    if (!root) return;
+    const categories = meta.categories || APTITUDE_CATEGORIES;
+    const catOpts = categories.map((c) =>
+      `<option value="${esc(c)}" ${c === (rule.category || categories[0]) ? 'selected' : ''}>${esc(c)}</option>`
+    ).join('');
+    const diff = normalizeDifficulty(rule.difficulty || 'Medium');
+    const selectedIds = (rule.selectedQuestionIds || []).map(String);
+    const count = Math.max(1, Number(rule.count ?? 1));
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-manual-bank-block border rounded-3 p-3 mb-2 bg-white';
+    wrap.innerHTML = `
+      <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label small mb-1">Category</label>
+          <select class="form-select form-select-sm" data-f="category">${catOpts}</select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">Difficulty</label>
+          <select class="form-select form-select-sm" data-f="difficulty">
+            ${APTITUDE_DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">No. of questions</label>
+          <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 1)}"/>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">Marks each</label>
+          <input class="form-control form-control-sm" type="number" min="0.5" step="0.5" data-f="marks" value="${esc(rule.marks ?? 1)}"/>
+        </div>
+        <div class="col-md-2">
+          <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-manual-block>Remove</button>
+        </div>
+      </div>
+      <div class="manual-bank-error small text-danger mt-2 d-none"></div>
+      <div class="manual-bank-picker mt-2"></div>
+      <div class="manual-bank-summary border rounded-2 p-2 mt-2 d-none"></div>`;
+    wrap._manualRuleState = {
+      selectedIds: new Set(selectedIds),
+      collapsed: selectedIds.length >= count && selectedIds.length > 0,
+      editing: false,
+      criteriaKey: '',
+    };
+    wrap.querySelector('[data-remove-manual-block]')?.addEventListener('click', () => {
+      wrap.remove();
+      updateManualBankSummary();
+    });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', () => refreshManualBankBlock(wrap));
+      el.addEventListener('input', () => refreshManualBankBlock(wrap));
+    });
+    root.appendChild(wrap);
+    refreshManualBankBlock(wrap);
+  }
+
   function collectManualBankRules() {
-    return collectCategoryRules('tfManualBankRules');
+    return [...document.querySelectorAll('.tf-manual-bank-block')].map((wrap) => {
+      const c = manualRuleCriteriaFromWrap(wrap);
+      return {
+        ...c,
+        selectedQuestionIds: [...(wrap._manualRuleState?.selectedIds || [])],
+      };
+    });
+  }
+
+  function validateManualBankRulesComplete() {
+    const blocks = [...document.querySelectorAll('.tf-manual-bank-block')];
+    if (!blocks.length) return 'Add at least one category rule for the question bank.';
+    for (const wrap of blocks) {
+      const c = manualRuleCriteriaFromWrap(wrap);
+      const state = wrap._manualRuleState;
+      const pool = filterManualBankPool(c);
+      if (pool.length < c.count) {
+        return pool.length
+          ? `Only ${pool.length} question(s) available for ${c.category} — ${c.difficulty}. Reduce the count or change category/difficulty.`
+          : `No questions available for ${c.category} — ${c.difficulty}.`;
+      }
+      if (!state || state.selectedIds.size !== c.count) {
+        return `Select exactly ${c.count} question(s) for ${c.category} — ${c.difficulty} (${state?.selectedIds.size || 0} selected).`;
+      }
+    }
+    return '';
   }
 
   function updateRandomSummary() {
@@ -2204,8 +2453,14 @@
   function updateManualBankSummary() {
     const rules = collectManualBankRules();
     const bankTotal = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const complete = rules.filter((r, i) => {
+      const wrap = document.querySelectorAll('.tf-manual-bank-block')[i];
+      return wrap?._manualRuleState?.selectedIds?.size === r.count;
+    }).length;
     const summary = document.getElementById('tfManualBankSummary');
-    if (summary) summary.textContent = `${bankTotal} question(s) from ${rules.length} rule(s)`;
+    if (summary) {
+      summary.textContent = `${bankTotal} question(s) from ${rules.length} categor${rules.length === 1 ? 'y' : 'ies'} · ${complete}/${rules.length} complete`;
+    }
     const countEl = document.getElementById('tfQuestionCount');
     if (countEl && getQuestionSource() === 'manual' && document.getElementById('tfUseBankManual')?.checked) {
       const mcqCount = collectMcqs().length;
@@ -2218,11 +2473,14 @@
     (questions || []).filter((q) => q?.bankId).forEach((q) => {
       const category = String(q.category || 'General Aptitude');
       const difficulty = normalizeDifficulty(q.difficulty || 'Medium');
-      const key = `${category}|${difficulty}|${Number(q.marks ?? 1)}`;
+      const marks = Number(q.marks ?? 1) || 1;
+      const key = `${category}|${difficulty}|${marks}`;
       if (!groups.has(key)) {
-        groups.set(key, { category, difficulty, count: 0, marks: Number(q.marks ?? 1) || 1 });
+        groups.set(key, { category, difficulty, count: 0, marks, selectedQuestionIds: [] });
       }
-      groups.get(key).count += 1;
+      const g = groups.get(key);
+      g.count += 1;
+      g.selectedQuestionIds.push(String(q.bankId || q.id || ''));
     });
     return [...groups.values()];
   }
@@ -2250,6 +2508,25 @@
     rules.forEach((rule) => {
       const count = Math.max(0, Number(rule.count) || 0);
       if (!count) return;
+
+      const selectedIds = (rule.selectedQuestionIds || []).map(String).filter(Boolean);
+      if (selectedIds.length) {
+        if (selectedIds.length !== count) {
+          throw new Error(`Select exactly ${count} question(s) for ${rule.category} — ${rule.difficulty}.`);
+        }
+        selectedIds.forEach((sid) => {
+          if (used.has(sid)) {
+            throw new Error('The same bank question cannot be used in more than one category row.');
+          }
+          const q = all.find((item) => String(item.id || item.bankId || '') === sid);
+          if (!q || !bankQuestionMatchesRule(q, rule)) {
+            throw new Error(`Selected question does not match ${rule.category} — ${rule.difficulty}.`);
+          }
+          used.add(sid);
+          picked.push(applyRuleMarksToQuestion({ ...q, bankId: sid }, rule));
+        });
+        return;
+      }
 
       const ruleManual = [];
       preferred.forEach((q) => {
@@ -3393,6 +3670,8 @@
     if (source === 'random') rules.forEach((r) => addRandomRuleRow(r));
 
     document.getElementById('tfManualBankRules').innerHTML = '';
+    manualBankRuleCounter = 0;
+    manualBankAllQuestions = [];
     let bankRules = test?.bankFilterRules?.length ? test.bankFilterRules : [];
     if (!bankRules.length && source === 'manual' && (test?.bankQuestionIds || []).length) {
       bankRules = inferBankRulesFromQuestions(test?.questions || []);
@@ -3401,8 +3680,14 @@
     document.getElementById('tfUseBankManual').checked = useBank;
     document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
     if (useBank) {
-      (bankRules.length ? bankRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }])
-        .forEach((r) => addManualBankRuleRow(r));
+      ensureManualBankQuestionsLoaded().then(() => {
+        (bankRules.length ? bankRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }])
+          .forEach((r) => addManualBankRuleRow(r));
+        updateManualBankSummary();
+      }).catch(() => {
+        (bankRules.length ? bankRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }])
+          .forEach((r) => addManualBankRuleRow(r));
+      });
     }
 
     const contestType = test?.contestType || preset?.contestType || 'none';
@@ -3439,7 +3724,9 @@
       payload.randomRules = [];
       const useBank = document.getElementById('tfUseBankManual')?.checked;
       payload.bankFilterRules = useBank ? collectManualBankRules() : [];
-      payload.bankQuestionIds = [];
+      payload.bankQuestionIds = useBank
+        ? payload.bankFilterRules.flatMap((r) => r.selectedQuestionIds || [])
+        : [];
       payload.questions = collectMcqs();
     }
     if (!payload.category) {
@@ -3733,12 +4020,16 @@
       const on = e.target.checked;
       document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
       if (on) {
-        const root = document.getElementById('tfManualBankRules');
-        if (root && !root.querySelector('.tf-category-rule')) {
-          addManualBankRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 });
-        }
+        ensureManualBankQuestionsLoaded().then(() => {
+          const root = document.getElementById('tfManualBankRules');
+          if (root && !root.querySelector('.tf-manual-bank-block')) {
+            addManualBankRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 });
+          }
+          updateManualQuestionCount();
+        }).catch(() => updateManualQuestionCount());
+      } else {
+        updateManualQuestionCount();
       }
-      updateManualQuestionCount();
     });
     document.getElementById('tfQuestionCount')?.addEventListener('input', () => updateManualQuestionCount());
     document.getElementById('btnFormBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate(false));
@@ -3852,8 +4143,10 @@
         const bankRules = useBank ? collectManualBankRules() : [];
         const bankTotal = bankRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
         if (useBank) {
-          if (!bankRules.length) {
-            toast('Add at least one category rule for the question bank.', 'error');
+          await ensureManualBankQuestionsLoaded();
+          const bankErr = validateManualBankRulesComplete();
+          if (bankErr) {
+            toast(bankErr, 'error');
             return;
           }
         } else if (!mcqCount) {
@@ -3865,7 +4158,10 @@
         } else {
           payload.questionCount = target;
         }
-        if (useBank) payload.bankFilterRules = bankRules;
+        if (useBank) {
+          payload.bankFilterRules = bankRules;
+          payload.bankQuestionIds = bankRules.flatMap((r) => r.selectedQuestionIds || []);
+        }
       }
       payload.totalMarks = 0;
       if (canManageContests()) {

@@ -275,6 +275,50 @@ class AptitudeQuestionBankModel extends BaseModel
                 continue;
             }
 
+            $selectedIds = array_values(array_unique(array_filter(
+                array_map(static fn ($id) => trim((string) $id), (array) ($rule['selectedQuestionIds'] ?? [])),
+                static fn ($id) => $id !== ''
+            )));
+            if ($selectedIds !== []) {
+                if (count($selectedIds) !== $count) {
+                    $label = (string) ($rule['category'] ?? 'category');
+                    $diff = (string) ($rule['difficulty'] ?? 'Medium');
+                    throw new \InvalidArgumentException(
+                        sprintf(
+                            'Select exactly %d question(s) for %s — %s (%d selected).',
+                            $count,
+                            $label,
+                            $diff,
+                            count($selectedIds)
+                        )
+                    );
+                }
+                $byId = [];
+                foreach ($this->questionsByIds($selectedIds) as $q) {
+                    $id = (string) ($q['bankId'] ?? '');
+                    if ($id !== '') {
+                        $byId[$id] = $q;
+                    }
+                }
+                foreach ($selectedIds as $sid) {
+                    if (in_array($sid, $usedIds, true)) {
+                        throw new \InvalidArgumentException('The same bank question cannot be used in more than one category row.');
+                    }
+                    $q = $byId[$sid] ?? null;
+                    if ($q === null) {
+                        throw new \InvalidArgumentException('One or more selected bank questions could not be found.');
+                    }
+                    if (!$this->questionMatchesRule($q, $rule)) {
+                        throw new \InvalidArgumentException(
+                            sprintf('Selected question does not match %s — %s.', (string) ($rule['category'] ?? ''), (string) ($rule['difficulty'] ?? ''))
+                        );
+                    }
+                    $usedIds[] = $sid;
+                    $picked[] = self::applyRuleMarks($q, $rule);
+                }
+                continue;
+            }
+
             $ruleManual = [];
             foreach ($preferred as $q) {
                 $id = (string) ($q['bankId'] ?? '');
