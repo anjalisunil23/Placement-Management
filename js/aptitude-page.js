@@ -39,6 +39,12 @@
   const DEMO_TESTS_KEY = 'ph-aptitude-demo-tests';
   const DEMO_BANK_KEY = 'ph-aptitude-demo-bank';
   const DEMO_JD_KEY = 'ph-aptitude-demo-jd-sets';
+  const DEMO_JD_COMPANIES = [
+    { id: 'demo-co-soti', name: 'SOTI' },
+    { id: 'demo-co-infosys', name: 'Infosys' },
+    { id: 'demo-co-tcs', name: 'TCS' },
+    { id: 'demo-co-wipro', name: 'Wipro' },
+  ];
 
   function cloneDemoTests() {
     return DEMO_TESTS.map((t) => JSON.parse(JSON.stringify(t)));
@@ -257,10 +263,14 @@
   let manualJdSetSummaries = [];
   let manualJdRuleCounter = 0;
   let jdLibrarySets = [];
+  let jdCompanyBlocks = [];
+  let jdCompanies = [];
+  let jdSelectedCompanyId = null;
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
+  let aiGenerateContext = 'bank';
   let aiJdUploadMeta = null;
   let aiGenProgressTimer = null;
   let aptAiIncompleteModal;
@@ -1271,6 +1281,57 @@
     manualJdSetSummaries = [];
   }
 
+  function groupJdSetsIntoBlocks(sets) {
+    const blocks = new Map();
+    (sets || []).forEach((set) => {
+      const companyId = String(set.companyId || '');
+      const companyName = String(set.companyName || (companyId ? 'Company' : 'Unassigned'));
+      const key = companyId || '_unassigned';
+      if (!blocks.has(key)) {
+        blocks.set(key, {
+          companyId,
+          companyName,
+          setCount: 0,
+          questionCount: 0,
+          sets: [],
+        });
+      }
+      const block = blocks.get(key);
+      block.setCount += 1;
+      block.questionCount += Number(set.questionCount || 0);
+      block.sets.push(set);
+    });
+    return [...blocks.values()].sort((a, b) => String(a.companyName).localeCompare(String(b.companyName)));
+  }
+
+  async function ensureJdCompaniesLoaded() {
+    if (jdCompanies.length) return jdCompanies;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/jd-companies').catch(() => null);
+      jdCompanies = res?.data?.companies || [];
+    } else {
+      jdCompanies = DEMO_JD_COMPANIES.slice();
+    }
+    return jdCompanies;
+  }
+
+  function fillAptAiJdCompanySelect(selectedId = '') {
+    const sel = document.getElementById('aptAiJdCompany');
+    if (!sel) return;
+    const pick = String(selectedId || '');
+    sel.innerHTML = `<option value="">Select company…</option>${jdCompanies.map((c) => {
+      const id = String(c.id || '');
+      return `<option value="${esc(id)}"${id === pick ? ' selected' : ''}>${esc(c.name || 'Company')}</option>`;
+    }).join('')}`;
+  }
+
+  function selectedJdCompanyFromForm() {
+    const sel = document.getElementById('aptAiJdCompany');
+    const companyId = String(sel?.value || '').trim();
+    const companyName = String(sel?.selectedOptions?.[0]?.textContent || '').trim();
+    return { companyId, companyName: companyName === 'Select company…' ? '' : companyName };
+  }
+
   async function ensureJdSetSummariesLoaded() {
     if (manualJdSetSummaries.length) return;
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
@@ -1279,6 +1340,8 @@
     } else {
       manualJdSetSummaries = loadDemoJdStore().map((s) => ({
         id: String(s.id || ''),
+        companyId: String(s.companyId || ''),
+        companyName: String(s.companyName || ''),
         jdTitle: String(s.jdTitle || ''),
         jdFilename: String(s.jdFilename || ''),
         jdFileUrl: String(s.jdFileUrl || s.jdFileDataUrl || ''),
@@ -1305,12 +1368,16 @@
 
   async function loadJdLibrary() {
     if (!access.canManage) return;
+    await ensureJdCompaniesLoaded().catch(() => {});
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
       const res = await api('/aptitude/jd-sets').catch(() => null);
       jdLibrarySets = res?.data?.sets || [];
+      jdCompanyBlocks = res?.data?.blocks || groupJdSetsIntoBlocks(jdLibrarySets);
     } else {
       jdLibrarySets = loadDemoJdStore().map((s) => ({
         id: String(s.id || ''),
+        companyId: String(s.companyId || ''),
+        companyName: String(s.companyName || ''),
         jdTitle: String(s.jdTitle || ''),
         jdFilename: String(s.jdFilename || ''),
         jdFileUrl: String(s.jdFileUrl || s.jdFileDataUrl || ''),
@@ -1318,8 +1385,9 @@
         hasDocument: !!(s.jdFileUrl || s.jdFileDataUrl),
         questionCount: Number(s.questionCount || s.questions?.length || 0),
       }));
+      jdCompanyBlocks = groupJdSetsIntoBlocks(jdLibrarySets);
     }
-    renderJdLibrary();
+    renderJdBlock();
   }
 
   function jdDocumentUrl(detail) {
@@ -1353,14 +1421,8 @@
     </div>`;
   }
 
-  function renderJdLibrary() {
-    const root = document.getElementById('jdLibraryList');
-    if (!root) return;
-    if (!jdLibrarySets.length) {
-      root.innerHTML = '<p class="text-muted-2 mb-0">No JD question sets yet. Use AI Generate from the JD Block tab to create one.</p>';
-      return;
-    }
-    root.innerHTML = jdLibrarySets.map((set) => {
+  function renderJdSetCardsHtml(sets) {
+    return (sets || []).map((set) => {
       const id = String(set.id || '');
       const hasDoc = !!(set.hasDocument || set.jdFileUrl);
       return `<div class="border rounded-3 p-3" data-jd-set-card="${esc(id)}">
@@ -1379,7 +1441,10 @@
         <div class="d-none mt-3" data-jd-questions="${esc(id)}"></div>
       </div>`;
     }).join('');
+  }
 
+  function bindJdSetCardEvents(root) {
+    if (!root) return;
     root.querySelectorAll('[data-jd-doc]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-jd-doc');
@@ -1420,6 +1485,64 @@
     root.querySelectorAll('[data-jd-delete]').forEach((btn) => {
       btn.addEventListener('click', () => deleteJdSet(btn.getAttribute('data-jd-delete')));
     });
+  }
+
+  function showJdCompanyDetail(companyId) {
+    const block = jdCompanyBlocks.find((b) => {
+      const id = String(b.companyId || '');
+      return (id || '_unassigned') === String(companyId || '_unassigned');
+    });
+    jdSelectedCompanyId = companyId;
+    document.getElementById('jdBlockCompanyView')?.classList.add('d-none');
+    document.getElementById('jdBlockCompanyDetail')?.classList.remove('d-none');
+    const titleEl = document.getElementById('jdBlockDetailTitle');
+    if (titleEl) titleEl.textContent = block?.companyName || 'Company';
+    const list = document.getElementById('jdBlockSetsList');
+    if (!list) return;
+    const sets = block?.sets || [];
+    list.innerHTML = sets.length
+      ? renderJdSetCardsHtml(sets)
+      : '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+    bindJdSetCardEvents(list);
+  }
+
+  function showJdCompanyGrid() {
+    jdSelectedCompanyId = null;
+    document.getElementById('jdBlockCompanyDetail')?.classList.add('d-none');
+    document.getElementById('jdBlockCompanyView')?.classList.remove('d-none');
+  }
+
+  function renderJdBlock() {
+    const grid = document.getElementById('jdBlockCompanyGrid');
+    if (!grid) return;
+    const activeCompanyId = jdSelectedCompanyId;
+    if (!jdCompanyBlocks.length) {
+      showJdCompanyGrid();
+      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No JD Block entries yet. Use AI Generate from the JD Block tab to create one.</p></div>';
+      return;
+    }
+    grid.innerHTML = jdCompanyBlocks.map((block) => {
+      const companyId = String(block.companyId || '_unassigned');
+      return `<div class="col-12 col-md-6 col-xl-4">
+        <button type="button" class="card h-100 w-100 text-start border rounded-3 p-3 jd-company-card" data-jd-company-id="${esc(companyId)}">
+          <div class="d-flex align-items-start justify-content-between gap-2">
+            <div class="min-w-0">
+              <div class="fw-semibold">${esc(block.companyName || 'Company')}</div>
+              <div class="small text-muted-2 mt-2">${esc(block.setCount || 0)} JD title(s) · ${esc(block.questionCount || 0)} question(s)</div>
+            </div>
+            <i class="bi bi-chevron-right text-muted-2 flex-shrink-0"></i>
+          </div>
+        </button>
+      </div>`;
+    }).join('');
+    grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
+      btn.addEventListener('click', () => showJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
+    });
+    if (activeCompanyId) {
+      showJdCompanyDetail(activeCompanyId);
+    } else {
+      showJdCompanyGrid();
+    }
   }
 
   async function deleteJdSet(id) {
@@ -1889,7 +2012,7 @@
   ];
 
   function getAiSourceMode() {
-    return document.getElementById('aptAiModeJd')?.checked ? 'jd' : 'category';
+    return aiGenerateContext === 'jd' ? 'jd' : 'category';
   }
 
   function updateAiGenTotal() {
@@ -1918,9 +2041,18 @@
 
   function updateAiSourceModeUI() {
     const jd = getAiSourceMode() === 'jd';
+    document.getElementById('aptAiSourceModePanel')?.classList.add('d-none');
     document.getElementById('aptAiCategoryPanel')?.classList.toggle('d-none', jd);
     document.getElementById('aptAiJdPanel')?.classList.toggle('d-none', !jd);
+    document.getElementById('aptAiModeCategory').checked = !jd;
+    document.getElementById('aptAiModeJd').checked = jd;
     updateAptAiModalTitle();
+    const hint = document.getElementById('aptAiStatusHint');
+    if (hint) {
+      hint.textContent = jd
+        ? 'Generate JD-based MCQs with OpenAI. Review and edit before saving to the JD Block — nothing is published automatically.'
+        : 'Generate aptitude MCQs with OpenAI. Review and edit before saving to the question bank — nothing is published automatically.';
+    }
     const instr = document.getElementById('aptAiInstructions');
     if (!instr) return;
     if (jd) {
@@ -1951,6 +2083,71 @@
     const input = document.getElementById('aptAiJdFileInput');
     if (input) input.value = '';
     showAptAiJdFileUi('');
+  }
+
+  function todayIsoDate() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function formatJdTitleDate(dateValue) {
+    const raw = String(dateValue || '').trim();
+    if (!raw) return '';
+    const d = new Date(`${raw}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function resolveJdTitle(baseTitle, addDate, dateValue) {
+    const base = String(baseTitle || '').trim();
+    if (!base) return '';
+    if (!addDate) return base;
+    const dateLabel = formatJdTitleDate(dateValue || todayIsoDate());
+    if (!dateLabel) return base;
+    const suffix = ` — ${dateLabel}`;
+    if (base.endsWith(suffix) || base.endsWith(dateLabel)) return base;
+    return `${base}${suffix}`;
+  }
+
+  function getJdTitleFormState() {
+    const base = (document.getElementById('aptAiJdTitle')?.value || '').trim();
+    const addDate = document.getElementById('aptAiJdTitleAddDate')?.checked === true;
+    const dateValue = document.getElementById('aptAiJdTitleDate')?.value || todayIsoDate();
+    return {
+      jdTitleBase: base,
+      jdTitleAddDate: addDate,
+      jdTitleDate: dateValue,
+      jdTitle: resolveJdTitle(base, addDate, dateValue),
+    };
+  }
+
+  function resetJdTitleDateOptions() {
+    const addDateEl = document.getElementById('aptAiJdTitleAddDate');
+    const dateEl = document.getElementById('aptAiJdTitleDate');
+    if (addDateEl) addDateEl.checked = false;
+    if (dateEl) dateEl.value = todayIsoDate();
+    updateJdTitleDateUi();
+  }
+
+  function updateJdTitleDateUi() {
+    const addDate = document.getElementById('aptAiJdTitleAddDate')?.checked === true;
+    document.getElementById('aptAiJdTitleDateWrap')?.classList.toggle('d-none', !addDate);
+    const hint = document.getElementById('aptAiJdTitleHint');
+    const preview = document.getElementById('aptAiJdTitlePreview');
+    const { jdTitleBase, jdTitle } = getJdTitleFormState();
+    if (hint) {
+      hint.textContent = addDate
+        ? 'The selected date is appended to the title when saving to JD Block.'
+        : 'Role or JD title saved under the selected company in JD Block.';
+    }
+    if (preview) {
+      if (addDate && jdTitleBase && jdTitle !== jdTitleBase) {
+        preview.textContent = `Saved as: ${jdTitle}`;
+        preview.classList.remove('d-none');
+      } else {
+        preview.textContent = '';
+        preview.classList.add('d-none');
+      }
+    }
   }
 
   function getJdPastedText() {
@@ -2151,9 +2348,14 @@
     if (mode === 'jd') {
       const jobDescriptionPasted = getJdPastedText();
       const jobDescriptionUploaded = getJdUploadedText();
+      const titleState = getJdTitleFormState();
       return {
         ...base,
-        jdTitle: (document.getElementById('aptAiJdTitle')?.value || '').trim(),
+        jdTitle: titleState.jdTitle,
+        jdTitleBase: titleState.jdTitleBase,
+        jdTitleAddDate: titleState.jdTitleAddDate,
+        jdTitleDate: titleState.jdTitleDate,
+        ...selectedJdCompanyFromForm(),
         jobDescription: jobDescriptionPasted || jobDescriptionUploaded,
         jobDescriptionPasted,
         jobDescriptionUploaded,
@@ -2197,16 +2399,19 @@
     updateAptAiSaveButtonLabel();
   }
 
-  function openAptAiModal(opts = {}) {
-    const useJd = opts.jd === true;
-    document.getElementById('aptAiModeCategory').checked = !useJd;
-    document.getElementById('aptAiModeJd').checked = useJd;
+  async function openAptAiModal(opts = {}) {
+    aiGenerateContext = opts.jd === true ? 'jd' : 'bank';
     document.getElementById('aptAiJdText').value = '';
     document.getElementById('aptAiJdTitle').value = '';
+    resetJdTitleDateOptions();
     clearAptAiJdUpload();
+    if (aiGenerateContext === 'jd') {
+      await ensureJdCompaniesLoaded().catch(() => {});
+      fillAptAiJdCompanySelect(opts.companyId || '');
+    }
     const instr = document.getElementById('aptAiInstructions');
     if (instr) {
-      instr.value = AI_CATEGORY_DEFAULT_INSTRUCTIONS;
+      instr.value = aiGenerateContext === 'jd' ? AI_JD_DEFAULT_INSTRUCTIONS : AI_CATEGORY_DEFAULT_INSTRUCTIONS;
       delete instr.dataset.userEdited;
     }
     initAiFormFields();
@@ -2717,6 +2922,22 @@
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     const params = collectAiFormParams();
     if (params.generationMode === 'jd') {
+      const { companyId, companyName } = selectedJdCompanyFromForm();
+      params.companyId = companyId;
+      params.companyName = companyName;
+      const titleState = getJdTitleFormState();
+      params.jdTitle = titleState.jdTitle;
+      params.jdTitleBase = titleState.jdTitleBase;
+      params.jdTitleAddDate = titleState.jdTitleAddDate;
+      params.jdTitleDate = titleState.jdTitleDate;
+      if (!companyId) {
+        toast('Select a company.', 'error');
+        return;
+      }
+      if (!titleState.jdTitleBase) {
+        toast('Enter a title.', 'error');
+        return;
+      }
       const jdText = resolveJdTextForGeneration();
       params.jobDescription = jdText;
       if (jdText.length < 40) {
@@ -2809,9 +3030,18 @@
       return;
     }
     const isJd = aiLastFormParams?.generationMode === 'jd';
-    const jdTitle = (document.getElementById('aptAiJdTitle')?.value || aiLastFormParams?.jdTitle || '').trim();
-    if (isJd && !jdTitle) {
-      toast('Enter a JD title before saving.', 'error');
+    const titleState = isJd ? getJdTitleFormState() : null;
+    const jdTitle = isJd
+      ? (titleState?.jdTitle || aiLastFormParams?.jdTitle || '')
+      : (document.getElementById('aptAiJdTitle')?.value || aiLastFormParams?.jdTitle || '').trim();
+    const companyId = selectedJdCompanyFromForm().companyId || aiLastFormParams?.companyId || '';
+    const companyName = selectedJdCompanyFromForm().companyName || aiLastFormParams?.companyName || '';
+    if (isJd && !companyId) {
+      toast('Select a company before saving.', 'error');
+      return;
+    }
+    if (isJd && !(titleState?.jdTitleBase || aiLastFormParams?.jdTitleBase || aiLastFormParams?.jdTitle)) {
+      toast('Enter a title before saving.', 'error');
       return;
     }
     const live = Auth.hasRealAuth() && !Auth.isDemo();
@@ -2843,6 +3073,8 @@
           const docUrl = aiJdUploadMeta?.jdFileDataUrl || aiLastFormParams?.jdFileDataUrl || '';
           store.unshift({
             id: setId,
+            companyId,
+            companyName,
             jdTitle,
             jdFilename: aiLastFormParams?.jdUploadFilename || aiJdUploadMeta?.filename || '',
             jdFileDataUrl: docUrl,
@@ -2853,7 +3085,7 @@
             questions,
           });
           saveDemoJdStore(store);
-          toast(`Saved ${questions.length} question(s) to JD Block: ${jdTitle}`, 'success');
+          toast(`Saved ${questions.length} question(s) to JD Block: ${companyName} · ${jdTitle}`, 'success');
           await loadJdLibrary();
         } else {
           const bank = loadDemoBankStore();
@@ -2880,6 +3112,8 @@
           body: JSON.stringify({
             questions: selected,
             jdTitle,
+            companyId,
+            companyName,
             jdFilename: aiLastFormParams?.jdUploadFilename || aiJdUploadMeta?.filename || '',
             jdFile: aiJdUploadMeta?.jdFile || aiLastFormParams?.jdFile || '',
             jdFileUrl: aiJdUploadMeta?.jdFileUrl || aiLastFormParams?.jdFileUrl || '',
@@ -3424,7 +3658,10 @@
     const sel = wrap.querySelector('[data-f="jdSetId"]');
     if (!sel) return;
     const opts = manualJdSetSummaries.length
-      ? manualJdSetSummaries.map((s) => `<option value="${esc(String(s.id))}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${esc(s.jdTitle || 'Untitled')} (${esc(s.questionCount || 0)})</option>`).join('')
+      ? manualJdSetSummaries.map((s) => {
+        const label = `${s.companyName ? `${s.companyName} · ` : ''}${s.jdTitle || 'Untitled'} (${s.questionCount || 0})`;
+        return `<option value="${esc(String(s.id))}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${esc(label)}</option>`;
+      }).join('')
       : '<option value="">No JD sets available</option>';
     sel.innerHTML = opts;
   }
@@ -5203,7 +5440,14 @@
     });
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal());
-    document.getElementById('btnJdAiGenerate')?.addEventListener('click', () => openAptAiModal({ jd: true }));
+    document.getElementById('btnJdAiGenerate')?.addEventListener('click', () => {
+      const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
+      openAptAiModal({ jd: true, companyId });
+    });
+    document.getElementById('btnJdBlockBack')?.addEventListener('click', () => showJdCompanyGrid());
+    document.getElementById('aptAiJdTitleAddDate')?.addEventListener('change', updateJdTitleDateUi);
+    document.getElementById('aptAiJdTitleDate')?.addEventListener('change', updateJdTitleDateUi);
+    document.getElementById('aptAiJdTitle')?.addEventListener('input', updateJdTitleDateUi);
     document.getElementById('btnAptAiAddRow')?.addEventListener('click', () => addAiGenRow());
     document.getElementById('aptAiModeCategory')?.addEventListener('change', () => {
       updateAiSourceModeUI();
@@ -5223,11 +5467,14 @@
       showAptAiFormPanel();
       if (aiLastFormParams) {
         const jd = aiLastFormParams.generationMode === 'jd';
-        document.getElementById('aptAiModeJd').checked = jd;
-        document.getElementById('aptAiModeCategory').checked = !jd;
+        aiGenerateContext = jd ? 'jd' : 'bank';
         updateAiSourceModeUI();
         if (jd) {
-          document.getElementById('aptAiJdTitle').value = aiLastFormParams.jdTitle || '';
+          ensureJdCompaniesLoaded().then(() => fillAptAiJdCompanySelect(aiLastFormParams.companyId || ''));
+          document.getElementById('aptAiJdTitle').value = aiLastFormParams.jdTitleBase || aiLastFormParams.jdTitle || '';
+          document.getElementById('aptAiJdTitleAddDate').checked = !!aiLastFormParams.jdTitleAddDate;
+          document.getElementById('aptAiJdTitleDate').value = aiLastFormParams.jdTitleDate || todayIsoDate();
+          updateJdTitleDateUi();
           document.getElementById('aptAiJdText').value = aiLastFormParams.jobDescriptionPasted || '';
           if (aiLastFormParams.jobDescriptionUploaded && aiLastFormParams.jdUploadFilename) {
             aiJdUploadMeta = {

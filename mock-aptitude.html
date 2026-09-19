@@ -37,6 +37,8 @@
   .apt-q-card-text{white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.45}
   .manual-bank-pick-list{max-height:240px;overflow-y:auto}
   .manual-bank-summary{background:color-mix(in srgb,#22c55e 8%,#fff)!important;border-color:color-mix(in srgb,#22c55e 35%,var(--border,#e5e7eb))!important}
+  .jd-company-card{background:#fff;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .jd-company-card:hover{border-color:#94a3b8!important;box-shadow:0 .125rem .5rem rgba(15,23,42,.08)}
   #bankQuestionsList,#aptAiPreviewList{max-width:100%;overflow-x:hidden}
   .apt-rich p:last-child,.apt-rich ul:last-child,.apt-rich ol:last-child{margin-bottom:0}
   .apt-prob-list{border:1px solid var(--border,#e5e7eb);border-radius:.75rem;overflow:hidden;background:#fff}
@@ -249,10 +251,17 @@
 
       <div id="manageJdPanel" class="d-none">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">JD-based questions are stored separately by job title. Use AI Generate to create a set from a pasted or uploaded job description.</p>
+          <p class="small text-muted-2 mb-0">JD-based questions are grouped by company. Use AI Generate to add a JD title and questions under a company card.</p>
           <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" id="btnJdAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate</button>
         </div>
-        <div id="jdLibraryList" class="d-flex flex-column gap-3"></div>
+        <div id="jdBlockCompanyView">
+          <div id="jdBlockCompanyGrid" class="row g-3"></div>
+        </div>
+        <div id="jdBlockCompanyDetail" class="d-none">
+          <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="btnJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
+          <h6 class="fw-semibold mb-3" id="jdBlockDetailTitle"></h6>
+          <div id="jdBlockSetsList" class="d-flex flex-column gap-3"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -463,18 +472,9 @@
     <div id="aptAiFormPanel">
       <p class="small text-muted-2 mb-3" id="aptAiStatusHint">Generate aptitude MCQs with OpenAI. Review and edit before saving — nothing is published automatically.</p>
       <div class="row g-3">
-        <div class="col-12">
-          <label class="form-label small fw-semibold">Question source</label>
-          <div class="d-flex flex-wrap gap-3">
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="aptAiSourceMode" id="aptAiModeCategory" value="category" checked>
-              <label class="form-check-label" for="aptAiModeCategory">Category / Topic</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="aptAiSourceMode" id="aptAiModeJd" value="jd">
-              <label class="form-check-label" for="aptAiModeJd">Job Description</label>
-            </div>
-          </div>
+        <div class="col-12 d-none" id="aptAiSourceModePanel" aria-hidden="true">
+          <input type="radio" name="aptAiSourceMode" id="aptAiModeCategory" value="category" checked class="d-none"/>
+          <input type="radio" name="aptAiSourceMode" id="aptAiModeJd" value="jd" class="d-none"/>
         </div>
         <div id="aptAiCategoryPanel" class="col-12">
           <div class="row g-3">
@@ -484,9 +484,22 @@
         </div>
         <div id="aptAiJdPanel" class="col-12 d-none">
           <div class="mb-3">
-            <label class="form-label small fw-semibold" for="aptAiJdTitle">JD title</label>
-            <input class="form-control" id="aptAiJdTitle" maxlength="160" placeholder="e.g. Software Developer — Infosys"/>
-            <div class="small text-muted-2 mt-1">Used to group and find these questions in the JD Block.</div>
+            <label class="form-label small fw-semibold" for="aptAiJdCompany">Company</label>
+            <select class="form-select" id="aptAiJdCompany"><option value="">Select company…</option></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="aptAiJdTitle">Title</label>
+            <input class="form-control" id="aptAiJdTitle" maxlength="160" placeholder="e.g. Associate Software Developer"/>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="aptAiJdTitleAddDate"/>
+              <label class="form-check-label small" for="aptAiJdTitleAddDate">Add date to title</label>
+            </div>
+            <div class="d-none mt-2" id="aptAiJdTitleDateWrap">
+              <label class="form-label small fw-semibold mb-1" for="aptAiJdTitleDate">Date</label>
+              <input class="form-control form-control-sm" type="date" id="aptAiJdTitleDate"/>
+            </div>
+            <div class="small text-muted-2 mt-1" id="aptAiJdTitleHint">Role or JD title saved under the selected company in JD Block.</div>
+            <div class="small text-primary mt-1 d-none" id="aptAiJdTitlePreview"></div>
           </div>
           <label class="form-label small fw-semibold" for="aptAiJdText">Paste job description</label>
           <textarea class="form-control mb-3" id="aptAiJdText" rows="6" placeholder="Paste the complete job description here…"></textarea>
@@ -584,5 +597,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919jdblock"></script>
+<script src="js/aptitude-page.js?v=20260919jddate"></script>
 </body></html>

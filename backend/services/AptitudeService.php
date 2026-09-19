@@ -592,6 +592,8 @@ final class AptitudeService
         array $admin,
         array $questions,
         string $jdTitle,
+        string $companyId,
+        ?string $companyName = null,
         ?string $jdFilename = null,
         ?string $jdFile = null,
         ?string $jdFileUrl = null,
@@ -606,6 +608,8 @@ final class AptitudeService
                 $admin,
                 $questions,
                 $jdTitle,
+                $companyId,
+                $companyName,
                 $jdFilename,
                 $jdFile,
                 $jdFileUrl,
@@ -628,7 +632,33 @@ final class AptitudeService
     {
         $model = new \PMS\Models\AptitudeJdQuestionSetModel();
 
-        return ['sets' => $model->listSummaries()];
+        return [
+            'sets' => $model->listSummaries(),
+            'blocks' => $model->listCompanyBlocks(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listJdCompanies(): array
+    {
+        $rows = (new \PMS\Models\CompanyModel())->listEnriched(500);
+        $companies = [];
+        foreach ($rows as $row) {
+            $id = trim((string) ($row['_id'] ?? ''));
+            $name = trim((string) ($row['companyName'] ?? ''));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+            $companies[] = ['id' => $id, 'name' => $name];
+        }
+        usort($companies, static fn (array $a, array $b): int => strcasecmp(
+            (string) ($a['name'] ?? ''),
+            (string) ($b['name'] ?? '')
+        ));
+
+        return ['companies' => $companies];
     }
 
     /**

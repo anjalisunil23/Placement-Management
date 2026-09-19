@@ -56,6 +56,44 @@ class AptitudeJdQuestionSetModel extends BaseModel
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    public function listCompanyBlocks(int $limit = 200): array
+    {
+        $sets = $this->listSummaries($limit);
+        /** @var array<string, array<string, mixed>> $blocks */
+        $blocks = [];
+        foreach ($sets as $set) {
+            $companyId = trim((string) ($set['companyId'] ?? ''));
+            $companyName = trim((string) ($set['companyName'] ?? ''));
+            $key = $companyId !== '' ? $companyId : '_unassigned';
+            if ($companyName === '') {
+                $companyName = $companyId !== '' ? 'Company' : 'Unassigned';
+            }
+            if (!isset($blocks[$key])) {
+                $blocks[$key] = [
+                    'companyId' => $companyId,
+                    'companyName' => $companyName,
+                    'setCount' => 0,
+                    'questionCount' => 0,
+                    'sets' => [],
+                ];
+            }
+            $blocks[$key]['setCount']++;
+            $blocks[$key]['questionCount'] += (int) ($set['questionCount'] ?? 0);
+            $blocks[$key]['sets'][] = $set;
+        }
+
+        $out = array_values($blocks);
+        usort($out, static fn (array $a, array $b): int => strcasecmp(
+            (string) ($a['companyName'] ?? ''),
+            (string) ($b['companyName'] ?? '')
+        ));
+
+        return $out;
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $questions
      * @return array<string, mixed>
      */
@@ -63,6 +101,8 @@ class AptitudeJdQuestionSetModel extends BaseModel
         string $jdTitle,
         array $questions,
         ?string $createdBy = null,
+        ?string $companyId = null,
+        ?string $companyName = null,
         ?string $jdFilename = null,
         ?string $jdFile = null,
         ?string $jdFileUrl = null,
@@ -71,6 +111,22 @@ class AptitudeJdQuestionSetModel extends BaseModel
         $jdTitle = trim($jdTitle);
         if ($jdTitle === '') {
             throw new \InvalidArgumentException('JD title is required.');
+        }
+
+        $companyId = trim((string) ($companyId ?? ''));
+        if ($companyId === '' || !Security::isValidId($companyId)) {
+            throw new \InvalidArgumentException('Company is required.');
+        }
+        $companyName = trim((string) ($companyName ?? ''));
+        if ($companyName === '') {
+            $company = (new CompanyModel())->findById($companyId);
+            if ($company === null) {
+                throw new \InvalidArgumentException('Selected company was not found.');
+            }
+            $companyName = trim((string) ($company['companyName'] ?? ''));
+        }
+        if ($companyName === '') {
+            throw new \InvalidArgumentException('Selected company was not found.');
         }
 
         $normalized = [];
@@ -97,6 +153,8 @@ class AptitudeJdQuestionSetModel extends BaseModel
 
         $doc = [
             'jdTitle' => $jdTitle,
+            'companyId' => $companyId,
+            'companyName' => $companyName,
             'questionCount' => count($normalized),
             'questions' => $normalized,
             'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
@@ -226,6 +284,8 @@ class AptitudeJdQuestionSetModel extends BaseModel
 
         return $this->withDocumentUrl([
             'id' => $id,
+            'companyId' => (string) ($row['companyId'] ?? ''),
+            'companyName' => (string) ($row['companyName'] ?? ''),
             'jdTitle' => (string) ($row['jdTitle'] ?? ''),
             'jdFilename' => (string) ($row['jdFilename'] ?? ''),
             'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
@@ -265,6 +325,8 @@ class AptitudeJdQuestionSetModel extends BaseModel
 
         return $this->withDocumentUrl([
             'id' => $id,
+            'companyId' => (string) ($row['companyId'] ?? ''),
+            'companyName' => (string) ($row['companyName'] ?? ''),
             'jdTitle' => (string) ($row['jdTitle'] ?? ''),
             'jdFilename' => (string) ($row['jdFilename'] ?? ''),
             'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),

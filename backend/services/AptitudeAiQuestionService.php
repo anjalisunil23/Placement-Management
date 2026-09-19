@@ -498,6 +498,8 @@ final class AptitudeAiQuestionService
         array $admin,
         array $questions,
         string $jdTitle,
+        string $companyId,
+        ?string $companyName = null,
         ?string $jdFilename = null,
         ?string $jdFile = null,
         ?string $jdFileUrl = null,
@@ -507,6 +509,10 @@ final class AptitudeAiQuestionService
         $jdTitle = trim($jdTitle);
         if ($jdTitle === '') {
             throw new \InvalidArgumentException('JD title is required.');
+        }
+        $companyId = trim($companyId);
+        if ($companyId === '') {
+            throw new \InvalidArgumentException('Company is required.');
         }
         if ($questions === []) {
             throw new \InvalidArgumentException('No questions selected to save.');
@@ -536,6 +542,8 @@ final class AptitudeAiQuestionService
             $jdTitle,
             $toSave,
             (string) ($admin['_id'] ?? $admin['id'] ?? ''),
+            $companyId,
+            $companyName,
             $jdFilename,
             $jdFile,
             $jdFileUrl,

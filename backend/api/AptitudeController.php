@@ -240,14 +240,34 @@ final class AptitudeController
         $body = $this->body();
         $questions = is_array($body['questions'] ?? null) ? $body['questions'] : [];
         $jdTitle = (string) ($body['jdTitle'] ?? '');
+        $companyId = (string) ($body['companyId'] ?? '');
+        $companyName = isset($body['companyName']) ? (string) $body['companyName'] : null;
         $jdFilename = isset($body['jdFilename']) ? (string) $body['jdFilename'] : null;
         $jdFile = isset($body['jdFile']) ? (string) $body['jdFile'] : null;
         $jdFileUrl = isset($body['jdFileUrl']) ? (string) $body['jdFileUrl'] : null;
         $jdMimeType = isset($body['jdMimeType']) ? (string) $body['jdMimeType'] : null;
         Response::success(
-            $this->service->saveAiJdQuestionSet($user, $questions, $jdTitle, $jdFilename, $jdFile, $jdFileUrl, $jdMimeType),
+            $this->service->saveAiJdQuestionSet(
+                $user,
+                $questions,
+                $jdTitle,
+                $companyId,
+                $companyName,
+                $jdFilename,
+                $jdFile,
+                $jdFileUrl,
+                $jdMimeType
+            ),
             'JD questions saved.'
         );
+    }
+
+    /** GET /api/aptitude/jd-companies */
+    public function listJdCompanies(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        AptitudeAccessService::requireManager($user);
+        Response::success($this->service->listJdCompanies());
     }
 
     /** GET /api/aptitude/jd-sets */
