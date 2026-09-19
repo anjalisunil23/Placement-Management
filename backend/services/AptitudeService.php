@@ -530,6 +530,30 @@ final class AptitudeService
 
     /**
      * @param array<string, mixed> $admin
+     * @param array<string, mixed> $file
+     * @return array<string, mixed>
+     */
+    public function extractAiJobDescription(array $admin, array $file): array
+    {
+        AptitudeAccessService::requireManager($admin);
+
+        try {
+            return (new JdTextExtractionService())->extractFromUpload($file);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            error_log('[PMS Aptitude AI] JD extract failed: ' . $e->getMessage());
+            Response::error(
+                'Unable to extract text from this file. Please upload a clearer PDF/image or paste the JD text manually.',
+                422
+            );
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $admin
      * @param array<int, array<string, mixed>> $questions
      * @return array<string, mixed>
      */

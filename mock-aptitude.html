@@ -432,16 +432,53 @@
     <div id="aptAiFormPanel">
       <p class="small text-muted-2 mb-3" id="aptAiStatusHint">Generate aptitude MCQs with OpenAI. Review and edit before saving — nothing is published automatically.</p>
       <div class="row g-3">
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiCategory">Category</label><select class="form-select" id="aptAiCategory"></select></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiTopic">Topic</label><input class="form-control" id="aptAiTopic" list="aptAiTopicList" placeholder="e.g. Percentage, Syllogism…"/><datalist id="aptAiTopicList"></datalist></div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Question source</label>
+          <div class="d-flex flex-wrap gap-3">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="aptAiSourceMode" id="aptAiModeCategory" value="category" checked>
+              <label class="form-check-label" for="aptAiModeCategory">Category / Topic</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="aptAiSourceMode" id="aptAiModeJd" value="jd">
+              <label class="form-check-label" for="aptAiModeJd">Job Description</label>
+            </div>
+          </div>
+        </div>
+        <div id="aptAiCategoryPanel" class="col-12">
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiCategory">Category</label><select class="form-select" id="aptAiCategory"></select></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiTopic">Topic</label><input class="form-control" id="aptAiTopic" list="aptAiTopicList" placeholder="e.g. Percentage, Syllogism…"/><datalist id="aptAiTopicList"></datalist></div>
+          </div>
+        </div>
+        <div id="aptAiJdPanel" class="col-12 d-none">
+          <label class="form-label small fw-semibold" for="aptAiJdText">Paste job description</label>
+          <textarea class="form-control mb-3" id="aptAiJdText" rows="6" placeholder="Paste the complete job description here…"></textarea>
+          <div class="text-center small text-muted-2 mb-2">OR</div>
+          <label class="form-label small fw-semibold">Upload job description</label>
+          <div class="dropzone" id="aptAiJdDropzone" role="button" tabindex="0" aria-label="Upload job description PDF or image">
+            <div id="aptAiJdDropzoneIdle">
+              <i class="bi bi-cloud-arrow-up fs-4 d-block mb-2"></i>
+              Drag &amp; drop PDF/image here<br>or<br>
+              <span class="text-primary fw-semibold">Choose file</span>
+            </div>
+            <div id="aptAiJdDropzoneFile" class="d-none">
+              <i class="bi bi-check-circle text-success me-1"></i><span id="aptAiJdFilename"></span>
+              <button type="button" class="btn btn-sm btn-link p-0 ms-2" id="btnAptAiJdRemove">Remove</button>
+            </div>
+          </div>
+          <div class="small text-muted-2 mt-2">Supported: PDF, JPG, JPEG, PNG (max 5 MB)</div>
+          <input type="file" id="aptAiJdFileInput" class="d-none" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"/>
+          <div id="aptAiJdExtractStatus" class="small text-muted-2 mt-2 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Extracting text from file…</div>
+        </div>
         <div class="col-12">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <label class="form-label small fw-semibold mb-0">Question generation</label>
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnAptAiAddRow"><i class="bi bi-plus-lg me-1"></i>Add row</button>
           </div>
           <div id="aptAiGenRows" class="d-flex flex-column gap-2"></div>
+          <div class="small text-muted-2 mt-2" id="aptAiGenTotal"></div>
         </div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="aptAiLanguage">Language</label><input class="form-control" id="aptAiLanguage" value="English"/></div>
         <div class="col-12"><label class="form-label small fw-semibold" for="aptAiInstructions">Optional instructions</label><textarea class="form-control" id="aptAiInstructions" rows="2" placeholder="Generate questions suitable for campus placement aptitude tests."></textarea></div>
       </div>
       <div class="d-flex flex-wrap gap-2 mt-4">
@@ -490,5 +527,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919manualpick"></script>
+<script src="js/aptitude-page.js?v=20260919jdai"></script>
 </body></html>

@@ -256,6 +256,11 @@
   let aptAiModal;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
+  let aiJdUploadMeta = null;
+
+  const AI_CATEGORY_DEFAULT_INSTRUCTIONS = 'Generate questions suitable for campus placement aptitude tests.';
+  const AI_JD_DEFAULT_INSTRUCTIONS = 'Generate questions relevant to the uploaded job description and suitable for campus placement assessment. Focus on the technical skills, concepts, tools, and responsibilities mentioned in the JD.';
+  const AI_JD_MAX_FILE_BYTES = 5 * 1024 * 1024;
   const selectedBankIds = new Set();
 
   function dirOptionLabel(value) {
@@ -1600,6 +1605,139 @@
     { difficulty: 'Medium', count: 5 },
   ];
 
+  function getAiSourceMode() {
+    return document.getElementById('aptAiModeJd')?.checked ? 'jd' : 'category';
+  }
+
+  function updateAiGenTotal() {
+    const el = document.getElementById('aptAiGenTotal');
+    if (!el) return;
+    const total = collectAiGenRows().reduce((sum, row) => sum + row.count, 0);
+    el.textContent = total > 0 ? `${total} question${total === 1 ? '' : 's'}` : '';
+  }
+
+  function updateAiSourceModeUI() {
+    const jd = getAiSourceMode() === 'jd';
+    document.getElementById('aptAiCategoryPanel')?.classList.toggle('d-none', jd);
+    document.getElementById('aptAiJdPanel')?.classList.toggle('d-none', !jd);
+    const instr = document.getElementById('aptAiInstructions');
+    if (!instr) return;
+    if (jd) {
+      if (!instr.dataset.userEdited || instr.value === AI_CATEGORY_DEFAULT_INSTRUCTIONS) {
+        instr.value = AI_JD_DEFAULT_INSTRUCTIONS;
+        delete instr.dataset.userEdited;
+      }
+      instr.placeholder = AI_JD_DEFAULT_INSTRUCTIONS;
+    } else {
+      if (!instr.dataset.userEdited || instr.value === AI_JD_DEFAULT_INSTRUCTIONS) {
+        instr.value = AI_CATEGORY_DEFAULT_INSTRUCTIONS;
+        delete instr.dataset.userEdited;
+      }
+      instr.placeholder = AI_CATEGORY_DEFAULT_INSTRUCTIONS;
+    }
+  }
+
+  function showAptAiJdFileUi(filename) {
+    document.getElementById('aptAiJdDropzoneIdle')?.classList.toggle('d-none', !!filename);
+    document.getElementById('aptAiJdDropzoneFile')?.classList.toggle('d-none', !filename);
+    const nameEl = document.getElementById('aptAiJdFilename');
+    if (nameEl) nameEl.textContent = filename || '';
+    document.getElementById('aptAiJdDropzone')?.classList.toggle('has-file', !!filename);
+  }
+
+  function clearAptAiJdUpload() {
+    aiJdUploadMeta = null;
+    const input = document.getElementById('aptAiJdFileInput');
+    if (input) input.value = '';
+    showAptAiJdFileUi('');
+  }
+
+  async function extractAptAiJdFile(file) {
+    if (!file) return;
+    const ext = (file.name || '').split('.').pop()?.toLowerCase() || '';
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+    if (!allowed.includes(ext)) {
+      toast('Supported formats: PDF, JPG, JPEG, PNG.', 'error');
+      return;
+    }
+    if (file.size > AI_JD_MAX_FILE_BYTES) {
+      toast('File must be 5 MB or smaller.', 'error');
+      return;
+    }
+
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    const status = document.getElementById('aptAiJdExtractStatus');
+    status?.classList.remove('d-none');
+
+    try {
+      if (!live) {
+        if (!Auth.isDemo() || !access.canManage) {
+          toast('Sign in as a placement officer to extract JD text.', 'info');
+          return;
+        }
+        const demoText = `[Demo extract from ${file.name}]\n\nSoftware Developer\n\nResponsibilities:\n- Develop web applications\n- Build REST APIs\n- Work with databases\n\nRequirements:\n- Java\n- Python\n- JavaScript\n- React\n- SQL\n- Data Structures\n- OOP`;
+        document.getElementById('aptAiJdText').value = demoText;
+        aiJdUploadMeta = { filename: file.name, demo: true };
+        showAptAiJdFileUi(file.name);
+        toast('Demo JD text extracted (no server call).', 'info');
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append('jd', file);
+      const res = await api('/aptitude/ai/extract-jd', { method: 'POST', body: fd });
+      if (!res?.success) throw new Error(res?.message || 'Could not extract text from file.');
+      const text = (res.data?.text || '').trim();
+      if (!text) {
+        throw new Error('Unable to extract text from this file. Please upload a clearer PDF/image or paste the JD text manually.');
+      }
+      document.getElementById('aptAiJdText').value = text;
+      aiJdUploadMeta = { filename: res.data?.filename || file.name, method: res.data?.method || ext };
+      showAptAiJdFileUi(aiJdUploadMeta.filename);
+      toast('Job description text extracted.', 'success');
+    } catch (err) {
+      toast(err?.message || 'Unable to extract text from this file. Please upload a clearer PDF/image or paste the JD text manually.', 'error');
+      clearAptAiJdUpload();
+    } finally {
+      status?.classList.add('d-none');
+    }
+  }
+
+  function bindAptAiJdDropzone() {
+    const dropzone = document.getElementById('aptAiJdDropzone');
+    const input = document.getElementById('aptAiJdFileInput');
+    if (!dropzone || !input || dropzone.dataset.bound === '1') return;
+    dropzone.dataset.bound = '1';
+
+    dropzone.addEventListener('click', () => input.click());
+    dropzone.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        input.click();
+      }
+    });
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (file) extractAptAiJdFile(file);
+    });
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) extractAptAiJdFile(file);
+    });
+    document.getElementById('btnAptAiJdRemove')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      clearAptAiJdUpload();
+    });
+  }
+
   function addAiGenRow(row = {}) {
     const root = document.getElementById('aptAiGenRows');
     if (!root) return;
@@ -1627,8 +1765,11 @@
         return;
       }
       wrap.remove();
+      updateAiGenTotal();
     });
+    wrap.querySelector('[data-ai-gen="count"]')?.addEventListener('input', updateAiGenTotal);
     root.appendChild(wrap);
+    updateAiGenTotal();
   }
 
   function initAiGenRows(rows = AI_GEN_ROW_DEFAULTS) {
@@ -1636,6 +1777,7 @@
     if (!root) return;
     root.innerHTML = '';
     (rows.length ? rows : AI_GEN_ROW_DEFAULTS).forEach((row) => addAiGenRow(row));
+    updateAiGenTotal();
   }
 
   function collectAiGenRows() {
@@ -1654,19 +1796,32 @@
   }
 
   function collectAiFormParams() {
+    const mode = getAiSourceMode();
     const batches = collectAiGenRows();
     const first = batches[0] || { difficulty: 'Medium', count: 5, marks: 1 };
-    return {
-      category: document.getElementById('aptAiCategory')?.value || 'General Aptitude',
-      topic: (document.getElementById('aptAiTopic')?.value || '').trim(),
+    const base = {
+      generationMode: mode,
       batches,
       difficulty: first.difficulty,
       count: batches.reduce((sum, row) => sum + row.count, 0),
       marks: first.marks,
-      language: (document.getElementById('aptAiLanguage')?.value || 'English').trim() || 'English',
+      language: 'English',
       negativeMarking: false,
       negativeMarks: 0,
       instructions: document.getElementById('aptAiInstructions')?.value || '',
+    };
+    if (mode === 'jd') {
+      return {
+        ...base,
+        jobDescription: (document.getElementById('aptAiJdText')?.value || '').trim(),
+        category: 'General Aptitude',
+        topic: 'Job Description',
+      };
+    }
+    return {
+      ...base,
+      category: document.getElementById('aptAiCategory')?.value || 'General Aptitude',
+      topic: (document.getElementById('aptAiTopic')?.value || '').trim(),
     };
   }
 
@@ -1684,7 +1839,18 @@
 
   function openAptAiModal() {
     document.getElementById('aptAiModalTitle').textContent = 'AI Generate — question bank';
+    document.getElementById('aptAiModeCategory').checked = true;
+    document.getElementById('aptAiModeJd').checked = false;
+    document.getElementById('aptAiJdText').value = '';
+    clearAptAiJdUpload();
+    const instr = document.getElementById('aptAiInstructions');
+    if (instr) {
+      instr.value = AI_CATEGORY_DEFAULT_INSTRUCTIONS;
+      delete instr.dataset.userEdited;
+    }
     initAiFormFields();
+    updateAiSourceModeUI();
+    bindAptAiJdDropzone();
     showAptAiFormPanel();
     document.getElementById('aptAiPreviewList').innerHTML = '';
     document.getElementById('aptAiGenerateStatus')?.classList.add('d-none');
@@ -1714,6 +1880,44 @@
         difficulty: params.difficulty || 'Medium',
         marks: params.marks || 1,
         source: 'AI',
+        selected: true,
+        duplicateInBank: false,
+        duplicateInBatch: false,
+      });
+    }
+    return { questions, requested: n, received: n, demo: true };
+  }
+
+  function demoGenerateJdAiQuestions(params) {
+    const jd = (params.jobDescription || '').toLowerCase();
+    const skillPool = [
+      { topic: 'OOP', q: 'Which OOP concept allows a child class to provide a specific implementation of a method defined in its parent class?', opts: ['Encapsulation', 'Inheritance', 'Polymorphism', 'Abstraction'], correct: 2 },
+      { topic: 'SQL', q: 'Which SQL clause is used to filter grouped records?', opts: ['WHERE', 'GROUP BY', 'HAVING', 'ORDER BY'], correct: 2 },
+      { topic: 'REST APIs', q: 'Which HTTP method is commonly used to retrieve data from a REST API?', opts: ['POST', 'GET', 'PUT', 'DELETE'], correct: 1 },
+      { topic: 'Java', q: 'Which Java keyword is used to inherit a class?', opts: ['implements', 'extends', 'inherits', 'superclass'], correct: 1 },
+      { topic: 'React', q: 'In React, which hook is used for side effects in functional components?', opts: ['useState', 'useEffect', 'useContext', 'useReducer'], correct: 1 },
+      { topic: 'Data Structures', q: 'Which data structure follows FIFO order?', opts: ['Stack', 'Queue', 'Tree', 'Graph'], correct: 1 },
+    ];
+    const relevant = skillPool.filter((s) => {
+      const key = s.topic.toLowerCase();
+      return jd.includes(key) || jd.includes(key.split(' ')[0]);
+    });
+    const pool = relevant.length ? relevant : skillPool.slice(0, 4);
+    const n = Math.min(50, Math.max(1, Number(params.count || 5)));
+    const questions = [];
+    for (let i = 0; i < n; i += 1) {
+      const skill = pool[i % pool.length];
+      questions.push({
+        tempId: `demo-ai-jd-${i + 1}`,
+        prompt: `[Demo JD] ${skill.q}`,
+        options: skill.opts,
+        correctIndex: skill.correct,
+        explanation: `This question tests ${skill.topic}, which is relevant to the job description.`,
+        category: 'General Aptitude',
+        topic: skill.topic,
+        difficulty: params.difficulty || 'Medium',
+        marks: params.marks || 1,
+        source: 'AI_JD',
         selected: true,
         duplicateInBank: false,
         duplicateInBatch: false,
@@ -2018,7 +2222,12 @@
   async function runAptAiGenerate() {
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     const params = collectAiFormParams();
-    if (!params.topic) {
+    if (params.generationMode === 'jd') {
+      if ((params.jobDescription || '').length < 40) {
+        toast('Paste or upload a job description (at least 40 characters).', 'error');
+        return;
+      }
+    } else if (!params.topic) {
       toast('Enter a topic.', 'error');
       return;
     }
@@ -2039,7 +2248,9 @@
         }
         const merged = [];
         params.batches.forEach((batch) => {
-          const chunk = demoGenerateAiQuestions({ ...params, ...batch });
+          const chunk = params.generationMode === 'jd'
+            ? demoGenerateJdAiQuestions({ ...params, ...batch })
+            : demoGenerateAiQuestions({ ...params, ...batch });
           merged.push(...(chunk.questions || []));
         });
         data = { questions: merged, requested: params.count, received: merged.length };
@@ -2098,7 +2309,7 @@
             category: q.category || category,
             difficulty: q.difficulty || 'Medium',
             topic: q.topic || '',
-            source: 'AI',
+            source: q.source || 'AI',
           });
         });
         saveDemoBankStore(bank);
@@ -4083,13 +4294,32 @@
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal());
     document.getElementById('btnAptAiAddRow')?.addEventListener('click', () => addAiGenRow());
+    document.getElementById('aptAiModeCategory')?.addEventListener('change', updateAiSourceModeUI);
+    document.getElementById('aptAiModeJd')?.addEventListener('change', updateAiSourceModeUI);
+    document.getElementById('aptAiInstructions')?.addEventListener('input', (e) => {
+      if (e.target.value.trim()) e.target.dataset.userEdited = '1';
+    });
     document.getElementById('aptAiCategory')?.addEventListener('change', (e) => fillAiTopicDatalist(e.target.value));
     document.getElementById('btnAptAiRun')?.addEventListener('click', () => runAptAiGenerate());
+    bindAptAiJdDropzone();
     document.getElementById('btnAptAiRegenerate')?.addEventListener('click', () => {
       showAptAiFormPanel();
       if (aiLastFormParams) {
-        document.getElementById('aptAiCategory').value = aiLastFormParams.category || '';
-        document.getElementById('aptAiTopic').value = aiLastFormParams.topic || '';
+        const jd = aiLastFormParams.generationMode === 'jd';
+        document.getElementById('aptAiModeJd').checked = jd;
+        document.getElementById('aptAiModeCategory').checked = !jd;
+        updateAiSourceModeUI();
+        if (jd) {
+          document.getElementById('aptAiJdText').value = aiLastFormParams.jobDescription || '';
+        } else {
+          document.getElementById('aptAiCategory').value = aiLastFormParams.category || '';
+          fillAiTopicDatalist(aiLastFormParams.category || 'Quantitative Aptitude');
+          document.getElementById('aptAiTopic').value = aiLastFormParams.topic || '';
+        }
+        document.getElementById('aptAiInstructions').value = aiLastFormParams.instructions || '';
+        if (aiLastFormParams.instructions) {
+          document.getElementById('aptAiInstructions').dataset.userEdited = '1';
+        }
         initAiGenRows(
           aiLastFormParams.batches?.length
             ? aiLastFormParams.batches

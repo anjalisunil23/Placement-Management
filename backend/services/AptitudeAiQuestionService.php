@@ -65,6 +65,11 @@ final class AptitudeAiQuestionService
         AptitudeAccessService::requireManager($admin);
         $this->assertCooldown((string) ($admin['_id'] ?? $admin['id'] ?? ''));
 
+        $mode = strtolower(trim((string) ($body['generationMode'] ?? $body['mode'] ?? 'category')));
+        if (in_array($mode, ['jd', 'job_description', 'job description'], true)) {
+            return $this->generateFromJdForUser($admin, $body);
+        }
+
         $category = AptitudeTestModel::normalizeCategory((string) ($body['category'] ?? 'General Aptitude'));
         $topic = trim((string) ($body['topic'] ?? ''));
         $language = trim((string) ($body['language'] ?? 'English')) ?: 'English';
@@ -106,6 +111,151 @@ final class AptitudeAiQuestionService
             'questions' => $merged,
             'requested' => $requested,
             'received' => count($merged),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
+    public function generateFromJdForUser(array $admin, array $body): array
+    {
+        $extractor = new JdTextExtractionService($this->openai);
+        $jobDescription = $extractor->sanitizeText(
+            (string) ($body['jobDescription'] ?? $body['jobDescriptionText'] ?? '')
+        );
+
+        if (mb_strlen($jobDescription) < 40) {
+            throw new \InvalidArgumentException(
+                'Job description text is required. Paste the JD or upload a PDF/image to extract text.'
+            );
+        }
+
+        $language = trim((string) ($body['language'] ?? 'English')) ?: 'English';
+        $instructions = trim((string) ($body['instructions'] ?? ''));
+        $negativeMarking = filter_var($body['negativeMarking'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $negativeMarks = $negativeMarking ? max(0, (float) ($body['negativeMarks'] ?? 0)) : 0.0;
+
+        $batches = $this->normalizeGenerationBatches($body);
+        if ($batches === []) {
+            throw new \InvalidArgumentException('Add at least one generation row with a question count.');
+        }
+
+        $merged = [];
+        $requested = 0;
+        foreach ($batches as $batch) {
+            $result = $this->generateFromJd(
+                $jobDescription,
+                $batch['difficulty'],
+                $batch['count'],
+                $batch['marks'],
+                $language,
+                $instructions,
+                $negativeMarks
+            );
+            $requested += $batch['count'];
+            foreach ($result['questions'] ?? [] as $question) {
+                $merged[] = $question;
+            }
+            $this->logGeneration($admin, 'General Aptitude', 'Job Description', $batch['difficulty'], $batch['count'], true);
+        }
+
+        return [
+            'questions' => $merged,
+            'requested' => $requested,
+            'received' => count($merged),
+            'generationMode' => 'jd',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function generateFromJd(
+        string $jobDescription,
+        string $difficulty,
+        int $count,
+        float $marks = 1.0,
+        string $language = 'English',
+        string $instructions = '',
+        float $negativeMarks = 0.0
+    ): array {
+        $difficulty = AptitudeTestModel::normalizeDifficulty($difficulty);
+        $count = max(1, min(self::MAX_COUNT, $count));
+        $fallbackCategory = 'General Aptitude';
+        $fallbackTopic = 'Job Description';
+
+        $system = 'You are an aptitude question generator for a university placement preparation system. '
+            . 'Analyze job descriptions and generate relevant technical/aptitude MCQs. '
+            . 'Return ONLY valid JSON with no markdown or commentary.';
+        $user = $this->buildJdPrompt($jobDescription, $difficulty, $count, $marks, $language, $instructions);
+
+        try {
+            $raw = $this->openai->generateJson($system, $user);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            error_log('[PMS Aptitude AI] JD generate failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI question generation is temporarily unavailable. Please try again.');
+        }
+
+        $questions = $this->extractQuestions($raw);
+        $validated = [];
+        $errors = [];
+        foreach ($questions as $i => $q) {
+            $mapped = $this->mapAiQuestion(
+                is_array($q) ? $q : [],
+                $fallbackCategory,
+                $fallbackTopic,
+                $difficulty,
+                $marks,
+                $negativeMarks
+            );
+            if ($mapped === null) {
+                $errors[] = 'Question ' . ($i + 1) . ' failed validation.';
+                continue;
+            }
+            $validated[] = $mapped;
+        }
+
+        if ($validated === []) {
+            $detail = $errors !== [] ? implode(' ', array_slice($errors, 0, 3)) : 'No valid questions in AI response.';
+            throw new \RuntimeException($detail);
+        }
+
+        if (count($validated) !== $count) {
+            throw new \RuntimeException(
+                'AI generated ' . count($validated) . ' valid question(s) but ' . $count . ' were requested. Please regenerate.'
+            );
+        }
+
+        $bank = new AptitudeQuestionBankModel();
+        $bankIndex = $bank->loadNormalizedPromptIndex();
+        $batchKeys = [];
+        $preview = [];
+
+        foreach ($validated as $i => $q) {
+            $key = AptitudeQuestionBankModel::normalizePromptKey((string) ($q['prompt'] ?? ''));
+            $duplicateInBank = isset($bankIndex[$key]);
+            $duplicateInBatch = isset($batchKeys[$key]);
+            $batchKeys[$key] = true;
+
+            $preview[] = array_merge($q, [
+                'tempId' => 'ai-jd-' . ($i + 1) . '-' . bin2hex(random_bytes(4)),
+                'source' => 'AI_JD',
+                'duplicateInBank' => $duplicateInBank,
+                'duplicateInBatch' => $duplicateInBatch,
+                'duplicateMessage' => $duplicateInBank
+                    ? 'This question already exists in the bank and will not be added if saved unchanged.'
+                    : ($duplicateInBatch ? 'Duplicate question within this AI batch.' : null),
+                'selected' => !$duplicateInBank && !$duplicateInBatch,
+            ]);
+        }
+
+        return [
+            'questions' => $preview,
+            'requested' => $count,
+            'received' => count($preview),
         ];
     }
 
@@ -264,7 +414,8 @@ final class AptitudeAiQuestionService
             }
 
             $bankIndex[$key] = true;
-            $row['source'] = 'AI';
+            $source = trim((string) ($q['source'] ?? 'AI'));
+            $row['source'] = in_array($source, ['AI', 'AI_JD'], true) ? $source : 'AI';
             $toInsert[] = $row;
         }
 
@@ -357,6 +508,72 @@ Double-check every calculation before returning JSON.
 PROMPT;
     }
 
+    private function buildJdPrompt(
+        string $jobDescription,
+        string $difficulty,
+        int $count,
+        float $marks,
+        string $language,
+        string $instructions
+    ): string {
+        $extra = trim($instructions);
+        $extraBlock = $extra !== '' ? "\nAdditional instructions:\n{$extra}\n" : '';
+
+        return <<<PROMPT
+You are generating campus placement aptitude/technical MCQs from a real company job description.
+
+Before generating questions, analyze the job description and identify:
+- Technical skills (languages, frameworks, tools)
+- Core concepts (OOP, data structures, DBMS, networks, REST APIs, etc.)
+- Job responsibilities (development, testing, debugging, etc.)
+- Other requirements (problem solving, communication, analytical skills)
+
+Use this analysis to decide what questions to generate.
+
+Requirements:
+- Generate exactly {$count} questions at {$difficulty} difficulty.
+- Every question MUST be relevant to skills, concepts, or responsibilities mentioned in the JD.
+- Do NOT generate questions about technologies not mentioned in the JD unless explicitly requested in additional instructions.
+- When multiple skills are present, distribute questions reasonably across the important ones.
+- Prioritize skills marked Required, Must have, Essential, or Mandatory in the JD.
+- Each question must have exactly four distinct options with only one correct answer.
+- Provide a short explanation that supports the correct option.
+- Set category to "General Aptitude" or a fitting aptitude category.
+- Set topic to the specific skill/concept tested (e.g. OOP, SQL, REST APIs, React).
+- Avoid duplicate, ambiguous, or trick questions unless requested.
+- Verify numerical calculations before returning JSON.
+- Language: {$language}
+- Return ONLY valid structured JSON with no markdown.
+
+Job Description:
+{$jobDescription}
+
+Difficulty: {$difficulty}
+Number of questions: {$count}
+Marks per question: {$marks}
+{$extraBlock}
+Use this exact JSON schema:
+{
+  "questions": [
+    {
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
+      "correctAnswerIndex": 0,
+      "correctOptionLetter": "A",
+      "explanation": "string",
+      "category": "General Aptitude",
+      "topic": "specific skill from JD",
+      "difficulty": "{$difficulty}",
+      "marks": {$marks}
+    }
+  ]
+}
+
+Rules for correctAnswerIndex: MUST be 0-based — 0 = option A, 1 = B, 2 = C, 3 = D. Never use 1–4.
+correctOptionLetter MUST be A, B, C, or D and MUST match correctAnswerIndex.
+PROMPT;
+    }
+
     /**
      * @param array<string, mixed> $raw
      * @return list<array<string, mixed>>
@@ -412,7 +629,11 @@ PROMPT;
             return null;
         }
 
-        return array_merge($mapped, ['source' => 'AI']);
+        $source = trim((string) ($q['source'] ?? 'AI'));
+
+        return array_merge($mapped, [
+            'source' => in_array($source, ['AI', 'AI_JD'], true) ? $source : 'AI',
+        ]);
     }
 
     /**

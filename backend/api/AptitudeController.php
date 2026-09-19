@@ -195,6 +195,19 @@ final class AptitudeController
         );
     }
 
+    /** POST /api/aptitude/ai/extract-jd — multipart field: jd */
+    public function extractAiJobDescription(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        if (!isset($_FILES['jd']) || !is_array($_FILES['jd'])) {
+            Response::error('No file uploaded.', 422);
+        }
+        Response::success(
+            $this->service->extractAiJobDescription($user, $_FILES['jd']),
+            'Job description text extracted.'
+        );
+    }
+
     /** POST /api/aptitude/ai/save */
     public function saveAiQuestions(): void
     {

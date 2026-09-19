@@ -87,6 +87,45 @@ final class OpenAIService
     }
 
     /**
+     * OCR / text extraction from a job-description image via vision-capable model.
+     */
+    public function extractTextFromImage(string $base64, string $mimeType): string
+    {
+        if (!$this->isConfigured()) {
+            throw new \RuntimeException('OpenAI is not configured on the server.');
+        }
+
+        $mimeType = trim($mimeType) !== '' ? trim($mimeType) : 'image/jpeg';
+        $payload = [
+            'model' => $this->model,
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        [
+                            'type' => 'text',
+                            'text' => 'Extract all readable job description text from this image. Return plain text only with no commentary or markdown.',
+                        ],
+                        [
+                            'type' => 'image_url',
+                            'image_url' => [
+                                'url' => 'data:' . $mimeType . ';base64,' . $base64,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'temperature' => 0,
+            'max_tokens' => 4096,
+        ];
+
+        $raw = $this->post('/chat/completions', $payload);
+        $text = trim((string) ($raw['choices'][0]['message']['content'] ?? ''));
+
+        return $text;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
