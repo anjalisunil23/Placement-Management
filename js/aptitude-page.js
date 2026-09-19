@@ -1881,6 +1881,8 @@
     list.innerHTML = topics.map((t) => `<option value="${esc(t)}"></option>`).join('');
   }
 
+  const AI_GEN_MAX_TOTAL = 200;
+
   const AI_GEN_ROW_DEFAULTS = [
     { difficulty: 'Easy', count: 5 },
     { difficulty: 'Medium', count: 5 },
@@ -1893,9 +1895,18 @@
   function updateAiGenTotal() {
     const el = document.getElementById('aptAiGenTotal');
     if (!el) return;
+    const maxTotal = meta.aiQuestionCountMax || AI_GEN_MAX_TOTAL;
     const total = collectAiGenRows().reduce((sum, row) => sum + row.count, 0);
-    el.className = 'small text-muted-2 mt-2';
-    el.textContent = total > 0 ? `${total} question${total === 1 ? '' : 's'} total` : '';
+    if (total <= 0) {
+      el.className = 'small text-muted-2 mt-2';
+      el.textContent = '';
+      return;
+    }
+    const over = total > maxTotal;
+    el.className = over ? 'small text-danger mt-2 fw-semibold' : 'small text-muted-2 mt-2';
+    el.textContent = over
+      ? `${total} questions — total cannot exceed ${maxTotal}. Reduce counts across rows.`
+      : `${total} question${total === 1 ? '' : 's'} (max ${maxTotal} total across all rows)`;
   }
 
   function updateAiSourceModeUI() {
@@ -2072,7 +2083,7 @@
       </div>
       <div class="col-md-5">
         <label class="form-label small fw-semibold mb-1">Number of questions</label>
-        <input class="form-control form-control-sm" type="number" data-ai-gen="count" min="0" value="${esc(count)}"/>
+        <input class="form-control form-control-sm" type="number" data-ai-gen="count" min="0" max="${meta.aiQuestionCountMax || AI_GEN_MAX_TOTAL}" value="${esc(count)}"/>
       </div>
       <div class="col-md-2">
         <button type="button" class="btn btn-sm btn-outline-danger w-100" data-ai-gen-remove title="Remove row"><i class="bi bi-trash"></i></button>
@@ -2099,9 +2110,10 @@
   }
 
   function collectAiGenRows() {
+    const maxTotal = meta.aiQuestionCountMax || AI_GEN_MAX_TOTAL;
     return [...document.querySelectorAll('.apt-ai-gen-row')].map((el) => ({
       difficulty: el.querySelector('[data-ai-gen="difficulty"]')?.value || 'Medium',
-      count: Math.max(0, Number(el.querySelector('[data-ai-gen="count"]')?.value || 0)),
+      count: Math.max(0, Math.min(maxTotal, Number(el.querySelector('[data-ai-gen="count"]')?.value || 0))),
       marks: 1,
     })).filter((row) => row.count > 0);
   }
@@ -2705,6 +2717,12 @@
     }
     if (!params.batches?.length) {
       toast('Add at least one generation row with a question count.', 'error');
+      return;
+    }
+    const maxTotal = meta.aiQuestionCountMax || AI_GEN_MAX_TOTAL;
+    if (params.count > maxTotal) {
+      toast(`Total questions cannot exceed ${maxTotal}. Reduce counts across rows.`, 'error');
+      updateAiGenTotal();
       return;
     }
     const status = document.getElementById('aptAiGenerateStatus');

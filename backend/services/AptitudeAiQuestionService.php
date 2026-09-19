@@ -13,6 +13,8 @@ use PMS\Models\AptitudeTestModel;
  */
 final class AptitudeAiQuestionService
 {
+    public const MAX_COUNT = 200;
+
     private const MIN_COOLDOWN_SECONDS = 8;
     private const JD_BATCH_SIZE = 10;
     private const MAX_JD_BATCH_ATTEMPTS = 15;
@@ -273,7 +275,7 @@ final class AptitudeAiQuestionService
         float $negativeMarks = 0.0
     ): array {
         $difficulty = AptitudeTestModel::normalizeDifficulty($difficulty);
-        $count = max(1, $count);
+        $count = max(1, min(self::MAX_COUNT, $count));
         $jdContext = $this->analyzeJdContext($jobDescription, $language);
         $bankIndex = (new AptitudeQuestionBankModel())->loadNormalizedPromptIndex();
         /** @var array<string, true> $seenKeys */
@@ -325,7 +327,7 @@ final class AptitudeAiQuestionService
         $category = AptitudeTestModel::normalizeCategory($category);
         $difficulty = AptitudeTestModel::normalizeDifficulty($difficulty);
         $topic = trim($topic);
-        $count = max(1, $count);
+        $count = max(1, min(self::MAX_COUNT, $count));
 
         if ($topic === '') {
             throw new \InvalidArgumentException('Topic is required.');
@@ -1540,7 +1542,7 @@ PROMPT;
         $rawBatches = $body['batches'] ?? null;
         if (!is_array($rawBatches) || $rawBatches === []) {
             $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($body['difficulty'] ?? 'Medium'));
-            $count = max(1, (int) ($body['count'] ?? 5));
+            $count = max(1, min(self::MAX_COUNT, (int) ($body['count'] ?? 5)));
             $marks = max(0.25, min(100, (float) ($body['marks'] ?? 1)));
             if (!in_array($difficulty, AptitudeTestModel::DIFFICULTIES, true)) {
                 throw new \InvalidArgumentException('Invalid difficulty.');
@@ -1554,18 +1556,23 @@ PROMPT;
         }
 
         $batches = [];
+        $totalCount = 0;
         foreach ($rawBatches as $batch) {
             if (!is_array($batch)) {
                 continue;
             }
             $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($batch['difficulty'] ?? 'Medium'));
-            $count = max(0, (int) ($batch['count'] ?? 0));
+            $count = max(0, min(self::MAX_COUNT, (int) ($batch['count'] ?? 0)));
             $marks = max(0.25, min(100, (float) ($batch['marks'] ?? 1)));
             if ($count <= 0) {
                 continue;
             }
             if (!in_array($difficulty, AptitudeTestModel::DIFFICULTIES, true)) {
                 throw new \InvalidArgumentException('Invalid difficulty.');
+            }
+            $totalCount += $count;
+            if ($totalCount > self::MAX_COUNT) {
+                throw new \InvalidArgumentException('Total questions cannot exceed ' . self::MAX_COUNT . '.');
             }
             $batches[] = [
                 'difficulty' => $difficulty,
