@@ -269,6 +269,7 @@
   let jdCompanies = [];
   let jdSelectedCompanyId = null;
   let studentJdSelectedCompanyId = null;
+  let studentJdBlockView = 'tests';
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aiPreviewQuestions = [];
@@ -1422,6 +1423,7 @@
         .map(mapDemoJdSetSummary);
       studentJdCompanyBlocks = groupJdSetsIntoBlocks(sets);
     }
+    syncStudentJdBlockViewNav();
     renderStudentJdBlock();
   }
 
@@ -1598,15 +1600,16 @@
     document.getElementById('jdBlockCompanyView')?.classList.remove('d-none');
   }
 
-  function renderJdCompanyGridHtml(blocks) {
+  function renderJdCompanyGridHtml(blocks, { forStudent = false } = {}) {
     return (blocks || []).map((block) => {
       const companyId = String(block.companyId || '_unassigned');
+      const meta = `${esc(block.setCount || 0)} JD title(s) · ${esc(block.questionCount || 0)} question(s)`;
       return `<div class="col-12 col-md-6 col-xl-4">
         <button type="button" class="card h-100 w-100 text-start border rounded-3 p-3 jd-company-card" data-jd-company-id="${esc(companyId)}">
           <div class="d-flex align-items-start justify-content-between gap-2">
             <div class="min-w-0">
               <div class="fw-semibold">${esc(block.companyName || 'Company')}</div>
-              <div class="small text-muted-2 mt-2">${esc(block.setCount || 0)} JD title(s) · ${esc(block.questionCount || 0)} question(s)</div>
+              ${forStudent ? '' : `<div class="small text-muted-2 mt-2">${meta}</div>`}
             </div>
             <i class="bi bi-chevron-right text-muted-2 flex-shrink-0"></i>
           </div>
@@ -1674,6 +1677,28 @@
     });
   }
 
+  function syncStudentJdBlockViewNav() {
+    document.querySelectorAll('#studentJdBlockViewNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-jd-block-view') === studentJdBlockView);
+    });
+    const intro = document.getElementById('studentJdBlockIntro');
+    if (intro) {
+      intro.textContent = studentJdBlockView === 'bank'
+        ? 'Browse JD documents and practice questions grouped by company.'
+        : 'Take company-specific JD tests grouped by company.';
+    }
+  }
+
+  function applyStudentJdBlockView(view) {
+    studentJdBlockView = view === 'bank' ? 'bank' : 'tests';
+    syncStudentJdBlockViewNav();
+    if (studentJdSelectedCompanyId) {
+      showStudentJdCompanyDetail(studentJdSelectedCompanyId);
+    } else {
+      renderStudentJdBlock();
+    }
+  }
+
   function showStudentJdCompanyDetail(companyId) {
     const block = studentJdCompanyBlocks.find((b) => String(b.companyId || '') === String(companyId || ''));
     studentJdSelectedCompanyId = companyId;
@@ -1681,21 +1706,26 @@
     document.getElementById('studentJdBlockCompanyDetail')?.classList.remove('d-none');
     const titleEl = document.getElementById('studentJdBlockDetailTitle');
     if (titleEl) titleEl.textContent = block?.companyName || 'Company';
+    const showTests = studentJdBlockView === 'tests';
     const testsRoot = document.getElementById('studentJdBlockCompanyTests');
-    const companyTests = studentCompanyTestsFor(companyId);
-    if (testsRoot) {
-      testsRoot.innerHTML = `<h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Company tests</h6>${renderStudentCompanyTestsHtml(companyTests)}`;
-      bindStudentCompanyTestEvents(testsRoot);
+    const bankSection = document.getElementById('studentJdBlockBankSection');
+    testsRoot?.classList.toggle('d-none', !showTests);
+    bankSection?.classList.toggle('d-none', showTests);
+    if (showTests) {
+      const companyTests = studentCompanyTestsFor(companyId);
+      if (testsRoot) {
+        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests);
+        bindStudentCompanyTestEvents(testsRoot);
+      }
+    } else {
+      const list = document.getElementById('studentJdBlockSetsList');
+      const sets = block?.sets || [];
+      if (!list) return;
+      list.innerHTML = sets.length
+        ? renderJdSetCardsHtml(sets, { allowDelete: false })
+        : '<p class="text-muted-2 mb-0">No JD question sets for this company yet.</p>';
+      bindJdSetCardEvents(list, { getDetail: getStudentJdSetDetail, allowDelete: false });
     }
-    const setsHeading = document.getElementById('studentJdBlockSetsHeading');
-    const list = document.getElementById('studentJdBlockSetsList');
-    const sets = block?.sets || [];
-    if (setsHeading) setsHeading.classList.toggle('d-none', !sets.length);
-    if (!list) return;
-    list.innerHTML = sets.length
-      ? renderJdSetCardsHtml(sets, { allowDelete: false })
-      : '<p class="text-muted-2 mb-0">No JD practice sets for this company yet.</p>';
-    bindJdSetCardEvents(list, { getDetail: getStudentJdSetDetail, allowDelete: false });
   }
 
   function showStudentJdCompanyGrid() {
@@ -1713,7 +1743,7 @@
       grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No JD Block entries are available yet. Check back later.</p></div>';
       return;
     }
-    grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks);
+    grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks, { forStudent: true });
     grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
       btn.addEventListener('click', () => showStudentJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
     });
@@ -5952,6 +5982,12 @@
     });
     document.getElementById('btnJdBlockBack')?.addEventListener('click', () => showJdCompanyGrid());
     document.getElementById('btnStudentJdBlockBack')?.addEventListener('click', () => showStudentJdCompanyGrid());
+    document.getElementById('studentJdBlockViewNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-jd-block-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyStudentJdBlockView(link.getAttribute('data-jd-block-view'));
+    });
     document.getElementById('aptAiJdTitleAddDate')?.addEventListener('change', updateJdTitleDateUi);
     document.getElementById('aptAiJdTitleDate')?.addEventListener('change', updateJdTitleDateUi);
     document.getElementById('aptAiJdTitle')?.addEventListener('input', updateJdTitleDateUi);
