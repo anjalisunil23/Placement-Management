@@ -2146,6 +2146,7 @@ final class AptitudeService
         AptitudeAccessService::requireManager($admin);
         $data = AptitudeAccessService::applyTestDepartmentScope($admin, $data);
         $data = AptitudeAccessService::sanitizeContestFields($admin, $data);
+        $data = $this->validateCompanyTestFields($data);
         $data = $this->requireContestBankSource($data);
         $data = $this->resolveTestQuestions($data);
         $id = $this->tests->createTest(array_merge($data, [
@@ -2173,6 +2174,7 @@ final class AptitudeService
         AptitudeAccessService::assertTestManageable($admin, $existing);
         $data = AptitudeAccessService::sanitizeTestUpdate($admin, $data);
         $merged = array_merge($existing, $data);
+        $data = $this->validateCompanyTestFields($merged);
         if (AptitudeTestModel::isContest($merged)) {
             $data = $this->requireContestBankSource($merged);
         }
@@ -2188,6 +2190,41 @@ final class AptitudeService
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function validateCompanyTestFields(array $data): array
+    {
+        if (!AptitudeTestModel::isCompanyTest($data)) {
+            return $data;
+        }
+        $companyId = trim((string) ($data['companyId'] ?? ''));
+        if ($companyId === '' || !Security::isValidId($companyId)) {
+            Response::error('Select a company for this company test.', 422);
+        }
+        $jdRules = array_values(array_filter((array) ($data['jdFilterRules'] ?? []), 'is_array'));
+        if ($jdRules === []) {
+            Response::error('Company tests must include at least one JD question rule.', 422);
+        }
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        foreach ($jdRules as $rule) {
+            $setId = trim((string) ($rule['jdSetId'] ?? ''));
+            if ($setId === '') {
+                continue;
+            }
+            $set = $model->findById($setId);
+            if ($set === null || trim((string) ($set['companyId'] ?? '')) !== $companyId) {
+                Response::error('JD sets must belong to the selected company.', 422);
+            }
+        }
+        $data['testKind'] = 'company';
+        $data['contestType'] = 'none';
+        $data['questionSource'] = 'manual';
+
+        return $data;
+    }
+
     private function requireContestBankSource(array $data): array
     {
         if (!AptitudeTestModel::isContest($data)) {

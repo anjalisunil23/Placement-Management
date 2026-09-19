@@ -36,12 +36,26 @@ class AptitudeTestModel extends BaseModel
         return in_array($raw, ['weekly', 'monthly'], true) ? $raw : 'none';
     }
 
+    public static function normalizeTestKind(string $value): string
+    {
+        $raw = strtolower(trim($value));
+        return $raw === 'company' ? 'company' : 'regular';
+    }
+
     /**
      * @param array<string, mixed> $test
      */
     public static function isContest(array $test): bool
     {
         return in_array(self::normalizeContestType((string) ($test['contestType'] ?? 'none')), ['weekly', 'monthly'], true);
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    public static function isCompanyTest(array $test): bool
+    {
+        return self::normalizeTestKind((string) ($test['testKind'] ?? '')) === 'company';
     }
 
     /**
@@ -860,6 +874,10 @@ class AptitudeTestModel extends BaseModel
             ];
         }
 
+        $testKind = self::normalizeTestKind((string) ($data['testKind'] ?? 'regular'));
+        $companyId = trim((string) ($data['companyId'] ?? ''));
+        $companyName = trim((string) ($data['companyName'] ?? ''));
+
         $payload = [
             'title' => trim((string) ($data['title'] ?? 'Aptitude mock')) ?: 'Aptitude mock',
             'description' => trim((string) ($data['description'] ?? '')),
@@ -872,7 +890,10 @@ class AptitudeTestModel extends BaseModel
             'negativeMarks' => $negativeMarks,
             'instructions' => trim((string) ($data['instructions'] ?? '')),
             'status' => self::normalizeStatus((string) ($data['status'] ?? 'published')),
-            'contestType' => self::normalizeContestType((string) ($data['contestType'] ?? 'none')),
+            'testKind' => $testKind,
+            'contestType' => $testKind === 'company'
+                ? 'none'
+                : self::normalizeContestType((string) ($data['contestType'] ?? 'none')),
             'questionSource' => $questionSource,
             'randomRules' => $questionSource === 'random' ? $randomRules : [],
             'bankFilterRules' => $questionSource === 'manual' ? $bankFilterRules : [],
@@ -881,6 +902,10 @@ class AptitudeTestModel extends BaseModel
             'questionType' => 'mcq',
             'questions' => $questions,
         ];
+        if ($testKind === 'company' && $companyId !== '' && Security::isValidId($companyId)) {
+            $payload['companyId'] = $companyId;
+            $payload['companyName'] = $companyName !== '' ? $companyName : 'Company';
+        }
         $contestType = $payload['contestType'];
         $payload['resultsPublished'] = $contestType === 'none'
             ? true
@@ -1046,6 +1071,9 @@ class AptitudeTestModel extends BaseModel
             'negativeMarks' => $negativeMarking ? $negativeMarks : 0.0,
             'instructions' => (string) ($test['instructions'] ?? ''),
             'status' => self::normalizeStatus((string) ($test['status'] ?? 'unpublished')),
+            'testKind' => self::normalizeTestKind((string) ($test['testKind'] ?? 'regular')),
+            'companyId' => trim((string) ($test['companyId'] ?? '')) !== '' ? (string) $test['companyId'] : null,
+            'companyName' => trim((string) ($test['companyName'] ?? '')) !== '' ? (string) $test['companyName'] : null,
             'contestType' => self::normalizeContestType((string) ($test['contestType'] ?? 'none')),
             'contestWeekday' => isset($test['contestWeekday']) ? (int) $test['contestWeekday'] : null,
             'contestMonthDay' => isset($test['contestMonthDay']) ? (int) $test['contestMonthDay'] : null,

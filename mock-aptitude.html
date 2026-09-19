@@ -195,6 +195,7 @@
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="company-tests">Company tests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">JD Block</a></li>
       </ul>
@@ -205,6 +206,14 @@
           <button type="button" class="btn btn-sm btn-primary" id="btnNewTest"><i class="bi bi-plus-lg me-1"></i>New test</button>
         </div>
         <div id="manageTestsList" class="d-flex flex-column gap-2"></div>
+      </div>
+
+      <div id="manageCompanyTestsPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">Company-specific mocks built from JD Block questions — pick a company, then select JD titles like question bank rules.</p>
+          <button type="button" class="btn btn-sm btn-primary" id="btnNewCompanyTest"><i class="bi bi-plus-lg me-1"></i>New company test</button>
+        </div>
+        <div id="manageCompanyTestsList" class="d-flex flex-column gap-2"></div>
       </div>
 
       <div id="manageContestsPanel" class="d-none">
@@ -374,6 +383,14 @@
     <div class="modal-body">
       <input type="hidden" id="tfId" value=""/>
       <div class="row g-3">
+        <input type="hidden" id="tfTestKind" value="regular"/>
+        <div class="col-12 d-none" id="tfCompanyPanel">
+          <label class="form-label small fw-semibold" for="tfCompanyId">Company</label>
+          <select class="form-select" id="tfCompanyId" aria-label="Company">
+            <option value="">Select company…</option>
+          </select>
+          <div class="form-text">JD titles below are filtered to this company.</div>
+        </div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfQuestionCount">Total number of questions</label><input class="form-control" type="number" id="tfQuestionCount" min="1" required/></div>
@@ -415,13 +432,14 @@
             <div id="tfManualBankRules" class="d-flex flex-column gap-2 mb-2"></div>
             <div class="small text-muted-2" id="tfManualBankSummary">0 questions from rules</div>
           </div>
-          <div class="form-check mb-2">
+          <div class="form-check mb-2" id="tfUseJdManualWrap">
             <input class="form-check-input" type="checkbox" id="tfUseJdManual"/>
             <label class="form-check-label" for="tfUseJdManual">Add questions from JD Block</label>
           </div>
+          <p class="small text-muted-2 mb-2 d-none" id="tfCompanyJdHint">Add one or more JD titles from the selected company. Pick the exact questions for each title, like question bank rules in a regular test.</p>
           <div class="border rounded-3 p-3 mb-3 d-none" id="tfJdPicker" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <div class="small fw-semibold">Pick questions by JD title</div>
+              <div class="small fw-semibold" id="tfJdPickerTitle">Pick questions by JD title</div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddManualJdRule"><i class="bi bi-plus-lg me-1"></i>Add JD</button>
             </div>
             <div id="tfManualJdRules" class="d-flex flex-column gap-2 mb-2"></div>
@@ -609,5 +627,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919studentjd"></script>
+<script src="js/aptitude-page.js?v=20260919companytest"></script>
 </body></html>

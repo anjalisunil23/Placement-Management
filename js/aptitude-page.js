@@ -2108,10 +2108,63 @@
     return type === 'weekly' || type === 'monthly';
   }
 
+  function formIsCompanyTest() {
+    return String(document.getElementById('tfTestKind')?.value || '') === 'company';
+  }
+
+  function selectedCompanyFromTestForm() {
+    const sel = document.getElementById('tfCompanyId');
+    const companyId = String(sel?.value || '').trim();
+    const companyName = String(sel?.selectedOptions?.[0]?.textContent || '').trim();
+    return {
+      companyId,
+      companyName: companyName === 'Select company…' ? '' : companyName,
+    };
+  }
+
+  async function fillTfCompanySelect(selectedId = '') {
+    await ensureJdCompaniesLoaded().catch(() => {});
+    const sel = document.getElementById('tfCompanyId');
+    if (!sel) return;
+    const pick = String(selectedId || '');
+    sel.innerHTML = `<option value="">Select company…</option>${jdCompanies.map((c) => {
+      const id = String(c.id || '');
+      return `<option value="${esc(id)}"${id === pick ? ' selected' : ''}>${esc(c.name || 'Company')}</option>`;
+    }).join('')}`;
+  }
+
+  function jdSetsForTestForm() {
+    const companyId = formIsCompanyTest() ? selectedCompanyFromTestForm().companyId : '';
+    const sets = manualJdSetSummaries || [];
+    if (!companyId) return sets;
+    return sets.filter((s) => String(s.companyId || '') === companyId);
+  }
+
+  function syncCompanyTestFormUi() {
+    const company = formIsCompanyTest();
+    document.getElementById('tfCompanyPanel')?.classList.toggle('d-none', !company);
+    document.getElementById('tfCompanyJdHint')?.classList.toggle('d-none', !company);
+    document.getElementById('tfUseJdManualWrap')?.classList.toggle('d-none', company);
+    document.getElementById('tfUseBankManual')?.closest('.form-check')?.classList.toggle('d-none', company);
+    document.getElementById('tfManualMcqSection')?.classList.toggle('d-none', company);
+    const jdTitle = document.getElementById('tfJdPickerTitle');
+    if (jdTitle) {
+      jdTitle.textContent = company ? 'Pick JD-generated questions' : 'Pick questions by JD title';
+    }
+    if (company) {
+      document.getElementById('tfUseJdManual').checked = true;
+      document.getElementById('tfJdPicker')?.classList.remove('d-none');
+      document.getElementById('tfSourceManual').checked = true;
+      document.getElementById('tfSourceRandom').checked = false;
+    }
+  }
+
   function syncQuestionSourcePanels() {
     const contest = formIsContest();
-    document.getElementById('tfSourceGroup')?.classList.toggle('d-none', contest);
+    const company = formIsCompanyTest();
+    document.getElementById('tfSourceGroup')?.classList.toggle('d-none', contest || company);
     document.getElementById('tfContestBankHint')?.classList.toggle('d-none', !contest);
+    syncCompanyTestFormUi();
     if (contest) {
       document.getElementById('tfSourceRandom').checked = true;
       document.getElementById('tfSourceManual').checked = false;
@@ -3787,13 +3840,26 @@
     await ensureJdSetSummariesLoaded();
     const sel = wrap.querySelector('[data-f="jdSetId"]');
     if (!sel) return;
-    const opts = manualJdSetSummaries.length
-      ? manualJdSetSummaries.map((s) => {
-        const label = `${s.companyName ? `${s.companyName} · ` : ''}${s.jdTitle || 'Untitled'} (${s.questionCount || 0})`;
+    const sets = jdSetsForTestForm();
+    const opts = sets.length
+      ? sets.map((s) => {
+        const label = formIsCompanyTest()
+          ? `${s.jdTitle || 'Untitled'} (${s.questionCount || 0})`
+          : `${s.companyName ? `${s.companyName} · ` : ''}${s.jdTitle || 'Untitled'} (${s.questionCount || 0})`;
         return `<option value="${esc(String(s.id))}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${esc(label)}</option>`;
       }).join('')
-      : '<option value="">No JD sets available</option>';
+      : `<option value="">${formIsCompanyTest() && !selectedCompanyFromTestForm().companyId ? 'Select a company first' : 'No JD sets available'}</option>`;
     sel.innerHTML = opts;
+  }
+
+  async function refreshAllManualJdSelects() {
+    const blocks = [...document.querySelectorAll('.tf-manual-jd-block')];
+    await Promise.all(blocks.map(async (wrap) => {
+      const current = wrap.querySelector('[data-f="jdSetId"]')?.value || '';
+      await populateManualJdSelect(wrap, current);
+      refreshManualJdBlock(wrap);
+    }));
+    updateManualJdSummary();
   }
 
   function addManualJdRuleRow(rule = {}) {
@@ -4079,6 +4145,14 @@
     return type === 'weekly' || type === 'monthly';
   }
 
+  function isCompanyTest(t) {
+    return String(t?.testKind || '') === 'company';
+  }
+
+  function isRegularTest(t) {
+    return !isContestTest(t) && !isCompanyTest(t);
+  }
+
   function applyManageContestType(type) {
     manageContestType = type === 'monthly' ? 'monthly' : 'weekly';
     document.getElementById('manageWeeklyContestsSection')?.classList.toggle('d-none', manageContestType !== 'weekly');
@@ -4100,6 +4174,8 @@
       manageContestType = 'monthly';
     } else if (panel === 'contests' && canManageContests()) {
       managePanel = 'contests';
+    } else if (panel === 'company-tests') {
+      managePanel = 'company-tests';
     } else if (panel === 'bank') {
       managePanel = 'bank';
     } else if (panel === 'jd') {
@@ -4109,6 +4185,7 @@
     }
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
     document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
+    document.getElementById('manageCompanyTestsPanel')?.classList.toggle('d-none', managePanel !== 'company-tests');
     document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
     document.getElementById('manageJdPanel')?.classList.toggle('d-none', managePanel !== 'jd');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
@@ -4207,12 +4284,19 @@
     </tr></thead><tbody>${contests.map((t) => renderManageContestRow(t)).join('')}</tbody></table></div>`;
   }
 
-  function renderManageRow(t, { showContestBadge = false } = {}) {
+  function companyTestBadgeHtml(t) {
+    if (!isCompanyTest(t)) return '';
+    const name = esc(t.companyName || 'Company');
+    return `<span class="badge text-bg-light border mt-1">Company · ${name}</span>`;
+  }
+
+  function renderManageRow(t, { showContestBadge = false, showCompanyBadge = false } = {}) {
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div>
           <strong>${esc(t.title)}</strong>
           <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
+          ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
           ${showContestBadge ? contestBadgeHtml(t) : ''}
           ${showContestBadge ? contestScheduleControls(t) : ''}
         </div>
@@ -4880,9 +4964,12 @@
       const canOpen = access.canTake && published && openNow && !alreadyDone;
       const tag = canOpen ? 'button' : 'div';
       const extra = canOpen ? ` type="button" data-open-test="${esc(t.id)}"` : '';
-      const title = isContestTest(t) && !openNow
+      let title = isContestTest(t) && !openNow
         ? `${t.title} · ${contestScheduleLabel(t)}`
         : t.title;
+      if (isCompanyTest(t) && t.companyName) {
+        title = `${title} · ${t.companyName}`;
+      }
       return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : ''}"${extra}>
         <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
         <span class="apt-prob-title">${i + 1}. ${esc(title)}</span>
@@ -5101,10 +5188,12 @@
 
   function openTestForm(test = null, preset = null) {
     const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
+    const isCompanyPreset = preset?.testKind === 'company' || isCompanyTest(test);
     const isContest = isContestTest(test) || isContestPreset;
     document.getElementById('testFormTitle').textContent = test
-      ? (isContest ? 'Edit contest' : 'Edit aptitude test')
-      : (isContestPreset ? `New ${preset.contestType} contest` : 'New aptitude test');
+      ? (isContest ? 'Edit contest' : (isCompanyPreset ? 'Edit company test' : 'Edit aptitude test'))
+      : (isContestPreset ? `New ${preset.contestType} contest` : (isCompanyPreset ? 'New company test' : 'New aptitude test'));
+    document.getElementById('tfTestKind').value = isCompanyPreset ? 'company' : 'regular';
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
@@ -5117,6 +5206,8 @@
     let source = test?.questionSource === 'random' ? 'random' : 'manual';
     if (isContest) {
       source = 'random';
+    } else if (isCompanyPreset) {
+      source = 'manual';
     }
     document.getElementById('tfSourceManual').checked = source === 'manual';
     document.getElementById('tfSourceRandom').checked = source === 'random';
@@ -5155,10 +5246,25 @@
     if (!jdRules.length && source === 'manual' && (test?.questions || []).some((q) => q.jdSetId)) {
       jdRules = inferJdRulesFromQuestions(test?.questions || []);
     }
-    const useJd = jdRules.length > 0;
+    const useJd = isCompanyPreset || jdRules.length > 0;
     document.getElementById('tfUseJdManual').checked = useJd;
     document.getElementById('tfJdPicker')?.classList.toggle('d-none', !useJd);
-    if (useJd) {
+    if (isCompanyPreset) {
+      fillTfCompanySelect(test?.companyId || '').then(() => {
+        if (useJd) {
+          ensureJdSetSummariesLoaded().then(() => {
+            document.getElementById('tfManualJdRules').innerHTML = '';
+            manualJdRuleCounter = 0;
+            (jdRules.length ? jdRules : [{}]).forEach((r) => addManualJdRuleRow(r));
+            updateManualJdSummary();
+          }).catch(() => {
+            (jdRules.length ? jdRules : [{}]).forEach((r) => addManualJdRuleRow(r));
+          });
+        } else {
+          addManualJdRuleRow();
+        }
+      });
+    } else if (useJd) {
       ensureJdSetSummariesLoaded().then(() => {
         jdRules.forEach((r) => addManualJdRuleRow(r));
         updateManualJdSummary();
@@ -5207,6 +5313,13 @@
       const useJd = document.getElementById('tfUseJdManual')?.checked;
       payload.jdFilterRules = useJd ? collectManualJdRules() : [];
       payload.questions = collectMcqs();
+    }
+    payload.testKind = formIsCompanyTest() ? 'company' : 'regular';
+    if (formIsCompanyTest()) {
+      const { companyId, companyName } = selectedCompanyFromTestForm();
+      payload.companyId = companyId;
+      payload.companyName = companyName;
+      payload.contestType = 'none';
     }
     if (!payload.category) {
       const fromQuestions = (payload.questions || []).map((q) => String(q.category || '').trim()).find(Boolean);
@@ -5304,7 +5417,8 @@
     syncManageContestActions();
     applyManagePanel(managePanel);
 
-    const regular = tests.filter((t) => !isContestTest(t));
+    const regular = tests.filter((t) => isRegularTest(t));
+    const companyTests = tests.filter((t) => isCompanyTest(t));
 
     const testsRoot = document.getElementById('manageTestsList');
     if (testsRoot) {
@@ -5312,6 +5426,14 @@
         ? regular.map((t) => renderManageRow(t)).join('')
         : '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
       bindManageListActions(testsRoot);
+    }
+
+    const companyRoot = document.getElementById('manageCompanyTestsList');
+    if (companyRoot) {
+      companyRoot.innerHTML = companyTests.length
+        ? companyTests.map((t) => renderManageRow(t, { showCompanyBadge: true })).join('')
+        : '<p class="text-muted-2 mb-0">No company tests yet. Create one from JD Block questions.</p>';
+      bindManageListActions(companyRoot);
     }
 
     renderManageContestSections('weekly', document.getElementById('manageWeeklyContestsList'));
@@ -5546,6 +5668,14 @@
       applyManagePanel('tests');
       openTestForm(null, { contestType: 'none' });
     });
+    document.getElementById('btnNewCompanyTest')?.addEventListener('click', () => {
+      applyManagePanel('company-tests');
+      openTestForm(null, { testKind: 'company', contestType: 'none' });
+    });
+    document.getElementById('tfCompanyId')?.addEventListener('change', () => {
+      if (!formIsCompanyTest()) return;
+      refreshAllManualJdSelects().catch(() => {});
+    });
     document.getElementById('btnNewWeeklyContest')?.addEventListener('click', () => {
       openManageContests('weekly');
       openTestForm(null, {
@@ -5689,10 +5819,18 @@
           payload.questionCount = ruleTotal;
         }
       } else {
-        const mcqCount = payload.questions?.length || 0;
-        const useBank = document.getElementById('tfUseBankManual')?.checked;
-        const useJd = document.getElementById('tfUseJdManual')?.checked;
+        const companyTest = formIsCompanyTest();
+        const mcqCount = companyTest ? 0 : (payload.questions?.length || 0);
+        const useBank = companyTest ? false : document.getElementById('tfUseBankManual')?.checked;
+        const useJd = companyTest ? true : document.getElementById('tfUseJdManual')?.checked;
         const target = Number(document.getElementById('tfQuestionCount')?.value || 0);
+        if (companyTest) {
+          const { companyId } = selectedCompanyFromTestForm();
+          if (!companyId) {
+            toast('Select a company.', 'error');
+            return;
+          }
+        }
         if (!target || target < 1) {
           toast('Enter total number of questions.', 'error');
           return;
@@ -5717,6 +5855,10 @@
             return;
           }
         }
+        if (companyTest && !useJd) {
+          toast('Add at least one JD question rule.', 'error');
+          return;
+        }
         if (!useBank && !useJd && !mcqCount) {
           toast('Add questions from the bank, JD Block, or add MCQs directly.', 'error');
           return;
@@ -5735,9 +5877,19 @@
         }
       }
       payload.totalMarks = 0;
+      if (formIsCompanyTest()) {
+        payload.testKind = 'company';
+        const { companyId, companyName } = selectedCompanyFromTestForm();
+        payload.companyId = companyId;
+        payload.companyName = companyName;
+        payload.contestType = 'none';
+      }
       if (canManageContests()) {
         if (isContestTest(payload)) openManageContests(payload.contestType);
+        else if (formIsCompanyTest()) applyManagePanel('company-tests');
         else applyManagePanel('tests');
+      } else if (formIsCompanyTest()) {
+        applyManagePanel('company-tests');
       }
       const live = Auth.hasRealAuth() && !Auth.isDemo();
       if (!live) {
