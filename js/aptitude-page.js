@@ -1652,6 +1652,20 @@
     showAptAiJdFileUi('');
   }
 
+  function getJdPastedText() {
+    return (document.getElementById('aptAiJdText')?.value || '').trim();
+  }
+
+  function getJdUploadedText() {
+    return (aiJdUploadMeta?.text || '').trim();
+  }
+
+  function resolveJdTextForGeneration() {
+    const pasted = getJdPastedText();
+    if (pasted) return pasted;
+    return getJdUploadedText();
+  }
+
   async function extractAptAiJdFile(file) {
     if (!file) return;
     const ext = (file.name || '').split('.').pop()?.toLowerCase() || '';
@@ -1675,11 +1689,10 @@
           toast('Sign in as a placement officer to extract JD text.', 'info');
           return;
         }
-        const demoText = `[Demo extract from ${file.name}]\n\nSoftware Developer\n\nResponsibilities:\n- Develop web applications\n- Build REST APIs\n- Work with databases\n\nRequirements:\n- Java\n- Python\n- JavaScript\n- React\n- SQL\n- Data Structures\n- OOP`;
-        document.getElementById('aptAiJdText').value = demoText;
-        aiJdUploadMeta = { filename: file.name, demo: true };
+        const demoText = `Software Developer\n\nResponsibilities:\n- Develop web applications\n- Build REST APIs\n- Work with databases\n\nRequirements:\n- Java\n- Python\n- JavaScript\n- React\n- SQL\n- Data Structures\n- OOP`;
+        aiJdUploadMeta = { filename: file.name, demo: true, text: demoText, method: ext };
         showAptAiJdFileUi(file.name);
-        toast('Demo JD text extracted (no server call).', 'info');
+        toast('File ready for generation (demo).', 'info');
         return;
       }
 
@@ -1691,10 +1704,13 @@
       if (!text) {
         throw new Error('Unable to extract text from this file. Please upload a clearer PDF/image or paste the JD text manually.');
       }
-      document.getElementById('aptAiJdText').value = text;
-      aiJdUploadMeta = { filename: res.data?.filename || file.name, method: res.data?.method || ext };
+      aiJdUploadMeta = {
+        filename: res.data?.filename || file.name,
+        method: res.data?.method || ext,
+        text,
+      };
       showAptAiJdFileUi(aiJdUploadMeta.filename);
-      toast('Job description text extracted.', 'success');
+      toast('File ready for generation.', 'success');
     } catch (err) {
       toast(err?.message || 'Unable to extract text from this file. Please upload a clearer PDF/image or paste the JD text manually.', 'error');
       clearAptAiJdUpload();
@@ -1811,9 +1827,14 @@
       instructions: document.getElementById('aptAiInstructions')?.value || '',
     };
     if (mode === 'jd') {
+      const jobDescriptionPasted = getJdPastedText();
+      const jobDescriptionUploaded = getJdUploadedText();
       return {
         ...base,
-        jobDescription: (document.getElementById('aptAiJdText')?.value || '').trim(),
+        jobDescription: jobDescriptionPasted || jobDescriptionUploaded,
+        jobDescriptionPasted,
+        jobDescriptionUploaded,
+        jdUploadFilename: aiJdUploadMeta?.filename || '',
         category: 'General Aptitude',
         topic: 'Job Description',
       };
@@ -2223,8 +2244,10 @@
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     const params = collectAiFormParams();
     if (params.generationMode === 'jd') {
-      if ((params.jobDescription || '').length < 40) {
-        toast('Paste or upload a job description (at least 40 characters).', 'error');
+      const jdText = resolveJdTextForGeneration();
+      params.jobDescription = jdText;
+      if (jdText.length < 40) {
+        toast('Paste a job description or upload a PDF/image (at least 40 characters of JD content required).', 'error');
         return;
       }
     } else if (!params.topic) {
@@ -4310,7 +4333,16 @@
         document.getElementById('aptAiModeCategory').checked = !jd;
         updateAiSourceModeUI();
         if (jd) {
-          document.getElementById('aptAiJdText').value = aiLastFormParams.jobDescription || '';
+          document.getElementById('aptAiJdText').value = aiLastFormParams.jobDescriptionPasted || '';
+          if (aiLastFormParams.jobDescriptionUploaded && aiLastFormParams.jdUploadFilename) {
+            aiJdUploadMeta = {
+              filename: aiLastFormParams.jdUploadFilename,
+              text: aiLastFormParams.jobDescriptionUploaded,
+            };
+            showAptAiJdFileUi(aiLastFormParams.jdUploadFilename);
+          } else {
+            clearAptAiJdUpload();
+          }
         } else {
           document.getElementById('aptAiCategory').value = aiLastFormParams.category || '';
           fillAiTopicDatalist(aiLastFormParams.category || 'Quantitative Aptitude');
