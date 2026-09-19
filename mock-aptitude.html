@@ -95,7 +95,7 @@
             <ul class="nav nav-pills gap-1 flex-wrap" id="takeListNav">
               <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="tests">Available tests</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Contests</a></li>
-              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="jdblock">JD Block</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="jdblock">Company Block</a></li>
             </ul>
             <ul class="nav nav-pills gap-1 flex-wrap mt-2 d-none" id="takeContestTypeNav">
               <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-contest-type="weekly">Weekly</a></li>
@@ -206,7 +206,7 @@
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="company-tests">Company tests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">JD Block</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">Company Block</a></li>
       </ul>
 
       <div id="manageTestsPanel">
@@ -219,7 +219,7 @@
 
       <div id="manageCompanyTestsPanel" class="d-none">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Company-specific mocks built from JD Block questions — pick a company, then select JD titles like question bank rules.</p>
+          <p class="small text-muted-2 mb-0">Company-specific mocks built from Company Block questions — pick a company, then select JD titles like question bank rules.</p>
           <button type="button" class="btn btn-sm btn-primary" id="btnNewCompanyTest"><i class="bi bi-plus-lg me-1"></i>New company test</button>
         </div>
         <div id="manageCompanyTestsList" class="d-flex flex-column gap-2"></div>
@@ -431,7 +431,7 @@
         <div class="col-12 d-none" id="tfRandomJdPanel">
           <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <div class="small fw-semibold">Random rules from JD Block</div>
+              <div class="small fw-semibold">Random rules from Company Block</div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRandomJdRule"><i class="bi bi-plus-lg me-1"></i>Add JD title</button>
             </div>
             <p class="small text-muted-2 mb-2">Each row randomly picks questions from a JD title when the test is saved. The same JD title can be used in multiple rows.</p>
@@ -455,7 +455,7 @@
           </div>
           <div class="form-check mb-2" id="tfUseJdManualWrap">
             <input class="form-check-input" type="checkbox" id="tfUseJdManual"/>
-            <label class="form-check-label" for="tfUseJdManual">Add questions from JD Block</label>
+            <label class="form-check-label" for="tfUseJdManual">Add questions from Company Block</label>
           </div>
           <p class="small text-muted-2 mb-2 d-none" id="tfCompanyJdHint">Add one or more JD titles from the selected company. Pick the exact questions for each title, like question bank rules in a regular test.</p>
           <div class="border rounded-3 p-3 mb-3 d-none" id="tfJdPicker" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
@@ -549,7 +549,7 @@
               <label class="form-label small fw-semibold mb-1" for="aptAiJdTitleDate">Date</label>
               <input class="form-control form-control-sm" type="date" id="aptAiJdTitleDate"/>
             </div>
-            <div class="small text-muted-2 mt-1" id="aptAiJdTitleHint">Role or JD title saved under the selected company in JD Block.</div>
+            <div class="small text-muted-2 mt-1" id="aptAiJdTitleHint">Role or JD title saved under the selected company in Company Block.</div>
             <div class="small text-primary mt-1 d-none" id="aptAiJdTitlePreview"></div>
           </div>
           <label class="form-label small fw-semibold" for="aptAiJdText">Paste job description</label>
@@ -648,5 +648,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919cofilter"></script>
+<script src="js/aptitude-page.js?v=20260919coblock"></script>
 </body></html>

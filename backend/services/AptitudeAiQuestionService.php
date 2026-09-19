@@ -469,7 +469,7 @@ final class AptitudeAiQuestionService
             $source = trim((string) ($q['source'] ?? 'AI'));
             if ($source === 'AI_JD') {
                 throw new \InvalidArgumentException(
-                    'JD-based questions must be saved to the JD Block, not the general question bank.'
+                    'JD-based questions must be saved to the Company Block, not the general question bank.'
                 );
             }
             $row['source'] = in_array($source, ['AI', 'AI_JD'], true) ? $source : 'AI';

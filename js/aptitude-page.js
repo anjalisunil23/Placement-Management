@@ -1676,7 +1676,7 @@
     const activeCompanyId = jdSelectedCompanyId;
     if (!jdCompanyBlocks.length) {
       showJdCompanyGrid();
-      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No JD Block entries yet. Use AI Generate from the JD Block tab to create one.</p></div>';
+      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No Company Block entries yet. Use AI Generate from the Company Block tab to create one.</p></div>';
       return;
     }
     grid.innerHTML = renderJdCompanyGridHtml(jdCompanyBlocks);
@@ -1789,7 +1789,7 @@
     const activeCompanyId = studentJdSelectedCompanyId;
     if (!studentJdCompanyBlocks.length) {
       showStudentJdCompanyGrid();
-      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No JD Block entries are available yet. Check back later.</p></div>';
+      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No Company Block entries are available yet. Check back later.</p></div>';
       return;
     }
     grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks, { forStudent: true });
@@ -2351,7 +2351,7 @@
     const el = document.getElementById('aptAiModalTitle');
     const preview = document.getElementById('aptAiPreviewPanel');
     if (!el || !preview?.classList.contains('d-none')) return;
-    el.textContent = getAiSourceMode() === 'jd' ? 'AI Generate — JD Block' : 'AI Generate — question bank';
+    el.textContent = getAiSourceMode() === 'jd' ? 'AI Generate — Company Block' : 'AI Generate — question bank';
   }
 
   function updateAiSourceModeUI() {
@@ -2365,7 +2365,7 @@
     const hint = document.getElementById('aptAiStatusHint');
     if (hint) {
       hint.textContent = jd
-        ? 'Generate JD-based MCQs with OpenAI. Review and edit before saving to the JD Block — nothing is published automatically.'
+        ? 'Generate JD-based MCQs with OpenAI. Review and edit before saving to the Company Block — nothing is published automatically.'
         : 'Generate aptitude MCQs with OpenAI. Review and edit before saving to the question bank — nothing is published automatically.';
     }
     const instr = document.getElementById('aptAiInstructions');
@@ -2451,8 +2451,8 @@
     const { jdTitleBase, jdTitle } = getJdTitleFormState();
     if (hint) {
       hint.textContent = addDate
-        ? 'The selected date is appended to the title when saving to JD Block.'
-        : 'Role or JD title saved under the selected company in JD Block.';
+        ? 'The selected date is appended to the title when saving to Company Block.'
+        : 'Role or JD title saved under the selected company in Company Block.';
     }
     if (preview) {
       if (addDate && jdTitleBase && jdTitle !== jdTitleBase) {
@@ -2702,7 +2702,7 @@
     if (!btn) return;
     const isJd = getAiSourceMode() === 'jd' || aiLastFormParams?.generationMode === 'jd';
     btn.innerHTML = isJd
-      ? '<i class="bi bi-briefcase me-1"></i>Save to JD Block'
+      ? '<i class="bi bi-briefcase me-1"></i>Save to Company Block'
       : '<i class="bi bi-database-add me-1"></i>Save to question bank';
   }
 
@@ -3066,7 +3066,7 @@
     bindAptAiPreviewEvents();
     if (!aiPreviewQuestions.length) {
       const isJd = getAiSourceMode() === 'jd' || aiLastFormParams?.generationMode === 'jd';
-      const viewLabel = isJd ? 'View JD Block' : 'View question bank';
+      const viewLabel = isJd ? 'View Company Block' : 'View question bank';
       list.innerHTML = `<p class="text-muted-2 mb-0">No questions in preview. Generate again or close this dialog.</p>
         <div class="d-flex flex-wrap gap-2 mt-3">
           <button type="button" class="btn btn-sm btn-primary" id="btnAptAiGenerateMore"><i class="bi bi-stars me-1"></i>Generate more</button>
@@ -3400,7 +3400,7 @@
             questions,
           });
           saveDemoJdStore(store);
-          toast(`Saved ${questions.length} question(s) to JD Block: ${companyName} · ${jdTitle}`, 'success');
+          toast(`Saved ${questions.length} question(s) to Company Block: ${companyName} · ${jdTitle}`, 'success');
           await loadJdLibrary();
         } else {
           const bank = loadDemoBankStore();
@@ -3436,7 +3436,7 @@
           }),
         });
         if (!res?.success) throw new Error(res?.message || 'Could not save JD questions.');
-        toast(`Saved ${res.data?.questionCount ?? selected.length} question(s) to JD Block.`, 'success');
+        toast(`Saved ${res.data?.questionCount ?? selected.length} question(s) to Company Block.`, 'success');
         delete jdSetDetailsCache[String(res.data?.id || '')];
         manualJdSetSummaries = [];
         await loadJdLibrary();
@@ -5762,7 +5762,7 @@
     if (companyRoot) {
       companyRoot.innerHTML = companyTests.length
         ? companyTests.map((t) => renderManageRow(t, { showCompanyBadge: true })).join('')
-        : '<p class="text-muted-2 mb-0">No company tests yet. Create one from JD Block questions.</p>';
+        : '<p class="text-muted-2 mb-0">No company tests yet. Create one from Company Block questions.</p>';
       bindManageListActions(companyRoot);
     }
 
@@ -6216,7 +6216,7 @@
           return;
         }
         if (!useBank && !useJd && !mcqCount) {
-          toast('Add questions from the bank, JD Block, or add MCQs directly.', 'error');
+          toast('Add questions from the bank, Company Block, or add MCQs directly.', 'error');
           return;
         }
         if (bankTotal + jdTotal + mcqCount !== target) {
