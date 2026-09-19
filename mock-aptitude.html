@@ -182,7 +182,7 @@
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">JD library</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">JD Block</a></li>
       </ul>
 
       <div id="manageTestsPanel">
@@ -248,7 +248,10 @@
       </div>
 
       <div id="manageJdPanel" class="d-none">
-        <p class="small text-muted-2 mb-3">JD-based questions are stored separately by job title. Generate them from AI Generate → Job Description.</p>
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+          <p class="small text-muted-2 mb-0">JD-based questions are stored separately by job title. Use AI Generate to create a set from a pasted or uploaded job description.</p>
+          <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" id="btnJdAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate</button>
+        </div>
         <div id="jdLibraryList" class="d-flex flex-column gap-3"></div>
       </div>
     </div>
@@ -393,7 +396,7 @@
           </div>
           <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" id="tfUseJdManual"/>
-            <label class="form-check-label" for="tfUseJdManual">Add questions from JD library</label>
+            <label class="form-check-label" for="tfUseJdManual">Add questions from JD Block</label>
           </div>
           <div class="border rounded-3 p-3 mb-3 d-none" id="tfJdPicker" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -483,7 +486,7 @@
           <div class="mb-3">
             <label class="form-label small fw-semibold" for="aptAiJdTitle">JD title</label>
             <input class="form-control" id="aptAiJdTitle" maxlength="160" placeholder="e.g. Software Developer — Infosys"/>
-            <div class="small text-muted-2 mt-1">Used to group and find these questions in the JD library.</div>
+            <div class="small text-muted-2 mt-1">Used to group and find these questions in the JD Block.</div>
           </div>
           <label class="form-label small fw-semibold" for="aptAiJdText">Paste job description</label>
           <textarea class="form-control mb-3" id="aptAiJdText" rows="6" placeholder="Paste the complete job description here…"></textarea>
@@ -581,5 +584,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919aigen200"></script>
+<script src="js/aptitude-page.js?v=20260919jdblock"></script>
 </body></html>

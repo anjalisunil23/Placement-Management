@@ -1357,7 +1357,7 @@
     const root = document.getElementById('jdLibraryList');
     if (!root) return;
     if (!jdLibrarySets.length) {
-      root.innerHTML = '<p class="text-muted-2 mb-0">No JD question sets yet. Use AI Generate → Job Description to create one.</p>';
+      root.innerHTML = '<p class="text-muted-2 mb-0">No JD question sets yet. Use AI Generate from the JD Block tab to create one.</p>';
       return;
     }
     root.innerHTML = jdLibrarySets.map((set) => {
@@ -1909,10 +1909,18 @@
       : `${total} question${total === 1 ? '' : 's'} (max ${maxTotal} total across all rows)`;
   }
 
+  function updateAptAiModalTitle() {
+    const el = document.getElementById('aptAiModalTitle');
+    const preview = document.getElementById('aptAiPreviewPanel');
+    if (!el || !preview?.classList.contains('d-none')) return;
+    el.textContent = getAiSourceMode() === 'jd' ? 'AI Generate — JD Block' : 'AI Generate — question bank';
+  }
+
   function updateAiSourceModeUI() {
     const jd = getAiSourceMode() === 'jd';
     document.getElementById('aptAiCategoryPanel')?.classList.toggle('d-none', jd);
     document.getElementById('aptAiJdPanel')?.classList.toggle('d-none', !jd);
+    updateAptAiModalTitle();
     const instr = document.getElementById('aptAiInstructions');
     if (!instr) return;
     if (jd) {
@@ -2168,6 +2176,8 @@
   function showAptAiFormPanel() {
     document.getElementById('aptAiFormPanel')?.classList.remove('d-none');
     document.getElementById('aptAiPreviewPanel')?.classList.add('d-none');
+    updateAptAiModalTitle();
+    updateAptAiSaveButtonLabel();
   }
 
   function updateAptAiSaveButtonLabel() {
@@ -2175,7 +2185,7 @@
     if (!btn) return;
     const isJd = getAiSourceMode() === 'jd' || aiLastFormParams?.generationMode === 'jd';
     btn.innerHTML = isJd
-      ? '<i class="bi bi-briefcase me-1"></i>Save to JD library'
+      ? '<i class="bi bi-briefcase me-1"></i>Save to JD Block'
       : '<i class="bi bi-database-add me-1"></i>Save to question bank';
   }
 
@@ -2187,10 +2197,10 @@
     updateAptAiSaveButtonLabel();
   }
 
-  function openAptAiModal() {
-    document.getElementById('aptAiModalTitle').textContent = 'AI Generate — question bank';
-    document.getElementById('aptAiModeCategory').checked = true;
-    document.getElementById('aptAiModeJd').checked = false;
+  function openAptAiModal(opts = {}) {
+    const useJd = opts.jd === true;
+    document.getElementById('aptAiModeCategory').checked = !useJd;
+    document.getElementById('aptAiModeJd').checked = useJd;
     document.getElementById('aptAiJdText').value = '';
     document.getElementById('aptAiJdTitle').value = '';
     clearAptAiJdUpload();
@@ -2535,15 +2545,17 @@
     if (!list) return;
     bindAptAiPreviewEvents();
     if (!aiPreviewQuestions.length) {
+      const isJd = getAiSourceMode() === 'jd' || aiLastFormParams?.generationMode === 'jd';
+      const viewLabel = isJd ? 'View JD Block' : 'View question bank';
       list.innerHTML = `<p class="text-muted-2 mb-0">No questions in preview. Generate again or close this dialog.</p>
         <div class="d-flex flex-wrap gap-2 mt-3">
           <button type="button" class="btn btn-sm btn-primary" id="btnAptAiGenerateMore"><i class="bi bi-stars me-1"></i>Generate more</button>
-          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAptAiViewBank">View question bank</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAptAiViewBank">${esc(viewLabel)}</button>
         </div>`;
       document.getElementById('btnAptAiGenerateMore')?.addEventListener('click', () => showAptAiFormPanel());
       document.getElementById('btnAptAiViewBank')?.addEventListener('click', () => {
         aptAiModal?.hide();
-        applyManagePanel('bank');
+        applyManagePanel(isJd ? 'jd' : 'bank');
         applyView('manage').catch(() => {});
       });
       return;
@@ -2841,7 +2853,7 @@
             questions,
           });
           saveDemoJdStore(store);
-          toast(`Saved ${questions.length} question(s) to JD library: ${jdTitle}`, 'success');
+          toast(`Saved ${questions.length} question(s) to JD Block: ${jdTitle}`, 'success');
           await loadJdLibrary();
         } else {
           const bank = loadDemoBankStore();
@@ -2875,7 +2887,7 @@
           }),
         });
         if (!res?.success) throw new Error(res?.message || 'Could not save JD questions.');
-        toast(`Saved ${res.data?.questionCount ?? selected.length} question(s) to JD library.`, 'success');
+        toast(`Saved ${res.data?.questionCount ?? selected.length} question(s) to JD Block.`, 'success');
         delete jdSetDetailsCache[String(res.data?.id || '')];
         manualJdSetSummaries = [];
         await loadJdLibrary();
@@ -5191,6 +5203,7 @@
     });
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal());
+    document.getElementById('btnJdAiGenerate')?.addEventListener('click', () => openAptAiModal({ jd: true }));
     document.getElementById('btnAptAiAddRow')?.addEventListener('click', () => addAiGenRow());
     document.getElementById('aptAiModeCategory')?.addEventListener('change', () => {
       updateAiSourceModeUI();
@@ -5321,7 +5334,7 @@
           }
         }
         if (!useBank && !useJd && !mcqCount) {
-          toast('Add questions from the bank, JD library, or add MCQs directly.', 'error');
+          toast('Add questions from the bank, JD Block, or add MCQs directly.', 'error');
           return;
         }
         if (bankTotal + jdTotal + mcqCount !== target) {
