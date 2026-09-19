@@ -284,6 +284,63 @@ class AptitudeJdQuestionSetModel extends BaseModel
         return $picked;
     }
 
+    /**
+     * @param array<int, array<string, mixed>> $rules
+     * @return list<array<string, mixed>>
+     */
+    public function pickRandomByRules(array $rules): array
+    {
+        $picked = [];
+        $usedKeys = [];
+
+        foreach (array_values($rules) as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $setId = trim((string) ($rule['jdSetId'] ?? ''));
+            if ($setId === '' || !Security::isValidId($setId)) {
+                throw new \InvalidArgumentException('Invalid JD set selected.');
+            }
+            $count = max(0, (int) ($rule['count'] ?? 0));
+            $marks = max(0.25, (float) ($rule['marks'] ?? 1));
+            if ($count <= 0) {
+                continue;
+            }
+
+            $set = $this->findById($setId);
+            if ($set === null) {
+                throw new \InvalidArgumentException('JD question set not found.');
+            }
+            $jdTitle = trim((string) ($set['jdTitle'] ?? 'Job Description'));
+            $pool = array_values($this->questionIndex($set));
+            if (count($pool) < $count) {
+                throw new \InvalidArgumentException(
+                    'Only ' . count($pool) . ' question(s) available in '
+                    . ($jdTitle !== '' ? $jdTitle : 'the JD set')
+                    . '. Reduce the count.'
+                );
+            }
+            shuffle($pool);
+            $slice = array_slice($pool, 0, $count);
+            foreach ($slice as $q) {
+                $qid = trim((string) ($q['id'] ?? ''));
+                $key = $setId . ':' . $qid;
+                if ($qid === '' || isset($usedKeys[$key])) {
+                    continue;
+                }
+                $usedKeys[$key] = true;
+                $picked[] = array_merge($q, [
+                    'marks' => $marks,
+                    'jdSetId' => $setId,
+                    'jdTitle' => $jdTitle,
+                    'source' => 'AI_JD',
+                ]);
+            }
+        }
+
+        return $picked;
+    }
+
     public function deleteSet(string $id): bool
     {
         if (!Security::isValidId($id)) {

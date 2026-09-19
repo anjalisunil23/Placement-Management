@@ -2218,9 +2218,13 @@ final class AptitudeService
                 Response::error('JD sets must belong to the selected company.', 422);
             }
         }
+        $source = AptitudeTestModel::normalizeQuestionSource((string) ($data['questionSource'] ?? 'manual'));
+        if (!in_array($source, ['manual', 'random_jd'], true)) {
+            $source = 'manual';
+        }
         $data['testKind'] = 'company';
         $data['contestType'] = 'none';
-        $data['questionSource'] = 'manual';
+        $data['questionSource'] = $source;
 
         return $data;
     }
@@ -2300,10 +2304,41 @@ final class AptitudeService
      */
     private function resolveTestQuestions(array $data): array
     {
-        $source = strtolower(trim((string) ($data['questionSource'] ?? 'manual'))) === 'random'
-            ? 'random'
-            : 'manual';
+        $source = AptitudeTestModel::normalizeQuestionSource((string) ($data['questionSource'] ?? 'manual'));
         $data['questionSource'] = $source;
+
+        if ($source === 'random_jd') {
+            $rules = array_values(array_filter((array) ($data['jdFilterRules'] ?? []), 'is_array'));
+            if ($rules === []) {
+                Response::error('Add at least one JD title rule for random selection.', 422);
+            }
+            $expected = max(0, (int) ($data['questionCount'] ?? 0));
+            $ruleTotal = array_sum(array_map(static fn (array $r): int => max(0, (int) ($r['count'] ?? 0)), $rules));
+            if ($expected > 0 && $ruleTotal > 0 && $expected !== $ruleTotal) {
+                Response::error('Total questions must match the sum of JD random rule counts.', 422);
+            }
+            try {
+                $questions = (new \PMS\Models\AptitudeJdQuestionSetModel())->pickRandomByRules($rules);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            if ($questions === []) {
+                Response::error('Could not pick questions from the JD sets for the given rules.', 422);
+            }
+            $data['questions'] = $questions;
+            $data['questionCount'] = count($questions);
+            $data['bankQuestionIds'] = [];
+            $data['randomRules'] = [];
+            $data['bankFilterRules'] = [];
+            if (trim((string) ($data['category'] ?? '')) === '' && $questions !== []) {
+                $data['category'] = (string) ($questions[0]['category'] ?? 'General Aptitude');
+            }
+            if (trim((string) ($data['difficulty'] ?? '')) === '' && $questions !== []) {
+                $data['difficulty'] = (string) ($questions[0]['difficulty'] ?? 'Medium');
+            }
+
+            return $data;
+        }
 
         if ($source === 'random') {
             $rules = array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array'));

@@ -42,6 +42,19 @@ class AptitudeTestModel extends BaseModel
         return $raw === 'company' ? 'company' : 'regular';
     }
 
+    public static function normalizeQuestionSource(string $value): string
+    {
+        $raw = strtolower(trim($value));
+        if ($raw === 'random_jd') {
+            return 'random_jd';
+        }
+        if ($raw === 'random') {
+            return 'random';
+        }
+
+        return 'manual';
+    }
+
     /**
      * @param array<string, mixed> $test
      */
@@ -813,9 +826,7 @@ class AptitudeTestModel extends BaseModel
             $negativeMarks = abs($negativeMarks);
         }
 
-        $questionSource = strtolower(trim((string) ($data['questionSource'] ?? 'manual'))) === 'random'
-            ? 'random'
-            : 'manual';
+        $questionSource = self::normalizeQuestionSource((string) ($data['questionSource'] ?? 'manual'));
         $randomRules = [];
         foreach ((array) ($data['randomRules'] ?? []) as $rule) {
             if (!is_array($rule)) {
@@ -898,7 +909,7 @@ class AptitudeTestModel extends BaseModel
             'randomRules' => $questionSource === 'random' ? $randomRules : [],
             'bankFilterRules' => $questionSource === 'manual' ? $bankFilterRules : [],
             'bankQuestionIds' => $questionSource === 'manual' ? $bankQuestionIds : [],
-            'jdFilterRules' => $questionSource === 'manual' ? $jdFilterRules : [],
+            'jdFilterRules' => in_array($questionSource, ['manual', 'random_jd'], true) ? $jdFilterRules : [],
             'questionType' => 'mcq',
             'questions' => $questions,
         ];
@@ -1084,9 +1095,7 @@ class AptitudeTestModel extends BaseModel
             'resultsPublished' => self::resultsPublished($test),
             'resultStatus' => self::resultStatus($test),
             'resultPublishedAt' => self::resultPublishedAt($test),
-            'questionSource' => in_array((string) ($test['questionSource'] ?? 'manual'), ['random'], true)
-                ? 'random'
-                : 'manual',
+            'questionSource' => self::normalizeQuestionSource((string) ($test['questionSource'] ?? 'manual')),
             'randomRules' => array_values(array_map(
                 static function ($rule): array {
                     if (!is_array($rule)) {
