@@ -648,6 +648,41 @@ final class AptitudeService
     /**
      * @param array<string, mixed> $admin
      */
+    public function streamJdQuestionSetDocument(array $admin, string $id): void
+    {
+        AptitudeAccessService::requireManager($admin);
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $set = $model->findById($id);
+        if ($set === null) {
+            Response::notFound('JD question set not found.');
+        }
+
+        $fileUri = trim((string) ($set['jdFile'] ?? ''));
+        if ($fileUri === '') {
+            Response::notFound('No document uploaded for this JD set.');
+        }
+
+        $filename = trim((string) ($set['jdFilename'] ?? ''));
+        if ($filename === '') {
+            $filename = 'jd-document.pdf';
+        }
+
+        $mime = trim((string) ($set['jdMimeType'] ?? ''));
+        $storage = new ObjectStorageService();
+        if ($mime === '') {
+            $mime = $storage->guessMime($filename);
+        }
+
+        try {
+            $storage->streamWithFallback($fileUri, $filename, $mime, true, ObjectStorageService::FOLDER_JD);
+        } catch (\Throwable) {
+            Response::notFound('Document not found.');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     */
     public function deleteJdQuestionSet(array $admin, string $id): void
     {
         AptitudeAccessService::requireManager($admin);

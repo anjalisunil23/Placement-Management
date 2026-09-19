@@ -266,6 +266,13 @@ final class AptitudeController
         Response::success($this->service->getJdQuestionSet($id));
     }
 
+    /** GET /api/aptitude/jd-sets/{id}/document */
+    public function streamJdSetDocument(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service->streamJdQuestionSetDocument($user, $id);
+    }
+
     /** DELETE /api/aptitude/jd-sets/{id} */
     public function deleteJdSet(string $id): void
     {

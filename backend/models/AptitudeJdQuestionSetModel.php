@@ -222,16 +222,18 @@ class AptitudeJdQuestionSetModel extends BaseModel
      */
     private function summaryView(array $row): array
     {
-        return [
-            'id' => (string) ($row['_id'] ?? ''),
+        $id = (string) ($row['_id'] ?? '');
+
+        return $this->withDocumentUrl([
+            'id' => $id,
             'jdTitle' => (string) ($row['jdTitle'] ?? ''),
             'jdFilename' => (string) ($row['jdFilename'] ?? ''),
             'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
             'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
-            'hasDocument' => trim((string) ($row['jdFileUrl'] ?? '')) !== '',
+            'hasDocument' => trim((string) ($row['jdFile'] ?? '')) !== '' || trim((string) ($row['jdFileUrl'] ?? '')) !== '',
             'questionCount' => (int) ($row['questionCount'] ?? count((array) ($row['questions'] ?? []))),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
-        ];
+        ], $row);
     }
 
     /**
@@ -259,17 +261,36 @@ class AptitudeJdQuestionSetModel extends BaseModel
             ];
         }
 
-        return [
-            'id' => (string) ($row['_id'] ?? ''),
+        $id = (string) ($row['_id'] ?? '');
+
+        return $this->withDocumentUrl([
+            'id' => $id,
             'jdTitle' => (string) ($row['jdTitle'] ?? ''),
             'jdFilename' => (string) ($row['jdFilename'] ?? ''),
             'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
             'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
-            'hasDocument' => trim((string) ($row['jdFileUrl'] ?? '')) !== '',
+            'hasDocument' => trim((string) ($row['jdFile'] ?? '')) !== '' || trim((string) ($row['jdFileUrl'] ?? '')) !== '',
             'questionCount' => count($questions),
             'questions' => $questions,
             'createdAt' => (string) ($row['createdAt'] ?? ''),
-        ];
+        ], $row);
+    }
+
+    /**
+     * @param array<string, mixed> $view
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function withDocumentUrl(array $view, array $row): array
+    {
+        $fileUri = trim((string) ($row['jdFile'] ?? ''));
+        $id = (string) ($view['id'] ?? $row['_id'] ?? '');
+        if ($fileUri !== '' && $id !== '') {
+            $view['jdFileUrl'] = '/backend/api/aptitude/jd-sets/' . rawurlencode($id) . '/document';
+            $view['hasDocument'] = true;
+        }
+
+        return $view;
     }
 
     /**
