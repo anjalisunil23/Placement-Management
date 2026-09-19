@@ -681,6 +681,60 @@ final class AptitudeService
     public function streamJdQuestionSetDocument(array $admin, string $id): void
     {
         AptitudeAccessService::requireManager($admin);
+        $this->streamJdQuestionSetDocumentForUser($id);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listJdBlockForStudent(array $user): array
+    {
+        if (!AptitudeAccessService::canTake($user)) {
+            Response::forbidden('Students only.');
+        }
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+
+        return ['blocks' => $model->listStudentCompanyBlocks()];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getJdBlockSetForStudent(array $user, string $id): array
+    {
+        if (!AptitudeAccessService::canTake($user)) {
+            Response::forbidden('Students only.');
+        }
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $set = $model->findById($id);
+        if ($set === null) {
+            Response::notFound('JD question set not found.');
+        }
+        if (trim((string) ($set['companyId'] ?? '')) === '') {
+            Response::notFound('JD question set not found.');
+        }
+
+        return $model->studentPublicDetail($set);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function streamJdBlockDocumentForStudent(array $user, string $id): void
+    {
+        if (!AptitudeAccessService::canTake($user)) {
+            Response::forbidden('Students only.');
+        }
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $set = $model->findById($id);
+        if ($set === null || trim((string) ($set['companyId'] ?? '')) === '') {
+            Response::notFound('JD question set not found.');
+        }
+        $this->streamJdQuestionSetDocumentForUser($id);
+    }
+
+    private function streamJdQuestionSetDocumentForUser(string $id): void
+    {
         $model = new \PMS\Models\AptitudeJdQuestionSetModel();
         $set = $model->findById($id);
         if ($set === null) {

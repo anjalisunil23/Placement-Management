@@ -44,12 +44,12 @@ class AptitudeJdQuestionSetModel extends BaseModel
     /**
      * @return list<array<string, mixed>>
      */
-    public function listSummaries(int $limit = 200): array
+    public function listSummaries(int $limit = 200, bool $forStudent = false): array
     {
         $rows = $this->findAll([], $limit, 0, ['createdAt' => -1]);
         $out = [];
         foreach ($rows as $row) {
-            $out[] = $this->summaryView($row);
+            $out[] = $this->summaryView($row, $forStudent);
         }
 
         return $out;
@@ -58,6 +58,46 @@ class AptitudeJdQuestionSetModel extends BaseModel
     /**
      * @return list<array<string, mixed>>
      */
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listStudentCompanyBlocks(int $limit = 200): array
+    {
+        $sets = $this->listSummaries($limit, true);
+        /** @var array<string, array<string, mixed>> $blocks */
+        $blocks = [];
+        foreach ($sets as $set) {
+            $companyId = trim((string) ($set['companyId'] ?? ''));
+            if ($companyId === '') {
+                continue;
+            }
+            $companyName = trim((string) ($set['companyName'] ?? ''));
+            if ($companyName === '') {
+                $companyName = 'Company';
+            }
+            if (!isset($blocks[$companyId])) {
+                $blocks[$companyId] = [
+                    'companyId' => $companyId,
+                    'companyName' => $companyName,
+                    'setCount' => 0,
+                    'questionCount' => 0,
+                    'sets' => [],
+                ];
+            }
+            $blocks[$companyId]['setCount']++;
+            $blocks[$companyId]['questionCount'] += (int) ($set['questionCount'] ?? 0);
+            $blocks[$companyId]['sets'][] = $set;
+        }
+
+        $out = array_values($blocks);
+        usort($out, static fn (array $a, array $b): int => strcasecmp(
+            (string) ($a['companyName'] ?? ''),
+            (string) ($b['companyName'] ?? '')
+        ));
+
+        return $out;
+    }
+
     public function listCompanyBlocks(int $limit = 200): array
     {
         $sets = $this->listSummaries($limit);
@@ -278,7 +318,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function summaryView(array $row): array
+    private function summaryView(array $row, bool $forStudent = false): array
     {
         $id = (string) ($row['_id'] ?? '');
 
@@ -293,14 +333,14 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'hasDocument' => trim((string) ($row['jdFile'] ?? '')) !== '' || trim((string) ($row['jdFileUrl'] ?? '')) !== '',
             'questionCount' => (int) ($row['questionCount'] ?? count((array) ($row['questions'] ?? []))),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
-        ], $row);
+        ], $row, $forStudent);
     }
 
     /**
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function detailView(array $row): array
+    private function detailView(array $row, bool $forStudent = false): array
     {
         $questions = [];
         foreach (array_values((array) ($row['questions'] ?? [])) as $q) {
@@ -335,7 +375,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questionCount' => count($questions),
             'questions' => $questions,
             'createdAt' => (string) ($row['createdAt'] ?? ''),
-        ], $row);
+        ], $row, $forStudent);
     }
 
     /**
@@ -343,12 +383,15 @@ class AptitudeJdQuestionSetModel extends BaseModel
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function withDocumentUrl(array $view, array $row): array
+    private function withDocumentUrl(array $view, array $row, bool $forStudent = false): array
     {
         $fileUri = trim((string) ($row['jdFile'] ?? ''));
         $id = (string) ($view['id'] ?? $row['_id'] ?? '');
         if ($fileUri !== '' && $id !== '') {
-            $view['jdFileUrl'] = '/backend/api/aptitude/jd-sets/' . rawurlencode($id) . '/document';
+            $prefix = $forStudent
+                ? '/backend/api/aptitude/student/jd-sets'
+                : '/backend/api/aptitude/jd-sets';
+            $view['jdFileUrl'] = $prefix . '/' . rawurlencode($id) . '/document';
             $view['hasDocument'] = true;
         }
 
@@ -362,5 +405,14 @@ class AptitudeJdQuestionSetModel extends BaseModel
     public function publicDetail(array $row): array
     {
         return $this->detailView($row);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    public function studentPublicDetail(array $row): array
+    {
+        return $this->detailView($row, true);
     }
 }

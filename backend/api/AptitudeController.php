@@ -301,6 +301,27 @@ final class AptitudeController
         Response::success(null, 'JD question set deleted.');
     }
 
+    /** GET /api/aptitude/student/jd-block */
+    public function listStudentJdBlock(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->listJdBlockForStudent($user));
+    }
+
+    /** GET /api/aptitude/student/jd-sets/{id} */
+    public function getStudentJdSet(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->getJdBlockSetForStudent($user, $id));
+    }
+
+    /** GET /api/aptitude/student/jd-sets/{id}/document */
+    public function streamStudentJdSetDocument(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service->streamJdBlockDocumentForStudent($user, $id);
+    }
+
     /** DELETE /api/aptitude/question-bank/{id} */
     public function deleteBankQuestion(string $id): void
     {

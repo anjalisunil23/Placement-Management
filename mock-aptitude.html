@@ -95,6 +95,7 @@
             <ul class="nav nav-pills gap-1 flex-wrap" id="takeListNav">
               <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="tests">Available tests</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Contests</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="jdblock">JD Block</a></li>
             </ul>
             <ul class="nav nav-pills gap-1 flex-wrap mt-2 d-none" id="takeContestTypeNav">
               <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-contest-type="weekly">Weekly</a></li>
@@ -102,6 +103,17 @@
             </ul>
           </div>
           <div id="testList"></div>
+          <div id="studentJdBlockPanel" class="d-none px-3 px-md-4 pb-3">
+            <p class="small text-muted-2 mb-3">Practice with company-specific job description questions grouped by company.</p>
+            <div id="studentJdBlockCompanyView">
+              <div id="studentJdBlockCompanyGrid" class="row g-3"></div>
+            </div>
+            <div id="studentJdBlockCompanyDetail" class="d-none">
+              <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="btnStudentJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
+              <h6 class="fw-semibold mb-3" id="studentJdBlockDetailTitle"></h6>
+              <div id="studentJdBlockSetsList" class="d-flex flex-column gap-3"></div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="col-lg-5">
@@ -597,5 +609,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919jdqview"></script>
+<script src="js/aptitude-page.js?v=20260919studentjd"></script>
 </body></html>

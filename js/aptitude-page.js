@@ -264,8 +264,10 @@
   let manualJdRuleCounter = 0;
   let jdLibrarySets = [];
   let jdCompanyBlocks = [];
+  let studentJdCompanyBlocks = [];
   let jdCompanies = [];
   let jdSelectedCompanyId = null;
+  let studentJdSelectedCompanyId = null;
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aiPreviewQuestions = [];
@@ -982,13 +984,25 @@
   }
 
   function applyTakeListPanel(panel) {
-    takeListPanel = panel === 'contests' ? 'contests' : 'tests';
+    takeListPanel = panel === 'contests' ? 'contests' : (panel === 'jdblock' ? 'jdblock' : 'tests');
     document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
     });
     document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
+    document.getElementById('testList')?.classList.toggle('d-none', takeListPanel === 'jdblock');
+    document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', takeListPanel !== 'jdblock');
     syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
-    renderTestList();
+    if (takeListPanel === 'jdblock') {
+      loadStudentJdBlock().catch(() => {});
+    } else {
+      renderTestList();
+    }
+  }
+
+  function setupTakeListNav() {
+    document.querySelector('#takeListNav [data-take-list="jdblock"]')
+      ?.closest('.nav-item')
+      ?.classList.toggle('d-none', !access.canTake);
   }
 
   function applyTakeContestType(type) {
@@ -1366,6 +1380,49 @@
     return jdSetDetailsCache[id] || null;
   }
 
+  async function getStudentJdSetDetail(setId) {
+    const id = String(setId || '');
+    if (!id) return null;
+    const cacheKey = `student:${id}`;
+    if (jdSetDetailsCache[cacheKey]) return jdSetDetailsCache[cacheKey];
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api(`/aptitude/student/jd-sets/${encodeURIComponent(id)}`).catch(() => null);
+      if (res?.data) jdSetDetailsCache[cacheKey] = res.data;
+    } else {
+      const detail = await getJdSetDetail(id);
+      if (detail) jdSetDetailsCache[cacheKey] = detail;
+    }
+    return jdSetDetailsCache[cacheKey] || null;
+  }
+
+  function mapDemoJdSetSummary(s) {
+    return {
+      id: String(s.id || ''),
+      companyId: String(s.companyId || ''),
+      companyName: String(s.companyName || ''),
+      jdTitle: String(s.jdTitle || ''),
+      jdFilename: String(s.jdFilename || ''),
+      jdFileUrl: String(s.jdFileUrl || s.jdFileDataUrl || ''),
+      jdMimeType: String(s.jdMimeType || ''),
+      hasDocument: !!(s.jdFileUrl || s.jdFileDataUrl),
+      questionCount: Number(s.questionCount || s.questions?.length || 0),
+    };
+  }
+
+  async function loadStudentJdBlock() {
+    if (!access.canTake) return;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/student/jd-block').catch(() => null);
+      studentJdCompanyBlocks = res?.data?.blocks || [];
+    } else {
+      const sets = loadDemoJdStore()
+        .filter((s) => String(s.companyId || '').trim() !== '')
+        .map(mapDemoJdSetSummary);
+      studentJdCompanyBlocks = groupJdSetsIntoBlocks(sets);
+    }
+    renderStudentJdBlock();
+  }
+
   async function loadJdLibrary() {
     if (!access.canManage) return;
     await ensureJdCompaniesLoaded().catch(() => {});
@@ -1446,7 +1503,7 @@
     </div>`;
   }
 
-  function renderJdSetCardsHtml(sets) {
+  function renderJdSetCardsHtml(sets, { allowDelete = true } = {}) {
     return (sets || []).map((set) => {
       const id = String(set.id || '');
       const hasDoc = !!(set.hasDocument || set.jdFileUrl);
@@ -1459,7 +1516,7 @@
           <div class="d-flex gap-2 flex-shrink-0">
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
             <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
+            ${allowDelete ? `<button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>` : ''}
           </div>
         </div>
         <div class="d-none mt-3" data-jd-doc-panel="${esc(id)}"></div>
@@ -1468,7 +1525,7 @@
     }).join('');
   }
 
-  function bindJdSetCardEvents(root) {
+  function bindJdSetCardEvents(root, { getDetail = getJdSetDetail, allowDelete = true } = {}) {
     if (!root) return;
     root.querySelectorAll('[data-jd-doc]').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -1481,7 +1538,7 @@
           btn.textContent = 'Document';
           return;
         }
-        const detail = await getJdSetDetail(id);
+        const detail = await getDetail(id);
         panel.innerHTML = renderJdDocumentPanel(detail || {});
         panel.classList.remove('d-none');
         btn.textContent = 'Hide doc';
@@ -1498,7 +1555,7 @@
           btn.textContent = 'Questions';
           return;
         }
-        const detail = await getJdSetDetail(id);
+        const detail = await getDetail(id);
         const qs = detail?.questions || [];
         panel.innerHTML = qs.length
           ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderJdQuestionDetailHtml(q, i)).join('')}</div>`
@@ -1507,9 +1564,11 @@
         btn.textContent = 'Hide';
       });
     });
-    root.querySelectorAll('[data-jd-delete]').forEach((btn) => {
-      btn.addEventListener('click', () => deleteJdSet(btn.getAttribute('data-jd-delete')));
-    });
+    if (allowDelete) {
+      root.querySelectorAll('[data-jd-delete]').forEach((btn) => {
+        btn.addEventListener('click', () => deleteJdSet(btn.getAttribute('data-jd-delete')));
+      });
+    }
   }
 
   function showJdCompanyDetail(companyId) {
@@ -1537,16 +1596,8 @@
     document.getElementById('jdBlockCompanyView')?.classList.remove('d-none');
   }
 
-  function renderJdBlock() {
-    const grid = document.getElementById('jdBlockCompanyGrid');
-    if (!grid) return;
-    const activeCompanyId = jdSelectedCompanyId;
-    if (!jdCompanyBlocks.length) {
-      showJdCompanyGrid();
-      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No JD Block entries yet. Use AI Generate from the JD Block tab to create one.</p></div>';
-      return;
-    }
-    grid.innerHTML = jdCompanyBlocks.map((block) => {
+  function renderJdCompanyGridHtml(blocks) {
+    return (blocks || []).map((block) => {
       const companyId = String(block.companyId || '_unassigned');
       return `<div class="col-12 col-md-6 col-xl-4">
         <button type="button" class="card h-100 w-100 text-start border rounded-3 p-3 jd-company-card" data-jd-company-id="${esc(companyId)}">
@@ -1560,6 +1611,18 @@
         </button>
       </div>`;
     }).join('');
+  }
+
+  function renderJdBlock() {
+    const grid = document.getElementById('jdBlockCompanyGrid');
+    if (!grid) return;
+    const activeCompanyId = jdSelectedCompanyId;
+    if (!jdCompanyBlocks.length) {
+      showJdCompanyGrid();
+      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No JD Block entries yet. Use AI Generate from the JD Block tab to create one.</p></div>';
+      return;
+    }
+    grid.innerHTML = renderJdCompanyGridHtml(jdCompanyBlocks);
     grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
       btn.addEventListener('click', () => showJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
     });
@@ -1567,6 +1630,48 @@
       showJdCompanyDetail(activeCompanyId);
     } else {
       showJdCompanyGrid();
+    }
+  }
+
+  function showStudentJdCompanyDetail(companyId) {
+    const block = studentJdCompanyBlocks.find((b) => String(b.companyId || '') === String(companyId || ''));
+    studentJdSelectedCompanyId = companyId;
+    document.getElementById('studentJdBlockCompanyView')?.classList.add('d-none');
+    document.getElementById('studentJdBlockCompanyDetail')?.classList.remove('d-none');
+    const titleEl = document.getElementById('studentJdBlockDetailTitle');
+    if (titleEl) titleEl.textContent = block?.companyName || 'Company';
+    const list = document.getElementById('studentJdBlockSetsList');
+    if (!list) return;
+    const sets = block?.sets || [];
+    list.innerHTML = sets.length
+      ? renderJdSetCardsHtml(sets, { allowDelete: false })
+      : '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+    bindJdSetCardEvents(list, { getDetail: getStudentJdSetDetail, allowDelete: false });
+  }
+
+  function showStudentJdCompanyGrid() {
+    studentJdSelectedCompanyId = null;
+    document.getElementById('studentJdBlockCompanyDetail')?.classList.add('d-none');
+    document.getElementById('studentJdBlockCompanyView')?.classList.remove('d-none');
+  }
+
+  function renderStudentJdBlock() {
+    const grid = document.getElementById('studentJdBlockCompanyGrid');
+    if (!grid) return;
+    const activeCompanyId = studentJdSelectedCompanyId;
+    if (!studentJdCompanyBlocks.length) {
+      showStudentJdCompanyGrid();
+      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No JD Block entries are available yet. Check back later.</p></div>';
+      return;
+    }
+    grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks);
+    grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
+      btn.addEventListener('click', () => showStudentJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
+    });
+    if (activeCompanyId) {
+      showStudentJdCompanyDetail(activeCompanyId);
+    } else {
+      showStudentJdCompanyGrid();
     }
   }
 
@@ -4469,9 +4574,14 @@
     });
 
     if (view === 'take' && access.canTake) {
+      setupTakeListNav();
       await loadTests();
       await loadMyProgress();
-      renderTestList();
+      if (takeListPanel === 'jdblock') {
+        await loadStudentJdBlock();
+      } else {
+        renderTestList();
+      }
     }
     if (view === 'progress' && access.canViewDirectory) {
       await Promise.all([initDirFilters(), loadDirectory()]);
@@ -5312,6 +5422,7 @@
       ? new bootstrap.Modal(document.getElementById('contestResultsModal'))
       : null;
     await loadAccess();
+    setupTakeListNav();
     syncManageContestActions();
     const any = access.canTake || access.canManage || access.canViewDirectory;
     if (!any) {
@@ -5470,6 +5581,7 @@
       openAptAiModal({ jd: true, companyId });
     });
     document.getElementById('btnJdBlockBack')?.addEventListener('click', () => showJdCompanyGrid());
+    document.getElementById('btnStudentJdBlockBack')?.addEventListener('click', () => showStudentJdCompanyGrid());
     document.getElementById('aptAiJdTitleAddDate')?.addEventListener('change', updateJdTitleDateUi);
     document.getElementById('aptAiJdTitleDate')?.addEventListener('change', updateJdTitleDateUi);
     document.getElementById('aptAiJdTitle')?.addEventListener('input', updateJdTitleDateUi);
