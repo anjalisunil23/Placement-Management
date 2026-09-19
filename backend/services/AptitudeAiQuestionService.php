@@ -447,7 +447,10 @@ final class AptitudeAiQuestionService
         array $admin,
         array $questions,
         string $jdTitle,
-        ?string $jdFilename = null
+        ?string $jdFilename = null,
+        ?string $jdFile = null,
+        ?string $jdFileUrl = null,
+        ?string $jdMimeType = null
     ): array {
         AptitudeAccessService::requireManager($admin);
         $jdTitle = trim($jdTitle);
@@ -482,7 +485,10 @@ final class AptitudeAiQuestionService
             $jdTitle,
             $toSave,
             (string) ($admin['_id'] ?? $admin['id'] ?? ''),
-            $jdFilename
+            $jdFilename,
+            $jdFile,
+            $jdFileUrl,
+            $jdMimeType
         );
     }
 

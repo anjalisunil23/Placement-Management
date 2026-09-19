@@ -54,10 +54,47 @@ final class JdTextExtractionService
             );
         }
 
-        return [
+        $stored = $this->persistUploadedFile($file, $name, $ext);
+
+        return array_merge([
             'text' => $text,
             'filename' => $name,
             'method' => $ext === 'pdf' ? 'pdf' : 'ocr',
+        ], $stored);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function persistUploadedFile(array $file, string $originalName, string $ext): array
+    {
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $storedName = 'apt_jd_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        $storage = new ObjectStorageService($config);
+        try {
+            $uri = $storage->putUploadedFile(
+                ObjectStorageService::FOLDER_JD,
+                $storedName,
+                $file
+            );
+        } catch (\Throwable $e) {
+            error_log('[PMS Aptitude JD] file store failed: ' . $e->getMessage());
+
+            return [];
+        }
+
+        $filename = $storage->storedNameFromUri($uri);
+        $mime = match ($ext) {
+            'pdf' => 'application/pdf',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            default => 'application/octet-stream',
+        };
+
+        return [
+            'jdFile' => $uri,
+            'jdFileUrl' => $storage->mediaUrl(ObjectStorageService::FOLDER_JD, $filename),
+            'jdMimeType' => $mime,
         ];
     }
 

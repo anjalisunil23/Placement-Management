@@ -580,14 +580,29 @@ final class AptitudeService
      * @param array<int, array<string, mixed>> $questions
      * @return array<string, mixed>
      */
-    public function saveAiJdQuestionSet(array $admin, array $questions, string $jdTitle, ?string $jdFilename = null): array
-    {
+    public function saveAiJdQuestionSet(
+        array $admin,
+        array $questions,
+        string $jdTitle,
+        ?string $jdFilename = null,
+        ?string $jdFile = null,
+        ?string $jdFileUrl = null,
+        ?string $jdMimeType = null
+    ): array {
         if ($questions === []) {
             Response::error('No questions selected to save.', 422);
         }
 
         try {
-            return (new AptitudeAiQuestionService())->saveJdSetForUser($admin, $questions, $jdTitle, $jdFilename);
+            return (new AptitudeAiQuestionService())->saveJdSetForUser(
+                $admin,
+                $questions,
+                $jdTitle,
+                $jdFilename,
+                $jdFile,
+                $jdFileUrl,
+                $jdMimeType
+            );
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
@@ -629,6 +644,18 @@ final class AptitudeService
     {
         AptitudeAccessService::requireManager($admin);
         $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $set = $model->findById($id);
+        if ($set === null) {
+            Response::notFound('JD question set not found.');
+        }
+        $fileUri = trim((string) ($set['jdFile'] ?? ''));
+        if ($fileUri !== '') {
+            try {
+                (new ObjectStorageService())->delete($fileUri);
+            } catch (\Throwable $e) {
+                error_log('[PMS Aptitude JD] delete file failed: ' . $e->getMessage());
+            }
+        }
         if (!$model->deleteSet($id)) {
             Response::notFound('JD question set not found.');
         }

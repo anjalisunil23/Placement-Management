@@ -63,7 +63,10 @@ class AptitudeJdQuestionSetModel extends BaseModel
         string $jdTitle,
         array $questions,
         ?string $createdBy = null,
-        ?string $jdFilename = null
+        ?string $jdFilename = null,
+        ?string $jdFile = null,
+        ?string $jdFileUrl = null,
+        ?string $jdMimeType = null
     ): array {
         $jdTitle = trim($jdTitle);
         if ($jdTitle === '') {
@@ -101,6 +104,18 @@ class AptitudeJdQuestionSetModel extends BaseModel
         $filename = trim((string) ($jdFilename ?? ''));
         if ($filename !== '') {
             $doc['jdFilename'] = $filename;
+        }
+        $fileUri = trim((string) ($jdFile ?? ''));
+        if ($fileUri !== '') {
+            $doc['jdFile'] = $fileUri;
+        }
+        $fileUrl = trim((string) ($jdFileUrl ?? ''));
+        if ($fileUrl !== '') {
+            $doc['jdFileUrl'] = $fileUrl;
+        }
+        $mime = trim((string) ($jdMimeType ?? ''));
+        if ($mime !== '') {
+            $doc['jdMimeType'] = $mime;
         }
 
         $id = $this->insert($doc);
@@ -211,6 +226,9 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'id' => (string) ($row['_id'] ?? ''),
             'jdTitle' => (string) ($row['jdTitle'] ?? ''),
             'jdFilename' => (string) ($row['jdFilename'] ?? ''),
+            'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
+            'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
+            'hasDocument' => trim((string) ($row['jdFileUrl'] ?? '')) !== '',
             'questionCount' => (int) ($row['questionCount'] ?? count((array) ($row['questions'] ?? []))),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
         ];
@@ -245,6 +263,9 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'id' => (string) ($row['_id'] ?? ''),
             'jdTitle' => (string) ($row['jdTitle'] ?? ''),
             'jdFilename' => (string) ($row['jdFilename'] ?? ''),
+            'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
+            'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
+            'hasDocument' => trim((string) ($row['jdFileUrl'] ?? '')) !== '',
             'questionCount' => count($questions),
             'questions' => $questions,
             'createdAt' => (string) ($row['createdAt'] ?? ''),

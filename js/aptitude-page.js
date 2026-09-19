@@ -1279,6 +1279,9 @@
         id: String(s.id || ''),
         jdTitle: String(s.jdTitle || ''),
         jdFilename: String(s.jdFilename || ''),
+        jdFileUrl: String(s.jdFileUrl || s.jdFileDataUrl || ''),
+        jdMimeType: String(s.jdMimeType || ''),
+        hasDocument: !!(s.jdFileUrl || s.jdFileDataUrl),
         questionCount: Number(s.questionCount || s.questions?.length || 0),
       }));
     }
@@ -1308,10 +1311,44 @@
         id: String(s.id || ''),
         jdTitle: String(s.jdTitle || ''),
         jdFilename: String(s.jdFilename || ''),
+        jdFileUrl: String(s.jdFileUrl || s.jdFileDataUrl || ''),
+        jdMimeType: String(s.jdMimeType || ''),
+        hasDocument: !!(s.jdFileUrl || s.jdFileDataUrl),
         questionCount: Number(s.questionCount || s.questions?.length || 0),
       }));
     }
     renderJdLibrary();
+  }
+
+  function jdDocumentUrl(detail) {
+    return String(detail?.jdFileUrl || detail?.jdFileDataUrl || '');
+  }
+
+  function isJdImageDocument(detail) {
+    const mime = String(detail?.jdMimeType || '');
+    if (mime.startsWith('image/')) return true;
+    return /\.(jpg|jpeg|png)$/i.test(String(detail?.jdFilename || ''));
+  }
+
+  function renderJdDocumentPanel(detail) {
+    const url = jdDocumentUrl(detail);
+    if (!url) {
+      return '<p class="small text-muted-2 mb-0">No uploaded document for this set.</p>';
+    }
+    const fn = esc(detail.jdFilename || 'JD document');
+    if (isJdImageDocument(detail)) {
+      return `<div class="border rounded-2 p-2 bg-light">
+        <div class="small text-muted-2 mb-2">${fn}</div>
+        <img src="${esc(url)}" alt="${fn}" class="img-fluid rounded border" style="max-height:480px;object-fit:contain"/>
+      </div>`;
+    }
+    return `<div class="border rounded-2 p-2 bg-light">
+      <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+        <span class="small text-muted-2">${fn}</span>
+        <a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary">Open in new tab</a>
+      </div>
+      <iframe src="${esc(url)}" class="w-100 rounded border" style="height:480px" title="${fn}"></iframe>
+    </div>`;
   }
 
   function renderJdLibrary() {
@@ -1323,6 +1360,7 @@
     }
     root.innerHTML = jdLibrarySets.map((set) => {
       const id = String(set.id || '');
+      const hasDoc = !!(set.hasDocument || set.jdFileUrl);
       return `<div class="border rounded-3 p-3" data-jd-set-card="${esc(id)}">
         <div class="d-flex align-items-start justify-content-between gap-2">
           <div class="min-w-0">
@@ -1330,14 +1368,33 @@
             <div class="small text-muted-2 mt-1">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
           </div>
           <div class="d-flex gap-2 flex-shrink-0">
-            <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">View</button>
+            ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
+            <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
             <button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
           </div>
         </div>
+        <div class="d-none mt-3" data-jd-doc-panel="${esc(id)}"></div>
         <div class="d-none mt-3" data-jd-questions="${esc(id)}"></div>
       </div>`;
     }).join('');
 
+    root.querySelectorAll('[data-jd-doc]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-jd-doc');
+        const card = btn.closest('[data-jd-set-card]');
+        const panel = card?.querySelector('[data-jd-doc-panel]');
+        if (!panel) return;
+        if (!panel.classList.contains('d-none')) {
+          panel.classList.add('d-none');
+          btn.textContent = 'Document';
+          return;
+        }
+        const detail = await getJdSetDetail(id);
+        panel.innerHTML = renderJdDocumentPanel(detail || {});
+        panel.classList.remove('d-none');
+        btn.textContent = 'Hide doc';
+      });
+    });
     root.querySelectorAll('[data-jd-view]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-jd-view');
@@ -1346,7 +1403,7 @@
         if (!panel) return;
         if (!panel.classList.contains('d-none')) {
           panel.classList.add('d-none');
-          btn.textContent = 'View';
+          btn.textContent = 'Questions';
           return;
         }
         const detail = await getJdSetDetail(id);
@@ -1888,6 +1945,15 @@
     return getJdUploadedText();
   }
 
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Could not read file.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function extractAptAiJdFile(file) {
     if (!file) return;
     const ext = (file.name || '').split('.').pop()?.toLowerCase() || '';
@@ -1912,7 +1978,15 @@
           return;
         }
         const demoText = `Software Developer\n\nResponsibilities:\n- Develop web applications\n- Build REST APIs\n- Work with databases\n\nRequirements:\n- Java\n- Python\n- JavaScript\n- React\n- SQL\n- Data Structures\n- OOP`;
-        aiJdUploadMeta = { filename: file.name, demo: true, text: demoText, method: ext };
+        const jdFileDataUrl = await readFileAsDataUrl(file);
+        aiJdUploadMeta = {
+          filename: file.name,
+          demo: true,
+          text: demoText,
+          method: ext,
+          jdFileDataUrl,
+          jdMimeType: file.type || (ext === 'pdf' ? 'application/pdf' : `image/${ext === 'jpg' ? 'jpeg' : ext}`),
+        };
         showAptAiJdFileUi(file.name);
         toast('File ready for generation (demo).', 'info');
         return;
@@ -1930,6 +2004,9 @@
         filename: res.data?.filename || file.name,
         method: res.data?.method || ext,
         text,
+        jdFile: res.data?.jdFile || '',
+        jdFileUrl: res.data?.jdFileUrl || '',
+        jdMimeType: res.data?.jdMimeType || '',
       };
       showAptAiJdFileUi(aiJdUploadMeta.filename);
       toast('File ready for generation.', 'success');
@@ -2058,6 +2135,10 @@
         jobDescriptionPasted,
         jobDescriptionUploaded,
         jdUploadFilename: aiJdUploadMeta?.filename || '',
+        jdFile: aiJdUploadMeta?.jdFile || '',
+        jdFileUrl: aiJdUploadMeta?.jdFileUrl || '',
+        jdFileDataUrl: aiJdUploadMeta?.jdFileDataUrl || '',
+        jdMimeType: aiJdUploadMeta?.jdMimeType || '',
         category: 'General Aptitude',
         topic: 'Job Description',
       };
@@ -2606,10 +2687,15 @@
             source: 'AI_JD',
           }));
           const store = loadDemoJdStore();
+          const docUrl = aiJdUploadMeta?.jdFileDataUrl || aiLastFormParams?.jdFileDataUrl || '';
           store.unshift({
             id: setId,
             jdTitle,
-            jdFilename: aiLastFormParams?.jdUploadFilename || '',
+            jdFilename: aiLastFormParams?.jdUploadFilename || aiJdUploadMeta?.filename || '',
+            jdFileDataUrl: docUrl,
+            jdFileUrl: docUrl,
+            jdMimeType: aiJdUploadMeta?.jdMimeType || aiLastFormParams?.jdMimeType || '',
+            hasDocument: !!docUrl,
             questionCount: questions.length,
             questions,
           });
@@ -2641,7 +2727,10 @@
           body: JSON.stringify({
             questions: selected,
             jdTitle,
-            jdFilename: aiLastFormParams?.jdUploadFilename || '',
+            jdFilename: aiLastFormParams?.jdUploadFilename || aiJdUploadMeta?.filename || '',
+            jdFile: aiJdUploadMeta?.jdFile || aiLastFormParams?.jdFile || '',
+            jdFileUrl: aiJdUploadMeta?.jdFileUrl || aiLastFormParams?.jdFileUrl || '',
+            jdMimeType: aiJdUploadMeta?.jdMimeType || aiLastFormParams?.jdMimeType || '',
           }),
         });
         if (!res?.success) throw new Error(res?.message || 'Could not save JD questions.');
@@ -4990,6 +5079,10 @@
             aiJdUploadMeta = {
               filename: aiLastFormParams.jdUploadFilename,
               text: aiLastFormParams.jobDescriptionUploaded,
+              jdFile: aiLastFormParams.jdFile || '',
+              jdFileUrl: aiLastFormParams.jdFileUrl || '',
+              jdFileDataUrl: aiLastFormParams.jdFileDataUrl || '',
+              jdMimeType: aiLastFormParams.jdMimeType || '',
             };
             showAptAiJdFileUi(aiLastFormParams.jdUploadFilename);
           } else {

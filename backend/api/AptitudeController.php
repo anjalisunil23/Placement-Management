@@ -229,8 +229,11 @@ final class AptitudeController
         $questions = is_array($body['questions'] ?? null) ? $body['questions'] : [];
         $jdTitle = (string) ($body['jdTitle'] ?? '');
         $jdFilename = isset($body['jdFilename']) ? (string) $body['jdFilename'] : null;
+        $jdFile = isset($body['jdFile']) ? (string) $body['jdFile'] : null;
+        $jdFileUrl = isset($body['jdFileUrl']) ? (string) $body['jdFileUrl'] : null;
+        $jdMimeType = isset($body['jdMimeType']) ? (string) $body['jdMimeType'] : null;
         Response::success(
-            $this->service->saveAiJdQuestionSet($user, $questions, $jdTitle, $jdFilename),
+            $this->service->saveAiJdQuestionSet($user, $questions, $jdTitle, $jdFilename, $jdFile, $jdFileUrl, $jdMimeType),
             'JD questions saved.'
         );
     }
