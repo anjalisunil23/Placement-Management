@@ -502,7 +502,7 @@ Use this exact JSON schema:
 
 Rules for correctAnswerIndex: MUST be 0-based — 0 = option A, 1 = B, 2 = C, 3 = D. Never use 1–4.
 correctOptionLetter MUST be A, B, C, or D and MUST match correctAnswerIndex.
-The explanation MUST clearly support the chosen option text.
+The explanation MUST clearly support the chosen option and include the exact text of the correct option.
 One of the four options MUST exactly match the final numeric answer shown in the explanation.
 Double-check every calculation before returning JSON.
 PROMPT;
@@ -571,6 +571,8 @@ Use this exact JSON schema:
 
 Rules for correctAnswerIndex: MUST be 0-based — 0 = option A, 1 = B, 2 = C, 3 = D. Never use 1–4.
 correctOptionLetter MUST be A, B, C, or D and MUST match correctAnswerIndex.
+The explanation MUST clearly support the chosen option and include the exact text of the correct option.
+Double-check every answer key before returning JSON.
 PROMPT;
     }
 
@@ -750,6 +752,7 @@ PROMPT;
         $aligned = AptitudeTestModel::alignOptionsWithExplanation($options, $explanation, $correctIndex);
         $options = $aligned['options'];
         $correctIndex = $aligned['correctIndex'];
+        $explanation = AptitudeTestModel::ensureExplanationMentionsCorrectOption($options, $correctIndex, $explanation);
 
         $topic = trim((string) ($q['topic'] ?? $fallbackTopic));
         if ($topic === '') {

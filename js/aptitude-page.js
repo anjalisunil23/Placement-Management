@@ -1933,7 +1933,7 @@
         prompt: `[Demo JD] ${skill.q}`,
         options: skill.opts,
         correctIndex: skill.correct,
-        explanation: `This question tests ${skill.topic}, which is relevant to the job description.`,
+        explanation: `${skill.opts[skill.correct]} is the correct answer because it directly relates to ${skill.topic} in the job description.`,
         category: 'General Aptitude',
         topic: skill.topic,
         difficulty: params.difficulty || 'Medium',
@@ -1974,7 +1974,27 @@
     return usesDollar ? `$${rounded}` : rounded;
   }
 
+  function parseLetterFromExplanation(explanation) {
+    const exp = String(explanation ?? '');
+    let m = exp.match(/\b(?:option|choice|answer)\s*([A-Da-d])\b/i);
+    if (m) return m[1].toUpperCase().charCodeAt(0) - 65;
+    m = exp.match(/\b([A-Da-d])\s+(?:is|are)\s+(?:correct|the correct|right)\b/i);
+    if (m) return m[1].toUpperCase().charCodeAt(0) - 65;
+    return null;
+  }
+
+  function ensureExplanationMentionsCorrectOption(options, correctIndex, explanation) {
+    const idx = Math.max(0, Math.min(3, Number(correctIndex) || 0));
+    const opt = sanitizeAiOptionText((options || [])[idx] || '');
+    const exp = String(explanation ?? '').trim();
+    if (!opt || !exp) return exp;
+    if (explanationSupportsOption(exp, opt)) return exp;
+    return `${exp.replace(/[.\s]+$/, '')}. The correct answer is ${opt}.`;
+  }
+
   function findUniqueOptionInExplanation(options, explanation) {
+    const letterIndex = parseLetterFromExplanation(explanation);
+    if (letterIndex != null && (options || [])[letterIndex]) return letterIndex;
     const exp = String(explanation ?? '').toLowerCase();
     const matches = [];
     (options || []).slice(0, 4).forEach((opt, i) => {
@@ -2053,6 +2073,10 @@
       }
       return false;
     }
+    if (opt.length >= 2) {
+      const re = new RegExp(`\\b${opt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (re.test(exp)) return true;
+    }
     return exp.includes(opt);
   }
 
@@ -2061,6 +2085,8 @@
     if (q.lockCorrectIndex) {
       q.options = (q.options || []).slice(0, 4).map((o) => sanitizeAiOptionText(o));
       q.correctIndex = resolveAiPreviewCorrectIndex({ ...q, options: q.options });
+      q.explanation = ensureExplanationMentionsCorrectOption(q.options, q.correctIndex, q.explanation || '');
+      q.answerAligned = true;
       return q;
     }
     const options = (q.options || []).slice(0, 4).map((o) => sanitizeAiOptionText(o));
@@ -2068,6 +2094,8 @@
     const aligned = alignAiPreviewOptions(options, q.explanation || '', hintIndex);
     q.options = aligned.options;
     q.correctIndex = aligned.correctIndex;
+    q.explanation = ensureExplanationMentionsCorrectOption(q.options, q.correctIndex, q.explanation || '');
+    q.answerAligned = true;
     return q;
   }
 
@@ -2152,8 +2180,11 @@
         const idx = Number(pick.getAttribute('data-ai-set-correct'));
         const val = Number(pick.value);
         if (aiPreviewQuestions[idx] && Number.isInteger(val) && val >= 0 && val <= 3) {
-          aiPreviewQuestions[idx].correctIndex = val;
-          aiPreviewQuestions[idx].lockCorrectIndex = true;
+          const item = aiPreviewQuestions[idx];
+          item.correctIndex = val;
+          item.lockCorrectIndex = true;
+          item.explanation = ensureExplanationMentionsCorrectOption(item.options || [], val, item.explanation || '');
+          item.answerAligned = true;
           renderAptAiPreview();
         }
         return;
@@ -2192,7 +2223,7 @@
       const opts = (q.options || []).slice(0, 4);
       const correct = resolveAiPreviewCorrectIndex(q);
       q.correctIndex = correct;
-      const mismatch = !explanationSupportsOption(q.explanation, opts[correct]);
+      const mismatch = !q.answerAligned && !explanationSupportsOption(q.explanation, opts[correct]);
       const mismatchWarn = mismatch
         ? '<div class="small text-warning mt-1">Marked answer may not match the explanation — pick the correct option below or edit.</div>'
         : '';

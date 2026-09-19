@@ -601,6 +601,26 @@ class AptitudeTestModel extends BaseModel
     }
 
     /**
+     * Ensure the explanation explicitly references the marked correct option text.
+     *
+     * @param list<string> $options
+     */
+    public static function ensureExplanationMentionsCorrectOption(array $options, int $correctIndex, string $explanation): string
+    {
+        $correctIndex = max(0, min(3, $correctIndex));
+        $opt = trim($options[$correctIndex] ?? '');
+        $explanation = trim($explanation);
+        if ($opt === '' || $explanation === '') {
+            return $explanation;
+        }
+        if (self::optionAppearsInExplanation(strtolower($opt), strtolower($explanation))) {
+            return $explanation;
+        }
+
+        return rtrim(rtrim($explanation, '.'), ' ') . '. The correct answer is ' . $opt . '.';
+    }
+
+    /**
      * @param list<string> $options
      */
     public static function findUniqueOptionInExplanation(array $options, string $explanation): ?int
