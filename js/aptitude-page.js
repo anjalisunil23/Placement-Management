@@ -470,6 +470,45 @@
       };
     });
 
+    if (resultType === 'company') {
+      const titles = ['soti demo test -1', 'Associate Software Engineer mock'];
+      const rows = [];
+      studentSummaries.forEach((s) => {
+        const count = Number(s.testsAttempted) || 0;
+        if (count === 0 || s.userId !== 'u-s1') return;
+        const pct = Math.max(40, Math.min(100, Number(s.recentScore ?? s.averageScore) || 0));
+        const totalMarks = 7;
+        const marksObtained = Math.round((pct / 100) * totalMarks);
+        rows.push({
+          attemptId: `demo-company-attempt-${s.userId}-final`,
+          userId: s.userId,
+          name: s.name,
+          registerNumber: s.registerNumber,
+          classBatch: s.classBatch,
+          attemptCount: 1,
+          testTitle: titles[0],
+          marksObtained,
+          totalMarks,
+          score: marksObtained,
+          percentage: pct,
+          completedAt: new Date().toISOString(),
+        });
+      });
+      const percentages = rows.map((r) => Number(r.percentage) || 0);
+      const studentIds = new Set(rows.map((r) => r.userId));
+      return {
+        rows,
+        summary: {
+          attemptCount: rows.length,
+          students: studentIds.size,
+          avgPercentage: percentages.length
+            ? Math.round((percentages.reduce((a, b) => a + b, 0) / percentages.length) * 10) / 10
+            : 0,
+        },
+        noClass: false,
+      };
+    }
+
     if (resultType === 'contests') {
       const rows = studentSummaries.filter((r) => (r.testsAttempted || 0) > 0 && (r.userId === 'u-s2' || r.userId === 'u-s1')).map((r) => ({
         ...r,
@@ -792,7 +831,9 @@
     const role = Auth.role();
     const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
       ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
-      : 'No test results in your authorized scope yet.';
+      : (progressPanel === 'company'
+        ? 'No company test results in your authorized scope yet.'
+        : 'No test results in your authorized scope yet.');
 
     const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
@@ -951,12 +992,14 @@
     if (branch) qs.set('course', branch);
     if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
-    if (progressPanel === 'tests' || progressPanel === 'contests') qs.set('resultType', progressPanel);
+    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company') {
+      qs.set('resultType', progressPanel);
+    }
     return qs;
   }
 
   function applyProgressPanel(panel) {
-    progressPanel = panel === 'contests' ? 'contests' : 'tests';
+    progressPanel = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
     document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
     });
@@ -971,7 +1014,7 @@
   }
 
   function applyMyResultsPanel(panel) {
-    myResultsPanel = panel === 'contests' ? 'contests' : 'tests';
+    myResultsPanel = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
     document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsPanel);
     });
@@ -1018,6 +1061,10 @@
     if (type === 'weekly' || type === 'monthly') return true;
     if (type === 'none') return false;
     return isContestTest(resolveHistoryTest(h));
+  }
+
+  function historyEntryIsCompany(h) {
+    return isCompanyTest(resolveHistoryTest(h));
   }
 
   function historyResultMode(h) {
@@ -1700,7 +1747,8 @@
     studentJdSelectedCompanyId = companyId;
     document.getElementById('studentJdBlockCompanyView')?.classList.add('d-none');
     document.getElementById('studentJdBlockCompanyDetail')?.classList.remove('d-none');
-    document.getElementById('btnStudentJdBlockBack')?.classList.remove('d-none');
+    document.getElementById('studentJdBlockDetailNav')?.classList.remove('d-none');
+    syncStudentJdBlockViewNav();
     const showTests = studentJdBlockView === 'tests';
     const testsRoot = document.getElementById('studentJdBlockCompanyTests');
     const bankSection = document.getElementById('studentJdBlockBankSection');
@@ -1727,7 +1775,7 @@
     studentJdSelectedCompanyId = null;
     document.getElementById('studentJdBlockCompanyDetail')?.classList.add('d-none');
     document.getElementById('studentJdBlockCompanyView')?.classList.remove('d-none');
-    document.getElementById('btnStudentJdBlockBack')?.classList.add('d-none');
+    document.getElementById('studentJdBlockDetailNav')?.classList.add('d-none');
   }
 
   function renderStudentJdBlock() {
@@ -5096,13 +5144,18 @@
       if (myResultsPanel === 'contests') {
         return historyEntryIsContest(h) && contestTypeOf(h) === myResultsContestType;
       }
-      return !historyEntryIsContest(h);
+      if (myResultsPanel === 'company') {
+        return historyEntryIsCompany(h);
+      }
+      return !historyEntryIsContest(h) && !historyEntryIsCompany(h);
     });
     const canReview = access.canTake;
     const contestLabel = myResultsContestType === 'monthly' ? 'monthly' : 'weekly';
     const emptyLabel = myResultsPanel === 'contests'
       ? `No ${contestLabel} contest attempts yet.`
-      : 'No attempts yet. Select a test on the left to begin.';
+      : (myResultsPanel === 'company'
+        ? 'No company test attempts yet.'
+        : 'No attempts yet. Select a test on the left to begin.');
     document.getElementById('myHistory').innerHTML = filtered.length
       ? filtered.slice(0, 8).map((h) => {
           const attemptId = h.attemptId || h.id;

@@ -1099,7 +1099,7 @@ final class AptitudeService
         $role = \PMS\Middleware\AuthMiddleware::resolvedRole($viewer);
         $filters = AptitudeAccessService::sanitizeDirectoryFilters($viewer, $filters);
         $dbFilter = AptitudeAccessService::completedAttemptsFilter($viewer);
-        $resultType = trim((string) ($filters['resultType'] ?? ''));
+        $resultType = $this->normalizeDirectoryResultType((string) ($filters['resultType'] ?? ''));
         if ($dbFilter === null) {
             return $resultType === 'contests'
                 ? $this->emptyContestDirectory($viewer)
@@ -1118,7 +1118,7 @@ final class AptitudeService
             2000
         );
 
-        $rows = $this->buildTestAttemptRows($viewer, $filters, $completed, $role);
+        $rows = $this->buildTestAttemptRows($viewer, $filters, $completed, $role, $resultType);
         $scope = AptitudeAccessService::scopeInfo($viewer);
         $percentages = array_map(static fn ($r) => (float) ($r['percentage'] ?? 0), $rows);
         $studentIds = [];
@@ -1149,8 +1149,14 @@ final class AptitudeService
      * @param array<int, array<string, mixed>> $completed
      * @return array<int, array<string, mixed>>
      */
-    private function buildTestAttemptRows(array $viewer, array $filters, array $completed, string $role): array
-    {
+    private function buildTestAttemptRows(
+        array $viewer,
+        array $filters,
+        array $completed,
+        string $role,
+        string $resultType = 'tests'
+    ): array {
+        $resultType = $this->normalizeDirectoryResultType($resultType);
         $contestTests = $this->contestTestIdSet();
         $testIds = [];
         $userIds = [];
@@ -1178,6 +1184,10 @@ final class AptitudeService
             if ($testId === '' || $uid === '' || isset($contestTests[$testId])) {
                 continue;
             }
+            $test = $testCache[$testId] ?? $this->tests->findById($testId) ?: [];
+            if (!$this->attemptMatchesDirectoryResultType($test, $resultType, $contestTests, $testId)) {
+                continue;
+            }
             $key = $uid . '|' . $testId;
             $attemptsByUserTest[$key][] = $attempt;
         }
@@ -1202,6 +1212,10 @@ final class AptitudeService
             if ($testId === '' || $uid === '' || isset($contestTests[$testId])) {
                 continue;
             }
+            $test = $testCache[$testId] ?? $this->tests->findById($testId) ?: [];
+            if (!$this->attemptMatchesDirectoryResultType($test, $resultType, $contestTests, $testId)) {
+                continue;
+            }
             if (!AptitudeAccessService::canViewSubject($viewer, $uid)) {
                 continue;
             }
@@ -1217,7 +1231,6 @@ final class AptitudeService
                 continue;
             }
 
-            $test = $testCache[$testId] ?? $this->tests->findById($testId) ?: [];
             $attemptId = (string) ($finalAttempt['_id'] ?? '');
             $marksObtained = (float) ($finalAttempt['marksObtained'] ?? $finalAttempt['score'] ?? 0);
             $totalMarks = (float) ($finalAttempt['totalMarks'] ?? $test['totalMarks'] ?? 0);
@@ -1257,25 +1270,68 @@ final class AptitudeService
     /**
      * @param array<int, array<string, mixed>> $attempts
      */
-    private function filterAttemptsByResultType(array $attempts, string $resultType): array
+    private function normalizeDirectoryResultType(string $resultType): string
     {
         $resultType = strtolower(trim($resultType));
-        if ($resultType !== 'tests' && $resultType !== 'contests') {
+        if ($resultType === 'contests' || $resultType === 'company') {
+            return $resultType;
+        }
+
+        return 'tests';
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @param array<string, true> $contestTests
+     */
+    private function attemptMatchesDirectoryResultType(
+        array $test,
+        string $resultType,
+        array $contestTests,
+        string $testId
+    ): bool {
+        $resultType = $this->normalizeDirectoryResultType($resultType);
+        if ($testId !== '' && isset($contestTests[$testId])) {
+            return $resultType === 'contests';
+        }
+        $isCompany = AptitudeTestModel::isCompanyTest($test);
+        if ($resultType === 'company') {
+            return $isCompany;
+        }
+        if ($resultType === 'contests') {
+            return false;
+        }
+
+        return !$isCompany;
+    }
+
+    private function filterAttemptsByResultType(array $attempts, string $resultType): array
+    {
+        $resultType = $this->normalizeDirectoryResultType($resultType);
+        if ($resultType === 'tests') {
             return $attempts;
         }
 
         $contestTests = $this->contestTestIdSet();
+        $testCache = [];
 
         return array_values(array_filter(
             $attempts,
-            static function (array $attempt) use ($resultType, $contestTests): bool {
+            function (array $attempt) use ($resultType, $contestTests, &$testCache): bool {
                 $testId = (string) ($attempt['testId'] ?? '');
                 if ($testId === '') {
                     return $resultType === 'tests';
                 }
-                $isContest = isset($contestTests[$testId]);
+                if (!isset($testCache[$testId])) {
+                    $testCache[$testId] = $this->tests->findById($testId) ?: [];
+                }
 
-                return $resultType === 'contests' ? $isContest : !$isContest;
+                return $this->attemptMatchesDirectoryResultType(
+                    $testCache[$testId],
+                    $resultType,
+                    $contestTests,
+                    $testId
+                );
             }
         ));
     }
