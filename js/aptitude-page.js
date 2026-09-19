@@ -1652,18 +1652,20 @@
     if (!companyTests.length) {
       return '<p class="small text-muted-2 mb-0">No company tests published for this company yet.</p>';
     }
-    return `<div class="d-flex flex-column gap-2">${companyTests.map((t) => {
+    return `<div class="apt-prob-list">${companyTests.map((t, i) => {
       const mine = bestHistoryForTest(t.id);
-      const canOpen = access.canTake && (t.status || 'published') === 'published';
-      return `<div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div class="min-w-0">
-          <div class="fw-semibold">${esc(t.title)}</div>
-          <div class="small text-muted-2">${esc(testMetaLine(t))}${mine ? ` · Best ${esc(mine.percentage)}%` : ''}</div>
-        </div>
-        ${canOpen
-          ? `<button type="button" class="btn btn-sm btn-primary flex-shrink-0" data-open-company-test="${esc(t.id)}">${mine ? 'Retake' : 'Take test'}</button>`
-          : ''}
-      </div>`;
+      const solved = !!mine;
+      const diff = difficultyListLabel(t.difficulty);
+      const published = (t.status || 'published') === 'published';
+      const canOpen = access.canTake && published;
+      const tag = canOpen ? 'button' : 'div';
+      const extra = canOpen ? ` type="button" data-open-company-test="${esc(t.id)}"` : '';
+      return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : ''}"${extra}>
+        <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
+        <span class="apt-prob-title">${i + 1}. ${esc(t.title)}</span>
+        <span class="apt-prob-pct">${esc(formatListPercentage(t, mine))}</span>
+        <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
+      </${tag}>`;
     }).join('')}</div>`;
   }
 
