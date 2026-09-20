@@ -253,6 +253,7 @@ $routes = [
 
     // Student
     ['GET',  '/student/dashboard',         [StudentController::class, 'dashboard']],
+    ['GET',  '/student/pca-offer-letter',  [StudentController::class, 'pcaOfferLetter']],
     ['GET',  '/student/profile',           [StudentController::class, 'getProfile']],
     ['PUT',  '/student/profile',           [StudentController::class, 'updateProfile']],
     ['POST', '/student/policy/accept',     [StudentController::class, 'acceptPolicy']],
@@ -473,6 +474,9 @@ $routes = [
     ['DELETE','/officer/department-placement-officer', [OfficerController::class, 'unassignDepartmentPlacementOfficer']],
     ['GET',    '/officer/volunteers',           [OfficerController::class, 'listVolunteers']],
     ['POST',   '/officer/volunteers',           [OfficerController::class, 'assignVolunteer']],
+    ['GET',    '/officer/volunteers/{id}/offer-letter',         [OfficerController::class, 'getVolunteerOfferLetter']],
+    ['PUT',    '/officer/volunteers/{id}/offer-letter',         [OfficerController::class, 'saveVolunteerOfferLetter']],
+    ['POST',   '/officer/volunteers/{id}/offer-letter/publish', [OfficerController::class, 'publishVolunteerOfferLetter']],
     ['DELETE', '/officer/volunteers/{id}',      [OfficerController::class, 'removeVolunteer']],
 
     // Aptitude mocks

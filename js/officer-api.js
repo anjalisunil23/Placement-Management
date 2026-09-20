@@ -533,8 +533,11 @@ const OfficerApi = {
       assignedBy: row.assignedBy || '',
       assignedByName: row.assignedByName || '',
       assignedAt: row.assignedAt || '',
+      academicYear: row.academicYear || '',
       notes: row.notes || '',
       status: row.status || 'active',
+      offerLetterStatus: row.offerLetterStatus || 'draft',
+      offerLetterPublishedAt: row.offerLetterPublishedAt || '',
     };
   },
 
@@ -554,5 +557,24 @@ const OfficerApi = {
 
   async removeVolunteer(assignmentId) {
     return api(`/officer/volunteers/${encodeURIComponent(assignmentId)}`, { method: 'DELETE' });
+  },
+
+  async fetchVolunteerOfferLetter(assignmentId) {
+    const res = await api(`/officer/volunteers/${encodeURIComponent(assignmentId)}/offer-letter`);
+    return res?.success ? res.data : null;
+  },
+
+  async saveVolunteerOfferLetter(assignmentId, payload) {
+    return api(`/officer/volunteers/${encodeURIComponent(assignmentId)}/offer-letter`, {
+      method: 'PUT',
+      body: payload,
+    });
+  },
+
+  async publishVolunteerOfferLetter(assignmentId, payload = {}) {
+    return api(`/officer/volunteers/${encodeURIComponent(assignmentId)}/offer-letter/publish`, {
+      method: 'POST',
+      body: payload,
+    });
   },
 };

@@ -606,8 +606,11 @@ const AdminApi = {
       assignedBy: row.assignedBy || '',
       assignedByName: row.assignedByName || '',
       assignedAt: row.assignedAt || '',
+      academicYear: row.academicYear || '',
       notes: row.notes || '',
       status: row.status || 'active',
+      offerLetterStatus: row.offerLetterStatus || 'draft',
+      offerLetterPublishedAt: row.offerLetterPublishedAt || '',
     };
   },
 

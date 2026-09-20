@@ -315,6 +315,17 @@
 
       <!-- ===== STUDENT ===== -->
       <div data-roles="student">
+        <div id="pcaOfferLetterCard" class="card-surface p-3 mb-3 d-none">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+              <h6 class="fw-bold mb-1"><i class="bi bi-person-badge me-1"></i>Placement Campus Ambassador</h6>
+              <p class="small text-muted-2 mb-0">Your official PCA appointment offer letter has been published.</p>
+            </div>
+            <a class="btn btn-primary btn-sm" id="pcaOfferLetterLink" href="pca-offer-letter.html?mode=student" target="_blank" rel="noopener">
+              <i class="bi bi-file-earmark-arrow-down me-1"></i>View &amp; download
+            </a>
+          </div>
+        </div>
         <div class="row g-3">
           <div class="col-6 col-lg-3"><div class="card-surface stat-card">
             <div class="d-flex justify-content-between"><div class="ic"><i class="bi bi-mortarboard-fill"></i></div></div>
@@ -1003,6 +1014,14 @@ if (role === 'student') {
             cgpa: n,
             academic: { ...(live.academic || {}), cgpa: n },
           });
+        }
+        const pcaCard = document.getElementById('pcaOfferLetterCard');
+        if (pcaCard) {
+          pcaCard.classList.toggle('d-none', !dash.data.pcaOfferLetterPublished);
+        }
+        const pcaLink = document.getElementById('pcaOfferLetterLink');
+        if (pcaLink && dash.data.pcaOfferLetterUrl) {
+          pcaLink.href = dash.data.pcaOfferLetterUrl;
         }
       }
       if (apt?.success && apt.data) aptData = apt.data;

@@ -17,6 +17,7 @@ use PMS\Models\ResumeModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
 use PMS\Services\OfficerDataService;
+use PMS\Services\PcaOfferLetterService;
 use PMS\Services\RecruitmentResultService;
 use PMS\Services\ApplicationUploadService;
 use PMS\Services\ApplicationWorkflowService;
@@ -199,13 +200,28 @@ final class StudentController
     $unreadNotifications = (new NotificationModel())->countUnread((string) $user['_id']);
     $remainingChances = (int) (($profile['placementChances']['remaining'] ?? null) ?? ($profile['chancesRemaining'] ?? 0));
 
+    $pcaLetter = (new PcaOfferLetterService())->getPublishedForStudentUser((string) $user['_id']);
+
     Response::success([
       'cgpa' => $cgpa,
       'applications' => $applications,
       'resumeCount' => $resumeCount,
       'unreadNotifications' => $unreadNotifications,
       'remainingChances' => $remainingChances,
+      'pcaOfferLetterPublished' => $pcaLetter !== null,
+      'pcaOfferLetterUrl' => $pcaLetter !== null ? '/pca-offer-letter.html?mode=student' : null,
     ]);
+  }
+
+  /** GET /api/student/pca-offer-letter — published PCA appointment letter only */
+  public function pcaOfferLetter(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $letter = (new PcaOfferLetterService())->getPublishedForStudentUser((string) $user['_id']);
+    if ($letter === null) {
+      Response::notFound('No published PCA offer letter is available for your account.');
+    }
+    Response::success($letter);
   }
 
   /** GET /api/student/profile */

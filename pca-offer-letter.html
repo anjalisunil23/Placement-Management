@@ -25,13 +25,24 @@
 
     .sheet {
       width: var(--page-w);
+      height: var(--page-h);
       min-height: var(--page-h);
+      max-height: var(--page-h);
+      max-width: 100%;
       margin: 12px auto;
       background: #fff;
       box-shadow: 0 2px 18px rgba(0, 0, 0, 0.12);
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      page-break-after: avoid;
+      page-break-inside: avoid;
+    }
+
+    .letterhead-wrap,
+    .letter-footer-wrap {
+      background: #fff;
+      line-height: 0;
     }
 
     .letterhead,
@@ -40,15 +51,19 @@
       display: block;
       flex-shrink: 0;
       background: #fff;
+      /* Fallback if PNG still contains black matte from export */
+      mix-blend-mode: screen;
     }
 
     .letter-footer { margin-top: auto; }
 
     .content {
       flex: 1 1 auto;
-      padding: 4mm var(--side-pad) 2mm;
+      min-height: 0;
+      padding: 3mm var(--side-pad) 2mm;
       font-size: 10.5pt;
-      line-height: 1.38;
+      line-height: 1.36;
+      overflow: hidden;
     }
 
     .doc-title {
@@ -118,6 +133,7 @@
       object-fit: contain;
       object-position: left bottom;
       margin-bottom: 0.5mm;
+      mix-blend-mode: multiply;
     }
 
     .signature-caption {
@@ -125,17 +141,37 @@
       margin-top: 0.5mm;
     }
 
-    @page { size: A4 portrait; margin: 0; }
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
 
     @media print {
-      html, body { background: #fff; }
-      .sheet {
+      html, body {
+        background: #fff;
+        width: 210mm;
+        height: 297mm;
         margin: 0;
+        padding: 0;
+      }
+      .sheet {
+        margin: 0 auto;
         box-shadow: none;
-        width: 100%;
-        min-height: 100vh;
+        width: 210mm;
+        height: 297mm;
+        min-width: 210mm;
+        min-height: 297mm;
+        max-width: 210mm;
+        max-height: 297mm;
         page-break-after: avoid;
         page-break-inside: avoid;
+      }
+      .letterhead-wrap,
+      .letter-footer-wrap,
+      .letterhead,
+      .letter-footer {
+        background: #fff !important;
+        mix-blend-mode: screen;
       }
       .no-print { display: none !important; }
     }
@@ -192,6 +228,28 @@
     }
 
     .toolbar button:hover { background: #163d7f; }
+
+    /* Embedded preview (PO modal iframe): fill A4 frame, no chrome */
+    html[data-embed="1"],
+    html[data-embed="1"] body {
+      background: #fff;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    html[data-embed="1"] .sheet {
+      margin: 0;
+      box-shadow: none;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      max-width: none;
+      max-height: none;
+    }
   </style>
 </head>
 <body>
@@ -211,7 +269,9 @@
 </div>
 
 <article class="sheet" id="letterSheet">
-  <img class="letterhead" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
+  <div class="letterhead-wrap">
+    <img class="letterhead" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
+  </div>
 
   <div class="content">
     <h1 class="doc-title">Official Offer Letter of Appointment</h1>
@@ -285,11 +345,14 @@
     </div>
   </div>
 
-  <img class="letter-footer" data-asset="css/img/pca-footer.png" alt="Contact and accreditation footer"/>
+  <div class="letter-footer-wrap">
+    <img class="letter-footer" data-asset="css/img/pca-footer.png" alt="Contact and accreditation footer"/>
+  </div>
 </article>
 
 <script>
 (function () {
+  const API_BASE = (location.protocol === 'file:' ? '' : '') + '/backend/api';
   const assetRoot = location.protocol === 'file:' ? '' : '/';
   document.querySelectorAll('[data-asset]').forEach((img) => {
     img.src = assetRoot + img.getAttribute('data-asset');
@@ -342,15 +405,71 @@
   const outAcademicYear = document.getElementById('outAcademicYear');
   const ayInline = document.querySelectorAll('.ay-inline');
 
-  const urlName = qp('name') || qp('student');
-  const urlClass = qp('class') || qp('batch');
-  if (urlName) inpName.value = urlName;
-  if (urlClass) inpClass.value = urlClass;
+  const mode = qp('mode');
+  const embed = qp('embed') === '1';
+  if (embed) document.documentElement.setAttribute('data-embed', '1');
+  const assignmentId = qp('assignment');
+  const readOnly = mode === 'student';
 
-  const urlDate = qp('date');
-  inpDate.value = urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)
-    ? urlDate
-    : toInputDateValue(new Date());
+  function applyPayload(data) {
+    if (!data) return;
+    if (data.letterDate) inpDate.value = data.letterDate;
+    if (data.studentName) inpName.value = data.studentName;
+    if (data.classLabel) inpClass.value = data.classLabel;
+    sync();
+  }
+
+  function setReadOnly(locked) {
+    [inpDate, inpName, inpClass].forEach((el) => { el.readOnly = locked; el.disabled = locked; });
+    const toolbar = document.querySelector('.toolbar');
+    if (!toolbar) return;
+    if (locked) {
+      toolbar.querySelectorAll('label').forEach((lbl, i) => {
+        if (i < 3) lbl.classList.add('d-none');
+      });
+      document.getElementById('btnPrint').textContent = 'Download / Print PDF';
+    }
+    if (embed) toolbar.classList.add('d-none');
+  }
+
+  async function loadLetterData() {
+    try {
+      if (mode === 'student') {
+        setReadOnly(true);
+        const res = await fetch(API_BASE + '/student/pca-offer-letter', { credentials: 'include', cache: 'no-store' });
+        const json = await res.json();
+        if (!json?.success) {
+          document.body.innerHTML = '<p class="p-4 text-center">No published PCA offer letter is available.</p>';
+          return;
+        }
+        applyPayload(json.data);
+        return;
+      }
+      if (assignmentId) {
+        const res = await fetch(API_BASE + '/officer/volunteers/' + encodeURIComponent(assignmentId) + '/offer-letter', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const json = await res.json();
+        if (json?.success) {
+          applyPayload(json.data);
+          if (json.data?.status === 'published') setReadOnly(true);
+          return;
+        }
+      }
+    } catch { /* fall back to query params */ }
+
+    const urlName = qp('name') || qp('student');
+    const urlClass = qp('class') || qp('batch');
+    if (urlName) inpName.value = urlName;
+    if (urlClass) inpClass.value = urlClass;
+    const urlDate = qp('date');
+    inpDate.value = urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)
+      ? urlDate
+      : toInputDateValue(new Date());
+    sync();
+    if (embed) document.querySelector('.toolbar')?.classList.add('d-none');
+  }
 
   function sync() {
     const letterDate = parseInputDate(inpDate.value);
@@ -367,7 +486,7 @@
 
   [inpDate, inpName, inpClass].forEach(el => el.addEventListener('input', sync));
   document.getElementById('btnPrint').addEventListener('click', () => window.print());
-  sync();
+  loadLetterData();
 })();
 </script>
 </body>

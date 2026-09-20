@@ -22,6 +22,8 @@ final class VolunteerAssignmentService
      */
     public function listForContext(array $ctx, ?string $departmentId = null): array
     {
+        (new PcaOfferLetterService())->expireOutdatedAssignments();
+
         $filter = ['status' => 'active'];
         if ($departmentId !== null && $departmentId !== '') {
             $deptOid = Security::toObjectId($departmentId);
@@ -42,6 +44,8 @@ final class VolunteerAssignmentService
      */
     public function assign(array $ctx, string $studentId, string $assignedByUserId, ?string $notes = null): array
     {
+        (new PcaOfferLetterService())->expireOutdatedAssignments();
+
         if (!empty($ctx['isAdmin'])) {
             Response::forbidden('Use the admin placement representatives view to manage campus-wide assignments.');
         }
@@ -69,14 +73,23 @@ final class VolunteerAssignmentService
             Response::error('This student is already assigned as a placement representative.', 422);
         }
 
+        $dept = (new DepartmentModel())->findById($deptId);
+        $userModel = new UserModel();
+        $studentUser = !empty($student['userId']) ? $userModel->findById((string) $student['userId']) : null;
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $studentName = trim((string) ($studentUser['name'] ?? $personal['name'] ?? $personal['fullName'] ?? ''));
+        $letterService = new PcaOfferLetterService();
+
         $assignmentId = $volunteerModel->insert([
             'studentId'    => Security::toObjectId($canonicalStudentId),
             'userId'       => !empty($student['userId']) ? Security::toObjectId((string) $student['userId']) : null,
             'departmentId' => Security::toObjectId($deptId),
             'assignedBy'   => Security::toObjectId($assignedByUserId),
             'assignedAt'   => DocumentHelper::now(),
+            'academicYear' => PcaOfferLetterService::currentAcademicYear(),
             'status'       => 'active',
             'notes'        => $notes !== null && trim($notes) !== '' ? trim($notes) : null,
+            'offerLetter'  => $letterService->defaultLetterPayload($student, $dept, $studentName),
         ]);
 
         $doc = $volunteerModel->findById($assignmentId);
@@ -167,6 +180,11 @@ final class VolunteerAssignmentService
             $name = (string) ($studentUser['name'] ?? $personal['name'] ?? $personal['fullName'] ?? '');
             $registerNumber = (string) ($student['registerNumber'] ?? '');
 
+            $letter = is_array($row['offerLetter'] ?? null) ? $row['offerLetter'] : [];
+            $offerStatus = strtolower(trim((string) ($letter['status'] ?? 'draft'))) === 'published'
+                ? 'published'
+                : 'draft';
+
             $out[] = [
                 'id'               => (string) ($row['_id'] ?? ''),
                 'studentId'        => $sid,
@@ -181,8 +199,11 @@ final class VolunteerAssignmentService
                 'assignedBy'       => (string) ($row['assignedBy'] ?? ''),
                 'assignedByName'   => (string) ($assigner['name'] ?? ''),
                 'assignedAt'       => $this->formatTimestamp($row['assignedAt'] ?? $row['createdAt'] ?? null),
+                'academicYear'     => (string) ($row['academicYear'] ?? PcaOfferLetterService::currentAcademicYear()),
                 'notes'            => (string) ($row['notes'] ?? ''),
                 'status'           => (string) ($row['status'] ?? 'active'),
+                'offerLetterStatus'=> $offerStatus,
+                'offerLetterPublishedAt' => $this->formatTimestamp($letter['publishedAt'] ?? null),
             ];
         }
 

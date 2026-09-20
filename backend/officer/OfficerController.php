@@ -35,6 +35,7 @@ use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
 use PMS\Services\ObjectStorageService;
+use PMS\Services\PcaOfferLetterService;
 use PMS\Services\VolunteerAssignmentService;
 
 use PMS\Utils\DocumentHelper;
@@ -1481,6 +1482,39 @@ final class OfficerController
             (string) ($scope['user']['_id'] ?? '')
         );
         Response::success(null, 'Placement representative removed.');
+    }
+
+    /** GET /api/officer/volunteers/{id}/offer-letter */
+    public function getVolunteerOfferLetter(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        Response::success((new PcaOfferLetterService())->getForOfficer($scope['ctx'], $id));
+    }
+
+    /** PUT /api/officer/volunteers/{id}/offer-letter */
+    public function saveVolunteerOfferLetter(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        Response::success(
+            (new PcaOfferLetterService())->saveDraft($scope['ctx'], $id, $input, (string) ($scope['user']['_id'] ?? '')),
+            'Offer letter saved.'
+        );
+    }
+
+    /** POST /api/officer/volunteers/{id}/offer-letter/publish */
+    public function publishVolunteerOfferLetter(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $service = new PcaOfferLetterService();
+        if ($input !== []) {
+            $service->saveDraft($scope['ctx'], $id, $input, (string) ($scope['user']['_id'] ?? ''));
+        }
+        Response::success(
+            $service->publish($scope['ctx'], $id, (string) ($scope['user']['_id'] ?? '')),
+            'Offer letter published. The student can now view and download it.'
+        );
     }
 
     private function isLiteProfileRequest(): bool
