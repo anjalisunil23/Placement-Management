@@ -718,7 +718,9 @@ const Auth = {
   },
   resolveRedirect(next) {
     if (this.role() === 'student' && studentNeedsPlacementRegistration()) {
-      return 'placement-registration.html';
+      if (!isSharedAptitudeTestUrl(next)) {
+        return 'placement-registration.html';
+      }
     }
     if (this.role() === 'student' && this._profileIncomplete) {
       if (!isSharedAptitudeTestUrl(next)) {
@@ -5449,6 +5451,42 @@ function userStatusBadge(status, blocked) {
   return `<span class="badge-soft ${cls}">${label}</span>`;
 }
 
+/** Persist post-login destination for AES callback (cookie + sessionStorage). */
+function persistAuthNextTarget(next) {
+  const target = String(next || '').trim();
+  if (!target) return;
+  try {
+    document.cookie = `ph_auth_next=${encodeURIComponent(target)}; path=/; max-age=600; SameSite=Lax`;
+  } catch (_) { /* ignore */ }
+  try {
+    sessionStorage.setItem('ph_auth_next', target);
+  } catch (_) { /* ignore */ }
+}
+
+function readAuthNextTarget() {
+  try {
+    const fromUrl = new URLSearchParams(location.search).get('next') || '';
+    if (fromUrl) return fromUrl;
+  } catch (_) { /* ignore */ }
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)ph_auth_next=([^;]*)/);
+    if (m) return decodeURIComponent(m[1]);
+  } catch (_) { /* ignore */ }
+  try {
+    return sessionStorage.getItem('ph_auth_next') || '';
+  } catch (_) { /* ignore */ }
+  return '';
+}
+
+/** True when the current page is a shared aptitude test deep link. */
+function sharedAptitudeTestEntry() {
+  try {
+    return isSharedAptitudeTestUrl(location.pathname + location.search);
+  } catch {
+    return false;
+  }
+}
+
 /** True when URL targets a shared aptitude test link (mock-aptitude.html?test=…). */
 function isSharedAptitudeTestUrl(raw) {
   try {
@@ -5476,14 +5514,8 @@ function authReentryUrl(nextPage, roleHint) {
     page += location.hash;
   }
   const next = page;
-  const aesRoles = ['student', 'staff', 'placement_officer', 'alumni'];
-  if (aesRoles.includes(role)) {
-    try {
-      document.cookie = `ph_auth_next=${encodeURIComponent(next)}; path=/; max-age=600; SameSite=Lax`;
-    } catch { /* ignore */ }
-    return `/public-stats.html?next=${encodeURIComponent(next)}`;
-  }
-  return `public-stats.html?next=${encodeURIComponent(next)}`;
+  persistAuthNextTarget(next);
+  return `/public-stats.html?next=${encodeURIComponent(next)}`;
 }
 
 function rebuildFormData(entries) {

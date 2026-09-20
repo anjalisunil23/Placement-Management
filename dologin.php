@@ -67,11 +67,14 @@ try {
     }
 
     $next = ltrim($target, '/');
-    if (!empty($_COOKIE['ph_auth_next'])) {
-        $cookieNext = trim((string) $_COOKIE['ph_auth_next']);
+    $rawNextHint = trim((string) ($_POST['ph_auth_next'] ?? ''));
+    if ($rawNextHint === '' && !empty($_COOKIE['ph_auth_next'])) {
+        $rawNextHint = trim((string) $_COOKIE['ph_auth_next']);
+    }
+    if ($rawNextHint !== '') {
         setcookie('ph_auth_next', '', ['expires' => time() - 3600, 'path' => '/', 'samesite' => 'Lax']);
-        if ($cookieNext !== '' && !str_contains(strtolower($cookieNext), 'login.html')) {
-            $next = ltrim($cookieNext, '/');
+        if (!str_contains(strtolower($rawNextHint), 'login.html')) {
+            $next = ltrim($rawNextHint, '/');
         }
     }
 

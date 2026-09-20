@@ -797,6 +797,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (isPublic) {
     document.documentElement.setAttribute('data-theme', UserPrefs.theme());
     document.documentElement.setAttribute('data-density', UserPrefs.density());
+    if (pageBase === 'public-stats.html') {
+      const next = new URLSearchParams(location.search).get('next') || '';
+      if (next && typeof persistAuthNextTarget === 'function') {
+        persistAuthNextTarget(next);
+      }
+      if (next && typeof Auth !== 'undefined') {
+        Auth.bootstrap({ soft: true }).then((hasSession) => {
+          if (!hasSession || typeof Auth.resolveRedirect !== 'function') return;
+          const target = Auth.resolveRedirect(next);
+          window.location.replace(typeof absAppPath === 'function' ? absAppPath(target) : target);
+        }).catch(() => {});
+      }
+    }
     if ((document.body?.dataset?.page || '') !== 'public-stats.html') {
       animateCounters();
     }
@@ -855,15 +868,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       revealApp();
       const roleHint = Auth.role() || Auth.user()?.role || '';
+      const returnTarget = `${pageBase}${location.search || ''}${location.hash || ''}`;
       Auth.clear();
-      window.location.href = authReentryUrl(pageBase, roleHint);
+      window.location.href = authReentryUrl(returnTarget, roleHint);
       return;
     }
   }
 
   // First-time students must complete Placement Cell registration before any other page.
   if (typeof studentNeedsPlacementRegistration === 'function' && studentNeedsPlacementRegistration()) {
-    if (pageBase !== 'placement-registration.html') {
+    const sharedTestEntry = typeof sharedAptitudeTestEntry === 'function' && sharedAptitudeTestEntry();
+    if (pageBase !== 'placement-registration.html' && !sharedTestEntry) {
       revealApp();
       window.location.replace('placement-registration.html');
       return;
@@ -893,14 +908,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       .then(() => {
         // Re-check after profile sync so a stale soft session cannot leave
         // unregistered students on the dashboard.
+        const sharedTestEntry = typeof sharedAptitudeTestEntry === 'function' && sharedAptitudeTestEntry();
         if (typeof studentNeedsPlacementRegistration === 'function'
           && studentNeedsPlacementRegistration()
-          && pageBase !== 'placement-registration.html') {
+          && pageBase !== 'placement-registration.html'
+          && !sharedTestEntry) {
           window.location.replace('placement-registration.html');
           return;
         }
-        const sharedTestEntry = typeof isSharedAptitudeTestUrl === 'function'
-          && isSharedAptitudeTestUrl(location.pathname + location.search);
         if (Auth.role() === 'student'
           && Auth._profileIncomplete
           && pageBase !== 'settings.html'
@@ -917,6 +932,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   animateCounters();
   // Defer badge refresh so it doesn't contend with the page's first data fetch.
   setTimeout(() => { NotificationInbox.refreshBadge?.(); }, 1800);
+  if (typeof sharedAptitudeTestEntry === 'function' && sharedAptitudeTestEntry() && hasSession) {
+    try { sessionStorage.removeItem('ph_auth_next'); } catch (_) { /* ignore */ }
+  }
+
   window.__phReady = true;
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();

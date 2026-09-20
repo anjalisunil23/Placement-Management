@@ -32,8 +32,14 @@ function showAesLoginError(msg) {
 }
 
 function storeAesNextFromUrl() {
-  const next = new URLSearchParams(location.search).get('next') || '';
+  const next = typeof readAuthNextTarget === 'function'
+    ? readAuthNextTarget()
+    : (new URLSearchParams(location.search).get('next') || '');
   if (!next) return;
+  if (typeof persistAuthNextTarget === 'function') {
+    persistAuthNextTarget(next);
+    return;
+  }
   document.cookie = `ph_auth_next=${encodeURIComponent(next)}; path=/; max-age=600; SameSite=Lax`;
 }
 
@@ -75,6 +81,14 @@ function postAesCallback(params) {
     input.value = String(value);
     form.appendChild(input);
   });
+  const next = typeof readAuthNextTarget === 'function' ? readAuthNextTarget() : '';
+  if (next) {
+    const nextInput = document.createElement('input');
+    nextInput.type = 'hidden';
+    nextInput.name = 'ph_auth_next';
+    nextInput.value = next;
+    form.appendChild(nextInput);
+  }
   document.body.appendChild(form);
   form.submit();
 }
@@ -179,6 +193,7 @@ async function bootPortalAesLogin() {
   const aesErr = params.get('aes_error');
 
   wirePortalAesLoginButtons();
+  storeAesNextFromUrl();
 
   if (typeof Auth !== 'undefined') {
     try {

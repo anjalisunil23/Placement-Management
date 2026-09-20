@@ -5438,6 +5438,9 @@
   async function applyView(requested) {
     const views = allowedViews();
     let view = requested || defaultView();
+    if (getSharedTestIdFromUrl() && access.canTake) {
+      view = 'take';
+    }
     const role = Auth.role();
     if (!access.canTake || role === 'placement_officer' || role === 'admin' || role === 'staff') {
       if (view === 'take' || !views.includes(view)) {
@@ -6442,7 +6445,9 @@
     if (access.canTake || access.canManage) renderTestList();
 
     setupViewNav();
-    const initialView = (location.hash || '').replace(/^#/, '') || defaultView();
+    const initialView = getSharedTestIdFromUrl()
+      ? 'take'
+      : ((location.hash || '').replace(/^#/, '') || defaultView());
     await applyView(initialView);
 
     window.addEventListener('hashchange', () => {
