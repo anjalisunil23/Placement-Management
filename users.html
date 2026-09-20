@@ -232,9 +232,16 @@ function formatVolunteerDate(raw) {
 
 async function loadVolunteers(force = false) {
   if (volunteersLoaded && !force) return volunteersList;
-  if (typeof AdminApi === 'undefined') return [];
-  const rows = await AdminApi.fetchVolunteers();
-  volunteersList = rows || [];
+  if (typeof AdminApi === 'undefined' || typeof AdminApi.fetchVolunteers !== 'function') {
+    volunteersLoaded = true;
+    return volunteersList;
+  }
+  try {
+    const rows = await AdminApi.fetchVolunteers();
+    volunteersList = rows || [];
+  } catch {
+    volunteersList = [];
+  }
   volunteersLoaded = true;
   return volunteersList;
 }

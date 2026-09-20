@@ -589,6 +589,35 @@ const AdminApi = {
     const res = await api('/admin/analytics/extended');
     return res.success ? res.data : null;
   },
+
+  mapVolunteerRow(row) {
+    if (!row) return null;
+    return {
+      id: this.id(row),
+      studentId: row.studentId || '',
+      userId: row.userId || null,
+      name: row.name || '',
+      registerNumber: row.registerNumber || '',
+      email: row.email || '',
+      classBatch: row.classBatch || '',
+      departmentId: row.departmentId || '',
+      departmentName: row.departmentName || '',
+      departmentCode: row.departmentCode || '',
+      assignedBy: row.assignedBy || '',
+      assignedByName: row.assignedByName || '',
+      assignedAt: row.assignedAt || '',
+      notes: row.notes || '',
+      status: row.status || 'active',
+    };
+  },
+
+  async fetchVolunteers(departmentId = '') {
+    const qs = departmentId ? `?departmentId=${encodeURIComponent(departmentId)}` : '';
+    const res = await api('/admin/volunteers' + qs);
+    if (!res?.success) return null;
+    const rows = Array.isArray(res.data) ? res.data : [];
+    return rows.map(r => this.mapVolunteerRow(r)).filter(Boolean);
+  },
 };
 
 const ReportCenter = {
@@ -688,34 +717,5 @@ const ReportCenter = {
       selection: 'Selection Count',
     };
     return map[type] || type;
-  },
-
-  mapVolunteerRow(row) {
-    if (!row) return null;
-    return {
-      id: AdminApi.id(row),
-      studentId: row.studentId || '',
-      userId: row.userId || null,
-      name: row.name || '',
-      registerNumber: row.registerNumber || '',
-      email: row.email || '',
-      classBatch: row.classBatch || '',
-      departmentId: row.departmentId || '',
-      departmentName: row.departmentName || '',
-      departmentCode: row.departmentCode || '',
-      assignedBy: row.assignedBy || '',
-      assignedByName: row.assignedByName || '',
-      assignedAt: row.assignedAt || '',
-      notes: row.notes || '',
-      status: row.status || 'active',
-    };
-  },
-
-  async fetchVolunteers(departmentId = '') {
-    const qs = departmentId ? `?departmentId=${encodeURIComponent(departmentId)}` : '';
-    const res = await api('/admin/volunteers' + qs);
-    if (!res?.success) return null;
-    const rows = Array.isArray(res.data) ? res.data : [];
-    return rows.map(r => AdminApi.mapVolunteerRow(r)).filter(Boolean);
   },
 };
