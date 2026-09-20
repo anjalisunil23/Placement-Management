@@ -84,7 +84,7 @@ final class AptitudeAccessService
     public static function sanitizeContestFields(array $user, array $data): array
     {
         if (!self::canManageContests($user)) {
-            unset($data['contestType'], $data['contestWeekday'], $data['contestMonthDay']);
+            unset($data['contestType'], $data['contestWeekday'], $data['contestMonthDay'], $data['contestStartTime'], $data['contestEndTime']);
 
             return $data;
         }
@@ -92,12 +92,16 @@ final class AptitudeAccessService
         $data['contestType'] = $type;
         if ($type === 'weekly') {
             $data['contestWeekday'] = max(1, min(7, (int) ($data['contestWeekday'] ?? 1)));
+            $data['contestStartTime'] = AptitudeTestModel::normalizeContestTime((string) ($data['contestStartTime'] ?? ''), '00:00');
+            $data['contestEndTime'] = AptitudeTestModel::normalizeContestTime((string) ($data['contestEndTime'] ?? ''), '23:59');
             unset($data['contestMonthDay']);
         } elseif ($type === 'monthly') {
             $data['contestMonthDay'] = max(1, min(28, (int) ($data['contestMonthDay'] ?? 1)));
+            $data['contestStartTime'] = AptitudeTestModel::normalizeContestTime((string) ($data['contestStartTime'] ?? ''), '00:00');
+            $data['contestEndTime'] = AptitudeTestModel::normalizeContestTime((string) ($data['contestEndTime'] ?? ''), '23:59');
             unset($data['contestWeekday']);
         } else {
-            unset($data['contestWeekday'], $data['contestMonthDay']);
+            unset($data['contestWeekday'], $data['contestMonthDay'], $data['contestStartTime'], $data['contestEndTime']);
         }
 
         return $data;
@@ -551,6 +555,8 @@ final class AptitudeAccessService
                     // Force empty result rather than leaking another class.
                     $out['class'] = '__unauthorized_class__';
                 }
+            } elseif (count($batches) === 1) {
+                $out['class'] = $batches[0];
             }
             return $out;
         }
@@ -577,7 +583,7 @@ final class AptitudeAccessService
     {
         $raw = strtolower(trim((string) ($filters['resultType'] ?? '')));
 
-        return in_array($raw, ['tests', 'contests'], true) ? $raw : '';
+        return in_array($raw, ['tests', 'contests', 'company'], true) ? $raw : '';
     }
 
     /**

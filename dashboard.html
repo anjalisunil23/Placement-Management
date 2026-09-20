@@ -104,6 +104,24 @@
       <!-- ===== PLACEMENT OFFICER / STAFF: department hiring overview ===== -->
       <div data-roles="placement_officer,staff" id="hiringOverviewRoot">
 
+        <!-- Placement officer: department aptitude manage + progress -->
+        <div class="card-surface mb-3" data-roles="placement_officer" id="officerAptCard">
+          <div class="p-3 p-md-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div class="d-flex align-items-start gap-3">
+              <div class="ic flex-shrink-0" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-lightning-charge-fill"></i></div>
+              <div>
+                <h6 class="fw-bold mb-1">Mock · Aptitude</h6>
+                <p class="small text-muted-2 mb-0" id="officerAptSub">Manage tests, contests, and question bank for your department.</p>
+              </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-3">
+              <div class="text-center px-2"><div class="small text-muted-2">Dept. students</div><strong id="officerAptDeptCount">—</strong></div>
+              <a href="mock-aptitude.html#progress" class="btn btn-outline-primary btn-sm"><i class="bi bi-bar-chart-line me-1"></i>Progress</a>
+              <a href="mock-aptitude.html#manage" class="btn btn-primary btn-sm"><i class="bi bi-sliders me-1"></i>Manage</a>
+            </div>
+          </div>
+        </div>
+
         <!-- Staff: aptitude practice + assigned-class progress -->
         <div class="card-surface mb-3" data-roles="staff" id="staffAptCard">
           <div class="p-3 p-md-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
@@ -111,13 +129,12 @@
               <div class="ic flex-shrink-0" style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)"><i class="bi bi-lightning-charge-fill"></i></div>
               <div>
                 <h6 class="fw-bold mb-1">Mock · Aptitude</h6>
-                <p class="small text-muted-2 mb-0" id="staffAptSub">Monitor class progress and manage aptitude tests for your students.</p>
+                <p class="small text-muted-2 mb-0" id="staffAptSub">View aptitude results for students in your assigned class only.</p>
               </div>
             </div>
             <div class="d-flex flex-wrap align-items-center gap-3">
               <div class="text-center px-2"><div class="small text-muted-2">Class students</div><strong id="staffAptClassCount">—</strong></div>
-              <a href="mock-aptitude.html#progress" class="btn btn-outline-primary btn-sm"><i class="bi bi-bar-chart-line me-1"></i>Class progress</a>
-              <a href="mock-aptitude.html#manage" class="btn btn-primary btn-sm"><i class="bi bi-sliders me-1"></i>Manage</a>
+              <a href="mock-aptitude.html#progress" class="btn btn-primary btn-sm"><i class="bi bi-bar-chart-line me-1"></i>Class results</a>
             </div>
           </div>
         </div>
@@ -760,6 +777,27 @@ if (role === 'placement_officer' || role === 'staff') {
   });
 }
 
+if (role === 'placement_officer') {
+  (async () => {
+    const u = Auth.user() || {};
+    const deptName = String(u.departmentName || u.department || '').trim();
+    const subEl = document.getElementById('officerAptSub');
+    const countEl = document.getElementById('officerAptDeptCount');
+    if (subEl) {
+      subEl.textContent = deptName
+        ? `Same aptitude tools as admin — scoped to ${deptName} students and tests.`
+        : 'Manage aptitude tests, contests, and question bank for your department.';
+    }
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/progress').catch(() => null);
+      if (countEl) countEl.textContent = String(res?.data?.summary?.students ?? '—');
+    } else if (typeof UserRegistry !== 'undefined' && deptName) {
+      const count = UserRegistry.all().filter((s) => s.role === 'student' && String(s.department || '') === deptName).length;
+      if (countEl) countEl.textContent = String(count);
+    }
+  })();
+}
+
 if (role === 'staff') {
   (async () => {
     async function paintStaffAptitude() {
@@ -771,11 +809,11 @@ if (role === 'staff') {
       const classEl = document.getElementById('staffAptClassCount');
 
       if (!batches.length) {
-        if (subEl) subEl.textContent = 'No class assigned yet. Assign a class to manage aptitude tests and view student progress.';
+        if (subEl) subEl.textContent = 'No class assigned yet. Assign a class to view aptitude results for your students.';
         if (classEl) classEl.textContent = '—';
       } else {
         const batchLabel = batches.join(', ');
-        if (subEl) subEl.textContent = `Class ${batchLabel}: monitor student progress and manage aptitude tests.`;
+        if (subEl) subEl.textContent = `Class ${batchLabel}: view aptitude results for your students only.`;
         if (Auth.hasRealAuth() && !Auth.isDemo()) {
           const res = await api('/aptitude/progress').catch(() => null);
           if (classEl) classEl.textContent = String(res?.data?.summary?.students ?? '—');

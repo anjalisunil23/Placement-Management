@@ -1013,6 +1013,17 @@ final class AptitudeService
         } else {
             $data['contestMonthDay'] = max(1, min(28, (int) ($patch['contestMonthDay'] ?? $test['contestMonthDay'] ?? 1)));
         }
+        if (array_key_exists('contestStartTime', $patch)) {
+            $data['contestStartTime'] = AptitudeTestModel::normalizeContestTime((string) $patch['contestStartTime'], '00:00');
+        }
+        if (array_key_exists('contestEndTime', $patch)) {
+            $data['contestEndTime'] = AptitudeTestModel::normalizeContestTime((string) $patch['contestEndTime'], '23:59');
+        }
+        $merged = array_merge($test, $data);
+        $probe = AptitudeTestModel::contestDayWindow(new \DateTimeImmutable('today'), $merged);
+        if ($probe['end'] <= $probe['start']) {
+            Response::error('Contest end time must be after the start time.', 422);
+        }
         if (!$this->tests->updateTest($id, $data)) {
             Response::error('Could not update contest schedule.', 500);
         }
@@ -1221,6 +1232,14 @@ final class AptitudeService
             }
 
             $profile = $profileCache[$uid] ?? $this->summarizeSubjectCached($uid, $group, null, false);
+            if ($role === 'staff' || ($viewer['role'] ?? '') === 'staff') {
+                $staffCtx = StaffContext::resolve($viewer);
+                $assigned = StaffContext::assignedClassBatches($staffCtx);
+                $studentClass = (string) ($profile['classBatch'] ?? $finalAttempt['classBatch'] ?? '');
+                if ($assigned === [] || !StaffContext::classBatchMatchesAssigned($studentClass, $assigned)) {
+                    continue;
+                }
+            }
             if (($profile['userType'] ?? '') !== 'student') {
                 if ($resultType === 'company' || in_array($role, ['staff', 'placement_officer'], true)) {
                     continue;
@@ -1384,6 +1403,7 @@ final class AptitudeService
 
         if ($role === 'staff') {
             $ctx = StaffContext::resolve($viewer);
+            $batchSet = [];
             foreach (StaffContext::assignedClassBatches($ctx) as $assignedBatch) {
                 $assignedBatch = trim((string) $assignedBatch);
                 if ($assignedBatch !== '') {

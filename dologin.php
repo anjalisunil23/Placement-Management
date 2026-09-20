@@ -75,15 +75,39 @@ try {
         }
     }
 
-    // Only allow same-site app pages (no open redirect).
-    $next = preg_replace('/[#?].*$/', '', $next) ?? '';
-    $next = ltrim(str_replace('\\', '/', $next), '/');
+    // Only allow same-site app pages (no open redirect). Preserve ?query for deep links (e.g. shared test URLs).
+    $rawNext = ltrim(str_replace('\\', '/', $next), '/');
+    $hash = '';
+    if (($hashPos = strpos($rawNext, '#')) !== false) {
+        $hash = substr($rawNext, $hashPos);
+        $rawNext = substr($rawNext, 0, $hashPos);
+    }
+    $query = '';
+    if (($qPos = strpos($rawNext, '?')) !== false) {
+        $query = substr($rawNext, $qPos);
+        $rawNext = substr($rawNext, 0, $qPos);
+    }
+    $next = $rawNext;
     if ($next === '' || str_contains($next, '..') || str_contains($next, '://')) {
         $next = ltrim($target, '/');
+        $query = '';
+        $hash = '';
     }
     if (!preg_match('/^[A-Za-z0-9._\/-]+\.html?$/i', $next) && !preg_match('/^[A-Za-z0-9._\/-]+$/i', $next)) {
         $next = 'dashboard.html';
+        $query = '';
+        $hash = '';
     }
+    if ($query !== '' && !preg_match('/^\?[A-Za-z0-9._%-=&]+$/', $query)) {
+        $query = '';
+    }
+    if ($hash !== '' && !preg_match('/^#[A-Za-z0-9._%-]+$/', $hash)) {
+        $hash = '';
+    }
+    if ($query !== '' && str_contains($query, 'test=') && str_ends_with($next, 'mock-aptitude.html') && $hash === '') {
+        $hash = '#take';
+    }
+    $next = $next . $query . $hash;
 
     // First /auth/me after AES login stays local-only (no placement API round-trips).
     $_SESSION['ph_auth_fast_boot'] = 1;

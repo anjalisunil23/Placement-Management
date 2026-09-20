@@ -97,6 +97,59 @@ class AptitudeTestModel extends BaseModel
         return self::contestStatus($test, $now) === 'ACTIVE';
     }
 
+    public static function normalizeContestTime(string $raw, string $default = '00:00'): string
+    {
+        $raw = trim($raw);
+        if (preg_match('/^(\d{1,2}):(\d{2})$/', $raw, $m)) {
+            $h = (int) $m[1];
+            $min = (int) $m[2];
+            if ($h >= 0 && $h <= 23 && $min >= 0 && $min <= 59) {
+                return sprintf('%02d:%02d', $h, $min);
+            }
+        }
+
+        return $default;
+    }
+
+    /**
+     * Start/end timestamps for a contest occurrence on a calendar day.
+     *
+     * @param array<string, mixed> $test
+     * @return array{start:\DateTimeImmutable,end:\DateTimeImmutable}
+     */
+    public static function contestDayWindow(\DateTimeImmutable $occurrenceDate, array $test): array
+    {
+        $startTime = self::normalizeContestTime((string) ($test['contestStartTime'] ?? ''), '00:00');
+        $endTime = self::normalizeContestTime((string) ($test['contestEndTime'] ?? ''), '23:59');
+        [$sh, $sm] = array_map('intval', explode(':', $startTime));
+        [$eh, $em] = array_map('intval', explode(':', $endTime));
+        $day = $occurrenceDate->setTime(0, 0, 0);
+        $start = $day->setTime($sh, $sm, 0);
+        $end = $day->setTime($eh, $em, 59);
+        if ($end <= $start) {
+            $end = $start->modify('+1 hour');
+        }
+
+        return ['start' => $start, 'end' => $end];
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    private static function contestTimeLabel(array $test): string
+    {
+        $start = trim((string) ($test['contestStartTime'] ?? ''));
+        $end = trim((string) ($test['contestEndTime'] ?? ''));
+        if ($start === '' && $end === '') {
+            return '';
+        }
+
+        return ' · '
+            . self::normalizeContestTime($start, '00:00')
+            . '–'
+            . self::normalizeContestTime($end, '23:59');
+    }
+
     /**
      * @param array<string, mixed> $test
      */
@@ -121,14 +174,24 @@ class AptitudeTestModel extends BaseModel
         return $now->setTime(0, 0, 0)->modify("-{$daysSince} days");
     }
 
-    private static function nextWeeklyOccurrenceStart(int $want, \DateTimeImmutable $now): \DateTimeImmutable
+    /**
+     * @param array<string, mixed> $test
+     */
+    private static function nextWeeklyOccurrenceStart(int $want, \DateTimeImmutable $now, array $test = []): \DateTimeImmutable
     {
         $today = (int) $now->format('N');
         $daysUntil = ($want - $today + 7) % 7;
         if ($daysUntil === 0) {
-            $end = $now->setTime(23, 59, 59);
-            if ($now > $end) {
-                $daysUntil = 7;
+            if ($test !== []) {
+                $window = self::contestDayWindow($now->setTime(0, 0, 0), $test);
+                if ($now > $window['end']) {
+                    $daysUntil = 7;
+                }
+            } else {
+                $end = $now->setTime(23, 59, 59);
+                if ($now > $end) {
+                    $daysUntil = 7;
+                }
             }
         }
 
@@ -151,12 +214,27 @@ class AptitudeTestModel extends BaseModel
         return new \DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $want));
     }
 
-    private static function nextMonthlyOccurrenceStart(int $want, \DateTimeImmutable $now): \DateTimeImmutable
+    /**
+     * @param array<string, mixed> $test
+     */
+    private static function nextMonthlyOccurrenceStart(int $want, \DateTimeImmutable $now, array $test = []): \DateTimeImmutable
     {
         $year = (int) $now->format('Y');
         $month = (int) $now->format('n');
         $dom = (int) $now->format('j');
-        if ($dom > $want) {
+        if ($dom === $want && $test !== []) {
+            $occ = new \DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $want));
+            $window = self::contestDayWindow($occ, $test);
+            if ($now > $window['end']) {
+                $month++;
+                if ($month > 12) {
+                    $month = 1;
+                    $year++;
+                }
+            } else {
+                return $occ;
+            }
+        } elseif ($dom > $want) {
             $month++;
             if ($month > 12) {
                 $month = 1;
@@ -189,9 +267,13 @@ class AptitudeTestModel extends BaseModel
             }
             $today = (int) $now->format('N');
             if ($today === $want) {
-                $end = $now->setTime(23, 59, 59);
+                $occ = self::lastWeeklyOccurrenceStart($want, $now);
+                $window = self::contestDayWindow($occ, $test);
+                if ($now < $window['start']) {
+                    return 'UPCOMING';
+                }
 
-                return $now <= $end ? 'ACTIVE' : 'COMPLETED';
+                return $now <= $window['end'] ? 'ACTIVE' : 'COMPLETED';
             }
             $daysSince = ($today - $want + 7) % 7;
             if ($daysSince >= 1 && $daysSince <= 3) {
@@ -211,9 +293,13 @@ class AptitudeTestModel extends BaseModel
         }
         $todayDom = (int) $now->format('j');
         if ($todayDom === $want) {
-            $end = $now->setTime(23, 59, 59);
+            $occ = self::lastMonthlyOccurrenceStart($want, $now);
+            $window = self::contestDayWindow($occ, $test);
+            if ($now < $window['start']) {
+                return 'UPCOMING';
+            }
 
-            return $now <= $end ? 'ACTIVE' : 'COMPLETED';
+            return $now <= $window['end'] ? 'ACTIVE' : 'COMPLETED';
         }
         if ($todayDom > $want) {
             $lastOcc = self::lastMonthlyOccurrenceStart($want, $now);
@@ -274,14 +360,13 @@ class AptitudeTestModel extends BaseModel
                 return ['start' => null, 'end' => null];
             }
             $occurrence = $status === 'UPCOMING'
-                ? self::nextWeeklyOccurrenceStart($want, $now)
+                ? self::nextWeeklyOccurrenceStart($want, $now, $test)
                 : self::lastWeeklyOccurrenceStart($want, $now);
-            $start = $occurrence->setTime(0, 0, 0);
-            $end = $occurrence->setTime(23, 59, 59);
+            $window = self::contestDayWindow($occurrence, $test);
 
             return [
-                'start' => $start->format(DATE_ATOM),
-                'end' => $end->format(DATE_ATOM),
+                'start' => $window['start']->format(DATE_ATOM),
+                'end' => $window['end']->format(DATE_ATOM),
             ];
         }
         $want = (int) ($test['contestMonthDay'] ?? 0);
@@ -290,17 +375,16 @@ class AptitudeTestModel extends BaseModel
         }
         try {
             $occurrence = $status === 'UPCOMING'
-                ? self::nextMonthlyOccurrenceStart($want, $now)
+                ? self::nextMonthlyOccurrenceStart($want, $now, $test)
                 : self::lastMonthlyOccurrenceStart($want, $now);
         } catch (\Throwable) {
             return ['start' => null, 'end' => null];
         }
-        $start = $occurrence->setTime(0, 0, 0);
-        $end = $occurrence->setTime(23, 59, 59);
+        $window = self::contestDayWindow($occurrence, $test);
 
         return [
-            'start' => $start->format(DATE_ATOM),
-            'end' => $end->format(DATE_ATOM),
+            'start' => $window['start']->format(DATE_ATOM),
+            'end' => $window['end']->format(DATE_ATOM),
         ];
     }
 
@@ -314,12 +398,15 @@ class AptitudeTestModel extends BaseModel
             $days = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday', 7 => 'Sunday'];
             $day = (int) ($test['contestWeekday'] ?? 0);
 
-            return $day >= 1 && $day <= 7 ? 'Weekly · ' . $days[$day] : 'Weekly contest';
+            $times = self::contestTimeLabel($test);
+
+            return $day >= 1 && $day <= 7 ? 'Weekly · ' . $days[$day] . $times : 'Weekly contest';
         }
         if ($type === 'monthly') {
             $dom = (int) ($test['contestMonthDay'] ?? 0);
+            $times = self::contestTimeLabel($test);
 
-            return $dom >= 1 && $dom <= 28 ? 'Monthly · day ' . $dom : 'Monthly contest';
+            return $dom >= 1 && $dom <= 28 ? 'Monthly · day ' . $dom . $times : 'Monthly contest';
         }
 
         return '';
@@ -931,8 +1018,12 @@ class AptitudeTestModel extends BaseModel
         }
         if ($contestType === 'weekly') {
             $payload['contestWeekday'] = max(1, min(7, (int) ($data['contestWeekday'] ?? 1)));
+            $payload['contestStartTime'] = self::normalizeContestTime((string) ($data['contestStartTime'] ?? ''), '00:00');
+            $payload['contestEndTime'] = self::normalizeContestTime((string) ($data['contestEndTime'] ?? ''), '23:59');
         } elseif ($contestType === 'monthly') {
             $payload['contestMonthDay'] = max(1, min(28, (int) ($data['contestMonthDay'] ?? 1)));
+            $payload['contestStartTime'] = self::normalizeContestTime((string) ($data['contestStartTime'] ?? ''), '00:00');
+            $payload['contestEndTime'] = self::normalizeContestTime((string) ($data['contestEndTime'] ?? ''), '23:59');
         }
         $deptOid = Security::toObjectId((string) ($data['departmentId'] ?? ''));
         if ($deptOid !== null) {
@@ -1092,6 +1183,12 @@ class AptitudeTestModel extends BaseModel
             'contestType' => self::normalizeContestType((string) ($test['contestType'] ?? 'none')),
             'contestWeekday' => isset($test['contestWeekday']) ? (int) $test['contestWeekday'] : null,
             'contestMonthDay' => isset($test['contestMonthDay']) ? (int) $test['contestMonthDay'] : null,
+            'contestStartTime' => trim((string) ($test['contestStartTime'] ?? '')) !== ''
+                ? self::normalizeContestTime((string) $test['contestStartTime'], '00:00')
+                : null,
+            'contestEndTime' => trim((string) ($test['contestEndTime'] ?? '')) !== ''
+                ? self::normalizeContestTime((string) $test['contestEndTime'], '23:59')
+                : null,
             'contestScheduleLabel' => self::contestScheduleLabel($test),
             'contestOpen' => self::isContestOpen($test),
             'contestStatus' => self::contestStatus($test),

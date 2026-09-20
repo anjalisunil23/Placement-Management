@@ -721,10 +721,9 @@ const Auth = {
       return 'placement-registration.html';
     }
     if (this.role() === 'student' && this._profileIncomplete) {
-      const raw = (next || '').trim();
-      const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
-      if (page === 'settings.html') return 'settings.html';
-      return 'settings.html';
+      if (!isSharedAptitudeTestUrl(next)) {
+        return 'settings.html';
+      }
     }
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
@@ -1133,8 +1132,11 @@ const Auth = {
           && studentNeedsPlacementRegistration();
         const onPolicyPage = page === 'placement-registration.html';
         const onSettingsPage = page === 'settings.html';
+        const onSharedTest = typeof isSharedAptitudeTestUrl === 'function'
+          && (isSharedAptitudeTestUrl(page + (typeof location !== 'undefined' ? location.search : ''))
+            || isSharedAptitudeTestUrl(typeof location !== 'undefined' ? location.pathname + location.search : ''));
         try {
-          if (!sessionStorage.getItem('ph_missing_fields_reminded') && !onPolicyPage && !onSettingsPage) {
+          if (!sessionStorage.getItem('ph_missing_fields_reminded') && !onPolicyPage && !onSettingsPage && !onSharedTest) {
             sessionStorage.setItem('ph_missing_fields_reminded', '1');
             const names = p.missingFields.slice(0, 5).join(', ');
             const extra = p.missingFields.length > 5 ? ` and ${p.missingFields.length - 5} more` : '';
@@ -1146,6 +1148,7 @@ const Auth = {
           && !awaitingPolicy
           && !onPolicyPage
           && !onSettingsPage
+          && !onSharedTest
           && page
         ) {
           window.location.replace('settings.html');
@@ -5444,6 +5447,20 @@ function userStatusBadge(status, blocked) {
   };
   const [cls, label] = map[status] || ['muted', status];
   return `<span class="badge-soft ${cls}">${label}</span>`;
+}
+
+/** True when URL targets a shared aptitude test link (mock-aptitude.html?test=…). */
+function isSharedAptitudeTestUrl(raw) {
+  try {
+    const str = String(raw || '').trim();
+    if (!str) return false;
+    const base = typeof location !== 'undefined' ? location.origin : 'http://localhost';
+    const u = /^https?:\/\//i.test(str) ? new URL(str) : new URL(str.startsWith('/') ? str : `/${str}`, base);
+    const page = u.pathname.replace(/^\//, '').split('/').pop() || '';
+    return page === 'mock-aptitude.html' && !!u.searchParams.get('test');
+  } catch {
+    return false;
+  }
 }
 
 function authReentryUrl(nextPage, roleHint) {

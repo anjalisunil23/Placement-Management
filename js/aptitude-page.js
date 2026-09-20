@@ -14,6 +14,46 @@
     { value: 6, label: 'Saturday' },
     { value: 7, label: 'Sunday' },
   ];
+  const DEFAULT_CONTEST_START_TIME = '09:00';
+  const DEFAULT_CONTEST_END_TIME = '18:00';
+
+  function normalizeContestTimeClient(raw, fallback) {
+    const m = String(raw || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return fallback;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h < 0 || h > 23 || min < 0 || min > 59) return fallback;
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+
+  function contestTimesClient(test) {
+    return {
+      start: normalizeContestTimeClient(test?.contestStartTime, '00:00'),
+      end: normalizeContestTimeClient(test?.contestEndTime, '23:59'),
+    };
+  }
+
+  function applyContestTimesToDate(date, test) {
+    const { start, end } = contestTimesClient(test);
+    const [sh, sm] = start.split(':').map(Number);
+    const [eh, em] = end.split(':').map(Number);
+    const startDt = new Date(date);
+    startDt.setHours(sh, sm, 0, 0);
+    const endDt = new Date(date);
+    endDt.setHours(eh, em, 59, 999);
+    if (endDt <= startDt) {
+      endDt.setTime(startDt.getTime() + 60 * 60 * 1000);
+    }
+    return { start: startDt, end: endDt };
+  }
+
+  function contestTimeLabelClient(test) {
+    const startRaw = String(test?.contestStartTime || '').trim();
+    const endRaw = String(test?.contestEndTime || '').trim();
+    if (!startRaw && !endRaw) return '';
+    const { start, end } = contestTimesClient(test);
+    return ` · ${start}–${end}`;
+  }
 
   const DEMO_TESTS = [
     {
@@ -384,9 +424,63 @@
 
   function staffAssignedBatches() {
     if (Auth.role() !== 'staff') return [];
+    const fromScope = access.scope?.assignedClassBatches;
+    if (Array.isArray(fromScope) && fromScope.length) return fromScope;
     if (typeof staffClassInchargeBatches === 'function') return staffClassInchargeBatches();
     const u = Auth.user() || {};
     return Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+  }
+
+  function staffNeedsClassFilter() {
+    return Auth.role() === 'staff';
+  }
+
+  function hasStaffDirectoryLookup() {
+    return !!(dirFilterBranch || dirFilterBatch);
+  }
+
+  function applyRoleAccess(base = access) {
+    const role = Auth.role();
+    const next = { ...base };
+    if (role === 'placement_officer') {
+      next.canTake = false;
+      next.canManage = typeof Auth.canManageAptitudeMocks === 'function' && Auth.canManageAptitudeMocks();
+      next.canViewDirectory = typeof Auth.canViewAptitudeDirectory === 'function' && Auth.canViewAptitudeDirectory();
+    } else if (role === 'admin') {
+      next.canTake = false;
+      next.canManage = typeof Auth.canManageAptitudeMocks === 'function' && Auth.canManageAptitudeMocks();
+      next.canViewDirectory = typeof Auth.canViewAptitudeDirectory === 'function' && Auth.canViewAptitudeDirectory();
+    } else if (role === 'staff') {
+      next.canTake = false;
+      next.canManage = false;
+      next.canViewDirectory = typeof Auth.canViewAptitudeDirectory === 'function' && Auth.canViewAptitudeDirectory();
+    }
+    return next;
+  }
+
+  function updateManageScopeHint(scope = access.scope || {}) {
+    const hint = document.getElementById('manageScopeHint');
+    if (!hint) return;
+    const role = Auth.role();
+    if (role === 'placement_officer') {
+      const name = resolveDepartmentLabel(
+        scope.departmentId || '',
+        scope.departmentName || '',
+        Auth.user()?.department || ''
+      );
+      hint.textContent = name
+        ? `Same tools as admin — scoped to ${name} students and tests only.`
+        : (scope.label || 'No department assigned — contact admin to manage aptitude tests.');
+      hint.classList.remove('d-none');
+      return;
+    }
+    if (role === 'admin') {
+      hint.textContent = 'Institution-wide aptitude management — all departments.';
+      hint.classList.remove('d-none');
+      return;
+    }
+    hint.textContent = '';
+    hint.classList.add('d-none');
   }
 
   function updateDirScopeHint(scope = access.scope || {}) {
@@ -406,9 +500,9 @@
       hint.classList.remove('d-none');
       return;
     }
-    if (role === 'placement_officer' && (scope.departmentName || scope.departmentId)) {
+    if (role === 'placement_officer') {
       const name = resolveDepartmentLabel(scope.departmentId || '', scope.departmentName || '', '');
-      hint.textContent = name ? `Department scope: ${name}.` : '';
+      hint.textContent = scope.label || (name ? `Department scope: ${name}.` : 'No department assigned.');
       hint.classList.toggle('d-none', !hint.textContent);
       return;
     }
@@ -830,11 +924,14 @@
     document.getElementById('dirStats').innerHTML = '';
 
     const role = Auth.role();
-    const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+    const staffBatches = staffAssignedBatches();
+    const emptyMsg = role === 'staff' && !staffBatches.length
       ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
-      : (progressPanel === 'company'
-        ? 'No company test results in your authorized scope yet.'
-        : 'No test results in your authorized scope yet.');
+      : (role === 'staff' && !hasStaffDirectoryLookup()
+        ? 'Select your class batch above to view aptitude results for your students.'
+        : (progressPanel === 'company'
+          ? 'No company test results in your authorized scope yet.'
+          : 'No test results in your authorized scope yet.'));
 
     const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
@@ -972,14 +1069,27 @@
     if (!data) return;
 
     applyDirDepartmentFromData(data.departments || []);
-    fillDirSelect(document.getElementById('fBranch'), data.branches || [], 'All branches', dirFilterBranch);
+    let branches = data.branches || [];
+    let batches = data.batches || [];
+    if (role === 'staff') {
+      const assigned = staffAssignedBatches();
+      batches = assigned.length ? assigned : [];
+      if (assigned.length === 1 && !dirFilterBatch) dirFilterBatch = assigned[0];
+    }
+    fillDirSelect(document.getElementById('fBranch'), branches, 'All branches', dirFilterBranch);
     dirFilterBranch = document.getElementById('fBranch')?.value || '';
-    fillDirSelect(document.getElementById('fBatch'), data.batches || [], 'All batches', dirFilterBatch);
+    const batchLabel = role === 'staff'
+      ? (batches.length > 1 ? 'All my classes' : 'Select class')
+      : 'All batches';
+    fillDirSelect(document.getElementById('fBatch'), batches, batchLabel, dirFilterBatch);
     dirFilterBatch = document.getElementById('fBatch')?.value || '';
     fillDirTypeSelect(data.types || []);
 
     const batchEl = document.getElementById('fBatch');
-    if (batchEl) batchEl.disabled = !(data.batches || []).length;
+    if (batchEl) {
+      batchEl.disabled = role === 'staff' ? !batches.length : !batches.length;
+      batchEl.required = role === 'staff' && batches.length > 0;
+    }
     document.getElementById('fTypeWrap')?.classList.toggle('d-none', role !== 'admin');
   }
 
@@ -2000,12 +2110,19 @@
     return d;
   }
 
-  function nextWeeklyOccurrenceStart(want, now = new Date()) {
+  function nextWeeklyOccurrenceStart(want, now = new Date(), test = null) {
     const today = now.getDay() === 0 ? 7 : now.getDay();
     let daysUntil = (want - today + 7) % 7;
     if (daysUntil === 0) {
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-      if (now > end) daysUntil = 7;
+      if (test) {
+        const occ = new Date(now);
+        occ.setHours(0, 0, 0, 0);
+        const { end } = applyContestTimesToDate(occ, test);
+        if (now > end) daysUntil = 7;
+      } else {
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        if (now > end) daysUntil = 7;
+      }
     }
     const d = new Date(now);
     d.setHours(0, 0, 0, 0);
@@ -2027,11 +2144,23 @@
     return new Date(year, month, want, 0, 0, 0);
   }
 
-  function nextMonthlyOccurrenceStart(want, now = new Date()) {
+  function nextMonthlyOccurrenceStart(want, now = new Date(), test = null) {
     const dom = now.getDate();
     let year = now.getFullYear();
     let month = now.getMonth();
-    if (dom > want) {
+    if (dom === want && test) {
+      const occ = new Date(year, month, want, 0, 0, 0);
+      const { end } = applyContestTimesToDate(occ, test);
+      if (now > end) {
+        month += 1;
+        if (month > 11) {
+          month = 0;
+          year += 1;
+        }
+      } else {
+        return occ;
+      }
+    } else if (dom > want) {
       month += 1;
       if (month > 11) {
         month = 0;
@@ -2041,10 +2170,12 @@
     return new Date(year, month, want, 0, 0, 0);
   }
 
-  function contestOccurrenceWindowFromStart(start) {
-    const end = new Date(start);
-    end.setHours(23, 59, 59, 999);
-    return { start: start.toISOString(), end: end.toISOString() };
+  function contestOccurrenceWindowFromStart(start, test = null) {
+    const window = test ? applyContestTimesToDate(start, test) : {
+      start,
+      end: new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59, 999),
+    };
+    return { start: window.start.toISOString(), end: window.end.toISOString() };
   }
 
   function contestStatusClient(test) {
@@ -2059,7 +2190,9 @@
       if (!Number.isFinite(want) || want < 1 || want > 7) return 'UPCOMING';
       const today = now.getDay() === 0 ? 7 : now.getDay();
       if (today === want) {
-        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        const occ = lastWeeklyOccurrenceStart(want, now);
+        const { start, end } = applyContestTimesToDate(occ, test);
+        if (now < start) return 'UPCOMING';
         return now <= end ? 'ACTIVE' : 'COMPLETED';
       }
       const daysSince = (today - want + 7) % 7;
@@ -2075,7 +2208,9 @@
       if (!Number.isFinite(want) || want < 1 || want > 28) return 'UPCOMING';
       const dom = now.getDate();
       if (dom === want) {
-        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        const occ = lastMonthlyOccurrenceStart(want, now);
+        const { start, end } = applyContestTimesToDate(occ, test);
+        if (now < start) return 'UPCOMING';
         return now <= end ? 'ACTIVE' : 'COMPLETED';
       }
       if (dom > want) {
@@ -2097,17 +2232,17 @@
       const want = Number(test?.contestWeekday);
       if (!Number.isFinite(want)) return { start: null, end: null };
       const start = status === 'UPCOMING'
-        ? nextWeeklyOccurrenceStart(want, now)
+        ? nextWeeklyOccurrenceStart(want, now, test)
         : lastWeeklyOccurrenceStart(want, now);
-      return contestOccurrenceWindowFromStart(start);
+      return contestOccurrenceWindowFromStart(start, test);
     }
     if (type === 'monthly') {
       const want = Number(test?.contestMonthDay);
       if (!Number.isFinite(want)) return { start: null, end: null };
       const start = status === 'UPCOMING'
-        ? nextMonthlyOccurrenceStart(want, now)
+        ? nextMonthlyOccurrenceStart(want, now, test)
         : lastMonthlyOccurrenceStart(want, now);
-      return contestOccurrenceWindowFromStart(start);
+      return contestOccurrenceWindowFromStart(start, test);
     }
     return { start: null, end: null };
   }
@@ -2221,10 +2356,32 @@
     }
   }
 
+  function contestScheduleTimesValid(test, patch = {}) {
+    const merged = { ...test, ...patch };
+    const occ = new Date();
+    occ.setHours(0, 0, 0, 0);
+    const { start, end } = applyContestTimesToDate(occ, merged);
+    return end > start;
+  }
+
   async function saveContestSchedule(id, field, value) {
-    if (!id || (field !== 'contestWeekday' && field !== 'contestMonthDay')) return;
-    const n = Number(value);
-    if (!Number.isFinite(n)) return;
+    const scheduleFields = ['contestWeekday', 'contestMonthDay', 'contestStartTime', 'contestEndTime'];
+    if (!id || !scheduleFields.includes(field)) return;
+    const test = tests.find((t) => String(t.id) === String(id))
+      || loadDemoTestsStore().find((t) => String(t.id) === String(id))
+      || null;
+    const patch = { [field]: value };
+    if (field === 'contestWeekday' || field === 'contestMonthDay') {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return;
+      patch[field] = n;
+    } else {
+      patch[field] = normalizeContestTimeClient(value, field === 'contestStartTime' ? '00:00' : '23:59');
+    }
+    if (test && !contestScheduleTimesValid(test, patch)) {
+      toast('Contest end time must be after the start time.', 'error');
+      return;
+    }
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     if (!live) {
       if (!Auth.isDemo() || !access.canManage) {
@@ -2237,9 +2394,9 @@
         toast('Contest not found.', 'error');
         return;
       }
-      store[idx] = { ...store[idx], [field]: n };
+      store[idx] = { ...store[idx], ...patch };
       saveDemoTestsStore(store);
-      toast('Contest day updated (demo).', 'success');
+      toast('Contest schedule updated (demo).', 'success');
       await loadTests();
       renderTestList();
       renderManage();
@@ -2251,13 +2408,13 @@
     }
     const res = await api(`/aptitude/tests/${encodeURIComponent(id)}/schedule`, {
       method: 'POST',
-      body: JSON.stringify({ [field]: n }),
+      body: JSON.stringify(patch),
     }).catch(() => null);
     if (!res?.success) {
       toast(res?.message || 'Could not update contest schedule.', 'error');
       return;
     }
-    toast(res.message || 'Contest day updated.', 'success');
+    toast(res.message || 'Contest schedule updated.', 'success');
     await loadTests();
     renderTestList();
     renderManage();
@@ -4816,10 +4973,26 @@
     bindManageListActions(listRoot);
   }
 
+  function contestScheduleTimeInputs(t, { inline = false } = {}) {
+    const id = esc(t.id);
+    const hasStoredTimes = String(t?.contestStartTime || '').trim() !== '' || String(t?.contestEndTime || '').trim() !== '';
+    const { start, end } = contestTimesClient(t);
+    const startVal = hasStoredTimes ? start : DEFAULT_CONTEST_START_TIME;
+    const endVal = hasStoredTimes ? end : DEFAULT_CONTEST_END_TIME;
+    const inputStyle = 'width:auto;min-width:6.5rem';
+    return `<div class="d-flex flex-wrap align-items-center gap-2">
+      <label class="small text-muted-2 mb-0" for="contest-start-${id}">Start</label>
+      <input type="time" class="form-control form-control-sm" id="contest-start-${id}" style="${inputStyle}" value="${esc(startVal)}" data-contest-schedule="${id}" data-schedule-field="contestStartTime"/>
+      <label class="small text-muted-2 mb-0" for="contest-end-${id}">End</label>
+      <input type="time" class="form-control form-control-sm" id="contest-end-${id}" style="${inputStyle}" value="${esc(endVal)}" data-contest-schedule="${id}" data-schedule-field="contestEndTime"/>
+    </div>`;
+  }
+
   function contestScheduleControls(t, { inline = false } = {}) {
     const type = String(t?.contestType || 'none');
     const id = esc(t.id);
     const wrapCls = inline ? 'd-flex flex-wrap align-items-center gap-2' : 'd-flex flex-wrap align-items-center gap-2 mt-2';
+    const timeInputs = contestScheduleTimeInputs(t, { inline });
     if (type === 'weekly') {
       const current = Number(t.contestWeekday) || 1;
       const opts = CONTEST_WEEKDAYS.map((d) =>
@@ -4828,6 +5001,7 @@
       return `<div class="${wrapCls}">
         <label class="small text-muted-2 mb-0" for="contest-day-${id}">Runs every</label>
         <select class="form-select form-select-sm" id="contest-day-${id}" style="width:auto;min-width:9rem" data-contest-schedule="${id}" data-schedule-field="contestWeekday">${opts}</select>
+        ${timeInputs}
       </div>`;
     }
     if (type === 'monthly') {
@@ -4839,6 +5013,7 @@
       return `<div class="${wrapCls}">
         <label class="small text-muted-2 mb-0" for="contest-day-${id}">Day of month</label>
         <select class="form-select form-select-sm" id="contest-day-${id}" style="width:auto;min-width:6rem" data-contest-schedule="${id}" data-schedule-field="contestMonthDay">${opts}</select>
+        ${timeInputs}
       </div>`;
     }
     return '';
@@ -4931,12 +5106,12 @@
     root.querySelectorAll('[data-unpublish-results]').forEach((btn) => {
       btn.addEventListener('click', () => setContestResultsPublished(btn.getAttribute('data-unpublish-results'), false));
     });
-    root.querySelectorAll('[data-contest-schedule]').forEach((sel) => {
-      sel.addEventListener('change', () => {
+    root.querySelectorAll('[data-contest-schedule]').forEach((el) => {
+      el.addEventListener('change', () => {
         saveContestSchedule(
-          sel.getAttribute('data-contest-schedule'),
-          sel.getAttribute('data-schedule-field'),
-          sel.value
+          el.getAttribute('data-contest-schedule'),
+          el.getAttribute('data-schedule-field'),
+          el.value
         );
       });
     });
@@ -4951,13 +5126,14 @@
   function contestScheduleLabel(test) {
     if (test?.contestScheduleLabel) return String(test.contestScheduleLabel);
     const type = String(test?.contestType || 'none');
+    const times = contestTimeLabelClient(test);
     if (type === 'weekly') {
       const hit = CONTEST_WEEKDAYS.find((d) => d.value === Number(test?.contestWeekday));
-      return hit ? `Weekly · ${hit.label}` : 'Weekly contest';
+      return hit ? `Weekly · ${hit.label}${times}` : 'Weekly contest';
     }
     if (type === 'monthly') {
       const day = Number(test?.contestMonthDay);
-      return Number.isFinite(day) && day > 0 ? `Monthly · day ${day}` : 'Monthly contest';
+      return Number.isFinite(day) && day > 0 ? `Monthly · day ${day}${times}` : 'Monthly contest';
     }
     return '';
   }
@@ -4982,6 +5158,16 @@
         existing?.contestMonthDay
         || document.getElementById('tfContestMonthDay')?.value
         || 1
+      );
+    }
+    if (type === 'weekly' || type === 'monthly') {
+      payload.contestStartTime = normalizeContestTimeClient(
+        existing?.contestStartTime || document.getElementById('tfContestStartTime')?.value,
+        DEFAULT_CONTEST_START_TIME
+      );
+      payload.contestEndTime = normalizeContestTimeClient(
+        existing?.contestEndTime || document.getElementById('tfContestEndTime')?.value,
+        DEFAULT_CONTEST_END_TIME
       );
     }
     return payload;
@@ -5230,8 +5416,8 @@
   function defaultView() {
     const views = allowedViews();
     const role = Auth.role();
+    if (views.includes('manage') && (role === 'placement_officer' || role === 'admin')) return 'manage';
     if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
-    if (views.includes('manage') && (role === 'admin' || role === 'staff')) return 'manage';
     if (views.includes('take')) return 'take';
     if (views.includes('progress')) return 'progress';
     return views[0] || 'take';
@@ -5252,6 +5438,14 @@
   async function applyView(requested) {
     const views = allowedViews();
     let view = requested || defaultView();
+    const role = Auth.role();
+    if (!access.canTake || role === 'placement_officer' || role === 'admin' || role === 'staff') {
+      if (view === 'take' || !views.includes(view)) {
+        view = views.includes('manage') && (role === 'placement_officer' || role === 'admin')
+          ? 'manage'
+          : (views.includes('progress') ? 'progress' : defaultView());
+      }
+    }
     if (!views.includes(view)) view = defaultView();
 
     const hash = `#${view}`;
@@ -5259,7 +5453,7 @@
       history.replaceState(null, '', hash);
     }
 
-    document.getElementById('aptTake')?.classList.toggle('d-none', view !== 'take');
+    document.getElementById('aptTake')?.classList.toggle('d-none', !(view === 'take' && access.canTake));
     document.getElementById('aptDirectory')?.classList.toggle('d-none', view !== 'progress');
     document.getElementById('aptManage')?.classList.toggle('d-none', view !== 'manage');
 
@@ -5279,7 +5473,8 @@
       await tryOpenSharedTest();
     }
     if (view === 'progress' && access.canViewDirectory) {
-      await Promise.all([initDirFilters(), loadDirectory()]);
+      await initDirFilters();
+      await loadDirectory();
     }
     if (view === 'manage' && access.canManage) renderManage();
 
@@ -5289,36 +5484,46 @@
   }
 
   async function loadAccess() {
-    access = {
+    const u = Auth.user() || {};
+    access = applyRoleAccess({
       canTake: typeof Auth.canTakeAptitudeMock === 'function' && Auth.canTakeAptitudeMock(),
       canManage: typeof Auth.canManageAptitudeMocks === 'function' && Auth.canManageAptitudeMocks(),
       canViewDirectory: typeof Auth.canViewAptitudeDirectory === 'function' && Auth.canViewAptitudeDirectory(),
       scope: null,
-    };
+    });
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
       const res = await api('/aptitude/access').catch(() => null);
       if (res?.success && res.data) {
-        access = {
+        access = applyRoleAccess({
           canTake: !!res.data.canTake,
           canManage: !!res.data.canManage,
           canViewDirectory: !!res.data.canViewDirectory,
           scope: res.data.scope || null,
-        };
+        });
       }
       const metaRes = await api('/aptitude/meta').catch(() => null);
       if (metaRes?.success && metaRes.data) meta = { ...meta, ...metaRes.data };
     } else if (Auth.role() === 'staff') {
-      const u = Auth.user() || {};
       access.scope = {
         role: 'staff',
         departmentId: u.departmentId || '',
         departmentName: u.departmentName || u.department || '',
         assignedClassBatches: staffAssignedBatches(),
       };
-      access.canTake = false;
-      access.canManage = typeof Auth.canManageAptitudeMocks === 'function' && Auth.canManageAptitudeMocks();
-      access.canViewDirectory = typeof Auth.canViewAptitudeDirectory === 'function' && Auth.canViewAptitudeDirectory();
+      access = applyRoleAccess(access);
+    } else if (Auth.role() === 'placement_officer') {
+      access.scope = {
+        role: 'placement_officer',
+        scope: 'department',
+        departmentId: u.departmentId || '',
+        departmentName: u.departmentName || u.department || '',
+        label: u.departmentName || u.department
+          ? `Students in ${u.departmentName || u.department}`
+          : 'Students in your department only',
+      };
+      access = applyRoleAccess(access);
     }
+    updateManageScopeHint(access.scope || {});
   }
 
   function studentIdLabel(r) {
@@ -5925,6 +6130,14 @@
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
     document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
     document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
+    document.getElementById('tfContestStartTime').value = normalizeContestTimeClient(
+      test?.contestStartTime || preset?.contestStartTime,
+      DEFAULT_CONTEST_START_TIME
+    );
+    document.getElementById('tfContestEndTime').value = normalizeContestTimeClient(
+      test?.contestEndTime || preset?.contestEndTime,
+      DEFAULT_CONTEST_END_TIME
+    );
     syncQuestionSourcePanels();
     document.getElementById('tfBulkFile').value = '';
     document.getElementById('mcqList').innerHTML = '';
@@ -6071,6 +6284,7 @@
 
   function renderManage() {
     if (!access.canManage) return;
+    updateManageScopeHint(access.scope || {});
     syncManageContestActions();
     applyManagePanel(managePanel);
 
@@ -6120,6 +6334,21 @@
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
     const seq = ++dirLoadSeq;
+    if (staffNeedsClassFilter() && progressPanel !== 'contests') {
+      const batches = staffAssignedBatches();
+      if (!batches.length) {
+        const scope = { ...(access.scope || {}), assignedClassBatches: batches };
+        updateDirScopeHint(scope);
+        renderDirectoryTable([], {}, scope);
+        return;
+      }
+      if (!hasStaffDirectoryLookup()) {
+        const scope = { ...(access.scope || {}), assignedClassBatches: batches };
+        updateDirScopeHint(scope);
+        renderDirectoryTable([], {}, scope);
+        return;
+      }
+    }
     if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
       const scope = {
         ...(access.scope || {}),
@@ -6200,7 +6429,12 @@
     syncManageContestActions();
     const any = access.canTake || access.canManage || access.canViewDirectory;
     if (!any) {
-      document.getElementById('aptDenied').classList.remove('d-none');
+      const denied = document.getElementById('aptDenied');
+      denied?.classList.remove('d-none');
+      const deniedMsg = denied?.querySelector('p');
+      if (deniedMsg && Auth.role() === 'placement_officer') {
+        deniedMsg.textContent = 'No department is assigned to your account yet. Contact the admin to assign your department before managing aptitude tests.';
+      }
       return;
     }
 
@@ -6335,6 +6569,8 @@
       openTestForm(null, {
         contestType: 'weekly',
         contestWeekday: new Date().getDay() === 0 ? 7 : new Date().getDay(),
+        contestStartTime: DEFAULT_CONTEST_START_TIME,
+        contestEndTime: DEFAULT_CONTEST_END_TIME,
         title: 'Weekly aptitude contest',
       });
     });
@@ -6343,6 +6579,8 @@
       openTestForm(null, {
         contestType: 'monthly',
         contestMonthDay: Math.min(28, new Date().getDate()),
+        contestStartTime: DEFAULT_CONTEST_START_TIME,
+        contestEndTime: DEFAULT_CONTEST_END_TIME,
         title: 'Monthly aptitude contest',
       });
     });
