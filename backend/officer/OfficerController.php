@@ -35,7 +35,6 @@ use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
 use PMS\Services\ObjectStorageService;
-use PMS\Services\PlacementRepresentativeOfferLetterService;
 use PMS\Services\VolunteerAssignmentService;
 
 use PMS\Utils\DocumentHelper;
@@ -1482,16 +1481,6 @@ final class OfficerController
             (string) ($scope['user']['_id'] ?? '')
         );
         Response::success(null, 'Placement representative removed.');
-    }
-
-    /** GET /api/officer/volunteers/{id}/offer-letter */
-    public function downloadVolunteerOfferLetter(string $id): void
-    {
-        $scope = (new OfficerDataService())->requireScope();
-        if (!empty($scope['ctx']['isAdmin'])) {
-            Response::forbidden('Use User Management → Placement representatives to download offer letters.');
-        }
-        (new PlacementRepresentativeOfferLetterService())->streamForAssignment($scope['ctx'], $id);
     }
 
     private function isLiteProfileRequest(): bool

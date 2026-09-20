@@ -618,10 +618,6 @@ const AdminApi = {
     const rows = Array.isArray(res.data) ? res.data : [];
     return rows.map(r => this.mapVolunteerRow(r)).filter(Boolean);
   },
-
-  volunteerOfferLetterUrl(assignmentId) {
-    return `${API_BASE}/admin/volunteers/${encodeURIComponent(assignmentId)}/offer-letter`;
-  },
 };
 
 const ReportCenter = {
