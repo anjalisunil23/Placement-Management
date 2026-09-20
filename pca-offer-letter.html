@@ -48,11 +48,10 @@
     .letterhead,
     .letter-footer {
       width: 100%;
+      height: auto;
       display: block;
       flex-shrink: 0;
-      background: #fff;
-      /* Fallback if PNG still contains black matte from export */
-      mix-blend-mode: screen;
+      background: transparent;
     }
 
     .letter-footer { margin-top: auto; }
@@ -167,11 +166,13 @@
         page-break-inside: avoid;
       }
       .letterhead-wrap,
-      .letter-footer-wrap,
+      .letter-footer-wrap {
+        background: #fff !important;
+      }
       .letterhead,
       .letter-footer {
-        background: #fff !important;
-        mix-blend-mode: screen;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
       .no-print { display: none !important; }
     }
@@ -270,7 +271,7 @@
 
 <article class="sheet" id="letterSheet">
   <div class="letterhead-wrap">
-    <img class="letterhead" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
+    <img class="letterhead" src="css/img/pca-letterhead.png" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
   </div>
 
   <div class="content">
@@ -340,13 +341,13 @@
     </div>
 
     <div class="signature-block">
-      <img class="principal-sign" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
+      <img class="principal-sign" src="css/img/principal-signature.png" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
       <div class="signature-caption">Signature of Principal</div>
     </div>
   </div>
 
   <div class="letter-footer-wrap">
-    <img class="letter-footer" data-asset="css/img/pca-footer.png" alt="Contact and accreditation footer"/>
+    <img class="letter-footer" src="css/img/pca-footer.png" data-asset="css/img/pca-footer.png" alt="Contact and accreditation footer"/>
   </div>
 </article>
 
