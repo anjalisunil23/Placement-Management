@@ -8,25 +8,16 @@ use PMS\Models\StudentModel;
 use PMS\Models\StudentVolunteerModel;
 use PMS\Models\UserModel;
 use PMS\Utils\Response;
-use TCPDF;
+use setasign\Fpdi\Tcpdf\Fpdi;
 
 /**
- * Generates the official Placement Campus Ambassador (PCA) appointment offer letter PDF.
- * Layout matches the college OFFICIAL OFFER LETTER template (letterhead + footer artwork).
+ * Generates the official Placement Campus Ambassador (PCA) appointment offer letter PDF
+ * by overlaying student details on the college OFFICIAL OFFER LETTER template.
  */
 final class PlacementRepresentativeOfferLetterService
 {
-    private const HEADER_X_MM = 10.6;
-    private const HEADER_Y_MM = 9.2;
-    private const HEADER_W_MM = 188.0;
-    private const HEADER_H_MM = 28.7;
-    private const FOOTER_Y_MM = 251.4;
-    private const FOOTER_W_MM = 190.2;
-    private const FOOTER_H_MM = 36.3;
-    private const CONTENT_TOP_MM = 40.0;
-    private const CONTENT_BOTTOM_MM = 48.0;
-    private const MARGIN_LEFT_MM = 20.6;
-    private const MARGIN_RIGHT_MM = 15.0;
+    /** PDF points → mm (TCPDF default unit). */
+    private const PT_TO_MM = 0.352778;
 
     /**
      * @param array<string, mixed> $ctx PlacementOfficerContext
@@ -101,7 +92,7 @@ final class PlacementRepresentativeOfferLetterService
         return [
             'name'           => $name,
             'salutation'     => $this->salutation($personal),
-            'classBatch'     => $classBatch !== '' ? $classBatch : '—',
+            'classBatch'     => $classBatch !== '' ? $classBatch : '',
             'letterDate'     => $this->formatLetterDate($assignmentDate),
             'academicYear'   => $this->academicYearJulyToJune($assignmentDate),
             'registerNumber' => (string) ($student['registerNumber'] ?? ''),
@@ -111,66 +102,29 @@ final class PlacementRepresentativeOfferLetterService
     /**
      * @param array<string, mixed> $payload
      */
-    private function buildPdf(array $payload): TCPDF
+    private function buildPdf(array $payload): Fpdi
     {
-        $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+        $template = $this->templatePath();
+        if ($template === '') {
+            Response::error('Offer letter template is missing on the server.', 500);
+        }
+
+        $pdf = new Fpdi('P', 'mm', 'A4', true, 'UTF-8', false);
         $pdf->SetCreator('PlaceHub PMS');
         $pdf->SetAuthor('Training & Placement Cell, AJCE');
         $pdf->SetTitle('Official Offer Letter — ' . ($payload['name'] ?? ''));
         $pdf->setPrintHeader(false);
         $pdf->setPrintFooter(false);
-        $pdf->SetMargins(self::MARGIN_LEFT_MM, self::CONTENT_TOP_MM, self::MARGIN_RIGHT_MM);
-        $pdf->SetAutoPageBreak(true, self::CONTENT_BOTTOM_MM);
+        $pdf->SetMargins(0, 0, 0);
+        $pdf->SetAutoPageBreak(false);
         $pdf->AddPage();
 
-        $letterhead = $this->letterheadPath();
-        if ($letterhead !== '') {
-            $pdf->Image(
-                $letterhead,
-                self::HEADER_X_MM,
-                self::HEADER_Y_MM,
-                self::HEADER_W_MM,
-                self::HEADER_H_MM,
-                'PNG',
-                '',
-                '',
-                false,
-                300,
-                '',
-                false,
-                false,
-                0,
-                false,
-                false,
-                false
-            );
-        }
+        $pdf->setSourceFile($template);
+        $tpl = $pdf->importPage(1);
+        $size = $pdf->getTemplateSize($tpl);
+        $pdf->useTemplate($tpl, 0, 0, $size['width'], $size['height'], true);
 
-        $footer = $this->footerPath();
-        if ($footer !== '') {
-            $pdf->Image(
-                $footer,
-                self::HEADER_X_MM,
-                self::FOOTER_Y_MM,
-                self::FOOTER_W_MM,
-                self::FOOTER_H_MM,
-                'PNG',
-                '',
-                '',
-                false,
-                300,
-                '',
-                false,
-                false,
-                0,
-                false,
-                false,
-                false
-            );
-        }
-
-        $pdf->SetY(self::CONTENT_TOP_MM);
-        $pdf->writeHTML($this->buildHtml($payload), true, false, true, false, '');
+        $this->overlayDynamicFields($pdf, $payload);
 
         return $pdf;
     }
@@ -178,88 +132,77 @@ final class PlacementRepresentativeOfferLetterService
     /**
      * @param array<string, mixed> $payload
      */
-    private function buildHtml(array $payload): string
+    private function overlayDynamicFields(Fpdi $pdf, array $payload): void
     {
-        $esc = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $dateText = (string) ($payload['letterDate'] ?? '');
+        $nameText = trim((string) (($payload['salutation'] ?? 'Mr./Ms.') . ' ' . ($payload['name'] ?? '')));
+        $classText = (string) ($payload['classBatch'] ?? '');
+        $yearText = (string) ($payload['academicYear'] ?? '');
 
-        $name = $esc($payload['name'] ?? '');
-        $salutation = $esc($payload['salutation'] ?? 'Mr./Ms.');
-        $classBatch = $esc($payload['classBatch'] ?? '—');
-        $letterDate = $esc($payload['letterDate'] ?? '');
-        $academicYear = $esc($payload['academicYear'] ?? '');
+        // Cover placeholder/sample values from the official template (coordinates in PDF points).
+        $this->coverRect($pdf, 82.0, 224.8, 62.0, 13.5);
+        $this->coverRect($pdf, 58.0, 251.0, 285.0, 13.5);
+        $this->coverRect($pdf, 58.0, 265.5, 285.0, 13.5);
+        $this->coverRect($pdf, 128.5, 150.2, 56.0, 13.5);
+        $this->coverRect($pdf, 349.0, 358.7, 56.0, 13.5);
+        $this->coverRect($pdf, 184.5, 444.5, 56.0, 13.5);
 
-        $signaturePath = $this->principalSignaturePath();
-        $signatureHtml = is_file($signaturePath)
-            ? '<img src="' . $esc($signaturePath) . '" width="105" height="40" />'
-            : '';
+        $this->writeText($pdf, 82.0, 225.8, $dateText);
+        $this->writeText($pdf, 58.5, 252.5, $nameText, 'B');
+        $this->writeText($pdf, 58.5, 266.8, 'Class: ' . $classText);
+        $this->writeText($pdf, 129.0, 151.3, $yearText);
+        $this->writeText($pdf, 349.5, 359.8, $yearText);
+        $this->writeText($pdf, 185.0, 445.6, $yearText);
 
-        $base = 'font-family:times,serif;font-size:11pt;line-height:1.45;color:#000;text-align:left;';
+        $signature = $this->principalSignaturePath();
+        if ($signature !== '') {
+            try {
+                $ext = str_ends_with(strtolower($signature), '.png') ? 'PNG' : 'JPG';
+                $pdf->Image(
+                    $signature,
+                    $this->mm(58.0),
+                    $this->mm(648.0),
+                    $this->mm(120.0),
+                    0,
+                    $ext,
+                    '',
+                    '',
+                    false,
+                    300,
+                    '',
+                    false,
+                    false,
+                    0,
+                    false,
+                    false,
+                    false
+                );
+            } catch (\Throwable) {
+                // Signature is optional when GD/Imagick cannot load PNG alpha.
+            }
+        }
+    }
 
-        return <<<HTML
-<style>
-  p { margin: 0 0 6px 0; {$base} }
-  .title { font-size:12pt; font-weight:bold; margin-bottom:8px; }
-  .rule { border:none;border-top:1.5px solid #9f9f9f;height:0;margin:10px 0 12px 0; }
-  .field-line { border-bottom:1px solid #000; display:inline-block; min-width:280px; padding-bottom:1px; }
-  .sig { margin-top:18px; }
-</style>
+    private function coverRect(Fpdi $pdf, float $xPt, float $yPt, float $wPt, float $hPt): void
+    {
+        $pdf->SetFillColor(255, 255, 255);
+        $pdf->Rect($this->mm($xPt), $this->mm($yPt), $this->mm($wPt), $this->mm($hPt), 'F');
+    }
 
-<p class="title">OFFICIAL OFFER LETTER OF APPOINTMENT</p>
-<p>Placement Campus Ambassador (PCA)</p>
-<p>Academic Year {$academicYear}</p>
-<p>&nbsp;</p>
-<p><strong>Training &amp; Placement Cell</strong></p>
-<p><strong>Amal Jyothi College of Engineering (Autonomous)</strong></p>
-<p>&nbsp;</p>
-<p>Date: {$letterDate}</p>
-<p><strong>{$salutation}</strong> <span class="field-line">{$name}</span></p>
-<p>Class: <span class="field-line">{$classBatch}</span></p>
-<p>&nbsp;</p>
+    private function writeText(Fpdi $pdf, float $xPt, float $yPt, string $text, string $style = ''): void
+    {
+        if ($text === '') {
+            return;
+        }
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetFont('times', $style, 11);
+        $pdf->SetXY($this->mm($xPt), $this->mm($yPt));
+        $pdf->Write(0, $text);
+    }
 
-<hr class="rule" />
-
-<p><strong>Congratulations!</strong></p>
-<p><strong>Welcome aboard,</strong></p>
-<p>&nbsp;</p>
-<p>
-  It gives us immense pleasure to inform you that you have been <strong>appointed as the <em>Placement Campus Ambassador (PCA)</em></strong>
-  representing your respective class for the <strong>Academic Year {$academicYear}</strong> under the
-  <strong>Training &amp; Placement Cell, Amal Jyothi College of Engineering (Autonomous).</strong>
-</p>
-<p>&nbsp;</p>
-<p><strong>Your Appointment Begins Now:</strong></p>
-<p>&nbsp;</p>
-<p>
-  Your appointment shall commence with immediate effect from the receipt of this Offer Letter, and will remain
-  valid for the Academic Year {$academicYear}, unless modified or withdrawn by the Training &amp; Placement Cell.
-</p>
-<p>&nbsp;</p>
-<p>
-  From this moment onward, you officially become a member of the <strong>Placement Campus Ambassadors Team.</strong>
-</p>
-<p><strong>Welcome to the Team:</strong></p>
-<p>
-  This appointment reflects the confidence we have in your abilities. We are excited to have you represent your
-  class and department and contribute towards creating a vibrant, efficient, and successful placement ecosystem
-  within the institution.
-</p>
-<p>&nbsp;</p>
-<p>
-  We look forward to welcoming you to the Training &amp; Placement Cell, Amal Jyothi College of Engineering
-  (Autonomous), and are confident that you will make a significant contribution to the success of our team.
-</p>
-<p>&nbsp;</p>
-<p>
-  We wish you a rewarding and successful tenure as a <strong>Placement Campus Ambassador.</strong>
-</p>
-<p><strong>With Best Wishes,</strong></p>
-<p><strong>Training &amp; Placement Cell, Amal Jyothi College of Engineering (Autonomous)</strong></p>
-<p>&nbsp;</p>
-<div class="sig">
-  {$signatureHtml}
-  <p>Signature of Principal</p>
-</div>
-HTML;
+    private function mm(float $points): float
+    {
+        return $points * self::PT_TO_MM;
     }
 
     private function assetRoot(): string
@@ -267,25 +210,11 @@ HTML;
         return dirname(__DIR__, 2);
     }
 
-    private function letterheadPath(): string
+    private function templatePath(): string
     {
         foreach ([
-            $this->assetRoot() . '/css/img/pca-letterhead.png',
-            $this->assetRoot() . '/css/pca-letterhead.png',
-        ] as $path) {
-            if (is_file($path)) {
-                return $path;
-            }
-        }
-
-        return '';
-    }
-
-    private function footerPath(): string
-    {
-        foreach ([
-            $this->assetRoot() . '/css/img/pca-footer.png',
-            $this->assetRoot() . '/css/pca-footer.png',
+            $this->assetRoot() . '/assets/templates/pca-offer-letter-template.pdf',
+            $this->assetRoot() . '/assets/templates/OFFICIAL-OFFER-LETTER.pdf',
         ] as $path) {
             if (is_file($path)) {
                 return $path;
@@ -298,6 +227,7 @@ HTML;
     private function principalSignaturePath(): string
     {
         foreach ([
+            $this->assetRoot() . '/css/img/principal-signature.jpg',
             $this->assetRoot() . '/css/img/principal-signature.png',
             $this->assetRoot() . '/css/principal-signature.png',
         ] as $path) {

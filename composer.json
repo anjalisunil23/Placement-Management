@@ -9,7 +9,8 @@
         "firebase/php-jwt": "^6.10",
         "vlucas/phpdotenv": "^5.6",
         "tecnickcom/tcpdf": "^6.7",
-        "phpmailer/phpmailer": "^6.9"
+        "phpmailer/phpmailer": "^6.9",
+        "setasign/fpdi-tcpdf": "2.3"
     },
     "autoload": {
         "psr-4": {
