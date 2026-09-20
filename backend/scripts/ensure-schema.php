@@ -35,6 +35,7 @@ $required = [
     Collections::STUDENTS,
     Collections::STAFF,
     Collections::PLACEMENT_OFFICERS,
+    Collections::STUDENT_VOLUNTEERS,
     Collections::COMPANIES,
     Collections::ALUMNI,
     Collections::DEPARTMENTS,

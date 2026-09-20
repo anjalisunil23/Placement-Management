@@ -33,6 +33,7 @@
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAdmins">Admins</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabOfficers">Placement officers</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabStaff">Staff</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabVolunteers" id="linkTabVolunteers">Placement representatives</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabCompanies">Companies</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabAlumni" id="linkTabAlumni">Alumni</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabDepartments" id="linkTabDepartments">Departments</a></li>
@@ -63,6 +64,11 @@
       <div class="table-wrap"><table class="table-modern"><thead><tr>
         <th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="staffRows"></tbody></table></div>
+    </div>
+    <div class="tab-pane fade" id="tabVolunteers">
+      <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th>Name</th><th>Register No</th><th>Department</th><th>Batch</th><th>Assigned by</th><th>Assigned on</th>
+      </tr></thead><tbody id="volunteerRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabCompanies">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
@@ -187,12 +193,14 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260727nologin"></script>
+<script src="js/admin-api.js?v=20260920volunteer"></script>
 <script src="js/api.js?v=20260727nologin"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
 let departments = [];
 let companyDirectory = [];
+let volunteersList = [];
+let volunteersLoaded = false;
 let editingDeptId = null;
 
 function deptModal() {
@@ -203,7 +211,50 @@ function activateTabFromHash() {
   const hash = (location.hash || '').replace('#', '');
   if (hash === 'departments') {
     bootstrap.Tab.getOrCreateInstance(document.getElementById('linkTabDepartments')).show();
+  } else if (hash === 'volunteers' || hash === 'representatives') {
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('linkTabVolunteers')).show();
   }
+}
+
+function filterVolunteersList(list) {
+  return (list || []).filter(v => matchesUsersSearch([
+    v.name, v.registerNumber, v.email, v.departmentName, v.departmentCode,
+    v.classBatch, v.assignedByName, v.notes,
+  ]));
+}
+
+function formatVolunteerDate(raw) {
+  if (!raw) return '—';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return String(raw).slice(0, 10) || '—';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+async function loadVolunteers(force = false) {
+  if (volunteersLoaded && !force) return volunteersList;
+  if (typeof AdminApi === 'undefined') return [];
+  const rows = await AdminApi.fetchVolunteers();
+  volunteersList = rows || [];
+  volunteersLoaded = true;
+  return volunteersList;
+}
+
+function renderVolunteers(list) {
+  const tbody = document.getElementById('volunteerRows');
+  if (!tbody) return;
+  if (!volunteersLoaded) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Loading placement representatives…</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.length ? list.map(v => `
+    <tr>
+      <td><div class="fw-semibold small">${v.name || '—'}</div>${v.email ? `<div class="small text-muted-2">${v.email}</div>` : ''}</td>
+      <td>${v.registerNumber || '—'}</td>
+      <td>${v.departmentName || v.departmentCode || '—'}</td>
+      <td>${v.classBatch || '—'}</td>
+      <td>${v.assignedByName || '—'}</td>
+      <td>${formatVolunteerDate(v.assignedAt)}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No placement representatives assigned yet.</td></tr>';
 }
 
 function openAddDept() {
@@ -790,6 +841,7 @@ function render() {
   renderAdmins(filterUsersList(UserRegistry.byRole('admin')));
   renderOfficers(filterUsersList(UserRegistry.byRole('placement_officer')));
   renderStaff(filterUsersList(UserRegistry.byRole('staff')));
+  renderVolunteers(filterVolunteersList(volunteersList));
   const companies = companyDirectory.length
     ? companyDirectory.map(company => AdminApi.mergeCompanyUser(UserRegistry.get(company.userId), company))
     : UserRegistry.byRole('company');
@@ -1113,6 +1165,7 @@ async function initUsersPage() {
   await loadDepartments();
   if (live) await UserRegistry.fetch();
   if (live) await loadCompanies();
+  if (live) await loadVolunteers();
   bindResumeVerifyToggle();
   const search = document.getElementById('usersSearch');
   if (search && search.dataset.wired !== '1') {

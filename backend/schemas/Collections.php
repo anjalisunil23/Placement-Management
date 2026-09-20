@@ -28,6 +28,7 @@ final class Collections
     public const ALUMNI_REFERRALS = 'alumni_referrals';
     public const ALUMNI_JOB_POSTS = 'alumni_job_posts';
     public const PLACEMENT_OFFICERS = 'placement_officers';
+    public const STUDENT_VOLUNTEERS = 'student_volunteers';
     public const RESUMES = 'resumes';
     public const RECRUITMENT_RESULTS = 'recruitment_results';
     public const SYSTEM_SETTINGS = 'system_settings';
@@ -181,6 +182,20 @@ final class Collections
                 'userId'       => 'ObjectId',
                 'departmentId' => 'ObjectId (unique — one placement officer per department)',
                 'designation'  => 'string',
+                'createdAt'    => 'UTCDateTime',
+                'updatedAt'    => 'UTCDateTime',
+            ],
+            self::STUDENT_VOLUNTEERS => [
+                '_id'          => 'ObjectId',
+                'studentId'    => 'ObjectId',
+                'userId'       => 'ObjectId|null',
+                'departmentId' => 'ObjectId',
+                'assignedBy'   => 'ObjectId',
+                'assignedAt'   => 'UTCDateTime',
+                'status'       => 'string (active|removed)',
+                'notes'        => 'string|null',
+                'removedAt'    => 'UTCDateTime|null',
+                'removedBy'    => 'ObjectId|null',
                 'createdAt'    => 'UTCDateTime',
                 'updatedAt'    => 'UTCDateTime',
             ],

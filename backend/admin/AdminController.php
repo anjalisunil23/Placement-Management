@@ -39,6 +39,7 @@ use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
 use PMS\Services\PlacementOfficerContext;
+use PMS\Services\VolunteerAssignmentService;
 use PMS\Services\ReportContext;
 use PMS\Services\ReportService;
 use PMS\Services\ObjectStorageService;
@@ -845,6 +846,18 @@ final class AdminController
     {
         RBACMiddleware::requireAdmin();
         Response::success((new PlacementOfficerModel())->listEnriched());
+    }
+
+    /** GET /api/admin/volunteers */
+    public function listVolunteers(): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $deptId = trim((string) ($_GET['departmentId'] ?? ''));
+        $ctx = PlacementOfficerContext::resolve($admin);
+        Response::success((new VolunteerAssignmentService())->listForContext(
+            $ctx,
+            $deptId !== '' ? $deptId : null
+        ));
     }
 
     /** PUT /api/admin/departments/{id}/placement-officer */

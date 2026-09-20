@@ -35,6 +35,7 @@ use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
 use PMS\Services\ObjectStorageService;
+use PMS\Services\VolunteerAssignmentService;
 
 use PMS\Utils\DocumentHelper;
 
@@ -1436,6 +1437,50 @@ final class OfficerController
             Response::forbidden('Only the Head of Department can assign a department placement officer.');
         }
         return $user;
+    }
+
+    /** GET /api/officer/volunteers */
+    public function listVolunteers(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        if (!empty($scope['ctx']['isAdmin'])) {
+            Response::forbidden('Use User Management → Placement representatives to view all representatives.');
+        }
+        if (empty($scope['ctx']['departmentId'])) {
+            Response::forbidden('Your placement officer profile has no department assigned.');
+        }
+        Response::success((new VolunteerAssignmentService())->listForContext($scope['ctx']));
+    }
+
+    /** POST /api/officer/volunteers */
+    public function assignVolunteer(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $studentId = (string) ($input['studentId'] ?? '');
+        if ($studentId === '') {
+            Response::error('studentId is required.', 422);
+        }
+        $notes = isset($input['notes']) ? (string) $input['notes'] : null;
+        $row = (new VolunteerAssignmentService())->assign(
+            $scope['ctx'],
+            $studentId,
+            (string) ($scope['user']['_id'] ?? ''),
+            $notes
+        );
+        Response::success($row, 'Placement representative assigned.');
+    }
+
+    /** DELETE /api/officer/volunteers/{id} */
+    public function removeVolunteer(string $id): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        (new VolunteerAssignmentService())->remove(
+            $scope['ctx'],
+            $id,
+            (string) ($scope['user']['_id'] ?? '')
+        );
+        Response::success(null, 'Placement representative removed.');
     }
 
     private function isLiteProfileRequest(): bool

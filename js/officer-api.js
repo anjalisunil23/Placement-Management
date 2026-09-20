@@ -516,4 +516,43 @@ const OfficerApi = {
     const res = await api('/officer/department-placement-officer', { method: 'DELETE' });
     return res;
   },
+
+  mapVolunteerRow(row) {
+    if (!row) return null;
+    return {
+      id: OfficerApi.id(row),
+      studentId: row.studentId || '',
+      userId: row.userId || null,
+      name: row.name || '',
+      registerNumber: row.registerNumber || '',
+      email: row.email || '',
+      classBatch: row.classBatch || '',
+      departmentId: row.departmentId || '',
+      departmentName: row.departmentName || '',
+      departmentCode: row.departmentCode || '',
+      assignedBy: row.assignedBy || '',
+      assignedByName: row.assignedByName || '',
+      assignedAt: row.assignedAt || '',
+      notes: row.notes || '',
+      status: row.status || 'active',
+    };
+  },
+
+  async fetchVolunteers() {
+    const res = await api('/officer/volunteers');
+    if (!res?.success) return null;
+    const rows = Array.isArray(res.data) ? res.data : [];
+    return rows.map(r => OfficerApi.mapVolunteerRow(r)).filter(Boolean);
+  },
+
+  async assignVolunteer(studentId, notes = '') {
+    return api('/officer/volunteers', {
+      method: 'POST',
+      body: { studentId, notes: notes || undefined },
+    });
+  },
+
+  async removeVolunteer(assignmentId) {
+    return api(`/officer/volunteers/${encodeURIComponent(assignmentId)}`, { method: 'DELETE' });
+  },
 };
