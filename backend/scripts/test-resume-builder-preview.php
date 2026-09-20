@@ -62,8 +62,10 @@ $assert(!str_contains($js, 'educationProgramYears'), 'no invented program-year d
 $assert(!str_contains($js, 'start + duration'), 'no start+duration calculation');
 $assert(str_contains($css, 'text-align: justify'), 'career objective justified');
 $assert(str_contains($css, 'screen and (max-width: 767.98px)'), 'mobile stack scoped to screen only');
-$assert(str_contains($settings, 'resume-builder.css?v=20260824rb20'), 'CSS cache bust');
-$assert(str_contains($settings, 'resume-builder.js?v=20260824rb20'), 'JS cache bust');
+$assert(str_contains($settings, 'resume-builder.css?v=20260824rb21'), 'CSS cache bust');
+$assert(str_contains($settings, 'resume-builder.js?v=20260824rb21'), 'JS cache bust');
+$assert(str_contains($css, 'margin: 0;'), 'print page margin zeroed to hide browser chrome');
+$assert(str_contains($js, "document.title = ' '"), 'print title blanked to hide Settings header');
 $assert(str_contains($css, 'font-size: 12pt'), 'section heading larger than body');
 $assert(str_contains($css, 'font-size: 10.5pt'), 'body and titles at 10.5pt');
 $assert(str_contains($css, 'padding: 16mm 16mm 16mm'), 'professional A4 padding');

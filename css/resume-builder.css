@@ -1283,6 +1283,14 @@
   body.rb-printing-resume .rb-preview-notice {
     display: none !important;
   }
+  html:has(body.rb-printing-resume),
+  body.rb-printing-resume {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
   body.rb-printing-resume * {
     visibility: hidden !important;
   }
@@ -1290,23 +1298,28 @@
   body.rb-printing-resume #rbResumePrintRoot * {
     visibility: visible !important;
   }
+  body.rb-printing-resume .rb-preview-page,
   body.rb-printing-resume .rb-preview-stage,
   body.rb-printing-resume .rb-preview-paper {
-    background: transparent !important;
+    background: #fff !important;
     border: 0 !important;
+    outline: 0 !important;
     box-shadow: none !important;
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
     min-height: auto !important;
+    border-radius: 0 !important;
   }
   body.rb-printing-resume #rbResumePrintRoot {
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
-    padding: 0 !important;
+    padding: 16mm !important;
     margin: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
     background: #fff !important;
     color: #000 !important;
     box-shadow: none !important;
@@ -1346,6 +1359,6 @@
   }
   @page {
     size: A4;
-    margin: 16mm;
+    margin: 0;
   }
 }

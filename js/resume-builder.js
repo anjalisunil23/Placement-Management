@@ -1641,10 +1641,21 @@
 
   function printResumePreview() {
     if (!state.previewMode) openLivePreview();
+    const previousTitle = document.title;
+    document.title = ' ';
     document.body.classList.add('rb-printing-resume');
+    let restored = false;
+    const restorePrintChrome = () => {
+      if (restored) return;
+      restored = true;
+      document.body.classList.remove('rb-printing-resume');
+      document.title = previousTitle;
+      window.removeEventListener('afterprint', restorePrintChrome);
+    };
+    window.addEventListener('afterprint', restorePrintChrome);
     window.setTimeout(() => {
       window.print();
-      window.setTimeout(() => document.body.classList.remove('rb-printing-resume'), 300);
+      window.setTimeout(restorePrintChrome, 800);
     }, 50);
   }
 
