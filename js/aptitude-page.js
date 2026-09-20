@@ -475,8 +475,8 @@
       return;
     }
     if (role === 'admin') {
-      hint.textContent = 'Institution-wide aptitude management — all departments.';
-      hint.classList.remove('d-none');
+      hint.textContent = '';
+      hint.classList.add('d-none');
       return;
     }
     hint.textContent = '';
