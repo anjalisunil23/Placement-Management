@@ -364,9 +364,17 @@ final class AdminController
     public function listUsers(): void
     {
         RBACMiddleware::requireAdmin();
-        $role = $_GET['role'] ?? null;
-        $filter = $role ? ['role' => $role] : [];
-        $users = $this->userModel->findAll($filter, 200);
+        $role = trim((string) ($_GET['role'] ?? ''));
+        if ($role !== '') {
+            $filter = ['role' => $role];
+            $limit = 500;
+        } else {
+            // Students are loaded via GET /admin/students; excluding them here keeps
+            // staff, placement officers, and other roles visible under the 500 cap.
+            $filter = ['role' => ['$nin' => ['student']]];
+            $limit = 500;
+        }
+        $users = $this->userModel->findAll($filter, $limit);
         $enriched = array_map(fn (array $u) => $this->enrichUserRow($u), $users);
         Response::success(DocumentHelper::serializeMany($enriched));
     }
