@@ -35,6 +35,9 @@ RewriteRule ^$ public-stats.html [L]
 RewriteRule ^public/stats\.html$ public-stats.html [L]
 RewriteRule ^public_stats\.html$ public-stats.html [L]
 
+# PCA offer letter (moved from assets/templates/ to web root for deploy)
+RewriteRule ^assets/templates/pca-offer-letter\.html$ pca-offer-letter.html [L,QSA]
+
 # Extensionless HTML: /dashboard → dashboard.html
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

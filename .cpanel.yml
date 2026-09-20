@@ -36,6 +36,9 @@ deployment:
     - /bin/cp -f composer.lock $DEPLOYPATH/composer.lock
     - /bin/cp -f .env.production.example $DEPLOYPATH/.env.production.example
     - /bin/cp -f *.html $DEPLOYPATH/
+    - /bin/mkdir -p $DEPLOYPATH/assets/templates
+    - /bin/cp -Rf assets/. $DEPLOYPATH/assets/
+    - test -f $DEPLOYPATH/pca-offer-letter.html || (echo "DEPLOY FAILED - pca-offer-letter.html missing." >&2; exit 1)
     - /bin/git rev-parse HEAD > $DEPLOYPATH/deploy-version.txt
     - /bin/date -u +"%Y-%m-%dT%H:%M:%SZ" >> $DEPLOYPATH/deploy-version.txt
     - /bin/head -n 1 js/app.js >> $DEPLOYPATH/deploy-version.txt
