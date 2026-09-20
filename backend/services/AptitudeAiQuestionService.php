@@ -70,7 +70,7 @@ final class AptitudeAiQuestionService
         AptitudeAccessService::requireManager($admin);
         $this->assertCooldown((string) ($admin['_id'] ?? $admin['id'] ?? ''));
 
-        $mode = strtolower(trim((string) ($body['generationMode'] ?? $body['mode'] ?? 'category'));
+        $mode = strtolower(trim((string) ($body['generationMode'] ?? $body['mode'] ?? 'category')));
         if (in_array($mode, ['jd', 'job_description', 'job description'], true)) {
             return $this->generateFromJdForUser($admin, $body);
         }
