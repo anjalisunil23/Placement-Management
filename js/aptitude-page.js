@@ -86,6 +86,139 @@
     { id: 'demo-co-wipro', name: 'Wipro' },
   ];
 
+  const APT_BOOT_CACHE_KEY = 'ph_apt_boot_v1';
+  const APT_TESTS_CACHE_KEY = 'ph_apt_tests_v1';
+  const APT_CACHE_TTL_MS = 60000;
+
+  let quillLoadPromise = null;
+  let xlsxLoadPromise = null;
+  let testsInflight = null;
+
+  function readSessionCache(key) {
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.t !== 'number') return null;
+      if (Date.now() - parsed.t > APT_CACHE_TTL_MS) return null;
+      return parsed.d ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeSessionCache(key, data) {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), d: data }));
+    } catch { /* ignore */ }
+  }
+
+  function ensureScript(id, src) {
+    const existing = document.getElementById(id);
+    if (existing) {
+      return existing.dataset.loaded === '1'
+        ? Promise.resolve()
+        : new Promise((resolve, reject) => {
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
+        });
+    }
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.id = id;
+      s.src = src;
+      s.async = true;
+      s.onload = () => { s.dataset.loaded = '1'; resolve(); };
+      s.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(s);
+    });
+  }
+
+  function ensureQuill() {
+    if (typeof Quill !== 'undefined') return Promise.resolve();
+    if (!quillLoadPromise) {
+      quillLoadPromise = (async () => {
+        if (!document.getElementById('ph-quill-css')) {
+          const l = document.createElement('link');
+          l.id = 'ph-quill-css';
+          l.rel = 'stylesheet';
+          l.href = 'https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css';
+          document.head.appendChild(l);
+        }
+        await ensureScript('ph-quill-js', 'https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js');
+      })().catch((err) => {
+        quillLoadPromise = null;
+        throw err;
+      });
+    }
+    return quillLoadPromise;
+  }
+
+  function ensureXlsx() {
+    if (typeof XLSX !== 'undefined') return Promise.resolve();
+    if (!xlsxLoadPromise) {
+      xlsxLoadPromise = ensureScript('ph-xlsx-js', 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js').catch((err) => {
+        xlsxLoadPromise = null;
+        throw err;
+      });
+    }
+    return xlsxLoadPromise;
+  }
+
+  function buildAuthAccess() {
+    const u = Auth.user() || {};
+    let next = applyRoleAccess({
+      canTake: typeof Auth.canTakeAptitudeMock === 'function' && Auth.canTakeAptitudeMock(),
+      canManage: typeof Auth.canManageAptitudeMocks === 'function' && Auth.canManageAptitudeMocks(),
+      canViewDirectory: typeof Auth.canViewAptitudeDirectory === 'function' && Auth.canViewAptitudeDirectory(),
+      scope: null,
+    });
+    if (Auth.role() === 'staff') {
+      next.scope = {
+        role: 'staff',
+        departmentId: u.departmentId || '',
+        departmentName: u.departmentName || u.department || '',
+        assignedClassBatches: staffAssignedBatches(),
+      };
+      next = applyRoleAccess(next);
+    } else if (Auth.role() === 'placement_officer') {
+      next.scope = {
+        role: 'placement_officer',
+        scope: 'department',
+        departmentId: u.departmentId || '',
+        departmentName: u.departmentName || u.department || '',
+        label: u.departmentName || u.department
+          ? `Students in ${u.departmentName || u.department}`
+          : 'Students in your department only',
+      };
+      next = applyRoleAccess(next);
+    }
+    return next;
+  }
+
+  function hydrateBootCache() {
+    const boot = readSessionCache(APT_BOOT_CACHE_KEY);
+    if (boot?.access) access = applyRoleAccess(boot.access);
+    if (boot?.meta) meta = { ...meta, ...boot.meta };
+    if (boot?.myProgress) myProgress = boot.myProgress;
+    const cachedTests = readSessionCache(APT_TESTS_CACHE_KEY);
+    if (Array.isArray(cachedTests) && cachedTests.length) tests = cachedTests;
+  }
+
+  function paintCachedTakeUi() {
+    if (!access.canTake) return;
+    renderMyStats(myProgress);
+    renderHistory(myProgress);
+    renderTestList();
+  }
+
+  function showTestListLoading() {
+    const root = document.getElementById('testList');
+    if (root && !tests.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">Loading tests…</p>';
+    }
+  }
+
   function cloneDemoTests() {
     return DEMO_TESTS.map((t) => JSON.parse(JSON.stringify(t)));
   }
@@ -1624,7 +1757,7 @@
     return /\.(jpg|jpeg|png)$/i.test(String(detail?.jdFilename || ''));
   }
 
-  function renderJdQuestionDetailHtml(q, index) {
+  function renderMcqPickDetailHtml(q, index, { compact = false } = {}) {
     const letters = ['A', 'B', 'C', 'D'];
     const opts = (q.options || []).slice(0, 4);
     const correct = Math.max(0, Math.min(3, Number(q.correctIndex ?? 0)));
@@ -1632,9 +1765,14 @@
     const promptBlock = /<[^>]+>/.test(promptRaw)
       ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
       : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
-    const meta = [q.topic, q.difficulty].filter(Boolean).map((v) => esc(String(v))).join(' · ');
+    const metaParts = [];
+    if (q.topic) metaParts.push(String(q.topic));
+    else if (q.category) metaParts.push(String(q.category));
+    if (q.difficulty) metaParts.push(String(q.difficulty));
+    const meta = metaParts.map((v) => esc(v)).join(' · ');
     const explanation = String(q.explanation || '').trim();
-    return `<div class="border rounded-2 p-3 bg-white">
+    const shellCls = compact ? 'min-w-0' : 'border rounded-2 p-3 bg-white';
+    return `<div class="${shellCls}">
       <div class="fw-semibold mb-2">Q${index + 1}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
       ${promptBlock}
       <div class="small mb-2">${opts.length
@@ -1647,6 +1785,10 @@
       <div class="small mb-1"><span class="fw-semibold">Answer:</span> ${letters[correct]}. ${esc(stripHtml(String(opts[correct] || '')) || opts[correct] || '—')}</div>
       ${explanation ? `<div class="small mt-2"><span class="fw-semibold">Explanation:</span> ${esc(explanation)}</div>` : ''}
     </div>`;
+  }
+
+  function renderJdQuestionDetailHtml(q, index, opts = {}) {
+    return renderMcqPickDetailHtml(q, index, opts);
   }
 
   function renderJdDocumentPanel(detail) {
@@ -2468,7 +2610,7 @@
     const company = formIsCompanyTest();
     document.getElementById('tfCompanyPanel')?.classList.toggle('d-none', !company);
     document.getElementById('tfCompanyJdHint')?.classList.toggle('d-none', !company || getQuestionSource() !== 'manual');
-    document.getElementById('tfUseJdManualWrap')?.classList.toggle('d-none', company);
+    document.getElementById('tfUseJdManualWrap')?.classList.add('d-none');
     document.getElementById('tfUseBankManual')?.closest('.form-check')?.classList.toggle('d-none', company);
     document.getElementById('tfManualMcqSection')?.classList.toggle('d-none', company);
     const jdTitle = document.getElementById('tfJdPickerTitle');
@@ -2479,9 +2621,11 @@
     if (randomLabel) {
       randomLabel.textContent = company ? 'Random from JD' : 'Random from bank';
     }
-    if (company && getQuestionSource() === 'manual') {
-      document.getElementById('tfUseJdManual').checked = true;
-      document.getElementById('tfJdPicker')?.classList.remove('d-none');
+    const showJdPicker = company && getQuestionSource() === 'manual';
+    document.getElementById('tfUseJdManual').checked = showJdPicker;
+    document.getElementById('tfJdPicker')?.classList.toggle('d-none', !showJdPicker);
+    if (!company) {
+      document.getElementById('tfUseJdManual').checked = false;
     }
   }
 
@@ -3755,7 +3899,7 @@
     if (source === 'random_jd') return sumRandomJdRuleCounts();
     const company = formIsCompanyTest();
     const useBank = !company && document.getElementById('tfUseBankManual')?.checked;
-    const useJd = company || document.getElementById('tfUseJdManual')?.checked;
+    const useJd = company && getQuestionSource() === 'manual';
     const bankTotal = useBank ? sumManualBankRuleCounts() : 0;
     const jdTotal = useJd ? sumManualJdRuleCounts() : 0;
     const mcqCount = company ? 0 : collectMcqs().length;
@@ -3921,15 +4065,16 @@
     picker.innerHTML = `
       <div class="small fw-semibold mb-1">Select ${needed} question${needed === 1 ? '' : 's'}</div>
       <div class="small mb-2 ${selected === needed ? 'text-success fw-semibold' : ''}">Selected: ${selected} / ${needed}</div>
-      <div class="d-flex flex-column gap-1 manual-bank-pick-list">
+      <div class="d-flex flex-column gap-2 manual-bank-pick-list">
         ${pool.map((q, i) => {
           const id = String(q.id || q.bankId || '');
           const checked = state.selectedIds.has(id);
           const disabled = (atLimit && !checked) || (usedElsewhere.has(id) && !checked);
-          const prompt = stripHtml(q.prompt) || 'Question';
-          return `<label class="d-flex align-items-start gap-2 border rounded-2 p-2 mb-0 bg-white ${disabled ? 'opacity-50' : ''}">
-            <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manual-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
-            <span class="small min-w-0 apt-q-card-text">Question ${i + 1}: ${esc(prompt)}</span>
+          return `<label class="d-block border rounded-2 p-2 mb-0 bg-white ${disabled ? 'opacity-50' : ''}">
+            <div class="d-flex align-items-start gap-2">
+              <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manual-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
+              <div class="flex-grow-1 min-w-0">${renderMcqPickDetailHtml(q, i, { compact: true })}</div>
+            </div>
           </label>`;
         }).join('')}
       </div>`;
@@ -4019,7 +4164,7 @@
       }
       const target = getTestFormTargetCount();
       const mcqCount = formIsCompanyTest() ? 0 : collectMcqs().length;
-      const jdTotal = (formIsCompanyTest() || document.getElementById('tfUseJdManual')?.checked) ? sumManualJdRuleCounts() : 0;
+      const jdTotal = (formIsCompanyTest() && getQuestionSource() === 'manual') ? sumManualJdRuleCounts() : 0;
       remaining = target - sumManualBankRuleCounts() - jdTotal - mcqCount;
       if (remaining <= 0) {
         toast('All questions are already assigned.', 'info');
@@ -4226,7 +4371,7 @@
         return `<label class="d-block border rounded-2 p-2 mb-0 bg-white ${disabled ? 'opacity-50' : ''}">
           <div class="d-flex align-items-start gap-2">
             <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
-            <div class="flex-grow-1 min-w-0">${renderJdQuestionDetailHtml(q, i)}</div>
+            <div class="flex-grow-1 min-w-0">${renderMcqPickDetailHtml(q, i, { compact: true })}</div>
           </div>
         </label>`;
       }).join('')}</div>`;
@@ -4449,6 +4594,7 @@
   }
 
   function addManualJdRuleRow(rule = {}, opts = {}) {
+    if (!formIsCompanyTest()) return;
     let remaining = 1;
     if (!opts.loading) {
       if (!isTestFormTargetSet()) {
@@ -5435,7 +5581,7 @@
     });
   }
 
-  async function applyView(requested) {
+  function resolveActiveView(requested) {
     const views = allowedViews();
     let view = requested || defaultView();
     if (getSharedTestIdFromUrl() && access.canTake) {
@@ -5450,7 +5596,10 @@
       }
     }
     if (!views.includes(view)) view = defaultView();
+    return view;
+  }
 
+  function setActiveView(view) {
     const hash = `#${view}`;
     if (location.hash !== hash) {
       history.replaceState(null, '', hash);
@@ -5464,10 +5613,17 @@
       link.classList.toggle('active', link.getAttribute('data-view') === view);
     });
 
+    if (typeof renderShell === 'function') {
+      renderShell(`${document.body?.dataset?.page || 'mock-aptitude.html'}${hash}`);
+    }
+  }
+
+  async function loadViewData(view, opts = {}) {
+    const { skipTests = false, skipProgress = false } = opts;
     if (view === 'take' && access.canTake) {
       setupTakeListNav();
-      await loadTests();
-      await loadMyProgress();
+      if (!skipTests) await loadTests();
+      if (!skipProgress) await loadMyProgress();
       if (takeListPanel === 'jdblock') {
         await loadStudentJdBlock();
       } else {
@@ -5480,51 +5636,45 @@
       await loadDirectory();
     }
     if (view === 'manage' && access.canManage) renderManage();
+  }
 
-    if (typeof renderShell === 'function') {
-      renderShell(`${document.body?.dataset?.page || 'mock-aptitude.html'}${hash}`);
-    }
+  async function applyView(requested, opts = {}) {
+    const view = resolveActiveView(requested);
+    setActiveView(view);
+    await loadViewData(view, opts);
+  }
+
+  function writeBootCache(extra = {}) {
+    writeSessionCache(APT_BOOT_CACHE_KEY, {
+      access: {
+        canTake: !!access.canTake,
+        canManage: !!access.canManage,
+        canViewDirectory: !!access.canViewDirectory,
+        scope: access.scope || null,
+      },
+      meta,
+      myProgress,
+      ...extra,
+    });
   }
 
   async function loadAccess() {
-    const u = Auth.user() || {};
-    access = applyRoleAccess({
-      canTake: typeof Auth.canTakeAptitudeMock === 'function' && Auth.canTakeAptitudeMock(),
-      canManage: typeof Auth.canManageAptitudeMocks === 'function' && Auth.canManageAptitudeMocks(),
-      canViewDirectory: typeof Auth.canViewAptitudeDirectory === 'function' && Auth.canViewAptitudeDirectory(),
-      scope: null,
-    });
+    access = buildAuthAccess();
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/aptitude/access').catch(() => null);
-      if (res?.success && res.data) {
+      const [accessRes, metaRes] = await Promise.all([
+        api('/aptitude/access').catch(() => null),
+        api('/aptitude/meta').catch(() => null),
+      ]);
+      if (accessRes?.success && accessRes.data) {
         access = applyRoleAccess({
-          canTake: !!res.data.canTake,
-          canManage: !!res.data.canManage,
-          canViewDirectory: !!res.data.canViewDirectory,
-          scope: res.data.scope || null,
+          canTake: !!accessRes.data.canTake,
+          canManage: !!accessRes.data.canManage,
+          canViewDirectory: !!accessRes.data.canViewDirectory,
+          scope: accessRes.data.scope || null,
         });
       }
-      const metaRes = await api('/aptitude/meta').catch(() => null);
       if (metaRes?.success && metaRes.data) meta = { ...meta, ...metaRes.data };
-    } else if (Auth.role() === 'staff') {
-      access.scope = {
-        role: 'staff',
-        departmentId: u.departmentId || '',
-        departmentName: u.departmentName || u.department || '',
-        assignedClassBatches: staffAssignedBatches(),
-      };
-      access = applyRoleAccess(access);
-    } else if (Auth.role() === 'placement_officer') {
-      access.scope = {
-        role: 'placement_officer',
-        scope: 'department',
-        departmentId: u.departmentId || '',
-        departmentName: u.departmentName || u.department || '',
-        label: u.departmentName || u.department
-          ? `Students in ${u.departmentName || u.department}`
-          : 'Students in your department only',
-      };
-      access = applyRoleAccess(access);
+      writeBootCache();
     }
     updateManageScopeHint(access.scope || {});
   }
@@ -5606,25 +5756,34 @@
   }
 
   async function loadTests() {
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/aptitude/tests').catch(() => null);
-      if (res?.success) {
-        tests = res.data?.tests || [];
+    if (testsInflight) return testsInflight;
+    testsInflight = (async () => {
+      if (Auth.hasRealAuth() && !Auth.isDemo()) {
+        const res = await api('/aptitude/tests').catch(() => null);
+        if (res?.success) {
+          tests = res.data?.tests || [];
+          writeSessionCache(APT_TESTS_CACHE_KEY, tests);
+          return;
+        }
+        if (!tests.length) {
+          tests = [];
+          toast(res?.message || 'Could not load aptitude tests from the server.', 'error');
+        }
         return;
       }
-      tests = [];
-      toast(res?.message || 'Could not load aptitude tests from the server.', 'error');
-      return;
-    }
-    tests = loadDemoTestsStore().map((t) => {
-      const copy = JSON.parse(JSON.stringify(t));
-      if (!access.canManage && typeof AptitudeExam !== 'undefined' && AptitudeExam.stripExamQuestions) {
-        copy.questions = AptitudeExam.stripExamQuestions(copy.questions || []);
-      } else if (!access.canManage) {
-        copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
-      }
-      return copy;
+      tests = loadDemoTestsStore().map((t) => {
+        const copy = JSON.parse(JSON.stringify(t));
+        if (!access.canManage && typeof AptitudeExam !== 'undefined' && AptitudeExam.stripExamQuestions) {
+          copy.questions = AptitudeExam.stripExamQuestions(copy.questions || []);
+        } else if (!access.canManage) {
+          copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
+        }
+        return copy;
+      });
+    })().finally(() => {
+      testsInflight = null;
     });
+    return testsInflight;
   }
 
   function renderMyStats(p) {
@@ -6034,7 +6193,13 @@
     }).filter((q) => richTextHasContent(q.prompt) && q.options.length >= 2);
   }
 
-  function openTestForm(test = null, preset = null) {
+  async function openTestForm(test = null, preset = null) {
+    try {
+      await ensureQuill();
+    } catch {
+      toast('Rich-text editor is still loading. Try again in a moment.', 'info');
+      return;
+    }
     const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
     const isCompanyPreset = preset?.testKind === 'company' || isCompanyTest(test);
     const isContest = isContestTest(test) || isContestPreset;
@@ -6106,10 +6271,10 @@
     document.getElementById('tfManualJdRules').innerHTML = '';
     manualJdRuleCounter = 0;
     manualJdSetSummaries = [];
-    const useJd = !isCompanyPreset && (jdRules.length > 0);
-    document.getElementById('tfUseJdManual').checked = useJd || (isCompanyPreset && source === 'manual');
-    document.getElementById('tfJdPicker')?.classList.toggle('d-none', isCompanyPreset ? source !== 'manual' : !useJd);
-    if (isCompanyPreset && source === 'manual') {
+    const useJd = isCompanyPreset && source === 'manual';
+    document.getElementById('tfUseJdManual').checked = useJd;
+    document.getElementById('tfJdPicker')?.classList.toggle('d-none', !useJd);
+    if (useJd) {
       fillTfCompanySelect(test?.companyId || preset?.companyId || '').then(() => {
         ensureJdSetSummariesLoaded().then(() => {
           document.getElementById('tfManualJdRules').innerHTML = '';
@@ -6119,13 +6284,6 @@
         }).catch(() => {
           jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
         });
-      });
-    } else if (useJd) {
-      ensureJdSetSummariesLoaded().then(() => {
-        jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
-        updateManualJdSummary();
-      }).catch(() => {
-        jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
       });
     }
 
@@ -6183,7 +6341,7 @@
       payload.bankQuestionIds = useBank
         ? payload.bankFilterRules.flatMap((r) => r.selectedQuestionIds || [])
         : [];
-      const useJd = document.getElementById('tfUseJdManual')?.checked;
+      const useJd = formIsCompanyTest() && source === 'manual';
       payload.jdFilterRules = useJd ? collectManualJdRules() : [];
       payload.questions = collectMcqs();
     }
@@ -6206,6 +6364,7 @@
   }
 
   function openBulk(mode, testId = '') {
+    ensureXlsx().catch(() => {});
     document.getElementById('bulkMode').value = mode;
     document.getElementById('bulkTestId').value = testId || '';
     document.getElementById('bulkTitle').textContent = mode === 'bank' ? 'Upload question bank' : 'Bulk upload to test';
@@ -6227,8 +6386,10 @@
   const BANK_BULK_EXCEL_HEADERS = ['prompt', 'optionA', 'optionB', 'optionC', 'optionD', 'correct', 'explanation', 'category', 'difficulty'];
   const BULK_SHEET_DIFFICULTIES = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
-  function downloadExcelTemplate(forBank = false) {
-    if (typeof XLSX === 'undefined') {
+  async function downloadExcelTemplate(forBank = false) {
+    try {
+      await ensureXlsx();
+    } catch {
       toast('Excel library is still loading. Try again in a moment.', 'info');
       return;
     }
@@ -6253,9 +6414,7 @@
   }
 
   async function parseExcelFile(file) {
-    if (typeof XLSX === 'undefined') {
-      throw new Error('Excel library not loaded.');
-    }
+    await ensureXlsx();
     const name = String(file?.name || '').toLowerCase();
     if (!/\.(xlsx|xls)$/.test(name)) {
       throw new Error('Please choose an Excel file (.xlsx or .xls).');
@@ -6329,6 +6488,7 @@
       saveDemoProgress({ ...p, history: p.history });
     }
     myProgress = p;
+    writeBootCache();
     renderMyStats(p);
     renderHistory(p);
     renderTestList();
@@ -6427,9 +6587,13 @@
     contestResultsModal = document.getElementById('contestResultsModal')
       ? new bootstrap.Modal(document.getElementById('contestResultsModal'))
       : null;
-    await loadAccess();
+    access = buildAuthAccess();
+    hydrateBootCache();
+
+    setupViewNav();
     setupTakeListNav();
     syncManageContestActions();
+
     const any = access.canTake || access.canManage || access.canViewDirectory;
     if (!any) {
       const denied = document.getElementById('aptDenied');
@@ -6441,14 +6605,26 @@
       return;
     }
 
-    await loadTests();
-    if (access.canTake || access.canManage) renderTestList();
-
-    setupViewNav();
     const initialView = getSharedTestIdFromUrl()
       ? 'take'
       : ((location.hash || '').replace(/^#/, '') || defaultView());
-    await applyView(initialView);
+    const view = resolveActiveView(initialView);
+    setActiveView(view);
+
+    if (view === 'take' && access.canTake) {
+      if (tests.length) paintCachedTakeUi();
+      else showTestListLoading();
+    }
+    if (view === 'manage' && access.canManage && tests.length) renderManage();
+
+    const needsProgress = view === 'take' && access.canTake;
+    await Promise.all([
+      loadAccess().then(() => setupViewNav()),
+      loadTests(),
+      needsProgress ? loadMyProgress() : Promise.resolve(),
+    ]);
+
+    await loadViewData(view, { skipTests: true, skipProgress: needsProgress });
 
     window.addEventListener('hashchange', () => {
       const view = (location.hash || '').replace(/^#/, '') || defaultView();
@@ -6759,7 +6935,7 @@
         const companyTest = formIsCompanyTest();
         const mcqCount = companyTest ? 0 : (payload.questions?.length || 0);
         const useBank = companyTest ? false : document.getElementById('tfUseBankManual')?.checked;
-        const useJd = companyTest ? (getQuestionSource() === 'manual') : document.getElementById('tfUseJdManual')?.checked;
+        const useJd = companyTest && getQuestionSource() === 'manual';
         const target = Number(document.getElementById('tfQuestionCount')?.value || 0);
         if (companyTest) {
           const { companyId } = selectedCompanyFromTestForm();
@@ -6797,7 +6973,9 @@
           return;
         }
         if (!useBank && !useJd && !mcqCount) {
-          toast('Add questions from the bank, Company Block, or add MCQs directly.', 'error');
+          toast(companyTest
+            ? 'Add questions from the Company Block.'
+            : 'Add questions from the bank or add MCQs directly.', 'error');
           return;
         }
         if (bankTotal + jdTotal + mcqCount !== target) {
