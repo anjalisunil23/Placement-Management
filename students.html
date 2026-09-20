@@ -21,17 +21,22 @@
     line-height:1.35;
   }
   .profile-email-value .profile-email-line + .profile-email-line{margin-top:.2rem}
-  /* PCA offer letter preview: A4 aspect ratio (210×297 mm) */
+  /* PCA offer letter preview: A4 aspect ratio (210×297 mm), tall enough to read */
   .pca-a4-preview-wrap{
     width:100%;
-    max-width:595px;
-    margin:0 auto;
+    max-width:100%;
+    height:min(75vh,920px);
+    max-height:75vh;
     aspect-ratio:210/297;
+    margin:0 auto;
     background:#fff;
     border:1px solid #dee2e6;
     border-radius:.375rem;
     overflow:hidden;
     box-shadow:0 2px 8px rgba(0,0,0,.08);
+  }
+  @media (min-width:992px){
+    .pca-a4-preview-wrap{height:min(78vh,960px)}
   }
   .pca-a4-preview-wrap iframe{
     display:block;
@@ -2235,6 +2240,16 @@ function refreshPcaLetterPreview() {
   iframe.src = pcaOfferLetterPreviewUrl(pcaModalPayloadFromForm());
 }
 
+function bindPcaPreviewIframeFit() {
+  const iframe = document.getElementById('pcaLetterPreview');
+  const modal = document.getElementById('pcaOfferLetterModal');
+  if (!iframe || !modal || iframe.dataset.pcaFitBound === '1') return;
+  iframe.dataset.pcaFitBound = '1';
+  modal.addEventListener('shown.bs.modal', () => {
+    try { iframe.contentWindow?.dispatchEvent(new Event('resize')); } catch { /* cross-origin */ }
+  });
+}
+
 async function openPcaOfferLetterModal(assignmentId, studentName = '') {
   if (!assignmentId || typeof OfficerApi === 'undefined') return;
   pcaModalAssignmentId = assignmentId;
@@ -3751,6 +3766,7 @@ onAppReady(async () => {
     removeVolunteerStudent(btn.getAttribute('data-volunteer-id')).catch(() => {});
   });
   document.getElementById('pcaModalPreviewBtn')?.addEventListener('click', () => refreshPcaLetterPreview());
+  bindPcaPreviewIframeFit();
   document.getElementById('pcaModalSaveBtn')?.addEventListener('click', () => savePcaOfferLetterDraft().catch(() => {}));
   document.getElementById('pcaModalPublishBtn')?.addEventListener('click', () => publishPcaOfferLetter().catch(() => {}));
   document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {

@@ -51,7 +51,7 @@
       height: auto;
       display: block;
       flex-shrink: 0;
-      background: transparent;
+      background: #fff;
     }
 
     .letter-footer { margin-top: auto; }
@@ -59,26 +59,26 @@
     .content {
       flex: 1 1 auto;
       min-height: 0;
-      padding: 3mm var(--side-pad) 2mm;
-      font-size: 10.5pt;
-      line-height: 1.36;
+      padding: 2mm var(--side-pad) 1mm;
+      font-size: 10pt;
+      line-height: 1.32;
       overflow: hidden;
     }
 
     .doc-title {
       text-align: center;
-      font-size: 13pt;
+      font-size: 12.5pt;
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      margin: 2mm 0 5mm;
+      margin: 1mm 0 3.5mm;
       line-height: 1.25;
     }
 
     .meta-block {
-      margin-bottom: 4mm;
-      font-size: 10.5pt;
-      line-height: 1.45;
+      margin-bottom: 3mm;
+      font-size: 10pt;
+      line-height: 1.4;
     }
 
     .meta-block .org-line { font-weight: 700; }
@@ -102,13 +102,13 @@
     .divider {
       border: none;
       border-top: 1.25pt solid #666;
-      margin: 4mm 0 4.5mm;
+      margin: 3mm 0 3.5mm;
     }
 
     .salutation { margin-bottom: 3mm; }
     .salutation p { font-weight: 700; margin-bottom: 1mm; }
 
-    .body-text p { margin-bottom: 3mm; text-align: left; }
+    .body-text p { margin-bottom: 2.5mm; text-align: left; }
     .body-text p:last-child { margin-bottom: 0; }
 
     .section-heading { font-weight: 700; margin: 3.5mm 0 2mm; }
@@ -120,8 +120,8 @@
     .closing .sign-off { font-weight: 700; line-height: 1.4; }
 
     .signature-block {
-      margin-top: 6mm;
-      font-size: 10.5pt;
+      margin-top: 4mm;
+      font-size: 10pt;
     }
 
     .principal-sign {
@@ -166,13 +166,10 @@
         page-break-inside: avoid;
       }
       .letterhead-wrap,
-      .letter-footer-wrap {
-        background: #fff !important;
-      }
+      .letter-footer-wrap,
       .letterhead,
       .letter-footer {
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
+        background: #fff !important;
       }
       .no-print { display: none !important; }
     }
@@ -230,7 +227,7 @@
 
     .toolbar button:hover { background: #163d7f; }
 
-    /* Embedded preview (PO modal iframe): fill A4 frame, no chrome */
+    /* Embedded preview (PO modal iframe): scale full A4 page to fit */
     html[data-embed="1"],
     html[data-embed="1"] body {
       background: #fff;
@@ -241,15 +238,27 @@
       overflow: hidden;
     }
 
+    html[data-embed="1"] .sheet-viewport {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+
     html[data-embed="1"] .sheet {
       margin: 0;
       box-shadow: none;
-      width: 100%;
-      height: 100%;
-      min-width: 0;
-      min-height: 0;
-      max-width: none;
-      max-height: none;
+      width: var(--page-w);
+      height: var(--page-h);
+      min-width: var(--page-w);
+      min-height: var(--page-h);
+      max-width: var(--page-w);
+      max-height: var(--page-h);
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%) scale(var(--embed-scale, 1));
+      transform-origin: top center;
     }
   </style>
 </head>
@@ -269,9 +278,10 @@
   <p class="hint">Academic year is calculated automatically (July–June). Adjust the letter date if needed before printing.</p>
 </div>
 
+<div class="sheet-viewport" id="sheetViewport">
 <article class="sheet" id="letterSheet">
   <div class="letterhead-wrap">
-    <img class="letterhead" src="css/img/pca-letterhead.png" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
+    <img class="letterhead" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
   </div>
 
   <div class="content">
@@ -341,15 +351,16 @@
     </div>
 
     <div class="signature-block">
-      <img class="principal-sign" src="css/img/principal-signature.png" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
+      <img class="principal-sign" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
       <div class="signature-caption">Signature of Principal</div>
     </div>
   </div>
 
   <div class="letter-footer-wrap">
-    <img class="letter-footer" src="css/img/pca-footer.png" data-asset="css/img/pca-footer.png" alt="Contact and accreditation footer"/>
+    <img class="letter-footer" data-asset="css/img/pca-footer.png" alt="Contact and accreditation footer"/>
   </div>
 </article>
+</div>
 
 <script>
 (function () {
@@ -485,9 +496,52 @@
     ayInline.forEach(el => { el.textContent = ay; });
   }
 
+  function fitEmbedPreview() {
+    if (!embed) return;
+    const viewport = document.getElementById('sheetViewport');
+    const sheet = document.getElementById('letterSheet');
+    if (!viewport || !sheet) return;
+
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    const sw = sheet.offsetWidth;
+    const sh = sheet.offsetHeight;
+    if (!vw || !vh || !sw || !sh) return;
+
+    const scale = Math.min(vw / sw, vh / sh);
+    document.documentElement.style.setProperty('--embed-scale', String(scale));
+  }
+
+  function scheduleEmbedFit() {
+    if (!embed) return;
+    requestAnimationFrame(() => {
+      fitEmbedPreview();
+      requestAnimationFrame(fitEmbedPreview);
+    });
+  }
+
   [inpDate, inpName, inpClass].forEach(el => el.addEventListener('input', sync));
   document.getElementById('btnPrint').addEventListener('click', () => window.print());
-  loadLetterData();
+
+  if (embed) {
+    window.addEventListener('resize', scheduleEmbedFit);
+    const viewport = document.getElementById('sheetViewport');
+    if (viewport && typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(scheduleEmbedFit).observe(viewport);
+    }
+    document.querySelectorAll('.letterhead, .letter-footer, .principal-sign').forEach((img) => {
+      if (!img.complete) {
+        img.addEventListener('load', scheduleEmbedFit, { once: true });
+        img.addEventListener('error', scheduleEmbedFit, { once: true });
+      }
+    });
+    if (document.fonts?.ready) document.fonts.ready.then(scheduleEmbedFit).catch(() => {});
+  }
+
+  loadLetterData().finally(() => {
+    scheduleEmbedFit();
+    if (embed) setTimeout(scheduleEmbedFit, 150);
+  });
 })();
 </script>
 </body>
