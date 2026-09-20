@@ -62,8 +62,11 @@ $assert(!str_contains($js, 'educationProgramYears'), 'no invented program-year d
 $assert(!str_contains($js, 'start + duration'), 'no start+duration calculation');
 $assert(str_contains($css, 'text-align: justify'), 'career objective justified');
 $assert(str_contains($css, 'screen and (max-width: 767.98px)'), 'mobile stack scoped to screen only');
-$assert(str_contains($settings, 'resume-builder.css?v=20260824rb19'), 'CSS cache bust');
-$assert(str_contains($settings, 'resume-builder.js?v=20260824rb19'), 'JS cache bust');
+$assert(str_contains($settings, 'resume-builder.css?v=20260824rb20'), 'CSS cache bust');
+$assert(str_contains($settings, 'resume-builder.js?v=20260824rb20'), 'JS cache bust');
+$assert(str_contains($css, 'font-size: 12pt'), 'section heading larger than body');
+$assert(str_contains($css, 'font-size: 10.5pt'), 'body and titles at 10.5pt');
+$assert(str_contains($css, 'padding: 16mm 16mm 16mm'), 'professional A4 padding');
 $assert(str_contains($schema, 'resume_contact_links'), 'contact links table in schema');
 $assert(str_contains($index, '/student/resume-builder/contact-links'), 'contact links API route');
 $assert(!str_contains($schema, 'resume_preview'), 'no preview table');
