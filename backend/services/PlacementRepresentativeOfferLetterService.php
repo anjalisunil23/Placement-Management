@@ -207,15 +207,30 @@ final class PlacementRepresentativeOfferLetterService
 
     private function assetRoot(): string
     {
-        return dirname(__DIR__, 2);
+        $root = dirname(__DIR__, 2);
+        $resolved = realpath($root);
+
+        return $resolved !== false ? $resolved : $root;
+    }
+
+    private function backendRoot(): string
+    {
+        $root = dirname(__DIR__);
+        $resolved = realpath($root);
+
+        return $resolved !== false ? $resolved : $root;
     }
 
     private function templatePath(): string
     {
-        foreach ([
+        $candidates = [
+            $this->backendRoot() . '/resources/templates/pca-offer-letter-template.pdf',
             $this->assetRoot() . '/assets/templates/pca-offer-letter-template.pdf',
             $this->assetRoot() . '/assets/templates/OFFICIAL-OFFER-LETTER.pdf',
-        ] as $path) {
+            $this->assetRoot() . '/backend/resources/templates/pca-offer-letter-template.pdf',
+        ];
+
+        foreach ($candidates as $path) {
             if (is_file($path)) {
                 return $path;
             }
