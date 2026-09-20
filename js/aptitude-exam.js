@@ -100,6 +100,44 @@
     return 'not-visited';
   }
 
+  function computePaletteCounts(questions, answers, marked, visited) {
+    const counts = {
+      'not-visited': 0,
+      'not-answered': 0,
+      answered: 0,
+      review: 0,
+      'answered-review': 0,
+    };
+    if (!questions?.length) return counts;
+    const order = questions.map((x) => questionKey(x));
+    const answersWithOrder = { ...answers, _order: order };
+    questions.forEach((q, i) => {
+      const st = paletteState(i, answersWithOrder, marked, visited);
+      counts[st] = (counts[st] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function buildSubmitSummaryHtml(counts) {
+    const rows = [
+      { key: 'not-visited', label: 'Not visited', swatch: 'background:#fff;border:1px solid #cbd5e1' },
+      { key: 'not-answered', label: 'Not answered', swatch: 'background:#dbeafe;border:1px solid #93c5fd' },
+      { key: 'answered', label: 'Answered', swatch: 'background:#22c55e;border:1px solid #16a34a' },
+      { key: 'review', label: 'Review', swatch: 'background:#ef4444;border:1px solid #dc2626' },
+      { key: 'answered-review', label: 'Answered + review', swatch: 'background:#22c55e;border:1px solid #dc2626;box-shadow:inset 0 0 0 1px #ef4444' },
+    ];
+    const items = rows.map((r) => `
+      <div class="d-flex justify-content-between align-items-center small py-1 gap-2">
+        <span class="d-inline-flex align-items-center gap-2 text-muted">
+          <i style="width:.75rem;height:.75rem;border-radius:.2rem;display:inline-block;${r.swatch}"></i>
+          ${esc(r.label)}
+        </span>
+        <strong class="text-nowrap">${counts[r.key] || 0}</strong>
+      </div>`).join('');
+    return `<p class="mb-2">Submit your answers now? You cannot change them after submission.</p>
+      <div class="border rounded-3 p-2 bg-light">${items}</div>`;
+  }
+
   function createExamController(opts) {
     const root = opts.root;
     const onExit = opts.onExit || (() => {});
@@ -233,21 +271,7 @@
     }
 
     function paletteCounts() {
-      const counts = {
-        'not-visited': 0,
-        'not-answered': 0,
-        answered: 0,
-        review: 0,
-        'answered-review': 0,
-      };
-      if (!state?.questions?.length) return counts;
-      const order = state.questions.map((x) => questionKey(x));
-      const answers = { ...state.answers, _order: order };
-      state.questions.forEach((q, i) => {
-        const st = paletteState(i, answers, state.marked, state.visited);
-        counts[st] = (counts[st] || 0) + 1;
-      });
-      return counts;
+      return computePaletteCounts(state?.questions || [], state?.answers || {}, state?.marked || {}, state?.visited || {});
     }
 
     function renderPaletteLegendCounts() {
@@ -332,10 +356,11 @@
     async function submitExam(auto = false) {
       if (submitting || !state) return;
       if (!auto) {
+        const counts = paletteCounts();
         const ok = typeof confirmAction === 'function'
           ? await confirmAction({
               title: 'Submit test',
-              message: 'Submit your answers now? You cannot change them after submission.',
+              messageHtml: buildSubmitSummaryHtml(counts),
               confirmText: 'Submit',
               variant: 'primary',
             })

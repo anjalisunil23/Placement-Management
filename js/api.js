@@ -5669,7 +5669,7 @@ function ensureConfirmModal() {
         <h5 class="modal-title fw-bold" id="phConfirmTitle">Confirm action</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body"><p class="mb-0" id="phConfirmMessage"></p></div>
+      <div class="modal-body"><div class="mb-0" id="phConfirmMessage"></div></div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="phConfirmCancel">Cancel</button>
         <button type="button" class="btn btn-primary" id="phConfirmOk">Confirm</button>
@@ -5696,7 +5696,11 @@ function confirmAction(opts) {
     const cancelBtn = document.getElementById('phConfirmCancel');
 
     titleEl.textContent = options.title || 'Confirm action';
-    msgEl.textContent = options.message || 'Are you sure you want to continue?';
+    if (options.messageHtml) {
+      msgEl.innerHTML = options.messageHtml;
+    } else {
+      msgEl.textContent = options.message || 'Are you sure you want to continue?';
+    }
     okBtn.textContent = options.confirmText || 'Confirm';
     cancelBtn.textContent = options.cancelText || 'Cancel';
     okBtn.className = `btn btn-${options.variant || 'primary'}`;
