@@ -39,6 +39,7 @@
       width: 100%;
       display: block;
       flex-shrink: 0;
+      background: #fff;
     }
 
     .letter-footer { margin-top: auto; }
@@ -111,16 +112,18 @@
 
     .principal-sign {
       display: block;
-      height: 14mm;
+      height: 16mm;
       width: auto;
-      max-width: 52mm;
+      max-width: 58mm;
       object-fit: contain;
-      object-position: left center;
-      margin-bottom: 1mm;
-      mix-blend-mode: lighten;
+      object-position: left bottom;
+      margin-bottom: 0.5mm;
     }
 
-    .signature-caption { font-weight: 400; }
+    .signature-caption {
+      font-weight: 400;
+      margin-top: 0.5mm;
+    }
 
     @page { size: A4 portrait; margin: 0; }
 
