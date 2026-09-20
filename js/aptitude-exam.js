@@ -232,6 +232,39 @@
       });
     }
 
+    function paletteCounts() {
+      const counts = {
+        'not-visited': 0,
+        'not-answered': 0,
+        answered: 0,
+        review: 0,
+        'answered-review': 0,
+      };
+      if (!state?.questions?.length) return counts;
+      const order = state.questions.map((x) => questionKey(x));
+      const answers = { ...state.answers, _order: order };
+      state.questions.forEach((q, i) => {
+        const st = paletteState(i, answers, state.marked, state.visited);
+        counts[st] = (counts[st] || 0) + 1;
+      });
+      return counts;
+    }
+
+    function renderPaletteLegendCounts() {
+      const counts = paletteCounts();
+      const map = {
+        'count-not-visited': counts['not-visited'],
+        'count-not-answered': counts['not-answered'],
+        'count-answered': counts.answered,
+        'count-review': counts.review,
+        'count-answered-review': counts['answered-review'],
+      };
+      Object.entries(map).forEach(([id, value]) => {
+        const node = el(id);
+        if (node) node.textContent = String(value);
+      });
+    }
+
     function renderPalette() {
       const box = el('palette');
       box.innerHTML = state.questions.map((q, i) => {
@@ -244,6 +277,7 @@
           renderQuestion();
         });
       });
+      renderPaletteLegendCounts();
     }
 
     function startTimer() {
