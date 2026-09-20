@@ -401,7 +401,11 @@
         </div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfQuestionCount">Total number of questions</label><input class="form-control" type="number" id="tfQuestionCount" min="1" required/></div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold" for="tfQuestionCount">Total number of questions</label>
+          <input class="form-control" type="number" id="tfQuestionCount" min="1" required placeholder="Enter total first"/>
+          <div class="form-text" id="tfQuestionCountHint">Set the total here first — category selection unlocks after that.</div>
+        </div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDuration">Total duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required/></div>
 
         <div class="col-12">
@@ -421,7 +425,7 @@
               <div class="small fw-semibold">Random rules from question bank</div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRandomRule"><i class="bi bi-plus-lg me-1"></i>Add category</button>
             </div>
-            <p class="small text-muted-2 mb-2">Add one or more rows — the same category can be used multiple times. Each row picks random questions for that category and difficulty, with its own marks per question.</p>
+            <p class="small text-muted-2 mb-2" id="tfRandomPanelHint">Enter the total number of questions above, then add categories. Each row picks random questions for that category and difficulty, with its own marks per question.</p>
             <div id="tfRandomRules" class="d-flex flex-column gap-2 mb-2"></div>
             <div class="small text-muted-2" id="tfRandomSummary">0 questions from rules</div>
           </div>
@@ -647,5 +651,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919coblock2"></script>
+<script src="js/aptitude-page.js?v=20260920target"></script>
 </body></html>

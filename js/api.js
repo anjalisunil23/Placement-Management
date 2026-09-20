@@ -728,10 +728,14 @@ const Auth = {
     }
     const raw = (next || '').trim();
     if (!raw) return this.homePage();
-    const page = raw.split('#')[0].split('?')[0].replace(/^\//, '');
-    const hash = raw.includes('#') ? raw.slice(raw.indexOf('#')) : '';
+    const hashIdx = raw.indexOf('#');
+    const hash = hashIdx >= 0 ? raw.slice(hashIdx) : '';
+    const beforeHash = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+    const qIdx = beforeHash.indexOf('?');
+    const page = (qIdx >= 0 ? beforeHash.slice(0, qIdx) : beforeHash).replace(/^\//, '');
+    const query = qIdx >= 0 ? beforeHash.slice(qIdx) : '';
     if (page && page !== 'public-stats.html' && page !== 'login.html' && this.isAllowed(page)) {
-      return page + hash;
+      return page + query + hash;
     }
     return this.homePage();
   },
@@ -5447,9 +5451,14 @@ function authReentryUrl(nextPage, roleHint) {
   if (!role) {
     try { role = Auth.role() || JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch { role = ''; }
   }
-  const page = nextPage || document.body?.dataset?.page || 'dashboard.html';
-  const hash = (typeof location !== 'undefined' && location.hash && !String(page).includes('#')) ? location.hash : '';
-  const next = String(page).includes('#') ? page : (page + hash);
+  let page = nextPage || document.body?.dataset?.page || 'dashboard.html';
+  if (!String(page).includes('?') && typeof location !== 'undefined' && location.search) {
+    page += location.search;
+  }
+  if (!String(page).includes('#') && typeof location !== 'undefined' && location.hash) {
+    page += location.hash;
+  }
+  const next = page;
   const aesRoles = ['student', 'staff', 'placement_officer', 'alumni'];
   if (aesRoles.includes(role)) {
     try {

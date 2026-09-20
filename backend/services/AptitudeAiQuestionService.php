@@ -16,7 +16,7 @@ final class AptitudeAiQuestionService
     public const MAX_COUNT = 200;
 
     private const MIN_COOLDOWN_SECONDS = 8;
-    private const JD_BATCH_SIZE = 10;
+    private const JD_BATCH_SIZE = 20;
     private const MAX_JD_BATCH_ATTEMPTS = 15;
     private const MAX_EXISTING_PROMPT_HINTS = 25;
 
@@ -70,10 +70,12 @@ final class AptitudeAiQuestionService
         AptitudeAccessService::requireManager($admin);
         $this->assertCooldown((string) ($admin['_id'] ?? $admin['id'] ?? ''));
 
-        $mode = strtolower(trim((string) ($body['generationMode'] ?? $body['mode'] ?? 'category')));
+        $mode = strtolower(trim((string) ($body['generationMode'] ?? $body['mode'] ?? 'category'));
         if (in_array($mode, ['jd', 'job_description', 'job description'], true)) {
             return $this->generateFromJdForUser($admin, $body);
         }
+
+        @set_time_limit(600);
 
         $category = AptitudeTestModel::normalizeCategory((string) ($body['category'] ?? 'General Aptitude'));
         $topic = trim((string) ($body['topic'] ?? ''));
@@ -92,9 +94,34 @@ final class AptitudeAiQuestionService
             throw new \InvalidArgumentException('Add at least one generation row with a question count.');
         }
 
+        $progressKey = $this->sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
+        $requested = array_sum(array_map(static fn (array $b): int => (int) ($b['count'] ?? 0), $batches));
+        $bankIndex = (new AptitudeQuestionBankModel())->loadNormalizedPromptIndex();
         $merged = [];
-        $requested = 0;
+        $generatedSoFar = 0;
+
+        $this->writeGenerationProgress($progressKey, [
+            'phase' => 'generating',
+            'message' => 'Generating questions…',
+            'generated' => 0,
+            'requested' => $requested,
+            'percent' => 0,
+            'done' => false,
+        ]);
+
         foreach ($batches as $batch) {
+            $difficulty = AptitudeTestModel::normalizeDifficulty((string) ($batch['difficulty'] ?? 'Medium'));
+            $this->writeGenerationProgress($progressKey, [
+                'phase' => 'generating',
+                'message' => "Generating {$difficulty} questions… ({$generatedSoFar} / {$requested})",
+                'generated' => $generatedSoFar,
+                'requested' => $requested,
+                'percent' => $requested > 0
+                    ? min(99, (int) round(($generatedSoFar / $requested) * 100))
+                    : 0,
+                'done' => false,
+            ]);
+
             $result = $this->generate(
                 $category,
                 $topic,
@@ -103,16 +130,28 @@ final class AptitudeAiQuestionService
                 $batch['marks'],
                 $language,
                 $instructions,
-                $negativeMarks
+                $negativeMarks,
+                $bankIndex
             );
-            $requested += $batch['count'];
             foreach ($result['questions'] ?? [] as $question) {
                 $merged[] = $question;
             }
+            $generatedSoFar = count($merged);
             $this->logGeneration($admin, $category, $topic, $batch['difficulty'], $batch['count'], true);
         }
 
         $received = count($merged);
+
+        $this->writeGenerationProgress($progressKey, [
+            'phase' => $received >= $requested ? 'complete' : 'incomplete',
+            'message' => $received >= $requested
+                ? "{$received} / {$requested} completed"
+                : "Generated {$received} of {$requested} requested",
+            'generated' => $received,
+            'requested' => $requested,
+            'percent' => $requested > 0 ? min(100, (int) round(($received / $requested) * 100)) : 100,
+            'done' => true,
+        ]);
 
         return [
             'questions' => $merged,
@@ -155,15 +194,15 @@ final class AptitudeAiQuestionService
         $requested = array_sum(array_map(static fn (array $b): int => (int) ($b['count'] ?? 0), $batches));
 
         $this->writeGenerationProgress($progressKey, [
-            'phase' => 'analyzing',
-            'message' => 'Analyzing Job Description…',
+            'phase' => 'generating',
+            'message' => 'Preparing JD context…',
             'generated' => 0,
             'requested' => $requested,
             'percent' => 0,
             'done' => false,
         ]);
 
-        $jdContext = $this->analyzeJdContext($jobDescription, $language);
+        $jdContext = $this->buildLocalJdContext($jobDescription);
 
         $bank = new AptitudeQuestionBankModel();
         $bankIndex = $bank->loadNormalizedPromptIndex();
@@ -276,7 +315,7 @@ final class AptitudeAiQuestionService
     ): array {
         $difficulty = AptitudeTestModel::normalizeDifficulty($difficulty);
         $count = max(1, min(self::MAX_COUNT, $count));
-        $jdContext = $this->analyzeJdContext($jobDescription, $language);
+        $jdContext = $this->buildLocalJdContext($jobDescription);
         $bankIndex = (new AptitudeQuestionBankModel())->loadNormalizedPromptIndex();
         /** @var array<string, true> $seenKeys */
         $seenKeys = [];
@@ -322,7 +361,8 @@ final class AptitudeAiQuestionService
         float $marks = 1.0,
         string $language = 'English',
         string $instructions = '',
-        float $negativeMarks = 0.0
+        float $negativeMarks = 0.0,
+        ?array $bankIndex = null
     ): array {
         $category = AptitudeTestModel::normalizeCategory($category);
         $difficulty = AptitudeTestModel::normalizeDifficulty($difficulty);
@@ -367,8 +407,9 @@ final class AptitudeAiQuestionService
             error_log('[PMS Aptitude AI] batch shortfall: requested ' . $count . ', received ' . $received);
         }
 
-        $bank = new AptitudeQuestionBankModel();
-        $bankIndex = $bank->loadNormalizedPromptIndex();
+        if ($bankIndex === null) {
+            $bankIndex = (new AptitudeQuestionBankModel())->loadNormalizedPromptIndex();
+        }
         $batchKeys = [];
         $preview = [];
 
@@ -652,6 +693,26 @@ PROMPT;
     }
 
     /**
+     * Fast local JD context — avoids an extra OpenAI round trip before generation.
+     * The full JD text is still included in every batch prompt.
+     *
+     * @return array{skills:list<array{name:string,weight:int}>,topics:list<string>,summary:string}
+     */
+    private function buildLocalJdContext(string $jobDescription): array
+    {
+        $summary = trim(preg_replace('/\s+/u', ' ', $jobDescription) ?? $jobDescription);
+        if (mb_strlen($summary) > 800) {
+            $summary = mb_substr($summary, 0, 800) . '…';
+        }
+
+        return [
+            'skills' => [],
+            'topics' => [],
+            'summary' => $summary,
+        ];
+    }
+
+    /**
      * @return array{skills:list<array{name:string,weight:int}>,topics:list<string>,summary:string}
      */
     private function analyzeJdContext(string $jobDescription, string $language): array
@@ -804,17 +865,6 @@ PROMPT
                 continue;
             }
 
-            $this->writeGenerationProgress($progressKey, [
-                'phase' => 'validating',
-                'message' => 'Validating questions…',
-                'generated' => $generatedTotal,
-                'requested' => $totalRequested,
-                'percent' => $totalRequested > 0
-                    ? min(99, (int) round(($generatedTotal / $totalRequested) * 100))
-                    : 0,
-                'done' => false,
-            ]);
-
             $validated = $this->validateJdBatchToPreview(
                 $rawQuestions,
                 $difficulty,
@@ -825,17 +875,6 @@ PROMPT
                 $bankIndex,
                 $tempCounter
             );
-
-            $this->writeGenerationProgress($progressKey, [
-                'phase' => 'deduplicating',
-                'message' => 'Removing duplicates…',
-                'generated' => $generatedTotal,
-                'requested' => $totalRequested,
-                'percent' => $totalRequested > 0
-                    ? min(99, (int) round(($generatedTotal / $totalRequested) * 100))
-                    : 0,
-                'done' => false,
-            ]);
 
             foreach ($validated as $question) {
                 if (count($collected) >= $target) {

@@ -2343,11 +2343,8 @@
     document.getElementById('tfRandomPanel')?.classList.toggle('d-none', !randomBank);
     document.getElementById('tfRandomJdPanel')?.classList.toggle('d-none', !randomJd);
     document.getElementById('tfManualPanel')?.classList.toggle('d-none', randomBank || randomJd);
-    const countEl = document.getElementById('tfQuestionCount');
-    if (countEl) {
-      countEl.readOnly = randomBank || randomJd;
-      updateTestFormQuestionCount();
-    }
+    updateTestFormQuestionCount();
+    syncTestFormCategoryGating();
   }
 
   function fillAiTopicDatalist(category) {
@@ -3335,11 +3332,9 @@
         data = { questions: merged, requested: params.count, received: merged.length };
         toast('Demo AI preview (no OpenAI call).', 'info');
       } else {
-        if (params.generationMode === 'jd') {
-          progressKey = createAiProgressKey();
-          params.progressKey = progressKey;
-          startAiGenProgressPoll(progressKey);
-        }
+        progressKey = createAiProgressKey();
+        params.progressKey = progressKey;
+        startAiGenProgressPoll(progressKey);
         const res = await api('/aptitude/ai/generate', { method: 'POST', body: JSON.stringify(params) });
         if (!res?.success) throw new Error(res?.message || 'AI generation failed.');
         data = res.data || {};
@@ -3499,6 +3494,117 @@
     }
   }
 
+  function getTestFormTargetCount() {
+    const n = Number(document.getElementById('tfQuestionCount')?.value || 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+
+  function isTestFormTargetSet() {
+    return getTestFormTargetCount() > 0;
+  }
+
+  function sumCategoryRuleCounts(rootId) {
+    return collectCategoryRules(rootId).reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+  }
+
+  function sumManualBankRuleCounts() {
+    return collectManualBankRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+  }
+
+  function sumManualJdRuleCounts() {
+    return [...document.querySelectorAll('.tf-manual-jd-block')].reduce(
+      (sum, wrap) => sum + (Number(manualJdRuleFromWrap(wrap).count) || 0),
+      0
+    );
+  }
+
+  function sumRandomJdRuleCounts() {
+    return collectRandomJdRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+  }
+
+  function formatAllocationSummary(allocated, target) {
+    if (!target) return 'Enter total number of questions above to assign categories.';
+    const remaining = Math.max(0, target - allocated);
+    if (allocated > target) {
+      return `${allocated} assigned — ${allocated - target} over the total of ${target}. Reduce category counts.`;
+    }
+    if (remaining === 0) {
+      return `${allocated} of ${target} questions assigned — ready to save.`;
+    }
+    return `${allocated} of ${target} questions assigned · ${remaining} remaining`;
+  }
+
+  function clampCategoryRuleCounts(rootId) {
+    const target = getTestFormTargetCount();
+    if (!target) return;
+    const rows = [...document.querySelectorAll(`#${rootId} .tf-category-rule`)];
+    let allocated = 0;
+    rows.forEach((row, index) => {
+      const countEl = row.querySelector('[data-f="count"]');
+      if (!countEl) return;
+      let count = Math.max(1, Number(countEl.value || 1));
+      const maxForRow = Math.max(1, target - allocated);
+      if (count > maxForRow) count = maxForRow;
+      countEl.value = String(count);
+      allocated += count;
+      if (index === rows.length - 1 && allocated < target) {
+        countEl.max = String(maxForRow);
+      }
+    });
+  }
+
+  function syncTestFormCategoryGating() {
+    const targetSet = isTestFormTargetSet();
+    const source = getQuestionSource();
+    const ids = [
+      'btnAddRandomRule',
+      'btnAddRandomJdRule',
+      'btnAddManualBankRule',
+      'btnAddManualJdRule',
+      'btnAddMcq',
+      'btnFormBulkImport',
+      'tfUseBankManual',
+      'tfUseJdManual',
+    ];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = !targetSet;
+    });
+    document.querySelectorAll('#tfRandomRules .tf-category-rule, #tfManualBankRules .tf-manual-bank-block, #tfManualJdRules .tf-manual-jd-block, #tfRandomJdRules .tf-random-jd-block').forEach((row) => {
+      row.querySelectorAll('select, input, button[data-remove-rule], button[data-remove-manual-block], button[data-remove-jd-block]').forEach((el) => {
+        if (el.matches('[data-remove-rule], [data-remove-manual-block], [data-remove-jd-block]')) {
+          el.disabled = !targetSet;
+          return;
+        }
+        el.disabled = !targetSet;
+      });
+    });
+    ['tfRandomPanel', 'tfRandomJdPanel', 'tfBankPicker', 'tfJdPicker', 'tfManualMcqSection'].forEach((id) => {
+      const panel = document.getElementById(id);
+      if (!panel) return;
+      panel.classList.toggle('opacity-50', !targetSet);
+      panel.setAttribute('aria-disabled', targetSet ? 'false' : 'true');
+    });
+    const hint = document.getElementById('tfQuestionCountHint');
+    if (hint) {
+      hint.textContent = targetSet
+        ? formatAllocationSummary(getTestFormAllocatedTotal(source), getTestFormTargetCount())
+        : 'Set the total here first — category selection unlocks after that.';
+    }
+  }
+
+  function getTestFormAllocatedTotal(source = getQuestionSource()) {
+    if (source === 'random') return sumCategoryRuleCounts('tfRandomRules');
+    if (source === 'random_jd') return sumRandomJdRuleCounts();
+    const company = formIsCompanyTest();
+    const useBank = !company && document.getElementById('tfUseBankManual')?.checked;
+    const useJd = company || document.getElementById('tfUseJdManual')?.checked;
+    const bankTotal = useBank ? sumManualBankRuleCounts() : 0;
+    const jdTotal = useJd ? sumManualJdRuleCounts() : 0;
+    const mcqCount = company ? 0 : collectMcqs().length;
+    return bankTotal + jdTotal + mcqCount;
+  }
+
   function addCategoryRuleRow(rootId, rule = {}, onChange = null) {
     const root = document.getElementById(rootId);
     if (!root) return;
@@ -3536,10 +3642,17 @@
       if (onChange) onChange();
     });
     wrap.querySelectorAll('[data-f]').forEach((el) => {
-      el.addEventListener('change', () => { if (onChange) onChange(); });
-      el.addEventListener('input', () => { if (onChange) onChange(); });
+      el.addEventListener('change', () => {
+        clampCategoryRuleCounts(rootId);
+        if (onChange) onChange();
+      });
+      el.addEventListener('input', () => {
+        clampCategoryRuleCounts(rootId);
+        if (onChange) onChange();
+      });
     });
     root.appendChild(wrap);
+    clampCategoryRuleCounts(rootId);
     if (onChange) onChange();
   }
 
@@ -3552,7 +3665,19 @@
     }));
   }
 
-  function addRandomRuleRow(rule = {}) {
+  function addRandomRuleRow(rule = {}, opts = {}) {
+    if (!opts.loading) {
+      if (!isTestFormTargetSet()) {
+        toast('Enter total number of questions first.', 'info');
+        return;
+      }
+      const remaining = getTestFormTargetCount() - sumCategoryRuleCounts('tfRandomRules');
+      if (remaining <= 0) {
+        toast('All questions are already assigned to categories.', 'info');
+        return;
+      }
+      if (rule.count == null) rule = { ...rule, count: remaining };
+    }
     addCategoryRuleRow('tfRandomRules', rule, updateRandomSummary);
   }
 
@@ -3728,7 +3853,22 @@
     updateManualBankSummary();
   }
 
-  function addManualBankRuleRow(rule = {}) {
+  function addManualBankRuleRow(rule = {}, opts = {}) {
+    let remaining = 1;
+    if (!opts.loading) {
+      if (!isTestFormTargetSet()) {
+        toast('Enter total number of questions first.', 'info');
+        return;
+      }
+      const target = getTestFormTargetCount();
+      const mcqCount = formIsCompanyTest() ? 0 : collectMcqs().length;
+      const jdTotal = (formIsCompanyTest() || document.getElementById('tfUseJdManual')?.checked) ? sumManualJdRuleCounts() : 0;
+      remaining = target - sumManualBankRuleCounts() - jdTotal - mcqCount;
+      if (remaining <= 0) {
+        toast('All questions are already assigned.', 'info');
+        return;
+      }
+    }
     manualBankRuleCounter += 1;
     const root = document.getElementById('tfManualBankRules');
     if (!root) return;
@@ -3738,7 +3878,9 @@
     ).join('');
     const diff = normalizeDifficulty(rule.difficulty || 'Medium');
     const selectedIds = (rule.selectedQuestionIds || []).map(String);
-    const count = Math.max(1, Number(rule.count ?? 1));
+    const count = opts.loading
+      ? Math.max(1, Number(rule.count ?? 1))
+      : Math.max(1, Math.min(Number(rule.count ?? remaining), remaining));
     const wrap = document.createElement('div');
     wrap.className = 'tf-manual-bank-block border rounded-3 p-3 mb-2 bg-white';
     wrap.innerHTML = `
@@ -3755,7 +3897,7 @@
         </div>
         <div class="col-md-2">
           <label class="form-label small mb-1">No. of questions</label>
-          <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 1)}"/>
+          <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(count)}"/>
         </div>
         <div class="col-md-2">
           <label class="form-label small mb-1">Marks each</label>
@@ -4061,11 +4203,26 @@
     sel.innerHTML = opts;
   }
 
-  function addRandomJdRuleRow(rule = {}) {
+  function addRandomJdRuleRow(rule = {}, opts = {}) {
+    let remaining = 1;
+    if (!opts.loading) {
+      if (!isTestFormTargetSet()) {
+        toast('Enter total number of questions first.', 'info');
+        return;
+      }
+      remaining = getTestFormTargetCount() - sumRandomJdRuleCounts();
+      if (remaining <= 0) {
+        toast('All questions are already assigned.', 'info');
+        return;
+      }
+      if (rule.count == null) rule = { ...rule, count: remaining };
+    }
     randomJdRuleCounter += 1;
     const root = document.getElementById('tfRandomJdRules');
     if (!root) return;
-    const count = Math.max(1, Number(rule.count ?? 1));
+    const count = opts.loading
+      ? Math.max(1, Number(rule.count ?? 1))
+      : Math.max(1, Math.min(Number(rule.count ?? remaining), remaining));
     const wrap = document.createElement('div');
     wrap.className = 'tf-random-jd-block border rounded-3 p-3 mb-2 bg-white';
     wrap.innerHTML = `
@@ -4114,11 +4271,15 @@
 
   function updateRandomJdSummary() {
     const rules = collectRandomJdRules();
-    const total = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const allocated = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const target = getTestFormTargetCount();
     const summary = document.getElementById('tfRandomJdSummary');
-    if (summary) summary.textContent = `${total} question(s) from ${rules.length} JD rule(s)`;
-    const countEl = document.getElementById('tfQuestionCount');
-    if (countEl && getQuestionSource() === 'random_jd') countEl.value = String(total || 1);
+    if (summary) {
+      summary.textContent = target
+        ? `${formatAllocationSummary(allocated, target)} · ${rules.length} JD rule(s)`
+        : `${allocated} question(s) from ${rules.length} JD rule(s) — enter total above first`;
+    }
+    syncTestFormCategoryGating();
   }
 
   async function refreshAllRandomJdSelects() {
@@ -4130,12 +4291,30 @@
     updateRandomJdSummary();
   }
 
-  function addManualJdRuleRow(rule = {}) {
+  function addManualJdRuleRow(rule = {}, opts = {}) {
+    let remaining = 1;
+    if (!opts.loading) {
+      if (!isTestFormTargetSet()) {
+        toast('Enter total number of questions first.', 'info');
+        return;
+      }
+      const target = getTestFormTargetCount();
+      const mcqCount = formIsCompanyTest() ? 0 : collectMcqs().length;
+      const bankTotal = (!formIsCompanyTest() && document.getElementById('tfUseBankManual')?.checked) ? sumManualBankRuleCounts() : 0;
+      remaining = target - sumManualJdRuleCounts() - bankTotal - mcqCount;
+      if (remaining <= 0) {
+        toast('All questions are already assigned.', 'info');
+        return;
+      }
+      if (rule.count == null) rule = { ...rule, count: remaining };
+    }
     manualJdRuleCounter += 1;
     const root = document.getElementById('tfManualJdRules');
     if (!root) return;
     const selectedIds = (rule.selectedQuestionIds || []).map(String);
-    const count = Math.max(1, Number(rule.count ?? 1));
+    const count = opts.loading
+      ? Math.max(1, Number(rule.count ?? 1))
+      : Math.max(1, Math.min(Number(rule.count ?? remaining), remaining));
     const wrap = document.createElement('div');
     wrap.className = 'tf-manual-jd-block border rounded-3 p-3 mb-2 bg-white';
     wrap.innerHTML = `
@@ -4216,22 +4395,22 @@
 
   function updateManualJdSummary() {
     const rules = collectManualJdRules();
-    const jdTotal = sumManualJdQuestionCount();
     const complete = rules.filter((r, i) => {
       const wrap = document.querySelectorAll('.tf-manual-jd-block')[i];
       return wrap?._manualJdState?.selectedIds?.size === r.count;
     }).length;
+    const target = getTestFormTargetCount();
+    const allocated = getTestFormAllocatedTotal('manual');
     const summary = document.getElementById('tfManualJdSummary');
     if (summary) {
-      summary.textContent = `${jdTotal} question(s) from ${rules.length} JD set${rules.length === 1 ? '' : 's'} · ${complete}/${rules.length} complete`;
+      const allocLine = target ? formatAllocationSummary(allocated, target) : 'Enter total number of questions above first';
+      summary.textContent = `${allocLine} · ${rules.length} JD set${rules.length === 1 ? '' : 's'} · ${complete}/${rules.length} complete`;
     }
-    updateTestFormQuestionCount();
+    syncTestFormCategoryGating();
   }
 
   function updateTestFormQuestionCount() {
     const source = getQuestionSource();
-    const countEl = document.getElementById('tfQuestionCount');
-    if (!countEl) return;
     if (source === 'random_jd') {
       updateRandomJdSummary();
       return;
@@ -4240,24 +4419,22 @@
       updateRandomSummary();
       return;
     }
-    const company = formIsCompanyTest();
-    const useBank = !company && document.getElementById('tfUseBankManual')?.checked;
-    const useJd = company || document.getElementById('tfUseJdManual')?.checked;
-    const bankTotal = useBank
-      ? collectManualBankRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0)
-      : 0;
-    const jdTotal = useJd ? sumManualJdQuestionCount() : 0;
-    const mcqCount = company ? 0 : collectMcqs().length;
-    countEl.value = String(bankTotal + jdTotal + mcqCount || 1);
+    updateManualBankSummary();
+    updateManualJdSummary();
+    syncTestFormCategoryGating();
   }
 
   function updateRandomSummary() {
     const rules = collectRandomRules();
-    const total = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const allocated = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const target = getTestFormTargetCount();
     const summary = document.getElementById('tfRandomSummary');
-    if (summary) summary.textContent = `${total} question(s) from ${rules.length} rule(s)`;
-    const countEl = document.getElementById('tfQuestionCount');
-    if (countEl && getQuestionSource() === 'random') countEl.value = String(total || 1);
+    if (summary) {
+      summary.textContent = target
+        ? `${formatAllocationSummary(allocated, target)} · ${rules.length} categor${rules.length === 1 ? 'y' : 'ies'}`
+        : `${allocated} question(s) from ${rules.length} rule(s) — enter total above first`;
+    }
+    syncTestFormCategoryGating();
   }
 
   function updateManualBankSummary() {
@@ -4267,11 +4444,14 @@
       const wrap = document.querySelectorAll('.tf-manual-bank-block')[i];
       return wrap?._manualRuleState?.selectedIds?.size === r.count;
     }).length;
+    const target = getTestFormTargetCount();
+    const allocated = getTestFormAllocatedTotal('manual');
     const summary = document.getElementById('tfManualBankSummary');
     if (summary) {
-      summary.textContent = `${bankTotal} question(s) from ${rules.length} categor${rules.length === 1 ? 'y' : 'ies'} · ${complete}/${rules.length} complete`;
+      const allocLine = target ? formatAllocationSummary(allocated, target) : 'Enter total number of questions above first';
+      summary.textContent = `${allocLine} · ${rules.length} categor${rules.length === 1 ? 'y' : 'ies'} · ${complete}/${rules.length} complete`;
     }
-    updateTestFormQuestionCount();
+    syncTestFormCategoryGating();
   }
 
   function inferBankRulesFromQuestions(questions) {
@@ -4294,6 +4474,7 @@
   function updateManualQuestionCount() {
     if (getQuestionSource() !== 'manual') return;
     updateManualBankSummary();
+    updateManualJdSummary();
   }
 
   function applyRuleMarksToQuestion(q, rule) {
@@ -4491,6 +4672,87 @@
     return !isContestTest(t) && !isCompanyTest(t);
   }
 
+  function getSharedTestIdFromUrl() {
+    try {
+      return new URLSearchParams(location.search).get('test') || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function buildTestShareUrl(testId) {
+    const url = new URL('mock-aptitude.html', window.location.href);
+    url.searchParams.set('test', String(testId || ''));
+    url.hash = 'take';
+    return url.href;
+  }
+
+  async function copyTestShareLink(testId) {
+    const t = tests.find((x) => String(x.id) === String(testId));
+    const url = buildTestShareUrl(testId);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const helper = document.createElement('textarea');
+      helper.value = url;
+      document.body.appendChild(helper);
+      helper.select();
+      document.execCommand('copy');
+      helper.remove();
+    }
+    const published = t && (t.status || 'unpublished') === 'published';
+    if (t && !published) {
+      toast('Link copied. Publish the test before students can open it.', 'info');
+    } else {
+      toast('Student test link copied.', 'success');
+    }
+  }
+
+  async function tryOpenSharedTest() {
+    const testId = getSharedTestIdFromUrl();
+    if (!testId || !access.canTake) return;
+
+    const t = tests.find((x) => String(x.id) === String(testId));
+    if (!t) {
+      toast('This test link is invalid or the test is not available.', 'error');
+      return;
+    }
+    if ((t.status || 'published') !== 'published') {
+      toast('This test is not published yet.', 'info');
+      return;
+    }
+
+    if (isCompanyTest(t)) {
+      takeListPanel = 'jdblock';
+      studentJdBlockView = 'tests';
+      document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
+        link.classList.toggle('active', link.getAttribute('data-take-list') === 'jdblock');
+      });
+      document.getElementById('takeContestTypeNav')?.classList.add('d-none');
+      document.getElementById('testList')?.classList.add('d-none');
+      document.getElementById('studentJdBlockPanel')?.classList.remove('d-none');
+      await loadStudentJdBlock();
+      const companyId = String(t.companyId || '');
+      if (companyId) showStudentJdCompanyDetail(companyId);
+    } else if (isContestTest(t)) {
+      takeListPanel = 'contests';
+      takeContestType = String(t.contestType || 'weekly') === 'monthly' ? 'monthly' : 'weekly';
+      applyTakeListPanel('contests');
+      applyTakeContestType(takeContestType);
+    } else {
+      takeListPanel = 'tests';
+      applyTakeListPanel('tests');
+    }
+
+    openExam(t);
+
+    try {
+      const url = new URL(location.href);
+      url.searchParams.delete('test');
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch { /* ignore */ }
+  }
+
   function applyManageContestType(type) {
     manageContestType = type === 'monthly' ? 'monthly' : 'weekly';
     document.getElementById('manageWeeklyContestsSection')?.classList.toggle('d-none', manageContestType !== 'weekly');
@@ -4605,6 +4867,7 @@
       <td>${contestScheduleControls(t, { inline: true })}</td>
       <td class="text-nowrap">
         <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>
           <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
           <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
         </div>
@@ -4638,6 +4901,7 @@
           ${showContestBadge ? contestScheduleControls(t) : ''}
         </div>
         <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>
           <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
           <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
         </div>
@@ -4648,6 +4912,9 @@
     if (!root) return;
     root.querySelectorAll('[data-view-contest-results]').forEach((btn) => {
       btn.addEventListener('click', () => openContestResultsPreview(btn.getAttribute('data-view-contest-results')));
+    });
+    root.querySelectorAll('[data-copy-test-link]').forEach((btn) => {
+      btn.addEventListener('click', () => copyTestShareLink(btn.getAttribute('data-copy-test-link')));
     });
     root.querySelectorAll('[data-edit]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -5009,6 +5276,7 @@
       } else {
         renderTestList();
       }
+      await tryOpenSharedTest();
     }
     if (view === 'progress' && access.canViewDirectory) {
       await Promise.all([initDirFilters(), loadDirectory()]);
@@ -5474,20 +5742,43 @@
   }
 
   async function importMcqsFromFormExcel(file) {
+    if (!isTestFormTargetSet()) {
+      throw new Error('Enter total number of questions before importing MCQs.');
+    }
     const rows = await parseExcelFile(file);
     const category = (meta.categories || APTITUDE_CATEGORIES)[0] || 'General Aptitude';
     const normalized = normalizeBulkRows(rows, category, 'Medium');
     if (!normalized.length) {
       throw new Error('No valid questions found in the Excel file.');
     }
+    const target = getTestFormTargetCount();
+    const remaining = target - getTestFormAllocatedTotal('manual');
+    if (remaining <= 0) {
+      throw new Error('All questions are already assigned.');
+    }
+    if (normalized.length > remaining) {
+      throw new Error(`Import would add ${normalized.length} questions but only ${remaining} slot(s) remain for the total of ${target}.`);
+    }
     const list = document.getElementById('mcqList');
     if (!list) return 0;
-    normalized.forEach((q) => addMcqRow(q));
+    normalized.forEach((q) => addMcqRow(q, { loading: true }));
     syncFormQuestionTotals();
     return normalized.length;
   }
 
-  function addMcqRow(q = {}) {
+  function addMcqRow(q = {}, opts = {}) {
+    const hasContent = richTextHasContent(q.prompt || '') || (Array.isArray(q.options) && q.options.some((o) => String(o || '').trim()));
+    if (!opts.loading && !hasContent) {
+      if (!isTestFormTargetSet()) {
+        toast('Enter total number of questions first.', 'info');
+        return;
+      }
+      const target = getTestFormTargetCount();
+      if (getTestFormAllocatedTotal('manual') >= target) {
+        toast('All questions are already assigned.', 'info');
+        return;
+      }
+    }
     mcqCounter += 1;
     const opts = Array.isArray(q.options) && q.options.length ? q.options.slice() : ['', '', '', ''];
     while (opts.length < 4) opts.push('');
@@ -5546,7 +5837,9 @@
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
-    document.getElementById('tfQuestionCount').value = test?.questionCount || (test?.questions || []).length || 10;
+    document.getElementById('tfQuestionCount').value = test
+      ? String(test?.questionCount || (test?.questions || []).length || '')
+      : '';
     document.getElementById('tfDuration').value = test?.durationMinutes || 30;
     document.getElementById('tfStatus').value = test
       ? (test.status === 'unpublished' ? 'unpublished' : 'published')
@@ -5566,10 +5859,8 @@
     document.getElementById('tfRandomRules').innerHTML = '';
     document.getElementById('tfRandomJdRules').innerHTML = '';
     randomJdRuleCounter = 0;
-    const rules = test?.randomRules?.length
-      ? test.randomRules
-      : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }];
-    if (source === 'random') rules.forEach((r) => addRandomRuleRow(r));
+    const rules = test?.randomRules?.length ? test.randomRules : [];
+    if (source === 'random' && rules.length) rules.forEach((r) => addRandomRuleRow(r, { loading: true }));
     let jdRules = test?.jdFilterRules?.length ? test.jdFilterRules : [];
     if (!jdRules.length && source === 'manual' && (test?.questions || []).some((q) => q.jdSetId)) {
       jdRules = inferJdRulesFromQuestions(test?.questions || []);
@@ -5577,10 +5868,10 @@
     if (isCompanyPreset && source === 'random_jd') {
       fillTfCompanySelect(test?.companyId || preset?.companyId || '').then(() => {
         ensureJdSetSummariesLoaded().then(() => {
-          (jdRules.length ? jdRules : [{}]).forEach((r) => addRandomJdRuleRow(r));
+          jdRules.forEach((r) => addRandomJdRuleRow(r, { loading: true }));
           updateRandomJdSummary();
         }).catch(() => {
-          (jdRules.length ? jdRules : [{}]).forEach((r) => addRandomJdRuleRow(r));
+          jdRules.forEach((r) => addRandomJdRuleRow(r, { loading: true }));
         });
       });
     }
@@ -5597,12 +5888,10 @@
     document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
     if (useBank) {
       ensureManualBankQuestionsLoaded().then(() => {
-        (bankRules.length ? bankRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }])
-          .forEach((r) => addManualBankRuleRow(r));
+        bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true }));
         updateManualBankSummary();
       }).catch(() => {
-        (bankRules.length ? bankRules : [{ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 }])
-          .forEach((r) => addManualBankRuleRow(r));
+        bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true }));
       });
     }
 
@@ -5617,18 +5906,18 @@
         ensureJdSetSummariesLoaded().then(() => {
           document.getElementById('tfManualJdRules').innerHTML = '';
           manualJdRuleCounter = 0;
-          (jdRules.length ? jdRules : [{}]).forEach((r) => addManualJdRuleRow(r));
+          jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
           updateManualJdSummary();
         }).catch(() => {
-          (jdRules.length ? jdRules : [{}]).forEach((r) => addManualJdRuleRow(r));
+          jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
         });
       });
     } else if (useJd) {
       ensureJdSetSummariesLoaded().then(() => {
-        jdRules.forEach((r) => addManualJdRuleRow(r));
+        jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
         updateManualJdSummary();
       }).catch(() => {
-        jdRules.forEach((r) => addManualJdRuleRow(r));
+        jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
       });
     }
 
@@ -5640,9 +5929,10 @@
     document.getElementById('tfBulkFile').value = '';
     document.getElementById('mcqList').innerHTML = '';
     const qs = source === 'manual' ? (test?.questions || []).filter((q) => !q.bankId && !q.jdSetId) : [];
-    if (qs.length) qs.forEach((q) => addMcqRow(q));
+    if (qs.length) qs.forEach((q) => addMcqRow(q, { loading: true }));
     updateManualBankSummary();
     updateTestFormQuestionCount();
+    syncTestFormCategoryGating();
     testFormModal.show();
   }
 
@@ -5984,13 +6274,7 @@
       const on = e.target.checked;
       document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
       if (on) {
-        ensureManualBankQuestionsLoaded().then(() => {
-          const root = document.getElementById('tfManualBankRules');
-          if (root && !root.querySelector('.tf-manual-bank-block')) {
-            addManualBankRuleRow({ category: 'General Aptitude', difficulty: 'Medium', count: 5, marks: 1 });
-          }
-          updateManualQuestionCount();
-        }).catch(() => updateManualQuestionCount());
+        ensureManualBankQuestionsLoaded().then(() => updateManualQuestionCount()).catch(() => updateManualQuestionCount());
       } else {
         updateManualQuestionCount();
       }
@@ -5999,17 +6283,16 @@
       const on = e.target.checked;
       document.getElementById('tfJdPicker')?.classList.toggle('d-none', !on);
       if (on) {
-        ensureJdSetSummariesLoaded().then(() => {
-          const root = document.getElementById('tfManualJdRules');
-          if (root && !root.querySelector('.tf-manual-jd-block')) addManualJdRuleRow();
-          updateManualJdSummary();
-        }).catch(() => updateManualJdSummary());
+        ensureJdSetSummariesLoaded().then(() => updateManualJdSummary()).catch(() => updateManualJdSummary());
       } else {
         updateManualJdSummary();
       }
     });
     document.getElementById('btnAddManualJdRule')?.addEventListener('click', () => addManualJdRuleRow());
-    document.getElementById('tfQuestionCount')?.addEventListener('input', () => updateManualQuestionCount());
+    document.getElementById('tfQuestionCount')?.addEventListener('input', () => {
+      clampCategoryRuleCounts('tfRandomRules');
+      updateTestFormQuestionCount();
+    });
     document.getElementById('btnFormBulkTemplate')?.addEventListener('click', () => downloadExcelTemplate(false));
     document.getElementById('btnFormBulkImport')?.addEventListener('click', () => {
       document.getElementById('tfBulkFile')?.click();
@@ -6202,17 +6485,33 @@
           return;
         }
         payload.jdFilterRules = collectRandomJdRules();
+        const jdTarget = getTestFormTargetCount();
         const ruleTotal = payload.jdFilterRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
-        payload.questionCount = ruleTotal || payload.questionCount;
-      } else if (payload.questionSource === 'random') {
-        if (!payload.randomRules?.length) {
-          toast('Add at least one random rule.', 'error');
+        if (!jdTarget) {
+          toast('Enter total number of questions.', 'error');
           return;
         }
-        const ruleTotal = payload.randomRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
-        if (ruleTotal !== payload.questionCount) {
-          payload.questionCount = ruleTotal;
+        if (ruleTotal !== jdTarget) {
+          toast(`JD question counts must add up to ${jdTarget} (currently ${ruleTotal}).`, 'error');
+          return;
         }
+        payload.questionCount = jdTarget;
+      } else if (payload.questionSource === 'random') {
+        if (!payload.randomRules?.length) {
+          toast('Add at least one category rule.', 'error');
+          return;
+        }
+        const randomTarget = getTestFormTargetCount();
+        const ruleTotal = payload.randomRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
+        if (!randomTarget) {
+          toast('Enter total number of questions.', 'error');
+          return;
+        }
+        if (ruleTotal !== randomTarget) {
+          toast(`Category question counts must add up to ${randomTarget} (currently ${ruleTotal}).`, 'error');
+          return;
+        }
+        payload.questionCount = randomTarget;
       } else {
         const companyTest = formIsCompanyTest();
         const mcqCount = companyTest ? 0 : (payload.questions?.length || 0);
@@ -6259,10 +6558,10 @@
           return;
         }
         if (bankTotal + jdTotal + mcqCount !== target) {
-          payload.questionCount = bankTotal + jdTotal + mcqCount;
-        } else {
-          payload.questionCount = target;
+          toast(`Question counts must add up to ${target} (currently ${bankTotal + jdTotal + mcqCount}).`, 'error');
+          return;
         }
+        payload.questionCount = target;
         if (useBank) {
           payload.bankFilterRules = bankRules;
           payload.bankQuestionIds = bankRules.flatMap((r) => r.selectedQuestionIds || []);
