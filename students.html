@@ -21,13 +21,18 @@
     line-height:1.35;
   }
   .profile-email-value .profile-email-line + .profile-email-line{margin-top:.2rem}
-  /* PCA offer letter preview: A4 aspect ratio (210×297 mm), tall enough to read */
+  /* PCA offer letter preview: tall A4 iframe, no outer scroll */
+  #pcaOfferLetterModal .modal-body{overflow:hidden}
+  #pcaOfferLetterModal .pca-modal-preview-col{
+    display:flex;
+    flex-direction:column;
+    min-height:min(78vh,960px);
+  }
   .pca-a4-preview-wrap{
+    flex:1 1 auto;
+    min-height:480px;
+    height:min(72vh,880px);
     width:100%;
-    max-width:100%;
-    height:min(75vh,920px);
-    max-height:75vh;
-    aspect-ratio:210/297;
     margin:0 auto;
     background:#fff;
     border:1px solid #dee2e6;
@@ -35,14 +40,13 @@
     overflow:hidden;
     box-shadow:0 2px 8px rgba(0,0,0,.08);
   }
-  @media (min-width:992px){
-    .pca-a4-preview-wrap{height:min(78vh,960px)}
-  }
   .pca-a4-preview-wrap iframe{
     display:block;
     width:100%;
     height:100%;
+    min-height:480px;
     border:0;
+    overflow:hidden;
   }
 </style>
 <script src="js/ph-role-guard.js?v=20260724boot"></script></head>
@@ -829,9 +833,9 @@
             </div>
             <p class="small text-muted-2 mt-3 mb-0" id="pcaModalHint">Representatives are cleared automatically when the academic year changes (July–June).</p>
           </div>
-          <div class="col-lg-8">
+          <div class="col-lg-8 pca-modal-preview-col">
             <div class="pca-a4-preview-wrap">
-              <iframe id="pcaLetterPreview" title="PCA offer letter preview" src="about:blank"></iframe>
+              <iframe id="pcaLetterPreview" title="PCA offer letter preview" src="about:blank" scrolling="no"></iframe>
             </div>
           </div>
         </div>
@@ -2150,6 +2154,7 @@ document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
   }
   if ((href === 'tabFinalYearRegistered' || href === 'tabFinalYearPending') && canViewFinalYear) {
     loadFinalYearStudents().catch(() => {});
+    if (canManageVolunteers) loadVolunteers().catch(() => {});
   }
   if (href === 'tabPlaced' && canViewPlaced) {
     loadPlacedStudents().catch(() => {});
@@ -2312,11 +2317,38 @@ async function publishPcaOfferLetter() {
   refreshPcaLetterPreview();
 }
 
+function volunteerLookupKeys(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const upper = raw.toUpperCase();
+  return upper === raw ? [raw] : [raw, upper];
+}
+
+function addVolunteerLookupKeys(...values) {
+  values.forEach((value) => {
+    volunteerLookupKeys(value).forEach((key) => volunteerStudentIds.add(key));
+  });
+}
+
 function syncVolunteerStudentIds() {
   volunteerStudentIds.clear();
   volunteersAll.forEach((v) => {
-    if (v.studentId) volunteerStudentIds.add(String(v.studentId));
+    addVolunteerLookupKeys(v.studentId, v.userId, v.registerNumber);
   });
+}
+
+function isStudentVolunteer(s) {
+  if (!s) return false;
+  const keys = volunteerLookupKeys(s.studentId)
+    .concat(volunteerLookupKeys(s.id))
+    .concat(volunteerLookupKeys(s.userId))
+    .concat(volunteerLookupKeys(s.registerNumber))
+    .concat(volunteerLookupKeys(s.admno));
+  return keys.some((key) => volunteerStudentIds.has(key));
+}
+
+function studentRefForVolunteer(s) {
+  return String(s?.studentId || s?.id || s?.userId || '').trim();
 }
 
 function filteredVolunteers() {
@@ -2416,8 +2448,7 @@ function renderAssignVolunteerPicker() {
   const q = document.getElementById('assignVolunteerSearch')?.value.trim().toLowerCase() || '';
   const candidates = finalYearStudentsAll.filter((s) => {
     if (!isFinalYearPolicyRegistered(s)) return false;
-    const sid = String(s.studentId || s.id || '');
-    if (volunteerStudentIds.has(sid)) return false;
+    if (isStudentVolunteer(s)) return false;
     if (!q) return true;
     return finalYearMatchesQuery(s, q);
   });
@@ -2426,7 +2457,7 @@ function renderAssignVolunteerPicker() {
     return;
   }
   root.innerHTML = candidates.slice(0, 80).map((s) => {
-    const sid = esc(s.studentId || s.id || '');
+    const sid = esc(studentRefForVolunteer(s));
     const name = esc(s.displayName || s.name || 'Student');
     const reg = esc(s.registerNumber || s.admno || '');
     const batch = esc(s.classBatch || '');
@@ -2437,11 +2468,12 @@ function renderAssignVolunteerPicker() {
   }).join('');
 }
 
-function openAssignVolunteerModal() {
+async function openAssignVolunteerModal() {
   if (!finalYearLoaded) {
     toast('Student list is still loading. Try again in a moment.', 'info');
     return;
   }
+  if (!volunteersLoaded) await loadVolunteers(true);
   renderAssignVolunteerPicker();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('assignVolunteerModal')).show();
 }
@@ -2455,13 +2487,13 @@ function finalYearRowHtml(s, kind = 'registered') {
   const pending = studentHasPendingSelfPlacement(s);
   const pendingBadge = pending ? ' <span class="badge-soft warning">Under Review</span>' : '';
   const regAttr = esc(s.registerNumber || s.admno || '');
-  const studentRef = String(s.studentId || s.id || '');
-  const isVolunteer = volunteerStudentIds.has(studentRef);
+  const studentRef = studentRefForVolunteer(s);
+  const isVolunteer = isStudentVolunteer(s);
   let actionCell = `<button type="button" class="btn btn-sm btn-outline-primary final-year-open" data-reg="${regAttr}">Open</button>`;
   if (canManageVolunteers && kind === 'registered') {
     if (isVolunteer) {
       actionCell = `<span class="badge-soft success me-2">Representative</span>${actionCell}`;
-    } else {
+    } else if (studentRef) {
       actionCell = `<button type="button" class="btn btn-sm btn-outline-success assign-volunteer-btn me-1" data-student-id="${esc(studentRef)}">Assign rep</button>${actionCell}`;
     }
   }
@@ -3651,6 +3683,7 @@ onAppReady(async () => {
     if (canVerifySelfPlacement) bootTasks.push(loadPendingSelfPlacements().catch(() => {}));
   } else if (live && canViewFinalYear) {
     bootTasks.push(loadFinalYearStudents().catch(() => {}));
+    if (canManageVolunteers) bootTasks.push(loadVolunteers().catch(() => {}));
   }
   if (live && canVerifySelfPlacement && !wantPlaced) {
     bootTasks.push(loadPendingSelfPlacements().catch(() => {}));
@@ -3687,6 +3720,10 @@ onAppReady(async () => {
     const bg = [];
     if (canViewFinalYear && wantPlaced) {
       bg.push(loadFinalYearStudents().catch(() => {}));
+      if (canManageVolunteers) bg.push(loadVolunteers().catch(() => {}));
+    }
+    if (canManageVolunteers && !wantPlaced) {
+      bg.push(loadVolunteers().catch(() => {}));
     }
     if (canViewPlaced && !wantPlaced) {
       bg.push(loadPlacedStudents().catch(() => {}));
@@ -3719,9 +3756,11 @@ onAppReady(async () => {
   });
   document.getElementById('linkFinalYearRegistered')?.addEventListener('shown.bs.tab', () => {
     if (canViewFinalYear && live) loadFinalYearStudents().catch(() => {});
+    if (canManageVolunteers && live) loadVolunteers().catch(() => {});
   });
   document.getElementById('linkFinalYearPending')?.addEventListener('shown.bs.tab', () => {
     if (canViewFinalYear && live) loadFinalYearStudents().catch(() => {});
+    if (canManageVolunteers && live) loadVolunteers().catch(() => {});
   });
   document.getElementById('linkApplications')?.addEventListener('shown.bs.tab', () => {
     if (!canManageApplications || !live) return;

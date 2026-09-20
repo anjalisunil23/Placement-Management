@@ -52,6 +52,8 @@
       display: block;
       flex-shrink: 0;
       background: #fff;
+      /* Hide black matte if an old cached PNG is still served */
+      mix-blend-mode: screen;
     }
 
     .letter-footer { margin-top: auto; }
@@ -170,6 +172,7 @@
       .letterhead,
       .letter-footer {
         background: #fff !important;
+        mix-blend-mode: screen;
       }
       .no-print { display: none !important; }
     }
@@ -227,7 +230,7 @@
 
     .toolbar button:hover { background: #163d7f; }
 
-    /* Embedded preview (PO modal iframe): scale full A4 page to fit */
+    /* Embedded preview (PO modal iframe): scale full A4 page to fit, no scroll */
     html[data-embed="1"],
     html[data-embed="1"] body {
       background: #fff;
@@ -238,11 +241,28 @@
       overflow: hidden;
     }
 
+    html[data-embed="1"] body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    html[data-embed="1"] .toolbar {
+      display: none !important;
+    }
+
     html[data-embed="1"] .sheet-viewport {
+      flex: 1 1 auto;
+      min-height: 0;
       width: 100%;
-      height: 100%;
       overflow: hidden;
-      position: relative;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+
+    html[data-embed="1"] .sheet-scaler {
+      flex-shrink: 0;
+      overflow: hidden;
     }
 
     html[data-embed="1"] .sheet {
@@ -254,11 +274,11 @@
       min-height: var(--page-h);
       max-width: var(--page-w);
       max-height: var(--page-h);
-      position: absolute;
-      top: 0;
-      left: 50%;
-      transform: translateX(-50%) scale(var(--embed-scale, 1));
-      transform-origin: top center;
+      position: relative;
+      top: auto;
+      left: auto;
+      transform: scale(var(--embed-scale, 1));
+      transform-origin: top left;
     }
   </style>
 </head>
@@ -279,6 +299,7 @@
 </div>
 
 <div class="sheet-viewport" id="sheetViewport">
+<div class="sheet-scaler" id="sheetScaler">
 <article class="sheet" id="letterSheet">
   <div class="letterhead-wrap">
     <img class="letterhead" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
@@ -361,13 +382,16 @@
   </div>
 </article>
 </div>
+</div>
 
 <script>
 (function () {
   const API_BASE = (location.protocol === 'file:' ? '' : '') + '/backend/api';
   const assetRoot = location.protocol === 'file:' ? '' : '/';
+  const ASSET_VER = '20260920white';
   document.querySelectorAll('[data-asset]').forEach((img) => {
-    img.src = assetRoot + img.getAttribute('data-asset');
+    const path = img.getAttribute('data-asset');
+    img.src = assetRoot + path + '?v=' + ASSET_VER;
   });
 
   function academicYearRange(fromDate) {
@@ -499,8 +523,13 @@
   function fitEmbedPreview() {
     if (!embed) return;
     const viewport = document.getElementById('sheetViewport');
+    const scaler = document.getElementById('sheetScaler');
     const sheet = document.getElementById('letterSheet');
-    if (!viewport || !sheet) return;
+    if (!viewport || !scaler || !sheet) return;
+
+    sheet.style.transform = 'none';
+    scaler.style.width = '';
+    scaler.style.height = '';
 
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
@@ -510,6 +539,10 @@
 
     const scale = Math.min(vw / sw, vh / sh);
     document.documentElement.style.setProperty('--embed-scale', String(scale));
+    scaler.style.width = Math.floor(sw * scale) + 'px';
+    scaler.style.height = Math.floor(sh * scale) + 'px';
+    sheet.style.transform = 'scale(' + scale + ')';
+    sheet.style.transformOrigin = 'top left';
   }
 
   function scheduleEmbedFit() {
