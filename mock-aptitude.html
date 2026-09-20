@@ -204,7 +204,6 @@
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="company-tests">Company tests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">Company Block</a></li>
       </ul>
@@ -215,13 +214,6 @@
           <button type="button" class="btn btn-sm btn-primary" id="btnNewTest"><i class="bi bi-plus-lg me-1"></i>New test</button>
         </div>
         <div id="manageTestsList" class="d-flex flex-column gap-2"></div>
-      </div>
-
-      <div id="manageCompanyTestsPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
-          <button type="button" class="btn btn-sm btn-primary" id="btnNewCompanyTest"><i class="bi bi-plus-lg me-1"></i>New company test</button>
-        </div>
-        <div id="manageCompanyTestsList" class="d-flex flex-column gap-2"></div>
       </div>
 
       <div id="manageContestsPanel" class="d-none">
@@ -279,16 +271,25 @@
       </div>
 
       <div id="manageJdPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
-          <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" id="btnJdAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate</button>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <ul class="nav nav-pills gap-1 flex-wrap mb-0 d-none" id="adminJdBlockViewNav">
+            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-admin-jd-block-view="tests">Tests</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-admin-jd-block-view="bank">Question bank</a></li>
+          </ul>
+          <div class="d-flex flex-wrap align-items-center gap-2 ms-auto">
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
+            <button type="button" class="btn btn-sm btn-primary d-none" id="btnNewCompanyTest"><i class="bi bi-plus-lg me-1"></i>New company test</button>
+            <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" id="btnJdAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate</button>
+          </div>
         </div>
         <div id="jdBlockCompanyView">
           <div id="jdBlockCompanyGrid" class="row g-3"></div>
         </div>
         <div id="jdBlockCompanyDetail" class="d-none">
-          <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="btnJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
-          <h6 class="fw-semibold mb-3" id="jdBlockDetailTitle"></h6>
-          <div id="jdBlockSetsList" class="d-flex flex-column gap-3"></div>
+          <div id="jdBlockCompanyTests" class="d-flex flex-column gap-2"></div>
+          <div id="jdBlockBankSection" class="d-none">
+            <div id="jdBlockSetsList" class="d-flex flex-column gap-3"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -646,5 +647,5 @@
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/aptitude-exam.js?v=20260918pub"></script>
-<script src="js/aptitude-page.js?v=20260919nointro"></script>
+<script src="js/aptitude-page.js?v=20260919coblock2"></script>
 </body></html>

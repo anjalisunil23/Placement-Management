@@ -270,6 +270,7 @@
   let jdSelectedCompanyId = null;
   let studentJdSelectedCompanyId = null;
   let studentJdBlockView = 'tests';
+  let adminJdBlockView = 'tests';
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aiPreviewQuestions = [];
@@ -1627,6 +1628,29 @@
     }
   }
 
+  function syncAdminJdBlockViewNav() {
+    document.querySelectorAll('#adminJdBlockViewNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-admin-jd-block-view') === adminJdBlockView);
+    });
+  }
+
+  function applyAdminJdBlockView(view) {
+    adminJdBlockView = view === 'bank' ? 'bank' : 'tests';
+    syncAdminJdBlockViewNav();
+    if (jdSelectedCompanyId) {
+      showJdCompanyDetail(jdSelectedCompanyId);
+    } else {
+      renderJdBlock();
+    }
+  }
+
+  function renderAdminCompanyTestsHtml(companyTests) {
+    if (!companyTests.length) {
+      return '<p class="small text-muted-2 mb-0">No company tests for this company yet.</p>';
+    }
+    return companyTests.map((t) => renderManageRow(t)).join('');
+  }
+
   function showJdCompanyDetail(companyId) {
     const block = jdCompanyBlocks.find((b) => {
       const id = String(b.companyId || '');
@@ -1635,21 +1659,39 @@
     jdSelectedCompanyId = companyId;
     document.getElementById('jdBlockCompanyView')?.classList.add('d-none');
     document.getElementById('jdBlockCompanyDetail')?.classList.remove('d-none');
-    const titleEl = document.getElementById('jdBlockDetailTitle');
-    if (titleEl) titleEl.textContent = block?.companyName || 'Company';
-    const list = document.getElementById('jdBlockSetsList');
-    if (!list) return;
-    const sets = block?.sets || [];
-    list.innerHTML = sets.length
-      ? renderJdSetCardsHtml(sets)
-      : '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
-    bindJdSetCardEvents(list);
+    document.getElementById('btnJdBlockBack')?.classList.remove('d-none');
+    document.getElementById('adminJdBlockViewNav')?.classList.remove('d-none');
+    syncAdminJdBlockViewNav();
+    const showTests = adminJdBlockView === 'tests';
+    const testsRoot = document.getElementById('jdBlockCompanyTests');
+    const bankSection = document.getElementById('jdBlockBankSection');
+    testsRoot?.classList.toggle('d-none', !showTests);
+    bankSection?.classList.toggle('d-none', showTests);
+    document.getElementById('btnNewCompanyTest')?.classList.toggle('d-none', !showTests);
+    if (showTests) {
+      const companyTests = studentCompanyTestsFor(companyId);
+      if (testsRoot) {
+        testsRoot.innerHTML = renderAdminCompanyTestsHtml(companyTests);
+        bindManageListActions(testsRoot);
+      }
+    } else {
+      const list = document.getElementById('jdBlockSetsList');
+      const sets = block?.sets || [];
+      if (!list) return;
+      list.innerHTML = sets.length
+        ? renderJdSetCardsHtml(sets)
+        : '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+      bindJdSetCardEvents(list);
+    }
   }
 
   function showJdCompanyGrid() {
     jdSelectedCompanyId = null;
     document.getElementById('jdBlockCompanyDetail')?.classList.add('d-none');
     document.getElementById('jdBlockCompanyView')?.classList.remove('d-none');
+    document.getElementById('btnJdBlockBack')?.classList.add('d-none');
+    document.getElementById('adminJdBlockViewNav')?.classList.add('d-none');
+    document.getElementById('btnNewCompanyTest')?.classList.add('d-none');
   }
 
   function renderJdCompanyGridHtml(blocks) {
@@ -4471,7 +4513,7 @@
     } else if (panel === 'contests' && canManageContests()) {
       managePanel = 'contests';
     } else if (panel === 'company-tests') {
-      managePanel = 'company-tests';
+      managePanel = 'jd';
     } else if (panel === 'bank') {
       managePanel = 'bank';
     } else if (panel === 'jd') {
@@ -4481,7 +4523,6 @@
     }
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
     document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
-    document.getElementById('manageCompanyTestsPanel')?.classList.toggle('d-none', managePanel !== 'company-tests');
     document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
     document.getElementById('manageJdPanel')?.classList.toggle('d-none', managePanel !== 'jd');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
@@ -5534,7 +5575,7 @@
       jdRules = inferJdRulesFromQuestions(test?.questions || []);
     }
     if (isCompanyPreset && source === 'random_jd') {
-      fillTfCompanySelect(test?.companyId || '').then(() => {
+      fillTfCompanySelect(test?.companyId || preset?.companyId || '').then(() => {
         ensureJdSetSummariesLoaded().then(() => {
           (jdRules.length ? jdRules : [{}]).forEach((r) => addRandomJdRuleRow(r));
           updateRandomJdSummary();
@@ -5572,7 +5613,7 @@
     document.getElementById('tfUseJdManual').checked = useJd || (isCompanyPreset && source === 'manual');
     document.getElementById('tfJdPicker')?.classList.toggle('d-none', isCompanyPreset ? source !== 'manual' : !useJd);
     if (isCompanyPreset && source === 'manual') {
-      fillTfCompanySelect(test?.companyId || '').then(() => {
+      fillTfCompanySelect(test?.companyId || preset?.companyId || '').then(() => {
         ensureJdSetSummariesLoaded().then(() => {
           document.getElementById('tfManualJdRules').innerHTML = '';
           manualJdRuleCounter = 0;
@@ -5744,7 +5785,6 @@
     applyManagePanel(managePanel);
 
     const regular = tests.filter((t) => isRegularTest(t));
-    const companyTests = tests.filter((t) => isCompanyTest(t));
 
     const testsRoot = document.getElementById('manageTestsList');
     if (testsRoot) {
@@ -5754,12 +5794,8 @@
       bindManageListActions(testsRoot);
     }
 
-    const companyRoot = document.getElementById('manageCompanyTestsList');
-    if (companyRoot) {
-      companyRoot.innerHTML = companyTests.length
-        ? companyTests.map((t) => renderManageRow(t, { showCompanyBadge: true })).join('')
-        : '<p class="text-muted-2 mb-0">No company tests yet. Create one from Company Block questions.</p>';
-      bindManageListActions(companyRoot);
+    if (managePanel === 'jd' && jdSelectedCompanyId) {
+      showJdCompanyDetail(jdSelectedCompanyId);
     }
 
     renderManageContestSections('weekly', document.getElementById('manageWeeklyContestsList'));
@@ -5995,8 +6031,15 @@
       openTestForm(null, { contestType: 'none' });
     });
     document.getElementById('btnNewCompanyTest')?.addEventListener('click', () => {
-      applyManagePanel('company-tests');
-      openTestForm(null, { testKind: 'company', contestType: 'none' });
+      applyManagePanel('jd');
+      const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
+      openTestForm(null, { testKind: 'company', contestType: 'none', companyId });
+    });
+    document.getElementById('adminJdBlockViewNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-admin-jd-block-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyAdminJdBlockView(link.getAttribute('data-admin-jd-block-view'));
     });
     document.getElementById('tfCompanyId')?.addEventListener('change', () => {
       if (!formIsCompanyTest()) return;
@@ -6238,10 +6281,10 @@
       }
       if (canManageContests()) {
         if (isContestTest(payload)) openManageContests(payload.contestType);
-        else if (formIsCompanyTest()) applyManagePanel('company-tests');
+        else if (formIsCompanyTest()) applyManagePanel('jd');
         else applyManagePanel('tests');
       } else if (formIsCompanyTest()) {
-        applyManagePanel('company-tests');
+        applyManagePanel('jd');
       }
       const live = Auth.hasRealAuth() && !Auth.isDemo();
       if (!live) {
