@@ -5766,9 +5766,9 @@
     return normalized.length;
   }
 
-  function addMcqRow(q = {}, opts = {}) {
+  function addMcqRow(q = {}, addOpts = {}) {
     const hasContent = richTextHasContent(q.prompt || '') || (Array.isArray(q.options) && q.options.some((o) => String(o || '').trim()));
-    if (!opts.loading && !hasContent) {
+    if (!addOpts.loading && !hasContent) {
       if (!isTestFormTargetSet()) {
         toast('Enter total number of questions first.', 'info');
         return;
