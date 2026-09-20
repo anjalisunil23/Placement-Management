@@ -555,4 +555,8 @@ const OfficerApi = {
   async removeVolunteer(assignmentId) {
     return api(`/officer/volunteers/${encodeURIComponent(assignmentId)}`, { method: 'DELETE' });
   },
+
+  volunteerOfferLetterUrl(assignmentId) {
+    return `${API_BASE}/officer/volunteers/${encodeURIComponent(assignmentId)}/offer-letter`;
+  },
 };

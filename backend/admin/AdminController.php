@@ -39,6 +39,7 @@ use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
 use PMS\Services\PlacementOfficerContext;
+use PMS\Services\PlacementRepresentativeOfferLetterService;
 use PMS\Services\VolunteerAssignmentService;
 use PMS\Services\ReportContext;
 use PMS\Services\ReportService;
@@ -866,6 +867,14 @@ final class AdminController
             $ctx,
             $deptId !== '' ? $deptId : null
         ));
+    }
+
+    /** GET /api/admin/volunteers/{id}/offer-letter */
+    public function downloadVolunteerOfferLetter(string $id): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        (new PlacementRepresentativeOfferLetterService())->streamForAssignment($ctx, $id);
     }
 
     /** PUT /api/admin/departments/{id}/placement-officer */

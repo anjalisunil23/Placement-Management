@@ -159,6 +159,7 @@ $routes = [
     ['POST',   '/admin/users/{id}/demote-from-admin', [AdminController::class, 'demoteAdminToStaff']],
     ['GET',    '/admin/placement-officers',     [AdminController::class, 'listPlacementOfficers']],
     ['GET',    '/admin/volunteers',             [AdminController::class, 'listVolunteers']],
+    ['GET',    '/admin/volunteers/{id}/offer-letter', [AdminController::class, 'downloadVolunteerOfferLetter']],
     ['GET',    '/admin/departments',            [AdminController::class, 'listDepartments']],
     ['POST',   '/admin/departments',            [AdminController::class, 'createDepartment']],
     ['PUT',    '/admin/departments/{id}',       [AdminController::class, 'updateDepartment']],
@@ -473,6 +474,7 @@ $routes = [
     ['DELETE','/officer/department-placement-officer', [OfficerController::class, 'unassignDepartmentPlacementOfficer']],
     ['GET',    '/officer/volunteers',           [OfficerController::class, 'listVolunteers']],
     ['POST',   '/officer/volunteers',           [OfficerController::class, 'assignVolunteer']],
+    ['GET',    '/officer/volunteers/{id}/offer-letter', [OfficerController::class, 'downloadVolunteerOfferLetter']],
     ['DELETE', '/officer/volunteers/{id}',      [OfficerController::class, 'removeVolunteer']],
 
     // Aptitude mocks
