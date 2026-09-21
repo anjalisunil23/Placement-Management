@@ -339,11 +339,11 @@
     const options = Array.isArray(row.options) && row.options.length >= 2
       ? row.options.map((o) => String(o || '').trim()).filter(Boolean)
       : [
-        rowField(row, 'optionA', 'option_a', 'a', 'option1'),
-        rowField(row, 'optionB', 'option_b', 'b', 'option2'),
-        rowField(row, 'optionC', 'option_c', 'c', 'option3'),
-        rowField(row, 'optionD', 'option_d', 'd', 'option4'),
-      ].filter(Boolean);
+      rowField(row, 'optionA', 'option_a', 'a', 'option1'),
+      rowField(row, 'optionB', 'option_b', 'b', 'option2'),
+      rowField(row, 'optionC', 'option_c', 'c', 'option3'),
+      rowField(row, 'optionD', 'option_d', 'd', 'option4'),
+    ].filter(Boolean);
     if (!prompt || options.length < 2) return null;
     const correct = rowField(row, 'correct', 'answer', 'correctIndex', 'correct_option');
     const marks = Number(rowField(row, 'marks', 'mark') || 1) || 1;
@@ -1058,13 +1058,18 @@
 
     const role = Auth.role();
     const staffBatches = staffAssignedBatches();
-    const emptyMsg = role === 'staff' && !staffBatches.length
+    const hasAssignedClass = staffBatches.length || (scope.assignedClassBatches || []).length;
+    const emptyMsg = progressPanel === 'contests'
+      ? (role === 'staff' && !hasAssignedClass
+        ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
+        : 'No contest results in your authorized scope yet.')
+      : (role === 'staff' && !staffBatches.length
       ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
-      : (role === 'staff' && !hasStaffDirectoryLookup()
-        ? 'Select your class batch above to view aptitude results for your students.'
-        : (progressPanel === 'company'
-          ? 'No company test results in your authorized scope yet.'
-          : 'No test results in your authorized scope yet.'));
+        : (role === 'staff' && !hasStaffDirectoryLookup()
+          ? 'Select your class batch above to view aptitude results for your students.'
+          : (progressPanel === 'company'
+            ? 'No company test results in your authorized scope yet.'
+            : 'No test results in your authorized scope yet.')));
 
     const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
@@ -6427,7 +6432,7 @@
 
     const allRows = [];
     wb.SheetNames.forEach((sheetName) => {
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
       const sheetDifficulty = BULK_SHEET_DIFFICULTIES[String(sheetName).trim().toLowerCase()] || null;
       rows.forEach((row) => {
         if (!row || typeof row !== 'object') return;
@@ -6525,7 +6530,7 @@
         renderContestResults(demo.contests || [], demo.summary || {}, scope, completed);
       } else {
         const demo = demoDirectoryRows(progressPanel);
-        renderDirectoryTable(demo.rows || [], demo.summary || {}, scope);
+      renderDirectoryTable(demo.rows || [], demo.summary || {}, scope);
       }
       return;
     }

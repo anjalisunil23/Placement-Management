@@ -118,6 +118,10 @@
     let running = false;
     let submitting = false;
     let beforeUnloadBound = false;
+    let contestMode = false;
+    let lockOverlay = null;
+    let overlayHideTimer = null;
+    let lastContestWarningAt = 0;
 
     function el(id) {
       return root.querySelector(`[data-cod="${id}"]`);
@@ -127,6 +131,101 @@
       root.querySelectorAll('[data-cod-panel]').forEach((p) => {
         p.classList.toggle('d-none', p.getAttribute('data-cod-panel') !== name);
       });
+    }
+
+    function isContestAttempt(meta = state?.testMeta || state?.test) {
+      const type = String(meta?.contestType || 'none');
+      return type === 'weekly' || type === 'monthly';
+    }
+
+    function ensureLockOverlay() {
+      if (lockOverlay) return lockOverlay;
+      const overlay = document.createElement('div');
+      overlay.setAttribute('data-cod-lock-overlay', '');
+      overlay.style.position = 'fixed';
+      overlay.style.inset = '0';
+      overlay.style.display = 'none';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.padding = '1rem';
+      overlay.style.background = 'rgba(15, 23, 42, 0.78)';
+      overlay.style.backdropFilter = 'blur(4px)';
+      overlay.style.zIndex = '1080';
+      overlay.innerHTML = `
+        <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
+          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Contest mode active</div>
+          <div data-cod-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">Stay on this tab and use Submit Answer when you are ready.</div>
+        </div>`;
+      document.body.appendChild(overlay);
+      lockOverlay = overlay;
+      return lockOverlay;
+    }
+
+    function showLockOverlay(message) {
+      const overlay = ensureLockOverlay();
+      const msg = overlay.querySelector('[data-cod-lock-message]');
+      if (msg) msg.textContent = message || 'Stay on this tab and use Submit Answer when you are ready.';
+      overlay.style.display = 'flex';
+      clearTimeout(overlayHideTimer);
+      overlayHideTimer = setTimeout(() => {
+        if (!document.hidden && !submitting && !state?.submitted) {
+          hideLockOverlay();
+        }
+      }, 2200);
+    }
+
+    function hideLockOverlay() {
+      if (lockOverlay) {
+        lockOverlay.style.display = 'none';
+      }
+      clearTimeout(overlayHideTimer);
+      overlayHideTimer = null;
+    }
+
+    function warnContestFocus(message) {
+      if (!contestMode || !state?.attemptId || state.submitted) return;
+      const now = Date.now();
+      if (now - lastContestWarningAt < 1200) return;
+      lastContestWarningAt = now;
+      showLockOverlay(message);
+      toast(message, 'warning');
+    }
+
+    function onVisibilityChange() {
+      if (!contestMode || !state?.attemptId || state.submitted) return;
+      if (document.hidden) {
+        warnContestFocus('Tab switch detected. Return to this contest before submitting.');
+      } else {
+        hideLockOverlay();
+      }
+    }
+
+    function onWindowBlur() {
+      if (!contestMode || !state?.attemptId || state.submitted) return;
+      warnContestFocus('Contest mode warning: stay on this tab until you submit.');
+    }
+
+    function onWindowFocus() {
+      if (!contestMode || state?.submitted) return;
+      hideLockOverlay();
+    }
+
+    function onClipboardBlock(e) {
+      if (!contestMode || !state?.attemptId || state.submitted) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toast('Copy, cut, and paste are disabled during contest mode.', 'warning');
+    }
+
+    function bindContestGuards(on) {
+      const method = on ? 'addEventListener' : 'removeEventListener';
+      document[method]('visibilitychange', onVisibilityChange);
+      window[method]('blur', onWindowBlur);
+      window[method]('focus', onWindowFocus);
+      root[method]('copy', onClipboardBlock, true);
+      root[method]('cut', onClipboardBlock, true);
+      root[method]('paste', onClipboardBlock, true);
+      if (!on) hideLockOverlay();
     }
 
     function stopTimer() {
@@ -193,7 +292,10 @@
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Maximum Marks</div><strong>${esc(test.marks || 0)}</strong></div></div>
         </div>`;
       const lines = test.instructions || [];
-      el('instr-list').innerHTML = lines.map((line) => `<li>${esc(line)}</li>`).join('');
+      const contestNote = isContestAttempt(test)
+        ? '<li><strong>Contest mode:</strong> copy, cut, and paste are blocked. Switching tabs triggers a warning.</li>'
+        : '';
+      el('instr-list').innerHTML = [contestNote, ...lines.map((line) => `<li>${esc(line)}</li>`)].join('');
     }
 
     function renderProblem(q) {
@@ -422,6 +524,7 @@
         state.startedAt = started.startedAt;
         state.submitted = false;
         state.answers = {};
+        contestMode = isContestAttempt(started.test || state.testMeta);
         (started.test.items || []).forEach((item) => {
           const sample = (item.testCases || []).find((tc) => tc.sample);
           state.answers[item.id] = {
@@ -436,6 +539,7 @@
         showPanel('exam');
         el('exam-title').textContent = started.test.title || 'Coding Test';
         bindUnload(true);
+        bindContestGuards(true);
         renderQuestion();
         startTimer();
         editor.focus();
@@ -526,6 +630,7 @@
         state.submitted = true;
         state.attemptId = null;
         if (editor) editor.setReadOnly(true);
+        bindContestGuards(false);
         if (auto) toast('Time is up — test submitted automatically.', 'info');
         if (result.saveWarning) toast(result.saveWarning, 'info');
         renderResult(result);
@@ -631,12 +736,14 @@
         persistCurrent();
         stopTimer();
         bindUnload(false);
+        bindContestGuards(false);
         onExit(state?.lastResult);
       }
       if (action === 'done') {
         persistCurrent();
         stopTimer();
         bindUnload(false);
+        bindContestGuards(false);
         onExit(state?.lastResult);
       }
       if (action === 'prev') {
@@ -665,13 +772,17 @@
         stopTimer();
         submitting = false;
         running = false;
+        contestMode = isContestAttempt(testMeta);
         state = { testMeta, test: null, answers: {}, index: 0, attemptId: null, submitted: false };
         renderInstructions(testMeta);
         root.classList.remove('d-none');
+        bindContestGuards(false);
+        hideLockOverlay();
       },
       hide() {
         stopTimer();
         bindUnload(false);
+        bindContestGuards(false);
         root.classList.add('d-none');
       },
     };

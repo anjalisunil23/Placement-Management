@@ -12,6 +12,9 @@ class CodingTestModel extends BaseModel
 {
     private static bool $tableReady = false;
 
+    private const CONTEST_START_DEFAULT = '09:00';
+    private const CONTEST_WINDOW_HOURS = 24;
+
     public const CATEGORIES = ['Programming', 'Python', 'Data Structures', 'Programming Logic', 'Algorithms'];
     public const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
     public const STATUSES = ['published', 'unpublished'];
@@ -20,6 +23,20 @@ class CodingTestModel extends BaseModel
     {
         $raw = strtolower(trim($value));
         return in_array($raw, ['weekly', 'monthly'], true) ? $raw : 'none';
+    }
+
+    public static function normalizeContestStartTime(string $value): string
+    {
+        $raw = trim($value);
+        if ($raw === '') {
+            return self::CONTEST_START_DEFAULT;
+        }
+        if (!preg_match('/^(?:[01]?\d|2[0-3]):[0-5]\d$/', $raw)) {
+            return self::CONTEST_START_DEFAULT;
+        }
+
+        [$hour, $minute] = array_map('intval', explode(':', $raw, 2));
+        return sprintf('%02d:%02d', $hour, $minute);
     }
 
     public static function contestClock(?\DateTimeInterface $now = null): \DateTimeImmutable
@@ -35,11 +52,62 @@ class CodingTestModel extends BaseModel
     public static function isContestOpen(array $test, ?\DateTimeInterface $now = null): bool
     {
         $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
-        if ($type === 'none' || $type === 'weekly' || $type === 'monthly') {
+        if ($type === 'none') {
             return true;
         }
 
-        return true;
+        $clock = self::contestClock($now);
+        $bounds = self::contestWindowBounds($test, $clock);
+        $start = self::contestClockFromValue($bounds['start'] ?? '');
+        $end = self::contestClockFromValue($bounds['end'] ?? '');
+
+        return $start < $end && $clock >= $start && $clock < $end;
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @return array{start:?string,end:?string,startTimestamp:?int,endTimestamp:?int,periodKey:string}
+     */
+    public static function contestWindowBounds(array $test, mixed $when = null): array
+    {
+        $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        if ($type === 'none') {
+            return [
+                'start' => null,
+                'end' => null,
+                'startTimestamp' => null,
+                'endTimestamp' => null,
+                'periodKey' => '',
+            ];
+        }
+
+        $start = self::contestOccurrenceStart($test, $when);
+        if (!$start instanceof \DateTimeImmutable) {
+            return [
+                'start' => null,
+                'end' => null,
+                'startTimestamp' => null,
+                'endTimestamp' => null,
+                'periodKey' => '',
+            ];
+        }
+        $end = $start->modify('+' . self::CONTEST_WINDOW_HOURS . ' hours');
+
+        return [
+            'start' => $start->format(DATE_ATOM),
+            'end' => $end->format(DATE_ATOM),
+            'startTimestamp' => $start->getTimestamp(),
+            'endTimestamp' => $end->getTimestamp(),
+            'periodKey' => self::contestPeriodKeyForStart($type, $start),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    public static function periodKey(array $test, mixed $when = null): string
+    {
+        return (string) (self::contestWindowBounds($test, $when)['periodKey'] ?? '');
     }
 
     public static function contestPeriodKey(string $type, mixed $when = null): string
@@ -81,16 +149,73 @@ class CodingTestModel extends BaseModel
     public static function contestScheduleLabel(array $test): string
     {
         $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        $startTime = self::normalizeContestStartTime((string) ($test['contestStartTime'] ?? self::CONTEST_START_DEFAULT));
         if ($type === 'weekly') {
             $days = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday', 7 => 'Sunday'];
             $day = (int) ($test['contestWeekday'] ?? 0);
-            return $day >= 1 && $day <= 7 ? 'Weekly · ' . $days[$day] : 'Weekly contest';
+            return $day >= 1 && $day <= 7 ? 'Weekly · ' . $days[$day] . ', ' . $startTime . ' IST' : 'Weekly contest';
         }
         if ($type === 'monthly') {
             $dom = (int) ($test['contestMonthDay'] ?? 0);
-            return $dom >= 1 && $dom <= 28 ? 'Monthly · day ' . $dom : 'Monthly contest';
+            return $dom >= 1 && $dom <= 28 ? 'Monthly · day ' . $dom . ', ' . $startTime . ' IST' : 'Monthly contest';
         }
         return '';
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    private static function contestOccurrenceStart(array $test, mixed $when = null): ?\DateTimeImmutable
+    {
+        $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        if ($type === 'none') {
+            return null;
+        }
+
+        $clock = $when instanceof \DateTimeInterface
+            ? self::contestClock($when)
+            : self::contestClockFromValue($when);
+        $startTime = self::normalizeContestStartTime((string) ($test['contestStartTime'] ?? self::CONTEST_START_DEFAULT));
+        [$hour, $minute] = array_map('intval', explode(':', $startTime, 2));
+
+        if ($type === 'weekly') {
+            $want = max(1, min(7, (int) ($test['contestWeekday'] ?? 1)));
+            $currentDow = (int) $clock->format('N');
+            $candidate = $clock->setTime($hour, $minute)->modify(sprintf('%+d days', $want - $currentDow));
+            if ($candidate > $clock) {
+                $candidate = $candidate->modify('-7 days');
+            }
+
+            return $candidate;
+        }
+
+        $want = max(1, min(28, (int) ($test['contestMonthDay'] ?? 1)));
+        $candidate = self::buildContestMonthDate((int) $clock->format('Y'), (int) $clock->format('n'), $want, $hour, $minute);
+        if ($candidate > $clock) {
+            $previousMonth = $clock->modify('first day of last month');
+            $candidate = self::buildContestMonthDate((int) $previousMonth->format('Y'), (int) $previousMonth->format('n'), $want, $hour, $minute);
+        }
+
+        return $candidate;
+    }
+
+    private static function buildContestMonthDate(int $year, int $month, int $day, int $hour, int $minute): \DateTimeImmutable
+    {
+        $tz = new \DateTimeZone('Asia/Kolkata');
+        $base = new \DateTimeImmutable(sprintf('%04d-%02d-01 %02d:%02d:00', $year, $month, $hour, $minute), $tz);
+        $maxDay = (int) $base->format('t');
+        $day = max(1, min($day, $maxDay));
+
+        return $base->setDate($year, $month, $day);
+    }
+
+    private static function contestPeriodKeyForStart(string $type, \DateTimeImmutable $start): string
+    {
+        if ($type === 'monthly') {
+            return $start->format('Y-m');
+        }
+
+        return $start->format('o-\WW');
     }
 
     protected function collectionName(): string
@@ -170,6 +295,7 @@ class CodingTestModel extends BaseModel
             'contestType' => self::normalizeContestType((string) ($data['contestType'] ?? 'none')),
             'contestWeekday' => (int) ($data['contestWeekday'] ?? 1),
             'contestMonthDay' => (int) ($data['contestMonthDay'] ?? 1),
+            'contestStartTime' => self::normalizeContestStartTime((string) ($data['contestStartTime'] ?? self::CONTEST_START_DEFAULT)),
             'instructions' => array_values((array) ($data['instructions'] ?? [])),
             'items' => $items,
             'questions' => count($items),
@@ -225,8 +351,11 @@ class CodingTestModel extends BaseModel
             'contestType' => $contestType,
             'contestWeekday' => (int) ($test['contestWeekday'] ?? 1),
             'contestMonthDay' => (int) ($test['contestMonthDay'] ?? 1),
+            'contestStartTime' => self::normalizeContestStartTime((string) ($test['contestStartTime'] ?? self::CONTEST_START_DEFAULT)),
             'contestOpen' => self::isContestOpen($test),
             'contestScheduleLabel' => self::contestScheduleLabel($test),
+            'contestWindowBounds' => self::contestWindowBounds($test),
+            'periodKey' => self::periodKey($test),
             'instructions' => array_values((array) ($test['instructions'] ?? [])),
             'questions' => count($items),
             'questionCount' => count($items),

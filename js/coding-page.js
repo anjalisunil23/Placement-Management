@@ -18,7 +18,6 @@
   let progressPanel = 'tests';
   let myResultsView = 'tests';
   let dirFilterBranch = '';
-  let dirFilterBatch = '';
   let dirSearch = '';
   let dirSearchTimer = 0;
   let bankDifficultyFilter = '';
@@ -68,21 +67,55 @@
     return type === 'weekly' || type === 'monthly';
   }
 
+  function formatIst(value, options = {}) {
+    if (!value) return '';
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return '';
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      weekday: options.weekday || undefined,
+      day: options.day || undefined,
+      month: options.month || undefined,
+      hour: options.hour || undefined,
+      minute: options.minute || undefined,
+      hour12: false,
+    }).format(dt);
+  }
+
+  function contestWindowSummary(test) {
+    const bounds = test?.contestWindowBounds || {};
+    const open = isContestOpenClient(test);
+    const end = bounds.end ? formatIst(bounds.end, { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    if (open && end) return `Open until ${end} IST`;
+    if (open) return 'Open now';
+    return 'Closed';
+  }
+
   function isContestOpenClient(test) {
     if (test && typeof test.contestOpen === 'boolean') return test.contestOpen;
+    const bounds = test?.contestWindowBounds || {};
+    if (bounds.start && bounds.end) {
+      const start = Date.parse(bounds.start);
+      const end = Date.parse(bounds.end);
+      const now = Date.now();
+      if (Number.isFinite(start) && Number.isFinite(end)) {
+        return now >= start && now < end;
+      }
+    }
     const type = String(test?.contestType || 'none');
-    return type === 'none' || type === 'weekly' || type === 'monthly' || !type;
+    return type === 'none' || !type;
   }
 
   function contestScheduleLabel(test) {
     const type = String(test?.contestType || 'none');
+    const startTime = String(test?.contestStartTime || '09:00');
     if (type === 'weekly') {
       const hit = CONTEST_WEEKDAYS.find((d) => d.value === Number(test?.contestWeekday));
-      return hit ? `Weekly · ${hit.label}` : 'Weekly contest';
+      return hit ? `Weekly · ${hit.label}, ${startTime} IST` : 'Weekly contest';
     }
     if (type === 'monthly') {
       const day = Number(test?.contestMonthDay);
-      return Number.isFinite(day) && day > 0 ? `Monthly · day ${day}` : 'Monthly contest';
+      return Number.isFinite(day) && day > 0 ? `Monthly · day ${day}, ${startTime} IST` : 'Monthly contest';
     }
     return '';
   }
@@ -92,8 +125,8 @@
     if (type === 'none') return '';
     const label = contestScheduleLabel(t);
     const open = isContestOpenClient(t);
-    const openLbl = type === 'monthly' ? 'Open this month' : (type === 'weekly' ? 'Open this week' : 'Open now');
-    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(label || type)}</span><span class="badge-soft ${open ? 'success' : 'muted'}">${open ? openLbl : 'Closed'}</span></div>`;
+    const windowLabel = contestWindowSummary(t);
+    return `<div class="mt-1 d-flex flex-wrap gap-1"><span class="badge-soft info">${esc(label || type)}</span><span class="badge-soft ${open ? 'success' : 'muted'}">${esc(windowLabel)}</span></div>`;
   }
 
   function testMetaLine(t) {
@@ -571,6 +604,7 @@
     const wrap = document.getElementById('tfContestWrap');
     const type = document.getElementById('tfContestType')?.value || 'none';
     wrap?.classList.toggle('d-none', !canManageContests());
+    document.getElementById('tfContestStartTimeWrap')?.classList.toggle('d-none', type === 'none');
     document.getElementById('tfContestWeekdayWrap')?.classList.toggle('d-none', type !== 'weekly');
     document.getElementById('tfContestMonthDayWrap')?.classList.toggle('d-none', type !== 'monthly');
   }
@@ -591,6 +625,7 @@
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
     document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || 1);
     document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || 1);
+    document.getElementById('tfContestStartTime').value = test?.contestStartTime || '09:00';
     syncContestFormFields();
     const list = document.getElementById('problemList');
     list.innerHTML = '';
@@ -721,14 +756,14 @@
   }
 
   function hasDirectoryLookup() {
-    return !!(dirSearch.trim() || dirFilterBranch || dirFilterBatch);
+    return !!(dirSearch.trim() || dirFilterBranch);
   }
 
   function renderClassChart(rows) {
     const wrap = document.getElementById('dirClassChartWrap');
     const chart = document.getElementById('dirClassChart');
     if (!wrap || !chart) return;
-    const show = progressPanel === 'tests' && !!(dirFilterBatch || dirFilterBranch);
+    const show = progressPanel === 'tests' && !!dirFilterBranch;
     wrap.classList.toggle('d-none', !show);
     if (!show) {
       chart.innerHTML = '';
@@ -764,18 +799,18 @@
       `<div class="col-6 col-md-2"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
     ).join('');
     renderClassChart(waiting ? [] : rows);
-    if (!waiting && (dirFilterBatch || dirFilterBranch)) {
+    if (!waiting && dirFilterBranch) {
       const title = document.getElementById('dirChartTitle');
-      if (title) title.textContent = `${dirFilterBatch || dirFilterBranch} progress`;
+      if (title) title.textContent = `${dirFilterBranch} progress`;
       document.getElementById('dirClassChartWrap')?.classList.remove('d-none');
     }
-    let emptyMsg = 'Search a student by name or roll number, or select a branch and class to view progress.';
+    let emptyMsg = 'Search a student by name or roll number, or select a branch to view progress.';
     if (!waiting && Auth.role() === 'staff' && !staffAssignedBatches().length && !(scope.assignedClassBatches || []).length) {
       emptyMsg = 'No class is assigned to your account. Contact the placement office to monitor student coding progress.';
     } else if (!waiting) {
-      emptyMsg = dirFilterBatch
-        ? 'No students found in this class.'
-        : (dirFilterBranch ? 'No coding progress found for this branch.' : 'No matching student with coding attempts.');
+      emptyMsg = dirFilterBranch
+        ? 'No students found for this branch.'
+        : 'No matching student with coding attempts.';
     }
     document.getElementById('dirRows').innerHTML = (!waiting && rows.length) ? rows.map((r) => {
       const uid = String(r.userId || '');
@@ -1025,13 +1060,11 @@
       data = await api('/coding/progress/filters?' + new URLSearchParams({
         department: document.getElementById('fDepartment')?.value || '',
         course: dirFilterBranch,
-        class: dirFilterBatch,
       }).toString()).then((r) => r?.success ? r.data : null).catch(() => null);
       if (!data) {
         data = await api('/aptitude/progress/filters?' + new URLSearchParams({
           department: document.getElementById('fDepartment')?.value || '',
           course: dirFilterBranch,
-          class: dirFilterBatch,
         }).toString()).then((r) => r?.success ? r.data : null).catch(() => null);
       }
     }
@@ -1040,7 +1073,6 @@
     }
     applyDirDepartmentFromData(data.departments || []);
     fillSelect(document.getElementById('fBranch'), [{ value: '', label: 'Select a branch' }, ...(data.branches || []).map((b) => ({ value: b, label: b }))], dirFilterBranch);
-    fillSelect(document.getElementById('fBatch'), [{ value: '', label: 'Select a class' }, ...(data.batches || []).map((b) => ({ value: b, label: b }))], dirFilterBatch);
   }
 
   let dirFiltersReady = false;
@@ -1051,18 +1083,11 @@
     document.getElementById('fDepartmentSelect')?.addEventListener('change', async () => {
       document.getElementById('fDepartment').value = document.getElementById('fDepartmentSelect').value;
       dirFilterBranch = '';
-      dirFilterBatch = '';
       await loadDirFilterOptions();
       await loadDirectory();
     });
     document.getElementById('fBranch')?.addEventListener('change', async () => {
       dirFilterBranch = document.getElementById('fBranch').value;
-      dirFilterBatch = '';
-      await loadDirFilterOptions();
-      await loadDirectory();
-    });
-    document.getElementById('fBatch')?.addEventListener('change', async () => {
-      dirFilterBatch = document.getElementById('fBatch').value;
       await loadDirectory();
     });
     document.getElementById('fType')?.addEventListener('change', () => loadDirectory());
@@ -1084,7 +1109,6 @@
     const dept = document.getElementById('fDepartment')?.value || '';
     if (dept) qs.set('department', dept);
     if (dirFilterBranch) qs.set('course', dirFilterBranch);
-    if (dirFilterBatch) qs.set('class', dirFilterBatch);
     const q = dirSearch.trim();
     if (q) qs.set('q', q);
     const type = document.getElementById('fType')?.value || '';
@@ -1319,6 +1343,7 @@
         contestType: canManageContests() ? (document.getElementById('tfContestType').value || 'none') : 'none',
         contestWeekday: Number(document.getElementById('tfContestWeekday').value || 1),
         contestMonthDay: Number(document.getElementById('tfContestMonthDay').value || 1),
+        contestStartTime: document.getElementById('tfContestStartTime').value || '09:00',
         instructions: [
           'Read each problem carefully.',
           'Select the programming language before submitting.',

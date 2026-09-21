@@ -8,6 +8,7 @@ use PMS\Middleware\AuthMiddleware;
 use PMS\Models\AlumniModel;
 use PMS\Models\ApplicationModel;
 use PMS\Models\AptitudeTestModel;
+use PMS\Models\CodingTestModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\DepartmentModel;
 use PMS\Models\StudentModel;
@@ -90,6 +91,7 @@ final class AptitudeAccessService
         }
         $type = AptitudeTestModel::normalizeContestType((string) ($data['contestType'] ?? 'none'));
         $data['contestType'] = $type;
+        $data['contestStartTime'] = CodingTestModel::normalizeContestStartTime((string) ($data['contestStartTime'] ?? '09:00'));
         if ($type === 'weekly') {
             $data['contestWeekday'] = max(1, min(7, (int) ($data['contestWeekday'] ?? 1)));
             $data['contestStartTime'] = AptitudeTestModel::normalizeContestTime((string) ($data['contestStartTime'] ?? ''), '00:00');

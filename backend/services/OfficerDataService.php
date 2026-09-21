@@ -1076,6 +1076,145 @@ final class OfficerDataService
     }
 
     /**
+     * Complete AES roster for one programme / branch (MCA, INMCA, CS, …),
+     * without requiring a class/batch selection. Includes every studying
+     * student in that programme, not only final-year rows.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAesProgrammeStudents(array $ctx, string $programme): array
+    {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        if ($programme === '') {
+            return [];
+        }
+
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        $staffBatches = !empty($ctx['staffScope']) ? StaffContext::assignedClassBatches($ctx) : [];
+        if (!empty($ctx['staffScope']) && $staffBatches === []) {
+            return [];
+        }
+
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $records = $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
+        $rows = [];
+        $seen = [];
+
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+            if (!$this->isAesStudyingStudent($record)) {
+                continue;
+            }
+            if (!$this->aesDirectoryRecordMatchesProgramme($record, $programme)) {
+                continue;
+            }
+
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? ''
+            )));
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            $local = null;
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+                $normKey = $this->normalizeStudentAdmnoKey($key);
+                if ($normKey !== '' && isset($localByKey[$normKey])) {
+                    $local = $localByKey[$normKey];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            if ($staffBatches !== [] && !StaffContext::classBatchMatchesAssigned(
+                StaffContext::studentClassBatch($row),
+                $staffBatches
+            )) {
+                continue;
+            }
+
+            $key = $this->normalizeStudentAdmnoKey((string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * PlaceHub students in the selected programme / branch.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listLocalProgrammeStudents(array $ctx, string $programme): array
+    {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        if ($programme === '') {
+            return [];
+        }
+
+        $source = !empty($ctx['staffScope'])
+            ? $this->listLocalStaffClassRosterRows($ctx)
+            : (new StudentModel())->findAll(PlacementOfficerContext::studentCollectionFilter($ctx), 5000);
+
+        $rows = [];
+        foreach ($source as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $hint = trim(implode(' ', array_filter([
+                (string) ($row['classBatch'] ?? ''),
+                (string) ($row['stud_class'] ?? ''),
+                (string) ($row['stud_course'] ?? ''),
+                (string) ($row['programme'] ?? ''),
+                (string) ($row['course'] ?? ''),
+                (string) ($row['branch'] ?? ''),
+                StaffContext::studentClassBatch($row),
+            ])));
+            $detected = $this->placementProgrammeCode($hint);
+            if ($detected === '') {
+                $detected = DepartmentProgrammeCatalog::resolveProgrammeCode($hint);
+            }
+            if ($detected === '' || strcasecmp($detected, $programme) !== 0) {
+                continue;
+            }
+            if ($programme === 'MCA' && $this->placementProgrammeCode($hint) === 'INMCA') {
+                continue;
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
      * AES directory for a programme: one dept (or campus) fetch, then PHP filter.
      *
      * AES getAllStudInfo4Placement does not reliably filter by stud_course — calling

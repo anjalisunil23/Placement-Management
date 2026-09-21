@@ -270,6 +270,9 @@ final class CodingService
             'testId' => $testId,
             'testTitle' => (string) ($test['title'] ?? ''),
             'contestType' => (string) ($test['contestType'] ?? 'none'),
+            'contestStartTime' => (string) ($test['contestStartTime'] ?? '09:00'),
+            'periodKey' => CodingTestModel::periodKey($test),
+            'contestWindowBounds' => CodingTestModel::contestWindowBounds($test),
             'endsAt' => $endsAt,
         ]);
         $pub = CodingTestModel::publicView($test, true);
@@ -324,6 +327,13 @@ final class CodingService
             $open = is_array($test) && CodingTestModel::isContestOpen($test);
             $result['contestClosed'] = !$open;
             $result['winnersPublished'] = !$open;
+            if (is_array($test)) {
+                $result['contestStartTime'] = (string) ($attempt['contestStartTime'] ?? $test['contestStartTime'] ?? '09:00');
+                $result['periodKey'] = (string) ($attempt['periodKey'] ?? CodingTestModel::periodKey($test, $attempt['submittedAt'] ?? null));
+                $result['contestWindowBounds'] = is_array($attempt['contestWindowBounds'] ?? null)
+                    ? $attempt['contestWindowBounds']
+                    : CodingTestModel::contestWindowBounds($test, $attempt['submittedAt'] ?? null);
+            }
         } else {
             $result['contestClosed'] = true;
             $result['winnersPublished'] = false;
@@ -423,14 +433,11 @@ final class CodingService
             $out[] = $row;
         }
         $course = trim((string) ($filters['course'] ?? ''));
-        $class = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
-        if ($class !== '' && !$wantContests) {
-            $classRows = $this->mergeClassRoster($user, $filters, $byUser, $byReg);
-            if ($classRows !== []) {
-                $out = $classRows;
+        if ($course !== '' && !$wantContests) {
+            $branchRows = $this->mergeBranchRoster($user, $filters, $out, $byUser, $byReg);
+            if ($branchRows !== []) {
+                $out = $branchRows;
             }
-        } elseif ($course !== '' && !$wantContests) {
-            $out = $this->mergeBranchRoster($user, $filters, $out, $byUser);
         }
         usort($out, static fn ($a, $b) => strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? '')));
         $allPercents = [];
@@ -468,8 +475,7 @@ final class CodingService
         }
         $q = trim((string) ($filters['q'] ?? ''));
         $course = trim((string) ($filters['course'] ?? ''));
-        $class = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
-        $needsFilter = $q === '' && $course === '' && $class === '';
+        $needsFilter = $q === '' && $course === '';
         return [
             'rows' => $needsFilter ? [] : $out,
             'summary' => $needsFilter ? [
@@ -534,7 +540,6 @@ final class CodingService
     {
         $departmentId = trim((string) ($filters['department'] ?? $filters['departmentId'] ?? ''));
         $course = trim((string) ($filters['course'] ?? ''));
-        $class = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
         $userType = trim((string) ($filters['userType'] ?? ''));
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
         if ($q !== '') {
@@ -544,18 +549,11 @@ final class CodingService
                 return false;
             }
         }
-        if ($class !== '') {
-            $rowClass = trim((string) ($row['classBatch'] ?? ''));
-            if ($rowClass === '' || !self::classLabelMatches($rowClass, $class)) {
-                return false;
-            }
-        } else {
-            if ($departmentId !== '' && (string) ($row['departmentId'] ?? '') !== $departmentId) {
-                return false;
-            }
-            if ($course !== '' && !self::courseLabelMatches((string) ($row['course'] ?? ''), $course, (string) ($row['classBatch'] ?? ''))) {
-                return false;
-            }
+        if ($departmentId !== '' && (string) ($row['departmentId'] ?? '') !== $departmentId && (string) ($row['departmentId'] ?? '') !== '') {
+            return false;
+        }
+        if ($course !== '' && !self::courseLabelMatches((string) ($row['course'] ?? ''), $course, (string) ($row['classBatch'] ?? ''))) {
+            return false;
         }
         if ($userType !== '' && strcasecmp((string) ($row['userType'] ?? ''), $userType) !== 0) {
             return false;
@@ -607,82 +605,46 @@ final class CodingService
         return '';
     }
 
-    private function mergeBranchRoster(array $viewer, array $filters, array $out, array $byUser): array
+    private function mergeBranchRoster(array $viewer, array $filters, array $out, array $byUser, array $byReg = []): array
     {
         $wantCourse = trim((string) ($filters['course'] ?? ''));
         if ($wantCourse === '') {
             return $out;
         }
-        $seen = [];
-        foreach ($out as $row) {
-            $uid = (string) ($row['userId'] ?? '');
-            if ($uid !== '') {
-                $seen[$uid] = true;
-            }
-        }
-        $allowed = AptitudeAccessService::authorizedSubjectUserIds($viewer);
-        $deptId = trim((string) ($filters['department'] ?? ''));
-        $query = $deptId !== '' ? ['departmentId' => $deptId] : [];
-        foreach ((new StudentModel())->findAll($query, 3000) as $student) {
-            $uid = trim((string) ($student['userId'] ?? ''));
-            if ($uid === '' || isset($seen[$uid])) {
-                continue;
-            }
-            if (is_array($allowed) && !in_array($uid, $allowed, true)) {
-                continue;
-            }
-            $classBatch = StaffContext::studentClassBatch($student);
-            $branch = $this->studentBranchLabel($student, [], $classBatch);
-            if (!self::courseLabelMatches($branch, $wantCourse, $classBatch)) {
-                continue;
-            }
-            $out[] = $this->summarizeDirectoryUser($uid, $byUser[$uid] ?? []);
-            $seen[$uid] = true;
-        }
-        return $out;
-    }
-
-    /**
-     * Complete AES + local roster for the selected class, with coding stats attached.
-     *
-     * @param array<string, mixed> $viewer
-     * @param array<string, mixed> $filters
-     * @param array<string, list<array<string, mixed>>> $byUser
-     * @param array<string, string> $byReg
-     * @return array<int, array<string, mixed>>
-     */
-    private function mergeClassRoster(array $viewer, array $filters, array $byUser, array $byReg = []): array
-    {
-        $wantClass = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
-        if ($wantClass === '') {
-            return [];
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($wantCourse);
+        if ($programme === '') {
+            $programme = $wantCourse;
         }
 
         $officer = new OfficerDataService();
         $ctx = $this->directoryOfficerContext($viewer);
-        $programme = trim((string) ($filters['course'] ?? ''));
-        if ($programme === '') {
-            $programme = $this->programmeFromClass($wantClass);
-        } else {
-            $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
-        }
-
         $roster = [];
-        if ($programme !== '') {
-            try {
-                $roster = $officer->listAesClassStudents($ctx, $programme, $wantClass, true);
-            } catch (\Throwable $e) {
-                error_log('[PMS coding class roster AES] ' . $e->getMessage());
-            }
+        try {
+            $roster = $officer->listAesProgrammeStudents($ctx, $programme);
+        } catch (\Throwable $e) {
+            error_log('[PMS coding branch roster AES] ' . $e->getMessage());
         }
         try {
-            foreach ($officer->listLocalClassStudentsForBatch($ctx, $wantClass) as $row) {
+            foreach ($officer->listLocalProgrammeStudents($ctx, $programme) as $row) {
                 $roster[] = $row;
             }
         } catch (\Throwable $e) {
-            error_log('[PMS coding class roster local] ' . $e->getMessage());
+            error_log('[PMS coding branch roster local] ' . $e->getMessage());
         }
 
+        $merged = $this->attachCodingStatsToRoster($filters, $byUser, $byReg, $roster);
+        return $merged !== [] ? $merged : $out;
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @param array<string, list<array<string, mixed>>> $byUser
+     * @param array<string, string> $byReg
+     * @param array<int, array<string, mixed>> $roster
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachCodingStatsToRoster(array $filters, array $byUser, array $byReg, array $roster): array
+    {
         if ($byReg === []) {
             foreach ($byUser as $uid => $hist) {
                 $sum = $this->summarizeDirectoryUser((string) $uid, is_array($hist) ? $hist : []);
@@ -850,43 +812,6 @@ final class CodingService
         return PlacementOfficerContext::resolve($viewer);
     }
 
-    private function programmeFromClass(string $classBatch): string
-    {
-        $norm = DepartmentProgrammeCatalog::normalizeCode($classBatch);
-        if ($norm === '') {
-            return '';
-        }
-        $best = '';
-        foreach (DepartmentProgrammeCatalog::groups() as $group) {
-            foreach ($group['programmes'] as $programme) {
-                $code = DepartmentProgrammeCatalog::normalizeCode((string) ($programme['code'] ?? ''));
-                if ($code !== '' && str_starts_with($norm, $code) && strlen($code) > strlen($best)) {
-                    $best = (string) $programme['code'];
-                }
-                foreach (($programme['aliases'] ?? []) as $alias) {
-                    $aliasNorm = DepartmentProgrammeCatalog::normalizeCode((string) $alias);
-                    if ($aliasNorm !== '' && str_starts_with($norm, $aliasNorm) && strlen($aliasNorm) > strlen($best)) {
-                        $best = (string) $programme['code'];
-                    }
-                }
-            }
-        }
-        if ($best !== '') {
-            return DepartmentProgrammeCatalog::resolveProgrammeCode($best);
-        }
-        if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
-            return 'INMCA';
-        }
-        if (str_starts_with($norm, 'MCA')) {
-            return 'MCA';
-        }
-        if (str_contains($norm, 'BCA')) {
-            return 'BCA';
-        }
-
-        return '';
-    }
-
     /**
      * @param array<string, mixed> $row
      * @return list<string>
@@ -937,24 +862,6 @@ final class CodingService
             'categoryPerformance' => [],
             'history' => [],
         ];
-    }
-
-    private static function classLabelMatches(string $studentClass, string $want): bool
-    {
-        $studentClass = trim($studentClass);
-        $want = trim($want);
-        if ($studentClass === '' || $want === '') {
-            return false;
-        }
-        if (strcasecmp($studentClass, $want) === 0) {
-            return true;
-        }
-        $compactA = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $studentClass));
-        $compactB = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $want));
-        if ($compactA !== '' && $compactA === $compactB) {
-            return true;
-        }
-        return strcasecmp(ClassInchargeRegistry::cohortKey($studentClass), ClassInchargeRegistry::cohortKey($want)) === 0;
     }
 
     private static function courseLabelMatches(string $studentCourse, string $want, string $studentClass): bool
@@ -1122,12 +1029,14 @@ final class CodingService
             $type = $test !== []
                 ? CodingTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none'))
                 : CodingTestModel::normalizeContestType((string) ($raw[0]['contestType'] ?? 'weekly'));
-            $currentKey = CodingTestModel::contestPeriodKey($type);
+            $currentKey = $test !== [] ? CodingTestModel::periodKey($test) : CodingTestModel::contestPeriodKey($type);
             $previousKey = CodingTestModel::previousContestPeriodKey($type);
             $current = [];
             $previous = [];
             foreach ($raw as $p) {
-                $key = CodingTestModel::contestPeriodKey($type, $p['submittedAt'] ?? '');
+                $key = $test !== []
+                    ? CodingTestModel::periodKey($test, $p['submittedAt'] ?? '')
+                    : CodingTestModel::contestPeriodKey($type, $p['submittedAt'] ?? '');
                 if ($key === $previousKey) {
                     $previous[] = $p;
                 } else {
@@ -1144,12 +1053,15 @@ final class CodingService
                 'contestType' => $type,
                 'contestOpen' => $open,
                 'contestClosed' => !$open,
+                'contestStartTime' => $test !== [] ? (string) ($test['contestStartTime'] ?? '09:00') : '09:00',
                 'contestScheduleLabel' => $test !== [] ? CodingTestModel::contestScheduleLabel($test) : '',
+                'contestWindowBounds' => $test !== [] ? CodingTestModel::contestWindowBounds($test) : [],
                 'winnersPublished' => $winnersPublished,
                 'winners' => $winnersPublished ? array_slice($previous, 0, 3) : [],
                 'participants' => $winnersPublished ? $previous : [],
                 'liveParticipants' => $current,
                 'participantCount' => count($current),
+                'periodKey' => $currentKey,
                 'currentPeriodKey' => $currentKey,
                 'previousPeriodKey' => $previousKey,
             ];

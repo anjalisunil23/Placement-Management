@@ -153,16 +153,10 @@
           </select>
           <input type="hidden" id="fDepartment" value=""/>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-4">
           <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBranch">Branch</label>
           <select class="form-select form-select-sm" id="fBranch" aria-label="Branch">
             <option value="">Select a branch</option>
-          </select>
-        </div>
-        <div class="col-6 col-md-3">
-          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBatch">Class</label>
-          <select class="form-select form-select-sm" id="fBatch" aria-label="Class">
-            <option value="">Select a class</option>
           </select>
         </div>
         <div class="col-6 col-md-3 d-none" id="fTypeWrap">
@@ -378,8 +372,8 @@
       <div data-cod="q-nav" class="d-flex flex-wrap"></div>
       <button type="button" class="btn btn-outline-secondary" data-cod="btn-next" data-cod-action="next">Next</button>
       <button type="button" class="btn btn-primary ms-auto" data-cod="btn-submit-test" data-cod-action="submit">Finish Test</button>
-    </div>
   </div>
+</div>
 
   <div data-cod-panel="result" class="d-none">
     <nav class="ph-breadcrumb mb-3" aria-label="Breadcrumb">
@@ -436,6 +430,10 @@
               <div class="col-md-4 d-none" id="tfContestMonthDayWrap">
                 <label class="form-label small fw-semibold" for="tfContestMonthDay">Day of month</label>
                 <select class="form-select" id="tfContestMonthDay"></select>
+              </div>
+              <div class="col-md-4 d-none" id="tfContestStartTimeWrap">
+                <label class="form-label small fw-semibold" for="tfContestStartTime">Start time</label>
+                <input class="form-control" id="tfContestStartTime" type="time" value="09:00"/>
               </div>
             </div>
           </div>
@@ -523,7 +521,7 @@
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/coding-data.js?v=20260915back"></script>
 <script src="js/coding-execution.js?v=20260915back"></script>
-<script src="js/coding-service.js?v=20260915back"></script>
-<script src="js/coding-exam.js?v=20260915back"></script>
-<script src="js/coding-page.js?v=20260917admin"></script>
+<script src="js/coding-service.js?v=20260921contest"></script>
+<script src="js/coding-exam.js?v=20260921contest"></script>
+<script src="js/coding-page.js?v=20260921contest"></script>
 </body></html>
