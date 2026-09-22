@@ -108,7 +108,12 @@ final class CodingAiProblemService
             throw new \InvalidArgumentException('Topic is required.');
         }
 
-        $system = 'You are a coding problem generator for a university placement preparation system. Return ONLY valid JSON with no markdown or commentary.';
+        $system = <<<'SYSTEM'
+You generate stdin/stdout coding problems for a university placement portal (HackerRank / CodeChef style).
+Students write a standalone Python program that reads from stdin and prints to stdout.
+NEVER generate LeetCode-style problems: no class stubs, no method signatures to fill in, no multithreading puzzles, no "modify the given code", no problem numbers like "1115.".
+Return ONLY valid JSON with no markdown or commentary.
+SYSTEM;
         $user = $this->buildPrompt($category, $topic, $difficulty, $count, $instructions);
 
         try {
@@ -130,7 +135,9 @@ final class CodingAiProblemService
             }
         }
         if ($validated === []) {
-            throw new \RuntimeException('No valid coding problems in the AI response. Try again.');
+            throw new \RuntimeException(
+                'No valid stdin/stdout problems were generated. Avoid LeetCode-style class/threading templates and ensure 3 test cases per problem. Try again.'
+            );
         }
 
         $preview = [];
@@ -195,28 +202,51 @@ final class CodingAiProblemService
         $extra = trim($instructions);
         $extraLine = $extra !== '' ? "Additional instructions: {$extra}\n" : '';
         return <<<PROMPT
-You generate campus-placement coding problems for college students.
+Generate campus-placement coding problems for college students.
 Category: {$category}
 Topic: {$topic}
 Difficulty: {$difficulty}
 Count: {$count}
 {$extraLine}
-Each problem MUST focus specifically on "{$topic}" within the "{$category}" category.
-Do NOT generate generic programming questions unrelated to "{$topic}".
-Every problem must require the student to apply "{$topic}" concepts, patterns, or techniques to solve it.
+
+FORMAT (mandatory for every problem):
+- Standalone stdin/stdout program — the student writes one Python script from scratch.
+- Clear sections: description, inputFormat, outputFormat, constraints, one worked example.
+- Exactly 3 test cases per problem: 1 sample (shown to student) + 2 hidden.
+- Title is a short descriptive name only — NO LeetCode numbers, NO "Implement class X".
+
+FORBIDDEN (never generate):
+- LeetCode / interview templates with provided class or method stubs
+- Multithreading, mutex, semaphore, or "two threads call foo()/bar()" puzzles
+- "Modify the given program/code" or filling in a pre-written class
+- Premium/company tags, problem IDs like "1115.", or copy-pasted LeetCode wording
+
+GOOD example shape:
+Title: "Reverse Words in a Sentence"
+Description: Given a sentence, print the words in reverse order.
+inputFormat: One line containing the sentence S.
+outputFormat: Words of S reversed, space-separated, on one line.
+constraints: 1 <= number of words <= 1000
+exampleInput: "hello world"
+exampleOutput: "world hello"
+sampleInput + sampleExpected: same as the example
+hiddenInput1/hiddenExpected1 and hiddenInput2/hiddenExpected2: two more valid cases
+
+Each problem MUST teach or practice "{$topic}" within "{$category}" using stdin/stdout logic only.
+
 Return ONLY valid JSON:
 {
   "problems": [
     {
-      "title": "short title",
-      "description": "problem statement",
-      "inputFormat": "how input is given",
-      "outputFormat": "how output should be printed",
-      "constraints": "constraints",
+      "title": "short descriptive title",
+      "description": "full problem statement in plain English",
+      "inputFormat": "how stdin is structured",
+      "outputFormat": "exactly what to print",
+      "constraints": "numeric limits",
       "exampleInput": "sample stdin",
       "exampleOutput": "sample stdout",
-      "sampleInput": "same as example input",
-      "sampleExpected": "same as example output",
+      "sampleInput": "same as exampleInput",
+      "sampleExpected": "same as exampleOutput",
       "hiddenInput1": "hidden stdin",
       "hiddenExpected1": "hidden stdout",
       "hiddenInput2": "hidden stdin",
@@ -230,9 +260,9 @@ Return ONLY valid JSON:
 }
 Rules:
 - Exactly {$count} problems.
-- Every problem must be about "{$topic}" — not generic coding drills.
-- Problems must be solvable in Python from stdin/stdout.
-- Sample and hidden cases must match the statement.
+- Every problem must be about "{$topic}".
+- Every problem must have ALL 3 test cases filled with correct expected outputs.
+- Problems must be solvable by a single Python script using input() and print().
 - Do not wrap JSON in markdown.
 PROMPT;
     }
@@ -260,31 +290,36 @@ PROMPT;
      */
     private function mapAiProblem(array $q, string $fallbackCategory, string $fallbackDifficulty): ?array
     {
-        $title = trim((string) ($q['title'] ?? ''));
+        $title = $this->sanitizeProblemTitle(trim((string) ($q['title'] ?? '')));
         $description = trim((string) ($q['description'] ?? $q['prompt'] ?? ''));
         if ($title === '' || $description === '') {
             return null;
         }
+        if ($this->isLeetcodeStyleProblem($title, $description, $q)) {
+            return null;
+        }
+
         $examples = is_array($q['examples'] ?? null) ? array_values($q['examples']) : [];
         $firstExample = is_array($examples[0] ?? null) ? $examples[0] : [];
         $cases = is_array($q['testCases'] ?? null) ? array_values($q['testCases']) : [];
-        $sampleIn = (string) ($q['sampleInput'] ?? $q['exampleInput'] ?? $firstExample['input'] ?? '');
-        $sampleOut = (string) ($q['sampleExpected'] ?? $q['exampleOutput'] ?? $firstExample['output'] ?? '');
+        $sampleIn = (string) ($q['sampleInput'] ?? $q['exampleInput'] ?? $firstExample['input'] ?? ($cases[0]['input'] ?? ''));
+        $sampleOut = (string) ($q['sampleExpected'] ?? $q['exampleOutput'] ?? $firstExample['output'] ?? ($cases[0]['expected'] ?? ''));
         $h1In = (string) ($q['hiddenInput1'] ?? ($cases[1]['input'] ?? ''));
         $h1Out = (string) ($q['hiddenExpected1'] ?? ($cases[1]['expected'] ?? ''));
         $h2In = (string) ($q['hiddenInput2'] ?? ($cases[2]['input'] ?? ''));
         $h2Out = (string) ($q['hiddenExpected2'] ?? ($cases[2]['expected'] ?? ''));
-        $starter = is_array($q['starterCode'] ?? null) ? $q['starterCode'] : [];
-        $python = (string) ($q['pythonStarter'] ?? $starter['Python'] ?? "# Write your solution\n");
+
         $testCases = [
             ['id' => 's1', 'label' => 'Sample Test Case', 'input' => $sampleIn, 'expected' => $sampleOut, 'sample' => true],
+            ['id' => 'h1', 'input' => $h1In, 'expected' => $h1Out, 'sample' => false],
+            ['id' => 'h2', 'input' => $h2In, 'expected' => $h2Out, 'sample' => false],
         ];
-        if ($h1In !== '' || $h1Out !== '') {
-            $testCases[] = ['id' => 'h1', 'input' => $h1In, 'expected' => $h1Out, 'sample' => false];
+        if (!$this->hasCompleteTestCases($testCases)) {
+            return null;
         }
-        if ($h2In !== '' || $h2Out !== '') {
-            $testCases[] = ['id' => 'h2', 'input' => $h2In, 'expected' => $h2Out, 'sample' => false];
-        }
+
+        $starter = is_array($q['starterCode'] ?? null) ? $q['starterCode'] : [];
+        $python = (string) ($q['pythonStarter'] ?? $starter['Python'] ?? "# Write your solution\n");
         return [
             'title' => $title,
             'description' => $description,
@@ -339,5 +374,56 @@ PROMPT;
         }
 
         return $batches;
+    }
+
+    private function sanitizeProblemTitle(string $title): string
+    {
+        $title = preg_replace('/^\d+\.\s*/', '', $title) ?? $title;
+
+        return trim($title);
+    }
+
+    /**
+     * @param array<string, mixed> $q
+     */
+    private function isLeetcodeStyleProblem(string $title, string $description, array $q): bool
+    {
+        $blob = strtolower($title . "\n" . $description . "\n" . json_encode($q, JSON_UNESCAPED_UNICODE));
+        $patterns = [
+            '/\bmodify the given (program|code|class)\b/',
+            '/\bsame instance\b/',
+            '/\btwo different threads\b/',
+            '/\bthread [a-z] will call\b/',
+            '/\bpublic void \w+\(/',
+            '/\bclass \w+\s*\{/',
+            '/\bimplement (the )?(following )?(class|interface)\b/',
+            '/\bpremium lock\b/',
+            '/\bleetcode\b/',
+            '/\bfoobar\b.*\bthread\b/',
+        ];
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $blob) === 1) {
+                return true;
+            }
+        }
+
+        return preg_match('/^\d+\.\s/', $title) === 1;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $testCases
+     */
+    private function hasCompleteTestCases(array $testCases): bool
+    {
+        if (count($testCases) !== 3) {
+            return false;
+        }
+        foreach ($testCases as $case) {
+            if (trim((string) ($case['input'] ?? '')) === '' || trim((string) ($case['expected'] ?? '')) === '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
