@@ -82,6 +82,8 @@
   let codAiModal = null;
   let aiPreviewProblems = [];
   let aiLastFormParams = null;
+  let manualBankAllProblems = [];
+  let manualBankRuleCounter = 0;
 
   function esc(s) {
     return CodingExam.esc(s);
@@ -763,12 +765,491 @@
     }).join('')}`;
   }
 
+  function getQuestionSource() {
+    if (formIsContest()) return 'random';
+    if (document.getElementById('tfSourceRandom')?.checked) return 'random';
+    return 'manual';
+  }
+
+  function formIsContest() {
+    const type = String(document.getElementById('tfContestType')?.value || 'none');
+    return type === 'weekly' || type === 'monthly';
+  }
+
+  function getTestFormTargetCount() {
+    const n = Number(document.getElementById('tfQuestionCount')?.value || 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+
+  function isTestFormTargetSet() {
+    return getTestFormTargetCount() > 0;
+  }
+
+  function sumCategoryRuleCounts(rootId) {
+    return collectCategoryRules(rootId).reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+  }
+
+  function sumManualBankRuleCounts() {
+    return collectManualBankRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+  }
+
+  function formatAllocationSummary(allocated, target) {
+    if (!target) return 'Enter total number of problems above to assign topics.';
+    const remaining = Math.max(0, target - allocated);
+    if (allocated > target) {
+      return `${allocated} assigned — ${allocated - target} over the total of ${target}. Reduce topic counts.`;
+    }
+    if (remaining === 0) {
+      return `${allocated} of ${target} problems assigned — ready to save.`;
+    }
+    return `${allocated} of ${target} problems assigned · ${remaining} remaining`;
+  }
+
+  function collectInlineProblems() {
+    return [...document.querySelectorAll('#problemList [data-problem]')].map(collectProblem).filter((q) => q.title);
+  }
+
+  function getTestFormAllocatedTotal(source = getQuestionSource()) {
+    if (source === 'random') return sumCategoryRuleCounts('tfRandomRules');
+    const useBank = !formIsCompanyTest() && document.getElementById('tfUseBankManual')?.checked;
+    const bankTotal = useBank ? sumManualBankRuleCounts() : 0;
+    const inlineCount = formIsCompanyTest() ? 0 : collectInlineProblems().length;
+    return bankTotal + inlineCount;
+  }
+
+  function clampCategoryRuleCounts(rootId) {
+    const target = getTestFormTargetCount();
+    if (!target) return;
+    const rows = [...document.querySelectorAll(`#${rootId} .tf-category-rule`)];
+    let allocated = 0;
+    rows.forEach((row) => {
+      const countEl = row.querySelector('[data-f="count"]');
+      if (!countEl) return;
+      let count = Math.max(1, Number(countEl.value || 1));
+      const maxForRow = Math.max(1, target - allocated);
+      if (count > maxForRow) count = maxForRow;
+      countEl.value = String(count);
+      allocated += count;
+    });
+  }
+
+  function collectCategoryRules(rootId) {
+    return [...document.querySelectorAll(`#${rootId} .tf-category-rule`)].map((row) => ({
+      category: row.querySelector('[data-f="category"]')?.value || CATEGORIES[0],
+      difficulty: row.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+      count: Math.max(1, Number(row.querySelector('[data-f="count"]')?.value || 1)),
+      marks: Math.max(1, Number(row.querySelector('[data-f="marks"]')?.value || 2)),
+    }));
+  }
+
+  function addCategoryRuleRow(rootId, rule = {}, onChange = null) {
+    const root = document.getElementById(rootId);
+    if (!root) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-category-rule row g-2 align-items-end';
+    const cat = normalizeCodingTopic(rule.category || CATEGORIES[0]);
+    const diff = rule.difficulty || 'Medium';
+    wrap.innerHTML = `
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Topic</label>
+        <select class="form-select form-select-sm" data-f="category">${CATEGORIES.map((c) =>
+          `<option value="${esc(c)}" ${c === cat ? 'selected' : ''}>${esc(c)}</option>`
+        ).join('')}</select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Difficulty</label>
+        <select class="form-select form-select-sm" data-f="difficulty">${DIFFICULTIES.map((d) =>
+          `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`
+        ).join('')}</select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">No. of problems</label>
+        <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(rule.count ?? 1)}"/>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Marks each</label>
+        <input class="form-control form-control-sm" type="number" min="1" step="1" data-f="marks" value="${esc(rule.marks ?? 2)}"/>
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-rule>Remove</button>
+      </div>`;
+    wrap.querySelector('[data-remove-rule]')?.addEventListener('click', () => {
+      wrap.remove();
+      if (onChange) onChange();
+    });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', () => { clampCategoryRuleCounts(rootId); if (onChange) onChange(); });
+      el.addEventListener('input', () => { clampCategoryRuleCounts(rootId); if (onChange) onChange(); });
+    });
+    root.appendChild(wrap);
+    clampCategoryRuleCounts(rootId);
+    if (onChange) onChange();
+  }
+
+  function addRandomRuleRow(rule = {}, opts = {}) {
+    if (!opts.loading) {
+      if (!isTestFormTargetSet()) {
+        toastMsg('Enter total number of problems first.', 'info');
+        return;
+      }
+      const remaining = getTestFormTargetCount() - sumCategoryRuleCounts('tfRandomRules');
+      if (remaining <= 0) {
+        toastMsg('All problems are already assigned to topics.', 'info');
+        return;
+      }
+      if (rule.count == null) rule = { ...rule, count: remaining };
+    }
+    addCategoryRuleRow('tfRandomRules', rule, updateRandomSummary);
+  }
+
+  function collectRandomRules() {
+    return collectCategoryRules('tfRandomRules');
+  }
+
+  function updateRandomSummary() {
+    const rules = collectRandomRules();
+    const allocated = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const target = getTestFormTargetCount();
+    const summary = document.getElementById('tfRandomSummary');
+    if (summary) {
+      summary.textContent = target
+        ? `${formatAllocationSummary(allocated, target)} · ${rules.length} topic${rules.length === 1 ? '' : 's'}`
+        : `${allocated} problem(s) from ${rules.length} rule(s) — enter total above first`;
+    }
+    syncTestFormCategoryGating();
+  }
+
+  function bankProblemMatchesRule(q, criteria) {
+    return normalizeCodingTopic(q.category) === normalizeCodingTopic(criteria.category)
+      && String(q.difficulty || 'Medium') === String(criteria.difficulty || 'Medium');
+  }
+
+  async function ensureManualBankProblemsLoaded() {
+    if (manualBankAllProblems.length) return;
+    manualBankAllProblems = await CodingService.listBank().catch(() => []);
+  }
+
+  function filterManualBankPool(criteria) {
+    return manualBankAllProblems.filter((q) => bankProblemMatchesRule(q, criteria));
+  }
+
+  function manualRuleCriteriaFromWrap(wrap) {
+    return {
+      category: wrap.querySelector('[data-f="category"]')?.value || CATEGORIES[0],
+      difficulty: wrap.querySelector('[data-f="difficulty"]')?.value || 'Medium',
+      count: Math.max(1, Number(wrap.querySelector('[data-f="count"]')?.value || 1)),
+      marks: Math.max(1, Number(wrap.querySelector('[data-f="marks"]')?.value || 2)),
+    };
+  }
+
+  function renderProblemPickDetailHtml(q) {
+    return `<div class="fw-semibold">${esc(q.title || 'Untitled')}</div><div class="small text-muted-2">${esc(normalizeCodingTopic(q.category))} · ${esc(q.difficulty || 'Medium')} · ${esc(q.marks || 2)} marks</div>`;
+  }
+
+  function bindManualRulePicker(wrap, pool, needed) {
+    const state = wrap._manualRuleState;
+    wrap.querySelectorAll('[data-manual-pick]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = cb.getAttribute('data-manual-pick');
+        if (!id) return;
+        if (cb.checked) {
+          if (state.selectedIds.size >= needed) { cb.checked = false; return; }
+          state.selectedIds.add(String(id));
+        } else {
+          state.selectedIds.delete(String(id));
+          state.collapsed = false;
+        }
+        if (state.selectedIds.size === needed) {
+          state.editing = false;
+          state.collapsed = true;
+        }
+        refreshManualBankBlock(wrap);
+      });
+    });
+  }
+
+  function renderManualRulePicker(wrap, pool, criteria) {
+    const picker = wrap.querySelector('.manual-bank-picker');
+    if (!picker) return;
+    const state = wrap._manualRuleState;
+    const needed = criteria.count;
+    const selected = state.selectedIds.size;
+    const atLimit = selected >= needed;
+    if (!pool.length) {
+      picker.innerHTML = '<p class="small text-muted-2 mb-0">No problems available for this topic and difficulty.</p>';
+      return;
+    }
+    picker.innerHTML = `
+      <div class="small fw-semibold mb-1">Select ${needed} problem${needed === 1 ? '' : 's'}</div>
+      <div class="small mb-2 ${selected === needed ? 'text-success fw-semibold' : ''}">Selected: ${selected} / ${needed}</div>
+      <div class="d-flex flex-column gap-2">${pool.map((q) => {
+        const id = String(q.id || '');
+        const checked = state.selectedIds.has(id);
+        const disabled = (atLimit && !checked);
+        return `<label class="d-block border rounded-2 p-2 mb-0 bg-white ${disabled ? 'opacity-50' : ''}">
+          <div class="d-flex align-items-start gap-2">
+            <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manual-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
+            <div class="min-w-0">${renderProblemPickDetailHtml(q)}</div>
+          </div>
+        </label>`;
+      }).join('')}</div>`;
+    bindManualRulePicker(wrap, pool, needed);
+  }
+
+  async function refreshManualBankBlock(wrap) {
+    if (!wrap?._manualRuleState) return;
+    await ensureManualBankProblemsLoaded();
+    const state = wrap._manualRuleState;
+    const criteria = manualRuleCriteriaFromWrap(wrap);
+    const pool = filterManualBankPool(criteria);
+    const errorEl = wrap.querySelector('.manual-bank-error');
+    const pickerEl = wrap.querySelector('.manual-bank-picker');
+    const summaryEl = wrap.querySelector('.manual-bank-summary');
+    [...state.selectedIds].forEach((id) => {
+      if (!pool.some((q) => String(q.id) === id)) state.selectedIds.delete(id);
+    });
+    if (pool.length < criteria.count) {
+      errorEl?.classList.remove('d-none');
+      if (errorEl) {
+        errorEl.textContent = pool.length
+          ? `Only ${pool.length} problem(s) available for ${criteria.category} — ${criteria.difficulty}. Reduce the count or change topic/difficulty.`
+          : `No problems available for ${criteria.category} — ${criteria.difficulty}.`;
+      }
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.add('d-none');
+      updateManualBankSummary();
+      return;
+    }
+    errorEl?.classList.add('d-none');
+    const complete = state.selectedIds.size === criteria.count;
+    if (complete && !state.editing) state.collapsed = true;
+    if (state.collapsed && !state.editing) {
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.remove('d-none');
+      if (summaryEl) {
+        summaryEl.innerHTML = `<div class="small text-success"><div>✓ ${esc(criteria.category)}</div><div>✓ ${esc(criteria.difficulty)}</div><div>✓ ${esc(criteria.count)} problem(s) selected</div></div><button type="button" class="btn btn-sm btn-link p-0 mt-1" data-edit-manual-pick>Edit selection</button>`;
+        summaryEl.querySelector('[data-edit-manual-pick]')?.addEventListener('click', () => {
+          state.editing = true;
+          state.collapsed = false;
+          refreshManualBankBlock(wrap);
+        });
+      }
+    } else {
+      summaryEl?.classList.add('d-none');
+      pickerEl?.classList.remove('d-none');
+      renderManualRulePicker(wrap, pool, criteria);
+    }
+    updateManualBankSummary();
+  }
+
+  function addManualBankRuleRow(rule = {}, opts = {}) {
+    let remaining = 1;
+    if (!opts.loading) {
+      if (!isTestFormTargetSet()) {
+        toastMsg('Enter total number of problems first.', 'info');
+        return;
+      }
+      const target = getTestFormTargetCount();
+      remaining = target - sumManualBankRuleCounts() - collectInlineProblems().length;
+      if (remaining <= 0) {
+        toastMsg('All problems are already assigned.', 'info');
+        return;
+      }
+    }
+    manualBankRuleCounter += 1;
+    const root = document.getElementById('tfManualBankRules');
+    if (!root) return;
+    const cat = normalizeCodingTopic(rule.category || CATEGORIES[0]);
+    const diff = rule.difficulty || 'Medium';
+    const selectedIds = (rule.selectedQuestionIds || []).map(String);
+    const count = opts.loading ? Math.max(1, Number(rule.count ?? 1)) : Math.max(1, Math.min(Number(rule.count ?? remaining), remaining));
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-manual-bank-block border rounded-3 p-3 mb-2 bg-white';
+    wrap.innerHTML = `
+      <div class="row g-2 align-items-end">
+        <div class="col-md-4"><label class="form-label small mb-1">Topic</label><select class="form-select form-select-sm" data-f="category">${CATEGORIES.map((c) => `<option value="${esc(c)}" ${c === cat ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+        <div class="col-md-2"><label class="form-label small mb-1">Difficulty</label><select class="form-select form-select-sm" data-f="difficulty">${DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === diff ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div>
+        <div class="col-md-2"><label class="form-label small mb-1">No. of problems</label><input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(count)}"/></div>
+        <div class="col-md-2"><label class="form-label small mb-1">Marks each</label><input class="form-control form-control-sm" type="number" min="1" data-f="marks" value="${esc(rule.marks ?? 2)}"/></div>
+        <div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-manual-block>Remove</button></div>
+      </div>
+      <div class="manual-bank-error small text-danger mt-2 d-none"></div>
+      <div class="manual-bank-picker mt-2"></div>
+      <div class="manual-bank-summary border rounded-2 p-2 mt-2 d-none"></div>`;
+    wrap._manualRuleState = { selectedIds: new Set(selectedIds), collapsed: selectedIds.length >= count && selectedIds.length > 0, editing: false };
+    wrap.querySelector('[data-remove-manual-block]')?.addEventListener('click', () => { wrap.remove(); updateManualBankSummary(); });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', () => refreshManualBankBlock(wrap));
+      el.addEventListener('input', () => refreshManualBankBlock(wrap));
+    });
+    root.appendChild(wrap);
+    refreshManualBankBlock(wrap);
+  }
+
+  function collectManualBankRules() {
+    return [...document.querySelectorAll('.tf-manual-bank-block')].map((wrap) => ({
+      ...manualRuleCriteriaFromWrap(wrap),
+      selectedQuestionIds: [...(wrap._manualRuleState?.selectedIds || [])],
+    }));
+  }
+
+  function validateManualBankRulesComplete() {
+    for (const wrap of document.querySelectorAll('.tf-manual-bank-block')) {
+      const c = manualRuleCriteriaFromWrap(wrap);
+      const state = wrap._manualRuleState;
+      const pool = filterManualBankPool(c);
+      if (pool.length < c.count) {
+        return pool.length
+          ? `Only ${pool.length} problem(s) available for ${c.category} — ${c.difficulty}.`
+          : `No problems available for ${c.category} — ${c.difficulty}.`;
+      }
+      if (!state || state.selectedIds.size !== c.count) {
+        return `Select exactly ${c.count} problem(s) for ${c.category} — ${c.difficulty}.`;
+      }
+    }
+    return '';
+  }
+
+  function inferBankRulesFromItems(items) {
+    const groups = new Map();
+    (items || []).filter((q) => q?.bankId).forEach((q) => {
+      const category = normalizeCodingTopic(q.category || CATEGORIES[0]);
+      const difficulty = q.difficulty || 'Medium';
+      const marks = Number(q.marks ?? 2) || 2;
+      const key = `${category}|${difficulty}|${marks}`;
+      if (!groups.has(key)) {
+        groups.set(key, { category, difficulty, count: 0, marks, selectedQuestionIds: [] });
+      }
+      const g = groups.get(key);
+      g.count += 1;
+      g.selectedQuestionIds.push(String(q.bankId));
+    });
+    return [...groups.values()];
+  }
+
+  function updateManualBankSummary() {
+    const rules = collectManualBankRules();
+    const complete = rules.filter((r, i) => {
+      const wrap = document.querySelectorAll('.tf-manual-bank-block')[i];
+      return wrap?._manualRuleState?.selectedIds?.size === r.count;
+    }).length;
+    const target = getTestFormTargetCount();
+    const allocated = getTestFormAllocatedTotal('manual');
+    const summary = document.getElementById('tfManualBankSummary');
+    if (summary) {
+      const allocLine = target ? formatAllocationSummary(allocated, target) : 'Enter total number of problems above first';
+      summary.textContent = `${allocLine} · ${rules.length} topic${rules.length === 1 ? '' : 's'} · ${complete}/${rules.length} complete`;
+    }
+    syncTestFormCategoryGating();
+  }
+
+  function syncTestFormCategoryGating() {
+    const targetSet = isTestFormTargetSet();
+    ['btnAddRandomRule', 'btnAddManualBankRule', 'btnAddProblem', 'tfUseBankManual'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = !targetSet;
+    });
+    document.querySelectorAll('.tf-category-rule, .tf-manual-bank-block').forEach((row) => {
+      row.querySelectorAll('select, input, button[data-remove-rule], button[data-remove-manual-block]').forEach((el) => {
+        el.disabled = !targetSet;
+      });
+    });
+    ['tfRandomPanel', 'tfBankPicker', 'tfManualProblemsSection'].forEach((id) => {
+      const panel = document.getElementById(id);
+      if (!panel) return;
+      panel.classList.toggle('opacity-50', !targetSet);
+    });
+    const hint = document.getElementById('tfQuestionCountHint');
+    if (hint) {
+      hint.textContent = targetSet
+        ? formatAllocationSummary(getTestFormAllocatedTotal(), getTestFormTargetCount())
+        : 'Set the total here first — topic selection unlocks after that.';
+    }
+  }
+
+  function syncQuestionSourcePanels() {
+    const contest = formIsContest();
+    document.getElementById('tfSourceGroup')?.classList.toggle('d-none', contest || formIsCompanyTest());
+    document.getElementById('tfContestBankHint')?.classList.toggle('d-none', !contest);
+    syncCompanyTestFormUi();
+    if (contest) {
+      document.getElementById('tfSourceRandom').checked = true;
+      document.getElementById('tfSourceManual').checked = false;
+    }
+    const source = getQuestionSource();
+    document.getElementById('tfRandomPanel')?.classList.toggle('d-none', source !== 'random');
+    document.getElementById('tfManualPanel')?.classList.toggle('d-none', source === 'random');
+    updateTestFormQuestionCount();
+    syncTestFormCategoryGating();
+  }
+
+  function updateTestFormQuestionCount() {
+    const source = getQuestionSource();
+    if (source === 'random') updateRandomSummary();
+    else updateManualBankSummary();
+    syncTestFormCategoryGating();
+  }
+
+  function collectContestPayload() {
+    return {
+      contestType: document.getElementById('tfContestType')?.value || 'none',
+      contestWeekday: Number(document.getElementById('tfContestWeekday')?.value || 1),
+      contestMonthDay: Number(document.getElementById('tfContestMonthDay')?.value || 1),
+      contestStartTime: document.getElementById('tfContestStartTime')?.value || DEFAULT_CONTEST_START_TIME,
+      contestEndTime: document.getElementById('tfContestEndTime')?.value || '18:00',
+    };
+  }
+
+  function collectTestFormPayload() {
+    const source = getQuestionSource();
+    const payload = {
+      id: document.getElementById('tfId')?.value?.trim() || '',
+      title: document.getElementById('tfTitle')?.value?.trim() || '',
+      description: document.getElementById('tfDescription')?.value?.trim() || '',
+      questionCount: getTestFormTargetCount(),
+      duration: Number(document.getElementById('tfDuration')?.value || 20),
+      durationMinutes: Number(document.getElementById('tfDuration')?.value || 20),
+      status: document.getElementById('tfStatus')?.value || 'published',
+      questionSource: source,
+      instructions: [
+        'Read each problem carefully.',
+        'Select the programming language before submitting.',
+        'Your code will be evaluated against test cases.',
+        'Do not refresh the page during the test.',
+      ],
+      testKind: formIsCompanyTest() ? 'company' : 'regular',
+    };
+    if (source === 'random') {
+      payload.randomRules = collectRandomRules();
+      payload.items = [];
+      payload.bankFilterRules = [];
+      payload.bankProblemIds = [];
+    } else {
+      payload.randomRules = [];
+      const useBank = !formIsCompanyTest() && document.getElementById('tfUseBankManual')?.checked;
+      payload.bankFilterRules = useBank ? collectManualBankRules() : [];
+      payload.bankProblemIds = useBank
+        ? payload.bankFilterRules.flatMap((r) => r.selectedQuestionIds || [])
+        : [];
+      payload.items = formIsCompanyTest() ? collectInlineProblems() : collectInlineProblems();
+    }
+    if (formIsCompanyTest()) {
+      const { companyId, companyName } = selectedCompanyFromTestForm();
+      payload.companyId = companyId;
+      payload.companyName = companyName;
+      payload.contestType = 'none';
+    } else if (canManageContests()) {
+      Object.assign(payload, collectContestPayload());
+    }
+    return payload;
+  }
+
   function syncCompanyTestFormUi() {
     const company = formIsCompanyTest();
     document.getElementById('tfCompanyPanel')?.classList.toggle('d-none', !company);
-    document.getElementById('tfContestWrap')?.classList.toggle('d-none', company || !canManageContests());
+    document.getElementById('tfUseBankManual')?.closest('.form-check')?.classList.toggle('d-none', company);
+    document.getElementById('tfManualProblemsSection')?.classList.toggle('d-none', false);
     if (company) document.getElementById('tfContestType').value = 'none';
-    syncContestFormFields();
   }
 
   function syncStudentJdBlockViewNav() {
@@ -1811,6 +2292,7 @@
     if (!list) return;
     list.insertAdjacentHTML('beforeend', problemEditorHtml(q || emptyProblem()));
     bindProblemList(list);
+    updateManualBankSummary();
   }
 
   function initContestMonthDaySelect() {
@@ -1819,43 +2301,68 @@
     el.innerHTML = Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   }
 
-  function syncContestFormFields() {
-    const wrap = document.getElementById('tfContestWrap');
-    const type = document.getElementById('tfContestType')?.value || 'none';
-    wrap?.classList.toggle('d-none', !canManageContests());
-    document.getElementById('tfContestStartTimeWrap')?.classList.toggle('d-none', type === 'none');
-    document.getElementById('tfContestWeekdayWrap')?.classList.toggle('d-none', type !== 'weekly');
-    document.getElementById('tfContestMonthDayWrap')?.classList.toggle('d-none', type !== 'monthly');
-  }
-
   async function openTestForm(test = null, preset = null) {
     const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
     const isCompanyPreset = preset?.testKind === 'company' || isCompanyTest(test);
     const isContest = isContestTest(test) || isContestPreset;
     document.getElementById('testFormTitle').textContent = test
-      ? (isContest ? 'Edit contest' : (isCompanyPreset ? 'Edit company test' : 'Edit test'))
-      : (isContestPreset ? `New ${preset.contestType} contest` : (isCompanyPreset ? 'New company test' : 'Create test'));
+      ? (isContest ? 'Edit contest' : (isCompanyPreset ? 'Edit company test' : 'Edit coding test'))
+      : (isContestPreset ? `New ${preset.contestType} contest` : (isCompanyPreset ? 'New company test' : 'New coding test'));
     document.getElementById('tfTestKind').value = isCompanyPreset ? 'company' : 'regular';
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
-    fillSelect(document.getElementById('tfCategory'), CATEGORIES, normalizeCodingTopic(test?.category || 'Algorithms'));
-    fillSelect(document.getElementById('tfDifficulty'), DIFFICULTIES, test?.difficulty || 'Medium');
+    document.getElementById('tfQuestionCount').value = test
+      ? String(test?.questionCount || (test?.items || []).length || '')
+      : '';
     document.getElementById('tfDuration').value = test?.duration || test?.durationMinutes || 20;
-    document.getElementById('tfStatus').value = test?.status === 'published' ? 'published' : 'unpublished';
+    document.getElementById('tfStatus').value = test
+      ? (test.status === 'unpublished' ? 'unpublished' : 'published')
+      : 'published';
+
+    let source = test?.questionSource === 'random' ? 'random' : 'manual';
+    if (isContest) source = 'random';
+    else if (isCompanyPreset) source = 'manual';
+    document.getElementById('tfSourceManual').checked = source === 'manual';
+    document.getElementById('tfSourceRandom').checked = source === 'random';
+
+    document.getElementById('tfRandomRules').innerHTML = '';
+    const rules = test?.randomRules?.length ? test.randomRules : [];
+    if (source === 'random' && rules.length) rules.forEach((r) => addRandomRuleRow(r, { loading: true }));
+
+    document.getElementById('tfManualBankRules').innerHTML = '';
+    manualBankRuleCounter = 0;
+    let bankRules = test?.bankFilterRules?.length ? test.bankFilterRules : [];
+    if (!bankRules.length && source === 'manual' && (test?.items || []).some((q) => q.bankId)) {
+      bankRules = inferBankRulesFromItems(test?.items || []);
+    }
+    const useBank = bankRules.length > 0;
+    document.getElementById('tfUseBankManual').checked = useBank;
+    document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
+    if (useBank) {
+      ensureManualBankProblemsLoaded().then(() => {
+        bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true }));
+        updateManualBankSummary();
+      }).catch(() => bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true })));
+    }
+
     initContestMonthDaySelect();
     const contestType = isCompanyPreset ? 'none' : (test?.contestType || preset?.contestType || 'none');
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
     document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
     document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
     document.getElementById('tfContestStartTime').value = test?.contestStartTime || preset?.contestStartTime || DEFAULT_CONTEST_START_TIME;
+    document.getElementById('tfContestEndTime').value = test?.contestEndTime || preset?.contestEndTime || '18:00';
     await fillTfCompanySelect(test?.companyId || preset?.companyId || '');
-    syncCompanyTestFormUi();
+
     const list = document.getElementById('problemList');
     list.innerHTML = '';
-    const items = test?.items || [];
-    if (items.length) items.forEach((q) => addProblemToForm(q));
-    else addProblemToForm(emptyProblem());
+    const inlineItems = source === 'manual'
+      ? (test?.items || []).filter((q) => !q.bankId)
+      : [];
+    if (inlineItems.length) inlineItems.forEach((q) => addProblemToForm(q));
+
+    syncQuestionSourcePanels();
     testFormModal.show();
   }
 
@@ -3183,8 +3690,28 @@
       e.preventDefault();
       applyManageContestType(link.getAttribute('data-contest-type'));
     });
-    document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
-    document.getElementById('btnAddProblem')?.addEventListener('click', () => addProblemToForm(emptyProblem()));
+    document.querySelectorAll('input[name="tfQuestionSource"]').forEach((el) => {
+      el.addEventListener('change', syncQuestionSourcePanels);
+    });
+    document.getElementById('btnAddRandomRule')?.addEventListener('click', () => addRandomRuleRow());
+    document.getElementById('btnAddManualBankRule')?.addEventListener('click', () => addManualBankRuleRow());
+    document.getElementById('tfUseBankManual')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
+      if (on) ensureManualBankProblemsLoaded().then(() => updateManualBankSummary()).catch(() => updateManualBankSummary());
+      else updateManualBankSummary();
+    });
+    document.getElementById('tfQuestionCount')?.addEventListener('input', () => {
+      clampCategoryRuleCounts('tfRandomRules');
+      updateTestFormQuestionCount();
+    });
+    document.getElementById('btnAddProblem')?.addEventListener('click', () => {
+      if (!isTestFormTargetSet()) {
+        toastMsg('Enter total number of problems first.', 'info');
+        return;
+      }
+      addProblemToForm(emptyProblem());
+    });
     document.getElementById('btnPickBankProblems')?.addEventListener('click', () => showBankPicker());
     document.getElementById('btnUseBankPicked')?.addEventListener('click', () => {
       const ids = [...document.querySelectorAll('#bankPickList input:checked')].map((i) => i.value);
@@ -3196,40 +3723,61 @@
     });
     document.getElementById('testForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const items = [...document.querySelectorAll('#problemList [data-problem]')].map(collectProblem).filter((q) => q.title);
-      if (!items.length) {
-        toastMsg('Add at least one problem with a title.', 'error');
+      const payload = collectTestFormPayload();
+      if (!payload.title) {
+        toastMsg('Enter a test title.', 'error');
         return;
       }
       const isCompany = formIsCompanyTest();
-      const company = selectedCompanyFromTestForm();
-      if (isCompany && !company.companyId) {
+      if (isCompany && !selectedCompanyFromTestForm().companyId) {
         toastMsg('Select a company for this test.', 'error');
         return;
       }
-      const payload = {
-        id: document.getElementById('tfId').value.trim(),
-        title: document.getElementById('tfTitle').value.trim(),
-        description: document.getElementById('tfDescription').value.trim(),
-        category: document.getElementById('tfCategory').value,
-        difficulty: document.getElementById('tfDifficulty').value,
-        duration: Number(document.getElementById('tfDuration').value || 20),
-        status: document.getElementById('tfStatus').value,
-        testKind: isCompany ? 'company' : 'regular',
-        companyId: isCompany ? company.companyId : '',
-        companyName: isCompany ? company.companyName : '',
-        contestType: isCompany ? 'none' : (canManageContests() ? (document.getElementById('tfContestType').value || 'none') : 'none'),
-        contestWeekday: Number(document.getElementById('tfContestWeekday').value || 1),
-        contestMonthDay: Number(document.getElementById('tfContestMonthDay').value || 1),
-        contestStartTime: document.getElementById('tfContestStartTime').value || DEFAULT_CONTEST_START_TIME,
-        instructions: [
-          'Read each problem carefully.',
-          'Select the programming language before submitting.',
-          'Your code will be evaluated against test cases.',
-          'Do not refresh the page during the test.',
-        ],
-        items,
-      };
+      if (payload.questionSource === 'random') {
+        if (!payload.randomRules?.length) {
+          toastMsg('Add at least one topic rule.', 'error');
+          return;
+        }
+        const target = getTestFormTargetCount();
+        const ruleTotal = payload.randomRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
+        if (!target) {
+          toastMsg('Enter total number of problems.', 'error');
+          return;
+        }
+        if (ruleTotal !== target) {
+          toastMsg(`Topic counts must add up to ${target} (currently ${ruleTotal}).`, 'error');
+          return;
+        }
+      } else {
+        const target = getTestFormTargetCount();
+        if (!target || target < 1) {
+          toastMsg('Enter total number of problems.', 'error');
+          return;
+        }
+        const useBank = !isCompany && document.getElementById('tfUseBankManual')?.checked;
+        const inlineCount = isCompany ? collectInlineProblems().length : collectInlineProblems().length;
+        if (useBank) {
+          await ensureManualBankProblemsLoaded();
+          const bankErr = validateManualBankRulesComplete();
+          if (bankErr) {
+            toastMsg(bankErr, 'error');
+            return;
+          }
+        }
+        if (isCompany && !inlineCount) {
+          toastMsg('Add at least one problem to the company test.', 'error');
+          return;
+        }
+        if (!isCompany && !useBank && !inlineCount) {
+          toastMsg('Add problems from the bank or add them directly.', 'error');
+          return;
+        }
+        const allocated = getTestFormAllocatedTotal('manual');
+        if (allocated !== target) {
+          toastMsg(`Assigned problems (${allocated}) must match total (${target}).`, 'error');
+          return;
+        }
+      }
       try {
         const saved = await CodingService.saveTest(payload);
         toastMsg(isContestTest(payload) || isContestTest(saved) ? 'Contest saved.' : (isCompany ? 'Company test saved.' : 'Test saved.'), 'success');

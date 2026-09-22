@@ -57,6 +57,13 @@ class CodingTestModel extends BaseModel
         return strtolower(trim($value)) === 'company' ? 'company' : 'regular';
     }
 
+    public static function normalizeDifficulty(string $value): string
+    {
+        $raw = ucfirst(strtolower(trim($value)));
+
+        return in_array($raw, self::DIFFICULTIES, true) ? $raw : 'Medium';
+    }
+
     public static function isCompanyTest(array $test): bool
     {
         if (self::normalizeTestKind((string) ($test['testKind'] ?? '')) === 'company') {
@@ -520,9 +527,20 @@ class CodingTestModel extends BaseModel
         $contestType = $testKind === 'company'
             ? 'none'
             : self::normalizeContestType((string) ($data['contestType'] ?? 'none'));
+        $source = strtolower(trim((string) ($data['questionSource'] ?? 'manual')));
+        if (!in_array($source, ['manual', 'random'], true)) {
+            $source = 'manual';
+        }
         $payload = [
             'title' => trim((string) ($data['title'] ?? '')),
             'description' => (string) ($data['description'] ?? ''),
+            'questionSource' => $source,
+            'randomRules' => array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array')),
+            'bankFilterRules' => array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array')),
+            'bankProblemIds' => array_values(array_filter(array_map(
+                static fn ($id) => trim((string) $id),
+                (array) ($data['bankProblemIds'] ?? [])
+            ))),
             'category' => self::normalizeCategory((string) ($data['category'] ?? 'Algorithms')),
             'difficulty' => (string) ($data['difficulty'] ?? 'Medium'),
             'duration' => max(1, (int) ($data['duration'] ?? $data['durationMinutes'] ?? 20)),
@@ -607,8 +625,11 @@ class CodingTestModel extends BaseModel
             'contestWindowBounds' => self::contestWindowBounds($test),
             'periodKey' => self::periodKey($test),
             'instructions' => array_values((array) ($test['instructions'] ?? [])),
+            'questionSource' => (string) ($test['questionSource'] ?? 'manual'),
+            'randomRules' => array_values((array) ($test['randomRules'] ?? [])),
+            'bankFilterRules' => array_values((array) ($test['bankFilterRules'] ?? [])),
             'questions' => count($items),
-            'questionCount' => count($items),
+            'questionCount' => (int) ($test['questionCount'] ?? count($items)),
             'marks' => (float) ($test['marks'] ?? $test['totalMarks'] ?? 0),
             'totalMarks' => (float) ($test['totalMarks'] ?? $test['marks'] ?? 0),
             'items' => $includeHidden ? array_values((array) ($test['items'] ?? [])) : $items,

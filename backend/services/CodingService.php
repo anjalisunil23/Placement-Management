@@ -182,6 +182,8 @@ final class CodingService
         if ($title === '') {
             Response::error('Enter a test title.', 422);
         }
+        $data = $this->requireContestBankSource($data);
+        $data = $this->resolveTestItems($data);
         $id = $this->tests->saveNew($data);
         $doc = $this->tests->findById($id);
         return CodingTestModel::publicView($doc ?: ['id' => $id], true);
@@ -207,6 +209,11 @@ final class CodingService
             $data['contestWeekday'] = $existing['contestWeekday'] ?? 1;
             $data['contestMonthDay'] = $existing['contestMonthDay'] ?? 1;
         }
+        $merged = array_merge($existing, $data);
+        if (CodingTestModel::normalizeContestType((string) ($merged['contestType'] ?? 'none')) !== 'none') {
+            $data = $this->requireContestBankSource($merged);
+        }
+        $data = $this->resolveTestItems(array_merge($existing, $data));
         $this->tests->saveExisting($id, $data);
         $doc = $this->tests->findById($id);
         return CodingTestModel::publicView($doc ?: $existing, true);
@@ -1918,5 +1925,123 @@ final class CodingService
         }
 
         return strcasecmp(ClassInchargeRegistry::cohortKey($studentClass), ClassInchargeRegistry::cohortKey($want)) === 0;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function requireContestBankSource(array $data): array
+    {
+        if (CodingTestModel::normalizeContestType((string) ($data['contestType'] ?? 'none')) === 'none') {
+            return $data;
+        }
+        $data['questionSource'] = 'random';
+        $rules = array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array'));
+        if ($rules === []) {
+            Response::error('Contest problems must be picked from the problem bank. Add at least one topic and difficulty rule.', 422);
+        }
+        $data['randomRules'] = $rules;
+        $data['bankProblemIds'] = [];
+
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function resolveTestItems(array $data): array
+    {
+        $source = strtolower(trim((string) ($data['questionSource'] ?? 'manual')));
+        if (!in_array($source, ['manual', 'random'], true)) {
+            $source = 'manual';
+        }
+        $data['questionSource'] = $source;
+
+        if ($source === 'random') {
+            $rules = array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array'));
+            if ($rules === []) {
+                Response::error('Add at least one topic + difficulty rule for random selection.', 422);
+            }
+            $expected = max(0, (int) ($data['questionCount'] ?? 0));
+            $ruleTotal = array_sum(array_map(static fn (array $r): int => max(0, (int) ($r['count'] ?? 0)), $rules));
+            if ($expected > 0 && $ruleTotal > 0 && $expected !== $ruleTotal) {
+                Response::error('Total problems must match the sum of random rule counts.', 422);
+            }
+            try {
+                $items = $this->bank->pickRandomByRules($rules);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            if ($items === []) {
+                Response::error('Could not pick problems from the bank for the given rules.', 422);
+            }
+            $data['items'] = $items;
+            $data['questionCount'] = count($items);
+            $data['bankProblemIds'] = [];
+            $data['bankFilterRules'] = [];
+            if (!empty($rules[0]['category'])) {
+                $data['category'] = CodingTestModel::normalizeCategory((string) $rules[0]['category']);
+            }
+            if (!empty($rules[0]['difficulty'])) {
+                $data['difficulty'] = CodingTestModel::normalizeDifficulty((string) $rules[0]['difficulty']);
+            }
+
+            return $data;
+        }
+
+        $bankIds = array_values(array_unique(array_filter(
+            array_map(static fn ($id) => trim((string) $id), (array) ($data['bankProblemIds'] ?? [])),
+            static fn ($id) => $id !== '' && Security::isValidId($id)
+        )));
+        $inline = array_values(array_filter((array) ($data['items'] ?? []), 'is_array'));
+        $filterRules = array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array'));
+        $items = [];
+
+        if ($filterRules !== []) {
+            try {
+                $items = $this->bank->resolveByRulesWithPreferred($filterRules, $bankIds);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            $bankIds = array_values(array_filter(array_map(
+                static fn (array $q): string => trim((string) ($q['bankId'] ?? '')),
+                $items
+            )));
+        } elseif ($bankIds !== []) {
+            $items = $this->bank->problemsByIds($bankIds);
+        }
+
+        foreach ($inline as $i => $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            $title = trim((string) ($q['title'] ?? ''));
+            if ($title === '') {
+                continue;
+            }
+            if (empty($q['id'])) {
+                $q['id'] = 'p-' . ($i + 1);
+            }
+            $items[] = $q;
+        }
+
+        if ($items === []) {
+            Response::error('Add at least one problem to the test.', 422);
+        }
+
+        $data['items'] = $items;
+        $data['questionCount'] = count($items);
+        $data['bankProblemIds'] = $bankIds;
+        $data['randomRules'] = [];
+        if (trim((string) ($data['category'] ?? '')) === '' && $items !== []) {
+            $data['category'] = CodingTestModel::normalizeCategory((string) ($items[0]['category'] ?? 'Algorithms'));
+        }
+        if (trim((string) ($data['difficulty'] ?? '')) === '' && $items !== []) {
+            $data['difficulty'] = CodingTestModel::normalizeDifficulty((string) ($items[0]['difficulty'] ?? 'Medium'));
+        }
+
+        return $data;
     }
 }
