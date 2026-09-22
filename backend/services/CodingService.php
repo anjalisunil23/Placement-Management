@@ -1939,13 +1939,35 @@ final class CodingService
         if (CodingTestModel::normalizeContestType((string) ($data['contestType'] ?? 'none')) === 'none') {
             return $data;
         }
-        $data['questionSource'] = 'random';
+
+        $source = strtolower(trim((string) ($data['questionSource'] ?? 'random')));
+        if (!in_array($source, ['manual', 'random'], true)) {
+            $source = 'random';
+        }
+        $data['questionSource'] = $source;
+
+        if ($source === 'manual') {
+            $bankRules = array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array'));
+            $bankIds = array_values(array_filter((array) ($data['bankProblemIds'] ?? []), static fn ($id): bool => is_string($id) && trim($id) !== ''));
+            if ($bankRules === [] && $bankIds === []) {
+                Response::error('Contest problems must be picked from the question bank. Select problems by topic.', 422);
+            }
+            $data['bankFilterRules'] = $bankRules;
+            $data['bankProblemIds'] = $bankIds;
+            $data['randomRules'] = [];
+            $data['items'] = [];
+
+            return $data;
+        }
+
         $rules = array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array'));
         if ($rules === []) {
             Response::error('Contest problems must be picked from the problem bank. Add at least one topic and difficulty rule.', 422);
         }
         $data['randomRules'] = $rules;
+        $data['bankFilterRules'] = [];
         $data['bankProblemIds'] = [];
+        $data['items'] = [];
 
         return $data;
     }

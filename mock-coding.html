@@ -9,6 +9,15 @@
   .apt-stat .val{font-size:1.35rem;font-weight:700}
   .cod-test-card{transition:border-color .15s ease,box-shadow .15s ease}
   .cod-test-card:hover{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));box-shadow:var(--shadow-sm)}
+  .cod-category-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10.5rem,1fr));gap:.75rem}
+  .cod-category-card{
+    border:1px solid var(--border);border-radius:.85rem;padding:1rem;background:#fff;text-align:left;
+    cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;height:100%;
+  }
+  .cod-category-card:hover{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+  .cod-category-card.is-complete{border-color:#86efac;background:linear-gradient(180deg,#f0fdf4,#fff)}
+  .cod-category-icon{font-size:1.35rem;line-height:1;margin-bottom:.45rem;color:var(--primary)}
+  .cod-category-card.is-complete .cod-category-icon{color:#16a34a}
   [data-cod-panel]{animation:codFade .18s ease}
   @keyframes codFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   .cod-timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.15rem;display:inline-flex;align-items:center;gap:.4rem}
@@ -134,8 +143,7 @@
         <div class="card-surface p-0 overflow-hidden">
           <div class="px-3 px-md-4 pt-3 pb-2">
             <ul class="nav nav-pills gap-1 flex-wrap" id="takeListNav">
-              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="problems">Problems</a></li>
-              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="tests">Tests</a></li>
+              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="tests">Tests</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Contests</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="submissions">My Submissions</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="jdblock">Company Block</a></li>
@@ -145,28 +153,11 @@
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-contest-type="monthly">Monthly</a></li>
             </ul>
           </div>
-          <div id="codingProblemsPanel" class="px-3 px-md-4 pb-3">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 pt-1">
-              <h6 class="fw-bold mb-0">Coding Problems</h6>
-              <input class="form-control form-control-sm" type="search" id="practiceSearch" placeholder="Search problems…" style="max-width:16rem"/>
-            </div>
-            <div class="cod-problems-layout">
-              <div class="cod-filter-card">
-                <div class="small fw-semibold mb-2">Difficulty</div>
-                <div id="practiceDiffFilters" class="d-flex flex-column gap-1 mb-3"></div>
-                <div class="small fw-semibold mb-2">Topics</div>
-                <div id="practiceTopicFilters" class="d-flex flex-column gap-1 mb-3"></div>
-                <div class="small fw-semibold mb-2">Status</div>
-                <div id="practiceStatusFilters" class="d-flex flex-column gap-1"></div>
-              </div>
-              <div class="border rounded-3 overflow-hidden bg-white" id="practiceProblemsList"></div>
-            </div>
-          </div>
           <div id="practiceSubmissionsPanel" class="d-none px-3 px-md-4 pb-3">
             <h6 class="fw-bold mb-3">My Submissions</h6>
             <div id="practiceSubmissionsList" class="small text-muted-2">No submissions yet.</div>
           </div>
-          <div id="testList" class="d-none"></div>
+          <div id="testList" class="px-3 px-md-4 pb-3"></div>
           <div id="studentJdBlockPanel" class="d-none px-3 px-md-4 pb-3">
             <div id="studentJdBlockDetailNav" class="d-none d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
               <ul class="nav nav-pills gap-1 flex-wrap mb-0" id="studentJdBlockViewNav">
@@ -267,44 +258,15 @@
     <div class="card-surface p-3 p-md-4 mb-3">
       <p class="small text-muted-2 mb-2 d-none" id="manageScopeHint"></p>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
-        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="problems">Problems</a></li>
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">Company Block</a></li>
       </ul>
 
-      <div id="manageProblemsPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <h6 class="fw-bold mb-0">Coding Problems</h6>
-          <input class="form-control form-control-sm" type="search" id="managePracticeSearch" placeholder="Search problems…" style="max-width:16rem"/>
-        </div>
-        <div class="cod-problems-layout">
-          <div class="cod-filter-card">
-            <div class="small fw-semibold mb-2">Difficulty</div>
-            <div id="managePracticeDiffFilters" class="d-flex flex-column gap-1 mb-3"></div>
-            <div class="small fw-semibold mb-2">Topics</div>
-            <div id="managePracticeTopicFilters" class="d-flex flex-column gap-1"></div>
-          </div>
-          <div class="border rounded-3 overflow-hidden bg-white" id="managePracticeProblemsList"></div>
-        </div>
-      </div>
-
       <div id="manageTestsPanel">
-        <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
-          <button type="button" class="btn btn-sm btn-primary" id="btnNewTest"><i class="bi bi-plus-lg me-1"></i>New test</button>
-        </div>
-        <div id="manageTestsBulkActions" class="d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 pb-2 border-bottom">
-          <div class="form-check mb-0">
-            <input class="form-check-input" type="checkbox" id="manageTestsSelectAllVisible"/>
-            <label class="form-check-label small" for="manageTestsSelectAllVisible">Select all shown</label>
-          </div>
-          <div class="d-flex align-items-center gap-2">
-            <span class="small text-muted-2" id="manageTestsSelectedCount">0 selected</span>
-            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnManageTestsDeleteSelected"><i class="bi bi-trash me-1"></i>Delete selected</button>
-          </div>
-        </div>
-        <div id="manageTestsList" class="d-flex flex-column gap-2"></div>
+        <p class="small text-muted-2 mb-3">Tests are grouped by topic from the question bank. Add or edit problems in the bank — each topic becomes a test for students.</p>
+        <div id="manageTestsList"></div>
       </div>
 
       <div id="manageContestsPanel" class="d-none">
@@ -557,7 +519,7 @@
 
         <div class="col-12">
           <label class="form-label small fw-semibold d-block mb-2">Problem selection</label>
-          <p class="small text-muted-2 mb-2 d-none" id="tfContestBankHint">Contest problems are picked from the problem bank using the rules below. Each student can attempt the contest only once, on the scheduled day.</p>
+          <p class="small text-muted-2 mb-2 d-none" id="tfContestBankHint">Contest problems are selected from the question bank — either pick specific problems or use random rules by topic. Each student gets one attempt on the scheduled day.</p>
           <div class="btn-group" role="group" aria-label="Problem selection" id="tfSourceGroup">
             <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceManual" value="manual" checked>
             <label class="btn btn-outline-primary btn-sm" for="tfSourceManual">Manual</label>
@@ -697,5 +659,5 @@
 <script src="js/coding-execution.js?v=20260915back"></script>
 <script src="js/coding-service.js?v=20260922practice"></script>
 <script src="js/coding-exam.js?v=20260922practice"></script>
-<script src="js/coding-page.js?v=20260922practice"></script>
+<script src="js/coding-page.js?v=20260922cattests"></script>
 </body></html>

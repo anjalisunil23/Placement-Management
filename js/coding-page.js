@@ -48,7 +48,9 @@
   let jdCompanies = [];
   const jdSetDetailsCache = {};
   let progressPanel = 'tests';
-  let takeListPanel = 'problems';
+  let takeListPanel = 'tests';
+  let selectedTestCategory = null;
+  let selectedManageTestCategory = null;
   let practiceProblems = [];
   let practiceSearch = '';
   const practiceDiffFilters = new Set();
@@ -774,7 +776,6 @@
   }
 
   function getQuestionSource() {
-    if (formIsContest()) return 'random';
     if (document.getElementById('tfSourceRandom')?.checked) return 'random';
     return 'manual';
   }
@@ -1087,16 +1088,21 @@
 
   function syncQuestionSourcePanels() {
     const contest = formIsContest();
-    document.getElementById('tfSourceGroup')?.classList.toggle('d-none', contest || formIsCompanyTest());
+    const company = formIsCompanyTest();
+    document.getElementById('tfSourceGroup')?.classList.toggle('d-none', company);
     document.getElementById('tfContestBankHint')?.classList.toggle('d-none', !contest);
     syncCompanyTestFormUi();
-    if (contest) {
-      document.getElementById('tfSourceRandom').checked = true;
-      document.getElementById('tfSourceManual').checked = false;
-    }
     const source = getQuestionSource();
     document.getElementById('tfRandomPanel')?.classList.toggle('d-none', source !== 'random');
     document.getElementById('tfManualPanel')?.classList.toggle('d-none', source === 'random');
+    if (contest && source === 'manual') {
+      const useBankEl = document.getElementById('tfUseBankManual');
+      if (useBankEl) useBankEl.checked = true;
+      document.getElementById('tfBankPicker')?.classList.remove('d-none');
+      document.getElementById('tfManualProblemsSection')?.classList.add('d-none');
+    } else {
+      document.getElementById('tfManualProblemsSection')?.classList.toggle('d-none', contest);
+    }
     updateTestFormQuestionCount();
   }
 
@@ -1147,7 +1153,9 @@
       payload.bankProblemIds = useBank
         ? payload.bankFilterRules.flatMap((r) => r.selectedQuestionIds || [])
         : [];
-      payload.items = formIsCompanyTest() ? collectInlineProblems() : collectInlineProblems();
+      payload.items = formIsCompanyTest()
+        ? collectInlineProblems()
+        : (formIsContest() ? [] : collectInlineProblems());
     }
     if (formIsCompanyTest()) {
       const { companyId, companyName } = selectedCompanyFromTestForm();
@@ -1287,6 +1295,160 @@
     </div>`;
   }
 
+  function groupProblemsByCategory(list) {
+    const map = new Map();
+    (list || []).forEach((p) => {
+      const cat = normalizeCodingTopic(p.category);
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat).push(p);
+    });
+    return map;
+  }
+
+  function categoryProgress(problems) {
+    const total = (problems || []).length;
+    const solved = (problems || []).filter((p) => p.practiceStatus === 'solved').length;
+    return { total, solved, completed: total > 0 && solved === total };
+  }
+
+  function topicFilterMeta(category) {
+    return TOPIC_FILTERS.find((t) => t.value === category) || { label: category, icon: 'bi-collection', tone: 'all' };
+  }
+
+  function categoryTestCardHtml(category, problems) {
+    const { total, solved, completed } = categoryProgress(problems);
+    if (!total) return '';
+    const meta = topicFilterMeta(category);
+    return `<button type="button" class="cod-category-card cod-test-card ${completed ? 'is-complete' : ''}" data-open-test-category="${esc(category)}">
+      <div class="cod-category-icon"><i class="bi ${esc(meta.icon || 'bi-collection')}"></i></div>
+      <div class="fw-semibold">${esc(meta.label || category)}</div>
+      <div class="small text-muted-2 mt-1">${esc(solved)}/${esc(total)} solved</div>
+      ${completed ? '<div class="small text-success mt-1"><i class="bi bi-check-circle-fill me-1"></i>Completed</div>' : ''}
+    </button>`;
+  }
+
+  function categoryProblemRowHtml(p, index) {
+    const solved = p.practiceStatus === 'solved';
+    const diff = difficultyListLabel(p.difficulty);
+    return `<button type="button" class="apt-prob-row is-clickable" data-open-category-problem="${esc(p.id || p.bankId)}">
+      <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
+      <span class="apt-prob-title">${index + 1}. ${esc(p.title || 'Untitled')}</span>
+      <span class="apt-prob-pct">${p.attemptCount ? esc(p.attemptCount) : '—'}</span>
+      <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
+    </button>`;
+  }
+
+  function renderCategoryTestsView() {
+    const root = document.getElementById('testList');
+    if (!root) return;
+
+    if (selectedTestCategory) {
+      const problems = practiceProblems
+        .filter((p) => normalizeCodingTopic(p.category) === selectedTestCategory)
+        .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+      const { total, solved, completed } = categoryProgress(problems);
+      root.innerHTML = `
+        <div class="pt-1">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-test-category-back aria-label="Back to topics"><i class="bi bi-arrow-left"></i></button>
+            <div>
+              <h6 class="fw-bold mb-0">${esc(selectedTestCategory)}</h6>
+              <div class="small text-muted-2">${esc(solved)}/${esc(total)} solved${completed ? ' · Test completed' : ''}</div>
+            </div>
+          </div>
+          ${problems.length
+            ? `<div class="apt-prob-list">${problems.map((p, i) => categoryProblemRowHtml(p, i)).join('')}</div>`
+            : '<p class="text-muted-2 mb-0">No problems in this topic yet.</p>'}
+        </div>`;
+      root.querySelector('[data-test-category-back]')?.addEventListener('click', () => {
+        selectedTestCategory = null;
+        renderTestList();
+      });
+      root.querySelectorAll('[data-open-category-problem]').forEach((btn) => {
+        btn.addEventListener('click', () => openPracticeProblem(btn.getAttribute('data-open-category-problem')));
+      });
+      return;
+    }
+
+    const byCat = groupProblemsByCategory(practiceProblems);
+    const cards = CATEGORIES.map((cat) => categoryTestCardHtml(cat, byCat.get(cat) || [])).filter(Boolean);
+    root.innerHTML = `
+      <div class="pt-1">
+        <h6 class="fw-bold mb-1">Topic tests</h6>
+        <p class="small text-muted-2 mb-3">Pick a topic, then solve each problem. Finish every problem to complete that test.</p>
+        ${cards.length
+          ? `<div class="cod-category-grid">${cards.join('')}</div>`
+          : '<p class="text-muted-2 mb-0">No problems in the question bank yet. Ask your placement officer to add problems.</p>'}
+      </div>`;
+    root.querySelectorAll('[data-open-test-category]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedTestCategory = btn.getAttribute('data-open-test-category');
+        renderTestList();
+      });
+    });
+  }
+
+  function renderManageCategoryTests() {
+    const root = document.getElementById('manageTestsList');
+    if (!root) return;
+
+    if (selectedManageTestCategory) {
+      const problems = bank
+        .filter((p) => normalizeCodingTopic(p.category) === selectedManageTestCategory)
+        .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+      root.innerHTML = `
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-manage-test-category-back aria-label="Back to topics"><i class="bi bi-arrow-left"></i></button>
+            <div>
+              <h6 class="fw-bold mb-0">${esc(selectedManageTestCategory)}</h6>
+              <div class="small text-muted-2">${esc(problems.length)} problem${problems.length === 1 ? '' : 's'} in this test</div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-manage-open-bank="${esc(selectedManageTestCategory)}"><i class="bi bi-pencil me-1"></i>Edit in bank</button>
+        </div>
+        ${problems.length
+          ? `<div class="apt-prob-list">${problems.map((p, i) => `<div class="apt-prob-row">
+              <span class="apt-prob-check"></span>
+              <span class="apt-prob-title">${i + 1}. ${esc(p.title || 'Untitled')}</span>
+              <span class="apt-prob-pct">${esc(p.marks || 2)} m</span>
+              <span class="apt-prob-diff ${difficultyListLabel(p.difficulty).cls}">${esc(difficultyListLabel(p.difficulty).text)}</span>
+            </div>`).join('')}</div>`
+          : '<p class="text-muted-2 mb-0">No problems in this topic. Add them from the question bank.</p>'}`;
+      root.querySelector('[data-manage-test-category-back]')?.addEventListener('click', () => {
+        selectedManageTestCategory = null;
+        renderManageCategoryTests();
+      });
+      root.querySelector('[data-manage-open-bank]')?.addEventListener('click', () => {
+        bankCategoryFilter = selectedManageTestCategory;
+        applyManagePanel('bank');
+        renderBank();
+      });
+      return;
+    }
+
+    const byCat = groupProblemsByCategory(bank);
+    const cards = CATEGORIES.map((cat) => {
+      const problems = byCat.get(cat) || [];
+      if (!problems.length) return '';
+      const meta = topicFilterMeta(cat);
+      return `<button type="button" class="cod-category-card cod-test-card" data-open-manage-test-category="${esc(cat)}">
+        <div class="cod-category-icon"><i class="bi ${esc(meta.icon || 'bi-collection')}"></i></div>
+        <div class="fw-semibold">${esc(meta.label || cat)}</div>
+        <div class="small text-muted-2 mt-1">${esc(problems.length)} problem${problems.length === 1 ? '' : 's'}</div>
+      </button>`;
+    }).filter(Boolean);
+    root.innerHTML = cards.length
+      ? `<div class="cod-category-grid">${cards.join('')}</div>`
+      : '<p class="text-muted-2 mb-0">No problems in the bank yet. Add problems under Question bank.</p>';
+    root.querySelectorAll('[data-open-manage-test-category]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedManageTestCategory = btn.getAttribute('data-open-manage-test-category');
+        renderManageCategoryTests();
+      });
+    });
+  }
+
   function filterPracticeProblems(list, { search, diffs, topics, statuses }) {
     const q = String(search || '').trim().toLowerCase();
     return (list || []).filter((p) => {
@@ -1374,10 +1536,6 @@
 
   async function loadPracticeProblems() {
     practiceProblems = await CodingService.listPracticeProblems();
-    bindPracticeFilters('student');
-    bindPracticeFilters('manage');
-    renderPracticeProblemsList('student');
-    renderPracticeProblemsList('manage');
   }
 
   async function renderPracticeSubmissions() {
@@ -1392,7 +1550,7 @@
             <span class="apt-prob-pct">${esc(r.dateLabel || '')}</span>
             <span class="apt-prob-diff ${r.accepted ? 'is-easy' : 'is-hard'}">${esc(r.status || '')}</span>
           </div>`).join('')}</div>`
-        : '<p class="text-muted-2 mb-0">No practice submissions yet. Solve a problem from the Problems tab.</p>';
+        : '<p class="text-muted-2 mb-0">No practice submissions yet. Open a test topic and solve a problem.</p>';
     } catch (err) {
       root.innerHTML = `<p class="text-muted-2 mb-0">${esc(err?.message || 'Could not load submissions.')}</p>`;
     }
@@ -1410,23 +1568,23 @@
   }
 
   function applyTakeListPanel(panel) {
-    const allowed = ['problems', 'tests', 'contests', 'submissions', 'jdblock'];
-    takeListPanel = allowed.includes(panel) ? panel : 'problems';
+    const allowed = ['tests', 'contests', 'submissions', 'jdblock'];
+    if (panel !== 'tests') selectedTestCategory = null;
+    takeListPanel = allowed.includes(panel) ? panel : 'tests';
     document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
     });
     document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
-    document.getElementById('codingProblemsPanel')?.classList.toggle('d-none', takeListPanel !== 'problems');
     document.getElementById('practiceSubmissionsPanel')?.classList.toggle('d-none', takeListPanel !== 'submissions');
     document.getElementById('testList')?.classList.toggle('d-none', takeListPanel !== 'tests' && takeListPanel !== 'contests');
     document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', takeListPanel !== 'jdblock');
     syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
     if (takeListPanel === 'jdblock') {
       loadStudentJdBlock().catch(() => {});
-    } else if (takeListPanel === 'problems') {
-      loadPracticeProblems().catch(() => {});
     } else if (takeListPanel === 'submissions') {
       renderPracticeSubmissions().catch(() => {});
+    } else if (takeListPanel === 'tests') {
+      loadPracticeProblems().then(() => renderTestList()).catch(() => renderTestList());
     } else {
       renderTestList();
     }
@@ -1764,7 +1922,7 @@
       ? `No ${contestLabel} contest attempts yet.`
       : (myResultsView === 'company'
         ? 'No company test attempts yet.'
-        : 'No attempts yet. Select a test on the left to begin.');
+        : 'No attempts yet. Open a topic test or contest to begin.');
     const root = document.getElementById('myHistory');
     if (!root) return;
     root.innerHTML = filtered.length
@@ -1867,22 +2025,22 @@
 
   function renderTestList(list) {
     const root = document.getElementById('testList');
-    if (!root || takeListPanel === 'jdblock' || takeListPanel === 'problems' || takeListPanel === 'submissions') return;
+    if (!root || takeListPanel === 'jdblock' || takeListPanel === 'submissions') return;
+
+    if (takeListPanel === 'tests') {
+      renderCategoryTestsView();
+      return;
+    }
+
     const published = (list || tests || []).filter((t) => (t.status || 'published') === 'published');
-    const wantContests = takeListPanel === 'contests';
     const visible = published.filter((t) => {
-      const isContest = isContestTest(t);
-      if (wantContests !== isContest) return false;
-      if (!wantContests && isCompanyTest(t)) return false;
-      if (isContest && String(t.contestType || '') !== takeContestType) return false;
+      if (!isContestTest(t)) return false;
+      if (String(t.contestType || '') !== takeContestType) return false;
       return true;
     });
     if (!visible.length) {
       const contestLabel = takeContestType === 'monthly' ? 'monthly' : 'weekly';
-      const msg = wantContests
-        ? `No ${contestLabel} coding contests are open right now, or none are published yet.`
-        : 'No published coding tests yet. Check back later or contact your placement officer.';
-      root.innerHTML = `<p class="text-muted-2 mb-0">${msg}</p>`;
+      root.innerHTML = `<p class="text-muted-2 mb-0">No ${contestLabel} coding contests are open right now, or none are published yet.</p>`;
       return;
     }
     root.innerHTML = `<div class="apt-prob-list">${visible.map((t, i) => codingProbRowHtml(t, i)).join('')}</div>`;
@@ -1912,9 +2070,11 @@
       renderStats(progress);
       renderHistory(progress);
       if (takeListPanel === 'jdblock') await loadStudentJdBlock();
-      else if (takeListPanel === 'problems') await loadPracticeProblems();
       else if (takeListPanel === 'submissions') await renderPracticeSubmissions();
-      else renderTestList();
+      else {
+        if (takeListPanel === 'tests') await loadPracticeProblems();
+        renderTestList();
+      }
     } catch (err) {
       toastMsg(err?.message || 'Could not load coding tests.', 'error');
     }
@@ -1952,8 +2112,6 @@
       manageContestType = 'monthly';
     } else if (panel === 'contests' && canManageContests()) {
       managePanel = 'contests';
-    } else if (panel === 'problems') {
-      managePanel = 'problems';
     } else if (panel === 'bank') {
       managePanel = 'bank';
     } else if (panel === 'jd') {
@@ -1961,7 +2119,7 @@
     } else {
       managePanel = 'tests';
     }
-    document.getElementById('manageProblemsPanel')?.classList.toggle('d-none', managePanel !== 'problems');
+    if (managePanel !== 'tests') selectedManageTestCategory = null;
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
     document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
     document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
@@ -1970,7 +2128,7 @@
       link.classList.toggle('active', link.getAttribute('data-manage-view') === managePanel);
     });
     if (managePanel === 'contests') applyManageContestType(manageContestType);
-    if (managePanel === 'problems') loadPracticeProblems().catch(() => {});
+    if (managePanel === 'tests') renderManageCategoryTests();
     if (managePanel === 'bank') renderBank();
     if (managePanel === 'jd') loadJdLibrary().catch(() => {});
   }
@@ -2265,20 +2423,7 @@
     updateManageScopeHint(access.scope || {});
     syncManageContestActions();
     applyManagePanel(managePanel);
-    const regular = tests.filter((t) => isRegularTest(t));
-    const testsRoot = document.getElementById('manageTestsList');
-    const testsBulkBar = document.getElementById('manageTestsBulkActions');
-    if (testsRoot) {
-      if (!regular.length) {
-        testsBulkBar?.classList.add('d-none');
-        testsRoot.innerHTML = '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
-      } else {
-        testsBulkBar?.classList.remove('d-none');
-        testsRoot.innerHTML = regular.map((t) => renderManageRow(t, { selectable: true })).join('');
-        bindManageListActions(testsRoot);
-      }
-      updateManageTestsSelectionToolbar();
-    }
+    if (managePanel === 'tests') renderManageCategoryTests();
     if (managePanel === 'jd' && jdSelectedCompanyId) {
       showJdCompanyDetail(jdSelectedCompanyId);
     }
@@ -2402,8 +2547,8 @@
         : 'published';
 
       let source = test?.questionSource === 'random' ? 'random' : 'manual';
-      if (isContest) source = 'random';
-      else if (isCompanyPreset) source = 'manual';
+      if (isCompanyPreset) source = 'manual';
+      else if (isContestPreset && !test) source = 'random';
       document.getElementById('tfSourceManual').checked = source === 'manual';
       document.getElementById('tfSourceRandom').checked = source === 'random';
 
@@ -2544,6 +2689,7 @@
     const list = document.getElementById('bankQuestionsList');
     const bulkBar = document.getElementById('bankBulkActions');
     bindBankListEvents();
+    if (managePanel === 'tests') renderManageCategoryTests();
     if (!rows.length) {
       bulkBar?.classList.add('d-none');
       list.innerHTML = '<p class="text-muted-2 mb-0">No problems in the bank yet. Add one manually or generate with AI.</p>';
@@ -3745,10 +3891,6 @@
       e.preventDefault();
       applyMyResultsContestType(link.getAttribute('data-results-contest-type'));
     });
-    document.getElementById('btnNewTest')?.addEventListener('click', () => {
-      applyManagePanel('tests');
-      openTestForm(null, { contestType: 'none' }).catch(() => {});
-    });
     document.getElementById('btnNewCompanyTest')?.addEventListener('click', () => {
       applyManagePanel('jd');
       const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
@@ -3847,7 +3989,11 @@
           toastMsg('Add at least one problem to the company test.', 'error');
           return;
         }
-        if (!isCompany && !useBank && !inlineCount) {
+        if (formIsContest() && !useBank) {
+          toastMsg('Pick contest problems from the question bank.', 'error');
+          return;
+        }
+        if (!isCompany && !formIsContest() && !useBank && !inlineCount) {
           toastMsg('Add problems from the bank or add them directly.', 'error');
           return;
         }
