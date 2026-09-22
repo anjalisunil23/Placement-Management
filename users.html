@@ -67,7 +67,7 @@
     </div>
     <div class="tab-pane fade" id="tabVolunteers">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
-        <th>Name</th><th>Register No</th><th>Department</th><th>Batch</th><th>Assigned by</th><th>Assigned on</th>
+        <th>Name</th><th>Register No</th><th>Department</th><th>Batch</th><th>Assigned by</th><th>Assigned on</th><th>Letter</th><th>Actions</th>
       </tr></thead><tbody id="volunteerRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabCompanies">
@@ -250,10 +250,18 @@ function renderVolunteers(list) {
   const tbody = document.getElementById('volunteerRows');
   if (!tbody) return;
   if (!volunteersLoaded) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Loading placement representatives…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted-2 p-4">Loading placement representatives…</td></tr>';
     return;
   }
-  tbody.innerHTML = list.length ? list.map(v => `
+  tbody.innerHTML = list.length ? list.map(v => {
+    const published = v.offerLetterStatus === 'published';
+    const letterBadge = published
+      ? '<span class="badge-soft success">Published</span>'
+      : '<span class="badge-soft warning">Draft</span>';
+    const actionCell = published
+      ? `<a class="btn btn-sm btn-outline-primary" href="pca-offer-letter.html?mode=admin&amp;assignment=${encodeURIComponent(v.id)}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-arrow-down me-1"></i>View &amp; download</a>`
+      : '<span class="small text-muted-2">Not published</span>';
+    return `
     <tr>
       <td><div class="fw-semibold small">${v.name || '—'}</div>${v.email ? `<div class="small text-muted-2">${v.email}</div>` : ''}</td>
       <td>${v.registerNumber || '—'}</td>
@@ -261,7 +269,10 @@ function renderVolunteers(list) {
       <td>${v.classBatch || '—'}</td>
       <td>${v.assignedByName || '—'}</td>
       <td>${formatVolunteerDate(v.assignedAt)}</td>
-    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No placement representatives assigned yet.</td></tr>';
+      <td>${letterBadge}</td>
+      <td>${actionCell}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No placement representatives assigned yet.</td></tr>';
 }
 
 function openAddDept() {

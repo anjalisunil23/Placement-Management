@@ -39,6 +39,7 @@ use PMS\Services\AnalyticsService;
 use PMS\Services\RecruitingService;
 use PMS\Services\TrackingService;
 use PMS\Services\PlacementOfficerContext;
+use PMS\Services\PcaOfferLetterService;
 use PMS\Services\VolunteerAssignmentService;
 use PMS\Services\ReportContext;
 use PMS\Services\ReportService;
@@ -67,7 +68,9 @@ final class AdminController
     {
         RBACMiddleware::requirePlacementDataViewer();
         $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
-        Response::success($this->userModel->getDashboardStats(!$lite));
+        $data = $this->userModel->getDashboardStats(!$lite);
+        $data['pcaOfferLetters'] = (new PcaOfferLetterService())->listPublishedSummaries(null);
+        Response::success($data);
     }
 
     // --- Drives (Admin manages all drives) ---
@@ -866,6 +869,13 @@ final class AdminController
             $ctx,
             $deptId !== '' ? $deptId : null
         ));
+    }
+
+    /** GET /api/admin/volunteers/{id}/offer-letter — published PCA letter (read-only) */
+    public function getVolunteerOfferLetter(string $id): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new PcaOfferLetterService())->getForAdmin($id));
     }
 
     /** PUT /api/admin/departments/{id}/placement-officer */

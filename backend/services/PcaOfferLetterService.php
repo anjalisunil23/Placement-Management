@@ -71,6 +71,81 @@ final class PcaOfferLetterService
         return $this->serializeLetter($row, includeDraft: true);
     }
 
+    /** Published letter for admin view (same payload shape as student). */
+    public function getForAdmin(string $assignmentId): array
+    {
+        $row = $this->assertActiveAssignment($assignmentId);
+        return $this->serializeLetter($row, includeDraft: false);
+    }
+
+    /** Published letter for staff view (class-scoped, same payload shape as student). */
+    public function getForStaff(array $staffCtx, string $assignmentId): array
+    {
+        $row = $this->assertActiveAssignment($assignmentId);
+        $student = (new StudentModel())->findById((string) ($row['studentId'] ?? ''));
+        if ($student === null) {
+            Response::notFound('Placement representative assignment not found.');
+        }
+        StaffContext::assertStudentInScope($student, $staffCtx);
+
+        return $this->serializeLetter($row, includeDraft: false);
+    }
+
+    /**
+     * Published PCA offer letters for dashboard lists.
+     *
+     * @param array<string, mixed>|null $staffCtx StaffContext::resolve() for class filtering; null = campus-wide (admin).
+     * @return list<array<string, mixed>>
+     */
+    public function listPublishedSummaries(?array $staffCtx = null): array
+    {
+        $this->expireOutdatedAssignments();
+
+        $rows = (new StudentVolunteerModel())->listActive(['status' => 'active'], 5000);
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
+        $mode = $staffCtx !== null ? 'staff' : 'admin';
+        $out = [];
+
+        foreach ($rows as $row) {
+            if ($this->letterStatus($row) !== 'published') {
+                continue;
+            }
+
+            $student = $studentModel->findById((string) ($row['studentId'] ?? ''));
+            if ($student === null) {
+                continue;
+            }
+            if ($staffCtx !== null && !StaffContext::studentMatchesScope($student, $staffCtx)) {
+                continue;
+            }
+
+            $assignmentId = (string) ($row['_id'] ?? '');
+            $uid = (string) ($row['userId'] ?? $student['userId'] ?? '');
+            $studentUser = $uid !== '' ? $userModel->findById($uid) : null;
+            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+            $name = trim((string) ($studentUser['name'] ?? $personal['name'] ?? $personal['fullName'] ?? ''));
+            $deptId = (string) ($row['departmentId'] ?? $student['departmentId'] ?? '');
+            $dept = $deptId !== '' ? $deptModel->findById($deptId) : null;
+            $letter = is_array($row['offerLetter'] ?? null) ? $row['offerLetter'] : [];
+
+            $out[] = [
+                'assignmentId'   => $assignmentId,
+                'studentName'    => $name,
+                'registerNumber' => (string) ($student['registerNumber'] ?? ''),
+                'classBatch'     => StaffContext::studentClassBatch($student),
+                'departmentName' => (string) ($dept['name'] ?? ''),
+                'academicYear'   => (string) ($letter['academicYear'] ?? $row['academicYear'] ?? ''),
+                'viewUrl'        => '/pca-offer-letter.html?mode=' . $mode . '&assignment=' . rawurlencode($assignmentId),
+            ];
+        }
+
+        usort($out, static fn ($a, $b) => strcasecmp((string) $a['studentName'], (string) $b['studentName']));
+
+        return $out;
+    }
+
     /**
      * @param array<string, mixed> $ctx
      * @param array<string, mixed> $input
@@ -287,6 +362,23 @@ final class PcaOfferLetterService
         $name = trim((string) ($user['name'] ?? $personal['name'] ?? $personal['fullName'] ?? ''));
 
         $row['offerLetter'] = $this->defaultLetterPayload($student, $dept, $name);
+        return $row;
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return array<string, mixed>
+     */
+    /**
+     * @return array<string, mixed>
+     */
+    private function assertActiveAssignment(string $assignmentId): array
+    {
+        $row = (new StudentVolunteerModel())->findById($assignmentId);
+        if ($row === null || (string) ($row['status'] ?? '') !== 'active') {
+            Response::notFound('Placement representative assignment not found.');
+        }
+
         return $row;
     }
 

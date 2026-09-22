@@ -9,7 +9,7 @@
 <noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" /></noscript>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-<link href="css/style.css?v=20260922bootfix" rel="stylesheet" />
+<link href="css/style.css?v=20260725responsive" rel="stylesheet" />
 <script src="js/ph-role-guard.js?v=20260724hod4"></script>
 </head>
 <body data-page="dashboard.html">
@@ -81,6 +81,16 @@
         </div>
 
         <div class="row g-3 mt-1">
+          <div class="col-12 d-none" id="pcaOfferLettersAdminCard">
+            <div class="card-surface p-3 p-md-4">
+              <h6 class="fw-bold mb-1"><i class="bi bi-person-badge me-1"></i>Placement representatives — PCA offer letters</h6>
+              <p class="small text-muted-2 mb-3">Published appointment letters for all campus representatives.</p>
+              <div id="pcaOfferLettersAdminList"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mt-1">
           <div class="col-12 col-xl-8"><div class="card-surface p-3 p-md-4">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div><h6 class="mb-0 fw-bold">Monthly Hiring Trend</h6></div>
@@ -119,6 +129,15 @@
               <a href="mock-aptitude.html#progress" class="btn btn-outline-primary btn-sm"><i class="bi bi-bar-chart-line me-1"></i>Progress</a>
               <a href="mock-aptitude.html#manage" class="btn btn-primary btn-sm"><i class="bi bi-sliders me-1"></i>Manage</a>
             </div>
+          </div>
+        </div>
+
+        <!-- Staff: PCA offer letters for assigned-class representatives -->
+        <div class="card-surface mb-3 d-none" data-roles="staff" id="pcaOfferLettersStaffCard">
+          <div class="p-3 p-md-4">
+            <h6 class="fw-bold mb-1"><i class="bi bi-person-badge me-1"></i>Placement representatives — PCA offer letters</h6>
+            <p class="small text-muted-2 mb-3">Published appointment letters for students in your assigned class only.</p>
+            <div id="pcaOfferLettersStaffList"></div>
           </div>
         </div>
 
@@ -431,7 +450,7 @@
 </div>
 
 <script src="js/api.js?v=20260917admin"></script>
-<script src="js/app.js?v=20260922bootfix"></script>
+<script src="js/app.js?v=20260917apt"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -574,6 +593,48 @@ const   actions = {
 };
 document.getElementById('dashActions').innerHTML = actions[role] || '';
 
+function paintPcaOfferLetters(list, listId, cardId, emptyText) {
+  const card = document.getElementById(cardId);
+  const root = document.getElementById(listId);
+  if (!root || !card) return;
+  const rows = Array.isArray(list) ? list : [];
+  if (!rows.length) {
+    card.classList.add('d-none');
+    root.innerHTML = '';
+    return;
+  }
+  card.classList.remove('d-none');
+  root.innerHTML = `<div class="table-wrap"><table class="table-modern table-sm mb-0"><thead><tr>
+    <th>Student</th><th>Register No</th><th>Class</th><th>Department</th><th class="text-end">Offer letter</th>
+  </tr></thead><tbody>${rows.map((row) => {
+    const name = String(row.studentName || '—');
+    const reg = String(row.registerNumber || '—');
+    const batch = String(row.classBatch || '—');
+    const dept = String(row.departmentName || '—');
+    const url = String(row.viewUrl || '#');
+    return `<tr>
+      <td class="fw-semibold small">${name}</td>
+      <td>${reg}</td>
+      <td>${batch}</td>
+      <td>${dept}</td>
+      <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="${url}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-arrow-down me-1"></i>View &amp; download</a></td>
+    </tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+async function loadDashboardPcaOfferLetters() {
+  if (!Auth.hasRealAuth() || Auth.isDemo()) return;
+  if (role === 'admin') {
+    const res = await api('/admin/dashboard?lite=1').catch(() => null);
+    paintPcaOfferLetters(res?.data?.pcaOfferLetters, 'pcaOfferLettersAdminList', 'pcaOfferLettersAdminCard');
+    return;
+  }
+  if (role === 'staff') {
+    const res = await api('/staff/dashboard?lite=1').catch(() => null);
+    paintPcaOfferLetters(res?.data?.pcaOfferLetters, 'pcaOfferLettersStaffList', 'pcaOfferLettersStaffCard');
+  }
+}
+
 function paintAdminStats(s) {
   if (!s) return;
   if (dashLive && (s.totalStudents > 0 || s.totalCompanies > 0 || s.totalDrives > 0 || s.placedStudents > 0)) {
@@ -701,17 +762,20 @@ if (role === 'admin') {
       if (pref?.dash?.success && pref.dash.data && map) {
         const lite = map(pref.dash.data, pref.dash.data.activeDrives ?? 0);
         paintAdminStats(lite);
+        paintPcaOfferLetters(pref.dash.data.pcaOfferLetters, 'pcaOfferLettersAdminList', 'pcaOfferLettersAdminCard');
         window.__phWriteDashKpi?.(role, { stats: lite });
       } else {
         await apisReady;
         if (Auth.hasRealAuth() && !Auth.isDemo()) {
           const lite = await dashboardStats({ lite: true });
           paintAdminStats(lite);
+          await loadDashboardPcaOfferLetters();
           window.__phWriteDashKpi?.(role, { stats: lite });
         }
       }
 
       if (Auth.hasRealAuth() && !Auth.isDemo()) {
+        loadDashboardPcaOfferLetters().catch(() => {});
         const runFull = () => {
           Promise.all([apisReady, chartsReady, dashboardStats({})]).then(([, , full]) => {
             if (full) {
@@ -835,6 +899,14 @@ if (role === 'staff') {
       }
     }
     await paintStaffAptitude();
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const pref = await (window.__phPrefetchDashLite || Promise.resolve(null)).catch(() => null);
+      if (pref?.dash?.success && pref.dash.data?.pcaOfferLetters) {
+        paintPcaOfferLetters(pref.dash.data.pcaOfferLetters, 'pcaOfferLettersStaffList', 'pcaOfferLettersStaffCard');
+      } else {
+        await loadDashboardPcaOfferLetters();
+      }
+    }
   })();
 }
 

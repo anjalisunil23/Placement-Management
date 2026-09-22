@@ -437,7 +437,10 @@
   const embed = qp('embed') === '1';
   const assignmentId = qp('assignment');
   const isStudent = mode === 'student';
-  const isOfficer = mode === 'officer' || (!isStudent && !!assignmentId);
+  const isAdmin = mode === 'admin';
+  const isStaff = mode === 'staff';
+  const isOfficer = mode === 'officer';
+  const isViewer = isStudent || isAdmin || isStaff;
 
   let letterData = {
     letterDate: '',
@@ -473,10 +476,14 @@
       toolbar.style.display = 'none';
       return;
     }
-    if (isStudent) {
+    if (isViewer) {
       btnPreview?.classList.add('is-hidden');
       btnPrint.textContent = 'Download as PDF';
-      toolbarHint.textContent = 'View your PCA offer letter below and download it as a PDF.';
+      toolbarHint.textContent = isAdmin
+        ? 'View the published PCA offer letter and download it as a PDF.'
+        : isStaff
+          ? 'View the published PCA offer letter for your class representative and download it as a PDF.'
+          : 'View your PCA offer letter below and download it as a PDF.';
       return;
     }
     if (isOfficer) {
@@ -501,7 +508,35 @@
         setupToolbar();
         return;
       }
-      if (assignmentId) {
+      if (isAdmin && assignmentId) {
+        const res = await fetch(API_BASE + '/admin/volunteers/' + encodeURIComponent(assignmentId) + '/offer-letter', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const json = await res.json();
+        if (!json?.success) {
+          document.body.innerHTML = '<p class="p-4 text-center">No published PCA offer letter is available for this representative.</p>';
+          return;
+        }
+        applyPayload(json.data);
+        setupToolbar();
+        return;
+      }
+      if (isStaff && assignmentId) {
+        const res = await fetch(API_BASE + '/staff/volunteers/' + encodeURIComponent(assignmentId) + '/offer-letter', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const json = await res.json();
+        if (!json?.success) {
+          document.body.innerHTML = '<p class="p-4 text-center">No published PCA offer letter is available for this class representative.</p>';
+          return;
+        }
+        applyPayload(json.data);
+        setupToolbar();
+        return;
+      }
+      if (isOfficer && assignmentId) {
         const res = await fetch(API_BASE + '/officer/volunteers/' + encodeURIComponent(assignmentId) + '/offer-letter', {
           credentials: 'include',
           cache: 'no-store',

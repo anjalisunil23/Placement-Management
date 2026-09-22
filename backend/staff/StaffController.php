@@ -11,6 +11,7 @@ use PMS\Models\RecommendationModel;
 use PMS\Models\StaffModel;
 use PMS\Models\UserModel;
 use PMS\Services\OfficerDataService;
+use PMS\Services\PcaOfferLetterService;
 use PMS\Services\StaffContext;
 use PMS\Services\StaffDataService;
 use PMS\Services\SelfPlacementService;
@@ -140,6 +141,15 @@ final class StaffController
     {
         $user = RBACMiddleware::requireStaff();
         Response::success((new StaffService())->getDashboard($user));
+    }
+
+    /** GET /api/staff/volunteers/{id}/offer-letter — published PCA letter for assigned-class students */
+    public function getVolunteerOfferLetter(string $id): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        Response::success((new PcaOfferLetterService())->getForStaff($ctx, $id));
     }
 
     /** GET /api/staff/recommendations */

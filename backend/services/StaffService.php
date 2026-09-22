@@ -78,6 +78,7 @@ final class StaffService
             ],
             'hiring' => $hiring['totals'],
             'branchStatistics' => $deptRow ? [$deptRow] : [],
+            'pcaOfferLetters' => (new PcaOfferLetterService())->listPublishedSummaries($ctx),
         ];
     }
 
