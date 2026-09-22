@@ -119,9 +119,12 @@
     let submitting = false;
     let beforeUnloadBound = false;
     let contestMode = false;
+    let contestGuardsBound = false;
+    let contestPaused = false;
+    let remainingMs = 0;
+    let timerDeadline = 0;
     let lockOverlay = null;
-    let overlayHideTimer = null;
-    let lastContestWarningAt = 0;
+    let lastFocusChangeAt = 0;
 
     function el(id) {
       return root.querySelector(`[data-cod="${id}"]`);
@@ -151,10 +154,11 @@
       overlay.style.background = 'rgba(15, 23, 42, 0.78)';
       overlay.style.backdropFilter = 'blur(4px)';
       overlay.style.zIndex = '1080';
+      overlay.style.pointerEvents = 'auto';
       overlay.innerHTML = `
         <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
-          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Contest mode active</div>
-          <div data-cod-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">Stay on this tab and use Submit Answer when you are ready.</div>
+          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Paused</div>
+          <div data-cod-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">You have left the test window. Please return to continue.</div>
         </div>`;
       document.body.appendChild(overlay);
       lockOverlay = overlay;
@@ -164,68 +168,14 @@
     function showLockOverlay(message) {
       const overlay = ensureLockOverlay();
       const msg = overlay.querySelector('[data-cod-lock-message]');
-      if (msg) msg.textContent = message || 'Stay on this tab and use Submit Answer when you are ready.';
+      if (msg) msg.textContent = message || 'You have left the test window. Please return to continue.';
       overlay.style.display = 'flex';
-      clearTimeout(overlayHideTimer);
-      overlayHideTimer = setTimeout(() => {
-        if (!document.hidden && !submitting && !state?.submitted) {
-          hideLockOverlay();
-        }
-      }, 2200);
     }
 
     function hideLockOverlay() {
       if (lockOverlay) {
         lockOverlay.style.display = 'none';
       }
-      clearTimeout(overlayHideTimer);
-      overlayHideTimer = null;
-    }
-
-    function warnContestFocus(message) {
-      if (!contestMode || !state?.attemptId || state.submitted) return;
-      const now = Date.now();
-      if (now - lastContestWarningAt < 1200) return;
-      lastContestWarningAt = now;
-      showLockOverlay(message);
-      toast(message, 'warning');
-    }
-
-    function onVisibilityChange() {
-      if (!contestMode || !state?.attemptId || state.submitted) return;
-      if (document.hidden) {
-        warnContestFocus('Tab switch detected. Return to this contest before submitting.');
-      } else {
-        hideLockOverlay();
-      }
-    }
-
-    function onWindowBlur() {
-      if (!contestMode || !state?.attemptId || state.submitted) return;
-      warnContestFocus('Contest mode warning: stay on this tab until you submit.');
-    }
-
-    function onWindowFocus() {
-      if (!contestMode || state?.submitted) return;
-      hideLockOverlay();
-    }
-
-    function onClipboardBlock(e) {
-      if (!contestMode || !state?.attemptId || state.submitted) return;
-      e.preventDefault();
-      e.stopPropagation();
-      toast('Copy, cut, and paste are disabled during contest mode.', 'warning');
-    }
-
-    function bindContestGuards(on) {
-      const method = on ? 'addEventListener' : 'removeEventListener';
-      document[method]('visibilitychange', onVisibilityChange);
-      window[method]('blur', onWindowBlur);
-      window[method]('focus', onWindowFocus);
-      root[method]('copy', onClipboardBlock, true);
-      root[method]('cut', onClipboardBlock, true);
-      root[method]('paste', onClipboardBlock, true);
-      if (!on) hideLockOverlay();
     }
 
     function stopTimer() {
@@ -250,6 +200,105 @@
       if (!state?.attemptId) return;
       e.preventDefault();
       e.returnValue = '';
+    }
+
+    function syncTimerDisplay() {
+      if (!el('timer')) return;
+      el('timer').innerHTML = `<i class="bi bi-stopwatch"></i> ${CodingService.formatTimer(remainingMs / 1000)}`;
+      el('timer').classList.toggle('is-low', remainingMs < 60000);
+    }
+
+    function freezeContestInteractions() {
+      if (editor) editor.setReadOnly(true);
+      if (el('stdin')) el('stdin').readOnly = true;
+      if (el('language')) el('language').disabled = true;
+      document.querySelectorAll('[data-cod-action="run"], [data-cod-action="submit-answer"], [data-cod-action="submit"]').forEach((btn) => {
+        btn.disabled = true;
+      });
+      root.querySelectorAll('[data-goto]').forEach((btn) => { btn.disabled = true; });
+      if (el('btn-prev')) el('btn-prev').disabled = true;
+      if (el('btn-next')) el('btn-next').disabled = true;
+    }
+
+    function restoreContestInteractions() {
+      const locked = !!state?.submitted;
+      if (editor) editor.setReadOnly(locked);
+      if (el('stdin')) el('stdin').readOnly = locked;
+      if (el('language')) el('language').disabled = locked;
+      document.querySelectorAll('[data-cod-action="run"], [data-cod-action="submit-answer"], [data-cod-action="submit"]').forEach((btn) => {
+        btn.disabled = locked || submitting || running;
+      });
+      root.querySelectorAll('[data-goto]').forEach((btn) => { btn.disabled = locked; });
+      if (el('btn-prev')) el('btn-prev').disabled = locked || state.index <= 0;
+      if (el('btn-next')) el('btn-next').disabled = locked || state.index >= state.test.items.length - 1;
+    }
+
+    function pauseContest() {
+      if (!contestMode || state?.submitted || !state?.attemptId || contestPaused) return;
+      remainingMs = Math.max(0, timerDeadline - Date.now());
+      contestPaused = true;
+      state.status = 'PAUSED';
+      stopTimer();
+      freezeContestInteractions();
+      showLockOverlay();
+      syncTimerDisplay();
+    }
+
+    function resumeContest() {
+      if (!contestMode || state?.submitted || !state?.attemptId || !contestPaused) return;
+      if (document.hidden || !document.hasFocus()) return;
+      contestPaused = false;
+      state.status = 'ACTIVE';
+      hideLockOverlay();
+      restoreContestInteractions();
+      startTimer(remainingMs);
+    }
+
+    function refreshContestWindowState() {
+      if (!contestMode || !state?.attemptId || state.submitted) return;
+      const active = !document.hidden && document.hasFocus();
+      if (active) resumeContest();
+      else pauseContest();
+    }
+
+    function onVisibilityChange() {
+      refreshContestWindowState();
+    }
+
+    function onWindowBlur() {
+      refreshContestWindowState();
+    }
+
+    function onWindowFocus() {
+      refreshContestWindowState();
+    }
+
+    function onClipboardBlock(e) {
+      if (!contestMode || !state?.attemptId || state.submitted || state.status !== 'ACTIVE') return;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function bindContestGuards(on) {
+      if (on && !contestGuardsBound) {
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        window.addEventListener('blur', onWindowBlur);
+        window.addEventListener('focus', onWindowFocus);
+        root.addEventListener('copy', onClipboardBlock, true);
+        root.addEventListener('cut', onClipboardBlock, true);
+        root.addEventListener('paste', onClipboardBlock, true);
+        contestGuardsBound = true;
+      }
+      if (!on && contestGuardsBound) {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        window.removeEventListener('blur', onWindowBlur);
+        window.removeEventListener('focus', onWindowFocus);
+        root.removeEventListener('copy', onClipboardBlock, true);
+        root.removeEventListener('cut', onClipboardBlock, true);
+        root.removeEventListener('paste', onClipboardBlock, true);
+        contestGuardsBound = false;
+      }
+      if (!on) hideLockOverlay();
     }
 
     function answeredCount() {
@@ -499,13 +548,18 @@
       setBusy(false);
     }
 
-    function startTimer() {
+    function startTimer(initialMs) {
       stopTimer();
+      if (typeof initialMs === 'number' && Number.isFinite(initialMs)) {
+        remainingMs = Math.max(0, initialMs);
+      } else if (!remainingMs) {
+        remainingMs = Math.max(0, (state.endsAt || 0) - Date.now());
+      }
+      timerDeadline = Date.now() + remainingMs;
       const tick = () => {
-        const left = state.endsAt - Date.now();
-        el('timer').innerHTML = `<i class="bi bi-stopwatch"></i> ${CodingService.formatTimer(left / 1000)}`;
-        el('timer').classList.toggle('is-low', left < 60000);
-        if (left <= 0) {
+        remainingMs = Math.max(0, timerDeadline - Date.now());
+        syncTimerDisplay();
+        if (remainingMs <= 0) {
           stopTimer();
           submitExam(true);
         }
@@ -523,8 +577,11 @@
         state.endsAt = started.endsAt;
         state.startedAt = started.startedAt;
         state.submitted = false;
+        state.status = 'ACTIVE';
         state.answers = {};
+        contestPaused = false;
         contestMode = isContestAttempt(started.test || state.testMeta);
+        remainingMs = Math.max(0, (started.endsAt || 0) - Date.now());
         (started.test.items || []).forEach((item) => {
           const sample = (item.testCases || []).find((tc) => tc.sample);
           state.answers[item.id] = {
@@ -541,7 +598,8 @@
         bindUnload(true);
         bindContestGuards(true);
         renderQuestion();
-        startTimer();
+        restoreContestInteractions();
+        startTimer(remainingMs);
         editor.focus();
       } catch (err) {
         toast(err?.message || 'Could not start test.', 'error');
@@ -549,7 +607,7 @@
     }
 
     async function runCurrent() {
-      if (running || !state?.attemptId || state.submitted) return;
+      if (running || !state?.attemptId || state.submitted || state.status !== 'ACTIVE') return;
       persistCurrent();
       const q = currentQ();
       const ans = state.answers[q.id];
@@ -590,7 +648,7 @@
     }
 
     function submitAnswer() {
-      if (submitting || running || !state?.attemptId || state.submitted) return;
+      if (submitting || running || !state?.attemptId || state.submitted || state.status !== 'ACTIVE') return;
       persistCurrent();
       const last = (state.test.items || []).length - 1;
       if (state.index < last) {
@@ -619,10 +677,13 @@
         if (!ok) return;
       }
       submitting = true;
+      state.status = 'SUBMITTED';
+      contestPaused = false;
       setBusy(true);
       if (el('btn-submit-test')) el('btn-submit-test').textContent = 'Submitting…';
       stopTimer();
       bindUnload(false);
+      hideLockOverlay();
       const timeTakenSeconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
       try {
         const result = await CodingService.submitAttempt(state.attemptId, { timeTakenSeconds });
@@ -636,11 +697,13 @@
         renderResult(result);
       } catch (err) {
         submitting = false;
+        state.status = 'ACTIVE';
         if (el('btn-submit-test')) el('btn-submit-test').textContent = 'Finish Test';
         toast(err?.message || 'Submit failed.', 'error');
         if (!auto) {
           bindUnload(true);
-          startTimer();
+          restoreContestInteractions();
+          startTimer(remainingMs);
           setBusy(false);
         }
         return;
@@ -737,6 +800,7 @@
         stopTimer();
         bindUnload(false);
         bindContestGuards(false);
+        hideLockOverlay();
         onExit(state?.lastResult);
       }
       if (action === 'done') {
@@ -744,10 +808,11 @@
         stopTimer();
         bindUnload(false);
         bindContestGuards(false);
+        hideLockOverlay();
         onExit(state?.lastResult);
       }
       if (action === 'prev') {
-        if (state.submitted) return;
+        if (state.submitted || state.status !== 'ACTIVE') return;
         persistCurrent();
         if (state.index > 0) {
           state.index -= 1;
@@ -755,16 +820,16 @@
         }
       }
       if (action === 'next') {
-        if (state.submitted) return;
+        if (state.submitted || state.status !== 'ACTIVE') return;
         persistCurrent();
         if (state.index < state.test.items.length - 1) {
           state.index += 1;
           renderQuestion();
         }
       }
-      if (action === 'run') runCurrent();
-      if (action === 'submit-answer') submitAnswer();
-      if (action === 'submit') submitExam(false);
+      if (action === 'run' && state.status === 'ACTIVE') runCurrent();
+      if (action === 'submit-answer' && state.status === 'ACTIVE') submitAnswer();
+      if (action === 'submit' && state.status !== 'SUBMITTED') submitExam(false);
     });
 
     return {
@@ -773,7 +838,10 @@
         submitting = false;
         running = false;
         contestMode = isContestAttempt(testMeta);
-        state = { testMeta, test: null, answers: {}, index: 0, attemptId: null, submitted: false };
+        contestPaused = false;
+        remainingMs = 0;
+        timerDeadline = 0;
+        state = { testMeta, test: null, answers: {}, index: 0, attemptId: null, submitted: false, status: 'NOT_STARTED' };
         renderInstructions(testMeta);
         root.classList.remove('d-none');
         bindContestGuards(false);
@@ -783,6 +851,7 @@
         stopTimer();
         bindUnload(false);
         bindContestGuards(false);
+        hideLockOverlay();
         root.classList.add('d-none');
       },
     };
