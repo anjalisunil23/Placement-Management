@@ -57,6 +57,19 @@ class CodingTestModel extends BaseModel
         return strtolower(trim($value)) === 'company' ? 'company' : 'regular';
     }
 
+    public static function normalizeQuestionSource(string $value): string
+    {
+        $raw = strtolower(trim($value));
+        if ($raw === 'random_jd') {
+            return 'random_jd';
+        }
+        if ($raw === 'random') {
+            return 'random';
+        }
+
+        return 'manual';
+    }
+
     public static function normalizeDifficulty(string $value): string
     {
         $raw = ucfirst(strtolower(trim($value)));
@@ -527,9 +540,22 @@ class CodingTestModel extends BaseModel
         $contestType = $testKind === 'company'
             ? 'none'
             : self::normalizeContestType((string) ($data['contestType'] ?? 'none'));
-        $source = strtolower(trim((string) ($data['questionSource'] ?? 'manual')));
-        if (!in_array($source, ['manual', 'random'], true)) {
-            $source = 'manual';
+        $source = self::normalizeQuestionSource((string) ($data['questionSource'] ?? 'manual'));
+        $jdFilterRules = [];
+        foreach ((array) ($data['jdFilterRules'] ?? []) as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $jdFilterRules[] = [
+                'jdSetId' => trim((string) ($rule['jdSetId'] ?? '')),
+                'jdTitle' => trim((string) ($rule['jdTitle'] ?? $rule['setTitle'] ?? '')),
+                'count' => max(0, (int) ($rule['count'] ?? 0)),
+                'marks' => max(1, (float) ($rule['marks'] ?? 2)),
+                'selectedQuestionIds' => array_values(array_filter(array_map(
+                    static fn ($id): string => trim((string) $id),
+                    (array) ($rule['selectedQuestionIds'] ?? $rule['selectedProblemIds'] ?? [])
+                ))),
+            ];
         }
         $payload = [
             'title' => trim((string) ($data['title'] ?? '')),
@@ -537,6 +563,7 @@ class CodingTestModel extends BaseModel
             'questionSource' => $source,
             'randomRules' => array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array')),
             'bankFilterRules' => array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array')),
+            'jdFilterRules' => in_array($source, ['manual', 'random_jd'], true) ? $jdFilterRules : [],
             'bankProblemIds' => array_values(array_filter(array_map(
                 static fn ($id) => trim((string) $id),
                 (array) ($data['bankProblemIds'] ?? [])
@@ -625,9 +652,10 @@ class CodingTestModel extends BaseModel
             'contestWindowBounds' => self::contestWindowBounds($test),
             'periodKey' => self::periodKey($test),
             'instructions' => array_values((array) ($test['instructions'] ?? [])),
-            'questionSource' => (string) ($test['questionSource'] ?? 'manual'),
+            'questionSource' => self::normalizeQuestionSource((string) ($test['questionSource'] ?? 'manual')),
             'randomRules' => array_values((array) ($test['randomRules'] ?? [])),
             'bankFilterRules' => array_values((array) ($test['bankFilterRules'] ?? [])),
+            'jdFilterRules' => array_values((array) ($test['jdFilterRules'] ?? [])),
             'questions' => count($items),
             'questionCount' => (int) ($test['questionCount'] ?? count($items)),
             'marks' => (float) ($test['marks'] ?? $test['totalMarks'] ?? 0),

@@ -89,7 +89,13 @@ final class CodingController
     public function generateAiBank(): void
     {
         $user = AuthMiddleware::authenticate();
-        Response::success($this->service()->generateAiBankProblems($user, $this->body()));
+        $body = $this->body();
+        $jdText = trim((string) ($body['jobDescription'] ?? $body['jobDescriptionText'] ?? ''));
+        if ($jdText !== '' || !empty($body['generationMode']) && (string) $body['generationMode'] === 'jd') {
+            Response::success($this->service()->generateAiCompanyBlockProblems($user, $body));
+            return;
+        }
+        Response::success($this->service()->generateAiBankProblems($user, $body));
     }
 
     public function saveAiBank(): void
@@ -232,6 +238,55 @@ final class CodingController
         $user = AuthMiddleware::authenticate();
         $this->service()->deleteCompanyBlockSet($user, $id);
         Response::success(null, 'Company problem set deleted.');
+    }
+
+    /** GET /api/coding/company-block/sets/{id}/document */
+    public function streamCompanyBlockDocument(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service()->streamCompanyBlockDocument($user, $id, false);
+    }
+
+    /** GET /api/coding/student/company-block/sets/{id}/document */
+    public function streamStudentCompanyBlockDocument(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service()->streamCompanyBlockDocument($user, $id, true);
+    }
+
+    /** POST /api/coding/ai/extract-jd */
+    public function extractAiJobDescription(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        if (!isset($_FILES['jd']) || !is_array($_FILES['jd'])) {
+            Response::error('No file uploaded.', 422);
+        }
+        Response::success(
+            $this->service()->extractAiJobDescription($user, $_FILES['jd']),
+            'Job description text extracted.'
+        );
+    }
+
+    /** POST /api/coding/ai/save-company-block */
+    public function saveAiCompanyBlockSet(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $problems = is_array($body['problems'] ?? null) ? $body['problems'] : (is_array($body['questions'] ?? null) ? $body['questions'] : []);
+        Response::success(
+            $this->service()->saveAiCompanyBlockSet(
+                $user,
+                $problems,
+                (string) ($body['setTitle'] ?? $body['jdTitle'] ?? ''),
+                (string) ($body['companyId'] ?? ''),
+                isset($body['companyName']) ? (string) $body['companyName'] : null,
+                isset($body['jdFilename']) ? (string) $body['jdFilename'] : null,
+                isset($body['jdFile']) ? (string) $body['jdFile'] : null,
+                isset($body['jdFileUrl']) ? (string) $body['jdFileUrl'] : null,
+                isset($body['jdMimeType']) ? (string) $body['jdMimeType'] : null
+            ),
+            'Company block problems saved.'
+        );
     }
 
     /** GET /api/coding/student/company-block */

@@ -94,6 +94,13 @@
   let aiLastFormParams = null;
   let manualBankAllProblems = [];
   let manualBankRuleCounter = 0;
+  let manualJdSetSummaries = [];
+  let manualJdRuleCounter = 0;
+  let randomJdRuleCounter = 0;
+  let aiGenerateContext = 'bank';
+  let aiJdUploadMeta = null;
+  const AI_JD_MAX_FILE_BYTES = 5 * 1024 * 1024;
+  const AI_JD_DEFAULT_INSTRUCTIONS = 'Generate stdin/stdout coding problems suitable for campus placement tests based on the job description. No LeetCode class templates or threading exercises unless the JD explicitly requires them.';
 
   function esc(s) {
     return CodingExam.esc(s);
@@ -409,6 +416,25 @@
       jdCompanies = res?.data?.companies || [];
     }
     return jdCompanies;
+  }
+
+  async function ensureJdSetSummariesLoaded() {
+    if (manualJdSetSummaries.length) return;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/coding/company-block').catch(() => null);
+      manualJdSetSummaries = (res?.data?.sets || []).map((s) => ({
+        ...s,
+        jdTitle: s.jdTitle || s.setTitle || '',
+        questionCount: Number(s.questionCount ?? s.problemCount ?? 0),
+      }));
+    }
+  }
+
+  function jdSetsForTestForm() {
+    const companyId = formIsCompanyTest() ? selectedCompanyFromTestForm().companyId : '';
+    const sets = manualJdSetSummaries || [];
+    if (!companyId) return sets;
+    return sets.filter((s) => String(s.companyId || '') === companyId);
   }
 
   async function getJdSetDetail(setId) {
@@ -776,6 +802,8 @@
   }
 
   function getQuestionSource() {
+    if (formIsContest()) return 'random';
+    if (formIsCompanyTest() && document.getElementById('tfSourceRandom')?.checked) return 'random_jd';
     if (document.getElementById('tfSourceRandom')?.checked) return 'random';
     return 'manual';
   }
@@ -803,9 +831,13 @@
 
   function getTestFormAllocatedTotal(source = getQuestionSource()) {
     if (source === 'random') return sumCategoryRuleCounts('tfRandomRules');
+    if (source === 'random_jd') return sumRandomJdRuleCounts();
     const useBank = !formIsCompanyTest() && document.getElementById('tfUseBankManual')?.checked;
+    const useJd = formIsCompanyTest() && source === 'manual';
     const bankTotal = useBank ? sumManualBankRuleCounts() : 0;
-    return bankTotal + collectInlineProblems().length;
+    const jdTotal = useJd ? sumManualJdQuestionCount() : 0;
+    const inlineCount = formIsCompanyTest() ? 0 : collectInlineProblems().length;
+    return bankTotal + jdTotal + inlineCount;
   }
 
   function collectCategoryRules(rootId) {
@@ -1086,30 +1118,428 @@
     }
   }
 
+  function inferJdRulesFromItems(items) {
+    const groups = new Map();
+    (items || []).filter((q) => q?.jdSetId).forEach((q) => {
+      const setId = String(q.jdSetId);
+      if (!groups.has(setId)) {
+        groups.set(setId, {
+          jdSetId: setId,
+          jdTitle: String(q.jdTitle || ''),
+          count: 0,
+          marks: Number(q.marks ?? 2) || 2,
+          selectedQuestionIds: [],
+        });
+      }
+      const g = groups.get(setId);
+      g.count += 1;
+      g.selectedQuestionIds.push(String(q.id || q.problemId || ''));
+    });
+    return [...groups.values()];
+  }
+
+  function manualJdRuleFromWrap(wrap) {
+    const setId = wrap.querySelector('[data-f="jdSetId"]')?.value || '';
+    const selected = manualJdSetSummaries.find((s) => String(s.id) === String(setId));
+    return {
+      jdSetId: setId,
+      jdTitle: selected?.jdTitle || selected?.setTitle || wrap.querySelector('[data-f="jdSetId"] option:checked')?.textContent?.trim() || '',
+      count: Math.max(1, Number(wrap.querySelector('[data-f="count"]')?.value || 1)),
+      marks: Math.max(1, Number(wrap.querySelector('[data-f="marks"]')?.value || 2)),
+    };
+  }
+
+  function randomJdRuleFromWrap(wrap) {
+    return manualJdRuleFromWrap(wrap);
+  }
+
+  function getManualJdIdsUsedExcept(excludeWrap) {
+    const used = new Set();
+    document.querySelectorAll('.tf-manual-jd-block').forEach((wrap) => {
+      if (wrap === excludeWrap) return;
+      wrap._manualJdState?.selectedIds?.forEach((id) => used.add(String(id)));
+    });
+    return used;
+  }
+
+  function bindManualJdPicker(wrap, pool, needed) {
+    const state = wrap._manualJdState;
+    wrap.querySelectorAll('[data-jd-pick]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = cb.getAttribute('data-jd-pick');
+        if (!id) return;
+        if (cb.checked) {
+          if (state.selectedIds.size >= needed) { cb.checked = false; return; }
+          state.selectedIds.add(String(id));
+        } else {
+          state.selectedIds.delete(String(id));
+          state.collapsed = false;
+        }
+        if (state.selectedIds.size === needed) {
+          state.editing = false;
+          state.collapsed = true;
+        }
+        refreshManualJdBlock(wrap);
+      });
+    });
+  }
+
+  function renderManualJdPicker(wrap, pool, criteria) {
+    const picker = wrap.querySelector('.manual-jd-picker');
+    if (!picker) return;
+    const state = wrap._manualJdState;
+    const needed = criteria.count;
+    const selected = state.selectedIds.size;
+    const atLimit = selected >= needed;
+    const usedElsewhere = getManualJdIdsUsedExcept(wrap);
+    if (!pool.length) {
+      picker.innerHTML = '<p class="small text-muted-2 mb-0">No problems in this JD set.</p>';
+      return;
+    }
+    picker.innerHTML = `
+      <div class="small fw-semibold mb-1">Select ${needed} problem${needed === 1 ? '' : 's'} from ${esc(criteria.jdTitle || 'JD')}</div>
+      <div class="small mb-2 ${selected === needed ? 'text-success fw-semibold' : ''}">Selected: ${selected} / ${needed}</div>
+      <div class="d-flex flex-column gap-2">${pool.map((q, i) => {
+        const id = String(q.id || '');
+        const checked = state.selectedIds.has(id);
+        const disabled = (atLimit && !checked) || (usedElsewhere.has(id) && !checked);
+        return `<label class="d-block border rounded-2 p-2 mb-0 bg-white ${disabled ? 'opacity-50' : ''}">
+          <div class="d-flex align-items-start gap-2">
+            <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
+            <div class="flex-grow-1 min-w-0">${renderProblemPickDetailHtml(q)}</div>
+          </div>
+        </label>`;
+      }).join('')}</div>`;
+    bindManualJdPicker(wrap, pool, needed);
+  }
+
+  function renderManualJdSummary(wrap, criteria) {
+    const summary = wrap.querySelector('.manual-jd-summary');
+    if (!summary) return;
+    summary.innerHTML = `
+      <div class="small text-success">
+        <div>✓ ${esc(criteria.jdTitle || 'JD set')}</div>
+        <div>✓ ${esc(criteria.count)} problem${criteria.count === 1 ? '' : 's'} selected</div>
+      </div>
+      <button type="button" class="btn btn-sm btn-link p-0 mt-1" data-edit-jd-pick>Edit selection</button>`;
+    summary.querySelector('[data-edit-jd-pick]')?.addEventListener('click', () => {
+      wrap._manualJdState.editing = true;
+      wrap._manualJdState.collapsed = false;
+      refreshManualJdBlock(wrap);
+    });
+  }
+
+  async function refreshManualJdBlock(wrap) {
+    if (!wrap?._manualJdState) return;
+    await ensureJdSetSummariesLoaded();
+    const state = wrap._manualJdState;
+    const criteria = manualJdRuleFromWrap(wrap);
+    const setId = criteria.jdSetId;
+    const errorEl = wrap.querySelector('.manual-jd-error');
+    const pickerEl = wrap.querySelector('.manual-jd-picker');
+    const summaryEl = wrap.querySelector('.manual-jd-summary');
+
+    if (state.criteriaKey && state.criteriaKey !== `${setId}|${criteria.count}`) {
+      state.selectedIds.clear();
+      state.collapsed = false;
+      state.editing = false;
+    }
+    state.criteriaKey = `${setId}|${criteria.count}`;
+
+    if (!setId) {
+      errorEl?.classList.remove('d-none');
+      if (errorEl) errorEl.textContent = 'Select a JD title.';
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.add('d-none');
+      updateManualJdSummary();
+      return;
+    }
+
+    const detail = await getJdSetDetail(setId);
+    const pool = detail?.problems || detail?.questions || [];
+    if (pool.length < criteria.count) {
+      errorEl?.classList.remove('d-none');
+      if (errorEl) {
+        errorEl.textContent = pool.length
+          ? `Only ${pool.length} problem(s) available in this JD set. Reduce the count.`
+          : 'This JD set has no problems.';
+      }
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.add('d-none');
+      state.collapsed = false;
+      updateManualJdSummary();
+      return;
+    }
+
+    errorEl?.classList.add('d-none');
+    const complete = state.selectedIds.size === criteria.count;
+    if (complete && !state.editing) state.collapsed = true;
+
+    if (state.collapsed && !state.editing) {
+      pickerEl?.classList.add('d-none');
+      summaryEl?.classList.remove('d-none');
+      renderManualJdSummary(wrap, criteria);
+    } else {
+      summaryEl?.classList.add('d-none');
+      pickerEl?.classList.remove('d-none');
+      renderManualJdPicker(wrap, pool, criteria);
+    }
+    updateManualJdSummary();
+  }
+
+  async function populateManualJdSelect(wrap, selectedId = '') {
+    await ensureJdSetSummariesLoaded();
+    const sel = wrap.querySelector('[data-f="jdSetId"]');
+    if (!sel) return;
+    const sets = jdSetsForTestForm();
+    const opts = sets.length
+      ? sets.map((s) => {
+        const count = Number(s.questionCount ?? s.problemCount ?? 0);
+        const label = formIsCompanyTest()
+          ? `${s.jdTitle || s.setTitle || 'Untitled'} (${count})`
+          : `${s.companyName ? `${s.companyName} · ` : ''}${s.jdTitle || s.setTitle || 'Untitled'} (${count})`;
+        return `<option value="${esc(String(s.id))}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${esc(label)}</option>`;
+      }).join('')
+      : `<option value="">${formIsCompanyTest() && !selectedCompanyFromTestForm().companyId ? 'Select a company first' : 'No JD sets available'}</option>`;
+    sel.innerHTML = opts;
+  }
+
+  async function refreshAllManualJdSelects() {
+    const blocks = [...document.querySelectorAll('.tf-manual-jd-block')];
+    await Promise.all(blocks.map(async (wrap) => {
+      const current = wrap.querySelector('[data-f="jdSetId"]')?.value || '';
+      await populateManualJdSelect(wrap, current);
+      await refreshManualJdBlock(wrap);
+    }));
+    updateManualJdSummary();
+  }
+
+  async function populateRandomJdSelect(wrap, selectedId = '') {
+    await ensureJdSetSummariesLoaded();
+    const sel = wrap.querySelector('[data-f="jdSetId"]');
+    if (!sel) return;
+    const sets = jdSetsForTestForm();
+    const opts = sets.length
+      ? sets.map((s) => {
+        const count = Number(s.questionCount ?? s.problemCount ?? 0);
+        const label = formIsCompanyTest()
+          ? `${s.jdTitle || s.setTitle || 'Untitled'} (${count})`
+          : `${s.companyName ? `${s.companyName} · ` : ''}${s.jdTitle || s.setTitle || 'Untitled'} (${count})`;
+        return `<option value="${esc(String(s.id))}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${esc(label)}</option>`;
+      }).join('')
+      : `<option value="">${formIsCompanyTest() && !selectedCompanyFromTestForm().companyId ? 'Select a company first' : 'No JD sets available'}</option>`;
+    sel.innerHTML = opts;
+  }
+
+  function addRandomJdRuleRow(rule = {}, opts = {}) {
+    randomJdRuleCounter += 1;
+    const root = document.getElementById('tfRandomJdRules');
+    if (!root) return;
+    const count = Math.max(1, Number(rule.count ?? 1));
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-random-jd-block border rounded-3 p-3 mb-2 bg-white';
+    wrap.innerHTML = `
+      <div class="row g-2 align-items-end">
+        <div class="col-md-6">
+          <label class="form-label small mb-1">JD title</label>
+          <select class="form-select form-select-sm" data-f="jdSetId"><option value="">Loading…</option></select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">No. of problems</label>
+          <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(count)}"/>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">Marks each</label>
+          <input class="form-control form-control-sm" type="number" min="1" data-f="marks" value="${esc(rule.marks ?? 2)}"/>
+        </div>
+        <div class="col-md-2">
+          <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-random-jd-block>Remove</button>
+        </div>
+      </div>`;
+    wrap.querySelector('[data-remove-random-jd-block]')?.addEventListener('click', () => {
+      wrap.remove();
+      updateRandomJdSummary();
+    });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', () => updateRandomJdSummary());
+      el.addEventListener('input', () => updateRandomJdSummary());
+    });
+    root.appendChild(wrap);
+    populateRandomJdSelect(wrap, rule.jdSetId || '').then(() => updateRandomJdSummary());
+  }
+
+  function collectRandomJdRules() {
+    return [...document.querySelectorAll('.tf-random-jd-block')].map((wrap) => randomJdRuleFromWrap(wrap));
+  }
+
+  function sumRandomJdRuleCounts() {
+    return collectRandomJdRules().reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+  }
+
+  function validateRandomJdRulesComplete() {
+    const blocks = [...document.querySelectorAll('.tf-random-jd-block')];
+    if (!blocks.length) return 'Add at least one JD random rule.';
+    for (const wrap of blocks) {
+      const c = randomJdRuleFromWrap(wrap);
+      if (!c.jdSetId) return 'Select a JD title for each random rule.';
+    }
+    return '';
+  }
+
+  function updateRandomJdSummary() {
+    const rules = collectRandomJdRules();
+    const allocated = rules.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    const summary = document.getElementById('tfRandomJdSummary');
+    if (summary) {
+      summary.textContent = `${formatProblemCountSummary(allocated)} · ${rules.length} JD rule${rules.length === 1 ? '' : 's'}`;
+    }
+  }
+
+  async function refreshAllRandomJdSelects() {
+    const blocks = [...document.querySelectorAll('.tf-random-jd-block')];
+    await Promise.all(blocks.map(async (wrap) => {
+      const current = wrap.querySelector('[data-f="jdSetId"]')?.value || '';
+      await populateRandomJdSelect(wrap, current);
+    }));
+    updateRandomJdSummary();
+  }
+
+  function addManualJdRuleRow(rule = {}, opts = {}) {
+    if (!formIsCompanyTest()) return;
+    manualJdRuleCounter += 1;
+    const root = document.getElementById('tfManualJdRules');
+    if (!root) return;
+    const selectedIds = (rule.selectedQuestionIds || rule.selectedProblemIds || []).map(String);
+    const count = Math.max(1, Number(rule.count ?? 1));
+    const wrap = document.createElement('div');
+    wrap.className = 'tf-manual-jd-block border rounded-3 p-3 mb-2 bg-white';
+    wrap.innerHTML = `
+      <div class="row g-2 align-items-end">
+        <div class="col-md-6">
+          <label class="form-label small mb-1">JD title</label>
+          <select class="form-select form-select-sm" data-f="jdSetId"><option value="">Loading…</option></select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">No. of problems</label>
+          <input class="form-control form-control-sm" type="number" min="1" data-f="count" value="${esc(count)}"/>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">Marks each</label>
+          <input class="form-control form-control-sm" type="number" min="1" data-f="marks" value="${esc(rule.marks ?? 2)}"/>
+        </div>
+        <div class="col-md-2">
+          <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-jd-block>Remove</button>
+        </div>
+      </div>
+      <div class="manual-jd-error small text-danger mt-2 d-none"></div>
+      <div class="manual-jd-picker mt-2"></div>
+      <div class="manual-jd-summary border rounded-2 p-2 mt-2 d-none"></div>`;
+    wrap._manualJdState = {
+      selectedIds: new Set(selectedIds),
+      collapsed: selectedIds.length >= count && selectedIds.length > 0,
+      editing: false,
+      criteriaKey: '',
+    };
+    wrap.querySelector('[data-remove-jd-block]')?.addEventListener('click', () => {
+      wrap.remove();
+      updateManualJdSummary();
+    });
+    wrap.querySelectorAll('[data-f]').forEach((el) => {
+      el.addEventListener('change', () => refreshManualJdBlock(wrap));
+      el.addEventListener('input', () => refreshManualJdBlock(wrap));
+    });
+    root.appendChild(wrap);
+    populateManualJdSelect(wrap, rule.jdSetId || '').then(() => refreshManualJdBlock(wrap));
+  }
+
+  function collectManualJdRules() {
+    return [...document.querySelectorAll('.tf-manual-jd-block')].map((wrap) => ({
+      ...manualJdRuleFromWrap(wrap),
+      selectedQuestionIds: [...(wrap._manualJdState?.selectedIds || [])],
+    }));
+  }
+
+  function validateManualJdRulesComplete() {
+    const blocks = [...document.querySelectorAll('.tf-manual-jd-block')];
+    if (!blocks.length) return 'Add at least one JD rule.';
+    for (const wrap of blocks) {
+      const c = manualJdRuleFromWrap(wrap);
+      const state = wrap._manualJdState;
+      if (!c.jdSetId) return 'Select a JD title for each JD rule.';
+      if (!state || state.selectedIds.size !== c.count) {
+        return `Select exactly ${c.count} problem(s) for ${c.jdTitle || 'the JD set'} (${state?.selectedIds.size || 0} selected).`;
+      }
+    }
+    return '';
+  }
+
+  function sumManualJdQuestionCount() {
+    const blocks = [...document.querySelectorAll('.tf-manual-jd-block')];
+    if (!blocks.length) return 0;
+    let selectedTotal = 0;
+    let hasSelection = false;
+    blocks.forEach((wrap) => {
+      const picked = wrap._manualJdState?.selectedIds?.size || 0;
+      if (picked > 0) {
+        hasSelection = true;
+        selectedTotal += picked;
+      }
+    });
+    if (hasSelection) return selectedTotal;
+    return blocks.reduce((sum, wrap) => sum + (Number(manualJdRuleFromWrap(wrap).count) || 0), 0);
+  }
+
+  function updateManualJdSummary() {
+    const rules = collectManualJdRules();
+    const complete = rules.filter((r, i) => {
+      const wrap = document.querySelectorAll('.tf-manual-jd-block')[i];
+      return wrap?._manualJdState?.selectedIds?.size === r.count;
+    }).length;
+    const allocated = getTestFormAllocatedTotal('manual');
+    const summary = document.getElementById('tfManualJdSummary');
+    if (summary) {
+      summary.textContent = `${formatProblemCountSummary(allocated)} · ${rules.length} JD set${rules.length === 1 ? '' : 's'} · ${complete}/${rules.length} complete`;
+    }
+  }
+
   function syncQuestionSourcePanels() {
     const contest = formIsContest();
-    const company = formIsCompanyTest();
-    document.getElementById('tfSourceGroup')?.classList.toggle('d-none', company);
+    document.getElementById('tfSourceGroup')?.classList.toggle('d-none', contest);
     document.getElementById('tfContestBankHint')?.classList.toggle('d-none', !contest);
     syncCompanyTestFormUi();
+    if (contest) {
+      document.getElementById('tfSourceRandom').checked = true;
+      document.getElementById('tfSourceManual').checked = false;
+    }
     const source = getQuestionSource();
-    document.getElementById('tfRandomPanel')?.classList.toggle('d-none', source !== 'random');
-    document.getElementById('tfManualPanel')?.classList.toggle('d-none', source === 'random');
+    const randomBank = source === 'random';
+    const randomJd = source === 'random_jd';
+    document.getElementById('tfRandomPanel')?.classList.toggle('d-none', !randomBank);
+    document.getElementById('tfRandomJdPanel')?.classList.toggle('d-none', !randomJd);
+    document.getElementById('tfManualPanel')?.classList.toggle('d-none', randomBank || randomJd);
     if (contest && source === 'manual') {
       const useBankEl = document.getElementById('tfUseBankManual');
       if (useBankEl) useBankEl.checked = true;
       document.getElementById('tfBankPicker')?.classList.remove('d-none');
       document.getElementById('tfManualProblemsSection')?.classList.add('d-none');
     } else {
-      document.getElementById('tfManualProblemsSection')?.classList.toggle('d-none', contest);
+      document.getElementById('tfManualProblemsSection')?.classList.toggle('d-none', contest || formIsCompanyTest());
     }
     updateTestFormQuestionCount();
   }
 
   function updateTestFormQuestionCount() {
     const source = getQuestionSource();
-    if (source === 'random') updateRandomSummary();
-    else updateManualBankSummary();
+    if (source === 'random_jd') {
+      updateRandomJdSummary();
+      return;
+    }
+    if (source === 'random') {
+      updateRandomSummary();
+      return;
+    }
+    updateManualBankSummary();
+    updateManualJdSummary();
   }
 
   function collectContestPayload() {
@@ -1141,21 +1571,28 @@
       ],
       testKind: formIsCompanyTest() ? 'company' : 'regular',
     };
-    if (source === 'random') {
+    if (source === 'random_jd') {
+      payload.jdFilterRules = collectRandomJdRules();
+      payload.randomRules = [];
+      payload.items = [];
+      payload.bankFilterRules = [];
+      payload.bankProblemIds = [];
+    } else if (source === 'random') {
       payload.randomRules = collectRandomRules();
       payload.items = [];
       payload.bankFilterRules = [];
       payload.bankProblemIds = [];
+      payload.jdFilterRules = [];
     } else {
       payload.randomRules = [];
       const useBank = !formIsCompanyTest() && document.getElementById('tfUseBankManual')?.checked;
+      const useJd = formIsCompanyTest() && source === 'manual';
       payload.bankFilterRules = useBank ? collectManualBankRules() : [];
       payload.bankProblemIds = useBank
         ? payload.bankFilterRules.flatMap((r) => r.selectedQuestionIds || [])
         : [];
-      payload.items = formIsCompanyTest()
-        ? collectInlineProblems()
-        : (formIsContest() ? [] : collectInlineProblems());
+      payload.jdFilterRules = useJd ? collectManualJdRules() : [];
+      payload.items = formIsCompanyTest() || formIsContest() ? [] : collectInlineProblems();
     }
     if (formIsCompanyTest()) {
       const { companyId, companyName } = selectedCompanyFromTestForm();
@@ -1171,8 +1608,24 @@
   function syncCompanyTestFormUi() {
     const company = formIsCompanyTest();
     document.getElementById('tfCompanyPanel')?.classList.toggle('d-none', !company);
+    document.getElementById('tfCompanyJdHint')?.classList.toggle('d-none', !company || getQuestionSource() !== 'manual');
+    document.getElementById('tfUseJdManualWrap')?.classList.add('d-none');
     document.getElementById('tfUseBankManual')?.closest('.form-check')?.classList.toggle('d-none', company);
-    document.getElementById('tfManualProblemsSection')?.classList.toggle('d-none', false);
+    document.getElementById('tfManualProblemsSection')?.classList.toggle('d-none', company);
+    const jdTitle = document.getElementById('tfJdPickerTitle');
+    if (jdTitle) {
+      jdTitle.textContent = company ? 'Pick JD-generated problems manually' : 'Pick problems by JD title';
+    }
+    const randomLabel = document.querySelector('label[for="tfSourceRandom"]');
+    if (randomLabel) {
+      randomLabel.textContent = company ? 'Random from JD' : 'Random from bank';
+    }
+    const showJdPicker = company && getQuestionSource() === 'manual';
+    document.getElementById('tfUseJdManual').checked = showJdPicker;
+    document.getElementById('tfJdPicker')?.classList.toggle('d-none', !showJdPicker);
+    if (!company) {
+      document.getElementById('tfUseJdManual').checked = false;
+    }
     if (company) document.getElementById('tfContestType').value = 'none';
   }
 
@@ -1249,6 +1702,9 @@
 
   async function loadStudentJdBlock() {
     if (!access.canTake) return;
+    if (!tests.length) {
+      tests = await CodingService.listTests().catch(() => []);
+    }
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
       const res = await api('/coding/student/company-block').catch(() => null);
       studentJdCompanyBlocks = (res?.data?.blocks || []).filter((b) => String(b.companyId || '').trim() !== '');
@@ -2546,15 +3002,38 @@
         ? (test.status === 'unpublished' ? 'unpublished' : 'published')
         : 'published';
 
-      let source = test?.questionSource === 'random' ? 'random' : 'manual';
-      if (isCompanyPreset) source = 'manual';
-      else if (isContestPreset && !test) source = 'random';
+      let source = test?.questionSource === 'random_jd'
+        ? 'random_jd'
+        : (test?.questionSource === 'random' ? 'random' : 'manual');
+      if (isContest) {
+        source = 'random';
+      } else if (isCompanyPreset && test?.questionSource !== 'random_jd') {
+        source = test?.questionSource === 'random' ? 'random' : 'manual';
+      } else if (isContestPreset && !test) {
+        source = 'random';
+      }
       document.getElementById('tfSourceManual').checked = source === 'manual';
-      document.getElementById('tfSourceRandom').checked = source === 'random';
+      document.getElementById('tfSourceRandom').checked = source === 'random' || source === 'random_jd';
 
       document.getElementById('tfRandomRules').innerHTML = '';
+      document.getElementById('tfRandomJdRules').innerHTML = '';
+      randomJdRuleCounter = 0;
       const rules = test?.randomRules?.length ? test.randomRules : [];
       if (source === 'random' && rules.length) rules.forEach((r) => addRandomRuleRow(r, { loading: true }));
+      let jdRules = test?.jdFilterRules?.length ? test.jdFilterRules : [];
+      if (!jdRules.length && source === 'manual' && (test?.items || []).some((q) => q.jdSetId)) {
+        jdRules = inferJdRulesFromItems(test?.items || []);
+      }
+      if (isCompanyPreset && source === 'random_jd') {
+        fillTfCompanySelect(test?.companyId || preset?.companyId || '').then(() => {
+          ensureJdSetSummariesLoaded().then(() => {
+            jdRules.forEach((r) => addRandomJdRuleRow(r, { loading: true }));
+            updateRandomJdSummary();
+          }).catch(() => {
+            jdRules.forEach((r) => addRandomJdRuleRow(r, { loading: true }));
+          });
+        });
+      }
 
       document.getElementById('tfManualBankRules').innerHTML = '';
       manualBankRuleCounter = 0;
@@ -2582,10 +3061,29 @@
       document.getElementById('tfContestStartTime').value = test?.contestStartTime || preset?.contestStartTime || DEFAULT_CONTEST_START_TIME;
       document.getElementById('tfContestEndTime').value = test?.contestEndTime || preset?.contestEndTime || '18:00';
 
+      document.getElementById('tfManualJdRules').innerHTML = '';
+      manualJdRuleCounter = 0;
+      manualJdSetSummaries = [];
+      const useJd = isCompanyPreset && source === 'manual';
+      document.getElementById('tfUseJdManual').checked = useJd;
+      document.getElementById('tfJdPicker')?.classList.toggle('d-none', !useJd);
+      if (useJd) {
+        fillTfCompanySelect(test?.companyId || preset?.companyId || '').then(() => {
+          ensureJdSetSummariesLoaded().then(() => {
+            document.getElementById('tfManualJdRules').innerHTML = '';
+            manualJdRuleCounter = 0;
+            jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
+            updateManualJdSummary();
+          }).catch(() => {
+            jdRules.forEach((r) => addManualJdRuleRow(r, { loading: true }));
+          });
+        });
+      }
+
       const list = document.getElementById('problemList');
       if (list) list.innerHTML = '';
-      const inlineItems = source === 'manual'
-        ? (test?.items || []).filter((q) => !q.bankId)
+      const inlineItems = source === 'manual' && !isCompanyPreset
+        ? (test?.items || []).filter((q) => !q.bankId && !q.jdSetId)
         : [];
       if (inlineItems.length) inlineItems.forEach((q) => addProblemToForm(q));
 
@@ -2593,7 +3091,7 @@
       updateTestFormQuestionCount();
       modal.show();
 
-      if (isCompanyPreset || isCompanyTest(test)) {
+      if ((isCompanyPreset || isCompanyTest(test)) && source !== 'random_jd' && !useJd) {
         fillTfCompanySelect(test?.companyId || preset?.companyId || '').catch(() => {});
       }
     } catch (err) {
@@ -3573,6 +4071,218 @@
     renderDirectoryTable(data?.rows || [], summary, scope);
   }
 
+  function getCodAiSourceMode() {
+    return aiGenerateContext === 'jd' ? 'jd' : 'category';
+  }
+
+  function todayIsoDate() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function formatJdTitleDate(dateValue) {
+    const raw = String(dateValue || '').trim();
+    if (!raw) return '';
+    const d = new Date(`${raw}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function getJdTitleFormState() {
+    const base = (document.getElementById('codAiJdTitle')?.value || '').trim();
+    const addDate = document.getElementById('codAiJdTitleAddDate')?.checked === true;
+    const dateValue = document.getElementById('codAiJdTitleDate')?.value || todayIsoDate();
+    const jdTitle = addDate && base ? `${base} (${formatJdTitleDate(dateValue)})` : base;
+    return { jdTitleBase: base, jdTitleAddDate: addDate, jdTitleDate: dateValue, jdTitle };
+  }
+
+  function updateCodJdTitleDateUi() {
+    const addDate = document.getElementById('codAiJdTitleAddDate')?.checked === true;
+    document.getElementById('codAiJdTitleDateWrap')?.classList.toggle('d-none', !addDate);
+    const preview = document.getElementById('codAiJdTitlePreview');
+    const state = getJdTitleFormState();
+    if (preview) {
+      if (state.jdTitleAddDate && state.jdTitleBase) {
+        preview.textContent = `Saved as: ${state.jdTitle}`;
+        preview.classList.remove('d-none');
+      } else {
+        preview.classList.add('d-none');
+      }
+    }
+  }
+
+  function resetCodJdTitleDateOptions() {
+    const addDateEl = document.getElementById('codAiJdTitleAddDate');
+    const dateEl = document.getElementById('codAiJdTitleDate');
+    if (addDateEl) addDateEl.checked = false;
+    if (dateEl) dateEl.value = todayIsoDate();
+    updateCodJdTitleDateUi();
+  }
+
+  async function fillCodAiJdCompanySelect(selectedId = '') {
+    await ensureJdCompaniesLoaded().catch(() => {});
+    const sel = document.getElementById('codAiJdCompany');
+    if (!sel) return;
+    const pick = String(selectedId || '');
+    sel.innerHTML = `<option value="">Select company…</option>${jdCompanies.map((c) => {
+      const id = String(c.id || '');
+      return `<option value="${esc(id)}"${id === pick ? ' selected' : ''}>${esc(c.name || 'Company')}</option>`;
+    }).join('')}`;
+  }
+
+  function selectedJdCompanyFromForm() {
+    const sel = document.getElementById('codAiJdCompany');
+    const companyId = String(sel?.value || '').trim();
+    const companyName = String(sel?.selectedOptions?.[0]?.textContent || '').trim();
+    return { companyId, companyName: companyName === 'Select company…' ? '' : companyName };
+  }
+
+  function getJdPastedText() {
+    return (document.getElementById('codAiJdText')?.value || '').trim();
+  }
+
+  function getJdUploadedText() {
+    return (aiJdUploadMeta?.text || '').trim();
+  }
+
+  function resolveJdTextForGeneration() {
+    const pasted = getJdPastedText();
+    if (pasted) return pasted;
+    return getJdUploadedText();
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Could not read file.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function showCodAiJdFileUi(filename) {
+    document.getElementById('codAiJdDropzoneIdle')?.classList.toggle('d-none', !!filename);
+    document.getElementById('codAiJdDropzoneFile')?.classList.toggle('d-none', !filename);
+    const nameEl = document.getElementById('codAiJdFilename');
+    if (nameEl) nameEl.textContent = filename || '';
+    document.getElementById('codAiJdDropzone')?.classList.toggle('has-file', !!filename);
+  }
+
+  function clearCodAiJdUpload() {
+    aiJdUploadMeta = null;
+    const input = document.getElementById('codAiJdFileInput');
+    if (input) input.value = '';
+    showCodAiJdFileUi('');
+  }
+
+  async function extractCodAiJdFile(file) {
+    if (!file) return;
+    const ext = (file.name || '').split('.').pop()?.toLowerCase() || '';
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+    if (!allowed.includes(ext)) {
+      toastMsg('Supported formats: PDF, JPG, JPEG, PNG.', 'error');
+      return;
+    }
+    if (file.size > AI_JD_MAX_FILE_BYTES) {
+      toastMsg('File must be 5 MB or smaller.', 'error');
+      return;
+    }
+    const status = document.getElementById('codAiJdExtractStatus');
+    status?.classList.remove('d-none');
+    try {
+      const fd = new FormData();
+      fd.append('jd', file);
+      const res = await api('/coding/ai/extract-jd', { method: 'POST', body: fd });
+      if (!res?.success) throw new Error(res?.message || 'Could not extract text from file.');
+      const text = (res.data?.text || '').trim();
+      if (!text) {
+        throw new Error('Unable to extract text from this file. Please upload a clearer PDF/image or paste the JD text manually.');
+      }
+      aiJdUploadMeta = {
+        filename: res.data?.filename || file.name,
+        method: res.data?.method || ext,
+        text,
+        jdFile: res.data?.jdFile || '',
+        jdFileUrl: res.data?.jdFileUrl || '',
+        jdMimeType: res.data?.jdMimeType || '',
+      };
+      showCodAiJdFileUi(aiJdUploadMeta.filename);
+      toastMsg('File ready for generation.', 'success');
+    } catch (err) {
+      toastMsg(err?.message || 'Unable to extract text from this file.', 'error');
+      clearCodAiJdUpload();
+    } finally {
+      status?.classList.add('d-none');
+    }
+  }
+
+  function bindCodAiJdDropzone() {
+    const dropzone = document.getElementById('codAiJdDropzone');
+    const input = document.getElementById('codAiJdFileInput');
+    if (!dropzone || !input || dropzone.dataset.bound === '1') return;
+    dropzone.dataset.bound = '1';
+    dropzone.addEventListener('click', () => input.click());
+    dropzone.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        input.click();
+      }
+    });
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) extractCodAiJdFile(file);
+    });
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (file) extractCodAiJdFile(file);
+    });
+    document.getElementById('btnCodAiJdRemove')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearCodAiJdUpload();
+    });
+  }
+
+  function updateCodAiModalTitle() {
+    const el = document.getElementById('codAiModalTitle');
+    const preview = document.getElementById('codAiPreviewPanel');
+    if (!el || !preview?.classList.contains('d-none')) return;
+    el.textContent = getCodAiSourceMode() === 'jd' ? 'AI Generate — Company Block' : 'AI Generate Problems';
+  }
+
+  function updateCodAiSourceModeUI() {
+    const jd = getCodAiSourceMode() === 'jd';
+    document.getElementById('codAiCategoryPanel')?.classList.toggle('d-none', jd);
+    document.getElementById('codAiJdPanel')?.classList.toggle('d-none', !jd);
+    updateCodAiModalTitle();
+    const hint = document.getElementById('codAiStatusHint');
+    if (hint) {
+      hint.textContent = jd
+        ? 'Generate JD-based coding problems with OpenAI. Review before saving to the Company Block — nothing is published automatically.'
+        : 'Generate coding problems with OpenAI, then review and save them to the problem bank.';
+    }
+    const instr = document.getElementById('codAiInstructions');
+    if (!instr) return;
+    if (jd) {
+      if (!instr.dataset.userEdited || instr.value === 'Stdin/stdout problems only — no LeetCode class or threading templates.') {
+        instr.value = AI_JD_DEFAULT_INSTRUCTIONS;
+        delete instr.dataset.userEdited;
+      }
+      instr.placeholder = AI_JD_DEFAULT_INSTRUCTIONS;
+    } else if (!instr.dataset.userEdited) {
+      instr.placeholder = 'Stdin/stdout problems only — no LeetCode class or threading templates.';
+    }
+  }
+
+  function updateCodAiSaveButtonLabel() {
+    const btn = document.getElementById('btnCodAiSave');
+    if (!btn) return;
+    const isJd = getCodAiSourceMode() === 'jd' || aiLastFormParams?.generationMode === 'jd';
+    btn.textContent = isJd ? 'Save to Company Block' : 'Save selected';
+  }
+
   const COD_AI_GEN_MAX_TOTAL = 30;
 
   const COD_AI_GEN_ROW_DEFAULTS = [
@@ -3583,6 +4293,16 @@
   function showCodAiForm() {
     document.getElementById('codAiFormPanel')?.classList.remove('d-none');
     document.getElementById('codAiPreviewPanel')?.classList.add('d-none');
+    updateCodAiModalTitle();
+    updateCodAiSaveButtonLabel();
+  }
+
+  function showCodAiPreviewPanel() {
+    document.getElementById('codAiFormPanel')?.classList.add('d-none');
+    document.getElementById('codAiPreviewPanel')?.classList.remove('d-none');
+    const title = document.getElementById('codAiModalTitle');
+    if (title) title.textContent = 'Review generated problems';
+    updateCodAiSaveButtonLabel();
   }
 
   function updateCodAiGenTotal() {
@@ -3686,9 +4406,25 @@
     sel.innerHTML = html;
   }
 
-  function openCodAiModal(opts = {}) {
+  async function openCodAiModal(opts = {}) {
+    aiGenerateContext = opts.jd === true ? 'jd' : 'bank';
+    document.getElementById('codAiJdText').value = '';
+    document.getElementById('codAiJdTitle').value = '';
+    resetCodJdTitleDateOptions();
+    clearCodAiJdUpload();
     fillCodAiCategorySelect('Algorithms');
     initCodAiGenRows();
+    if (aiGenerateContext === 'jd') {
+      await ensureJdCompaniesLoaded().catch(() => {});
+      fillCodAiJdCompanySelect(opts.companyId || '');
+    }
+    const instr = document.getElementById('codAiInstructions');
+    if (instr) {
+      instr.value = aiGenerateContext === 'jd' ? AI_JD_DEFAULT_INSTRUCTIONS : '';
+      delete instr.dataset.userEdited;
+    }
+    updateCodAiSourceModeUI();
+    bindCodAiJdDropzone();
     aiLastFormParams = { companyId: opts.companyId || '' };
     showCodAiForm();
     document.getElementById('codAiPreviewList').innerHTML = '';
@@ -3698,15 +4434,42 @@
   }
 
   function collectCodAiParams() {
+    const mode = getCodAiSourceMode();
     const batches = collectCodAiGenRows();
     const first = batches[0] || { difficulty: 'Medium', count: 3 };
-    return {
-      category: (document.getElementById('codAiCategory')?.value || '').trim(),
-      topic: (document.getElementById('codAiTopic')?.value || '').trim(),
+    const base = {
+      generationMode: mode,
       batches,
       difficulty: first.difficulty,
       count: batches.reduce((sum, row) => sum + row.count, 0),
       instructions: document.getElementById('codAiInstructions')?.value || '',
+    };
+    if (mode === 'jd') {
+      const jobDescriptionPasted = getJdPastedText();
+      const jobDescriptionUploaded = getJdUploadedText();
+      const titleState = getJdTitleFormState();
+      return {
+        ...base,
+        jdTitle: titleState.jdTitle,
+        jdTitleBase: titleState.jdTitleBase,
+        jdTitleAddDate: titleState.jdTitleAddDate,
+        jdTitleDate: titleState.jdTitleDate,
+        ...selectedJdCompanyFromForm(),
+        jobDescription: jobDescriptionPasted || jobDescriptionUploaded,
+        jobDescriptionPasted,
+        jobDescriptionUploaded,
+        jdUploadFilename: aiJdUploadMeta?.filename || '',
+        jdFile: aiJdUploadMeta?.jdFile || '',
+        jdFileUrl: aiJdUploadMeta?.jdFileUrl || '',
+        jdMimeType: aiJdUploadMeta?.jdMimeType || '',
+        category: 'Algorithms',
+        topic: 'Job Description',
+      };
+    }
+    return {
+      ...base,
+      category: (document.getElementById('codAiCategory')?.value || '').trim(),
+      topic: (document.getElementById('codAiTopic')?.value || '').trim(),
     };
   }
 
@@ -3739,13 +4502,35 @@
       return;
     }
     const params = collectCodAiParams();
-    if (!params.category) {
-      toastMsg('Select a category.', 'error');
-      return;
-    }
-    if (!params.topic) {
-      toastMsg('Select a topic.', 'error');
-      return;
+    if (params.generationMode === 'jd') {
+      const { companyId } = selectedJdCompanyFromForm();
+      const titleState = getJdTitleFormState();
+      params.companyId = companyId;
+      params.companyName = selectedJdCompanyFromForm().companyName;
+      params.jdTitle = titleState.jdTitle;
+      if (!companyId) {
+        toastMsg('Select a company.', 'error');
+        return;
+      }
+      if (!titleState.jdTitleBase) {
+        toastMsg('Enter a title.', 'error');
+        return;
+      }
+      const jdText = resolveJdTextForGeneration();
+      params.jobDescription = jdText;
+      if (jdText.length < 40) {
+        toastMsg('Paste a job description or upload a PDF/image (at least 40 characters required).', 'error');
+        return;
+      }
+    } else {
+      if (!params.category) {
+        toastMsg('Select a category.', 'error');
+        return;
+      }
+      if (!params.topic) {
+        toastMsg('Select a topic.', 'error');
+        return;
+      }
     }
     if (!params.batches?.length) {
       toastMsg('Add at least one generation row with a problem count.', 'error');
@@ -3775,8 +4560,7 @@
       } else if (requested > 0 && received < requested) {
         toastMsg(`Generated ${received} of ${requested} requested problems.`, 'info');
       }
-      document.getElementById('codAiFormPanel')?.classList.add('d-none');
-      document.getElementById('codAiPreviewPanel')?.classList.remove('d-none');
+      showCodAiPreviewPanel();
       renderCodAiPreview();
     } catch (err) {
       toastMsg(err?.message || 'AI generation failed.', 'error');
@@ -3792,17 +4576,52 @@
       toastMsg('Select at least one problem to save.', 'error');
       return;
     }
+    const isJd = aiLastFormParams?.generationMode === 'jd';
+    const titleState = isJd ? getJdTitleFormState() : null;
+    const companyId = selectedJdCompanyFromForm().companyId || aiLastFormParams?.companyId || '';
+    const companyName = selectedJdCompanyFromForm().companyName || aiLastFormParams?.companyName || '';
+    if (isJd && !companyId) {
+      toastMsg('Select a company before saving.', 'error');
+      return;
+    }
+    if (isJd && !(titleState?.jdTitleBase || aiLastFormParams?.jdTitleBase || aiLastFormParams?.jdTitle)) {
+      toastMsg('Enter a title before saving.', 'error');
+      return;
+    }
     const status = document.getElementById('codAiSaveStatus');
     const btn = document.getElementById('btnCodAiSave');
     status?.classList.remove('d-none');
     btn?.setAttribute('disabled', 'disabled');
     try {
-      const data = await CodingService.saveAiProblems(selected);
-      toastMsg(`Saved ${data?.added ?? selected.length} problem(s) to the bank.`, 'success');
+      if (isJd) {
+        const res = await api('/coding/ai/save-company-block', {
+          method: 'POST',
+          body: JSON.stringify({
+            problems: selected,
+            setTitle: titleState?.jdTitle || aiLastFormParams?.jdTitle || '',
+            jdTitle: titleState?.jdTitle || aiLastFormParams?.jdTitle || '',
+            companyId,
+            companyName,
+            jdFilename: aiLastFormParams?.jdUploadFilename || aiJdUploadMeta?.filename || '',
+            jdFile: aiJdUploadMeta?.jdFile || aiLastFormParams?.jdFile || '',
+            jdFileUrl: aiJdUploadMeta?.jdFileUrl || aiLastFormParams?.jdFileUrl || '',
+            jdMimeType: aiJdUploadMeta?.jdMimeType || aiLastFormParams?.jdMimeType || '',
+          }),
+        });
+        if (!res?.success) throw new Error(res?.message || 'Could not save company block problems.');
+        toastMsg(`Saved ${res.data?.problemCount ?? selected.length} problem(s) to Company Block.`, 'success');
+        delete jdSetDetailsCache[String(res.data?.id || '')];
+        manualJdSetSummaries = [];
+        await loadJdLibrary();
+        applyManagePanel('jd');
+      } else {
+        const data = await CodingService.saveAiProblems(selected);
+        toastMsg(`Saved ${data?.added ?? selected.length} problem(s) to the bank.`, 'success');
+        bank = await CodingService.listBank();
+        applyManagePanel('bank');
+        renderBank();
+      }
       codAiModal?.hide();
-      bank = await CodingService.listBank();
-      applyManagePanel('bank');
-      renderBank();
     } catch (err) {
       toastMsg(err?.message || 'Could not save AI problems.', 'error');
     } finally {
@@ -3905,7 +4724,7 @@
     document.getElementById('btnJdBlockBack')?.addEventListener('click', () => showJdCompanyGrid());
     document.getElementById('btnJdAiGenerate')?.addEventListener('click', () => {
       const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
-      openCodAiModal({ companyId });
+      openCodAiModal({ jd: true, companyId }).catch(() => {});
     });
     document.getElementById('btnNewWeeklyContest')?.addEventListener('click', () => {
       openManageContests('weekly');
@@ -3935,7 +4754,29 @@
       el.addEventListener('change', syncQuestionSourcePanels);
     });
     document.getElementById('btnAddRandomRule')?.addEventListener('click', () => addRandomRuleRow());
+    document.getElementById('btnAddRandomJdRule')?.addEventListener('click', () => addRandomJdRuleRow());
     document.getElementById('btnAddManualBankRule')?.addEventListener('click', () => addManualBankRuleRow());
+    document.getElementById('btnAddManualJdRule')?.addEventListener('click', () => addManualJdRuleRow());
+    document.getElementById('tfUseJdManual')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      document.getElementById('tfJdPicker')?.classList.toggle('d-none', !on);
+      if (on) {
+        ensureJdSetSummariesLoaded().then(() => updateManualJdSummary()).catch(() => updateManualJdSummary());
+      } else {
+        updateManualJdSummary();
+      }
+    });
+    document.getElementById('tfCompanyId')?.addEventListener('change', () => {
+      manualJdSetSummaries = [];
+      refreshAllManualJdSelects().catch(() => {});
+      refreshAllRandomJdSelects().catch(() => {});
+    });
+    document.getElementById('codAiJdTitleAddDate')?.addEventListener('change', updateCodJdTitleDateUi);
+    document.getElementById('codAiJdTitleDate')?.addEventListener('change', updateCodJdTitleDateUi);
+    document.getElementById('codAiJdTitle')?.addEventListener('input', updateCodJdTitleDateUi);
+    document.getElementById('codAiInstructions')?.addEventListener('input', (e) => {
+      if (e.target.value.trim()) e.target.dataset.userEdited = '1';
+    });
     document.getElementById('tfUseBankManual')?.addEventListener('change', (e) => {
       const on = e.target.checked;
       document.getElementById('tfBankPicker')?.classList.toggle('d-none', !on);
@@ -3964,7 +4805,29 @@
         toastMsg('Select a company for this test.', 'error');
         return;
       }
-      if (payload.questionSource === 'random') {
+      if (payload.questionSource === 'random_jd') {
+        if (!payload.jdFilterRules?.length) {
+          toastMsg('Add at least one JD random rule.', 'error');
+          return;
+        }
+        if (isCompany && !selectedCompanyFromTestForm().companyId) {
+          toastMsg('Select a company.', 'error');
+          return;
+        }
+        await ensureJdSetSummariesLoaded();
+        const jdRandomErr = validateRandomJdRulesComplete();
+        if (jdRandomErr) {
+          toastMsg(jdRandomErr, 'error');
+          return;
+        }
+        payload.jdFilterRules = collectRandomJdRules();
+        const ruleTotal = payload.jdFilterRules.reduce((s, r) => s + (Number(r.count) || 0), 0);
+        if (ruleTotal < 1) {
+          toastMsg('Each JD rule must include at least one problem.', 'error');
+          return;
+        }
+        payload.questionCount = ruleTotal;
+      } else if (payload.questionSource === 'random') {
         if (!payload.randomRules?.length) {
           toastMsg('Add at least one topic rule.', 'error');
           return;
@@ -3976,7 +4839,8 @@
         }
       } else {
         const useBank = !isCompany && document.getElementById('tfUseBankManual')?.checked;
-        const inlineCount = collectInlineProblems().length;
+        const useJd = isCompany && getQuestionSource() === 'manual';
+        const inlineCount = isCompany ? 0 : collectInlineProblems().length;
         if (useBank) {
           await ensureManualBankProblemsLoaded();
           const bankErr = validateManualBankRulesComplete();
@@ -3985,8 +4849,17 @@
             return;
           }
         }
-        if (isCompany && !inlineCount) {
-          toastMsg('Add at least one problem to the company test.', 'error');
+        if (useJd) {
+          await ensureJdSetSummariesLoaded();
+          const jdErr = validateManualJdRulesComplete();
+          if (jdErr) {
+            toastMsg(jdErr, 'error');
+            return;
+          }
+          payload.jdFilterRules = collectManualJdRules();
+        }
+        if (isCompany && !useJd) {
+          toastMsg('Add at least one JD problem rule from the Company Block.', 'error');
           return;
         }
         if (formIsContest() && !useBank) {

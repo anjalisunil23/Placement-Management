@@ -185,7 +185,10 @@ final class CodingService
         if ($title === '') {
             Response::error('Enter a test title.', 422);
         }
-        $data = $this->requireContestBankSource($data);
+        $data = $this->validateCompanyTestFields($data);
+        if (!CodingTestModel::isCompanyTest($data)) {
+            $data = $this->requireContestBankSource($data);
+        }
         $data = $this->resolveTestItems($data);
         $id = $this->tests->saveNew($data);
         $doc = $this->tests->findById($id);
@@ -213,8 +216,13 @@ final class CodingService
             $data['contestMonthDay'] = $existing['contestMonthDay'] ?? 1;
         }
         $merged = array_merge($existing, $data);
-        if (CodingTestModel::normalizeContestType((string) ($merged['contestType'] ?? 'none')) !== 'none') {
+        $merged = $this->validateCompanyTestFields($merged);
+        if (CodingTestModel::isCompanyTest($merged)) {
+            $data = $merged;
+        } elseif (CodingTestModel::normalizeContestType((string) ($merged['contestType'] ?? 'none')) !== 'none') {
             $data = $this->requireContestBankSource($merged);
+        } else {
+            $data = $merged;
         }
         $data = $this->resolveTestItems(array_merge($existing, $data));
         $this->tests->saveExisting($id, $data);
@@ -296,6 +304,145 @@ final class CodingService
             error_log('[PMS coding AI] save failed: ' . $e->getMessage());
             Response::error('Could not save AI problems. Please try again.', 500);
             return [];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function generateAiCompanyBlockProblems(array $user, array $body): array
+    {
+        AptitudeAccessService::requireCodingManager($user);
+        try {
+            return (new CodingAiProblemService())->generateFromJdForUser($body);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 503);
+        } catch (\Throwable $e) {
+            error_log('[PMS coding AI] JD generate failed: ' . $e->getMessage());
+            Response::error('AI generation is temporarily unavailable. Please try again.', 503);
+            return [];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $file
+     * @return array<string, mixed>
+     */
+    public function extractAiJobDescription(array $user, array $file): array
+    {
+        AptitudeAccessService::requireCodingManager($user);
+        try {
+            return (new JdTextExtractionService())->extractFromUpload($file);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            error_log('[PMS coding AI] JD extract failed: ' . $e->getMessage());
+            Response::error(
+                'Unable to extract text from this file. Please upload a clearer PDF/image or paste the JD text manually.',
+                422
+            );
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<int, array<string, mixed>> $problems
+     * @return array<string, mixed>
+     */
+    public function saveAiCompanyBlockSet(
+        array $user,
+        array $problems,
+        string $setTitle,
+        string $companyId,
+        ?string $companyName = null,
+        ?string $jdFilename = null,
+        ?string $jdFile = null,
+        ?string $jdFileUrl = null,
+        ?string $jdMimeType = null
+    ): array {
+        AptitudeAccessService::requireCodingManager($user);
+        if ($problems === []) {
+            Response::error('No problems selected to save.', 422);
+        }
+        try {
+            return (new CodingAiProblemService())->saveCompanyBlockSetForUser(
+                $user,
+                $problems,
+                $setTitle,
+                $companyId,
+                $companyName,
+                $jdFilename,
+                $jdFile,
+                $jdFileUrl,
+                $jdMimeType
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            error_log('[PMS coding AI] company block save failed: ' . $e->getMessage());
+            Response::error('Could not save company block problems. Please try again.', 500);
+            return [];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function streamCompanyBlockDocument(array $user, string $id, bool $student = false): void
+    {
+        if ($student) {
+            if (!AptitudeAccessService::canTake($user)) {
+                Response::forbidden('Students only.');
+            }
+        } else {
+            AptitudeAccessService::requireCodingManager($user);
+        }
+        $this->streamCompanyBlockDocumentForUser($id, $student);
+    }
+
+    private function streamCompanyBlockDocumentForUser(string $id, bool $student = false): void
+    {
+        if (!Security::isValidId($id)) {
+            Response::notFound('Company problem set not found.');
+        }
+        $model = new CodingCompanyProblemSetModel();
+        $set = $model->findById($id);
+        if ($set === null) {
+            Response::notFound('Company problem set not found.');
+        }
+        if ($student && trim((string) ($set['companyId'] ?? '')) === '') {
+            Response::notFound('Company problem set not found.');
+        }
+
+        $fileUri = trim((string) ($set['jdFile'] ?? ''));
+        if ($fileUri === '') {
+            Response::notFound('No document uploaded for this set.');
+        }
+
+        $filename = trim((string) ($set['jdFilename'] ?? ''));
+        if ($filename === '') {
+            $filename = 'jd-document.pdf';
+        }
+
+        $mime = trim((string) ($set['jdMimeType'] ?? ''));
+        $storage = new ObjectStorageService();
+        if ($mime === '') {
+            $mime = $storage->guessMime($filename);
+        }
+
+        try {
+            $storage->streamWithFallback($fileUri, $filename, $mime, true, ObjectStorageService::FOLDER_JD);
+        } catch (\Throwable) {
+            Response::notFound('Document not found.');
         }
     }
 
@@ -1528,7 +1675,7 @@ final class CodingService
             Response::notFound('Company problem set not found.');
         }
 
-        return $model->publicDetail($set);
+        return $student ? $model->studentPublicDetail($set) : $model->publicDetail($set, false);
     }
 
     /**
@@ -1976,13 +2123,77 @@ final class CodingService
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
-    private function resolveTestItems(array $data): array
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function validateCompanyTestFields(array $data): array
     {
-        $source = strtolower(trim((string) ($data['questionSource'] ?? 'manual')));
-        if (!in_array($source, ['manual', 'random'], true)) {
+        if (!CodingTestModel::isCompanyTest($data)) {
+            return $data;
+        }
+        $companyId = trim((string) ($data['companyId'] ?? ''));
+        if ($companyId === '' || !Security::isValidId($companyId)) {
+            Response::error('Select a company for this company test.', 422);
+        }
+        $jdRules = array_values(array_filter((array) ($data['jdFilterRules'] ?? []), 'is_array'));
+        if ($jdRules === []) {
+            Response::error('Company tests must include at least one company block problem rule.', 422);
+        }
+        $model = new CodingCompanyProblemSetModel();
+        foreach ($jdRules as $rule) {
+            $setId = trim((string) ($rule['jdSetId'] ?? ''));
+            if ($setId === '') {
+                continue;
+            }
+            $set = $model->findById($setId);
+            if ($set === null || trim((string) ($set['companyId'] ?? '')) !== $companyId) {
+                Response::error('Company block sets must belong to the selected company.', 422);
+            }
+        }
+        $source = CodingTestModel::normalizeQuestionSource((string) ($data['questionSource'] ?? 'manual'));
+        if (!in_array($source, ['manual', 'random_jd'], true)) {
             $source = 'manual';
         }
+        $data['testKind'] = 'company';
+        $data['contestType'] = 'none';
         $data['questionSource'] = $source;
+
+        return $data;
+    }
+
+    private function resolveTestItems(array $data): array
+    {
+        $source = CodingTestModel::normalizeQuestionSource((string) ($data['questionSource'] ?? 'manual'));
+        $data['questionSource'] = $source;
+
+        if ($source === 'random_jd') {
+            $rules = array_values(array_filter((array) ($data['jdFilterRules'] ?? []), 'is_array'));
+            if ($rules === []) {
+                Response::error('Add at least one company block set rule for random selection.', 422);
+            }
+            try {
+                $items = (new CodingCompanyProblemSetModel())->pickRandomByRules($rules);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            if ($items === []) {
+                Response::error('Could not pick problems from company block sets for the given rules.', 422);
+            }
+            $data['items'] = $items;
+            $data['questionCount'] = count($items);
+            $data['bankProblemIds'] = [];
+            $data['bankFilterRules'] = [];
+            $data['randomRules'] = [];
+            if (trim((string) ($data['category'] ?? '')) === '' && $items !== []) {
+                $data['category'] = CodingTestModel::normalizeCategory((string) ($items[0]['category'] ?? 'Algorithms'));
+            }
+            if (trim((string) ($data['difficulty'] ?? '')) === '' && $items !== []) {
+                $data['difficulty'] = CodingTestModel::normalizeDifficulty((string) ($items[0]['difficulty'] ?? 'Medium'));
+            }
+
+            return $data;
+        }
 
         if ($source === 'random') {
             $rules = array_values(array_filter((array) ($data['randomRules'] ?? []), 'is_array'));
@@ -2022,9 +2233,21 @@ final class CodingService
         )));
         $inline = array_values(array_filter((array) ($data['items'] ?? []), 'is_array'));
         $filterRules = array_values(array_filter((array) ($data['bankFilterRules'] ?? []), 'is_array'));
+        $jdFilterRules = array_values(array_filter((array) ($data['jdFilterRules'] ?? []), 'is_array'));
         $items = [];
 
-        if ($filterRules !== []) {
+        if ($source === 'manual' && $jdFilterRules !== []) {
+            try {
+                $jdItems = (new CodingCompanyProblemSetModel())->resolveByRules($jdFilterRules);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            foreach ($jdItems as $item) {
+                $items[] = $item;
+            }
+        }
+
+        if ($source === 'manual' && $filterRules !== []) {
             try {
                 $items = $this->bank->resolveByRulesWithPreferred($filterRules, $bankIds);
             } catch (\InvalidArgumentException $e) {
@@ -2038,18 +2261,20 @@ final class CodingService
             $items = $this->bank->problemsByIds($bankIds);
         }
 
-        foreach ($inline as $i => $q) {
-            if (!is_array($q)) {
-                continue;
+        if (!CodingTestModel::isCompanyTest($data)) {
+            foreach ($inline as $i => $q) {
+                if (!is_array($q)) {
+                    continue;
+                }
+                $title = trim((string) ($q['title'] ?? ''));
+                if ($title === '') {
+                    continue;
+                }
+                if (empty($q['id'])) {
+                    $q['id'] = 'p-' . ($i + 1);
+                }
+                $items[] = $q;
             }
-            $title = trim((string) ($q['title'] ?? ''));
-            if ($title === '') {
-                continue;
-            }
-            if (empty($q['id'])) {
-                $q['id'] = 'p-' . ($i + 1);
-            }
-            $items[] = $q;
         }
 
         if ($items === []) {

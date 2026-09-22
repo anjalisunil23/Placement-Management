@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Models\CodingCompanyProblemSetModel;
 use PMS\Models\CodingProblemBankModel;
 use PMS\Models\CodingTestModel;
 
@@ -171,6 +172,12 @@ SYSTEM;
             }
             if (array_key_exists('selected', $q) && empty($q['selected'])) {
                 continue;
+            }
+            $source = trim((string) ($q['source'] ?? 'AI'));
+            if ($source === 'AI_JD') {
+                throw new \InvalidArgumentException(
+                    'JD-based problems must be saved to the Company Block, not the general question bank.'
+                );
             }
             $mapped = $this->mapAiProblem($q, (string) ($q['category'] ?? 'Programming'), (string) ($q['difficulty'] ?? 'Medium'));
             if ($mapped === null || trim((string) ($mapped['title'] ?? '')) === '') {
@@ -425,5 +432,206 @@ PROMPT;
         }
 
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function generateFromJdForUser(array $body): array
+    {
+        @set_time_limit(600);
+
+        $extractor = new JdTextExtractionService($this->openai);
+        $jobDescription = $extractor->sanitizeText(
+            (string) ($body['jobDescription'] ?? $body['jobDescriptionText'] ?? '')
+        );
+        if (mb_strlen($jobDescription) < 40) {
+            throw new \InvalidArgumentException(
+                'Job description text is required. Paste the JD or upload a PDF/image to extract text.'
+            );
+        }
+
+        $instructions = trim((string) ($body['instructions'] ?? ''));
+        $jdInstructions = $instructions !== ''
+            ? $instructions
+            : 'Generate stdin/stdout coding problems aligned with skills and technologies mentioned in the job description.';
+
+        $batches = $this->normalizeGenerationBatches($body);
+        if ($batches === []) {
+            throw new \InvalidArgumentException('Add at least one generation row with a problem count.');
+        }
+
+        $merged = [];
+        foreach ($batches as $batch) {
+            $result = $this->generateFromJd(
+                $jobDescription,
+                (string) ($batch['difficulty'] ?? 'Medium'),
+                (int) ($batch['count'] ?? 0),
+                $jdInstructions
+            );
+            foreach ($result['problems'] ?? [] as $problem) {
+                if (is_array($problem)) {
+                    $merged[] = $problem;
+                }
+            }
+        }
+
+        if ($merged === []) {
+            throw new \RuntimeException('No valid coding problems in the AI response. Try again.');
+        }
+
+        $preview = [];
+        foreach ($merged as $i => $q) {
+            $preview[] = array_merge($q, [
+                'tempId' => 'ai-jd-' . ($i + 1) . '-' . bin2hex(random_bytes(4)),
+                'selected' => true,
+                'source' => 'AI_JD',
+            ]);
+        }
+
+        $requested = array_sum(array_map(static fn (array $b): int => (int) ($b['count'] ?? 0), $batches));
+
+        return [
+            'problems' => $preview,
+            'questions' => $preview,
+            'requested' => $requested,
+            'received' => count($preview),
+            'partial' => count($preview) < $requested,
+            'generationMode' => 'jd',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function generateFromJd(string $jobDescription, string $difficulty, int $count, string $instructions = ''): array
+    {
+        $difficulty = $this->normalizeDifficulty($difficulty);
+        $count = max(1, min(self::MAX_BATCH_COUNT, $count));
+        $excerpt = mb_strlen($jobDescription) > 12000
+            ? mb_substr($jobDescription, 0, 12000) . '…'
+            : $jobDescription;
+
+        $system = <<<'SYSTEM'
+You generate stdin/stdout coding problems for a university placement portal based on job descriptions.
+Students write standalone Python programs that read from stdin and print to stdout.
+NEVER generate LeetCode-style class/threading templates.
+Return ONLY valid JSON with no markdown or commentary.
+SYSTEM;
+
+        $extra = trim($instructions);
+        $extraLine = $extra !== '' ? "Additional instructions: {$extra}\n" : '';
+        $user = <<<PROMPT
+Generate {$count} campus-placement coding problem(s) at {$difficulty} difficulty based on this job description.
+
+{$extraLine}
+Job description:
+{$excerpt}
+
+Each problem must use stdin/stdout format with description, inputFormat, outputFormat, constraints, one example, exactly 3 test cases, and pythonStarter.
+Problems should reflect skills, tools, or concepts implied by the JD (e.g. SQL, APIs, data structures, logic).
+
+Return ONLY valid JSON:
+{"problems":[{"title":"...","description":"...","inputFormat":"...","outputFormat":"...","constraints":"...","exampleInput":"...","exampleOutput":"...","sampleInput":"...","sampleExpected":"...","hiddenInput1":"...","hiddenExpected1":"...","hiddenInput2":"...","hiddenExpected2":"...","pythonStarter":"# Write your solution\\n","marks":2,"difficulty":"{$difficulty}","category":"Algorithms"}]}
+PROMPT;
+
+        try {
+            $raw = $this->openai->generateJson($system, $user);
+        } catch (\Throwable $e) {
+            error_log('[PMS coding AI] JD generate failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI generation is temporarily unavailable. Please try again.');
+        }
+
+        $problems = $this->extractProblems($raw);
+        $validated = [];
+        foreach ($problems as $p) {
+            $mapped = $this->mapAiProblem(is_array($p) ? $p : [], 'Algorithms', $difficulty);
+            if ($mapped !== null) {
+                $mapped['source'] = 'AI_JD';
+                $validated[] = $mapped;
+            }
+        }
+        if ($validated === []) {
+            throw new \RuntimeException('No valid stdin/stdout problems were generated from the job description.');
+        }
+
+        $preview = [];
+        foreach (array_slice($validated, 0, $count) as $i => $q) {
+            $preview[] = array_merge($q, [
+                'tempId' => 'ai-jd-' . ($i + 1) . '-' . bin2hex(random_bytes(4)),
+                'selected' => true,
+                'source' => 'AI_JD',
+            ]);
+        }
+
+        return [
+            'problems' => $preview,
+            'questions' => $preview,
+            'requested' => $count,
+            'received' => count($preview),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @param array<int, array<string, mixed>> $problems
+     * @return array<string, mixed>
+     */
+    public function saveCompanyBlockSetForUser(
+        array $admin,
+        array $problems,
+        string $setTitle,
+        string $companyId,
+        ?string $companyName = null,
+        ?string $jdFilename = null,
+        ?string $jdFile = null,
+        ?string $jdFileUrl = null,
+        ?string $jdMimeType = null
+    ): array {
+        AptitudeAccessService::requireCodingManager($admin);
+        $setTitle = trim($setTitle);
+        if ($setTitle === '') {
+            throw new \InvalidArgumentException('Set title is required.');
+        }
+        $companyId = trim($companyId);
+        if ($companyId === '') {
+            throw new \InvalidArgumentException('Company is required.');
+        }
+        if ($problems === []) {
+            throw new \InvalidArgumentException('No problems selected to save.');
+        }
+
+        $toSave = [];
+        foreach (array_values($problems) as $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            if (array_key_exists('selected', $q) && empty($q['selected'])) {
+                continue;
+            }
+            $mapped = $this->mapAiProblem($q, (string) ($q['category'] ?? 'Algorithms'), (string) ($q['difficulty'] ?? 'Medium'));
+            if ($mapped === null) {
+                continue;
+            }
+            $mapped['source'] = 'AI_JD';
+            $toSave[] = $mapped;
+        }
+
+        if ($toSave === []) {
+            throw new \RuntimeException('No problems could be saved. Check validation errors.');
+        }
+
+        return (new CodingCompanyProblemSetModel())->createSet(
+            $setTitle,
+            $toSave,
+            (string) ($admin['_id'] ?? $admin['id'] ?? ''),
+            $companyId,
+            $companyName,
+            $jdFilename,
+            $jdFile,
+            $jdFileUrl,
+            $jdMimeType
+        );
     }
 }

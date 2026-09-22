@@ -555,9 +555,13 @@ $routes = [
     ['GET',  '/coding/company-block/companies', [CodingController::class, 'listCompanyBlockCompanies']],
     ['GET',  '/coding/company-block',         [CodingController::class, 'listCompanyBlock']],
     ['GET',  '/coding/company-block/sets/{id}', [CodingController::class, 'getCompanyBlockSet']],
+    ['GET',  '/coding/company-block/sets/{id}/document', [CodingController::class, 'streamCompanyBlockDocument']],
     ['DELETE','/coding/company-block/sets/{id}', [CodingController::class, 'deleteCompanyBlockSet']],
     ['GET',  '/coding/student/company-block', [CodingController::class, 'listStudentCompanyBlock']],
     ['GET',  '/coding/student/company-block/sets/{id}', [CodingController::class, 'getStudentCompanyBlockSet']],
+    ['GET',  '/coding/student/company-block/sets/{id}/document', [CodingController::class, 'streamStudentCompanyBlockDocument']],
+    ['POST', '/coding/ai/extract-jd', [CodingController::class, 'extractAiJobDescription']],
+    ['POST', '/coding/ai/save-company-block', [CodingController::class, 'saveAiCompanyBlockSet']],
 
     // Health & public
     ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],

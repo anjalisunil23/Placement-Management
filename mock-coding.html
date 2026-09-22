@@ -512,6 +512,7 @@
           <select class="form-select" id="tfCompanyId" aria-label="Company">
             <option value="">Select company…</option>
           </select>
+          <div class="form-text">JD titles below are filtered to this company.</div>
         </div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
@@ -540,6 +541,18 @@
           </div>
         </div>
 
+        <div class="col-12 d-none" id="tfRandomJdPanel">
+          <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div class="small fw-semibold">Random rules from Company Block</div>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRandomJdRule"><i class="bi bi-plus-lg me-1"></i>Add JD title</button>
+            </div>
+            <p class="small text-muted-2 mb-2">Each row randomly picks problems from a JD title when the test is saved. The same JD title can be used in multiple rows.</p>
+            <div id="tfRandomJdRules" class="d-flex flex-column gap-2 mb-2"></div>
+            <div class="small text-muted-2" id="tfRandomJdSummary">0 problems from JD rules</div>
+          </div>
+        </div>
+
         <div class="col-12" id="tfManualPanel">
           <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" id="tfUseBankManual"/>
@@ -552,6 +565,19 @@
             </div>
             <div id="tfManualBankRules" class="d-flex flex-column gap-2 mb-2"></div>
             <div class="small text-muted-2" id="tfManualBankSummary">0 problems from rules</div>
+          </div>
+          <div class="form-check mb-2 d-none" id="tfUseJdManualWrap">
+            <input class="form-check-input" type="checkbox" id="tfUseJdManual"/>
+            <label class="form-check-label" for="tfUseJdManual">Add problems from Company Block</label>
+          </div>
+          <p class="small text-muted-2 mb-2 d-none" id="tfCompanyJdHint">Add one or more JD titles from the selected company. Pick the exact problems for each title, like problem bank rules in a regular test.</p>
+          <div class="border rounded-3 p-3 mb-3 d-none" id="tfJdPicker" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div class="small fw-semibold" id="tfJdPickerTitle">Pick problems by JD title</div>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddManualJdRule"><i class="bi bi-plus-lg me-1"></i>Add JD</button>
+            </div>
+            <div id="tfManualJdRules" class="d-flex flex-column gap-2 mb-2"></div>
+            <div class="small text-muted-2" id="tfManualJdSummary">0 problems from JD sets</div>
           </div>
           <div id="tfManualProblemsSection">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -603,13 +629,55 @@
 </div></div></div>
 
 <div class="modal fade" id="codAiBankModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
-  <div class="modal-header"><h5 class="modal-title fw-bold">AI Generate Problems</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="codAiModalTitle">AI Generate Problems</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body">
     <div id="codAiFormPanel">
-      <p class="small text-muted-2 mb-3">Generate coding problems with OpenAI, then review and save them to the problem bank.</p>
+      <p class="small text-muted-2 mb-3" id="codAiStatusHint">Generate coding problems with OpenAI, then review and save them to the problem bank.</p>
       <div class="row g-3">
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiCategory">Category</label><select class="form-select" id="codAiCategory"><option value="">Select category…</option></select></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiTopic">Topic</label><select class="form-select" id="codAiTopic" disabled><option value="">Select category first…</option></select></div>
+        <div id="codAiCategoryPanel" class="col-12">
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiCategory">Category</label><select class="form-select" id="codAiCategory"><option value="">Select category…</option></select></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiTopic">Topic</label><select class="form-select" id="codAiTopic" disabled><option value="">Select category first…</option></select></div>
+          </div>
+        </div>
+        <div id="codAiJdPanel" class="col-12 d-none">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="codAiJdCompany">Company</label>
+            <select class="form-select" id="codAiJdCompany"><option value="">Select company…</option></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="codAiJdTitle">Title</label>
+            <input class="form-control" id="codAiJdTitle" maxlength="160" placeholder="e.g. Associate Software Developer"/>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="codAiJdTitleAddDate"/>
+              <label class="form-check-label small" for="codAiJdTitleAddDate">Add date to title</label>
+            </div>
+            <div class="d-none mt-2" id="codAiJdTitleDateWrap">
+              <label class="form-label small fw-semibold mb-1" for="codAiJdTitleDate">Date</label>
+              <input class="form-control form-control-sm" type="date" id="codAiJdTitleDate"/>
+            </div>
+            <div class="small text-muted-2 mt-1" id="codAiJdTitleHint">Role or JD title saved under the selected company in Company Block.</div>
+            <div class="small text-primary mt-1 d-none" id="codAiJdTitlePreview"></div>
+          </div>
+          <label class="form-label small fw-semibold" for="codAiJdText">Paste job description</label>
+          <textarea class="form-control mb-3" id="codAiJdText" rows="6" placeholder="Paste the complete job description here…"></textarea>
+          <div class="text-center small text-muted-2 mb-2">OR</div>
+          <label class="form-label small fw-semibold">Upload job description</label>
+          <div class="dropzone" id="codAiJdDropzone" role="button" tabindex="0" aria-label="Upload job description PDF or image">
+            <div id="codAiJdDropzoneIdle">
+              <i class="bi bi-cloud-arrow-up fs-4 d-block mb-2"></i>
+              Drag &amp; drop PDF/image here<br>or<br>
+              <span class="text-primary fw-semibold">Choose file</span>
+            </div>
+            <div id="codAiJdDropzoneFile" class="d-none">
+              <i class="bi bi-check-circle text-success me-1"></i><span id="codAiJdFilename"></span>
+              <button type="button" class="btn btn-sm btn-link p-0 ms-2" id="btnCodAiJdRemove">Remove</button>
+            </div>
+          </div>
+          <div class="small text-muted-2 mt-2">Supported: PDF, JPG, JPEG, PNG (max 5 MB)</div>
+          <input type="file" id="codAiJdFileInput" class="d-none" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"/>
+          <div id="codAiJdExtractStatus" class="small text-muted-2 mt-2 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Extracting text from file…</div>
+        </div>
         <div class="col-12">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <label class="form-label small fw-semibold mb-0">Problem generation</label>
@@ -659,5 +727,5 @@
 <script src="js/coding-execution.js?v=20260915back"></script>
 <script src="js/coding-service.js?v=20260922practice"></script>
 <script src="js/coding-exam.js?v=20260922practice"></script>
-<script src="js/coding-page.js?v=20260922cattests"></script>
+<script src="js/coding-page.js?v=20260922jdblock"></script>
 </body></html>
