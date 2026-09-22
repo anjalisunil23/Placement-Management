@@ -41,11 +41,83 @@ final class CodingService
             if (!$this->studentCanSeeTest($user, $row)) {
                 continue;
             }
+            if (CodingTestModel::shouldSplitForStudentList($row)) {
+                foreach ((array) ($row['items'] ?? []) as $index => $item) {
+                    if (!is_array($item)) {
+                        continue;
+                    }
+                    $out[] = $this->problemTestListMeta($row, $item, (int) $index);
+                }
+                continue;
+            }
             $view = CodingTestModel::publicView($row, false);
             unset($view['items']);
             $out[] = $view;
         }
         return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $parent
+     * @param array<string, mixed> $item
+     * @return array<string, mixed>
+     */
+    private function problemTestListMeta(array $parent, array $item, int $index): array
+    {
+        $parentId = (string) ($parent['_id'] ?? $parent['id'] ?? '');
+        $problemId = (string) ($item['id'] ?? ('p' . ($index + 1)));
+        $view = CodingTestModel::publicView($parent, false);
+        unset($view['items']);
+        $marks = (float) ($item['marks'] ?? 2);
+        $duration = CodingTestModel::singleProblemDuration($item, $parent);
+        $difficulty = (string) ($item['difficulty'] ?? $parent['difficulty'] ?? 'Medium');
+
+        return array_merge($view, [
+            'id' => CodingTestModel::composeProblemTestId($parentId, $problemId),
+            'parentTestId' => $parentId,
+            'problemItemId' => $problemId,
+            'title' => (string) ($item['title'] ?? ('Problem ' . ($index + 1))),
+            'description' => (string) ($item['description'] ?? ''),
+            'difficulty' => $difficulty,
+            'questions' => 1,
+            'questionCount' => 1,
+            'marks' => $marks,
+            'totalMarks' => $marks,
+            'duration' => $duration,
+            'durationMinutes' => $duration,
+            'bundleTitle' => (string) ($parent['title'] ?? ''),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @return array<string, mixed>|null
+     */
+    private function buildSingleProblemTestView(array $test, string $problemId): ?array
+    {
+        $full = CodingTestModel::publicView($test, true);
+        $item = null;
+        $index = 0;
+        foreach ((array) ($full['items'] ?? []) as $i => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if ((string) ($row['id'] ?? '') === $problemId) {
+                $item = $row;
+                $index = (int) $i;
+                break;
+            }
+        }
+        if ($item === null) {
+            return null;
+        }
+
+        $meta = $this->problemTestListMeta($test, $item, $index);
+
+        return array_merge($meta, [
+            'items' => [$item],
+            'instructions' => array_values((array) ($test['instructions'] ?? [])),
+        ]);
     }
 
     /**
@@ -251,7 +323,8 @@ final class CodingService
         if (!AptitudeAccessService::canTake($user)) {
             Response::forbidden('Only students can take mock tests.');
         }
-        $test = $this->tests->findById($testId);
+        [$parentId, $problemId] = CodingTestModel::parseProblemTestId($testId);
+        $test = $this->tests->findById($parentId);
         if (!$test || ($test['status'] ?? '') !== 'published') {
             Response::notFound('Coding test not found.');
         }
@@ -262,22 +335,33 @@ final class CodingService
             $when = CodingTestModel::contestScheduleLabel($test) ?: 'the scheduled day';
             Response::error('This contest is not open today. It runs on ' . $when . '.', 422);
         }
-        $duration = max(1, (int) ($test['duration'] ?? 20));
+        if ($problemId !== '') {
+            $pub = $this->buildSingleProblemTestView($test, $problemId);
+            if ($pub === null) {
+                Response::notFound('Coding problem not found.');
+            }
+            $duration = max(1, (int) ($pub['duration'] ?? 20));
+            $attemptTitle = (string) ($pub['title'] ?? $test['title'] ?? '');
+        } else {
+            $pub = CodingTestModel::publicView($test, true);
+            $duration = max(1, (int) ($test['duration'] ?? 20));
+            $attemptTitle = (string) ($test['title'] ?? '');
+        }
         $startedAt = (int) round(microtime(true) * 1000);
         $endsAt = $startedAt + $duration * 60 * 1000;
         $attemptId = $this->attempts->start([
             'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
-            'testId' => $testId,
-            'testTitle' => (string) ($test['title'] ?? ''),
+            'testId' => $parentId,
+            'testTitle' => $attemptTitle,
             'contestType' => (string) ($test['contestType'] ?? 'none'),
             'testKind' => CodingTestModel::normalizeTestKind((string) ($test['testKind'] ?? 'regular')),
             'companyId' => trim((string) ($test['companyId'] ?? '')) !== '' ? (string) $test['companyId'] : null,
+            'problemItemId' => $problemId !== '' ? $problemId : null,
             'contestStartTime' => (string) ($test['contestStartTime'] ?? '09:00'),
             'periodKey' => CodingTestModel::periodKey($test),
             'contestWindowBounds' => CodingTestModel::contestWindowBounds($test),
             'endsAt' => $endsAt,
         ]);
-        $pub = CodingTestModel::publicView($test, true);
         $answers = [];
         foreach ((array) ($pub['items'] ?? []) as $item) {
             $sample = null;
@@ -363,9 +447,16 @@ final class CodingService
                     $solved[(string) $qr['id']] = true;
                 }
             }
+            $parentTestId = (string) ($row['testId'] ?? '');
+            $problemItemId = trim((string) ($row['problemItemId'] ?? ''));
+            $listTestId = $problemItemId !== ''
+                ? CodingTestModel::composeProblemTestId($parentTestId, $problemItemId)
+                : $parentTestId;
             $history[] = [
                 'id' => (string) ($row['_id'] ?? ''),
-                'testId' => (string) ($row['testId'] ?? ''),
+                'testId' => $parentTestId,
+                'listTestId' => $listTestId,
+                'problemItemId' => $problemItemId !== '' ? $problemItemId : null,
                 'testTitle' => (string) ($row['testTitle'] ?? ''),
                 'submittedAt' => $row['submittedAt'] ?? '',
                 'score' => $row['score'] ?? 0,

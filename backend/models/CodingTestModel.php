@@ -18,6 +18,7 @@ class CodingTestModel extends BaseModel
     public const CATEGORIES = ['Programming', 'Python', 'Data Structures', 'Programming Logic', 'Algorithms'];
     public const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
     public const STATUSES = ['published', 'unpublished'];
+    public const PROBLEM_TEST_SEP = '::';
 
     public static function normalizeContestType(string $value): string
     {
@@ -37,6 +38,51 @@ class CodingTestModel extends BaseModel
         }
 
         return trim((string) ($test['companyId'] ?? '')) !== '';
+    }
+
+    public static function composeProblemTestId(string $parentId, string $problemId): string
+    {
+        return $parentId . self::PROBLEM_TEST_SEP . $problemId;
+    }
+
+    /**
+     * @return array{0:string,1:string}
+     */
+    public static function parseProblemTestId(string $id): array
+    {
+        $pos = strpos($id, self::PROBLEM_TEST_SEP);
+        if ($pos === false) {
+            return [$id, ''];
+        }
+
+        return [substr($id, 0, $pos), substr($id, $pos + strlen(self::PROBLEM_TEST_SEP))];
+    }
+
+    public static function shouldSplitForStudentList(array $test): bool
+    {
+        $contest = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        if (in_array($contest, ['weekly', 'monthly'], true)) {
+            return false;
+        }
+
+        return count((array) ($test['items'] ?? [])) > 1;
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @param array<string, mixed> $parent
+     */
+    public static function singleProblemDuration(array $item, array $parent = []): int
+    {
+        $diff = strtolower((string) ($item['difficulty'] ?? $parent['difficulty'] ?? 'medium'));
+        if ($diff === 'easy') {
+            return 15;
+        }
+        if ($diff === 'hard') {
+            return 30;
+        }
+
+        return 20;
     }
 
     public static function normalizeContestStartTime(string $value): string

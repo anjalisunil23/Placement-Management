@@ -51,6 +51,7 @@ class CodingAttemptModel extends BaseModel
             'contestType' => (string) ($data['contestType'] ?? 'none'),
             'testKind' => (string) ($data['testKind'] ?? 'regular'),
             'companyId' => trim((string) ($data['companyId'] ?? '')) !== '' ? (string) $data['companyId'] : null,
+            'problemItemId' => trim((string) ($data['problemItemId'] ?? '')) !== '' ? (string) $data['problemItemId'] : null,
             'contestStartTime' => (string) ($data['contestStartTime'] ?? '09:00'),
             'periodKey' => (string) ($data['periodKey'] ?? ''),
             'contestWindowBounds' => is_array($data['contestWindowBounds'] ?? null) ? $data['contestWindowBounds'] : [],

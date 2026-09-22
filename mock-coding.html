@@ -70,6 +70,22 @@
   .cod-class-bar .pct{width:3rem;text-align:right;font-size:.8rem;font-weight:700}
   .jd-company-card{background:#fff;cursor:pointer;transition:border-color .15s,box-shadow .15s}
   .jd-company-card:hover{border-color:#94a3b8!important;box-shadow:0 .125rem .5rem rgba(15,23,42,.08)}
+  .apt-prob-list{border:1px solid var(--border,#e5e7eb);border-radius:.75rem;overflow:hidden;background:#fff}
+  .apt-prob-row{
+    display:grid;grid-template-columns:1.6rem minmax(0,1fr) 4.6rem 4.2rem;
+    align-items:center;gap:.75rem;padding:.85rem 1rem;border:0;width:100%;
+    background:#fff;text-align:left;color:inherit;
+  }
+  .apt-prob-row:nth-child(even){background:#f8fafc}
+  .apt-prob-row:hover{background:#f1f5f9}
+  .apt-prob-row.is-clickable{cursor:pointer}
+  .apt-prob-check{color:#22c55e;font-size:1rem;line-height:1}
+  .apt-prob-title{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .apt-prob-pct{color:#94a3b8;font-size:.9rem;text-align:right;font-variant-numeric:tabular-nums}
+  .apt-prob-diff{font-size:.9rem;font-weight:500;text-align:right}
+  .apt-prob-diff.is-easy{color:#14b8a6}
+  .apt-prob-diff.is-medium{color:#f59e0b}
+  .apt-prob-diff.is-hard{color:#ef4444}
   body.cod-role-officer #codTake,
   body.cod-role-admin #codTake,
   body.cod-role-staff #codTake{display:none!important}
@@ -121,7 +137,7 @@
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-contest-type="monthly">Monthly</a></li>
             </ul>
           </div>
-          <div id="testList" class="px-3 px-md-4 pb-3 d-flex flex-column gap-2"></div>
+          <div id="testList" class="px-3 px-md-4 pb-3"></div>
           <div id="studentJdBlockPanel" class="d-none px-3 px-md-4 pb-3">
             <div id="studentJdBlockDetailNav" class="d-none d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
               <button type="button" class="btn btn-sm btn-outline-secondary" id="btnStudentJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
@@ -548,7 +564,7 @@
 <script src="js/app.js?v=20260915crumb"></script>
 <script src="js/coding-data.js?v=20260915back"></script>
 <script src="js/coding-execution.js?v=20260915back"></script>
-<script src="js/coding-service.js?v=20260921contest"></script>
+<script src="js/coding-service.js?v=20260922split"></script>
 <script src="js/coding-exam.js?v=20260922autosubmit"></script>
-<script src="js/coding-page.js?v=20260922tabs"></script>
+<script src="js/coding-page.js?v=20260922split"></script>
 </body></html>

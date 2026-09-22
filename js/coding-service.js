@@ -226,6 +226,90 @@
     return true;
   }
 
+  const PROBLEM_TEST_SEP = '::';
+
+  function parseProblemTestId(id) {
+    const s = String(id || '');
+    const idx = s.indexOf(PROBLEM_TEST_SEP);
+    if (idx < 0) return { parentId: s, problemId: '' };
+    return { parentId: s.slice(0, idx), problemId: s.slice(idx + PROBLEM_TEST_SEP.length) };
+  }
+
+  function composeProblemTestId(parentId, problemId) {
+    return `${parentId}${PROBLEM_TEST_SEP}${problemId}`;
+  }
+
+  function shouldSplitForStudentList(test) {
+    const type = String(test?.contestType || 'none');
+    if (type === 'weekly' || type === 'monthly') return false;
+    return (test?.items || []).length > 1;
+  }
+
+  function singleProblemDuration(item, parent) {
+    const diff = String(item?.difficulty || parent?.difficulty || 'Medium').toLowerCase();
+    if (diff === 'easy') return 15;
+    if (diff === 'hard') return 30;
+    return 20;
+  }
+
+  function problemTestMetaFromFull(parent, item, index) {
+    const parentId = String(parent.id || '');
+    const problemId = String(item.id || `p${index + 1}`);
+    const meta = testMetaFromFull(parent);
+    const marks = Number(item.marks || 2);
+    const duration = singleProblemDuration(item, parent);
+    return {
+      ...meta,
+      id: composeProblemTestId(parentId, problemId),
+      parentTestId: parentId,
+      problemItemId: problemId,
+      title: String(item.title || `Problem ${index + 1}`),
+      description: String(item.description || ''),
+      difficulty: item.difficulty || parent.difficulty || 'Medium',
+      questions: 1,
+      questionCount: 1,
+      marks,
+      totalMarks: marks,
+      duration,
+      durationMinutes: duration,
+      bundleTitle: String(parent.title || ''),
+    };
+  }
+
+  function expandTestsForStudent(list) {
+    const out = [];
+    (list || []).forEach((test) => {
+      const full = getFullTestLocal(test.id) || test;
+      const items = full.items || [];
+      if (shouldSplitForStudentList(full)) {
+        items.forEach((item, index) => {
+          out.push(problemTestMetaFromFull(full, item, index));
+        });
+      } else {
+        out.push(testMetaFromFull(full));
+      }
+    });
+    return out;
+  }
+
+  function buildSingleProblemPublicTest(parentId, problemId) {
+    const full = getFullTestLocal(parentId);
+    if (!full) return null;
+    const items = full.items || [];
+    const index = items.findIndex((item) => String(item.id) === String(problemId));
+    if (index < 0) return null;
+    const item = items[index];
+    const publicQ = typeof CodingData !== 'undefined' && CodingData.publicQuestion
+      ? (row) => CodingData.publicQuestion(row)
+      : (row) => row;
+    const meta = problemTestMetaFromFull(full, item, index);
+    return {
+      ...meta,
+      items: [publicQ(item)],
+      instructions: full.instructions || [],
+    };
+  }
+
   function testMetaFromFull(test) {
     const items = test.items || [];
     const marks = Number(test.marks || test.totalMarks) || items.reduce((s, q) => s + Number(q.marks || 0), 0);
@@ -262,15 +346,22 @@
   }
 
   function questionFromAttempt(attempt, questionId) {
-    const fromFull = getFullTestLocal(attempt?.testId)?.items?.find((q) => String(q.id) === String(questionId));
-    if (fromFull) return fromFull;
     const fromAttempt = (attempt?.test?.items || []).find((q) => String(q.id) === String(questionId));
     if (fromAttempt) return fromAttempt;
-    return typeof CodingData !== 'undefined' ? CodingData.getQuestion(attempt?.testId, questionId) : null;
+    const { parentId, problemId } = parseProblemTestId(attempt?.testId);
+    if (problemId) {
+      const single = buildSingleProblemPublicTest(parentId, problemId);
+      const fromSingle = single?.items?.find((q) => String(q.id) === String(questionId));
+      if (fromSingle) return fromSingle;
+    }
+    const fromFull = getFullTestLocal(parentId || attempt?.testId)?.items?.find((q) => String(q.id) === String(questionId));
+    if (fromFull) return fromFull;
+    return typeof CodingData !== 'undefined' ? CodingData.getQuestion(parentId || attempt?.testId, questionId) : null;
   }
 
   function getFullTestLocal(id) {
-    const managed = loadManagedTests().find((t) => String(t.id) === String(id));
+    const { parentId } = parseProblemTestId(id);
+    const managed = loadManagedTests().find((t) => String(t.id) === String(parentId || id));
     if (managed) {
       const builtin = typeof CodingData !== 'undefined' ? CodingData.getTest(id) : null;
       if (builtin?.items) {
@@ -281,7 +372,7 @@
       }
       return managed;
     }
-    return typeof CodingData !== 'undefined' ? CodingData.getTest(id) : null;
+    return typeof CodingData !== 'undefined' ? CodingData.getTest(parentId || id) : null;
   }
 
   const CodingService = {
@@ -294,9 +385,9 @@
         if (!res?.success) throw new Error(res?.message || 'Could not load coding tests.');
         return res.data.tests || [];
       }
-      return loadManagedTests()
-        .filter((t) => (t.status || 'published') === 'published')
-        .map(testMetaFromFull);
+      return expandTestsForStudent(
+        loadManagedTests().filter((t) => (t.status || 'published') === 'published')
+      );
     },
 
     async listManagedTests() {
@@ -451,7 +542,14 @@
         });
         return started;
       }
-      const pub = getFullTestLocal(testId) ? publicFromFull(getFullTestLocal(testId)) : (typeof CodingData !== 'undefined' ? CodingData.getPublicTest(testId) : null);
+      const { parentId, problemId } = parseProblemTestId(testId);
+      let pub = null;
+      if (problemId) {
+        pub = buildSingleProblemPublicTest(parentId, problemId);
+      } else {
+        const full = getFullTestLocal(testId);
+        pub = full ? publicFromFull(full) : (typeof CodingData !== 'undefined' ? CodingData.getPublicTest(testId) : null);
+      }
       if (!pub) throw new Error('Test not found.');
       const attemptId = 'cod-' + Date.now();
       const answers = {};
@@ -567,9 +665,15 @@
       if (!attempt) throw new Error('Attempt not found.');
       if (attempt.submitted) throw new Error('This test has already been submitted.');
       attempt.submitted = true;
-      const full = getFullTestLocal(attempt.testId)
-        || attempt.test
-        || (typeof CodingData !== 'undefined' ? CodingData.getTest(attempt.testId) : null);
+      const { parentId, problemId } = parseProblemTestId(attempt.testId);
+      let full = attempt.test || null;
+      if (!full?.items?.length) {
+        if (problemId) full = buildSingleProblemPublicTest(parentId, problemId);
+        else {
+          full = getFullTestLocal(attempt.testId)
+            || (typeof CodingData !== 'undefined' ? CodingData.getTest(attempt.testId) : null);
+        }
+      }
       if (!full) throw new Error('Test not found.');
       const questionResults = [];
       let score = 0;
@@ -650,9 +754,12 @@
       const taken = Number.isFinite(timeTakenSeconds)
         ? timeTakenSeconds
         : Math.max(0, Math.round((Date.now() - attempt.startedAt) / 1000));
+      const listTestId = problemId ? composeProblemTestId(parentId, problemId) : String(full.id || attempt.testId || '');
       const result = {
         attemptId,
-        testId: full.id,
+        testId: parentId || full.parentTestId || full.id,
+        listTestId,
+        problemItemId: problemId || full.problemItemId || null,
         testTitle: full.title,
         score,
         totalMarks,
@@ -677,6 +784,8 @@
       progress.history.unshift({
         id: attemptId,
         testId: result.testId,
+        listTestId: result.listTestId,
+        problemItemId: result.problemItemId,
         testTitle: result.testTitle,
         submittedAt: result.submittedAt,
         score: result.score,

@@ -138,7 +138,7 @@
     const companyTests = studentCompanyTestsFor(companyId);
     if (testsRoot) {
       testsRoot.innerHTML = companyTests.length
-        ? companyTests.map((t) => testCardHtml(t)).join('')
+        ? `<div class="apt-prob-list">${companyTests.map((t, i) => codingProbRowHtml(t, i)).join('')}</div>`
         : '<p class="small text-muted-2 mb-0">No company coding tests published for this company yet.</p>';
       bindOpenTests(testsRoot, companyTests);
     }
@@ -514,33 +514,57 @@
           : 'No coding attempts yet. Select a test on the left to begin.'}</p>`;
   }
 
-  function testCardHtml(t, { allowStart = true } = {}) {
+  function bestHistoryForTest(testId) {
+    const rows = (myProgress?.history || []).filter((h) => {
+      const listId = String(h.listTestId || h.testId || '');
+      return listId === String(testId);
+    });
+    if (!rows.length) return null;
+    return rows.reduce((best, h) => {
+      const pct = Number(h.percentage);
+      const bestPct = Number(best?.percentage);
+      return Number.isFinite(pct) && (!Number.isFinite(bestPct) || pct > bestPct) ? h : best;
+    }, rows[0]);
+  }
+
+  function difficultyListLabel(value) {
+    const d = String(value || 'Medium').toLowerCase();
+    if (d === 'easy') return { text: 'Easy', cls: 'is-easy' };
+    if (d === 'hard') return { text: 'Hard', cls: 'is-hard' };
+    return { text: 'Med.', cls: 'is-medium' };
+  }
+
+  function formatListPercentage(t, mine) {
+    if (mine) {
+      const pct = Number(mine.percentage);
+      if (Number.isFinite(pct)) return `${pct}%`;
+    }
+    return '—';
+  }
+
+  function codingProbRowHtml(t, index, { allowStart = true } = {}) {
     const open = !isContestTest(t) || isContestOpenClient(t);
-    const action = !access.canTake
-      ? ''
-      : (allowStart && open
-        ? `<button type="button" class="btn btn-sm btn-primary" data-open-test="${esc(t.id)}">Select</button>`
-        : `<button type="button" class="btn btn-sm btn-outline-secondary" disabled>${esc(isContestTest(t) ? (contestScheduleLabel(t) || 'Scheduled') : 'Unavailable')}</button>`);
-    return `
-      <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-start gap-2 cod-test-card">
-        <div class="flex-grow-1">
-          <div class="fw-semibold">${esc(t.title)}</div>
-          <div class="small text-muted-2 d-flex flex-wrap align-items-center gap-1 mt-1">
-            <span>${esc(t.category || '')}</span>
-            <span>·</span>
-            <span class="badge-soft ${difficultyClass(t.difficulty)}">${esc(t.difficulty || 'Medium')}</span>
-            <span>·</span>
-            <span>${esc(t.questions || t.questionCount || 0)} Questions</span>
-            <span>·</span>
-            <span>${esc(t.duration || t.durationMinutes || 0)} min</span>
-            <span>·</span>
-            <span>${esc(t.marks || t.totalMarks || 0)} marks</span>
-          </div>
-          <div class="small mt-1">${esc(t.description || '')}</div>
-          ${isContestTest(t) ? contestBadgeHtml(t) : ''}
-        </div>
-        ${action}
-      </div>`;
+    const mine = bestHistoryForTest(t.id);
+    const passPct = typeof CodingService !== 'undefined' ? Number(CodingService.passPercent || 40) : 40;
+    const solved = !!mine && (String(mine.status || '') === 'Passed' || Number(mine.percentage) >= passPct);
+    const diff = difficultyListLabel(t.difficulty);
+    const canOpen = access.canTake && allowStart && open;
+    const tag = canOpen ? 'button' : 'div';
+    const extra = canOpen ? ` type="button" data-open-test="${esc(t.id)}"` : '';
+    let title = t.title || 'Coding problem';
+    if (isContestTest(t) && !open) {
+      title = `${title} · ${contestScheduleLabel(t)}`;
+    }
+    return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : ''}"${extra}>
+      <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
+      <span class="apt-prob-title">${index + 1}. ${esc(title)}</span>
+      <span class="apt-prob-pct">${esc(formatListPercentage(t, mine))}</span>
+      <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
+    </${tag}>`;
+  }
+
+  function testCardHtml(t, { allowStart = true } = {}) {
+    return codingProbRowHtml(t, 0, { allowStart });
   }
 
   function bindOpenTests(root, list) {
@@ -572,7 +596,7 @@
       root.innerHTML = `<p class="text-muted-2 mb-0">${msg}</p>`;
       return;
     }
-    root.innerHTML = visible.map((t) => testCardHtml(t)).join('');
+    root.innerHTML = `<div class="apt-prob-list">${visible.map((t, i) => codingProbRowHtml(t, i)).join('')}</div>`;
     bindOpenTests(root, visible);
   }
 
