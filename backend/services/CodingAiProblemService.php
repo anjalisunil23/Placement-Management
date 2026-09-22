@@ -8,18 +8,26 @@ use PMS\Models\CodingProblemBankModel;
 use PMS\Models\CodingTestModel;
 
 /**
- * AI coding problem generation via Ollama.
+ * AI coding problem generation via OpenAI.
  */
 final class CodingAiProblemService
 {
     private const MAX_BATCH_COUNT = 10;
     private const MAX_TOTAL_COUNT = 30;
 
-    private OllamaService $ollama;
+    private OpenAIService $openai;
 
-    public function __construct(?OllamaService $ollama = null)
+    public function __construct(?OpenAIService $openai = null)
     {
-        $this->ollama = $ollama ?? new OllamaService();
+        $this->openai = $openai ?? new OpenAIService();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function checkStatus(): array
+    {
+        return $this->openai->checkStatus();
     }
 
     /**
@@ -28,6 +36,8 @@ final class CodingAiProblemService
      */
     public function generateFromRequest(array $body): array
     {
+        @set_time_limit(600);
+
         $category = $this->normalizeCategory(trim((string) ($body['category'] ?? '')));
         $topic = trim((string) ($body['topic'] ?? ''));
         $instructions = (string) ($body['instructions'] ?? '');
@@ -98,8 +108,18 @@ final class CodingAiProblemService
             throw new \InvalidArgumentException('Topic is required.');
         }
 
-        $prompt = $this->buildPrompt($category, $topic, $difficulty, $count, $instructions);
-        $raw = $this->ollama->generateJson($prompt);
+        $system = 'You are a coding problem generator for a university placement preparation system. Return ONLY valid JSON with no markdown or commentary.';
+        $user = $this->buildPrompt($category, $topic, $difficulty, $count, $instructions);
+
+        try {
+            $raw = $this->openai->generateJson($system, $user);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            error_log('[PMS coding AI] generate failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI generation is temporarily unavailable. Please try again.');
+        }
+
         $problems = $this->extractProblems($raw);
 
         $validated = [];

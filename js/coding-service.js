@@ -511,7 +511,7 @@
         method: 'POST',
         body: JSON.stringify(params),
       }).catch(() => null);
-      if (!res?.success) throw new Error(res?.message || 'AI generation failed. Ensure Ollama is running.');
+      if (!res?.success) throw new Error(res?.message || 'AI generation failed. Check OpenAI configuration on the server.');
       return res.data;
     },
 

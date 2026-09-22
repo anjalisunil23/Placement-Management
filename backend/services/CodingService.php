@@ -261,7 +261,8 @@ final class CodingService
             Response::error($e->getMessage(), 503);
         } catch (\Throwable $e) {
             error_log('[PMS coding AI] generate failed: ' . $e->getMessage());
-            Response::error('AI generation failed. Please try again.', 503);
+            $msg = trim($e->getMessage());
+            Response::error($msg !== '' ? $msg : 'AI generation failed. Please try again.', 503);
             return [];
         }
     }
