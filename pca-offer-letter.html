@@ -28,7 +28,6 @@
       height: var(--page-h);
       min-height: var(--page-h);
       max-height: var(--page-h);
-      max-width: 100%;
       margin: 12px auto;
       background: #fff;
       box-shadow: 0 2px 18px rgba(0, 0, 0, 0.12);
@@ -48,11 +47,10 @@
     .letterhead,
     .letter-footer {
       width: 100%;
-      height: auto;
       display: block;
       flex-shrink: 0;
       background: #fff;
-      /* Hide black matte if an old cached PNG is still served */
+      /* Fallback if PNG still contains black matte from export */
       mix-blend-mode: screen;
     }
 
@@ -60,27 +58,25 @@
 
     .content {
       flex: 1 1 auto;
-      min-height: 0;
-      padding: 2mm var(--side-pad) 1mm;
-      font-size: 10pt;
-      line-height: 1.32;
-      overflow: hidden;
+      padding: 4mm var(--side-pad) 2mm;
+      font-size: 10.5pt;
+      line-height: 1.38;
     }
 
     .doc-title {
       text-align: center;
-      font-size: 12.5pt;
+      font-size: 13pt;
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      margin: 1mm 0 3.5mm;
+      margin: 2mm 0 5mm;
       line-height: 1.25;
     }
 
     .meta-block {
-      margin-bottom: 3mm;
-      font-size: 10pt;
-      line-height: 1.4;
+      margin-bottom: 4mm;
+      font-size: 10.5pt;
+      line-height: 1.45;
     }
 
     .meta-block .org-line { font-weight: 700; }
@@ -104,13 +100,13 @@
     .divider {
       border: none;
       border-top: 1.25pt solid #666;
-      margin: 3mm 0 3.5mm;
+      margin: 4mm 0 4.5mm;
     }
 
     .salutation { margin-bottom: 3mm; }
     .salutation p { font-weight: 700; margin-bottom: 1mm; }
 
-    .body-text p { margin-bottom: 2.5mm; text-align: left; }
+    .body-text p { margin-bottom: 3mm; text-align: left; }
     .body-text p:last-child { margin-bottom: 0; }
 
     .section-heading { font-weight: 700; margin: 3.5mm 0 2mm; }
@@ -122,8 +118,8 @@
     .closing .sign-off { font-weight: 700; line-height: 1.4; }
 
     .signature-block {
-      margin-top: 4mm;
-      font-size: 10pt;
+      margin-top: 6mm;
+      font-size: 10.5pt;
     }
 
     .principal-sign {
@@ -147,23 +143,34 @@
       margin: 0;
     }
 
+    body.embed {
+      background: #fff;
+    }
+
+    body.embed .toolbar {
+      display: none !important;
+    }
+
+    body.embed .sheet {
+      margin: 0 auto;
+      box-shadow: none;
+    }
+
     @media print {
       html, body {
         background: #fff;
-        width: 210mm;
-        height: 297mm;
+        width: var(--page-w);
+        height: var(--page-h);
         margin: 0;
         padding: 0;
       }
       .sheet {
-        margin: 0 auto;
+        margin: 0;
         box-shadow: none;
-        width: 210mm;
-        height: 297mm;
-        min-width: 210mm;
-        min-height: 297mm;
-        max-width: 210mm;
-        max-height: 297mm;
+        width: var(--page-w);
+        height: var(--page-h);
+        min-height: var(--page-h);
+        max-height: var(--page-h);
         page-break-after: avoid;
         page-break-inside: avoid;
       }
@@ -229,57 +236,6 @@
     }
 
     .toolbar button:hover { background: #163d7f; }
-
-    /* Embedded preview (PO modal iframe): scale full A4 page to fit, no scroll */
-    html[data-embed="1"],
-    html[data-embed="1"] body {
-      background: #fff;
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-    }
-
-    html[data-embed="1"] body {
-      display: flex;
-      flex-direction: column;
-    }
-
-    html[data-embed="1"] .toolbar {
-      display: none !important;
-    }
-
-    html[data-embed="1"] .sheet-viewport {
-      flex: 1 1 auto;
-      min-height: 0;
-      width: 100%;
-      overflow: hidden;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-    }
-
-    html[data-embed="1"] .sheet-scaler {
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-
-    html[data-embed="1"] .sheet {
-      margin: 0;
-      box-shadow: none;
-      width: var(--page-w);
-      height: var(--page-h);
-      min-width: var(--page-w);
-      min-height: var(--page-h);
-      max-width: var(--page-w);
-      max-height: var(--page-h);
-      position: relative;
-      top: auto;
-      left: auto;
-      transform: scale(var(--embed-scale, 1));
-      transform-origin: top left;
-    }
   </style>
 </head>
 <body>
@@ -298,8 +254,6 @@
   <p class="hint">Academic year is calculated automatically (July–June). Adjust the letter date if needed before printing.</p>
 </div>
 
-<div class="sheet-viewport" id="sheetViewport">
-<div class="sheet-scaler" id="sheetScaler">
 <article class="sheet" id="letterSheet">
   <div class="letterhead-wrap">
     <img class="letterhead" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
@@ -381,17 +335,13 @@
     <img class="letter-footer" data-asset="css/img/pca-footer.png" alt="Contact and accreditation footer"/>
   </div>
 </article>
-</div>
-</div>
 
 <script>
 (function () {
   const API_BASE = (location.protocol === 'file:' ? '' : '') + '/backend/api';
   const assetRoot = location.protocol === 'file:' ? '' : '/';
-  const ASSET_VER = '20260920white';
   document.querySelectorAll('[data-asset]').forEach((img) => {
-    const path = img.getAttribute('data-asset');
-    img.src = assetRoot + path + '?v=' + ASSET_VER;
+    img.src = assetRoot + img.getAttribute('data-asset');
   });
 
   function academicYearRange(fromDate) {
@@ -443,9 +393,12 @@
 
   const mode = qp('mode');
   const embed = qp('embed') === '1';
-  if (embed) document.documentElement.setAttribute('data-embed', '1');
   const assignmentId = qp('assignment');
   const readOnly = mode === 'student';
+
+  if (embed) {
+    document.body.classList.add('embed');
+  }
 
   function applyPayload(data) {
     if (!data) return;
@@ -520,61 +473,9 @@
     ayInline.forEach(el => { el.textContent = ay; });
   }
 
-  function fitEmbedPreview() {
-    if (!embed) return;
-    const viewport = document.getElementById('sheetViewport');
-    const scaler = document.getElementById('sheetScaler');
-    const sheet = document.getElementById('letterSheet');
-    if (!viewport || !scaler || !sheet) return;
-
-    sheet.style.transform = 'none';
-    scaler.style.width = '';
-    scaler.style.height = '';
-
-    const vw = viewport.clientWidth;
-    const vh = viewport.clientHeight;
-    const sw = sheet.offsetWidth;
-    const sh = sheet.offsetHeight;
-    if (!vw || !vh || !sw || !sh) return;
-
-    const scale = Math.min(vw / sw, vh / sh);
-    document.documentElement.style.setProperty('--embed-scale', String(scale));
-    scaler.style.width = Math.floor(sw * scale) + 'px';
-    scaler.style.height = Math.floor(sh * scale) + 'px';
-    sheet.style.transform = 'scale(' + scale + ')';
-    sheet.style.transformOrigin = 'top left';
-  }
-
-  function scheduleEmbedFit() {
-    if (!embed) return;
-    requestAnimationFrame(() => {
-      fitEmbedPreview();
-      requestAnimationFrame(fitEmbedPreview);
-    });
-  }
-
   [inpDate, inpName, inpClass].forEach(el => el.addEventListener('input', sync));
   document.getElementById('btnPrint').addEventListener('click', () => window.print());
-
-  if (embed) {
-    window.addEventListener('resize', scheduleEmbedFit);
-    const viewport = document.getElementById('sheetViewport');
-    if (viewport && typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(scheduleEmbedFit).observe(viewport);
-    }
-    document.querySelectorAll('.letterhead, .letter-footer, .principal-sign').forEach((img) => {
-      if (!img.complete) {
-        img.addEventListener('load', scheduleEmbedFit, { once: true });
-        img.addEventListener('error', scheduleEmbedFit, { once: true });
-      }
-    });
-    if (document.fonts?.ready) document.fonts.ready.then(scheduleEmbedFit).catch(() => {});
-  }
-
-  loadLetterData().finally(() => {
-    scheduleEmbedFit();
-    if (embed) setTimeout(scheduleEmbedFit, 150);
-  });
+  loadLetterData();
 })();
 </script>
 </body>
