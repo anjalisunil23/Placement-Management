@@ -55,9 +55,20 @@
   let myProgress = null;
   let studentJdCompanyBlocks = [];
   let studentJdSelectedCompanyId = null;
+  let studentJdBlockView = 'tests';
   let dirFilterBranch = '';
-  let dirSearch = '';
-  let dirSearchTimer = 0;
+  let dirFilterBatch = '';
+  let progressContestType = 'weekly';
+  let dirLoadTimer = 0;
+  let dirLoadSeq = 0;
+  let dirResultsCacheKey = '';
+  let dirResultsCache = null;
+  let dirFilterCacheKey = '';
+  let dirFilterCache = null;
+  let dirFiltersBound = false;
+  let deptStorePrimed = false;
+  let contestPreviewId = null;
+  let contestResultsModal = null;
   let bankDifficultyFilter = '';
   let bankCategoryFilter = '';
   const selectedBankIds = new Set();
@@ -138,8 +149,96 @@
     const kind = String(row.testKind || '').toLowerCase();
     if (kind === 'company') return true;
     if (String(row.companyId || '').trim()) return true;
-    const test = tests.find((t) => String(t.id) === String(row.testId || ''));
+    const test = resolveHistoryTest(row);
     return isCompanyTest(test);
+  }
+
+  function historyEntryIsContest(h) {
+    const row = h && typeof h === 'object' ? h : {};
+    const type = String(row.contestType || '').toLowerCase();
+    if (type === 'weekly' || type === 'monthly') return true;
+    return isContestTest(resolveHistoryTest(row));
+  }
+
+  function resolveHistoryTest(h) {
+    const id = String(h?.testId || '');
+    const title = String(h?.testTitle || h?.testName || '').trim();
+    const byId = id ? tests.find((t) => String(t.id) === id) : null;
+    if (byId) return byId;
+    return title ? tests.find((t) => String(t.title || '') === title) : null;
+  }
+
+  function historyResultMode(h) {
+    const row = h && typeof h === 'object' ? h : {};
+    if (row.resultVisibility) return String(row.resultVisibility);
+    if (access.canManage || access.canViewDirectory) return 'full';
+    if (!historyEntryIsContest(row)) return 'full';
+    const test = resolveHistoryTest(row);
+    if (test && (test.resultStatus === 'PUBLISHED' || test.resultsPublished)) return 'published';
+    if (test && Object.prototype.hasOwnProperty.call(test, 'resultsPublished')) {
+      return test.resultsPublished ? 'published' : 'pending';
+    }
+    return row.resultsPublished ? 'published' : 'pending';
+  }
+
+  function enrichHistoryEntry(h) {
+    if (!h || typeof h !== 'object') return h;
+    const copy = { ...h };
+    const test = resolveHistoryTest(copy);
+    if (test) {
+      copy.testId = copy.testId || test.id;
+      if (!copy.contestType) copy.contestType = test.contestType || 'none';
+      if (!copy.testKind) copy.testKind = isCompanyTest(test) ? 'company' : 'regular';
+      if (!copy.companyId && test.companyId) copy.companyId = test.companyId;
+      if (!copy.companyName && test.companyName) copy.companyName = test.companyName;
+    }
+    const pct = Number(copy.percentage);
+    const total = Number(copy.totalMarks ?? copy.maximumScore);
+    const obtained = Number(copy.marksObtained ?? copy.score);
+    if ((!Number.isFinite(obtained) || obtained <= 0) && Number.isFinite(pct) && Number.isFinite(total) && total > 0) {
+      copy.marksObtained = Math.round((pct / 100) * total * 100) / 100;
+      copy.score = copy.marksObtained;
+    }
+    if (copy.timeTakenLabel && !copy.timeTakenSeconds) {
+      const m = String(copy.timeTakenLabel).match(/^(\d{2}):(\d{2})$/);
+      if (m) copy.timeTakenSeconds = Number(m[1]) * 60 + Number(m[2]);
+    }
+    return copy;
+  }
+
+  function formatTimeTaken(seconds) {
+    const sec = Math.max(0, Number(seconds) || 0);
+    const m = Math.floor(sec / 60);
+    return `${String(m).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  }
+
+  function formatHistoryMeta(h) {
+    const row = enrichHistoryEntry(h);
+    const bits = [];
+    if (historyEntryIsContest(row)) {
+      bits.push(row.contestScheduleLabel || (row.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest'));
+    }
+    const mode = historyResultMode(row);
+    if (mode === 'pending') {
+      bits.push('Results pending');
+      return bits.join(' · ');
+    }
+    const sec = Number(row.timeTakenSeconds);
+    if (row.timeTakenLabel) {
+      bits.push(String(row.timeTakenLabel));
+    } else if (Number.isFinite(sec) && sec > 0) {
+      bits.push(formatTimeTaken(sec));
+    }
+    const obtained = Number(row.marksObtained ?? row.score);
+    const total = Number(row.totalMarks ?? row.maximumScore);
+    const pct = Number(row.percentage);
+    if (Number.isFinite(obtained) && Number.isFinite(total) && total > 0) {
+      const markStr = `${obtained}/${total}`;
+      bits.push(Number.isFinite(pct) ? `Score ${markStr} (${pct}%)` : `Score ${markStr}`);
+    } else if (Number.isFinite(pct)) {
+      bits.push(`Score ${pct}%`);
+    }
+    return bits.length ? bits.join(' · ') : '—';
   }
 
   function renderJdCompanyGridHtml(blocks) {
@@ -311,6 +410,21 @@
     return jdSetDetailsCache[id] || null;
   }
 
+  async function getStudentJdSetDetail(setId) {
+    const id = String(setId || '');
+    if (!id) return null;
+    const cacheKey = `student:${id}`;
+    if (jdSetDetailsCache[cacheKey]) return jdSetDetailsCache[cacheKey];
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api(`/coding/student/company-block/sets/${encodeURIComponent(id)}`).catch(() => null);
+      if (res?.data) jdSetDetailsCache[cacheKey] = res.data;
+    } else {
+      const detail = await getJdSetDetail(id);
+      if (detail) jdSetDetailsCache[cacheKey] = detail;
+    }
+    return jdSetDetailsCache[cacheKey] || null;
+  }
+
   async function loadJdLibrary() {
     if (!access.canManage) return;
     await ensureJdCompaniesLoaded().catch(() => {});
@@ -372,7 +486,7 @@
     return Number(set?.problemCount ?? set?.questionCount ?? 0);
   }
 
-  function renderJdSetCardsHtml(sets, { selectable = false } = {}) {
+  function renderJdSetCardsHtml(sets, { allowDelete = true, selectable = false } = {}) {
     return (sets || []).map((set) => {
       const id = String(set.id || '');
       const hasDoc = !!(set.hasDocument || set.jdFileUrl);
@@ -387,7 +501,7 @@
           <div class="d-flex gap-2 flex-shrink-0">
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
             <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Problems</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
+            ${allowDelete ? `<button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>` : ''}
           </div>
         </div>
         <div class="d-none mt-3" data-jd-doc-panel="${esc(id)}"></div>
@@ -472,7 +586,7 @@
     }
   }
 
-  function bindJdSetCardEvents(root) {
+  function bindJdSetCardEvents(root, { getDetail = getJdSetDetail, allowDelete = true } = {}) {
     if (!root) return;
     root.querySelectorAll('[data-jd-select]').forEach((pick) => {
       pick.addEventListener('change', () => {
@@ -495,7 +609,7 @@
           btn.textContent = 'Document';
           return;
         }
-        const detail = await getJdSetDetail(id);
+        const detail = await getDetail(id);
         panel.innerHTML = renderJdDocumentPanel(detail || {});
         panel.classList.remove('d-none');
         btn.textContent = 'Hide doc';
@@ -512,7 +626,7 @@
           btn.textContent = 'Problems';
           return;
         }
-        const detail = await getJdSetDetail(id);
+        const detail = await getDetail(id);
         const qs = detail?.problems || detail?.questions || [];
         panel.innerHTML = qs.length
           ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderCodingProblemDetailHtml(q, i)).join('')}</div>`
@@ -521,9 +635,11 @@
         btn.textContent = 'Hide';
       });
     });
-    root.querySelectorAll('[data-jd-delete]').forEach((btn) => {
-      btn.addEventListener('click', () => deleteJdSet(btn.getAttribute('data-jd-delete')));
-    });
+    if (allowDelete) {
+      root.querySelectorAll('[data-jd-delete]').forEach((btn) => {
+        btn.addEventListener('click', () => deleteJdSet(btn.getAttribute('data-jd-delete')));
+      });
+    }
   }
 
   async function deleteJdSet(id) {
@@ -655,18 +771,50 @@
     syncContestFormFields();
   }
 
+  function syncStudentJdBlockViewNav() {
+    document.querySelectorAll('#studentJdBlockViewNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-jd-block-view') === studentJdBlockView);
+    });
+  }
+
+  function applyStudentJdBlockView(view) {
+    studentJdBlockView = view === 'bank' ? 'bank' : 'tests';
+    syncStudentJdBlockViewNav();
+    if (studentJdSelectedCompanyId) {
+      showStudentJdCompanyDetail(studentJdSelectedCompanyId);
+    } else {
+      renderStudentJdBlock();
+    }
+  }
+
   function showStudentJdCompanyDetail(companyId) {
+    const block = studentJdCompanyBlocks.find((b) => String(b.companyId || '') === String(companyId || ''));
     studentJdSelectedCompanyId = companyId;
     document.getElementById('studentJdBlockCompanyView')?.classList.add('d-none');
     document.getElementById('studentJdBlockCompanyDetail')?.classList.remove('d-none');
     document.getElementById('studentJdBlockDetailNav')?.classList.remove('d-none');
+    syncStudentJdBlockViewNav();
+    const showTests = studentJdBlockView === 'tests';
     const testsRoot = document.getElementById('studentJdBlockCompanyTests');
-    const companyTests = studentCompanyTestsFor(companyId);
-    if (testsRoot) {
-      testsRoot.innerHTML = companyTests.length
-        ? `<div class="apt-prob-list">${companyTests.map((t, i) => codingProbRowHtml(t, i)).join('')}</div>`
-        : '<p class="small text-muted-2 mb-0">No company coding tests published for this company yet.</p>';
-      bindOpenTests(testsRoot, companyTests);
+    const bankSection = document.getElementById('studentJdBlockBankSection');
+    testsRoot?.classList.toggle('d-none', !showTests);
+    bankSection?.classList.toggle('d-none', showTests);
+    if (showTests) {
+      const companyTests = studentCompanyTestsFor(companyId);
+      if (testsRoot) {
+        testsRoot.innerHTML = companyTests.length
+          ? `<div class="apt-prob-list">${companyTests.map((t, i) => codingProbRowHtml(t, i)).join('')}</div>`
+          : '<p class="small text-muted-2 mb-0">No company coding tests published for this company yet.</p>';
+        bindOpenTests(testsRoot, companyTests);
+      }
+    } else {
+      const list = document.getElementById('studentJdBlockSetsList');
+      const sets = block?.sets || [];
+      if (!list) return;
+      list.innerHTML = sets.length
+        ? renderJdSetCardsHtml(sets, { allowDelete: false })
+        : '<p class="text-muted-2 mb-0">No company problem sets for this company yet.</p>';
+      bindJdSetCardEvents(list, { getDetail: getStudentJdSetDetail, allowDelete: false });
     }
   }
 
@@ -702,6 +850,7 @@
     } else {
       studentJdCompanyBlocks = buildDemoStudentCompanyBlocks();
     }
+    syncStudentJdBlockViewNav();
     renderStudentJdBlock();
   }
 
@@ -758,16 +907,13 @@
     });
     document.getElementById('myResultsContestTypeNav')?.classList.toggle('d-none', myResultsView !== 'contests');
     syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
-    syncMyResultsPanels();
-    if (myResultsView === 'contests') renderContestArena();
-    else if (myProgress) renderHistory(myProgress);
+    if (myProgress) renderHistory(myProgress);
   }
 
   function applyMyResultsContestType(type) {
     myResultsContestType = type === 'monthly' ? 'monthly' : 'weekly';
     syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
     if (myProgress) renderHistory(myProgress);
-    if (myResultsView === 'contests') renderContestArena();
   }
 
   function formatIst(value, options = {}) {
@@ -920,11 +1066,26 @@
   function defaultView() {
     const views = allowedViews();
     const role = currentRole();
-    if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
     if (views.includes('manage') && (role === 'placement_officer' || role === 'admin')) return 'manage';
+    if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
     if (views.includes('take')) return 'take';
     if (views.includes('progress')) return 'progress';
-    return views[0] || (access.canViewDirectory ? 'progress' : 'take');
+    return views[0] || 'take';
+  }
+
+  function resolveActiveView(requested) {
+    const views = allowedViews();
+    let view = requested || defaultView();
+    const role = currentRole();
+    if (!access.canTake || role === 'placement_officer' || role === 'admin' || role === 'staff') {
+      if (view === 'take' || !views.includes(view)) {
+        view = views.includes('manage') && (role === 'placement_officer' || role === 'admin')
+          ? 'manage'
+          : (views.includes('progress') ? 'progress' : defaultView());
+      }
+    }
+    if (!views.includes(view)) view = defaultView();
+    return view;
   }
 
   function setupViewNav() {
@@ -939,15 +1100,7 @@
   }
 
   async function applyView(requested) {
-    const views = allowedViews();
-    let view = requested || defaultView();
-    const role = currentRole();
-    if (!access.canTake || role === 'placement_officer' || role === 'admin' || role === 'staff') {
-      if (view === 'take' || !views.includes(view)) {
-        view = views.includes('progress') ? 'progress' : (views.includes('manage') ? 'manage' : defaultView());
-      }
-    }
-    if (!views.includes(view)) view = defaultView();
+    const view = resolveActiveView(requested);
     const hash = `#${view}`;
     if (location.hash !== hash) history.replaceState(null, '', hash);
 
@@ -997,6 +1150,27 @@
         assignedClassBatches: role === 'staff' ? staffAssignedBatches() : [],
       };
     }
+    updateManageScopeHint(access.scope || {});
+  }
+
+  function updateManageScopeHint(scope = access.scope || {}) {
+    const hint = document.getElementById('manageScopeHint');
+    if (!hint) return;
+    const role = currentRole();
+    if (role === 'placement_officer') {
+      const name = resolveDepartmentLabel(
+        scope.departmentId || '',
+        scope.departmentName || '',
+        Auth.user()?.department || ''
+      );
+      hint.textContent = name
+        ? `Same tools as admin — scoped to ${name} students and tests only.`
+        : (scope.label || 'No department assigned — contact admin to manage coding tests.');
+      hint.classList.remove('d-none');
+      return;
+    }
+    hint.textContent = '';
+    hint.classList.add('d-none');
   }
 
   function renderStats(p) {
@@ -1016,46 +1190,60 @@
       </div>`).join('');
   }
 
-  function historyMatchesView(h) {
-    if (myResultsView === 'company') return historyEntryIsCompany(h);
-    const contest = isContestTest(h) || String(h.contestType || '') === 'weekly' || String(h.contestType || '') === 'monthly';
-    if (myResultsView === 'contests') {
-      return contest && !historyEntryIsCompany(h) && contestTypeOf(h) === myResultsContestType;
-    }
-    return !contest && !historyEntryIsCompany(h);
-  }
-
-  function syncMyResultsPanels() {
-    const showArena = myResultsView === 'contests';
-    document.getElementById('myHistory')?.classList.toggle('d-none', showArena);
-    document.getElementById('contestArena')?.classList.toggle('d-none', !showArena);
-  }
-
   function renderHistory(p) {
-    syncMyResultsPanels();
-    const hist = (p.history || []).filter(historyMatchesView);
+    const hist = (p.history || []).map((h) => enrichHistoryEntry(h));
+    const filtered = hist.filter((h) => {
+      if (myResultsView === 'contests') {
+        return historyEntryIsContest(h) && contestTypeOf(h) === myResultsContestType;
+      }
+      if (myResultsView === 'company') {
+        return historyEntryIsCompany(h);
+      }
+      return !historyEntryIsContest(h) && !historyEntryIsCompany(h);
+    });
+    const canReview = access.canTake;
+    const contestLabel = myResultsContestType === 'monthly' ? 'monthly' : 'weekly';
+    const emptyLabel = myResultsView === 'contests'
+      ? `No ${contestLabel} contest attempts yet.`
+      : (myResultsView === 'company'
+        ? 'No company test attempts yet.'
+        : 'No attempts yet. Select a test on the left to begin.');
     const root = document.getElementById('myHistory');
-    if (!root || myResultsView === 'contests') return;
-    root.innerHTML = hist.length
-      ? hist.slice(0, 8).map((h) => `
-          <div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
+    if (!root) return;
+    root.innerHTML = filtered.length
+      ? filtered.slice(0, 8).map((h) => {
+          const attemptId = h.attemptId || h.id;
+          const mode = historyResultMode(h);
+          const viewBtn = canReview && attemptId && Auth.hasRealAuth() && !Auth.isDemo()
+            ? `<button type="button" class="btn btn-link btn-sm p-0" data-view-attempt="${esc(attemptId)}">${mode === 'pending' ? 'Status' : (mode === 'published' ? 'Result' : 'View')}</button>`
+            : '';
+          return `<div class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2">
             <div class="min-w-0">
-              <div class="text-truncate fw-medium">${esc(h.testTitle)}</div>
-              <div class="small text-muted-2">${esc(h.dateLabel || h.submittedAt || '')}</div>
+              <div class="text-truncate fw-medium">${esc(h.testTitle || h.testName || 'Test')}</div>
+              <div class="small text-muted-2">${esc(formatHistoryMeta(h))}</div>
             </div>
-            <div class="text-end flex-shrink-0">
-              <div class="small fw-semibold">${esc(h.score)} / ${esc(h.totalMarks)}</div>
-              <div class="d-flex justify-content-end align-items-center gap-1 mt-1">
-                <span class="small text-muted-2">${esc(h.percentage)}%</span>
-                <span class="badge-soft ${h.status === 'Passed' ? 'success' : 'danger'}">${esc(h.status)}</span>
-              </div>
-            </div>
-          </div>`).join('')
-      : `<p class="text-muted-2 mb-0">${myResultsView === 'company'
-        ? 'No company coding test attempts yet.'
-        : myResultsView === 'contests'
-          ? `No ${myResultsContestType === 'monthly' ? 'monthly' : 'weekly'} contest attempts yet.`
-          : 'No coding attempts yet. Select a test on the left to begin.'}</p>`;
+            <div class="d-flex align-items-center gap-2 flex-shrink-0 pt-1">${viewBtn}</div>
+          </div>`;
+        }).join('')
+      : `<p class="text-muted-2 mb-0">${emptyLabel}</p>`;
+    root.querySelectorAll('[data-view-attempt]').forEach((btn) => {
+      btn.addEventListener('click', () => viewCodingAttemptResult(btn.getAttribute('data-view-attempt')));
+    });
+  }
+
+  async function viewCodingAttemptResult(attemptId) {
+    if (!attemptId) return;
+    if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
+      toastMsg('Detailed results are available in a live student session.', 'info');
+      return;
+    }
+    const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/result`).catch(() => null);
+    if (!res?.success) {
+      toastMsg(res?.message || 'Could not load result.', 'error');
+      return;
+    }
+    document.getElementById('hubView')?.classList.add('d-none');
+    exam?.showResult(res.data);
   }
 
   function bestHistoryForTest(testId) {
@@ -1165,9 +1353,7 @@
       tests = list || [];
       myProgress = progress;
       renderStats(progress);
-      syncMyResultsPanels();
-      if (myResultsView === 'contests') await renderContestArena();
-      else renderHistory(progress);
+      renderHistory(progress);
       if (takeListPanel === 'jdblock') await loadStudentJdBlock();
       else renderTestList();
     } catch (err) {
@@ -1509,6 +1695,7 @@
 
   function renderManage() {
     if (!access.canManage) return;
+    updateManageScopeHint(access.scope || {});
     syncManageContestActions();
     applyManagePanel(managePanel);
     const regular = tests.filter((t) => isRegularTest(t));
@@ -1550,7 +1737,7 @@
           <div class="col-md-2"><label class="form-label small mb-1">Difficulty</label>
             <select class="form-select form-select-sm" data-f="difficulty">${DIFFICULTIES.map((d) => `<option ${d === (q.difficulty || 'Medium') ? 'selected' : ''}>${d}</option>`).join('')}</select>
           </div>
-          <div class="col-md-6"><label class="form-label small mb-1">Category</label>
+          <div class="col-md-6"><label class="form-label small mb-1">Topic</label>
             <select class="form-select form-select-sm" data-f="category">${CATEGORIES.map((c) => `<option ${c === normalizeCodingTopic(q.category || 'Algorithms') ? 'selected' : ''}>${c}</option>`).join('')}</select>
           </div>
           <div class="col-12"><label class="form-label small mb-1">Description</label><textarea class="form-control form-control-sm" data-f="description" rows="2">${esc(q.description || '')}</textarea></div>
@@ -1779,104 +1966,465 @@
     bankProblemModal.show();
   }
 
-  function progressDirTitle(role, panel = progressPanel) {
-    const contest = panel === 'contests';
-    const map = {
-      placement_officer: contest ? 'Department contest results' : 'Department test results',
-      staff: contest ? 'Class contest results' : 'Class test results',
-      admin: contest ? 'Institution contest results' : 'Institution test results',
-    };
-    return map[role] || (contest ? 'Contest results' : 'Test results');
-  }
-
   function studentIdLabel(r) {
     return r.registerNumber || r.studentCode || r.studentId || '—';
   }
 
-  function categoryShort(r) {
-    const cats = r.categoryPerformance || r.categoryWise || {};
-    const entries = Object.entries(cats);
-    if (!entries.length) return '—';
-    return entries.map(([k, v]) => {
-      const pct = (v && typeof v === 'object') ? (v.percentage ?? 0) : v;
-      return `${k}: ${pct}%`;
-    }).join(' · ');
+  function staffNeedsClassFilter() {
+    return Auth.role() === 'staff';
   }
 
-  function hasDirectoryLookup() {
-    return !!(dirSearch.trim() || dirFilterBranch);
+  function hasStaffDirectoryLookup() {
+    return !!(dirFilterBranch || dirFilterBatch);
   }
 
-  function renderClassChart(rows) {
-    const wrap = document.getElementById('dirClassChartWrap');
-    const chart = document.getElementById('dirClassChart');
-    if (!wrap || !chart) return;
-    const show = progressPanel === 'tests' && !!dirFilterBranch;
-    wrap.classList.toggle('d-none', !show);
-    if (!show) {
-      chart.innerHTML = '';
-      return;
+  function dirOptionLabel(value) {
+    const raw = String(value || '').trim();
+    if (typeof resolveCollegeProgrammeLabel === 'function') {
+      const catalog = resolveCollegeProgrammeLabel(raw);
+      if (catalog) return catalog;
     }
-    if (!rows.length) {
-      chart.innerHTML = '<p class="small text-muted-2 mb-0">No students found for this selection yet.</p>';
-      return;
-    }
-    const sorted = [...rows].sort((a, b) => (Number(b.bestScore) || 0) - (Number(a.bestScore) || 0));
-    chart.innerHTML = sorted.map((r) => {
-      const pct = Math.max(0, Math.min(100, Number(r.bestScore) || 0));
-      return `<div class="cod-class-bar">
-        <div class="lbl" title="${esc(r.name || '')}">${esc(r.name || 'Student')}</div>
-        <div class="track"><span style="width:${pct}%"></span></div>
-        <div class="pct">${esc(pct)}%</div>
-      </div>`;
-    }).join('');
+    return raw;
   }
 
-  function renderDirectoryTable(rows, summary, scope = {}, needsFilter = false) {
-    document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
-    document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
-    const waiting = needsFilter || !hasDirectoryLookup();
-    document.getElementById('dirStats').innerHTML = waiting ? '' : [
-      ['Students', summary.students ?? 0],
-      ['With attempts', summary.withAttempts ?? 0],
-      ['Total attempts', summary.totalAttempts ?? 0],
-      ['Avg score', `${summary.avgPercentage ?? 0}%`],
-      ['Avg best', `${summary.avgBestScore ?? 0}%`],
-      ['Highest best', `${summary.highestBestScore ?? 0}%`],
-    ].map(([lbl, val]) =>
-      `<div class="col-6 col-md-2"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
-    ).join('');
-    renderClassChart(waiting ? [] : rows);
-    if (!waiting && dirFilterBranch) {
-      const title = document.getElementById('dirChartTitle');
-      if (title) title.textContent = `${dirFilterBranch} progress`;
-      document.getElementById('dirClassChartWrap')?.classList.remove('d-none');
+  function fillDirSelect(el, values, allLabel, selected = '') {
+    if (!el) return;
+    const current = selected || el.value;
+    el.innerHTML = `<option value="">${esc(allLabel)}</option>${(values || []).map((v) => {
+      const value = String(v || '').trim();
+      if (!value) return '';
+      return `<option value="${esc(value)}">${esc(dirOptionLabel(value))}</option>`;
+    }).join('')}`;
+    if (current && [...el.options].some((o) => o.value === current)) el.value = current;
+    else el.value = '';
+  }
+
+  function fillDirTypeSelect(types = []) {
+    const el = document.getElementById('fType');
+    if (!el) return;
+    const current = el.value;
+    const items = types.length ? types : [
+      { value: 'student', label: 'Students' },
+      { value: 'alumni', label: 'Alumni' },
+    ];
+    el.innerHTML = `<option value="">All types</option>${items.map((t) =>
+      `<option value="${esc(t.value)}">${esc(t.label || t.value)}</option>`).join('')}`;
+    if (current && [...el.options].some((o) => o.value === current)) el.value = current;
+    else el.value = '';
+  }
+
+  async function fetchProgressFilterOptions(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.department) qs.set('department', params.department);
+    if (params.course) qs.set('course', params.course);
+    if (params.class) qs.set('class', params.class);
+    const q = qs.toString();
+    const res = await api('/coding/progress/filters' + (q ? `?${q}` : '')).catch(() => null);
+    return res?.success ? res.data : null;
+  }
+
+  function resolveDepartmentLabel(id, fallbackName = '', fallbackCode = '') {
+    if (typeof DepartmentStore !== 'undefined' && id) {
+      const hit = DepartmentStore.all().find((d) => String(d.id || d._id || '') === String(id));
+      if (hit?.name) return String(hit.name);
     }
-    let emptyMsg = 'Search a student by name or roll number, or select a branch to view progress.';
-    if (!waiting && Auth.role() === 'staff' && !staffAssignedBatches().length && !(scope.assignedClassBatches || []).length) {
-      emptyMsg = 'No class is assigned to your account. Contact the placement office to monitor student coding progress.';
-    } else if (!waiting) {
-      emptyMsg = dirFilterBranch
-        ? 'No students found for this branch.'
-        : 'No matching student with coding attempts.';
+    if (fallbackName) return String(fallbackName);
+    if (id && typeof departmentDisplayName === 'function') return departmentDisplayName(id);
+    if (fallbackCode && typeof departmentDisplayName === 'function') return departmentDisplayName(fallbackCode);
+    return fallbackCode || fallbackName || '';
+  }
+
+  function syncContestTypeNav(navId, type, attr) {
+    document.querySelectorAll(`#${navId} .nav-link`).forEach((link) => {
+      link.classList.toggle('active', link.getAttribute(attr) === type);
+    });
+  }
+
+  function contestResultStatusLabel(contest) {
+    const status = contest?.resultStatus || (contest?.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    return status === 'PUBLISHED' ? 'Published' : 'Not published';
+  }
+
+  function formatContestDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString(undefined, {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  function formatAttemptScore(row) {
+    const obtained = Number(row.marksObtained ?? row.score);
+    const total = Number(row.totalMarks ?? row.maximumScore);
+    const pct = Number(row.percentage);
+    if (Number.isFinite(obtained) && Number.isFinite(total) && total > 0) {
+      return Number.isFinite(pct) ? `${obtained}/${total} (${pct}%)` : `${obtained}/${total}`;
     }
-    document.getElementById('dirRows').innerHTML = (!waiting && rows.length) ? rows.map((r) => {
-      const uid = String(r.userId || '');
-      return `<tr>
-        <td class="fw-semibold">${esc(r.name)}</td>
-        <td>${esc(studentIdLabel(r))}</td>
-        <td>${esc(r.classBatch || '—')}</td>
-        <td>${esc(r.testsAttempted ?? r.attempts ?? 0)}</td>
-        <td>${esc(r.averageScore ?? r.percentage ?? 0)}%</td>
-        <td>${esc(r.bestScore ?? 0)}%</td>
-        <td>${uid
-          ? `<button type="button" class="btn btn-sm btn-outline-primary" data-detail="${esc(uid)}">View</button>`
-          : `<span class="small text-muted-2" title="No PlaceHub login is linked, so coding history cannot be opened.">—</span>`}</td>
-      </tr>`;
-    }).join('') : `<tr><td colspan="7" class="text-muted-2 p-3">${emptyMsg}</td></tr>`;
-    document.querySelectorAll('[data-detail]').forEach((btn) => {
+    return Number.isFinite(pct) ? `${pct}%` : '—';
+  }
+
+  function mergeCompletedContestRows(apiContests = [], completedContests = []) {
+    const byId = new Map();
+    (completedContests || []).forEach((c) => {
+      const id = String(c.id || c.testId || '');
+      if (id) byId.set(id, { ...c, testId: id, id });
+    });
+    (apiContests || []).forEach((c) => {
+      const id = String(c.testId || c.id || '');
+      if (!id) return;
+      const prev = byId.get(id) || {};
+      byId.set(id, {
+        ...prev,
+        ...c,
+        testId: id,
+        id,
+        participants: c.participants || prev.participants || [],
+        participantCount: c.participantCount ?? prev.participantCount ?? (c.participants || prev.participants || []).length,
+      });
+    });
+    if (byId.size === 0) {
+      tests.filter((t) => isContestTest(t) && contestStatusClient(t) === 'COMPLETED').forEach((t) => {
+        const id = String(t.id);
+        byId.set(id, {
+          ...t,
+          testId: id,
+          id,
+          participants: [],
+          participantCount: Number(t.attemptCount ?? 0),
+        });
+      });
+    }
+    return [...byId.values()].sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+  }
+
+  function bindDirContestActions(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-view-contest-results]').forEach((btn) => {
+      btn.addEventListener('click', () => openContestResultsPreview(btn.getAttribute('data-view-contest-results')));
+    });
+    root.querySelectorAll('[data-publish-results]').forEach((btn) => {
+      btn.addEventListener('click', () => setContestResultsPublished(btn.getAttribute('data-publish-results'), true));
+    });
+    root.querySelectorAll('[data-unpublish-results]').forEach((btn) => {
+      btn.addEventListener('click', () => setContestResultsPublished(btn.getAttribute('data-unpublish-results'), false));
+    });
+    root.querySelectorAll('[data-view-attempt]').forEach((btn) => {
+      btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt'), btn.getAttribute('data-detail')));
+    });
+    root.querySelectorAll('[data-detail]').forEach((btn) => {
       btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
     });
+  }
+
+  function renderProgressContestRow(c) {
+    const id = String(c.testId || c.id || '');
+    const window = {
+      start: c.contestStartAt || c.contestWindow?.start,
+      end: c.contestEndAt || c.contestWindow?.end,
+    };
+    const resultStatus = c.resultStatus || (c.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    const resultLabel = contestResultStatusLabel(c);
+    const resultCls = resultStatus === 'PUBLISHED' ? 'success' : 'warning';
+    const participants = Number(c.participantCount ?? (c.participants || []).length ?? 0);
+    const canManageResults = access.canManage;
+    const publishBtn = !canManageResults
+      ? ''
+      : (resultStatus === 'PUBLISHED'
+        ? `<button type="button" class="btn btn-sm btn-outline-warning" data-unpublish-results="${esc(id)}">Hide results</button>`
+        : `<button type="button" class="btn btn-sm btn-success" data-publish-results="${esc(id)}">Publish Result</button>`);
+    const scheduleLines = [
+      esc(c.contestScheduleLabel || contestScheduleLabel(c)),
+      window.start ? `Start: ${esc(formatContestDateTime(window.start))}` : '',
+      window.end ? `End: ${esc(formatContestDateTime(window.end))}` : '',
+    ].filter(Boolean);
+    const publishedAt = c.resultPublishedAt
+      ? `<div class="small text-muted-2 mt-1">Published ${esc(formatContestDateTime(c.resultPublishedAt))}</div>`
+      : '';
+
+    return `<tr>
+      <td class="fw-semibold">${esc(c.title || 'Contest')}</td>
+      <td class="small text-muted-2">${scheduleLines.join('<br>')}</td>
+      <td>
+        <div class="d-flex flex-wrap gap-1">
+          <span class="badge-soft muted">Completed</span>
+          <span class="badge-soft ${resultCls}">${esc(resultLabel)}</span>
+        </div>
+        ${publishedAt}
+      </td>
+      <td>${esc(participants)}</td>
+      <td class="text-nowrap">
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" data-view-contest-results="${esc(id)}">View Results</button>
+          ${publishBtn}
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  function renderProgressContestTable(contests, emptyMsg) {
+    if (!contests.length) {
+      return `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+    }
+    return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
+      <th>Title</th><th>Schedule</th><th>Status</th><th>Participants</th><th>Actions</th>
+    </tr></thead><tbody>${contests.map((c) => renderProgressContestRow(c)).join('')}</tbody></table></div>`;
+  }
+
+  function renderContestResults(contests, summary, scope = {}, completedContests = []) {
+    document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
+    document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
+    document.getElementById('dirStats')?.classList.add('d-none');
+    document.getElementById('dirStats').innerHTML = '';
+    document.getElementById('progressContestTypeNav')?.classList.remove('d-none');
+
+    const merged = mergeCompletedContestRows(contests, completedContests)
+      .filter((c) => String(c.contestType || '') === progressContestType);
+
+    const role = Auth.role();
+    const label = progressContestType === 'monthly' ? 'monthly' : 'weekly';
+    const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
+      ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
+      : `No completed ${label} contests yet. Finished contests will appear here after their scheduled day ends.`;
+
+    const root = document.getElementById('dirContestSections');
+    if (!root) return;
+
+    if (!merged.length) {
+      root.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+      return;
+    }
+
+    root.innerHTML = renderProgressContestTable(merged, emptyMsg);
+    bindDirContestActions(root);
+  }
+
+  function renderDirectoryTable(rows, summary, scope = {}) {
+    document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
+    document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
+    document.getElementById('progressContestTypeNav')?.classList.add('d-none');
+    document.getElementById('dirStats')?.classList.add('d-none');
+    document.getElementById('dirStats').innerHTML = '';
+
+    const role = Auth.role();
+    const staffBatches = staffAssignedBatches();
+    const hasAssignedClass = staffBatches.length || (scope.assignedClassBatches || []).length;
+    const emptyMsg = progressPanel === 'contests'
+      ? (role === 'staff' && !hasAssignedClass
+        ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
+        : 'No contest results in your authorized scope yet.')
+      : (role === 'staff' && !staffBatches.length
+        ? 'No class is assigned to your account. Contact the placement office to monitor student coding progress.'
+        : (role === 'staff' && !hasStaffDirectoryLookup()
+          ? 'Select your class batch above to view coding results for your students.'
+          : (progressPanel === 'company'
+            ? 'No company test results in your authorized scope yet.'
+            : 'No test results in your authorized scope yet.')));
+
+    const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
+    document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
+      const attemptId = String(r.attemptId || r.id || '');
+      const userId = String(r.userId || '');
+      const viewBtn = canViewDetail && userId
+        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-view-attempt="${esc(attemptId)}" data-detail="${esc(userId)}">View</button>`
+        : `<button type="button" class="btn btn-sm btn-outline-secondary" data-detail="${esc(userId)}">Profile</button>`;
+      return `<tr>
+        <td class="fw-semibold">${esc(r.name || '—')}</td>
+        <td>${esc(r.registerNumber || studentIdLabel(r))}</td>
+        <td>${esc(r.classBatch || '—')}</td>
+        <td>${esc(r.attemptCount ?? '—')}</td>
+        <td>${esc(formatAttemptScore(r))}</td>
+        <td>${esc(r.testTitle || r.testName || '—')}</td>
+        <td>${viewBtn}</td>
+      </tr>`;
+    }).join('')
+      : `<tr><td colspan="7" class="text-muted-2 p-3">${emptyMsg}</td></tr>`;
+
+    document.getElementById('dirRows').querySelectorAll('[data-view-attempt]').forEach((btn) => {
+      btn.addEventListener('click', () => viewAttemptResult(btn.getAttribute('data-view-attempt'), btn.getAttribute('data-detail')));
+    });
+    document.getElementById('dirRows').querySelectorAll('[data-detail]').forEach((btn) => {
+      btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
+    });
+  }
+
+  function demoProgressFilterOptions() {
+    const u = Auth.user() || {};
+    const role = Auth.role();
+    const departments = [];
+    if (role === 'admin') {
+      const depts = typeof listStudentAcademicDepartments === 'function'
+        ? listStudentAcademicDepartments()
+        : (typeof DepartmentStore !== 'undefined' ? DepartmentStore.all() : []);
+      depts.forEach((d) => {
+        departments.push({
+          id: String(d._id || d.id || ''),
+          name: String(d.name || d.code || ''),
+          code: String(d.code || ''),
+        });
+      });
+    } else if (u.departmentId || u.departmentName || u.department || access.scope?.departmentId) {
+      const deptId = String(u.departmentId || access.scope?.departmentId || '');
+      departments.push({
+        id: deptId,
+        name: resolveDepartmentLabel(deptId, u.departmentName || access.scope?.departmentName || '', u.department || ''),
+        code: String(u.department || ''),
+      });
+    }
+    const assigned = role === 'staff' && typeof staffClassInchargeBatches === 'function'
+      ? staffClassInchargeBatches()
+      : (Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : []);
+    const batches = assigned.length
+      ? assigned
+      : (role === 'staff' ? [] : [
+        'MCAINT2022-27-S9',
+        'MCA2025-27-S3',
+      ]);
+    const branches = ['INMCA', 'MCA', 'BCA'];
+    const types = role === 'admin'
+      ? [{ value: 'student', label: 'Students' }, { value: 'alumni', label: 'Alumni' }]
+      : [{ value: 'student', label: 'Students' }];
+    return { departments, branches, batches, types };
+  }
+
+  function showDirectoryLoading() {
+    if (progressPanel === 'contests') {
+      const root = document.getElementById('dirContestSections');
+      if (root) root.innerHTML = '<p class="text-muted-2 mb-0">Loading contest results…</p>';
+      return;
+    }
+    const rows = document.getElementById('dirRows');
+    if (rows) rows.innerHTML = '<tr><td colspan="7" class="text-muted-2 p-3">Loading results…</td></tr>';
+  }
+
+  function scheduleLoadDirectory(delay = 180) {
+    window.clearTimeout(dirLoadTimer);
+    dirLoadTimer = window.setTimeout(() => {
+      loadDirectory().catch(() => {});
+    }, delay);
+  }
+
+  async function viewAttemptResult(attemptId, userId) {
+    if (userId) {
+      openStudentDetail(userId);
+      return;
+    }
+    if (!attemptId) return;
+    toastMsg('Could not open student result.', 'error');
+  }
+
+  function renderContestPreviewTable(participants) {
+    if (!participants.length) {
+      return '<p class="text-muted-2 mb-0">No participants submitted this contest yet.</p>';
+    }
+    const rows = participants.map((p) => `<tr>
+      <td>${esc(p.rank ?? '—')}</td>
+      <td class="fw-semibold">${esc(p.name || '—')}</td>
+      <td>${esc(p.registerNumber || p.studentCode || '—')}</td>
+      <td>${esc(p.marksObtained ?? p.score ?? '—')} / ${esc(p.totalMarks ?? '—')}</td>
+      <td>${esc(p.percentage ?? '—')}%</td>
+    </tr>`).join('');
+    return `<div class="table-wrap"><table class="table-modern table-sm mb-0"><thead><tr>
+      <th>Rank</th><th>Student</th><th>Register No.</th><th>Score</th><th>Percentage</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  async function openContestResultsPreview(id) {
+    if (!id) return;
+    contestPreviewId = id;
+    const titleEl = document.getElementById('contestResultsModalTitle');
+    const metaEl = document.getElementById('contestResultsModalMeta');
+    const bodyEl = document.getElementById('contestResultsModalBody');
+    const footerEl = document.getElementById('contestResultsModalFooter');
+    if (!bodyEl || !footerEl) return;
+    bodyEl.innerHTML = '<p class="text-muted-2 mb-0">Loading results…</p>';
+    footerEl.innerHTML = '';
+    contestResultsModal?.show();
+
+    let data = null;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api(`/coding/tests/${encodeURIComponent(id)}/contest-results`).catch(() => null);
+      data = res?.success ? res.data : null;
+    }
+    if (!data?.contest) {
+      bodyEl.innerHTML = '<p class="text-danger mb-0">Could not load contest results.</p>';
+      return;
+    }
+    const c = data.contest;
+    if (titleEl) titleEl.textContent = c.title || 'Contest results';
+    const window = {
+      start: c.contestStartAt || c.contestWindow?.start,
+      end: c.contestEndAt || c.contestWindow?.end,
+    };
+    const resultStatus = c.resultStatus || (c.resultsPublished ? 'PUBLISHED' : 'PENDING');
+    const resultLabel = contestResultStatusLabel(c);
+    if (metaEl) {
+      metaEl.innerHTML = [
+        window.start ? `Start: ${formatContestDateTime(window.start)}` : '',
+        window.end ? `End: ${formatContestDateTime(window.end)}` : '',
+        `${data.summary?.participantCount ?? c.participantCount ?? 0} participant(s)`,
+        `Result: ${resultLabel}`,
+        c.resultPublishedAt ? `Published: ${formatContestDateTime(c.resultPublishedAt)}` : '',
+      ].filter(Boolean).join(' · ');
+    }
+    bodyEl.innerHTML = renderContestPreviewTable(data.participants || []);
+    if (resultStatus === 'PUBLISHED') {
+      footerEl.innerHTML = `<span class="badge-soft success me-auto">Published${c.resultPublishedAt ? ` · ${esc(formatContestDateTime(c.resultPublishedAt))}` : ''}</span>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>`;
+    } else {
+      footerEl.innerHTML = `
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success" id="btnConfirmPublishContest"><i class="bi bi-megaphone me-1"></i>Publish Result</button>`;
+      document.getElementById('btnConfirmPublishContest')?.addEventListener('click', () => {
+        setContestResultsPublished(id, true);
+      });
+    }
+  }
+
+  async function setContestResultsPublished(id, published) {
+    if (!id) return;
+    const msg = published
+      ? 'Are you sure you want to publish this result? Students will be able to view their results after publication.'
+      : 'Hide contest results from students again?';
+    if (!confirm(msg)) return;
+    if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
+      toastMsg('Publishing results requires a live session with manage access.', 'info');
+      return;
+    }
+    const res = await api(`/coding/tests/${encodeURIComponent(id)}/publish-results`, {
+      method: 'POST',
+      body: JSON.stringify({ published: !!published }),
+    }).catch(() => null);
+    if (!res?.success) {
+      toastMsg(res?.message || 'Could not update contest results.', 'error');
+      return;
+    }
+    toastMsg(res.message || (published ? 'Contest results published.' : 'Contest results hidden.'), 'success');
+    if (contestPreviewId && String(contestPreviewId) === String(id)) {
+      openContestResultsPreview(id).catch(() => {});
+    }
+    if (access.canViewDirectory && progressPanel === 'contests') {
+      loadDirectory().catch(() => {});
+    }
+    if (access.canManage) {
+      await loadManaged().catch(() => {});
+      renderManage();
+    }
+  }
+
+  function applyProgressPanel(panel) {
+    progressPanel = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
+    document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
+    });
+    document.getElementById('progressContestTypeNav')?.classList.toggle('d-none', progressPanel !== 'contests');
+    syncContestTypeNav('progressContestTypeNav', progressContestType, 'data-progress-contest-type');
+  }
+
+  function applyProgressContestType(type) {
+    progressContestType = type === 'monthly' ? 'monthly' : 'weekly';
+    syncContestTypeNav('progressContestTypeNav', progressContestType, 'data-progress-contest-type');
+    if (progressPanel === 'contests') loadDirectory().catch(() => {});
   }
 
   function medalMeta(rank) {
@@ -1982,76 +2530,6 @@
       </div>`).join('');
   }
 
-  async function renderContestArena() {
-    syncMyResultsPanels();
-    if (myResultsView !== 'contests') return;
-    const root = document.getElementById('contestArena');
-    if (!root) return;
-    root.innerHTML = '<p class="text-muted-2 mb-0">Loading contest arena…</p>';
-    try {
-      const board = await CodingService.contestBoard();
-      root.innerHTML = contestBoardsHtml(board.contests || [], { student: true, myUserId: board.myUserId || '' });
-    } catch (err) {
-      root.innerHTML = `<p class="text-muted-2 mb-0">${esc(err?.message || 'Could not load contest arena.')}</p>`;
-    }
-  }
-
-  function renderContestResults(contests, summary) {
-    document.getElementById('dirTestResultsWrap')?.classList.add('d-none');
-    document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
-    document.getElementById('dirClassChartWrap')?.classList.add('d-none');
-    const published = contests.filter((c) => c.winnersPublished).length;
-    document.getElementById('dirStats').innerHTML = [
-      ['Contests', contests.length],
-      ['Winners published', published],
-      ['Live now', contests.filter((c) => c.contestOpen).length],
-      ['Submissions', contests.reduce((n, c) => n + Number(c.participantCount || 0), 0)],
-      ['Avg score', `${summary.avgPercentage ?? 0}%`],
-      ['Highest best', `${summary.highestBestScore ?? 0}%`],
-    ].map(([lbl, val]) =>
-      `<div class="col-6 col-md-2"><div class="card-surface p-2 apt-stat"><div class="small text-muted-2">${lbl}</div><div class="val" style="font-size:1.1rem">${esc(val)}</div></div></div>`
-    ).join('');
-    const root = document.getElementById('dirContestSections');
-    if (!root) return;
-    root.innerHTML = contestBoardsHtml(contests, { student: false });
-  }
-
-  function demoDirectoryFromLocal() {
-    const u = Auth.user() || {};
-    return (async () => {
-      const mine = await CodingService.getProgress();
-      const hist = mine.history || [];
-      if (!hist.length) {
-        return { rows: [], summary: { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 } };
-      }
-      const percents = hist.map((h) => Number(h.percentage) || 0);
-      const avg = percents.length ? Math.round(percents.reduce((a, b) => a + b, 0) / percents.length) : 0;
-      const best = percents.length ? Math.max(...percents) : 0;
-      return {
-        rows: [{
-          userId: u.id || 'me',
-          name: u.name || 'You',
-          registerNumber: u.registerNumber || u.studentId || '—',
-          classBatch: u.classBatch || '—',
-          testsAttempted: hist.length,
-          averageScore: avg,
-          bestScore: best,
-          accuracy: avg,
-          recentScore: percents[0] || 0,
-          categoryPerformance: {},
-        }],
-        summary: {
-          students: 1,
-          withAttempts: 1,
-          totalAttempts: hist.length,
-          avgPercentage: avg,
-          avgBestScore: best,
-          highestBestScore: best,
-        },
-      };
-    })();
-  }
-
   async function openStudentDetail(userId) {
     const body = document.getElementById('studentCodBody');
     body.innerHTML = '<p class="text-muted-2 mb-0">Loading…</p>';
@@ -2082,136 +2560,256 @@
       }).join('') : '<p class="text-muted-2 mb-0">No coding attempts yet.</p>'}`;
   }
 
-  function applyDirDepartmentFromData(departments) {
-    const select = document.getElementById('fDepartmentSelect');
+  function applyDirDepartmentFromData(departments = []) {
+    const labelInput = document.getElementById('fDepartmentLabel');
     const hidden = document.getElementById('fDepartment');
-    const label = document.getElementById('fDepartmentLabel');
-    if (Auth.role() === 'admin') {
-      if (select && !select.dataset.filled) {
-        select.innerHTML = '<option value="">All departments</option>' + departments.map((d) => `<option value="${esc(d.id)}">${esc(d.name || d.code || d.id)}</option>`).join('');
-        select.dataset.filled = '1';
+    const select = document.getElementById('fDepartmentSelect');
+    const u = Auth.user() || {};
+    let id = String(hidden?.value || u.departmentId || access.scope?.departmentId || '').trim();
+    let label = resolveDepartmentLabel(id, u.departmentName || access.scope?.departmentName || '', u.department || '');
+    if (Array.isArray(departments) && departments.length) {
+      const match = departments.find((d) => String(d.id || '') === id) || (departments.length === 1 ? departments[0] : null);
+      if (match) {
+        id = String(match.id || id).trim();
+        label = String(match.name || match.code || label).trim();
       }
-    } else {
-      const first = departments[0] || {};
-      if (label) label.value = first.name || first.code || access.scope?.departmentName || '';
-      if (hidden) hidden.value = first.id || access.scope?.departmentId || '';
+    }
+    if (hidden) hidden.value = id;
+    if (labelInput) labelInput.value = label || '—';
+    if (hidden && !hidden.value && departments.length === 1) {
+      hidden.value = String(departments[0].id || '');
+    }
+    if (select && Auth.role() === 'admin') {
+      const current = hidden?.value || select.value || '';
+      select.innerHTML = `<option value="">All departments</option>${departments.map((d) => {
+        const deptId = String(d.id || '');
+        const name = String(d.name || d.code || deptId);
+        return `<option value="${esc(deptId)}">${esc(name)}</option>`;
+      }).join('')}`;
+      if (current && [...select.options].some((o) => o.value === current)) select.value = current;
+      if (hidden) hidden.value = select.value;
     }
   }
 
-  async function loadDirFilterOptions() {
+  async function loadDirFilterOptions(changed = '') {
     const role = Auth.role();
-    document.getElementById('fDepartmentLabel')?.classList.toggle('d-none', role === 'admin');
-    document.getElementById('fDepartmentSelect')?.classList.toggle('d-none', role !== 'admin');
-    document.getElementById('fTypeWrap')?.classList.toggle('d-none', role !== 'admin');
+    const labelInput = document.getElementById('fDepartmentLabel');
+    const select = document.getElementById('fDepartmentSelect');
+
+    if (role === 'admin') {
+      labelInput?.classList.add('d-none');
+      select?.classList.remove('d-none');
+    } else {
+      select?.classList.add('d-none');
+      labelInput?.classList.remove('d-none');
+    }
+
+    if (changed === 'fDepartmentSelect' || changed === 'fBranch') {
+      if (changed === 'fDepartmentSelect') {
+        dirFilterBranch = '';
+        dirFilterBatch = '';
+      }
+      if (changed === 'fBranch') dirFilterBatch = '';
+      dirResultsCacheKey = '';
+      dirResultsCache = null;
+    }
+
     let data = null;
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      data = await api('/coding/progress/filters?' + new URLSearchParams({
+      if (typeof DepartmentStore !== 'undefined' && !deptStorePrimed) {
+        await DepartmentStore.fetch().catch(() => {});
+        deptStorePrimed = true;
+      }
+      const filterParams = {
         department: document.getElementById('fDepartment')?.value || '',
-        course: dirFilterBranch,
-      }).toString()).then((r) => r?.success ? r.data : null).catch(() => null);
-      if (!data) {
-        data = await api('/aptitude/progress/filters?' + new URLSearchParams({
-          department: document.getElementById('fDepartment')?.value || '',
-          course: dirFilterBranch,
-        }).toString()).then((r) => r?.success ? r.data : null).catch(() => null);
+        course: changed === 'fDepartmentSelect' ? '' : dirFilterBranch,
+        class: (changed === 'fDepartmentSelect' || changed === 'fBranch') ? '' : dirFilterBatch,
+      };
+      const cacheKey = JSON.stringify(filterParams);
+      if (cacheKey === dirFilterCacheKey && dirFilterCache) {
+        data = dirFilterCache;
+      } else {
+        data = await fetchProgressFilterOptions(filterParams);
+        if (data) {
+          dirFilterCacheKey = cacheKey;
+          dirFilterCache = data;
+        }
       }
     }
     if (!data) {
-      data = { departments: [], branches: [], batches: staffAssignedBatches(), types: [] };
+      data = demoProgressFilterOptions();
     }
+    if (!data) return;
+
     applyDirDepartmentFromData(data.departments || []);
-    fillSelect(document.getElementById('fBranch'), [{ value: '', label: 'Select a branch' }, ...(data.branches || []).map((b) => ({ value: b, label: b }))], dirFilterBranch);
+    let branches = data.branches || [];
+    let batches = data.batches || [];
+    if (role === 'staff') {
+      const assigned = staffAssignedBatches();
+      batches = assigned.length ? assigned : [];
+      if (assigned.length === 1 && !dirFilterBatch) dirFilterBatch = assigned[0];
+    }
+    fillDirSelect(document.getElementById('fBranch'), branches, 'All branches', dirFilterBranch);
+    dirFilterBranch = document.getElementById('fBranch')?.value || '';
+    const batchLabel = role === 'staff'
+      ? (batches.length > 1 ? 'All my classes' : 'Select class')
+      : 'All batches';
+    fillDirSelect(document.getElementById('fBatch'), batches, batchLabel, dirFilterBatch);
+    dirFilterBatch = document.getElementById('fBatch')?.value || '';
+    fillDirTypeSelect(data.types || []);
+
+    const batchEl = document.getElementById('fBatch');
+    if (batchEl) {
+      batchEl.disabled = !batches.length;
+      batchEl.required = role === 'staff' && batches.length > 0;
+    }
+    document.getElementById('fTypeWrap')?.classList.toggle('d-none', role !== 'admin');
   }
 
-  let dirFiltersReady = false;
+  function bindDirFilterEvents() {
+    if (dirFiltersBound) return;
+    dirFiltersBound = true;
+
+    document.getElementById('fBranch')?.addEventListener('change', async (e) => {
+      dirFilterBranch = e.target.value || '';
+      dirFilterBatch = '';
+      const batchEl = document.getElementById('fBatch');
+      if (batchEl) batchEl.value = '';
+      showDirectoryLoading();
+      await loadDirFilterOptions('fBranch');
+      scheduleLoadDirectory(0);
+    });
+
+    document.getElementById('fBatch')?.addEventListener('change', (e) => {
+      dirFilterBatch = e.target.value || '';
+      dirResultsCacheKey = '';
+      dirResultsCache = null;
+      showDirectoryLoading();
+      scheduleLoadDirectory(120);
+    });
+
+    document.getElementById('fType')?.addEventListener('change', () => {
+      dirResultsCacheKey = '';
+      dirResultsCache = null;
+      showDirectoryLoading();
+      scheduleLoadDirectory(120);
+    });
+
+    document.getElementById('fDepartmentSelect')?.addEventListener('change', async (e) => {
+      const hidden = document.getElementById('fDepartment');
+      if (hidden) hidden.value = e.target.value || '';
+      showDirectoryLoading();
+      await loadDirFilterOptions('fDepartmentSelect');
+      scheduleLoadDirectory(0);
+    });
+  }
+
   async function initDirFilters() {
-    if (dirFiltersReady) return;
-    dirFiltersReady = true;
+    bindDirFilterEvents();
     await loadDirFilterOptions();
-    document.getElementById('fDepartmentSelect')?.addEventListener('change', async () => {
-      document.getElementById('fDepartment').value = document.getElementById('fDepartmentSelect').value;
-      dirFilterBranch = '';
-      await loadDirFilterOptions();
-      await loadDirectory();
-    });
-    document.getElementById('fBranch')?.addEventListener('change', async () => {
-      dirFilterBranch = document.getElementById('fBranch').value;
-      await loadDirectory();
-    });
-    document.getElementById('fType')?.addEventListener('change', () => loadDirectory());
-    document.getElementById('fSearch')?.addEventListener('input', () => {
-      dirSearch = document.getElementById('fSearch').value || '';
-      window.clearTimeout(dirSearchTimer);
-      dirSearchTimer = window.setTimeout(() => loadDirectory(), 280);
-    });
-  }
-
-  function syncProgressFilters() {
-    const tests = progressPanel === 'tests';
-    document.getElementById('dirFilterRow')?.classList.toggle('d-none', !tests);
-    if (!tests) document.getElementById('dirClassChartWrap')?.classList.add('d-none');
   }
 
   function buildDirectoryQuery() {
     const qs = new URLSearchParams();
-    const dept = document.getElementById('fDepartment')?.value || '';
+    const dept = document.getElementById('fDepartment')?.value.trim();
+    const branch = document.getElementById('fBranch')?.value.trim();
+    const batch = document.getElementById('fBatch')?.value.trim();
+    const type = document.getElementById('fType')?.value.trim();
     if (dept) qs.set('department', dept);
-    if (dirFilterBranch) qs.set('course', dirFilterBranch);
-    const q = dirSearch.trim();
-    if (q) qs.set('q', q);
-    const type = document.getElementById('fType')?.value || '';
+    if (branch) qs.set('course', branch);
+    if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
-    qs.set('resultType', progressPanel === 'contests' ? 'contests' : 'tests');
+    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company') {
+      qs.set('resultType', progressPanel);
+    }
     return qs;
   }
 
-  function updateDirScopeHint(scope) {
+  function updateDirScopeHint(scope = access.scope || {}) {
     const hint = document.getElementById('dirScopeHint');
     if (!hint) return;
     const role = Auth.role();
     if (role === 'staff') {
-      const batches = scope.assignedClassBatches || staffAssignedBatches();
-      hint.textContent = batches.length ? `Showing students in ${batches.join(', ')}.` : '';
-      hint.classList.toggle('d-none', !hint.textContent);
-    } else if (role === 'placement_officer') {
-      hint.textContent = scope.departmentName ? `Showing ${scope.departmentName} students.` : '';
-      hint.classList.toggle('d-none', !hint.textContent);
-    } else {
-      hint.classList.add('d-none');
+      const batches = (scope.assignedClassBatches && scope.assignedClassBatches.length)
+        ? scope.assignedClassBatches
+        : staffAssignedBatches();
+      if (!batches.length) {
+        hint.textContent = 'No class is assigned to your account yet. Contact the placement office to view student progress.';
+        hint.classList.remove('d-none');
+        return;
+      }
+      hint.textContent = `Showing students in your assigned class${batches.length > 1 ? 'es' : ''}: ${batches.join(', ')}.`;
+      hint.classList.remove('d-none');
+      return;
     }
+    if (role === 'placement_officer') {
+      const name = resolveDepartmentLabel(scope.departmentId || '', scope.departmentName || '', '');
+      hint.textContent = scope.label || (name ? `Department scope: ${name}.` : 'No department assigned.');
+      hint.classList.toggle('d-none', !hint.textContent);
+      return;
+    }
+    hint.textContent = '';
+    hint.classList.add('d-none');
   }
 
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
-    const role = Auth.role();
-    document.getElementById('dirTitle').textContent = progressDirTitle(role, progressPanel);
-    syncProgressFilters();
-    let scope = access.scope || {};
-    updateDirScopeHint(scope);
-    if (progressPanel !== 'contests' && !hasDirectoryLookup()) {
-      renderDirectoryTable([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 }, scope, true);
-      return;
-    }
-    try {
-      const live = await CodingService.directory(buildDirectoryQuery());
-      if (live?.scope) {
-        access.scope = live.scope;
-        scope = live.scope;
+    const seq = ++dirLoadSeq;
+    applyProgressPanel(progressPanel);
+    if (staffNeedsClassFilter() && progressPanel !== 'contests') {
+      const batches = staffAssignedBatches();
+      if (!batches.length) {
+        const scope = { ...(access.scope || {}), assignedClassBatches: batches };
         updateDirScopeHint(scope);
-      }
-      if (live && (progressPanel === 'contests' || live.view === 'contests')) {
-        renderContestResults(live.contests || [], live.summary || {});
+        renderDirectoryTable([], {}, scope);
         return;
       }
-      renderDirectoryTable(live?.rows || [], live?.summary || {}, scope, !!live?.needsFilter);
-    } catch (err) {
-      toastMsg(err?.message || 'Could not load coding progress.', 'error');
-      if (progressPanel === 'contests') {
-        renderContestResults([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 });
-      } else {
-        renderDirectoryTable([], { students: 0, withAttempts: 0, totalAttempts: 0, avgPercentage: 0, avgBestScore: 0, highestBestScore: 0 }, scope);
+      if (!hasStaffDirectoryLookup()) {
+        const scope = { ...(access.scope || {}), assignedClassBatches: batches };
+        updateDirScopeHint(scope);
+        renderDirectoryTable([], {}, scope);
+        return;
       }
     }
+    if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
+      renderDirectoryTable([], {}, access.scope || {});
+      return;
+    }
+    const qs = buildDirectoryQuery();
+    const cacheKey = qs.toString();
+    let data = null;
+    if (cacheKey === dirResultsCacheKey && dirResultsCache) {
+      data = dirResultsCache;
+    } else {
+      const res = await api('/coding/progress?' + qs.toString()).catch(() => null);
+      if (seq !== dirLoadSeq) return;
+      data = res?.success ? res.data : null;
+      if (data) {
+        dirResultsCacheKey = cacheKey;
+        dirResultsCache = data;
+      }
+    }
+    if (seq !== dirLoadSeq) return;
+    const summary = data?.summary || {};
+    const scope = data?.scope || access.scope || {};
+    access.scope = scope;
+    if (scope.departmentId || scope.departmentName) {
+      applyDirDepartmentFromData([{
+        id: String(scope.departmentId || document.getElementById('fDepartment')?.value || ''),
+        name: String(scope.departmentName || ''),
+      }]);
+    }
+    updateDirScopeHint(scope);
+    if (progressPanel === 'contests' || data?.view === 'contests') {
+      renderContestResults(
+        data?.contests || [],
+        summary,
+        scope,
+        data?.completedContests || []
+      );
+      return;
+    }
+    renderDirectoryTable(data?.rows || [], summary, scope);
   }
 
   function showCodAiForm() {
@@ -2219,8 +2817,44 @@
     document.getElementById('codAiPreviewPanel')?.classList.add('d-none');
   }
 
+  function codAiTopicHierarchy() {
+    return (typeof CodingData !== 'undefined' && CodingData.TOPIC_HIERARCHY) || {};
+  }
+
+  function fillCodAiCategorySelect(selected = 'Algorithms') {
+    const sel = document.getElementById('codAiCategory');
+    if (!sel) return;
+    const cats = Object.keys(codAiTopicHierarchy());
+    sel.innerHTML = `<option value="">Select category…</option>${cats.map((c) =>
+      `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c)}</option>`
+    ).join('')}`;
+    fillCodAiTopicSelect(selected || '');
+  }
+
+  function fillCodAiTopicSelect(category, selected = '') {
+    const sel = document.getElementById('codAiTopic');
+    if (!sel) return;
+    const groups = codAiTopicHierarchy()[category];
+    if (!category || !groups) {
+      sel.innerHTML = '<option value="">Select category first…</option>';
+      sel.disabled = true;
+      sel.value = '';
+      return;
+    }
+    sel.disabled = false;
+    let html = '<option value="">Select topic…</option>';
+    Object.entries(groups).forEach(([groupLabel, topics]) => {
+      html += `<optgroup label="${esc(groupLabel)}">`;
+      (topics || []).forEach((topic) => {
+        html += `<option value="${esc(topic)}"${topic === selected ? ' selected' : ''}>${esc(topic)}</option>`;
+      });
+      html += '</optgroup>';
+    });
+    sel.innerHTML = html;
+  }
+
   function openCodAiModal(opts = {}) {
-    fillSelect(document.getElementById('codAiCategory'), CATEGORIES, 'Algorithms');
+    fillCodAiCategorySelect('Algorithms');
     fillSelect(document.getElementById('codAiDifficulty'), DIFFICULTIES, 'Medium');
     aiLastFormParams = { companyId: opts.companyId || '' };
     showCodAiForm();
@@ -2232,8 +2866,8 @@
 
   function collectCodAiParams() {
     return {
-      category: document.getElementById('codAiCategory')?.value || 'Algorithms',
-      topic: (document.getElementById('codAiTopic')?.value || '').trim() || (document.getElementById('codAiCategory')?.value || 'Algorithms'),
+      category: (document.getElementById('codAiCategory')?.value || '').trim(),
+      topic: (document.getElementById('codAiTopic')?.value || '').trim(),
       difficulty: document.getElementById('codAiDifficulty')?.value || 'Medium',
       count: Number(document.getElementById('codAiCount')?.value || 5),
       instructions: document.getElementById('codAiInstructions')?.value || '',
@@ -2269,8 +2903,12 @@
       return;
     }
     const params = collectCodAiParams();
+    if (!params.category) {
+      toastMsg('Select a category.', 'error');
+      return;
+    }
     if (!params.topic) {
-      toastMsg('Enter a topic.', 'error');
+      toastMsg('Select a topic.', 'error');
       return;
     }
     const status = document.getElementById('codAiGenerateStatus');
@@ -2340,15 +2978,24 @@
       e.preventDefault();
       applyManagePanel(link.getAttribute('data-manage-view'));
     });
+    contestResultsModal = document.getElementById('contestResultsModal')
+      ? new bootstrap.Modal(document.getElementById('contestResultsModal'))
+      : null;
     document.getElementById('progressViewNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-progress-view]');
       if (!link) return;
       e.preventDefault();
-      progressPanel = link.getAttribute('data-progress-view') || 'tests';
-      document.querySelectorAll('#progressViewNav .nav-link').forEach((a) => {
-        a.classList.toggle('active', a.getAttribute('data-progress-view') === progressPanel);
-      });
-      loadDirectory();
+      applyProgressPanel(link.getAttribute('data-progress-view') || 'tests');
+      dirResultsCacheKey = '';
+      dirResultsCache = null;
+      showDirectoryLoading();
+      loadDirectory().catch(() => {});
+    });
+    document.getElementById('progressContestTypeNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-progress-contest-type]');
+      if (!link) return;
+      e.preventDefault();
+      applyProgressContestType(link.getAttribute('data-progress-contest-type'));
     });
     document.getElementById('takeListNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-take-list]');
@@ -2365,6 +3012,12 @@
     document.getElementById('btnStudentJdBlockBack')?.addEventListener('click', () => {
       showStudentJdCompanyGrid();
       renderStudentJdBlock();
+    });
+    document.getElementById('studentJdBlockViewNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-jd-block-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyStudentJdBlockView(link.getAttribute('data-jd-block-view'));
     });
     document.getElementById('myResultsNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-results-view]');
@@ -2485,6 +3138,9 @@
     });
     document.getElementById('btnNewBankProblem')?.addEventListener('click', () => openBankProblemForm());
     document.getElementById('btnAiGenerate')?.addEventListener('click', () => openCodAiModal());
+    document.getElementById('codAiCategory')?.addEventListener('change', (e) => {
+      fillCodAiTopicSelect(e.target.value || '');
+    });
     document.getElementById('btnCodAiRun')?.addEventListener('click', () => runCodAiGenerate());
     document.getElementById('btnCodAiSave')?.addEventListener('click', () => saveCodAiSelected());
     document.getElementById('btnCodAiCancelPreview')?.addEventListener('click', () => showCodAiForm());
@@ -2599,7 +3255,6 @@
     setupTakeListNav();
     const any = access.canTake || access.canManage || access.canViewDirectory;
     document.getElementById('codDenied')?.classList.toggle('d-none', any);
-    document.getElementById('codTake')?.classList.toggle('d-none', true);
     if (!any) return;
     setupViewNav();
     const hash = String(location.hash || '').replace('#', '');

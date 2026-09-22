@@ -11,6 +11,7 @@ use PMS\Models\CodingTestModel;
 use PMS\Models\CompanyModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
+use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
 
@@ -248,12 +249,18 @@ final class CodingService
     public function generateAiBankProblems(array $user, array $body): array
     {
         AptitudeAccessService::requireManager($user);
-        $category = (string) ($body['category'] ?? 'Programming');
-        $topic = trim((string) ($body['topic'] ?? $category));
+        $category = trim((string) ($body['category'] ?? ''));
+        $topic = trim((string) ($body['topic'] ?? ''));
         $difficulty = (string) ($body['difficulty'] ?? 'Medium');
         $count = (int) ($body['count'] ?? 5);
         $instructions = (string) ($body['instructions'] ?? '');
         $count = max(1, min(10, $count));
+        if ($category === '') {
+            Response::error('Category is required.', 422);
+        }
+        if ($topic === '') {
+            Response::error('Topic is required.', 422);
+        }
         try {
             return (new CodingAiProblemService())->generate($category, $topic, $difficulty, $count, $instructions);
         } catch (\InvalidArgumentException $e) {
@@ -470,6 +477,57 @@ final class CodingService
      * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
+    public function attemptResult(array $user, string $attemptId): array
+    {
+        $attempt = $this->attempts->findById($attemptId);
+        if (!$attempt) {
+            Response::notFound('Attempt not found.');
+        }
+        if (!AptitudeAccessService::canViewAttempt($user, $attempt)) {
+            Response::forbidden('You cannot view this attempt result.');
+        }
+        if (($attempt['status'] ?? '') !== 'submitted') {
+            Response::forbidden('Result is available only after submission.');
+        }
+        $seconds = max(0, (int) ($attempt['timeTakenSeconds'] ?? 0));
+        $minutes = intdiv($seconds, 60);
+        $timeTakenLabel = (string) ($attempt['timeTakenLabel'] ?? sprintf('%02d:%02d', $minutes, $seconds % 60));
+        $score = (float) ($attempt['score'] ?? 0);
+        $totalMarks = (float) ($attempt['totalMarks'] ?? 0);
+        $percentage = (float) ($attempt['percentage'] ?? 0);
+        $status = (string) ($attempt['resultStatus'] ?? $attempt['status'] ?? '');
+        if ($status === 'submitted') {
+            $status = $percentage >= 40 ? 'Passed' : 'Failed';
+        }
+        return [
+            'attemptId' => $attemptId,
+            'testId' => (string) ($attempt['testId'] ?? ''),
+            'testTitle' => (string) ($attempt['testTitle'] ?? ''),
+            'score' => $score,
+            'totalMarks' => $totalMarks,
+            'percentage' => $percentage,
+            'passed' => stripos($status, 'pass') !== false,
+            'status' => $status,
+            'correct' => (int) ($attempt['correct'] ?? 0),
+            'incorrect' => (int) ($attempt['incorrect'] ?? 0),
+            'skipped' => (int) ($attempt['skipped'] ?? 0),
+            'questions' => (int) ($attempt['questions'] ?? count((array) ($attempt['questionResults'] ?? []))),
+            'testsPassed' => (int) ($attempt['testsPassed'] ?? 0),
+            'testsTotal' => (int) ($attempt['testsTotal'] ?? 0),
+            'timeTakenSeconds' => $seconds,
+            'timeTakenLabel' => $timeTakenLabel,
+            'questionResults' => array_values((array) ($attempt['questionResults'] ?? [])),
+            'contestType' => (string) ($attempt['contestType'] ?? 'none'),
+            'winnersPublished' => !empty($attempt['winnersPublished']),
+            'contestClosed' => !empty($attempt['contestClosed']),
+            'submittedAt' => $attempt['submittedAt'] ?? '',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
     public function myProgress(array $user): array
     {
         $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
@@ -531,96 +589,223 @@ final class CodingService
     {
         AptitudeAccessService::requireDirectoryViewer($user);
         $filters = AptitudeAccessService::sanitizeDirectoryFilters($user, $filters);
+        $resultType = $this->normalizeDirectoryResultType((string) ($filters['resultType'] ?? ''));
+        if ($resultType === 'contests') {
+            return $this->contestResultsDirectory($user, $filters);
+        }
+
         $allowed = AptitudeAccessService::authorizedSubjectUserIds($user);
-        $wantContests = (($filters['resultType'] ?? '') === 'contests');
-        $courseLookup = trim((string) ($filters['course'] ?? ''));
+        if (is_array($allowed) && $allowed === []) {
+            return $this->emptyAttemptDirectory($user);
+        }
+
+        $role = \PMS\Middleware\AuthMiddleware::resolvedRole($user);
         $rows = $this->attempts->findAll(['status' => 'submitted'], 2000, 0, ['submittedAt' => -1]);
-        $byUser = [];
-        foreach ($rows as $row) {
-            $uid = (string) ($row['userId'] ?? '');
-            if ($uid === '') {
+        /** @var array<string, array<string, mixed>> $testCache */
+        $testCache = [];
+        /** @var array<string, list<array<string, mixed>>> $attemptsByKey */
+        $attemptsByKey = [];
+        foreach ($rows as $attempt) {
+            $uid = (string) ($attempt['userId'] ?? '');
+            if ($uid === '' || (is_array($allowed) && !in_array($uid, $allowed, true))) {
                 continue;
             }
-            if (is_array($allowed) && !in_array($uid, $allowed, true)) {
+            $testId = (string) ($attempt['testId'] ?? '');
+            if ($testId === '') {
                 continue;
             }
-            $contest = CodingTestModel::normalizeContestType((string) ($row['contestType'] ?? 'none'));
-            if ($wantContests && $contest === 'none') {
+            if (!isset($testCache[$testId])) {
+                $testCache[$testId] = $this->tests->findById($testId) ?: [];
+            }
+            if (!$this->attemptMatchesDirectoryResultType($attempt, $testCache[$testId], $resultType)) {
                 continue;
             }
-            if (!$wantContests && $contest !== 'none' && $courseLookup === '') {
-                continue;
-            }
-            $byUser[$uid][] = $row;
+            $problemId = trim((string) ($attempt['problemItemId'] ?? ''));
+            $key = $uid . '|' . $testId . '|' . $problemId;
+            $attemptsByKey[$key][] = $attempt;
         }
+        foreach ($attemptsByKey as &$group) {
+            usort($group, static function (array $a, array $b): int {
+                $ta = strtotime((string) ($a['submittedAt'] ?? $a['completedAt'] ?? '')) ?: 0;
+                $tb = strtotime((string) ($b['submittedAt'] ?? $b['completedAt'] ?? '')) ?: 0;
+
+                return $ta <=> $tb;
+            });
+        }
+        unset($group);
+
         $out = [];
-        $byReg = [];
-        foreach ($byUser as $uid => $hist) {
-            $row = $this->summarizeDirectoryUser($uid, $hist);
-            foreach ($this->registerKeys($row) as $key) {
-                $byReg[$key] = (string) $uid;
-            }
-            if (!$this->directoryRowMatches($row, $filters)) {
+        /** @var array<string, array<string, mixed>> $profileCache */
+        $profileCache = [];
+        foreach ($attemptsByKey as $group) {
+            if ($group === []) {
                 continue;
             }
-            $out[] = $row;
-        }
-        $course = trim((string) ($filters['course'] ?? ''));
-        if ($course !== '' && !$wantContests) {
-            $branchRows = $this->mergeBranchRoster($user, $filters, $out, $byUser, $byReg);
-            if ($branchRows !== []) {
-                $out = $branchRows;
+            $finalAttempt = $group[count($group) - 1];
+            $uid = (string) ($finalAttempt['userId'] ?? '');
+            $testId = (string) ($finalAttempt['testId'] ?? '');
+            $test = $testCache[$testId] ?? [];
+            if (!AptitudeAccessService::canViewSubject($user, $uid)) {
+                continue;
             }
-        }
-        usort($out, static fn ($a, $b) => strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? '')));
-        $allPercents = [];
-        $bests = [];
-        $totalAttempts = 0;
-        $withAttempts = 0;
-        foreach ($out as $row) {
-            $attempts = (int) ($row['testsAttempted'] ?? 0);
-            $totalAttempts += $attempts;
-            if ($attempts > 0) {
-                $withAttempts++;
-                $allPercents[] = (float) ($row['averageScore'] ?? 0);
-                $bests[] = (float) ($row['bestScore'] ?? 0);
+            if (!isset($profileCache[$uid])) {
+                $profileCache[$uid] = $this->summarizeDirectoryUser($uid, $group);
             }
-        }
-        $summary = [
-            'students' => count($out),
-            'withAttempts' => $withAttempts,
-            'totalAttempts' => $totalAttempts,
-            'avgPercentage' => $allPercents === [] ? 0 : (int) round(array_sum($allPercents) / count($allPercents)),
-            'avgBestScore' => $bests === [] ? 0 : (int) round(array_sum($bests) / count($bests)),
-            'highestBestScore' => $bests === [] ? 0 : (int) max($bests),
-        ];
-        if ($wantContests) {
-            $boardFilters = $filters;
-            $boardFilters['q'] = '';
-            $boardFilters['class'] = '';
-            $boardFilters['course'] = '';
-            return [
-                'view' => 'contests',
-                'contests' => $this->buildContestBoards($user, $byUser, $boardFilters, true),
-                'summary' => $summary,
-                'scope' => AptitudeAccessService::scopeInfo($user),
+            $profile = $profileCache[$uid];
+            if ($role === 'staff') {
+                $staffCtx = StaffContext::resolve($user);
+                $assigned = StaffContext::assignedClassBatches($staffCtx);
+                $studentClass = (string) ($profile['classBatch'] ?? '');
+                if ($assigned === [] || !StaffContext::classBatchMatchesAssigned($studentClass, $assigned)) {
+                    continue;
+                }
+            }
+            if (($profile['userType'] ?? '') !== 'student') {
+                if ($resultType === 'company' || in_array($role, ['staff', 'placement_officer'], true)) {
+                    continue;
+                }
+            }
+            if ($role !== 'admin' && ($profile['userType'] ?? '') === 'alumni') {
+                continue;
+            }
+            if (!$this->matchesDirectoryFilters($profile, $filters)) {
+                continue;
+            }
+
+            $attemptId = (string) ($finalAttempt['_id'] ?? '');
+            $marksObtained = (float) ($finalAttempt['score'] ?? 0);
+            $totalMarks = (float) ($finalAttempt['totalMarks'] ?? $test['totalMarks'] ?? 0);
+            $percentage = (float) ($finalAttempt['percentage'] ?? 0);
+            $out[] = [
+                'attemptId' => $attemptId,
+                'userId' => $uid,
+                'name' => (string) ($profile['name'] ?? 'User'),
+                'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
+                'studentCode' => (string) ($profile['studentCode'] ?? $profile['registerNumber'] ?? ''),
+                'classBatch' => (string) ($profile['classBatch'] ?? ''),
+                'testId' => $testId,
+                'testTitle' => (string) ($finalAttempt['testTitle'] ?? $test['title'] ?? 'Coding test'),
+                'attemptCount' => count($group),
+                'marksObtained' => $marksObtained,
+                'totalMarks' => $totalMarks,
+                'score' => $marksObtained,
+                'percentage' => $percentage,
+                'completedAt' => $finalAttempt['completedAt'] ?? $finalAttempt['submittedAt'] ?? null,
             ];
         }
-        $q = trim((string) ($filters['q'] ?? ''));
-        $course = trim((string) ($filters['course'] ?? ''));
-        $needsFilter = $q === '' && $course === '';
+
+        usort($out, static function (array $a, array $b): int {
+            $ta = strtotime((string) ($a['completedAt'] ?? '')) ?: 0;
+            $tb = strtotime((string) ($b['completedAt'] ?? '')) ?: 0;
+            if ($tb !== $ta) {
+                return $tb <=> $ta;
+            }
+
+            return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+
+        $percentages = array_map(static fn ($r) => (float) ($r['percentage'] ?? 0), $out);
+        $studentIds = [];
+        foreach ($out as $row) {
+            $uid = (string) ($row['userId'] ?? '');
+            if ($uid !== '') {
+                $studentIds[$uid] = true;
+            }
+        }
+
         return [
-            'rows' => $needsFilter ? [] : $out,
-            'summary' => $needsFilter ? [
-                'students' => 0,
-                'withAttempts' => 0,
-                'totalAttempts' => 0,
-                'avgPercentage' => 0,
-                'avgBestScore' => 0,
-                'highestBestScore' => 0,
-            ] : $summary,
-            'needsFilter' => $needsFilter,
+            'view' => 'attempts',
+            'rows' => $out,
             'scope' => AptitudeAccessService::scopeInfo($user),
+            'summary' => [
+                'attemptCount' => count($out),
+                'students' => count($studentIds),
+                'avgPercentage' => $percentages === [] ? 0 : round(array_sum($percentages) / count($percentages), 1),
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
+    public function publishContestResults(array $admin, string $id, bool $published): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid coding test id.', 400);
+        }
+        $test = $this->tests->findById($id);
+        if (!$test) {
+            Response::notFound('Coding test not found.');
+        }
+        AptitudeAccessService::assertTestManageable($admin, $test);
+        if (!CodingTestModel::isContest($test)) {
+            Response::error('Results can only be published for weekly or monthly contests.', 422);
+        }
+        if ($published) {
+            if (CodingTestModel::contestStatus($test) !== 'COMPLETED') {
+                Response::error('Results can only be published after the contest has ended.', 422);
+            }
+            if (CodingTestModel::resultsPublished($test)) {
+                Response::error('Contest results are already published.', 422);
+            }
+            $patch = [
+                'resultsPublished' => true,
+                'resultPublishedAt' => DocumentHelper::now(),
+            ];
+        } else {
+            $patch = [
+                'resultsPublished' => false,
+                'resultPublishedAt' => null,
+            ];
+        }
+        if (!$this->tests->update($id, $patch)) {
+            Response::error('Could not update contest results visibility.', 500);
+        }
+        $fresh = $this->tests->findById($id) ?: $test;
+
+        return CodingTestModel::publicView($fresh, true);
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
+    public function contestResultsPreview(array $admin, string $id): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid coding test id.', 400);
+        }
+        $test = $this->tests->findById($id);
+        if (!$test) {
+            Response::notFound('Coding test not found.');
+        }
+        AptitudeAccessService::assertTestManageable($admin, $test);
+        if (!CodingTestModel::isContest($test)) {
+            Response::error('Contest results are available only for weekly or monthly contests.', 422);
+        }
+        if (CodingTestModel::contestStatus($test) !== 'COMPLETED') {
+            Response::error('Results preview is available only after the contest has ended.', 422);
+        }
+
+        $participants = $this->contestLeaderboardRows($test);
+        $window = CodingTestModel::contestWindow($test);
+        $view = CodingTestModel::publicView($test, true);
+
+        return [
+            'contest' => array_merge($view, [
+                'participantCount' => count($participants),
+                'contestStartAt' => $window['start'] ?? null,
+                'contestEndAt' => $window['end'] ?? null,
+            ]),
+            'participants' => $participants,
+            'summary' => [
+                'participantCount' => count($participants),
+                'resultStatus' => CodingTestModel::resultStatus($test),
+                'resultPublishedAt' => CodingTestModel::resultPublishedAt($test),
+            ],
         ];
     }
 
@@ -691,6 +876,14 @@ final class CodingService
         if ($userType !== '' && strcasecmp((string) ($row['userType'] ?? ''), $userType) !== 0) {
             return false;
         }
+        $classBatch = trim((string) ($filters['class'] ?? $filters['classBatch'] ?? ''));
+        if ($classBatch !== '') {
+            $rowClass = trim((string) ($row['classBatch'] ?? ''));
+            if ($rowClass === '' || !self::classLabelMatches($rowClass, $classBatch)) {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -1434,5 +1627,295 @@ final class CodingService
         }
 
         return array_values($map);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptyAttemptDirectory(array $user): array
+    {
+        return [
+            'view' => 'attempts',
+            'rows' => [],
+            'scope' => AptitudeAccessService::scopeInfo($user),
+            'summary' => [
+                'attemptCount' => 0,
+                'students' => 0,
+                'avgPercentage' => 0,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptyContestDirectory(array $user): array
+    {
+        return [
+            'view' => 'contests',
+            'contests' => [],
+            'completedContests' => [],
+            'rows' => [],
+            'scope' => AptitudeAccessService::scopeInfo($user),
+            'summary' => [
+                'contestCount' => 0,
+                'publishedCount' => 0,
+                'pendingCount' => 0,
+                'totalParticipants' => 0,
+                'uniqueParticipants' => 0,
+                'avgPercentage' => 0,
+                'highestScore' => 0,
+            ],
+        ];
+    }
+
+    private function normalizeDirectoryResultType(string $resultType): string
+    {
+        $resultType = strtolower(trim($resultType));
+        if ($resultType === 'contests' || $resultType === 'company') {
+            return $resultType;
+        }
+
+        return 'tests';
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $test
+     */
+    private function attemptMatchesDirectoryResultType(array $attempt, array $test, string $resultType): bool
+    {
+        $resultType = $this->normalizeDirectoryResultType($resultType);
+        $contest = CodingTestModel::normalizeContestType((string) ($attempt['contestType'] ?? $test['contestType'] ?? 'none'));
+        $isCompany = CodingTestModel::isCompanyTest($test)
+            || CodingTestModel::normalizeTestKind((string) ($attempt['testKind'] ?? '')) === 'company'
+            || trim((string) ($attempt['companyId'] ?? '')) !== '';
+        if ($resultType === 'contests') {
+            return in_array($contest, ['weekly', 'monthly'], true);
+        }
+        if ($resultType === 'company') {
+            return $isCompany;
+        }
+
+        return !in_array($contest, ['weekly', 'monthly'], true) && !$isCompany;
+    }
+
+    /**
+     * @param array<string, mixed> $profile
+     * @param array<string, mixed> $filters
+     */
+    private function matchesDirectoryFilters(array $profile, array $filters): bool
+    {
+        return $this->directoryRowMatches($profile, $filters);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    private function contestResultsDirectory(array $user, array $filters): array
+    {
+        $allowed = AptitudeAccessService::authorizedSubjectUserIds($user);
+        if (is_array($allowed) && $allowed === []) {
+            return $this->emptyContestDirectory($user);
+        }
+
+        $attempts = $this->attempts->findAll(['status' => 'submitted'], 5000, 0, ['submittedAt' => -1]);
+        /** @var array<string, int> $countsByTest */
+        $countsByTest = [];
+        /** @var array<string, true> $uniqueUsers */
+        $uniqueUsers = [];
+        $percentageSum = 0.0;
+        $percentageCount = 0;
+        $highestScore = 0.0;
+        /** @var array<string, array<string, mixed>> $testCache */
+        $testCache = [];
+        /** @var array<string, array<string, mixed>> $profileCache */
+        $profileCache = [];
+
+        foreach ($attempts as $attempt) {
+            $uid = (string) ($attempt['userId'] ?? '');
+            $testId = (string) ($attempt['testId'] ?? '');
+            if ($uid === '' || $testId === '' || (is_array($allowed) && !in_array($uid, $allowed, true))) {
+                continue;
+            }
+            if (!isset($testCache[$testId])) {
+                $testCache[$testId] = $this->tests->findById($testId) ?: [];
+            }
+            $test = $testCache[$testId];
+            if (!CodingTestModel::isContest($test)) {
+                continue;
+            }
+            if (!isset($profileCache[$uid])) {
+                $profileCache[$uid] = $this->summarizeDirectoryUser($uid, [$attempt]);
+            }
+            if (!$this->matchesDirectoryFilters($profileCache[$uid], $filters)) {
+                continue;
+            }
+            $countsByTest[$testId] = ($countsByTest[$testId] ?? 0) + 1;
+            $uniqueUsers[$uid] = true;
+            $pct = (float) ($attempt['percentage'] ?? 0);
+            $percentageSum += $pct;
+            $percentageCount++;
+            if ($pct > $highestScore) {
+                $highestScore = $pct;
+            }
+        }
+
+        $contests = [];
+        $listed = [];
+        foreach ($countsByTest as $testId => $count) {
+            if ($count <= 0) {
+                continue;
+            }
+            $test = $testCache[$testId] ?? $this->tests->findById($testId) ?: [];
+            if ($test === [] || !CodingTestModel::isContest($test)) {
+                continue;
+            }
+            if (CodingTestModel::contestStatus($test) !== 'COMPLETED') {
+                continue;
+            }
+            $window = CodingTestModel::contestWindow($test);
+            $entry = $this->contestDirectoryEntry($test, $testId, $window);
+            $entry['participantCount'] = $count;
+            $contests[] = $entry;
+            $listed[$testId] = true;
+        }
+
+        foreach ($testCache as $testId => $test) {
+            if (isset($listed[$testId]) || $test === [] || !CodingTestModel::isContest($test)) {
+                continue;
+            }
+            if (CodingTestModel::contestStatus($test) !== 'COMPLETED') {
+                continue;
+            }
+            $window = CodingTestModel::contestWindow($test);
+            $contests[] = $this->contestDirectoryEntry($test, $testId, $window);
+        }
+
+        usort($contests, static fn (array $a, array $b): int => strcmp((string) ($a['title'] ?? ''), (string) ($b['title'] ?? '')));
+
+        $totalParticipants = array_sum($countsByTest);
+        $publishedCount = count(array_filter(
+            $contests,
+            static fn (array $c): bool => CodingTestModel::resultsPublished($c)
+                || strtoupper((string) ($c['resultStatus'] ?? '')) === 'PUBLISHED'
+        ));
+
+        return [
+            'view' => 'contests',
+            'contests' => $contests,
+            'completedContests' => $contests,
+            'rows' => [],
+            'scope' => AptitudeAccessService::scopeInfo($user),
+            'summary' => [
+                'contestCount' => count($contests),
+                'publishedCount' => $publishedCount,
+                'pendingCount' => max(0, count($contests) - $publishedCount),
+                'totalParticipants' => $totalParticipants,
+                'uniqueParticipants' => count($uniqueUsers),
+                'avgPercentage' => $percentageCount === 0 ? 0 : round($percentageSum / $percentageCount, 1),
+                'highestScore' => $highestScore,
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @param array{start:?string,end:?string} $window
+     * @return array<string, mixed>
+     */
+    private function contestDirectoryEntry(array $test, string $testId, array $window): array
+    {
+        return [
+            'testId' => $testId,
+            'id' => $testId,
+            'title' => (string) ($test['title'] ?? 'Contest'),
+            'category' => (string) ($test['category'] ?? ''),
+            'contestType' => CodingTestModel::normalizeContestType((string) ($test['contestType'] ?? 'none')),
+            'contestScheduleLabel' => CodingTestModel::contestScheduleLabel($test),
+            'contestStatus' => CodingTestModel::contestStatus($test),
+            'contestStartAt' => $window['start'] ?? null,
+            'contestEndAt' => $window['end'] ?? null,
+            'resultsPublished' => CodingTestModel::resultsPublished($test),
+            'resultStatus' => CodingTestModel::resultStatus($test),
+            'resultPublishedAt' => CodingTestModel::resultPublishedAt($test),
+            'participantCount' => 0,
+            'participants' => [],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @return array<int, array<string, mixed>>
+     */
+    private function contestLeaderboardRows(array $test): array
+    {
+        $testId = (string) ($test['_id'] ?? $test['id'] ?? '');
+        if ($testId === '') {
+            return [];
+        }
+        $attempts = $this->attempts->findAll(['testId' => $testId, 'status' => 'submitted'], 5000, 0, ['submittedAt' => -1]);
+        if ($attempts === []) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($attempts as $attempt) {
+            $uid = (string) ($attempt['userId'] ?? '');
+            if ($uid === '') {
+                continue;
+            }
+            $profile = $this->summarizeDirectoryUser($uid, [$attempt]);
+            $rows[] = [
+                'userId' => $uid,
+                'name' => (string) ($profile['name'] ?? 'User'),
+                'registerNumber' => (string) ($profile['registerNumber'] ?? ''),
+                'studentCode' => (string) ($profile['studentCode'] ?? $profile['registerNumber'] ?? ''),
+                'classBatch' => (string) ($profile['classBatch'] ?? ''),
+                'marksObtained' => (float) ($attempt['score'] ?? 0),
+                'totalMarks' => (float) ($attempt['totalMarks'] ?? $test['totalMarks'] ?? 0),
+                'score' => (float) ($attempt['score'] ?? 0),
+                'percentage' => (float) ($attempt['percentage'] ?? 0),
+                'timeTakenLabel' => '—',
+                'timeTakenSeconds' => 0,
+            ];
+        }
+
+        usort($rows, static function (array $a, array $b): int {
+            $sa = (float) ($a['percentage'] ?? 0);
+            $sb = (float) ($b['percentage'] ?? 0);
+            if ($sb !== $sa) {
+                return $sb <=> $sa;
+            }
+
+            return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+        foreach ($rows as $i => &$row) {
+            $row['rank'] = $i + 1;
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    private static function classLabelMatches(string $studentClass, string $want): bool
+    {
+        $studentClass = trim($studentClass);
+        $want = trim($want);
+        if ($studentClass === '' || $want === '') {
+            return false;
+        }
+        if (strcasecmp($studentClass, $want) === 0) {
+            return true;
+        }
+        $compactA = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $studentClass));
+        $compactB = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $want));
+        if ($compactA !== '' && $compactA === $compactB) {
+            return true;
+        }
+
+        return strcasecmp(ClassInchargeRegistry::cohortKey($studentClass), ClassInchargeRegistry::cohortKey($want)) === 0;
     }
 }

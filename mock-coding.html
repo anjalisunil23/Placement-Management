@@ -86,9 +86,6 @@
   .apt-prob-diff.is-easy{color:#14b8a6}
   .apt-prob-diff.is-medium{color:#f59e0b}
   .apt-prob-diff.is-hard{color:#ef4444}
-  body.cod-role-officer #codTake,
-  body.cod-role-admin #codTake,
-  body.cod-role-staff #codTake{display:none!important}
   @media (max-width: 991.98px){
     .cod-editor,.cod-highlight,.cod-input{min-height:16rem}
   }
@@ -106,14 +103,13 @@
         <span class="current">Coding Practice</span>
       </nav>
       <h1 class="page-title">Coding Practice</h1>
-      <p class="small text-muted-2 mb-0 d-none" id="codRoleHint"></p>
     </div>
   </div>
 
   <ul class="nav nav-pills gap-1 mb-3 flex-wrap d-none" id="codViewNav">
     <li class="nav-item"><a class="nav-link" data-view="take" href="#take">Take test</a></li>
     <li class="nav-item"><a class="nav-link" data-view="progress" href="#progress">Progress</a></li>
-    <li class="nav-item"><a class="nav-link" data-view="manage" href="#manage">Manage tests</a></li>
+    <li class="nav-item"><a class="nav-link" data-view="manage" href="#manage">Manage</a></li>
   </ul>
 
   <div id="codDenied" class="card-surface p-4 text-center d-none">
@@ -137,16 +133,23 @@
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-contest-type="monthly">Monthly</a></li>
             </ul>
           </div>
-          <div id="testList" class="px-3 px-md-4 pb-3"></div>
+          <div id="testList"></div>
           <div id="studentJdBlockPanel" class="d-none px-3 px-md-4 pb-3">
             <div id="studentJdBlockDetailNav" class="d-none d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+              <ul class="nav nav-pills gap-1 flex-wrap mb-0" id="studentJdBlockViewNav">
+                <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-jd-block-view="tests">Tests</a></li>
+                <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-jd-block-view="bank">Question bank</a></li>
+              </ul>
               <button type="button" class="btn btn-sm btn-outline-secondary" id="btnStudentJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
             </div>
             <div id="studentJdBlockCompanyView">
               <div id="studentJdBlockCompanyGrid" class="row g-3"></div>
             </div>
             <div id="studentJdBlockCompanyDetail" class="d-none">
-              <div id="studentJdBlockCompanyTests" class="d-flex flex-column gap-2"></div>
+              <div id="studentJdBlockCompanyTests"></div>
+              <div id="studentJdBlockBankSection">
+                <div id="studentJdBlockSetsList" class="d-flex flex-column gap-3"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -163,8 +166,7 @@
             <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-contest-type="weekly">Weekly</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-contest-type="monthly">Monthly</a></li>
           </ul>
-          <div id="myHistory" class="small text-muted-2">Finish a test to see your score here.</div>
-          <div id="contestArena" class="d-none"></div>
+          <div id="myHistory" class="small text-muted-2">No attempts yet.</div>
         </div>
       </div>
     </div>
@@ -172,22 +174,18 @@
 
   <div id="codDirectory" class="d-none mt-3">
     <div class="card-surface p-3 p-md-4 mb-3">
-      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-        <div>
-          <h6 class="fw-bold mb-1" id="dirTitle">Institution test results</h6>
-          <p class="small text-muted-2 mb-0 d-none" id="dirScopeHint"></p>
-        </div>
-      </div>
+      <p class="small text-muted-2 mb-2 d-none" id="dirScopeHint"></p>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="progressViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-progress-view="tests">Test results</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contest results</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contests</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="company">Company test results</a></li>
+      </ul>
+      <ul class="nav nav-pills gap-1 mb-3 flex-wrap d-none" id="progressContestTypeNav">
+        <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-progress-contest-type="weekly">Weekly</a></li>
+        <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-progress-contest-type="monthly">Monthly</a></li>
       </ul>
       <div class="row g-2 mb-3" id="dirStats"></div>
       <div class="row g-2 align-items-end mb-3" id="dirFilterRow">
-        <div class="col-12 col-md-4">
-          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fSearch">Search name or roll no</label>
-          <input class="form-control form-control-sm" id="fSearch" type="search" placeholder="Type a name or roll number" autocomplete="off"/>
-        </div>
         <div class="col-6 col-md-3" id="fDepartmentWrap">
           <label class="form-label small fw-semibold text-muted-2 mb-1" for="fDepartmentLabel">Department</label>
           <input class="form-control form-control-sm" id="fDepartmentLabel" readonly tabindex="-1" value=""/>
@@ -196,13 +194,19 @@
           </select>
           <input type="hidden" id="fDepartment" value=""/>
         </div>
-        <div class="col-6 col-md-4">
+        <div class="col-6 col-md-3">
           <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBranch">Branch</label>
           <select class="form-select form-select-sm" id="fBranch" aria-label="Branch">
-            <option value="">Select a branch</option>
+            <option value="">All branches</option>
           </select>
         </div>
-        <div class="col-6 col-md-3 d-none" id="fTypeWrap">
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold text-muted-2 mb-1" for="fBatch">Batch</label>
+          <select class="form-select form-select-sm" id="fBatch" aria-label="Batch">
+            <option value="">All batches</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3" id="fTypeWrap">
           <label class="form-label small fw-semibold text-muted-2 mb-1" for="fType">Type</label>
           <select class="form-select form-select-sm" id="fType" aria-label="Type">
             <option value="">All types</option>
@@ -211,14 +215,13 @@
           </select>
         </div>
       </div>
-      <div id="dirClassChartWrap" class="d-none mb-3">
-        <h6 class="fw-bold mb-2" id="dirChartTitle">Branch progress</h6>
-        <div id="dirClassChart"></div>
-      </div>
       <div class="table-wrap" id="dirTestResultsWrap"><table class="table-modern"><thead><tr>
-        <th>Name</th><th>Roll no</th><th>Class</th><th>Attempts</th><th>Avg</th><th>Best</th><th></th>
+        <th>Name</th><th>Student ID</th><th>Class</th><th>Attempts</th><th>Final score</th><th>Test title</th><th></th>
       </tr></thead><tbody id="dirRows"></tbody></table></div>
-      <div class="d-none" id="dirContestResultsWrap"><div id="dirContestSections" class="d-flex flex-column gap-3"></div></div>
+      <div class="d-none" id="dirContestResultsWrap">
+        <p class="small text-muted-2 mb-3" id="dirContestIntro">Review completed contests, publish results for students, and browse participant scores.</p>
+        <div id="dirContestSections" class="d-flex flex-column gap-3"></div>
+      </div>
     </div>
   </div>
 
@@ -229,6 +232,7 @@
 
   <div id="codManage" class="d-none mt-3">
     <div class="card-surface p-3 p-md-4 mb-3">
+      <p class="small text-muted-2 mb-2 d-none" id="manageScopeHint"></p>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
@@ -331,7 +335,7 @@
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
           <ul class="nav nav-pills gap-1 flex-wrap mb-0 d-none" id="adminJdBlockViewNav">
             <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-admin-jd-block-view="tests">Tests</a></li>
-            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-admin-jd-block-view="bank">Problem bank</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-admin-jd-block-view="bank">Question bank</a></li>
           </ul>
           <div class="d-flex flex-wrap align-items-center gap-2 ms-auto">
             <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
@@ -362,48 +366,6 @@
     </div>
   </div>
 </div>
-<script>
-(function () {
-  var role = '';
-  try {
-    var user = JSON.parse(localStorage.getItem('ph-user') || 'null') || {};
-    role = user.role || localStorage.getItem('ph-role') || '';
-    var designation = String(user.designation || '').toUpperCase();
-    if ((role === 'staff' || !role) && (user.isHod === true || user.isHod === 1 || user.isHod === '1' || /\bHOD\b/.test(designation) || /HEAD OF/.test(designation))) {
-      role = 'placement_officer';
-    }
-  } catch (e) {}
-  var nav = document.getElementById('codViewNav');
-  var take = document.getElementById('codTake');
-  var dir = document.getElementById('codDirectory');
-  var manage = document.getElementById('codManage');
-  var denied = document.getElementById('codDenied');
-  function show(el, on) { if (el) el.classList.toggle('d-none', !on); }
-  if (role === 'placement_officer' || role === 'admin' || role === 'staff') {
-    document.body.classList.add(role === 'placement_officer' ? 'cod-role-officer' : (role === 'admin' ? 'cod-role-admin' : 'cod-role-staff'));
-    if (nav) {
-      nav.classList.remove('d-none');
-      nav.querySelectorAll('[data-view]').forEach(function (link) {
-        var view = link.getAttribute('data-view');
-        var allow = view === 'progress' || (view === 'manage' && role === 'placement_officer');
-        if (link.closest('.nav-item')) link.closest('.nav-item').classList.toggle('d-none', !allow);
-        link.classList.toggle('active', view === 'progress');
-      });
-    }
-    show(take, false);
-    show(dir, true);
-    show(manage, false);
-    show(denied, false);
-    var hint = document.getElementById('codRoleHint');
-    if (hint) {
-      hint.textContent = role === 'placement_officer'
-        ? 'Track student coding progress and manage tests for your department.'
-        : 'Track student coding progress.';
-      hint.classList.remove('d-none');
-    }
-  }
-})();
-</script>
 
 <div id="examShell" class="d-none">
   <div data-cod-panel="instructions" class="card-surface p-3 p-md-4">
@@ -414,19 +376,21 @@
       <span class="sep">›</span>
       <span class="current" data-cod="instr-title">Test</span>
     </nav>
-    <h1 class="page-title mb-3">Coding Test</h1>
+    <p class="page-sub mb-3">Review details, then start when ready. Your code is evaluated against test cases after you submit.</p>
     <div data-cod="instr-meta" class="mb-3"></div>
     <h6 class="fw-bold">Instructions</h6>
     <div data-cod="instr-list"></div>
-    <div class="mt-4 d-flex gap-2">
+    <div class="mt-4 d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-outline-secondary" data-cod-action="back"><i class="bi bi-arrow-left me-1"></i>Back</button>
       <button type="button" class="btn btn-primary" data-cod-action="start"><i class="bi bi-play-fill me-1"></i>Start Test</button>
     </div>
   </div>
 
   <div data-cod-panel="exam" class="d-none">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-      <div>
-        <nav class="ph-breadcrumb mb-1" aria-label="Breadcrumb">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-cod-action="back"><i class="bi bi-arrow-left me-1"></i>Back</button>
+        <nav class="ph-breadcrumb mb-0" aria-label="Breadcrumb">
           <a class="ph-crumb-home" href="dashboard.html">Home</a>
           <span class="sep">›</span>
           <button type="button" class="ph-crumb-link" data-cod-action="cancel">Coding Practice</button>
@@ -502,6 +466,10 @@
       <span class="sep">›</span>
       <span class="current">Result</span>
     </nav>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h1 class="page-title mb-0">Result</h1>
+      <button type="button" class="btn btn-outline-secondary" data-cod-action="done"><i class="bi bi-arrow-left me-1"></i>Back</button>
+    </div>
     <div class="card-surface p-3 p-md-4 mb-3" data-cod="result-hero"></div>
     <div class="row g-2 mb-3" data-cod="result-stats"></div>
     <div class="card-surface p-3 p-md-4 mb-3" data-cod="result-bar"></div>
@@ -515,7 +483,7 @@
   </div>
 </div>
 
-<div class="modal fade" id="testFormModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered"><div class="modal-content">
+<div class="modal fade" id="testFormModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title fw-bold" id="testFormTitle">New coding test</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <form id="testForm">
     <div class="modal-body">
@@ -530,7 +498,7 @@
           </select>
         </div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfCategory">Category</label><select class="form-select" id="tfCategory"></select></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="tfCategory">Topic</label><select class="form-select" id="tfCategory"></select></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDifficulty">Difficulty</label><select class="form-select" id="tfDifficulty"></select></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDuration">Duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required value="20"/></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfStatus">Status</label><select class="form-select" id="tfStatus"><option value="unpublished">unpublished</option><option value="published">published</option></select></div>
@@ -614,8 +582,8 @@
     <div id="codAiFormPanel">
       <p class="small text-muted-2 mb-3">Generate coding problems with Ollama, then review and save them to the problem bank.</p>
       <div class="row g-3">
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiCategory">Category</label><select class="form-select" id="codAiCategory"></select></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiTopic">Topic</label><input class="form-control" id="codAiTopic" placeholder="Arrays, loops, strings…"/></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiCategory">Category</label><select class="form-select" id="codAiCategory"><option value="">Select category…</option></select></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiTopic">Topic</label><select class="form-select" id="codAiTopic" disabled><option value="">Select category first…</option></select></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiDifficulty">Difficulty</label><select class="form-select" id="codAiDifficulty"></select></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="codAiCount">Number of problems</label>
           <select class="form-select" id="codAiCount"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option></select>
@@ -641,13 +609,25 @@
   </div>
 </div></div></div>
 
+<div class="modal fade" id="contestResultsModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header">
+    <div>
+      <h5 class="modal-title fw-bold mb-0" id="contestResultsModalTitle">Contest results</h5>
+      <div class="small text-muted-2" id="contestResultsModalMeta"></div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  </div>
+  <div class="modal-body" id="contestResultsModalBody"><p class="text-muted-2 mb-0">Loading…</p></div>
+  <div class="modal-footer flex-wrap gap-2" id="contestResultsModalFooter"></div>
+</div></div></div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260917admin"></script>
 <script src="js/app.js?v=20260915crumb"></script>
-<script src="js/coding-data.js?v=20260922topics"></script>
+<script src="js/coding-data.js?v=20260922ai-topics"></script>
 <script src="js/coding-execution.js?v=20260915back"></script>
 <script src="js/coding-service.js?v=20260922split"></script>
-<script src="js/coding-exam.js?v=20260922autosubmit"></script>
-<script src="js/coding-page.js?v=20260922coblock"></script>
+<script src="js/coding-exam.js?v=20260922uiparity"></script>
+<script src="js/coding-page.js?v=20260922ai-topics"></script>
 </body></html>

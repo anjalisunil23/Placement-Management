@@ -56,7 +56,7 @@ class CodingProblemBankModel extends BaseModel
             'keywords' => is_array($q['keywords'] ?? null) ? $q['keywords'] : [],
             'marks' => (float) ($q['marks'] ?? 2),
             'difficulty' => (string) ($q['difficulty'] ?? 'Medium'),
-            'category' => (string) ($q['category'] ?? 'Programming'),
+            'category' => CodingTestModel::normalizeCategory((string) ($q['category'] ?? 'Algorithms')),
         ];
     }
 

@@ -15,7 +15,33 @@ class CodingTestModel extends BaseModel
     private const CONTEST_START_DEFAULT = '09:00';
     private const CONTEST_WINDOW_HOURS = 24;
 
-    public const CATEGORIES = ['Algorithms', 'Database', 'Shell', 'Concurrency', 'JavaScript', 'pandas', 'Programming', 'Python', 'Data Structures', 'Programming Logic'];
+    public const CATEGORIES = ['Algorithms', 'Database', 'Shell', 'Concurrency', 'JavaScript', 'pandas'];
+
+    /** @var array<string, string> */
+    private const LEGACY_CATEGORIES = [
+        'Programming' => 'Algorithms',
+        'Python' => 'Shell',
+        'Data Structures' => 'Algorithms',
+        'Programming Logic' => 'Algorithms',
+    ];
+
+    public static function normalizeCategory(string $value): string
+    {
+        $raw = trim($value);
+        if ($raw === '') {
+            return 'Algorithms';
+        }
+        if (isset(self::LEGACY_CATEGORIES[$raw])) {
+            return self::LEGACY_CATEGORIES[$raw];
+        }
+        foreach (self::CATEGORIES as $cat) {
+            if (strcasecmp($cat, $raw) === 0) {
+                return $cat;
+            }
+        }
+
+        return 'Algorithms';
+    }
     public const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
     public const STATUSES = ['published', 'unpublished'];
     public const PROBLEM_TEST_SEP = '::';
@@ -109,6 +135,105 @@ class CodingTestModel extends BaseModel
         return new \DateTimeImmutable('now', $tz);
     }
 
+    public static function isContest(array $test): bool
+    {
+        return in_array(self::normalizeContestType((string) ($test['contestType'] ?? 'none')), ['weekly', 'monthly'], true);
+    }
+
+    public static function resultsPublished(array $test): bool
+    {
+        return filter_var($test['resultsPublished'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    public static function resultStatus(array $test): string
+    {
+        if (!self::isContest($test)) {
+            return 'PUBLISHED';
+        }
+
+        return self::resultsPublished($test) ? 'PUBLISHED' : 'PENDING';
+    }
+
+    public static function resultPublishedAt(array $test): ?string
+    {
+        $raw = trim((string) ($test['resultPublishedAt'] ?? ''));
+        return $raw !== '' ? $raw : null;
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @return array{start:?string,end:?string}
+     */
+    public static function contestWindow(array $test, ?\DateTimeInterface $now = null): array
+    {
+        if (!self::isContest($test)) {
+            return ['start' => null, 'end' => null];
+        }
+        $bounds = self::contestWindowBounds($test, $now);
+
+        return [
+            'start' => $bounds['start'] ?? null,
+            'end' => $bounds['end'] ?? null,
+        ];
+    }
+
+    /**
+     * Lifecycle for scheduled contests: UPCOMING → ACTIVE → COMPLETED (per occurrence).
+     *
+     * @param array<string, mixed> $test
+     */
+    public static function contestStatus(array $test, ?\DateTimeInterface $now = null): string
+    {
+        if (!self::isContest($test)) {
+            return 'ACTIVE';
+        }
+        $clock = self::contestClock($now);
+        if (self::isContestOpen($test, $clock)) {
+            return 'ACTIVE';
+        }
+        $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
+        $created = self::contestCreatedAt($test);
+        if ($type === 'weekly') {
+            $want = (int) ($test['contestWeekday'] ?? 0);
+            if ($want < 1 || $want > 7) {
+                return 'UPCOMING';
+            }
+            $today = (int) $clock->format('N');
+            if ($today === $want) {
+                return 'COMPLETED';
+            }
+            $daysSince = ($today - $want + 7) % 7;
+            if ($daysSince >= 1 && $daysSince <= 3) {
+                $lastOcc = self::lastWeeklyOccurrenceStart($want, $clock);
+                if ($created !== null && $created <= $lastOcc) {
+                    return 'COMPLETED';
+                }
+
+                return 'UPCOMING';
+            }
+
+            return 'UPCOMING';
+        }
+        $want = (int) ($test['contestMonthDay'] ?? 0);
+        if ($want < 1 || $want > 28) {
+            return 'UPCOMING';
+        }
+        $todayDom = (int) $clock->format('j');
+        if ($todayDom === $want) {
+            return 'COMPLETED';
+        }
+        if ($todayDom > $want) {
+            $lastOcc = self::lastMonthlyOccurrenceStart($want, $clock);
+            if ($created !== null && $created <= $lastOcc) {
+                return 'COMPLETED';
+            }
+
+            return 'UPCOMING';
+        }
+
+        return 'UPCOMING';
+    }
+
     public static function isContestOpen(array $test, ?\DateTimeInterface $now = null): bool
     {
         $type = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
@@ -122,6 +247,51 @@ class CodingTestModel extends BaseModel
         $end = self::contestClockFromValue($bounds['end'] ?? '');
 
         return $start < $end && $clock >= $start && $clock < $end;
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    private static function contestCreatedAt(array $test): ?\DateTimeImmutable
+    {
+        $raw = trim((string) ($test['createdAt'] ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+        $ts = strtotime($raw);
+        if ($ts === false) {
+            return null;
+        }
+
+        return (new \DateTimeImmutable('@' . $ts))->setTimezone(new \DateTimeZone('Asia/Kolkata'));
+    }
+
+    private static function lastWeeklyOccurrenceStart(int $want, \DateTimeImmutable $now): \DateTimeImmutable
+    {
+        $today = (int) $now->format('N');
+        $daysSince = ($today - $want + 7) % 7;
+        $d = $now->setTime(0, 0);
+        if ($daysSince > 0) {
+            $d = $d->modify('-' . $daysSince . ' days');
+        }
+
+        return $d;
+    }
+
+    private static function lastMonthlyOccurrenceStart(int $want, \DateTimeImmutable $now): \DateTimeImmutable
+    {
+        $year = (int) $now->format('Y');
+        $month = (int) $now->format('n');
+        $dom = (int) $now->format('j');
+        if ($dom < $want) {
+            $month--;
+            if ($month < 1) {
+                $month = 12;
+                $year--;
+            }
+        }
+
+        return new \DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $want), new \DateTimeZone('Asia/Kolkata'));
     }
 
     /**
@@ -333,7 +503,7 @@ class CodingTestModel extends BaseModel
                 'keywords' => is_array($q['keywords'] ?? null) ? $q['keywords'] : [],
                 'marks' => (float) ($q['marks'] ?? 2),
                 'difficulty' => (string) ($q['difficulty'] ?? 'Medium'),
-                'category' => (string) ($q['category'] ?? $data['category'] ?? 'Programming'),
+                'category' => self::normalizeCategory((string) ($q['category'] ?? $data['category'] ?? 'Algorithms')),
             ];
         }
         $marks = 0.0;
@@ -353,7 +523,7 @@ class CodingTestModel extends BaseModel
         $payload = [
             'title' => trim((string) ($data['title'] ?? '')),
             'description' => (string) ($data['description'] ?? ''),
-            'category' => (string) ($data['category'] ?? 'Programming'),
+            'category' => self::normalizeCategory((string) ($data['category'] ?? 'Algorithms')),
             'difficulty' => (string) ($data['difficulty'] ?? 'Medium'),
             'duration' => max(1, (int) ($data['duration'] ?? $data['durationMinutes'] ?? 20)),
             'durationMinutes' => max(1, (int) ($data['duration'] ?? $data['durationMinutes'] ?? 20)),
@@ -370,6 +540,12 @@ class CodingTestModel extends BaseModel
             'marks' => $marks,
             'totalMarks' => $marks,
             'departmentId' => (string) ($data['departmentId'] ?? ''),
+            'resultsPublished' => $contestType === 'none'
+                ? false
+                : filter_var($data['resultsPublished'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'resultPublishedAt' => trim((string) ($data['resultPublishedAt'] ?? '')) !== ''
+                ? (string) $data['resultPublishedAt']
+                : null,
         ];
         if ($testKind === 'company' && $companyId !== '' && Security::isValidId($companyId)) {
             $payload['companyId'] = $companyId;
@@ -409,6 +585,7 @@ class CodingTestModel extends BaseModel
             }
             $row = $item;
             $row['testCases'] = $cases;
+            $row['category'] = self::normalizeCategory((string) ($item['category'] ?? $test['category'] ?? 'Algorithms'));
             $items[] = $row;
         }
         $contestType = self::normalizeContestType((string) ($test['contestType'] ?? 'none'));
@@ -416,7 +593,7 @@ class CodingTestModel extends BaseModel
             'id' => $id,
             'title' => (string) ($test['title'] ?? ''),
             'description' => (string) ($test['description'] ?? ''),
-            'category' => (string) ($test['category'] ?? 'Programming'),
+            'category' => self::normalizeCategory((string) ($test['category'] ?? 'Algorithms')),
             'difficulty' => (string) ($test['difficulty'] ?? 'Medium'),
             'duration' => (int) ($test['duration'] ?? $test['durationMinutes'] ?? 20),
             'durationMinutes' => (int) ($test['duration'] ?? $test['durationMinutes'] ?? 20),
@@ -439,6 +616,11 @@ class CodingTestModel extends BaseModel
             'testKind' => self::normalizeTestKind((string) ($test['testKind'] ?? 'regular')),
             'companyId' => trim((string) ($test['companyId'] ?? '')) !== '' ? (string) $test['companyId'] : null,
             'companyName' => trim((string) ($test['companyName'] ?? '')) !== '' ? (string) $test['companyName'] : null,
+            'resultsPublished' => self::resultsPublished($test),
+            'resultStatus' => self::resultStatus($test),
+            'resultPublishedAt' => self::resultPublishedAt($test),
+            'contestStatus' => self::contestStatus($test),
+            'contestWindow' => self::contestWindow($test),
         ];
     }
 

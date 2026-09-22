@@ -154,6 +154,12 @@ final class CodingController
         Response::success($this->service()->submit($user, $id, $this->body()), 'Submitted.');
     }
 
+    public function attemptResult(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->attemptResult($user, $id));
+    }
+
     public function myProgress(): void
     {
         $user = AuthMiddleware::authenticate();
@@ -164,6 +170,27 @@ final class CodingController
     {
         $user = AuthMiddleware::authenticate();
         Response::success($this->service()->directory($user, $_GET));
+    }
+
+    /** POST /api/coding/tests/{id}/publish-results */
+    public function publishResults(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $published = array_key_exists('published', $body)
+            ? filter_var($body['published'], FILTER_VALIDATE_BOOLEAN)
+            : true;
+        Response::success(
+            $this->service()->publishContestResults($user, $id, $published),
+            $published ? 'Contest results published.' : 'Contest results hidden from students.'
+        );
+    }
+
+    /** GET /api/coding/tests/{id}/contest-results */
+    public function contestResultsPreview(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->contestResultsPreview($user, $id));
     }
 
     public function contestBoard(): void

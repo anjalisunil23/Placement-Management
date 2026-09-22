@@ -24,10 +24,13 @@ final class CodingAiProblemService
      */
     public function generate(string $category, string $topic, string $difficulty, int $count, string $instructions = ''): array
     {
-        $category = $this->normalizeCategory($category);
+        $category = $this->normalizeCategory(trim($category));
         $difficulty = $this->normalizeDifficulty($difficulty);
         $topic = trim($topic);
         $count = max(1, min(10, $count));
+        if ($category === '') {
+            throw new \InvalidArgumentException('Category is required.');
+        }
         if ($topic === '') {
             throw new \InvalidArgumentException('Topic is required.');
         }
@@ -95,13 +98,7 @@ final class CodingAiProblemService
 
     private function normalizeCategory(string $value): string
     {
-        $raw = trim($value);
-        foreach (CodingTestModel::CATEGORIES as $cat) {
-            if (strcasecmp($cat, $raw) === 0) {
-                return $cat;
-            }
-        }
-        return 'Programming';
+        return CodingTestModel::normalizeCategory($value);
     }
 
     private function normalizeDifficulty(string $value): string
@@ -121,6 +118,9 @@ Topic: {$topic}
 Difficulty: {$difficulty}
 Count: {$count}
 {$extraLine}
+Each problem MUST focus specifically on "{$topic}" within the "{$category}" category.
+Do NOT generate generic programming questions unrelated to "{$topic}".
+Every problem must require the student to apply "{$topic}" concepts, patterns, or techniques to solve it.
 Return ONLY valid JSON:
 {
   "problems": [
@@ -147,6 +147,7 @@ Return ONLY valid JSON:
 }
 Rules:
 - Exactly {$count} problems.
+- Every problem must be about "{$topic}" — not generic coding drills.
 - Problems must be solvable in Python from stdin/stdout.
 - Sample and hidden cases must match the statement.
 - Do not wrap JSON in markdown.

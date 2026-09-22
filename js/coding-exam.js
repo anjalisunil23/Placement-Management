@@ -842,8 +842,8 @@
       if (!t) return;
       const action = t.getAttribute('data-cod-action');
       if (action === 'start') beginExam();
-      if (action === 'cancel') {
-        if (state.test && !state.submitted) {
+      if (action === 'cancel' || action === 'back') {
+        if (state.test && !state.submitted && state.status === 'ACTIVE') {
           if (!window.confirm('Leave this test and go back? Your code is saved as a draft.')) {
             return;
           }
@@ -896,6 +896,15 @@
         stopTimer();
         teardownLockdown();
         root.classList.add('d-none');
+      },
+      showResult(result) {
+        stopTimer();
+        teardownLockdown();
+        submitting = false;
+        running = false;
+        state = { test: null, testMeta: null, lastResult: result, submitted: true, status: 'SUBMITTED' };
+        renderResult(result);
+        root.classList.remove('d-none');
       },
     };
   }
