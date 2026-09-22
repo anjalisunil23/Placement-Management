@@ -2044,6 +2044,7 @@
     });
     document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
     document.getElementById('testList')?.classList.toggle('d-none', takeListPanel !== 'tests' && takeListPanel !== 'contests');
+    document.getElementById('studentContestBoard')?.classList.toggle('d-none', takeListPanel !== 'contests');
     document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', takeListPanel !== 'jdblock');
     syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
     if (takeListPanel === 'jdblock') {
@@ -2052,6 +2053,7 @@
       loadPracticeProblems().then(() => renderTestList()).catch(() => renderTestList());
     } else {
       renderTestList();
+      loadStudentContestBoard().catch(() => {});
     }
   }
 
@@ -2059,6 +2061,7 @@
     takeContestType = type === 'monthly' ? 'monthly' : 'weekly';
     syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
     renderTestList();
+    loadStudentContestBoard().catch(() => {});
   }
 
   function setupTakeListNav() {
@@ -2538,6 +2541,7 @@
       else {
         if (takeListPanel === 'tests') await loadPracticeProblems();
         renderTestList();
+        if (takeListPanel === 'contests') await loadStudentContestBoard();
       }
     } catch (err) {
       toastMsg(err?.message || 'Could not load coding tests.', 'error');
@@ -3716,24 +3720,27 @@
     }).join('')}</div>`;
   }
 
-  function contestCardHtml(c, { student = false, myUserId = '' } = {}) {
-    const published = !!c.winnersPublished;
-    const open = !!c.contestOpen;
-    const winners = c.winners || [];
-    const participants = c.participants || [];
-    const mine = c.myResult || participants.find((p) => String(p.userId || '') === String(myUserId)) || null;
-    const typeLabel = c.contestScheduleLabel || (c.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest');
-    const status = open
-      ? (c.contestType === 'monthly' ? 'Open this month' : 'Open this week')
-      : (published ? 'Winners published' : 'Closed');
-    const statusCls = open ? 'success' : (published ? 'warning' : 'muted');
-    let body = '';
-    if (published) {
-      body = `${podiumHtml(winners)}
-        <div class="table-wrap"><table class="table-modern"><thead><tr>
+  function contestParticipantsForScope(participants, scope, myDepartmentId = '') {
+    const list = Array.isArray(participants) ? participants : [];
+    if (scope !== 'department' || !myDepartmentId) return list;
+    return list.filter((p) => String(p.departmentId || '') === String(myDepartmentId));
+  }
+
+  function rerankContestParticipants(participants) {
+    const sorted = [...(participants || [])].sort((a, b) => {
+      const pct = (Number(b.percentage) || 0) - (Number(a.percentage) || 0);
+      if (pct !== 0) return pct;
+      return (Number(b.score) || 0) - (Number(a.score) || 0);
+    });
+    return sorted.map((p, i) => ({ ...p, rank: i + 1 }));
+  }
+
+  function contestLeaderboardTable(participants, myUserId = '') {
+    const rows = rerankContestParticipants(participants);
+    return `<div class="table-wrap"><table class="table-modern"><thead><tr>
           <th>Rank</th><th>Name</th><th>Roll no</th><th>Score</th><th>XP</th>
         </tr></thead><tbody>
-          ${participants.map((p) => {
+          ${rows.map((p) => {
             const me = String(p.userId || '') === String(myUserId);
             return `<tr class="${me ? 'table-warning' : ''}">
               <td><span class="cod-rank is-${esc(p.rank || '')}">${esc(p.rank || '—')}</span></td>
@@ -3744,6 +3751,32 @@
             </tr>`;
           }).join('') || '<tr><td colspan="5" class="text-muted-2 p-3">No finishers yet.</td></tr>'}
         </tbody></table></div>`;
+  }
+
+  function contestCardHtml(c, { student = false, myUserId = '', myDepartmentId = '' } = {}) {
+    const published = !!c.winnersPublished;
+    const open = !!c.contestOpen;
+    const winners = c.winners || [];
+    const participants = c.participants || [];
+    const mine = c.myResult || participants.find((p) => String(p.userId || '') === String(myUserId)) || null;
+    const deptId = myDepartmentId || mine?.departmentId || '';
+    const typeLabel = c.contestScheduleLabel || (c.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest');
+    const status = open
+      ? (c.contestType === 'monthly' ? 'Open this month' : 'Open this week')
+      : (published ? 'Winners published' : 'Closed');
+    const statusCls = open ? 'success' : (published ? 'warning' : 'muted');
+    let body = '';
+    if (published) {
+      const contestKey = String(c.id || c.testId || c.title || 'contest').replace(/[^\w-]+/g, '-');
+      const deptWinners = contestParticipantsForScope(winners, 'department', deptId).slice(0, 3);
+      body = `<ul class="nav nav-pills gap-1 mb-2 flex-wrap" id="contestScopeNav-${esc(contestKey)}">
+          <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-contest-scope="overall">Overall</a></li>
+          <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-contest-scope="department"${deptId ? '' : ' aria-disabled="true"'}>Department</a></li>
+        </ul>
+        <div data-contest-scope-panel="overall">${podiumHtml(winners)}${contestLeaderboardTable(participants, myUserId)}</div>
+        <div class="d-none" data-contest-scope-panel="department">${deptId
+          ? `${podiumHtml(deptWinners)}${contestLeaderboardTable(contestParticipantsForScope(participants, 'department', deptId), myUserId)}`
+          : '<p class="text-muted-2 mb-0">Department is not set on your profile yet.</p>'}</div>`;
     } else {
       body = `<div class="border rounded-3 p-3 mb-2">
         <div class="fw-semibold">${open ? 'Contest is live' : 'Contest closed'}</div>
@@ -3755,10 +3788,15 @@
         <div class="small">${esc(c.participantCount || 0)} student${Number(c.participantCount) === 1 ? '' : 's'} submitted.</div>
       </div>`;
       if (student && mine) {
+        const rankLines = [
+          mine.rank != null ? `Overall rank: #${mine.rank}${Number(mine.overallTotal) > 0 ? ` of ${mine.overallTotal}` : ''}` : '',
+          mine.departmentRank != null ? `${mine.departmentName || 'Department'} rank: #${mine.departmentRank}${Number(mine.departmentTotal) > 0 ? ` of ${mine.departmentTotal}` : ''}` : '',
+        ].filter(Boolean);
         body += `<div class="border rounded-3 p-3">
           <div class="small text-muted-2">Your score</div>
           <div class="fw-bold">${esc(mine.percentage ?? 0)}% · ${esc(mine.score ?? 0)} / ${esc(mine.totalMarks ?? 0)}</div>
-          <div class="small text-muted-2">Rank and medals unlock after the contest closes.</div>
+          ${rankLines.length ? `<div class="small mt-2">${rankLines.map((line) => esc(line)).join('<br>')}</div>` : ''}
+          <div class="small text-muted-2 mt-1">${rankLines.length ? 'Full leaderboards unlock after results are published.' : 'Rank and medals unlock after the contest closes.'}</div>
         </div>`;
       } else if (student && open) {
         body += '<p class="small text-muted-2 mb-0">Join from the left to earn a podium finish.</p>';
@@ -3794,6 +3832,47 @@
         <h6 class="fw-bold mb-2">${esc(title)}</h6>
         ${list.map((c) => contestCardHtml(c, opts)).join('')}
       </div>`).join('');
+  }
+
+  function bindContestScopeNav(root) {
+    root?.querySelectorAll('[id^="contestScopeNav-"]')?.forEach((nav) => {
+      const card = nav.closest('.border.rounded-3');
+      if (!card) return;
+      nav.querySelectorAll('[data-contest-scope]').forEach((link) => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          const scope = link.getAttribute('data-contest-scope') || 'overall';
+          nav.querySelectorAll('[data-contest-scope]').forEach((item) => {
+            item.classList.toggle('active', item.getAttribute('data-contest-scope') === scope);
+          });
+          card.querySelectorAll('[data-contest-scope-panel]').forEach((panel) => {
+            panel.classList.toggle('d-none', panel.getAttribute('data-contest-scope-panel') !== scope);
+          });
+        });
+      });
+    });
+  }
+
+  async function loadStudentContestBoard() {
+    const root = document.getElementById('studentContestBoard');
+    if (!root || !access.canTake) return;
+    root.classList.toggle('d-none', takeListPanel !== 'contests');
+    if (takeListPanel !== 'contests') return;
+    root.innerHTML = '<p class="text-muted-2 mb-0">Loading contest leaderboards…</p>';
+    try {
+      const data = await CodingService.contestBoard();
+      const contests = (data?.contests || []).filter((c) => String(c.contestType || '') === takeContestType);
+      const u = Auth.user() || {};
+      const myDepartmentId = String(u.departmentId || access.scope?.departmentId || '');
+      root.innerHTML = contests.length
+        ? `<h6 class="fw-bold mb-2">Contest leaderboards</h6>
+           <p class="small text-muted-2 mb-3">Switch between overall and your department. Names appear after results are published.</p>
+           ${contestBoardsHtml(contests, { student: true, myUserId: data?.myUserId || u.id || '', myDepartmentId })}`
+        : '<p class="text-muted-2 mb-0">No published contest leaderboards for this period yet.</p>';
+      bindContestScopeNav(root);
+    } catch (err) {
+      root.innerHTML = `<p class="text-muted-2 mb-0">${esc(err?.message || 'Could not load contest leaderboards.')}</p>`;
+    }
   }
 
   async function openStudentDetail(userId) {

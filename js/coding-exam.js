@@ -906,7 +906,16 @@
           <div class="small">Score: <strong>${esc(result.score)} / ${esc(result.totalMarks)}</strong></div>
           <div class="small">Status: <strong>${esc(result.status)}</strong></div>
         </div>${contestNote}`;
+      const rankCards = [];
+      if (result.rank != null) {
+        rankCards.push(['Overall rank', `#${result.rank}${Number(result.overallTotal) > 0 ? ` of ${result.overallTotal}` : ''}`]);
+      }
+      if (result.departmentRank != null) {
+        const deptLabel = result.departmentName ? `${result.departmentName} rank` : 'Department rank';
+        rankCards.push([deptLabel, `#${result.departmentRank}${Number(result.departmentTotal) > 0 ? ` of ${result.departmentTotal}` : ''}`]);
+      }
       el('result-stats').innerHTML = [
+        ...rankCards,
         ['Questions', result.questions],
         ['Correct', result.correct],
         ['Incorrect', result.incorrect],

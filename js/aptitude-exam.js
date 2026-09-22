@@ -643,8 +643,10 @@
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Correct</div><strong class="text-success">${esc(result.correctAnswers ?? result.correctCount ?? 0)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Wrong</div><strong class="text-danger">${esc(result.incorrectAnswers ?? result.wrongCount ?? 0)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Unanswered</div><strong>${esc(result.unansweredQuestions ?? result.unansweredCount ?? 0)}</strong></div></div>
-          ${(mode === 'full' || mode === 'published') && result.rank != null ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Rank</div><strong>#${esc(result.rank)}</strong></div></div>` : ''}
-          ${mode === 'full' && result.percentile != null ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Percentile</div><strong>${esc(result.percentile)}%</strong></div></div>` : ''}
+          ${(mode === 'full' || mode === 'published') && result.rank != null ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Overall rank</div><strong>#${esc(result.rank)}${Number(result.overallTotal) > 0 ? ` <span class="text-muted-2 fw-normal">of ${esc(result.overallTotal)}</span>` : ''}</strong></div></div>` : ''}
+          ${(mode === 'full' || mode === 'published') && result.departmentRank != null ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">${esc(result.departmentName ? `${result.departmentName} rank` : 'Department rank')}</div><strong>#${esc(result.departmentRank)}${Number(result.departmentTotal) > 0 ? ` <span class="text-muted-2 fw-normal">of ${esc(result.departmentTotal)}</span>` : ''}</strong></div></div>` : ''}
+          ${mode === 'full' && result.percentile != null ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Overall percentile</div><strong>${esc(result.percentile)}%</strong></div></div>` : ''}
+          ${mode === 'full' && result.departmentPercentile != null ? `<div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Department percentile</div><strong>${esc(result.departmentPercentile)}%</strong></div></div>` : ''}
         </div>
         ${publishedLine}`;
       if (mode === 'published' || mode === 'score') {

@@ -397,15 +397,38 @@ final class AptitudeService
             $this->recomputeContestRanks((string) ($test['_id'] ?? ''));
             $fresh = $this->attempts->findById($attemptId) ?: $fresh;
         } else {
-            $rankInfo = $this->computeRank((string) ($test['_id'] ?? ''), (float) ($scored['percentage'] ?? 0));
-            if ($rankInfo['rank'] !== null) {
-                $this->attempts->update($attemptId, [
-                    'rank' => $rankInfo['rank'],
-                    'percentile' => $rankInfo['percentile'],
-                ]);
-                $fresh['rank'] = $rankInfo['rank'];
-                $fresh['percentile'] = $rankInfo['percentile'];
-            }
+            $rankInfo = $this->computePeerRanks(
+                (string) ($test['_id'] ?? ''),
+                $userId,
+                (float) ($scored['percentage'] ?? 0),
+                (int) ($scored['timeTakenSeconds'] ?? 0),
+                false
+            );
+            $this->attempts->update($attemptId, [
+                'rank' => $rankInfo['rank'],
+                'percentile' => $rankInfo['percentile'],
+                'overallTotal' => $rankInfo['overallTotal'],
+                'departmentRank' => $rankInfo['departmentRank'],
+                'departmentPercentile' => $rankInfo['departmentPercentile'],
+                'departmentTotal' => $rankInfo['departmentTotal'],
+                'departmentName' => $rankInfo['departmentName'],
+            ]);
+            $fresh = array_merge($fresh, $rankInfo);
+        }
+        if (AptitudeTestModel::isContest($test)) {
+            $testId = (string) ($test['_id'] ?? '');
+            $oid = Security::toObjectId($testId);
+            $overallTotal = $oid !== null ? count($this->attempts->completed(['testId' => $oid], 2000)) : 0;
+            $deptInfo = $this->computeDepartmentPeerRanks(
+                $testId,
+                $userId,
+                (float) ($fresh['percentage'] ?? $scored['percentage'] ?? 0),
+                (int) ($fresh['timeTakenSeconds'] ?? $scored['timeTakenSeconds'] ?? 0),
+                true
+            );
+            $this->attempts->update($attemptId, array_merge($deptInfo, ['overallTotal' => $overallTotal]));
+            $fresh = array_merge($fresh, $deptInfo, ['overallTotal' => $overallTotal]);
+            $fresh = $this->attempts->findById($attemptId) ?: $fresh;
         }
 
         return $this->buildResultPayload($fresh, $test, $user);
@@ -2640,6 +2663,11 @@ final class AptitudeService
             'durationSeconds' => $durationSec,
             'rank' => $attempt['rank'] ?? null,
             'percentile' => $attempt['percentile'] ?? null,
+            'overallTotal' => isset($attempt['overallTotal']) ? (int) $attempt['overallTotal'] : null,
+            'departmentRank' => isset($attempt['departmentRank']) ? (int) $attempt['departmentRank'] : null,
+            'departmentPercentile' => $attempt['departmentPercentile'] ?? null,
+            'departmentTotal' => isset($attempt['departmentTotal']) ? (int) $attempt['departmentTotal'] : null,
+            'departmentName' => (string) ($attempt['departmentName'] ?? ''),
             'autoSubmitted' => !empty($attempt['autoSubmitted']),
             'questionAnalysis' => $this->withQuestionExplanations(
                 array_values((array) ($attempt['questionAnalysis'] ?? [])),
@@ -2652,6 +2680,23 @@ final class AptitudeService
             'resultPublishedAt' => AptitudeTestModel::resultPublishedAt($test),
             'contestStatus' => AptitudeTestModel::contestStatus($test),
         ]);
+
+        if ($viewer && AptitudeAccessService::canTake($viewer) && ($payload['departmentRank'] ?? null) === null) {
+            $subjectId = (string) ($attempt['userId'] ?? ($viewer['_id'] ?? $viewer['id'] ?? ''));
+            $isContest = AptitudeTestModel::isContest($test);
+            $ranks = $this->computePeerRanks(
+                (string) ($test['_id'] ?? ''),
+                $subjectId,
+                (float) ($payload['percentage'] ?? 0),
+                (int) ($payload['timeTakenSeconds'] ?? 0),
+                $isContest
+            );
+            if ($isContest && ($payload['rank'] ?? null) !== null) {
+                $ranks['rank'] = (int) $payload['rank'];
+                $ranks['percentile'] = $payload['percentile'] ?? $ranks['percentile'];
+            }
+            $payload = array_merge($payload, $ranks);
+        }
 
         $mode = $viewer ? $this->resultVisibilityForUser($viewer, $test) : 'full';
 
@@ -2829,43 +2874,173 @@ final class AptitudeService
     }
 
     /**
-     * @return array{rank:?int,percentile:?float}
+     * @return array{
+     *   rank:?int,
+     *   percentile:?float,
+     *   overallTotal:int,
+     *   departmentRank:?int,
+     *   departmentPercentile:?float,
+     *   departmentTotal:int,
+     *   departmentName:string
+     * }
      */
-    private function computeRank(string $testId, float $percentage): array
-    {
+    private function computePeerRanks(
+        string $testId,
+        string $userId,
+        float $percentage,
+        int $timeTakenSeconds = 0,
+        bool $useTimeTiebreak = false
+    ): array {
+        $empty = [
+            'rank' => null,
+            'percentile' => null,
+            'overallTotal' => 0,
+            'departmentRank' => null,
+            'departmentPercentile' => null,
+            'departmentTotal' => 0,
+            'departmentName' => '',
+        ];
         if ($testId === '') {
-            return ['rank' => null, 'percentile' => null];
+            return $empty;
         }
         $oid = Security::toObjectId($testId);
         if ($oid === null) {
-            return ['rank' => null, 'percentile' => null];
+            return $empty;
         }
         $peers = $this->attempts->completed(['testId' => $oid], 2000);
-        if ($peers === []) {
-            return ['rank' => 1, 'percentile' => 100.0];
+        $overall = $this->rankAmongAttempts($peers, $percentage, $timeTakenSeconds, $useTimeTiebreak);
+        $dept = $this->computeDepartmentPeerRanks($testId, $userId, $percentage, $timeTakenSeconds, $useTimeTiebreak, $peers);
+
+        return [
+            'rank' => $overall['rank'],
+            'percentile' => $overall['percentile'],
+            'overallTotal' => $overall['total'],
+            'departmentRank' => $dept['departmentRank'],
+            'departmentPercentile' => $dept['departmentPercentile'],
+            'departmentTotal' => $dept['departmentTotal'],
+            'departmentName' => $dept['departmentName'],
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>>|null $peers
+     * @return array{departmentRank:?int,departmentPercentile:?float,departmentTotal:int,departmentName:string}
+     */
+    private function computeDepartmentPeerRanks(
+        string $testId,
+        string $userId,
+        float $percentage,
+        int $timeTakenSeconds = 0,
+        bool $useTimeTiebreak = false,
+        ?array $peers = null
+    ): array {
+        $empty = [
+            'departmentRank' => null,
+            'departmentPercentile' => null,
+            'departmentTotal' => 0,
+            'departmentName' => '',
+        ];
+        $profile = AptitudeAccessService::loadSubjectProfile($userId);
+        $deptId = (string) ($profile['departmentId'] ?? '');
+        $student = is_array($profile['student'] ?? null) ? $profile['student'] : [];
+        $deptName = AptitudeAccessService::departmentDisplayName($deptId, $student);
+        if ($deptId === '') {
+            return array_merge($empty, ['departmentName' => $deptName]);
         }
-        $scores = [];
-        foreach ($peers as $p) {
-            $scores[] = (float) ($p['percentage'] ?? 0);
+        if ($peers === null) {
+            if ($testId === '') {
+                return array_merge($empty, ['departmentName' => $deptName]);
+            }
+            $oid = Security::toObjectId($testId);
+            if ($oid === null) {
+                return array_merge($empty, ['departmentName' => $deptName]);
+            }
+            $peers = $this->attempts->completed(['testId' => $oid], 2000);
         }
-        rsort($scores, SORT_NUMERIC);
-        $rank = 1;
-        foreach ($scores as $i => $s) {
-            if ($percentage >= $s) {
+        $deptPeers = [];
+        foreach ($peers as $peer) {
+            $uid = (string) ($peer['userId'] ?? '');
+            if ($uid === '') {
+                continue;
+            }
+            $peerProfile = AptitudeAccessService::loadSubjectProfile($uid);
+            if ((string) ($peerProfile['departmentId'] ?? '') !== $deptId) {
+                continue;
+            }
+            $deptPeers[] = $peer;
+        }
+        $ranked = $this->rankAmongAttempts($deptPeers, $percentage, $timeTakenSeconds, $useTimeTiebreak);
+
+        return [
+            'departmentRank' => $ranked['rank'],
+            'departmentPercentile' => $ranked['percentile'],
+            'departmentTotal' => $ranked['total'],
+            'departmentName' => $deptName,
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $attempts
+     * @return array{rank:?int,percentile:?float,total:int}
+     */
+    private function rankAmongAttempts(
+        array $attempts,
+        float $percentage,
+        int $timeTakenSeconds = 0,
+        bool $useTimeTiebreak = false
+    ): array {
+        if ($attempts === []) {
+            return ['rank' => 1, 'percentile' => 100.0, 'total' => 0];
+        }
+        $rows = [];
+        foreach ($attempts as $attempt) {
+            $rows[] = [
+                'percentage' => (float) ($attempt['percentage'] ?? 0),
+                'timeTakenSeconds' => (int) ($attempt['timeTakenSeconds'] ?? PHP_INT_MAX),
+            ];
+        }
+        usort($rows, static function (array $a, array $b) use ($useTimeTiebreak): int {
+            $cmp = ($b['percentage'] <=> $a['percentage']);
+            if ($cmp !== 0 || !$useTimeTiebreak) {
+                return $cmp;
+            }
+
+            return ($a['timeTakenSeconds'] <=> $b['timeTakenSeconds']);
+        });
+        $rank = count($rows);
+        foreach ($rows as $i => $row) {
+            $betterScore = $row['percentage'] > $percentage;
+            $sameScoreFaster = $useTimeTiebreak
+                && abs($row['percentage'] - $percentage) < 0.0001
+                && $row['timeTakenSeconds'] < $timeTakenSeconds;
+            if ($betterScore || $sameScoreFaster) {
+                continue;
+            }
+            if ($row['percentage'] < $percentage) {
                 $rank = $i + 1;
                 break;
             }
-            $rank = $i + 2;
+            if (!$useTimeTiebreak || $row['timeTakenSeconds'] >= $timeTakenSeconds) {
+                $rank = $i + 1;
+                break;
+            }
         }
-        $n = count($scores);
         $better = 0;
-        foreach ($scores as $s) {
-            if ($percentage > $s) {
+        foreach ($rows as $row) {
+            if ($row['percentage'] > $percentage) {
+                $better++;
+                continue;
+            }
+            if ($useTimeTiebreak
+                && abs($row['percentage'] - $percentage) < 0.0001
+                && $row['timeTakenSeconds'] < $timeTakenSeconds) {
                 $better++;
             }
         }
-        $percentile = $n > 0 ? round(($better / $n) * 100, 1) : null;
-        return ['rank' => $rank, 'percentile' => $percentile];
+        $total = count($rows);
+        $percentile = $total > 0 ? round(($better / $total) * 100, 1) : null;
+
+        return ['rank' => $rank, 'percentile' => $percentile, 'total' => $total];
     }
 
     private function parseTime(mixed $value): int
