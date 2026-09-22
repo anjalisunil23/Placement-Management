@@ -2829,9 +2829,81 @@
     renderDirectoryTable(data?.rows || [], summary, scope);
   }
 
+  const COD_AI_GEN_MAX_TOTAL = 30;
+
+  const COD_AI_GEN_ROW_DEFAULTS = [
+    { difficulty: 'Easy', count: 3 },
+    { difficulty: 'Medium', count: 3 },
+  ];
+
   function showCodAiForm() {
     document.getElementById('codAiFormPanel')?.classList.remove('d-none');
     document.getElementById('codAiPreviewPanel')?.classList.add('d-none');
+  }
+
+  function updateCodAiGenTotal() {
+    const el = document.getElementById('codAiGenTotal');
+    if (!el) return;
+    const total = collectCodAiGenRows().reduce((sum, row) => sum + row.count, 0);
+    if (total <= 0) {
+      el.className = 'small text-muted-2 mt-2';
+      el.textContent = '';
+      return;
+    }
+    const over = total > COD_AI_GEN_MAX_TOTAL;
+    el.className = over ? 'small text-danger mt-2 fw-semibold' : 'small text-muted-2 mt-2';
+    el.textContent = over
+      ? `${total} problems — total cannot exceed ${COD_AI_GEN_MAX_TOTAL}. Reduce counts across rows.`
+      : `${total} problem${total === 1 ? '' : 's'} (max ${COD_AI_GEN_MAX_TOTAL} total across all rows)`;
+  }
+
+  function addCodAiGenRow(row = {}) {
+    const root = document.getElementById('codAiGenRows');
+    if (!root) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'cod-ai-gen-row row g-2 align-items-end';
+    const difficulty = row.difficulty || 'Medium';
+    const count = row.count ?? 3;
+    wrap.innerHTML = `
+      <div class="col-md-5">
+        <label class="form-label small fw-semibold mb-1">Difficulty</label>
+        <select class="form-select form-select-sm" data-cod-ai-gen="difficulty">
+          ${DIFFICULTIES.map((d) => `<option value="${esc(d)}" ${d === difficulty ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small fw-semibold mb-1">Number of problems</label>
+        <input class="form-control form-control-sm" type="number" data-cod-ai-gen="count" min="0" max="${COD_AI_GEN_MAX_TOTAL}" value="${esc(count)}"/>
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-danger w-100" data-cod-ai-gen-remove title="Remove row"><i class="bi bi-trash"></i></button>
+      </div>`;
+    wrap.querySelector('[data-cod-ai-gen-remove]')?.addEventListener('click', () => {
+      if (root.querySelectorAll('.cod-ai-gen-row').length <= 1) {
+        toastMsg('Keep at least one generation row.', 'error');
+        return;
+      }
+      wrap.remove();
+      updateCodAiGenTotal();
+    });
+    wrap.querySelector('[data-cod-ai-gen="count"]')?.addEventListener('input', updateCodAiGenTotal);
+    root.appendChild(wrap);
+    updateCodAiGenTotal();
+  }
+
+  function initCodAiGenRows(rows = COD_AI_GEN_ROW_DEFAULTS) {
+    const root = document.getElementById('codAiGenRows');
+    if (!root) return;
+    root.innerHTML = '';
+    (rows.length ? rows : COD_AI_GEN_ROW_DEFAULTS).forEach((row) => addCodAiGenRow(row));
+    updateCodAiGenTotal();
+  }
+
+  function collectCodAiGenRows() {
+    return [...document.querySelectorAll('.cod-ai-gen-row')].map((el) => ({
+      difficulty: el.querySelector('[data-cod-ai-gen="difficulty"]')?.value || 'Medium',
+      count: Math.max(0, Math.min(COD_AI_GEN_MAX_TOTAL, Number(el.querySelector('[data-cod-ai-gen="count"]')?.value || 0))),
+    })).filter((row) => row.count > 0);
   }
 
   function codAiTopicHierarchy() {
@@ -2872,7 +2944,7 @@
 
   function openCodAiModal(opts = {}) {
     fillCodAiCategorySelect('Algorithms');
-    fillSelect(document.getElementById('codAiDifficulty'), DIFFICULTIES, 'Medium');
+    initCodAiGenRows();
     aiLastFormParams = { companyId: opts.companyId || '' };
     showCodAiForm();
     document.getElementById('codAiPreviewList').innerHTML = '';
@@ -2882,11 +2954,14 @@
   }
 
   function collectCodAiParams() {
+    const batches = collectCodAiGenRows();
+    const first = batches[0] || { difficulty: 'Medium', count: 3 };
     return {
       category: (document.getElementById('codAiCategory')?.value || '').trim(),
       topic: (document.getElementById('codAiTopic')?.value || '').trim(),
-      difficulty: document.getElementById('codAiDifficulty')?.value || 'Medium',
-      count: Number(document.getElementById('codAiCount')?.value || 5),
+      batches,
+      difficulty: first.difficulty,
+      count: batches.reduce((sum, row) => sum + row.count, 0),
       instructions: document.getElementById('codAiInstructions')?.value || '',
     };
   }
@@ -2928,6 +3003,15 @@
       toastMsg('Select a topic.', 'error');
       return;
     }
+    if (!params.batches?.length) {
+      toastMsg('Add at least one generation row with a problem count.', 'error');
+      return;
+    }
+    if (params.count > COD_AI_GEN_MAX_TOTAL) {
+      toastMsg(`Total problems cannot exceed ${COD_AI_GEN_MAX_TOTAL}. Reduce counts across rows.`, 'error');
+      updateCodAiGenTotal();
+      return;
+    }
     const status = document.getElementById('codAiGenerateStatus');
     const btn = document.getElementById('btnCodAiRun');
     status?.classList.remove('d-none');
@@ -2939,6 +3023,13 @@
       if (!aiPreviewProblems.length) {
         toastMsg('No problems were generated.', 'error');
         return;
+      }
+      const requested = Number(data.requested || params.count || 0);
+      const received = Number(data.received || aiPreviewProblems.length);
+      if (requested > 0 && received >= requested) {
+        toastMsg(`Generated ${received} problem${received === 1 ? '' : 's'}.`, 'success');
+      } else if (requested > 0 && received < requested) {
+        toastMsg(`Generated ${received} of ${requested} requested problems.`, 'info');
       }
       document.getElementById('codAiFormPanel')?.classList.add('d-none');
       document.getElementById('codAiPreviewPanel')?.classList.remove('d-none');
@@ -3158,9 +3249,22 @@
     document.getElementById('codAiCategory')?.addEventListener('change', (e) => {
       fillCodAiTopicSelect(e.target.value || '');
     });
+    document.getElementById('btnCodAiAddRow')?.addEventListener('click', () => addCodAiGenRow());
     document.getElementById('btnCodAiRun')?.addEventListener('click', () => runCodAiGenerate());
     document.getElementById('btnCodAiSave')?.addEventListener('click', () => saveCodAiSelected());
-    document.getElementById('btnCodAiCancelPreview')?.addEventListener('click', () => showCodAiForm());
+    document.getElementById('btnCodAiCancelPreview')?.addEventListener('click', () => {
+      showCodAiForm();
+      if (aiLastFormParams) {
+        document.getElementById('codAiCategory').value = aiLastFormParams.category || '';
+        fillCodAiTopicSelect(aiLastFormParams.category || '', aiLastFormParams.topic || '');
+        document.getElementById('codAiInstructions').value = aiLastFormParams.instructions || '';
+        initCodAiGenRows(
+          aiLastFormParams.batches?.length
+            ? aiLastFormParams.batches
+            : [{ difficulty: aiLastFormParams.difficulty || 'Medium', count: aiLastFormParams.count || 3 }]
+        );
+      }
+    });
     document.getElementById('bankSelectAllVisible')?.addEventListener('change', (e) => {
       const on = e.target.checked;
       visibleBankProblems().forEach((q) => {

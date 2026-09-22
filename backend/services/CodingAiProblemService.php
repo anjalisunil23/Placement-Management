@@ -12,11 +12,74 @@ use PMS\Models\CodingTestModel;
  */
 final class CodingAiProblemService
 {
+    private const MAX_BATCH_COUNT = 10;
+    private const MAX_TOTAL_COUNT = 30;
+
     private OllamaService $ollama;
 
     public function __construct(?OllamaService $ollama = null)
     {
         $this->ollama = $ollama ?? new OllamaService();
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function generateFromRequest(array $body): array
+    {
+        $category = $this->normalizeCategory(trim((string) ($body['category'] ?? '')));
+        $topic = trim((string) ($body['topic'] ?? ''));
+        $instructions = (string) ($body['instructions'] ?? '');
+        if ($category === '') {
+            throw new \InvalidArgumentException('Category is required.');
+        }
+        if ($topic === '') {
+            throw new \InvalidArgumentException('Topic is required.');
+        }
+
+        $batches = $this->normalizeGenerationBatches($body);
+        if ($batches === []) {
+            throw new \InvalidArgumentException('Add at least one generation row with a problem count.');
+        }
+
+        $merged = [];
+        foreach ($batches as $batch) {
+            $result = $this->generate(
+                $category,
+                $topic,
+                (string) ($batch['difficulty'] ?? 'Medium'),
+                (int) ($batch['count'] ?? 0),
+                $instructions
+            );
+            foreach ($result['problems'] ?? [] as $problem) {
+                if (is_array($problem)) {
+                    $merged[] = $problem;
+                }
+            }
+        }
+
+        if ($merged === []) {
+            throw new \RuntimeException('No valid coding problems in the AI response. Try again.');
+        }
+
+        $preview = [];
+        foreach ($merged as $i => $q) {
+            $preview[] = array_merge($q, [
+                'tempId' => 'ai-' . ($i + 1) . '-' . bin2hex(random_bytes(4)),
+                'selected' => true,
+            ]);
+        }
+
+        $requested = array_sum(array_map(static fn (array $b): int => (int) ($b['count'] ?? 0), $batches));
+
+        return [
+            'problems' => $preview,
+            'questions' => $preview,
+            'requested' => $requested,
+            'received' => count($preview),
+            'partial' => count($preview) < $requested,
+        ];
     }
 
     /**
@@ -27,7 +90,7 @@ final class CodingAiProblemService
         $category = $this->normalizeCategory(trim($category));
         $difficulty = $this->normalizeDifficulty($difficulty);
         $topic = trim($topic);
-        $count = max(1, min(10, $count));
+        $count = max(1, min(self::MAX_BATCH_COUNT, $count));
         if ($category === '') {
             throw new \InvalidArgumentException('Category is required.');
         }
@@ -215,5 +278,46 @@ PROMPT;
             'difficulty' => $this->normalizeDifficulty((string) ($q['difficulty'] ?? $fallbackDifficulty)),
             'category' => $this->normalizeCategory((string) ($q['category'] ?? $fallbackCategory)),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     * @return list<array{difficulty:string,count:int}>
+     */
+    private function normalizeGenerationBatches(array $body): array
+    {
+        $rawBatches = $body['batches'] ?? null;
+        if (!is_array($rawBatches) || $rawBatches === []) {
+            $difficulty = $this->normalizeDifficulty((string) ($body['difficulty'] ?? 'Medium'));
+            $count = max(1, min(self::MAX_BATCH_COUNT, (int) ($body['count'] ?? 5)));
+
+            return [[
+                'difficulty' => $difficulty,
+                'count' => $count,
+            ]];
+        }
+
+        $batches = [];
+        $totalCount = 0;
+        foreach ($rawBatches as $batch) {
+            if (!is_array($batch)) {
+                continue;
+            }
+            $difficulty = $this->normalizeDifficulty((string) ($batch['difficulty'] ?? 'Medium'));
+            $count = max(0, min(self::MAX_BATCH_COUNT, (int) ($batch['count'] ?? 0)));
+            if ($count <= 0) {
+                continue;
+            }
+            $totalCount += $count;
+            if ($totalCount > self::MAX_TOTAL_COUNT) {
+                throw new \InvalidArgumentException('Total problems cannot exceed ' . self::MAX_TOTAL_COUNT . '.');
+            }
+            $batches[] = [
+                'difficulty' => $difficulty,
+                'count' => $count,
+            ];
+        }
+
+        return $batches;
     }
 }

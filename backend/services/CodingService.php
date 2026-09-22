@@ -253,20 +253,8 @@ final class CodingService
     public function generateAiBankProblems(array $user, array $body): array
     {
         AptitudeAccessService::requireCodingManager($user);
-        $category = trim((string) ($body['category'] ?? ''));
-        $topic = trim((string) ($body['topic'] ?? ''));
-        $difficulty = (string) ($body['difficulty'] ?? 'Medium');
-        $count = (int) ($body['count'] ?? 5);
-        $instructions = (string) ($body['instructions'] ?? '');
-        $count = max(1, min(10, $count));
-        if ($category === '') {
-            Response::error('Category is required.', 422);
-        }
-        if ($topic === '') {
-            Response::error('Topic is required.', 422);
-        }
         try {
-            return (new CodingAiProblemService())->generate($category, $topic, $difficulty, $count, $instructions);
+            return (new CodingAiProblemService())->generateFromRequest($body);
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
