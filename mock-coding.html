@@ -13,6 +13,10 @@
   @keyframes codFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   .cod-timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.15rem;display:inline-flex;align-items:center;gap:.4rem}
   .cod-timer.is-low{color:var(--danger)}
+  #examShell[data-cod-locked="1"] [data-cod="q-body"],
+  #examShell[data-cod-locked="1"] [data-cod="q-title"]{
+    user-select:none;-webkit-user-select:none;
+  }
   .cod-editor{display:flex;min-height:22rem;border:1px solid #1e293b;border-radius:.7rem;overflow:hidden;background:#0f172a;color:#e2e8f0}
   .cod-gutter{
     flex:0 0 2.6rem;padding:.75rem .35rem;text-align:right;background:#0b1220;color:#64748b;
@@ -298,7 +302,7 @@
     <h1 class="page-title mb-3">Coding Test</h1>
     <div data-cod="instr-meta" class="mb-3"></div>
     <h6 class="fw-bold">Instructions</h6>
-    <ul class="text-muted-2 mb-0" data-cod="instr-list"></ul>
+    <div data-cod="instr-list"></div>
     <div class="mt-4 d-flex gap-2">
       <button type="button" class="btn btn-primary" data-cod-action="start"><i class="bi bi-play-fill me-1"></i>Start Test</button>
     </div>
@@ -522,6 +526,6 @@
 <script src="js/coding-data.js?v=20260915back"></script>
 <script src="js/coding-execution.js?v=20260915back"></script>
 <script src="js/coding-service.js?v=20260921contest"></script>
-<script src="js/coding-exam.js?v=20260921contest"></script>
+<script src="js/coding-exam.js?v=20260922autosubmit"></script>
 <script src="js/coding-page.js?v=20260921contest"></script>
 </body></html>

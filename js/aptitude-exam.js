@@ -144,9 +144,166 @@
     let state = null;
     let timerId = null;
     let submitting = false;
+    let examLockdown = false;
+    let remainingMs = 0;
+    let timerDeadline = 0;
+    let lockOverlay = null;
+    let lockdownGuardsBound = false;
+    let beforeUnloadBound = false;
+    let focusViolationHandled = false;
 
     function el(id) {
       return root.querySelector(`[data-exam="${id}"]`);
+    }
+
+    function isContestAttempt(meta = state?.test) {
+      const type = String(meta?.contestType || 'none');
+      return type === 'weekly' || type === 'monthly';
+    }
+
+    function ensureLockOverlay() {
+      if (lockOverlay) return lockOverlay;
+      const overlay = document.createElement('div');
+      overlay.setAttribute('data-exam-lock-overlay', '');
+      overlay.style.position = 'fixed';
+      overlay.style.inset = '0';
+      overlay.style.display = 'none';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.padding = '1rem';
+      overlay.style.background = 'rgba(15, 23, 42, 0.78)';
+      overlay.style.backdropFilter = 'blur(4px)';
+      overlay.style.zIndex = '1080';
+      overlay.style.pointerEvents = 'auto';
+      overlay.innerHTML = `
+        <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
+          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
+          <div data-exam-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">You left the test window. Submitting your answers and signing you out…</div>
+        </div>`;
+      document.body.appendChild(overlay);
+      lockOverlay = overlay;
+      return lockOverlay;
+    }
+
+    function showLockOverlay(message) {
+      const overlay = ensureLockOverlay();
+      const msg = overlay.querySelector('[data-exam-lock-message]');
+      if (msg) msg.textContent = message || 'You have left the test window. Return to this tab to continue.';
+      overlay.style.display = 'flex';
+    }
+
+    function hideLockOverlay() {
+      if (lockOverlay) lockOverlay.style.display = 'none';
+    }
+
+    function bindUnload(on) {
+      if (on && !beforeUnloadBound) {
+        window.addEventListener('beforeunload', onBeforeUnload);
+        beforeUnloadBound = true;
+      }
+      if (!on && beforeUnloadBound) {
+        window.removeEventListener('beforeunload', onBeforeUnload);
+        beforeUnloadBound = false;
+      }
+    }
+
+    function onBeforeUnload(e) {
+      if (!state?.started || state?.submitted) return;
+      e.preventDefault();
+      e.returnValue = '';
+    }
+
+    function freezeExamInteractions() {
+      root.querySelectorAll('[data-opt-select], [data-goto], [data-exam-action]').forEach((btn) => {
+        btn.disabled = true;
+      });
+    }
+
+    function restoreExamInteractions() {
+      const locked = !!state?.submitted;
+      root.querySelectorAll('[data-opt-select]').forEach((btn) => { btn.disabled = locked; });
+      root.querySelectorAll('[data-goto]').forEach((btn) => { btn.disabled = locked; });
+      root.querySelectorAll('[data-exam-action]').forEach((btn) => {
+        const action = btn.getAttribute('data-exam-action');
+        if (action === 'prev') btn.disabled = locked || state.index <= 0;
+        else if (action === 'next') btn.disabled = locked || state.index >= (state.questions?.length || 1) - 1;
+        else if (action === 'submit') btn.disabled = locked || submitting;
+        else btn.disabled = locked;
+      });
+    }
+
+    function logoutAfterViolation() {
+      if (typeof Auth !== 'undefined' && typeof Auth.logout === 'function') {
+        Auth.logout();
+        return;
+      }
+      window.location.href = 'public-stats.html';
+    }
+
+    async function handleFocusViolation() {
+      if (focusViolationHandled || !examLockdown || state?.submitted || !state?.started || submitting) return;
+      if (!document.hidden && document.hasFocus()) return;
+      focusViolationHandled = true;
+      stopTimer();
+      bindLockdownGuards(false);
+      bindUnload(false);
+      examLockdown = false;
+      freezeExamInteractions();
+      showLockOverlay('You switched tabs or left the test window. Your test is being submitted and you will be signed out.');
+      try {
+        await submitExam(true, { logoutAfter: true });
+      } catch (_) { /* still sign out below */ }
+      logoutAfterViolation();
+    }
+
+    function onVisibilityChange() {
+      if (document.hidden) handleFocusViolation();
+    }
+
+    function onClipboardBlock(e) {
+      if (!examLockdown || !state?.started || state.submitted) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function onContextMenuBlock(e) {
+      if (!examLockdown || !state?.started || state.submitted) return;
+      e.preventDefault();
+    }
+
+    function onSelectStartBlock(e) {
+      if (!examLockdown || !state?.started || state.submitted) return;
+      e.preventDefault();
+    }
+
+    function bindLockdownGuards(on) {
+      if (on && !lockdownGuardsBound) {
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        root.addEventListener('copy', onClipboardBlock, true);
+        root.addEventListener('cut', onClipboardBlock, true);
+        root.addEventListener('paste', onClipboardBlock, true);
+        root.addEventListener('contextmenu', onContextMenuBlock, true);
+        root.addEventListener('selectstart', onSelectStartBlock, true);
+        lockdownGuardsBound = true;
+      }
+      if (!on && lockdownGuardsBound) {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        root.removeEventListener('copy', onClipboardBlock, true);
+        root.removeEventListener('cut', onClipboardBlock, true);
+        root.removeEventListener('paste', onClipboardBlock, true);
+        root.removeEventListener('contextmenu', onContextMenuBlock, true);
+        root.removeEventListener('selectstart', onSelectStartBlock, true);
+        lockdownGuardsBound = false;
+      }
+      if (!on) hideLockOverlay();
+    }
+
+    function teardownLockdown() {
+      examLockdown = false;
+      focusViolationHandled = false;
+      bindLockdownGuards(false);
+      bindUnload(false);
+      root.removeAttribute('data-exam-locked');
     }
 
     function showPanel(name) {
@@ -173,6 +330,10 @@
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Negative marking</div><strong>${test.negativeMarking ? `Yes (−${esc(test.negativeMarks || 0)})` : 'No'}</strong></div></div>
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Category</div><strong>${esc(testCategoryLabel(test))}</strong></div></div>
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Difficulty</div><strong>${esc(test.difficulty || '—')}</strong></div></div>
+        </div>
+        <div class="alert alert-warning py-2 px-3 small mb-3">
+          <strong>During the test:</strong> copy, cut, and paste are disabled. Switching tabs or windows will automatically submit your test and sign you out.
+          ${isContestAttempt(test) ? ' Contest rules apply for the full duration.' : ''}
         </div>
         <h6 class="fw-bold">Instructions</h6>
         <div class="text-muted-2" style="white-space:pre-wrap">${esc(test.instructions || 'Read each question carefully. Choose one option. Submit before time ends.')}</div>`;
@@ -304,10 +465,16 @@
       renderPaletteLegendCounts();
     }
 
-    function startTimer() {
+    function startTimer(initialMs) {
       stopTimer();
+      if (initialMs != null) {
+        timerDeadline = Date.now() + Math.max(0, initialMs);
+        state.endsAt = timerDeadline;
+      } else {
+        timerDeadline = state.endsAt;
+      }
       const tick = () => {
-        const left = state.endsAt - Date.now();
+        const left = timerDeadline - Date.now();
         el('timer').textContent = formatTimer(left / 1000);
         el('timer').classList.toggle('text-danger', left < 60000);
         if (left <= 0) {
@@ -346,15 +513,24 @@
       state.endsAt = Date.now() + durationMs;
       state.started = true;
       state.submitted = false;
+      state.status = 'ACTIVE';
+      focusViolationHandled = false;
+      examLockdown = true;
+      timerDeadline = state.endsAt;
+      remainingMs = durationMs;
       showPanel('exam');
       el('exam-title').textContent = state.test.title || 'Examination';
+      root.setAttribute('data-exam-locked', '1');
+      bindUnload(true);
+      bindLockdownGuards(true);
       bindOptionPicker();
       renderQuestion();
+      restoreExamInteractions();
       startTimer();
     }
 
-    async function submitExam(auto = false) {
-      if (submitting || !state) return;
+    async function submitExam(auto = false, options = {}) {
+      if (submitting || !state) return false;
       if (!auto) {
         const counts = paletteCounts();
         const ok = typeof confirmAction === 'function'
@@ -365,10 +541,11 @@
               variant: 'primary',
             })
           : window.confirm('Submit test now?');
-        if (!ok) return;
+        if (!ok) return false;
       }
       submitting = true;
       stopTimer();
+      if (!options.logoutAfter) teardownLockdown();
       const timeTakenSeconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
       const payload = {
         answers: buildSubmitAnswers(),
@@ -384,9 +561,15 @@
         });
         if (!res?.success) {
           submitting = false;
-          toast(res?.message || 'Submit failed.', 'error');
-          if (!auto) startTimer();
-          return;
+          if (!options.logoutAfter) toast(res?.message || 'Submit failed.', 'error');
+          if (!auto && !options.logoutAfter) {
+            examLockdown = true;
+            root.setAttribute('data-exam-locked', '1');
+            bindLockdownGuards(true);
+            bindUnload(true);
+            startTimer(Math.max(0, timerDeadline - Date.now()));
+          }
+          return false;
         }
         result = res.data;
       } else if (opts.scoreLocally) {
@@ -396,8 +579,10 @@
       }
       submitting = false;
       state.submitted = true;
+      if (options.logoutAfter) return true;
       if (auto) toast('Time is up — test submitted automatically.', 'info');
       renderResult(result);
+      return true;
     }
 
     function resultVisibility(result) {
@@ -514,6 +699,7 @@
         if (!ok) return;
       }
       stopTimer();
+      teardownLockdown();
       onExit(state?.lastResult);
     }
 
@@ -564,6 +750,7 @@
     return {
       open(test) {
         stopTimer();
+        teardownLockdown();
         submitting = false;
         const safeTest = {
           ...test,
@@ -586,10 +773,12 @@
       },
       hide() {
         stopTimer();
+        teardownLockdown();
         root.classList.add('d-none');
       },
       showResult(result) {
         stopTimer();
+        teardownLockdown();
         submitting = false;
         state = { test: null, lastResult: result, submitted: true, started: true };
         renderResult(result);

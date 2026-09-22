@@ -118,13 +118,12 @@
     let running = false;
     let submitting = false;
     let beforeUnloadBound = false;
-    let contestMode = false;
-    let contestGuardsBound = false;
-    let contestPaused = false;
+    let examLockdown = false;
+    let lockdownGuardsBound = false;
+    let focusViolationHandled = false;
     let remainingMs = 0;
     let timerDeadline = 0;
     let lockOverlay = null;
-    let lastFocusChangeAt = 0;
 
     function el(id) {
       return root.querySelector(`[data-cod="${id}"]`);
@@ -139,6 +138,34 @@
     function isContestAttempt(meta = state?.testMeta || state?.test) {
       const type = String(meta?.contestType || 'none');
       return type === 'weekly' || type === 'monthly';
+    }
+
+    function problemColumn() {
+      return root.querySelector('[data-cod="q-body"]')?.closest('.col-lg-5') || null;
+    }
+
+    function isProblemArea(node) {
+      if (!node) return false;
+      const col = problemColumn();
+      const elNode = node instanceof Element ? node : node.parentElement;
+      return !!(col && elNode && col.contains(elNode));
+    }
+
+    function selectionInProblemArea() {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+      const node = sel.anchorNode;
+      return isProblemArea(node instanceof Element ? node : node?.parentElement);
+    }
+
+    function isEditorArea(node) {
+      if (!node) return false;
+      const elNode = node instanceof Element ? node : node.parentElement;
+      return !!(elNode && (
+        elNode.closest('[data-cod="editor"]')
+        || elNode.closest('[data-cod="stdin"]')
+        || elNode.closest('.cod-input')
+      ));
     }
 
     function ensureLockOverlay() {
@@ -157,8 +184,8 @@
       overlay.style.pointerEvents = 'auto';
       overlay.innerHTML = `
         <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
-          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Paused</div>
-          <div data-cod-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">You have left the test window. Please return to continue.</div>
+          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
+          <div data-cod-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">You left the test window. Submitting your answers and signing you out…</div>
         </div>`;
       document.body.appendChild(overlay);
       lockOverlay = overlay;
@@ -208,7 +235,7 @@
       el('timer').classList.toggle('is-low', remainingMs < 60000);
     }
 
-    function freezeContestInteractions() {
+    function freezeExamInteractions() {
       if (editor) editor.setReadOnly(true);
       if (el('stdin')) el('stdin').readOnly = true;
       if (el('language')) el('language').disabled = true;
@@ -220,7 +247,7 @@
       if (el('btn-next')) el('btn-next').disabled = true;
     }
 
-    function restoreContestInteractions() {
+    function restoreExamInteractions() {
       const locked = !!state?.submitted;
       if (editor) editor.setReadOnly(locked);
       if (el('stdin')) el('stdin').readOnly = locked;
@@ -233,72 +260,87 @@
       if (el('btn-next')) el('btn-next').disabled = locked || state.index >= state.test.items.length - 1;
     }
 
-    function pauseContest() {
-      if (!contestMode || state?.submitted || !state?.attemptId || contestPaused) return;
-      remainingMs = Math.max(0, timerDeadline - Date.now());
-      contestPaused = true;
-      state.status = 'PAUSED';
+    function logoutAfterViolation() {
+      if (typeof Auth !== 'undefined' && typeof Auth.logout === 'function') {
+        Auth.logout();
+        return;
+      }
+      window.location.href = 'public-stats.html';
+    }
+
+    async function handleFocusViolation() {
+      if (focusViolationHandled || !examLockdown || state?.submitted || !state?.attemptId || submitting) return;
+      if (!document.hidden && document.hasFocus()) return;
+      focusViolationHandled = true;
       stopTimer();
-      freezeContestInteractions();
-      showLockOverlay();
-      syncTimerDisplay();
-    }
-
-    function resumeContest() {
-      if (!contestMode || state?.submitted || !state?.attemptId || !contestPaused) return;
-      if (document.hidden || !document.hasFocus()) return;
-      contestPaused = false;
-      state.status = 'ACTIVE';
-      hideLockOverlay();
-      restoreContestInteractions();
-      startTimer(remainingMs);
-    }
-
-    function refreshContestWindowState() {
-      if (!contestMode || !state?.attemptId || state.submitted) return;
-      const active = !document.hidden && document.hasFocus();
-      if (active) resumeContest();
-      else pauseContest();
+      bindLockdownGuards(false);
+      bindUnload(false);
+      examLockdown = false;
+      freezeExamInteractions();
+      showLockOverlay('You switched tabs or left the test window. Your test is being submitted and you will be signed out.');
+      try {
+        await submitExam(true, { logoutAfter: true });
+      } catch (_) { /* still sign out below */ }
+      logoutAfterViolation();
     }
 
     function onVisibilityChange() {
-      refreshContestWindowState();
-    }
-
-    function onWindowBlur() {
-      refreshContestWindowState();
-    }
-
-    function onWindowFocus() {
-      refreshContestWindowState();
+      if (document.hidden) handleFocusViolation();
     }
 
     function onClipboardBlock(e) {
-      if (!contestMode || !state?.attemptId || state.submitted || state.status !== 'ACTIVE') return;
-      e.preventDefault();
-      e.stopPropagation();
+      if (!examLockdown || !state?.attemptId || state.submitted) return;
+      if (e.type === 'paste') {
+        if (!isEditorArea(e.target)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+      if (isProblemArea(e.target) || selectionInProblemArea()) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
     }
 
-    function bindContestGuards(on) {
-      if (on && !contestGuardsBound) {
+    function onContextMenuBlock(e) {
+      if (!examLockdown || !state?.attemptId || state.submitted) return;
+      if (isProblemArea(e.target)) e.preventDefault();
+    }
+
+    function onSelectStartBlock(e) {
+      if (!examLockdown || !state?.attemptId || state.submitted) return;
+      if (isProblemArea(e.target)) e.preventDefault();
+    }
+
+    function bindLockdownGuards(on) {
+      if (on && !lockdownGuardsBound) {
         document.addEventListener('visibilitychange', onVisibilityChange);
-        window.addEventListener('blur', onWindowBlur);
-        window.addEventListener('focus', onWindowFocus);
         root.addEventListener('copy', onClipboardBlock, true);
         root.addEventListener('cut', onClipboardBlock, true);
         root.addEventListener('paste', onClipboardBlock, true);
-        contestGuardsBound = true;
+        root.addEventListener('contextmenu', onContextMenuBlock, true);
+        root.addEventListener('selectstart', onSelectStartBlock, true);
+        lockdownGuardsBound = true;
       }
-      if (!on && contestGuardsBound) {
+      if (!on && lockdownGuardsBound) {
         document.removeEventListener('visibilitychange', onVisibilityChange);
-        window.removeEventListener('blur', onWindowBlur);
-        window.removeEventListener('focus', onWindowFocus);
         root.removeEventListener('copy', onClipboardBlock, true);
         root.removeEventListener('cut', onClipboardBlock, true);
         root.removeEventListener('paste', onClipboardBlock, true);
-        contestGuardsBound = false;
+        root.removeEventListener('contextmenu', onContextMenuBlock, true);
+        root.removeEventListener('selectstart', onSelectStartBlock, true);
+        lockdownGuardsBound = false;
       }
       if (!on) hideLockOverlay();
+    }
+
+    function teardownLockdown() {
+      examLockdown = false;
+      focusViolationHandled = false;
+      bindLockdownGuards(false);
+      bindUnload(false);
+      root.removeAttribute('data-cod-locked');
     }
 
     function answeredCount() {
@@ -341,10 +383,12 @@
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Maximum Marks</div><strong>${esc(test.marks || 0)}</strong></div></div>
         </div>`;
       const lines = test.instructions || [];
-      const contestNote = isContestAttempt(test)
-        ? '<li><strong>Contest mode:</strong> copy, cut, and paste are blocked. Switching tabs triggers a warning.</li>'
-        : '';
-      el('instr-list').innerHTML = [contestNote, ...lines.map((line) => `<li>${esc(line)}</li>`)].join('');
+      const lockdownNote = `
+        <div class="alert alert-warning py-2 px-3 small mb-3">
+          <strong>During the test:</strong> problem statements cannot be copied. Switching tabs or windows will automatically submit your test and sign you out.
+          You can still edit code in the editor.${isContestAttempt(test) ? ' Contest rules apply for the full duration.' : ''}
+        </div>`;
+      el('instr-list').innerHTML = `${lockdownNote}<ul class="text-muted-2 mb-0 ps-3">${lines.length ? lines.map((line) => `<li>${esc(line)}</li>`).join('') : '<li>Read each problem carefully. Write and run your code before submitting.</li>'}</ul>`;
     }
 
     function renderProblem(q) {
@@ -579,8 +623,8 @@
         state.submitted = false;
         state.status = 'ACTIVE';
         state.answers = {};
-        contestPaused = false;
-        contestMode = isContestAttempt(started.test || state.testMeta);
+        focusViolationHandled = false;
+        examLockdown = true;
         remainingMs = Math.max(0, (started.endsAt || 0) - Date.now());
         (started.test.items || []).forEach((item) => {
           const sample = (item.testCases || []).find((tc) => tc.sample);
@@ -595,10 +639,11 @@
         if (!editor) editor = createCodeEditor(el('editor'));
         showPanel('exam');
         el('exam-title').textContent = started.test.title || 'Coding Test';
+        root.setAttribute('data-cod-locked', '1');
         bindUnload(true);
-        bindContestGuards(true);
+        bindLockdownGuards(true);
         renderQuestion();
-        restoreContestInteractions();
+        restoreExamInteractions();
         startTimer(remainingMs);
         editor.focus();
       } catch (err) {
@@ -661,8 +706,8 @@
       toast('Answer saved. Click Finish Test to end the exam.', 'success');
     }
 
-    async function submitExam(auto = false) {
-      if (submitting || !state?.attemptId || state.submitted) return;
+    async function submitExam(auto = false, options = {}) {
+      if (submitting || !state?.attemptId || state.submitted) return false;
       persistCurrent();
       if (!auto) {
         const ok = typeof confirmAction === 'function'
@@ -674,16 +719,14 @@
               variant: 'primary',
             })
           : window.confirm('Finish this test? You may not be able to modify your answers after submission.');
-        if (!ok) return;
+        if (!ok) return false;
       }
       submitting = true;
       state.status = 'SUBMITTED';
-      contestPaused = false;
       setBusy(true);
       if (el('btn-submit-test')) el('btn-submit-test').textContent = 'Submitting…';
       stopTimer();
-      bindUnload(false);
-      hideLockOverlay();
+      if (!options.logoutAfter) teardownLockdown();
       const timeTakenSeconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
       try {
         const result = await CodingService.submitAttempt(state.attemptId, { timeTakenSeconds });
@@ -691,24 +734,33 @@
         state.submitted = true;
         state.attemptId = null;
         if (editor) editor.setReadOnly(true);
-        bindContestGuards(false);
+        if (options.logoutAfter) {
+          submitting = false;
+          state.submitted = true;
+          return true;
+        }
         if (auto) toast('Time is up — test submitted automatically.', 'info');
         if (result.saveWarning) toast(result.saveWarning, 'info');
         renderResult(result);
       } catch (err) {
         submitting = false;
+        if (options.logoutAfter) return false;
         state.status = 'ACTIVE';
         if (el('btn-submit-test')) el('btn-submit-test').textContent = 'Finish Test';
         toast(err?.message || 'Submit failed.', 'error');
         if (!auto) {
+          examLockdown = true;
+          root.setAttribute('data-cod-locked', '1');
           bindUnload(true);
-          restoreContestInteractions();
+          bindLockdownGuards(true);
+          restoreExamInteractions();
           startTimer(remainingMs);
           setBusy(false);
         }
-        return;
+        return false;
       }
       submitting = false;
+      return true;
     }
 
     function renderResult(result) {
@@ -798,17 +850,13 @@
         }
         persistCurrent();
         stopTimer();
-        bindUnload(false);
-        bindContestGuards(false);
-        hideLockOverlay();
+        teardownLockdown();
         onExit(state?.lastResult);
       }
       if (action === 'done') {
         persistCurrent();
         stopTimer();
-        bindUnload(false);
-        bindContestGuards(false);
-        hideLockOverlay();
+        teardownLockdown();
         onExit(state?.lastResult);
       }
       if (action === 'prev') {
@@ -835,23 +883,18 @@
     return {
       open(testMeta) {
         stopTimer();
+        teardownLockdown();
         submitting = false;
         running = false;
-        contestMode = isContestAttempt(testMeta);
-        contestPaused = false;
         remainingMs = 0;
         timerDeadline = 0;
         state = { testMeta, test: null, answers: {}, index: 0, attemptId: null, submitted: false, status: 'NOT_STARTED' };
         renderInstructions(testMeta);
         root.classList.remove('d-none');
-        bindContestGuards(false);
-        hideLockOverlay();
       },
       hide() {
         stopTimer();
-        bindUnload(false);
-        bindContestGuards(false);
-        hideLockOverlay();
+        teardownLockdown();
         root.classList.add('d-none');
       },
     };
