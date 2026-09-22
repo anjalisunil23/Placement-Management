@@ -1033,14 +1033,20 @@
     const next = { ...base };
     if (role === 'placement_officer') {
       next.canTake = false;
-      next.canManage = false;
-      next.canViewDirectory = true;
+      next.canManage = typeof Auth !== 'undefined' && typeof Auth.canManageCodingTests === 'function'
+        ? Auth.canManageCodingTests()
+        : !!base.canManage;
+      next.canViewDirectory = typeof Auth !== 'undefined' && typeof Auth.canViewCodingDirectory === 'function'
+        ? Auth.canViewCodingDirectory()
+        : !!base.canViewDirectory;
     } else if (role === 'admin') {
       next.canTake = false;
       next.canManage = typeof Auth !== 'undefined' && typeof Auth.canManageCodingTests === 'function'
         ? Auth.canManageCodingTests()
         : !!base.canManage;
-      next.canViewDirectory = true;
+      next.canViewDirectory = typeof Auth !== 'undefined' && typeof Auth.canViewCodingDirectory === 'function'
+        ? Auth.canViewCodingDirectory()
+        : !!base.canViewDirectory;
     } else if (role === 'staff') {
       next.canTake = false;
       next.canManage = false;
@@ -1068,7 +1074,7 @@
   function defaultView() {
     const views = allowedViews();
     const role = currentRole();
-    if (views.includes('manage') && role === 'admin') return 'manage';
+    if (views.includes('manage') && (role === 'placement_officer' || role === 'admin')) return 'manage';
     if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
     if (views.includes('take')) return 'take';
     if (views.includes('progress')) return 'progress';
@@ -1081,7 +1087,7 @@
     const role = currentRole();
     if (!access.canTake || role === 'placement_officer' || role === 'admin' || role === 'staff') {
       if (view === 'take' || !views.includes(view)) {
-        view = views.includes('manage') && role === 'admin'
+        view = views.includes('manage') && (role === 'placement_officer' || role === 'admin')
           ? 'manage'
           : (views.includes('progress') ? 'progress' : defaultView());
       }
@@ -2910,7 +2916,7 @@
   async function runCodAiGenerate() {
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     if (!live) {
-      toastMsg('Sign in as an admin to generate problems.', 'info');
+      toastMsg('Sign in as an admin or placement officer to generate problems.', 'info');
       return;
     }
     const params = collectCodAiParams();

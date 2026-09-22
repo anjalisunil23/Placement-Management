@@ -167,7 +167,7 @@
     };
   }
 
-  const MANAGE_KEY = 'ph-coding-managed-tests';
+  const MANAGE_KEY = 'ph-coding-managed-tests-v2';
   const BANK_KEY = 'ph-coding-problem-bank';
 
   function liveApi() {
@@ -195,14 +195,8 @@
   }
 
   function loadManagedTests() {
-    let tests = loadJson(MANAGE_KEY, null);
-    if (!Array.isArray(tests) || !tests.length) {
-      tests = typeof CodingData !== 'undefined' && CodingData.seedManagedTests
-        ? CodingData.seedManagedTests()
-        : [];
-      saveJson(MANAGE_KEY, tests);
-    }
-    return tests;
+    const tests = loadJson(MANAGE_KEY, null);
+    return Array.isArray(tests) ? tests : [];
   }
 
   function saveManagedTests(tests) {
@@ -355,24 +349,12 @@
       if (fromSingle) return fromSingle;
     }
     const fromFull = getFullTestLocal(parentId || attempt?.testId)?.items?.find((q) => String(q.id) === String(questionId));
-    if (fromFull) return fromFull;
-    return typeof CodingData !== 'undefined' ? CodingData.getQuestion(parentId || attempt?.testId, questionId) : null;
+    return fromFull || null;
   }
 
   function getFullTestLocal(id) {
     const { parentId } = parseProblemTestId(id);
-    const managed = loadManagedTests().find((t) => String(t.id) === String(parentId || id));
-    if (managed) {
-      const builtin = typeof CodingData !== 'undefined' ? CodingData.getTest(id) : null;
-      if (builtin?.items) {
-        managed.items = (managed.items || []).map((item) => {
-          const src = builtin.items.find((q) => q.id === item.id);
-          return src ? { ...item, solver: src.solver, keywords: item.keywords || src.keywords } : item;
-        });
-      }
-      return managed;
-    }
-    return typeof CodingData !== 'undefined' ? CodingData.getTest(parentId || id) : null;
+    return loadManagedTests().find((t) => String(t.id) === String(parentId || id)) || null;
   }
 
   const CodingService = {
@@ -524,7 +506,7 @@
     },
 
     async generateAiProblems(params) {
-      if (!liveApi()) throw new Error('Sign in as an admin to generate problems.');
+      if (!liveApi()) throw new Error('Sign in as an admin or placement officer to generate problems.');
       const res = await api('/coding/problem-bank/ai/generate', {
         method: 'POST',
         body: JSON.stringify(params),
@@ -534,7 +516,7 @@
     },
 
     async saveAiProblems(problems) {
-      if (!liveApi()) throw new Error('Sign in as an admin to save problems.');
+      if (!liveApi()) throw new Error('Sign in as an admin or placement officer to save problems.');
       const res = await api('/coding/problem-bank/ai/save', {
         method: 'POST',
         body: JSON.stringify({ problems }),
@@ -574,7 +556,7 @@
         pub = buildSingleProblemPublicTest(parentId, problemId);
       } else {
         const full = getFullTestLocal(testId);
-        pub = full ? publicFromFull(full) : (typeof CodingData !== 'undefined' ? CodingData.getPublicTest(testId) : null);
+        pub = full ? publicFromFull(full) : null;
       }
       if (!pub) throw new Error('Test not found.');
       const attemptId = 'cod-' + Date.now();
@@ -696,8 +678,7 @@
       if (!full?.items?.length) {
         if (problemId) full = buildSingleProblemPublicTest(parentId, problemId);
         else {
-          full = getFullTestLocal(attempt.testId)
-            || (typeof CodingData !== 'undefined' ? CodingData.getTest(attempt.testId) : null);
+          full = getFullTestLocal(attempt.testId);
         }
       }
       if (!full) throw new Error('Test not found.');

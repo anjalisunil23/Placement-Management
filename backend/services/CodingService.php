@@ -26,11 +26,6 @@ final class CodingService
         $this->tests = new CodingTestModel();
         $this->bank = new CodingProblemBankModel();
         $this->attempts = new CodingAttemptModel();
-        try {
-            (new CodingSeedService($this->bank, $this->tests))->ensureSeeded();
-        } catch (\Throwable $e) {
-            error_log('[PMS coding seed] ' . $e->getMessage());
-        }
     }
 
     /**

@@ -78,13 +78,22 @@ final class AptitudeAccessService
     }
 
     /**
-     * Coding practice content (tests, bank, contests, company block) — admin only.
+     * Coding practice content — admin (all departments) or placement officer (own department).
      *
      * @param array<string, mixed> $user
      */
     public static function canManageCoding(array $user): bool
     {
-        return AuthMiddleware::resolvedRole($user) === 'admin';
+        $role = AuthMiddleware::resolvedRole($user);
+        if ($role === 'admin') {
+            return true;
+        }
+        if ($role !== 'placement_officer') {
+            return false;
+        }
+        $ctx = PlacementOfficerContext::resolve($user);
+
+        return !empty($ctx['departmentId']);
     }
 
     /**
@@ -101,7 +110,7 @@ final class AptitudeAccessService
     public static function requireCodingManager(array $user): void
     {
         if (!self::canManageCoding($user)) {
-            Response::forbidden('Only admins can manage coding practice content.');
+            Response::forbidden('Only admins and placement officers can manage coding practice content.');
         }
     }
 
