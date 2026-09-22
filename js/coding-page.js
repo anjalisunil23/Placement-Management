@@ -2200,7 +2200,9 @@
     const next = { ...base };
     if (role === 'placement_officer') {
       next.canTake = false;
-      next.canManage = false;
+      next.canManage = typeof Auth !== 'undefined' && typeof Auth.canManageCodingTests === 'function'
+        ? Auth.canManageCodingTests()
+        : !!base.canManage;
       next.canViewDirectory = typeof Auth !== 'undefined' && typeof Auth.canViewCodingDirectory === 'function'
         ? Auth.canViewCodingDirectory()
         : !!base.canViewDirectory;
@@ -2239,7 +2241,7 @@
   function defaultView() {
     const views = allowedViews();
     const role = currentRole();
-    if (views.includes('manage') && role === 'admin') return 'manage';
+    if (views.includes('manage') && (role === 'placement_officer' || role === 'admin')) return 'manage';
     if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
     if (views.includes('take')) return 'take';
     if (views.includes('progress')) return 'progress';
@@ -2252,7 +2254,7 @@
     const role = currentRole();
     if (!access.canTake || role === 'placement_officer' || role === 'admin' || role === 'staff') {
       if (view === 'take' || !views.includes(view)) {
-        view = views.includes('manage') && role === 'admin'
+        view = views.includes('manage') && (role === 'placement_officer' || role === 'admin')
           ? 'manage'
           : (views.includes('progress') ? 'progress' : defaultView());
       }
@@ -2334,6 +2336,19 @@
   function updateManageScopeHint(scope = access.scope || {}) {
     const hint = document.getElementById('manageScopeHint');
     if (!hint) return;
+    const role = currentRole();
+    if (role === 'placement_officer') {
+      const name = resolveDepartmentLabel(
+        scope.departmentId || '',
+        scope.departmentName || '',
+        Auth.user()?.department || ''
+      );
+      hint.textContent = name
+        ? `Same tools as admin — scoped to ${name} students and tests only.`
+        : (scope.label || 'No department assigned — contact admin to manage coding tests.');
+      hint.classList.remove('d-none');
+      return;
+    }
     hint.textContent = '';
     hint.classList.add('d-none');
   }

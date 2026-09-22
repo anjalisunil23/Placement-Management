@@ -984,13 +984,8 @@ const Auth = {
   },
   canTakeCodingMock() { return this.canTakeAptitudeMock(); },
   canViewCodingDirectory() { return this.canViewAptitudeDirectory(); },
-  /** Admins manage coding tests; placement officers view department progress only. */
-  canManageCodingTests() {
-    return this.role() === 'admin';
-  },
-  canManageCodingContests() {
-    return this.role() === 'admin';
-  },
+  canManageCodingTests() { return this.canManageAptitudeMocks(); },
+  canManageCodingContests() { return this.canManageAptitudeContests(); },
   isAuthed() { return !!this.user(); },
   hasRealAuth() {
     const t = this.token();
