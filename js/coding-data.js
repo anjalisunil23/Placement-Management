@@ -27,6 +27,8 @@
       examples: clone(item.examples || []),
       starterCode: clone(item.starterCode),
       marks: item.marks,
+      difficulty: item.difficulty,
+      category: item.category,
       testCases: (item.testCases || []).map((tc) => {
         if (tc.sample) return clone(tc);
         const hidden = { id: tc.id, sample: false, label: tc.label || 'Hidden Test Case' };

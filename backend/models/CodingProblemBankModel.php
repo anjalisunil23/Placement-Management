@@ -279,6 +279,49 @@ class CodingProblemBankModel extends BaseModel
      * @param array<string, mixed> $q
      * @return array<string, mixed>
      */
+    /**
+     * Student-safe problem view (hides hidden test case I/O).
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    public static function publicView(array $row, ?string $id = null): array
+    {
+        $norm = self::normalize($row);
+        $pid = trim((string) ($id ?? $row['id'] ?? $row['_id'] ?? ''));
+        $testCases = [];
+        foreach ((array) ($norm['testCases'] ?? []) as $tc) {
+            if (!is_array($tc)) {
+                continue;
+            }
+            if (!empty($tc['sample'])) {
+                $testCases[] = $tc;
+                continue;
+            }
+            $testCases[] = [
+                'id' => (string) ($tc['id'] ?? ''),
+                'sample' => false,
+                'label' => (string) ($tc['label'] ?? 'Hidden Test Case'),
+            ];
+        }
+
+        return [
+            'id' => $pid,
+            'bankId' => $pid,
+            'title' => $norm['title'],
+            'description' => $norm['description'],
+            'inputFormat' => $norm['inputFormat'],
+            'outputFormat' => $norm['outputFormat'],
+            'constraints' => $norm['constraints'],
+            'examples' => $norm['examples'],
+            'starterCode' => $norm['starterCode'],
+            'testCases' => $testCases,
+            'marks' => $norm['marks'],
+            'difficulty' => $norm['difficulty'],
+            'category' => $norm['category'],
+        ];
+    }
+
     public static function toTestItem(array $q, ?string $bankId = null): array
     {
         $norm = self::normalize($q);

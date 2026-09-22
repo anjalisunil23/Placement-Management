@@ -89,6 +89,16 @@
   @media (max-width: 991.98px){
     .cod-editor,.cod-highlight,.cod-input{min-height:16rem}
   }
+  .cod-problems-layout{display:grid;grid-template-columns:minmax(0,15rem) minmax(0,1fr);gap:1rem}
+  @media (max-width: 991.98px){.cod-problems-layout{grid-template-columns:1fr}}
+  .cod-filter-card{border:1px solid var(--border);border-radius:.75rem;padding:.85rem;background:#fff}
+  .cod-problem-row{display:grid;grid-template-columns:1.4rem minmax(0,1fr) auto;gap:.65rem;align-items:center;padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;background:#fff}
+  .cod-problem-row:last-child{border-bottom:0}
+  .cod-problem-row:hover{background:#f8fafc}
+  .cod-problem-row .status-solved{color:#22c55e}
+  .cod-problem-row .status-attempted{color:#94a3b8}
+  .cod-problem-row .status-unsolved{color:transparent}
+  #examShell[data-cod-mode="practice"] .cod-timer{display:none!important}
 </style>
 </head>
 <body data-page="mock-coding.html"><div class="app">
@@ -124,8 +134,10 @@
         <div class="card-surface p-0 overflow-hidden">
           <div class="px-3 px-md-4 pt-3 pb-2">
             <ul class="nav nav-pills gap-1 flex-wrap" id="takeListNav">
-              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="tests">Available tests</a></li>
+              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="problems">Problems</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="tests">Tests</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Contests</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="submissions">My Submissions</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="jdblock">Company Block</a></li>
             </ul>
             <ul class="nav nav-pills gap-1 flex-wrap mt-2 d-none" id="takeContestTypeNav">
@@ -133,7 +145,28 @@
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-contest-type="monthly">Monthly</a></li>
             </ul>
           </div>
-          <div id="testList"></div>
+          <div id="codingProblemsPanel" class="px-3 px-md-4 pb-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 pt-1">
+              <h6 class="fw-bold mb-0">Coding Problems</h6>
+              <input class="form-control form-control-sm" type="search" id="practiceSearch" placeholder="Search problems…" style="max-width:16rem"/>
+            </div>
+            <div class="cod-problems-layout">
+              <div class="cod-filter-card">
+                <div class="small fw-semibold mb-2">Difficulty</div>
+                <div id="practiceDiffFilters" class="d-flex flex-column gap-1 mb-3"></div>
+                <div class="small fw-semibold mb-2">Topics</div>
+                <div id="practiceTopicFilters" class="d-flex flex-column gap-1 mb-3"></div>
+                <div class="small fw-semibold mb-2">Status</div>
+                <div id="practiceStatusFilters" class="d-flex flex-column gap-1"></div>
+              </div>
+              <div class="border rounded-3 overflow-hidden bg-white" id="practiceProblemsList"></div>
+            </div>
+          </div>
+          <div id="practiceSubmissionsPanel" class="d-none px-3 px-md-4 pb-3">
+            <h6 class="fw-bold mb-3">My Submissions</h6>
+            <div id="practiceSubmissionsList" class="small text-muted-2">No submissions yet.</div>
+          </div>
+          <div id="testList" class="d-none"></div>
           <div id="studentJdBlockPanel" class="d-none px-3 px-md-4 pb-3">
             <div id="studentJdBlockDetailNav" class="d-none d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
               <ul class="nav nav-pills gap-1 flex-wrap mb-0" id="studentJdBlockViewNav">
@@ -234,11 +267,28 @@
     <div class="card-surface p-3 p-md-4 mb-3">
       <p class="small text-muted-2 mb-2 d-none" id="manageScopeHint"></p>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="problems">Problems</a></li>
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">Company Block</a></li>
       </ul>
+
+      <div id="manageProblemsPanel" class="d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <h6 class="fw-bold mb-0">Coding Problems</h6>
+          <input class="form-control form-control-sm" type="search" id="managePracticeSearch" placeholder="Search problems…" style="max-width:16rem"/>
+        </div>
+        <div class="cod-problems-layout">
+          <div class="cod-filter-card">
+            <div class="small fw-semibold mb-2">Difficulty</div>
+            <div id="managePracticeDiffFilters" class="d-flex flex-column gap-1 mb-3"></div>
+            <div class="small fw-semibold mb-2">Topics</div>
+            <div id="managePracticeTopicFilters" class="d-flex flex-column gap-1"></div>
+          </div>
+          <div class="border rounded-3 overflow-hidden bg-white" id="managePracticeProblemsList"></div>
+        </div>
+      </div>
 
       <div id="manageTestsPanel">
         <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
@@ -427,9 +477,14 @@
             <label class="small fw-semibold mb-1" for="codStdin">Custom Input</label>
             <textarea class="form-control font-monospace" id="codStdin" data-cod="stdin" rows="3" spellcheck="false" placeholder="Enter input for your program"></textarea>
           </div>
-          <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+          <div class="d-flex flex-wrap align-items-center gap-2 mt-3" data-cod="test-actions">
             <button type="button" class="btn btn-outline-secondary" data-cod="btn-run" data-cod-action="run">Run Code</button>
             <button type="button" class="btn btn-primary" data-cod="btn-submit" data-cod-action="submit-answer">Submit Answer</button>
+            <span class="small text-muted-2 ms-auto" data-cod="run-state"></span>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2 mt-3 d-none" data-cod="practice-actions">
+            <button type="button" class="btn btn-outline-secondary" data-cod-action="run">Run Code</button>
+            <button type="button" class="btn btn-primary" data-cod-action="submit-practice">Submit</button>
             <span class="small text-muted-2 ms-auto" data-cod="run-state"></span>
           </div>
           <div class="mt-3">
@@ -450,7 +505,7 @@
         </div>
       </div>
     </div>
-    <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+    <div class="d-flex flex-wrap align-items-center gap-2 mt-3" data-cod="exam-nav">
       <button type="button" class="btn btn-outline-secondary" data-cod="btn-prev" data-cod-action="prev">Previous</button>
       <div data-cod="q-nav" class="d-flex flex-wrap"></div>
       <button type="button" class="btn btn-outline-secondary" data-cod="btn-next" data-cod-action="next">Next</button>
@@ -498,11 +553,6 @@
         </div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
-        <div class="col-md-6">
-          <label class="form-label small fw-semibold" for="tfQuestionCount">Total number of problems</label>
-          <input class="form-control" type="number" id="tfQuestionCount" min="1" required placeholder="Enter total first"/>
-          <div class="form-text" id="tfQuestionCountHint">Set the total here first — topic selection unlocks after that.</div>
-        </div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDuration">Total duration (minutes)</label><input class="form-control" type="number" id="tfDuration" min="1" required value="20"/></div>
 
         <div class="col-12">
@@ -522,7 +572,7 @@
               <div class="small fw-semibold">Random rules from problem bank</div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRandomRule"><i class="bi bi-plus-lg me-1"></i>Add topic</button>
             </div>
-            <p class="small text-muted-2 mb-2" id="tfRandomPanelHint">Enter the total number of problems above, then add topic rows. Each row picks random problems for that topic and difficulty, with marks per problem.</p>
+            <p class="small text-muted-2 mb-2" id="tfRandomPanelHint">Add topic rows below. Each row picks random problems for that topic and difficulty, with marks per problem.</p>
             <div id="tfRandomRules" class="d-flex flex-column gap-2 mb-2"></div>
             <div class="small text-muted-2" id="tfRandomSummary">0 problems from rules</div>
           </div>
@@ -643,9 +693,9 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260922pomanage"></script>
 <script src="js/app.js?v=20260915crumb"></script>
-<script src="js/coding-data.js?v=20260922nostatic"></script>
+<script src="js/coding-data.js?v=20260922practice"></script>
 <script src="js/coding-execution.js?v=20260915back"></script>
-<script src="js/coding-service.js?v=20260922openai"></script>
-<script src="js/coding-exam.js?v=20260922uiparity"></script>
-<script src="js/coding-page.js?v=20260922newtestfix2"></script>
+<script src="js/coding-service.js?v=20260922practice"></script>
+<script src="js/coding-exam.js?v=20260922practice"></script>
+<script src="js/coding-page.js?v=20260922practice"></script>
 </body></html>

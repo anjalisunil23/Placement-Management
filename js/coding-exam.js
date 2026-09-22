@@ -368,7 +368,11 @@
       state.answers[q.id].code = code;
       state.answers[q.id].customInput = customInput;
       if (state.attemptId) {
-        CodingService.saveDraft(state.attemptId, q.id, { language, code, customInput });
+        if (isPracticeMode()) {
+          CodingService.savePracticeDraft(state.attemptId, { language, code, customInput });
+        } else {
+          CodingService.saveDraft(state.attemptId, q.id, { language, code, customInput });
+        }
       }
     }
 
@@ -391,10 +395,30 @@
       el('instr-list').innerHTML = `${lockdownNote}<ul class="text-muted-2 mb-0 ps-3">${lines.length ? lines.map((line) => `<li>${esc(line)}</li>`).join('') : '<li>Read each problem carefully. Write and run your code before submitting.</li>'}</ul>`;
     }
 
+    function isPracticeMode() {
+      return !!state?.practiceMode;
+    }
+
+    function applyPracticeUi(on) {
+      root.setAttribute('data-cod-mode', on ? 'practice' : 'test');
+      if (el('timer')) el('timer').classList.toggle('d-none', on);
+      root.querySelector('[data-cod="exam-nav"]')?.classList.toggle('d-none', on);
+      root.querySelector('[data-cod="practice-actions"]')?.classList.toggle('d-none', !on);
+      root.querySelector('[data-cod="test-actions"]')?.classList.toggle('d-none', on);
+      if (el('btn-submit-test')) el('btn-submit-test').classList.toggle('d-none', on);
+      if (el('q-kicker')) el('q-kicker').classList.toggle('d-none', on);
+    }
+
     function renderProblem(q) {
       const example = (q.examples && q.examples[0]) || null;
-      el('q-kicker').textContent = `Question ${state.index + 1} of ${state.test.items.length}`;
-      el('q-title').textContent = q.title;
+      if (isPracticeMode()) {
+        const diff = difficultyClass(q.difficulty || 'Medium');
+        el('q-kicker').textContent = '';
+        el('q-title').innerHTML = `${esc(q.title)} <span class="badge-soft ${diff} ms-1">${esc(q.difficulty || 'Medium')}</span>`;
+      } else {
+        el('q-kicker').textContent = `Question ${state.index + 1} of ${state.test.items.length}`;
+        el('q-title').textContent = q.title;
+      }
       el('q-body').innerHTML = `
         <p class="mb-3">${esc(q.description)}</p>
         <div class="mb-3">
@@ -661,13 +685,20 @@
       el('run-state').textContent = 'Running code...';
       renderRunPanel(null, true);
       try {
-        const result = await CodingService.runCode({
-          attemptId: state.attemptId,
-          questionId: q.id,
-          language: ans.language,
-          code: ans.code,
-          stdin: ans.customInput,
-        });
+        const result = isPracticeMode()
+          ? await CodingService.runPracticeCode({
+            attemptId: state.attemptId,
+            language: ans.language,
+            code: ans.code,
+            stdin: ans.customInput,
+          })
+          : await CodingService.runCode({
+            attemptId: state.attemptId,
+            questionId: q.id,
+            language: ans.language,
+            code: ans.code,
+            stdin: ans.customInput,
+          });
         ans.lastRun = result;
         el('run-state').textContent = '';
         renderRunPanel(result, false);
@@ -704,6 +735,96 @@
       }
       renderNav();
       toast('Answer saved. Click Finish Test to end the exam.', 'success');
+    }
+
+    async function submitPracticeSolution() {
+      if (submitting || running || !state?.attemptId || state.submitted || !isPracticeMode()) return false;
+      persistCurrent();
+      const ok = typeof confirmAction === 'function'
+        ? await confirmAction({
+          title: 'Submit solution?',
+          message: 'Your code will be judged against all test cases.',
+          confirmText: 'Submit',
+          cancelText: 'Cancel',
+          variant: 'primary',
+        })
+        : window.confirm('Submit your solution?');
+      if (!ok) return false;
+      submitting = true;
+      setBusy(true);
+      const timeTakenSeconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
+      try {
+        const result = await CodingService.submitPracticeProblem(state.attemptId, { timeTakenSeconds });
+        state.lastResult = result;
+        state.submitted = true;
+        state.attemptId = null;
+        renderPracticeResult(result);
+      } catch (err) {
+        submitting = false;
+        setBusy(false);
+        toast(err?.message || 'Submit failed.', 'error');
+        return false;
+      }
+      submitting = false;
+      return true;
+    }
+
+    function renderPracticeResult(result) {
+      showPanel('result');
+      const accepted = !!result.accepted;
+      el('result-hero').innerHTML = `
+        <div class="text-center py-2">
+          <div class="text-muted-2 mb-1">Practice Result</div>
+          <div class="cod-score">${accepted ? 'Accepted' : 'Wrong Answer'}</div>
+          <div class="cod-pct">${esc(result.testsPassed ?? 0)} / ${esc(result.testsTotal ?? 0)} test cases</div>
+          <span class="badge-soft ${accepted ? 'success' : 'danger'} mt-2">${esc(result.status || (accepted ? 'Accepted' : 'Wrong Answer'))}</span>
+        </div>`;
+      el('result-stats').innerHTML = [
+        ['Test cases', `${result.testsPassed ?? 0} / ${result.testsTotal ?? 0}`],
+        ['Score', `${result.score ?? 0} / ${result.totalMarks ?? 0}`],
+        ['Time', result.timeTakenLabel || '—'],
+        ['Status', result.practiceStatus || (accepted ? 'solved' : 'attempted')],
+      ].map(([lbl, val]) => `
+        <div class="col-6 col-md"><div class="card-surface p-3 apt-stat">
+          <div class="small text-muted-2">${esc(lbl)}</div>
+          <div class="val" style="font-size:1.2rem">${esc(val)}</div>
+        </div></div>`).join('');
+      el('result-bar').innerHTML = '';
+      el('result-questions').innerHTML = (result.questionResults || []).map((row) => {
+        const cls = row.status === 'Correct' ? 'success' : 'danger';
+        return `<div class="d-flex justify-content-between align-items-center border-bottom py-2">
+          <div>${esc(row.title)}</div>
+          <span class="badge-soft ${cls}">${esc(row.status)} · ${esc(row.testsPassed)}/${esc(row.testsTotal)}</span>
+        </div>`;
+      }).join('') || '';
+    }
+
+    async function beginPractice() {
+      if (!state?.practiceMeta) return;
+      try {
+        const started = CodingService.startPracticeAttempt(state.practiceMeta);
+        state.attemptId = started.attemptId;
+        state.test = { title: started.problem.title, items: [started.problem] };
+        state.startedAt = started.startedAt;
+        state.submitted = false;
+        state.status = 'ACTIVE';
+        state.index = 0;
+        state.practiceMode = true;
+        state.answers = started.problem.id ? { [started.problem.id]: {
+          language: 'Python',
+          code: started.problem.starterCode?.Python || '',
+          customInput: (started.problem.testCases || []).find((t) => t.sample)?.input || '',
+          lastRun: null,
+        } } : {};
+        if (!editor) editor = createCodeEditor(el('editor'));
+        showPanel('exam');
+        applyPracticeUi(true);
+        el('exam-title').textContent = started.problem.title || 'Coding Problem';
+        renderQuestion();
+        editor.focus();
+      } catch (err) {
+        toast(err?.message || 'Could not open problem.', 'error');
+      }
     }
 
     async function submitExam(auto = false, options = {}) {
@@ -842,9 +963,14 @@
       if (!t) return;
       const action = t.getAttribute('data-cod-action');
       if (action === 'start') beginExam();
+      if (action === 'start-practice') beginPractice();
+      if (action === 'submit-practice') submitPracticeSolution();
       if (action === 'cancel' || action === 'back') {
         if (state.test && !state.submitted && state.status === 'ACTIVE') {
-          if (!window.confirm('Leave this test and go back? Your code is saved as a draft.')) {
+          const msg = isPracticeMode()
+            ? 'Leave this problem? Your draft is not submitted yet.'
+            : 'Leave this test and go back? Your code is saved as a draft.';
+          if (!window.confirm(msg)) {
             return;
           }
         }
@@ -888,8 +1014,28 @@
         running = false;
         remainingMs = 0;
         timerDeadline = 0;
-        state = { testMeta, test: null, answers: {}, index: 0, attemptId: null, submitted: false, status: 'NOT_STARTED' };
+        applyPracticeUi(false);
+        state = { testMeta, test: null, answers: {}, index: 0, attemptId: null, submitted: false, status: 'NOT_STARTED', practiceMode: false };
         renderInstructions(testMeta);
+        root.classList.remove('d-none');
+      },
+      openPractice(problemMeta) {
+        stopTimer();
+        teardownLockdown();
+        submitting = false;
+        running = false;
+        state = {
+          practiceMeta: problemMeta,
+          test: null,
+          answers: {},
+          index: 0,
+          attemptId: null,
+          submitted: false,
+          status: 'NOT_STARTED',
+          practiceMode: true,
+        };
+        applyPracticeUi(true);
+        beginPractice();
         root.classList.remove('d-none');
       },
       hide() {

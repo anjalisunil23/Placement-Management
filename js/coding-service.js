@@ -8,6 +8,8 @@
   const API_ENABLED = false;
   const EXEC_UNAVAILABLE = 'Code execution service unavailable, please try again';
   const attempts = new Map();
+  const practiceAttempts = new Map();
+  const PRACTICE_SUBS_PREFIX = 'ph-coding-practice-subs-';
 
   if (typeof global.CodeExecutionService === 'undefined') {
     global.CodeExecutionService = {
@@ -52,6 +54,77 @@
 
   function saveProgress(progress) {
     localStorage.setItem(storageKey(), JSON.stringify(progress));
+  }
+
+  function practiceSubsKey() {
+    return PRACTICE_SUBS_PREFIX + userKey();
+  }
+
+  function loadPracticeSubmissions() {
+    try {
+      const raw = localStorage.getItem(practiceSubsKey());
+      return Array.isArray(JSON.parse(raw || '[]')) ? JSON.parse(raw || '[]') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function savePracticeSubmissions(rows) {
+    localStorage.setItem(practiceSubsKey(), JSON.stringify(Array.isArray(rows) ? rows : []));
+  }
+
+  function practiceStatusMap() {
+    const map = {};
+    loadPracticeSubmissions().forEach((row) => {
+      const id = String(row.bankProblemId || '');
+      if (!id) return;
+      if (!map[id]) {
+        map[id] = { status: 'attempted', attemptCount: 0, lastSubmittedAt: row.submittedAt || '' };
+      }
+      map[id].attemptCount += 1;
+      if (row.accepted) map[id].status = 'solved';
+    });
+    return map;
+  }
+
+  function publicProblemView(item) {
+    const fn = typeof CodingData !== 'undefined' && CodingData.publicQuestion
+      ? CodingData.publicQuestion
+      : (row) => row;
+    return fn(item);
+  }
+
+  async function gradePracticeSolution(problem, language, code) {
+    const caseResults = [];
+    let passed = 0;
+    let total = 0;
+    for (const tc of (problem.testCases || [])) {
+      total += 1;
+      if (isStarter(problem, language, code)) {
+        caseResults.push({ id: tc.id, sample: !!tc.sample, status: 'Not Run', passed: false });
+        continue;
+      }
+      const ran = await executeOnce(problem, language, code, tc.input, true);
+      if (ran.passed) passed += 1;
+      caseResults.push({
+        id: tc.id,
+        sample: !!tc.sample,
+        status: ran.status,
+        passed: ran.passed,
+      });
+    }
+    const accepted = total > 0 && passed === total;
+    const marks = Number(problem.marks || 2);
+    return {
+      accepted,
+      status: accepted ? 'Accepted' : 'Wrong Answer',
+      testsPassed: passed,
+      testsTotal: total,
+      score: accepted ? marks : (total ? Math.round((marks * passed) / total) : 0),
+      totalMarks: marks,
+      percentage: total ? Math.round((passed / total) * 1000) / 10 : 0,
+      caseResults,
+    };
   }
 
   function normalizeOut(value) {
@@ -532,6 +605,220 @@
         return res.data;
       }
       return summarizeProgress(loadProgress());
+    },
+
+    async listPracticeProblems(filters = {}) {
+      const category = filters.category || '';
+      const difficulty = filters.difficulty || '';
+      if (liveApi()) {
+        const qs = new URLSearchParams();
+        if (category) qs.set('category', category);
+        if (difficulty) qs.set('difficulty', difficulty);
+        const res = await api('/coding/problems?' + qs.toString()).catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not load coding problems.');
+        return res.data.problems || [];
+      }
+      const statusMap = practiceStatusMap();
+      return loadBankStore()
+        .filter((q) => {
+          if (!category) return true;
+          const cat = typeof CodingData !== 'undefined' && CodingData.normalizeTopic
+            ? CodingData.normalizeTopic(q.category)
+            : String(q.category || '');
+          return cat === category;
+        })
+        .filter((q) => !difficulty || String(q.difficulty || '') === difficulty)
+        .map((q) => {
+          const view = publicProblemView(q);
+          const stat = statusMap[String(q.id)] || null;
+          return {
+            ...view,
+            practiceStatus: stat ? stat.status : 'unsolved',
+            attemptCount: stat ? stat.attemptCount : 0,
+          };
+        });
+    },
+
+    async getPracticeProblem(id) {
+      if (liveApi()) {
+        const res = await api(`/coding/problems/${encodeURIComponent(id)}`).catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not load problem.');
+        return res.data;
+      }
+      const row = loadBankStore().find((q) => String(q.id) === String(id));
+      if (!row) throw new Error('Problem not found.');
+      const stat = practiceStatusMap()[String(id)] || null;
+      return {
+        ...publicProblemView(row),
+        practiceStatus: stat ? stat.status : 'unsolved',
+        attemptCount: stat ? stat.attemptCount : 0,
+      };
+    },
+
+    async listPracticeSubmissions() {
+      if (liveApi()) {
+        const res = await api('/coding/practice/submissions').catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not load submissions.');
+        return res.data.submissions || [];
+      }
+      return loadPracticeSubmissions().map((row) => ({
+        ...row,
+        dateLabel: formatDate(row.submittedAt || ''),
+      }));
+    },
+
+    startPracticeAttempt(problem) {
+      const bankId = String(problem.bankId || problem.id || '');
+      const item = publicProblemView(problem);
+      item.id = item.id || bankId;
+      const attemptId = 'prac-' + Date.now();
+      const sample = (item.testCases || []).find((tc) => tc.sample);
+      const answers = {};
+      answers[item.id] = {
+        language: 'Python',
+        code: item.starterCode?.Python || '',
+        customInput: sample ? sample.input : '',
+        lastRun: null,
+      };
+      const attempt = {
+        id: attemptId,
+        bankProblemId: bankId,
+        problem: item,
+        answers,
+        startedAt: Date.now(),
+        submitted: false,
+      };
+      practiceAttempts.set(attemptId, attempt);
+      return { attemptId, problem: item, startedAt: attempt.startedAt };
+    },
+
+    savePracticeDraft(attemptId, fields) {
+      const attempt = practiceAttempts.get(attemptId);
+      if (!attempt || attempt.submitted) return;
+      const qid = attempt.problem?.id;
+      if (!qid) return;
+      attempt.answers[qid] = Object.assign(attempt.answers[qid] || {}, fields);
+    },
+
+    async runPracticeCode({ attemptId, language, code, stdin }) {
+      const attempt = practiceAttempts.get(attemptId);
+      if (!attempt || attempt.submitted) throw new Error('This practice session has ended.');
+      const question = attempt.problem;
+      const qid = question.id;
+      this.savePracticeDraft(attemptId, { language, code, customInput: stdin });
+
+      const customStdin = String(stdin ?? '');
+      const custom = await executeOnce(question, language, code, customStdin, false);
+      const cases = [];
+      for (const tc of (question.testCases || [])) {
+        if (!tc.sample) {
+          cases.push({
+            id: tc.id,
+            label: tc.label || 'Hidden Test Case',
+            sample: false,
+            hidden: true,
+            input: '',
+            expected: '',
+            output: '',
+            stderr: '',
+            status: 'Not Run',
+            passed: false,
+          });
+          continue;
+        }
+        const ran = await executeOnce(question, language, code, tc.input, true);
+        cases.push({
+          id: tc.id,
+          label: tc.label || 'Sample Test Case',
+          sample: true,
+          hidden: false,
+          input: tc.input,
+          expected: ran.expected,
+          output: ran.stdout,
+          stderr: ran.stderr,
+          status: ran.status,
+          passed: ran.passed,
+        });
+      }
+      const visible = cases.filter((c) => !c.hidden);
+      const passedVisible = visible.filter((c) => c.passed).length;
+      const lastRun = {
+        overall: custom.status,
+        custom: {
+          input: customStdin,
+          output: custom.stdout,
+          expected: custom.expected,
+          stderr: custom.stderr,
+          status: custom.status,
+          passed: custom.passed,
+          durationMs: custom.exec?.durationMs,
+        },
+        results: cases.map((c, i) => ({ ...c, index: i + 1, label: c.label || `Test Case ${i + 1}` })),
+        passedCount: passedVisible,
+        totalCount: cases.length,
+        visibleCount: visible.length,
+        at: Date.now(),
+      };
+      if (attempt.answers[qid]) attempt.answers[qid].lastRun = lastRun;
+      return lastRun;
+    },
+
+    async submitPracticeProblem(attemptId, { timeTakenSeconds } = {}) {
+      const attempt = practiceAttempts.get(attemptId);
+      if (!attempt) throw new Error('Practice session not found.');
+      if (attempt.submitted) throw new Error('Already submitted.');
+      attempt.submitted = true;
+      const question = attempt.problem;
+      const ans = attempt.answers[question.id] || {};
+      const language = ans.language || 'Python';
+      const code = ans.code || '';
+      const graded = await gradePracticeSolution(question, language, code);
+      const taken = Number.isFinite(timeTakenSeconds)
+        ? timeTakenSeconds
+        : Math.max(0, Math.round((Date.now() - attempt.startedAt) / 1000));
+      const payload = {
+        bankProblemId: attempt.bankProblemId,
+        problemTitle: question.title,
+        language,
+        accepted: graded.accepted,
+        status: graded.status,
+        testsPassed: graded.testsPassed,
+        testsTotal: graded.testsTotal,
+        score: graded.score,
+        totalMarks: graded.totalMarks,
+        percentage: graded.percentage,
+        timeTakenSeconds: taken,
+        submittedAt: new Date().toISOString(),
+      };
+      if (liveApi()) {
+        const res = await api(`/coding/problems/${encodeURIComponent(attempt.bankProblemId)}/submit`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }).catch(() => null);
+        if (!res?.success) {
+          payload.saveWarning = res?.message || 'Result shown locally; server save failed.';
+        } else {
+          Object.assign(payload, res.data || {});
+        }
+      } else {
+        const rows = loadPracticeSubmissions();
+        rows.unshift({ id: 'ps-' + Date.now(), ...payload, dateLabel: formatDate(payload.submittedAt) });
+        savePracticeSubmissions(rows.slice(0, 100));
+        const stat = practiceStatusMap()[attempt.bankProblemId];
+        payload.practiceStatus = stat ? stat.status : (graded.accepted ? 'solved' : 'attempted');
+        payload.attemptCount = stat ? stat.attemptCount : 1;
+      }
+      practiceAttempts.delete(attemptId);
+      payload.timeTakenLabel = formatTimer(taken);
+      payload.questionResults = [{
+        index: 1,
+        id: question.id,
+        title: question.title,
+        status: graded.accepted ? 'Correct' : 'Incorrect',
+        testsPassed: graded.testsPassed,
+        testsTotal: graded.testsTotal,
+      }];
+      return payload;
     },
 
     async startAttempt(testId) {

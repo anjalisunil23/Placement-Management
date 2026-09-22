@@ -6,6 +6,7 @@ namespace PMS\Services;
 
 use PMS\Models\CodingAttemptModel;
 use PMS\Models\CodingCompanyProblemSetModel;
+use PMS\Models\CodingPracticeSubmissionModel;
 use PMS\Models\CodingProblemBankModel;
 use PMS\Models\CodingTestModel;
 use PMS\Models\CompanyModel;
@@ -20,12 +21,14 @@ final class CodingService
     private CodingTestModel $tests;
     private CodingProblemBankModel $bank;
     private CodingAttemptModel $attempts;
+    private CodingPracticeSubmissionModel $practiceSubmissions;
 
     public function __construct()
     {
         $this->tests = new CodingTestModel();
         $this->bank = new CodingProblemBankModel();
         $this->attempts = new CodingAttemptModel();
+        $this->practiceSubmissions = new CodingPracticeSubmissionModel();
     }
 
     /**
@@ -2043,5 +2046,158 @@ final class CodingService
         }
 
         return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<int, array<string, mixed>>
+     */
+    public function listPracticeProblems(array $user, ?string $category = null, ?string $difficulty = null): array
+    {
+        $this->requirePracticeViewer($user);
+        $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
+        $statusMap = AptitudeAccessService::canTake($user)
+            ? $this->practiceSubmissions->statusMapForUser($uid)
+            : [];
+        $rows = $this->bank->listProblems($category, $difficulty, 2000);
+        $out = [];
+        foreach ($rows as $row) {
+            $id = (string) ($row['id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            $view = CodingProblemBankModel::publicView($row, $id);
+            $stat = $statusMap[$id] ?? null;
+            $view['practiceStatus'] = $stat ? (string) ($stat['status'] ?? 'attempted') : 'unsolved';
+            $view['attemptCount'] = $stat ? (int) ($stat['attemptCount'] ?? 0) : 0;
+            $out[] = $view;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function getPracticeProblem(array $user, string $id): array
+    {
+        $this->requirePracticeViewer($user);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid problem id.', 400);
+        }
+        $row = $this->bank->findById($id);
+        if (!$row) {
+            Response::notFound('Problem not found.');
+        }
+        $view = CodingProblemBankModel::publicView($row, $id);
+        $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
+        if ($uid !== '' && AptitudeAccessService::canTake($user)) {
+            $stat = $this->practiceSubmissions->statusMapForUser($uid)[$id] ?? null;
+            $view['practiceStatus'] = $stat ? (string) ($stat['status'] ?? 'attempted') : 'unsolved';
+            $view['attemptCount'] = $stat ? (int) ($stat['attemptCount'] ?? 0) : 0;
+        }
+
+        return $view;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<int, array<string, mixed>>
+     */
+    public function listPracticeSubmissions(array $user): array
+    {
+        AptitudeAccessService::requirePortalUser($user);
+        if (!AptitudeAccessService::canTake($user)) {
+            Response::forbidden('Practice submissions are available to students only.');
+        }
+        $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
+        $rows = $this->practiceSubmissions->listByUser($uid, 100);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id' => (string) ($row['_id'] ?? ''),
+                'bankProblemId' => (string) ($row['bankProblemId'] ?? ''),
+                'problemTitle' => (string) ($row['problemTitle'] ?? ''),
+                'language' => (string) ($row['language'] ?? 'Python'),
+                'status' => !empty($row['accepted']) ? 'Accepted' : 'Wrong Answer',
+                'accepted' => !empty($row['accepted']),
+                'testsPassed' => (int) ($row['testsPassed'] ?? 0),
+                'testsTotal' => (int) ($row['testsTotal'] ?? 0),
+                'score' => (float) ($row['score'] ?? 0),
+                'totalMarks' => (float) ($row['totalMarks'] ?? 0),
+                'percentage' => (float) ($row['percentage'] ?? 0),
+                'timeTakenSeconds' => (int) ($row['timeTakenSeconds'] ?? 0),
+                'submittedAt' => (string) ($row['submittedAt'] ?? ''),
+                'dateLabel' => self::formatDateLabel($row['submittedAt'] ?? ''),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function submitPracticeProblem(array $user, string $bankProblemId, array $body): array
+    {
+        AptitudeAccessService::requirePortalUser($user);
+        if (!AptitudeAccessService::canTake($user)) {
+            Response::forbidden('Only students can submit practice solutions.');
+        }
+        if (!Security::isValidId($bankProblemId)) {
+            Response::error('Invalid problem id.', 400);
+        }
+        $row = $this->bank->findById($bankProblemId);
+        if (!$row) {
+            Response::notFound('Problem not found.');
+        }
+        $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
+        $testsPassed = max(0, (int) ($body['testsPassed'] ?? 0));
+        $testsTotal = max(0, (int) ($body['testsTotal'] ?? 0));
+        $accepted = !empty($body['accepted']) || ($testsTotal > 0 && $testsPassed === $testsTotal);
+        $payload = [
+            'userId' => $uid,
+            'bankProblemId' => $bankProblemId,
+            'problemTitle' => (string) ($body['problemTitle'] ?? $row['title'] ?? ''),
+            'language' => (string) ($body['language'] ?? 'Python'),
+            'status' => $accepted ? 'accepted' : 'wrong',
+            'accepted' => $accepted,
+            'testsPassed' => $testsPassed,
+            'testsTotal' => $testsTotal,
+            'score' => (float) ($body['score'] ?? ($accepted ? ($row['marks'] ?? 2) : 0)),
+            'totalMarks' => (float) ($body['totalMarks'] ?? ($row['marks'] ?? 2)),
+            'percentage' => (float) ($body['percentage'] ?? ($accepted ? 100 : 0)),
+            'timeTakenSeconds' => max(0, (int) ($body['timeTakenSeconds'] ?? 0)),
+        ];
+        $submissionId = $this->practiceSubmissions->record($payload);
+        $stat = $this->practiceSubmissions->statusMapForUser($uid)[$bankProblemId] ?? null;
+
+        return [
+            'submissionId' => $submissionId,
+            'bankProblemId' => $bankProblemId,
+            'accepted' => $accepted,
+            'status' => $accepted ? 'Accepted' : 'Wrong Answer',
+            'testsPassed' => $testsPassed,
+            'testsTotal' => $testsTotal,
+            'score' => $payload['score'],
+            'totalMarks' => $payload['totalMarks'],
+            'percentage' => $payload['percentage'],
+            'practiceStatus' => $stat ? (string) ($stat['status'] ?? 'attempted') : ($accepted ? 'solved' : 'attempted'),
+            'attemptCount' => $stat ? (int) ($stat['attemptCount'] ?? 0) : 1,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function requirePracticeViewer(array $user): void
+    {
+        AptitudeAccessService::requirePortalUser($user);
+        if (!AptitudeAccessService::canTake($user) && !AptitudeAccessService::canManageCoding($user)) {
+            Response::forbidden('You cannot browse coding problems.');
+        }
     }
 }

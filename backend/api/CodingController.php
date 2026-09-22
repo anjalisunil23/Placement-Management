@@ -247,4 +247,34 @@ final class CodingController
         $user = AuthMiddleware::authenticate();
         Response::success($this->service()->getCompanyBlockSet($user, $id, true));
     }
+
+    /** GET /api/coding/problems */
+    public function listPracticeProblems(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $category = isset($_GET['category']) ? trim((string) $_GET['category']) : null;
+        $difficulty = isset($_GET['difficulty']) ? trim((string) $_GET['difficulty']) : null;
+        Response::success(['problems' => $this->service()->listPracticeProblems($user, $category ?: null, $difficulty ?: null)]);
+    }
+
+    /** GET /api/coding/problems/{id} */
+    public function getPracticeProblem(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->getPracticeProblem($user, $id));
+    }
+
+    /** GET /api/coding/practice/submissions */
+    public function listPracticeSubmissions(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(['submissions' => $this->service()->listPracticeSubmissions($user)]);
+    }
+
+    /** POST /api/coding/problems/{id}/submit */
+    public function submitPracticeProblem(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->submitPracticeProblem($user, $id, $this->body()), 'Submitted.');
+    }
 }
