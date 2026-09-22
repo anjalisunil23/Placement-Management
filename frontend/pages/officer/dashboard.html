@@ -30,29 +30,49 @@
     PMS.requireAuth(['placement_officer', 'admin']);
 
     async function init() {
-      const res = await PMS.get('/officer/profile');
-      const { isAdmin, department } = res.data;
-      if (isAdmin) {
-        document.getElementById('deptBanner').className = 'alert alert-secondary';
-        document.getElementById('deptBanner').textContent = 'Admin view — all departments';
-        document.getElementById('deptBanner').classList.remove('d-none');
-      } else if (department) {
-        document.getElementById('deptBanner').textContent =
-          `Assigned department: ${department.name} (${department.code})`;
-        document.getElementById('deptBanner').classList.remove('d-none');
-      }
+      const banner = document.getElementById('deptBanner');
+      const stats = document.getElementById('stats');
+      stats.innerHTML = '<div class="col-12"><div class="alert alert-light border mb-0">Loading dashboard…</div></div>';
+      try {
+        const res = await PMS.get('/officer/profile');
+        const profile = res?.data || {};
+        const { isAdmin, department } = profile;
+        if (isAdmin) {
+          banner.className = 'alert alert-secondary';
+          banner.textContent = 'Admin view — all departments';
+          banner.classList.remove('d-none');
+        } else if (department) {
+          banner.textContent = `Assigned department: ${department.name} (${department.code})`;
+          banner.classList.remove('d-none');
+        }
 
-      const [apps, students, drives] = await Promise.all([
-        PMS.get('/officer/applications/pending'),
-        PMS.get('/officer/students/pending'),
-        PMS.get('/officer/drives'),
-      ]);
-      document.getElementById('stats').innerHTML = `
-        <div class="col-md-4"><div class="card p-3"><h5>${drives.data.length}</h5><small>Drives</small></div></div>
-        <div class="col-md-4"><div class="card p-3"><h5>${apps.data.length}</h5><small>Pending Applications</small></div></div>
-        <div class="col-md-4"><div class="card p-3"><h5>${students.data.length}</h5><small>Pending Students</small></div></div>`;
+        const [apps, students, drives] = await Promise.allSettled([
+          PMS.get('/officer/applications/pending'),
+          PMS.get('/officer/students/pending'),
+          PMS.get('/officer/drives'),
+        ]);
+        const appsCount = apps.status === 'fulfilled' ? (apps.value?.data || []).length : '—';
+        const studentsCount = students.status === 'fulfilled' ? (students.value?.data || []).length : '—';
+        const drivesCount = drives.status === 'fulfilled' ? (drives.value?.data || []).length : '—';
+        stats.innerHTML = `
+          <div class="col-md-4"><div class="card p-3"><h5>${drivesCount}</h5><small>Drives</small></div></div>
+          <div class="col-md-4"><div class="card p-3"><h5>${appsCount}</h5><small>Pending Applications</small></div></div>
+          <div class="col-md-4"><div class="card p-3"><h5>${studentsCount}</h5><small>Pending Students</small></div></div>`;
+
+        if (apps.status === 'rejected' || students.status === 'rejected' || drives.status === 'rejected') {
+          const note = document.createElement('div');
+          note.className = 'alert alert-warning mt-3';
+          note.textContent = 'Some dashboard data could not be loaded. The page is still usable.';
+          stats.parentElement?.appendChild(note);
+        }
+      } catch (err) {
+        banner.className = 'alert alert-danger';
+        banner.textContent = err?.message || 'Could not load placement officer dashboard.';
+        banner.classList.remove('d-none');
+        stats.innerHTML = '<div class="col-12"><div class="alert alert-warning mb-0">Dashboard data is temporarily unavailable. Try refreshing the page.</div></div>';
+      }
     }
-    init();
+    init().catch(() => {});
   </script>
 </body>
 </html>
