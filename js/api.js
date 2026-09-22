@@ -984,8 +984,8 @@ const Auth = {
   },
   canTakeCodingMock() { return this.canTakeAptitudeMock(); },
   canViewCodingDirectory() { return this.canViewAptitudeDirectory(); },
-  canManageCodingTests() { return this.canManageAptitudeMocks(); },
-  canManageCodingContests() { return this.canManageAptitudeContests(); },
+  canManageCodingTests() { return this.role() === 'admin'; },
+  canManageCodingContests() { return this.role() === 'admin'; },
   isAuthed() { return !!this.user(); },
   hasRealAuth() {
     const t = this.token();

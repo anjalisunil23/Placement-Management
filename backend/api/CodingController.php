@@ -32,7 +32,7 @@ final class CodingController
         $role = AuthMiddleware::resolvedRole($user);
         Response::success([
             'canTake' => AptitudeAccessService::canTake($user),
-            'canManage' => AptitudeAccessService::canManage($user),
+            'canManage' => AptitudeAccessService::canManageCoding($user),
             'canViewDirectory' => AptitudeAccessService::canViewDirectory($user),
             'role' => $role,
             'scope' => AptitudeAccessService::scopeInfo($user),
@@ -53,7 +53,7 @@ final class CodingController
     {
         $user = AptitudeAccessService::requirePortalUser();
         $manage = isset($_GET['manage']) && (string) $_GET['manage'] === '1';
-        $tests = ($manage && AptitudeAccessService::canManage($user))
+        $tests = ($manage && AptitudeAccessService::canManageCoding($user))
             ? $this->service()->listAllForAdmin($user)
             : $this->service()->listPublishedForUser($user);
         Response::success(['tests' => $tests]);

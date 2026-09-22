@@ -151,7 +151,7 @@ final class CodingService
      */
     public function listAllForAdmin(array $user): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         $rows = $this->tests->findAll([], 500, 0, ['createdAt' => -1]);
         $out = [];
         $role = \PMS\Middleware\AuthMiddleware::resolvedRole($user);
@@ -180,7 +180,7 @@ final class CodingService
      */
     public function createTest(array $user, array $data): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         $data = AptitudeAccessService::applyTestDepartmentScope($user, $data);
         $data = AptitudeAccessService::sanitizeContestFields($user, $data);
         $title = trim((string) ($data['title'] ?? ''));
@@ -199,7 +199,7 @@ final class CodingService
      */
     public function updateTest(array $user, string $id, array $data): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         $existing = $this->tests->findById($id);
         if (!$existing) {
             Response::notFound('Coding test not found.');
@@ -207,7 +207,7 @@ final class CodingService
         AptitudeAccessService::assertTestManageable($user, $existing);
         $data = AptitudeAccessService::applyTestDepartmentScope($user, $data);
         $data = AptitudeAccessService::sanitizeContestFields($user, $data);
-        if (!AptitudeAccessService::canManageContests($user)) {
+        if (!AptitudeAccessService::canManageCodingContests($user)) {
             $data['contestType'] = $existing['contestType'] ?? 'none';
             $data['contestWeekday'] = $existing['contestWeekday'] ?? 1;
             $data['contestMonthDay'] = $existing['contestMonthDay'] ?? 1;
@@ -222,13 +222,22 @@ final class CodingService
      */
     public function deleteTest(array $user, string $id): void
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid coding test id.', 400);
+        }
         $existing = $this->tests->findById($id);
         if (!$existing) {
             Response::notFound('Coding test not found.');
         }
         AptitudeAccessService::assertTestManageable($user, $existing);
-        $this->tests->delete($id);
+        $contestType = CodingTestModel::normalizeContestType((string) ($existing['contestType'] ?? 'none'));
+        if (in_array($contestType, ['weekly', 'monthly'], true) && !AptitudeAccessService::canManageCodingContests($user)) {
+            Response::forbidden('You cannot delete coding contests.');
+        }
+        if (!$this->tests->delete($id)) {
+            Response::error('Could not delete test.', 500);
+        }
     }
 
     /**
@@ -237,7 +246,7 @@ final class CodingService
      */
     public function listBank(array $user, ?string $category = null, ?string $difficulty = null): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         return $this->bank->listProblems($category, $difficulty);
     }
 
@@ -248,7 +257,7 @@ final class CodingService
      */
     public function generateAiBankProblems(array $user, array $body): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         $category = trim((string) ($body['category'] ?? ''));
         $topic = trim((string) ($body['topic'] ?? ''));
         $difficulty = (string) ($body['difficulty'] ?? 'Medium');
@@ -281,7 +290,7 @@ final class CodingService
      */
     public function saveAiBankProblems(array $user, array $problems): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         if ($problems === []) {
             Response::error('No problems selected to save.', 422);
         }
@@ -303,7 +312,7 @@ final class CodingService
      */
     public function saveBankProblem(array $user, array $data, ?string $id = null): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         if (trim((string) ($data['title'] ?? '')) === '') {
             Response::error('Enter a problem title.', 422);
         }
@@ -317,11 +326,16 @@ final class CodingService
      */
     public function deleteBankProblem(array $user, string $id): void
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
+        if (!Security::isValidId($id)) {
+            Response::notFound('Problem not found.');
+        }
         if (!$this->bank->findById($id)) {
             Response::notFound('Problem not found.');
         }
-        $this->bank->delete($id);
+        if (!$this->bank->delete($id)) {
+            Response::error('Could not delete problem.', 500);
+        }
     }
 
     /**
@@ -331,7 +345,7 @@ final class CodingService
      */
     public function bulkDeleteBankProblems(array $user, array $ids): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         $deleted = 0;
         $notFound = 0;
 
@@ -731,7 +745,7 @@ final class CodingService
      */
     public function publishContestResults(array $admin, string $id, bool $published): array
     {
-        AptitudeAccessService::requireManager($admin);
+        AptitudeAccessService::requireCodingManager($admin);
         if (!Security::isValidId($id)) {
             Response::error('Invalid coding test id.', 400);
         }
@@ -774,7 +788,7 @@ final class CodingService
      */
     public function contestResultsPreview(array $admin, string $id): array
     {
-        AptitudeAccessService::requireManager($admin);
+        AptitudeAccessService::requireCodingManager($admin);
         if (!Security::isValidId($id)) {
             Response::error('Invalid coding test id.', 400);
         }
@@ -1472,7 +1486,7 @@ final class CodingService
      */
     public function listCompanyBlockForAdmin(array $user): array
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
         $model = new CodingCompanyProblemSetModel();
         $sets = $model->listSummaries();
         $blocks = $this->mergeCompanyBlocks($model->listCompanyBlocks(), $this->companyBlocksFromTests(false));
@@ -1509,7 +1523,7 @@ final class CodingService
                 Response::forbidden('Students only.');
             }
         } else {
-            AptitudeAccessService::requireManager($user);
+            AptitudeAccessService::requireCodingManager($user);
         }
         $model = new CodingCompanyProblemSetModel();
         $set = $model->findById($id);
@@ -1528,13 +1542,16 @@ final class CodingService
      */
     public function deleteCompanyBlockSet(array $user, string $id): void
     {
-        AptitudeAccessService::requireManager($user);
+        AptitudeAccessService::requireCodingManager($user);
+        if (!Security::isValidId($id)) {
+            Response::notFound('Company problem set not found.');
+        }
         $model = new CodingCompanyProblemSetModel();
         if ($model->findById($id) === null) {
             Response::notFound('Company problem set not found.');
         }
         if (!$model->deleteSet($id)) {
-            Response::error('Could not delete company problem set.', 422);
+            Response::error('Could not delete company problem set.', 500);
         }
     }
 

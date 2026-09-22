@@ -434,7 +434,10 @@
 
     async deleteTest(id) {
       if (liveApi()) {
-        const res = await api(`/coding/tests/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!isLiveCodingId(id)) {
+          throw new Error('This test is not on the server. Refresh the page and try again.');
+        }
+        const res = await api(`/coding/tests/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
         if (!res?.success) throw new Error(res?.message || 'Could not delete test.');
         return;
       }
@@ -472,7 +475,10 @@
 
     async deleteBankProblem(id) {
       if (liveApi()) {
-        const res = await api(`/coding/problem-bank/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!isLiveCodingId(id)) {
+          throw new Error('This problem is not on the server. Refresh the page and try again.');
+        }
+        const res = await api(`/coding/problem-bank/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
         if (!res?.success) throw new Error(res?.message || 'Could not delete problem.');
         return;
       }
@@ -483,12 +489,16 @@
       const list = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
       if (!list.length) throw new Error('Select at least one problem to delete.');
       if (liveApi()) {
+        const serverIds = list.filter((id) => isLiveCodingId(id));
+        if (!serverIds.length) {
+          throw new Error('Selected problems are not on the server. Refresh the page and try again.');
+        }
         const res = await api('/coding/problem-bank/bulk-delete', {
           method: 'POST',
-          body: JSON.stringify({ ids: list }),
-        });
+          body: JSON.stringify({ ids: serverIds }),
+        }).catch(() => null);
         if (!res?.success) throw new Error(res?.message || 'Could not delete selected problems.');
-        return res.data || { deleted: list.length };
+        return res.data || { deleted: serverIds.length };
       }
       const drop = new Set(list);
       saveBankStore(loadBankStore().filter((q) => !drop.has(String(q.id))));
@@ -514,7 +524,7 @@
     },
 
     async generateAiProblems(params) {
-      if (!liveApi()) throw new Error('Sign in as a placement officer to generate problems.');
+      if (!liveApi()) throw new Error('Sign in as an admin to generate problems.');
       const res = await api('/coding/problem-bank/ai/generate', {
         method: 'POST',
         body: JSON.stringify(params),
@@ -524,7 +534,7 @@
     },
 
     async saveAiProblems(problems) {
-      if (!liveApi()) throw new Error('Sign in as a placement officer to save problems.');
+      if (!liveApi()) throw new Error('Sign in as an admin to save problems.');
       const res = await api('/coding/problem-bank/ai/save', {
         method: 'POST',
         body: JSON.stringify({ problems }),

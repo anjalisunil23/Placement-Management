@@ -78,6 +78,34 @@ final class AptitudeAccessService
     }
 
     /**
+     * Coding practice content (tests, bank, contests, company block) — admin only.
+     *
+     * @param array<string, mixed> $user
+     */
+    public static function canManageCoding(array $user): bool
+    {
+        return AuthMiddleware::resolvedRole($user) === 'admin';
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public static function canManageCodingContests(array $user): bool
+    {
+        return self::canManageCoding($user);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public static function requireCodingManager(array $user): void
+    {
+        if (!self::canManageCoding($user)) {
+            Response::forbidden('Only admins can manage coding practice content.');
+        }
+    }
+
+    /**
      * @param array<string, mixed> $user
      * @param array<string, mixed> $data
      * @return array<string, mixed>
@@ -189,18 +217,22 @@ final class AptitudeAccessService
         if ($role === 'admin') {
             return;
         }
+        $testDept = self::normalizeDepartmentId($test['departmentId'] ?? '');
+        if ($testDept === '') {
+            return;
+        }
         if ($role === 'staff' || ($user['role'] ?? '') === 'staff') {
             $ctx = StaffContext::resolve($user);
-            $testDept = (string) ($test['departmentId'] ?? '');
-            if ($testDept === '' || (string) ($ctx['departmentId'] ?? '') !== $testDept) {
+            $viewerDept = self::normalizeDepartmentId($ctx['departmentId'] ?? '');
+            if ($viewerDept === '' || $viewerDept !== $testDept) {
                 Response::forbidden('You can only manage aptitude tests for your department.');
             }
 
             return;
         }
         $ctx = PlacementOfficerContext::resolve($user);
-        $testDept = (string) ($test['departmentId'] ?? '');
-        if ($testDept === '' || (string) ($ctx['departmentId'] ?? '') !== $testDept) {
+        $viewerDept = self::normalizeDepartmentId($ctx['departmentId'] ?? '');
+        if ($viewerDept === '' || $viewerDept !== $testDept) {
             Response::forbidden('You can only manage aptitude tests for your department.');
         }
     }

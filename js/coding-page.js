@@ -1033,11 +1033,13 @@
     const next = { ...base };
     if (role === 'placement_officer') {
       next.canTake = false;
-      next.canManage = true;
+      next.canManage = false;
       next.canViewDirectory = true;
     } else if (role === 'admin') {
       next.canTake = false;
-      next.canManage = true;
+      next.canManage = typeof Auth !== 'undefined' && typeof Auth.canManageCodingTests === 'function'
+        ? Auth.canManageCodingTests()
+        : !!base.canManage;
       next.canViewDirectory = true;
     } else if (role === 'staff') {
       next.canTake = false;
@@ -1066,7 +1068,7 @@
   function defaultView() {
     const views = allowedViews();
     const role = currentRole();
-    if (views.includes('manage') && (role === 'placement_officer' || role === 'admin')) return 'manage';
+    if (views.includes('manage') && role === 'admin') return 'manage';
     if (views.includes('progress') && (role === 'placement_officer' || role === 'admin' || role === 'staff')) return 'progress';
     if (views.includes('take')) return 'take';
     if (views.includes('progress')) return 'progress';
@@ -1079,7 +1081,7 @@
     const role = currentRole();
     if (!access.canTake || role === 'placement_officer' || role === 'admin' || role === 'staff') {
       if (view === 'take' || !views.includes(view)) {
-        view = views.includes('manage') && (role === 'placement_officer' || role === 'admin')
+        view = views.includes('manage') && role === 'admin'
           ? 'manage'
           : (views.includes('progress') ? 'progress' : defaultView());
       }
@@ -1137,7 +1139,12 @@
       let res = await api('/coding/access').catch(() => null);
       if (!res?.success) res = await api('/aptitude/access').catch(() => null);
       if (res?.success && res.data) {
-        access.scope = res.data.scope || access.scope;
+        access = applyRoleAccess({
+          canTake: res.data.canTake !== undefined ? !!res.data.canTake : access.canTake,
+          canManage: res.data.canManage !== undefined ? !!res.data.canManage : access.canManage,
+          canViewDirectory: res.data.canViewDirectory !== undefined ? !!res.data.canViewDirectory : access.canViewDirectory,
+          scope: res.data.scope || access.scope,
+        });
       }
     }
     access = applyRoleAccess(access);
@@ -1629,17 +1636,18 @@
     }
     if (!confirm(`Delete ${ids.length} selected item(s)? This cannot be undone.`)) return;
     let deleted = 0;
+    let lastError = '';
     for (const id of ids) {
       try {
         await CodingService.deleteTest(id);
         deleted += 1;
         selectedManageTestIds.delete(String(id));
-      } catch (_) {
-        /* continue with remaining */
+      } catch (err) {
+        lastError = err?.message || lastError;
       }
     }
     if (!deleted) {
-      toastMsg('Could not delete selected items.', 'error');
+      toastMsg(lastError || 'Could not delete selected items.', 'error');
       return;
     }
     toastMsg(`Deleted ${deleted} item(s).`, 'success');
@@ -1677,16 +1685,19 @@
       return;
     }
     let deleted = 0;
+    let lastError = '';
     for (const id of ids) {
       const res = await api(`/coding/company-block/sets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
       if (res?.success) {
         deleted += 1;
         delete jdSetDetailsCache[String(id)];
         selectedJdSetIds.delete(String(id));
+      } else if (res?.message) {
+        lastError = res.message;
       }
     }
     if (!deleted) {
-      toastMsg('Could not delete selected company problem sets.', 'error');
+      toastMsg(lastError || 'Could not delete selected company problem sets.', 'error');
       return;
     }
     toastMsg(`Deleted ${deleted} company problem set(s).`, 'success');
@@ -2899,7 +2910,7 @@
   async function runCodAiGenerate() {
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     if (!live) {
-      toastMsg('Sign in as a placement officer to generate problems.', 'info');
+      toastMsg('Sign in as an admin to generate problems.', 'info');
       return;
     }
     const params = collectCodAiParams();
