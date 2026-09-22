@@ -506,13 +506,55 @@
     </div>`;
   }
 
-  function renderCodingProblemDetailHtml(p, index) {
+  function renderCodingTestCasesBlock(testCases, { showAll = false } = {}) {
+    const cases = Array.isArray(testCases) ? testCases : [];
+    if (!cases.length) return '';
+    const rows = cases.map((tc, i) => {
+      const isSample = !!tc.sample;
+      const label = esc(tc.label || (isSample ? 'Sample test case' : `Test case ${i + 1}`));
+      if (!showAll && !isSample) {
+        return `<div class="small text-muted-2 mb-1">${label} (hidden from students)</div>`;
+      }
+      const input = String(tc.input ?? '').trim();
+      const expected = String(tc.expected ?? '').trim();
+      return `<div class="border rounded-2 p-2 mb-2 bg-light">
+        <div class="small fw-semibold mb-1">${label}${isSample ? ' · Sample' : ''}</div>
+        ${input ? `<div class="small mb-1"><span class="text-muted-2">Input:</span><pre class="cod-console small mb-0 mt-1">${esc(input)}</pre></div>` : ''}
+        ${expected ? `<div class="small mb-0"><span class="text-muted-2">Expected:</span><pre class="cod-console small mb-0 mt-1">${esc(expected)}</pre></div>` : ''}
+        ${!input && !expected ? '<div class="small text-muted-2 mb-0">No I/O stored for this case.</div>' : ''}
+      </div>`;
+    }).join('');
+    return `<div class="mt-2">
+      <div class="small fw-semibold mb-1">Test cases${showAll ? '' : ' (sample only)'}</div>
+      ${rows}
+    </div>`;
+  }
+
+  function renderCodingProblemDetailHtml(p, index, opts = {}) {
+    const { showAllTestCases = false, compact = false } = opts;
     const desc = String(p.description || '').trim();
     const meta = [normalizeCodingTopic(p.category), p.difficulty || 'Medium', `${p.marks || 2} marks`].filter(Boolean).join(' · ');
-    return `<div class="border rounded-2 p-3 bg-white">
+    const shellCls = compact ? 'min-w-0' : 'border rounded-2 p-3 bg-white';
+    const fmtBlock = (label, value) => {
+      const text = String(value || '').trim();
+      if (!text) return '';
+      return `<div class="small mb-2"><span class="fw-semibold">${label}:</span><div class="apt-q-card-text mb-0">${esc(text)}</div></div>`;
+    };
+    const example = Array.isArray(p.examples) && p.examples[0] ? p.examples[0] : null;
+    return `<div class="${shellCls}">
       <div class="fw-semibold mb-1">P${index + 1} · ${esc(p.title || 'Problem')}</div>
       <div class="small text-muted-2 mb-2">${esc(meta)}</div>
-      ${desc ? `<div class="apt-q-card-text small mb-0">${esc(desc)}</div>` : '<p class="small text-muted-2 mb-0">No description.</p>'}
+      ${desc ? `<div class="apt-q-card-text small mb-2">${esc(desc)}</div>` : '<p class="small text-muted-2 mb-2">No description.</p>'}
+      ${fmtBlock('Input format', p.inputFormat)}
+      ${fmtBlock('Output format', p.outputFormat)}
+      ${fmtBlock('Constraints', p.constraints)}
+      ${example && (example.input || example.output)
+        ? `<div class="small mb-2"><span class="fw-semibold">Example:</span>
+          ${example.input ? `<div class="text-muted-2">Input</div><pre class="cod-console small mb-1">${esc(example.input)}</pre>` : ''}
+          ${example.output ? `<div class="text-muted-2">Output</div><pre class="cod-console small mb-0">${esc(example.output)}</pre>` : ''}
+        </div>`
+        : ''}
+      ${renderCodingTestCasesBlock(p.testCases, { showAll: showAllTestCases })}
     </div>`;
   }
 
@@ -667,7 +709,7 @@
         const detail = await getDetail(id);
         const qs = detail?.problems || detail?.questions || [];
         panel.innerHTML = qs.length
-          ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderCodingProblemDetailHtml(q, i)).join('')}</div>`
+          ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderCodingProblemDetailHtml(q, i, { showAllTestCases: allowDelete })).join('')}</div>`
           : '<p class="small text-muted-2 mb-0">No problems in this set.</p>';
         panel.classList.remove('d-none');
         btn.textContent = 'Hide';
@@ -1206,7 +1248,7 @@
         return `<label class="d-block border rounded-2 p-2 mb-0 bg-white ${disabled ? 'opacity-50' : ''}">
           <div class="d-flex align-items-start gap-2">
             <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-pick="${esc(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}/>
-            <div class="flex-grow-1 min-w-0">${renderProblemPickDetailHtml(q)}</div>
+            <div class="flex-grow-1 min-w-0">${renderCodingProblemDetailHtml(q, i, { showAllTestCases: true, compact: true })}</div>
           </div>
         </label>`;
       }).join('')}</div>`;
@@ -4480,12 +4522,8 @@
     if (!list) return;
     list.innerHTML = aiPreviewProblems.map((q, i) => `
       <label class="border rounded-3 p-3 d-flex gap-2 align-items-start">
-        <input class="form-check-input mt-1" type="checkbox" data-ai-idx="${i}" ${q.selected ? 'checked' : ''}/>
-        <div class="min-w-0">
-          <div class="fw-semibold">${esc(q.title || 'Untitled')}</div>
-          <div class="small text-muted-2">${esc(q.difficulty || '')} · ${esc(q.category || '')} · ${esc(q.marks || 2)} marks</div>
-          <div class="small mt-1">${esc((q.description || '').slice(0, 180))}${(q.description || '').length > 180 ? '…' : ''}</div>
-        </div>
+        <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-ai-idx="${i}" ${q.selected ? 'checked' : ''}/>
+        <div class="min-w-0 flex-grow-1">${renderCodingProblemDetailHtml(q, i, { showAllTestCases: true, compact: true })}</div>
       </label>`).join('');
     list.querySelectorAll('[data-ai-idx]').forEach((el) => {
       el.addEventListener('change', () => {
