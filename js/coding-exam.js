@@ -135,11 +135,6 @@
       });
     }
 
-    function isContestAttempt(meta = state?.testMeta || state?.test) {
-      const type = String(meta?.contestType || 'none');
-      return type === 'weekly' || type === 'monthly';
-    }
-
     function problemColumn() {
       return root.querySelector('[data-cod="q-body"]')?.closest('.col-lg-5') || null;
     }
@@ -390,7 +385,7 @@
       const lockdownNote = `
         <div class="alert alert-warning py-2 px-3 small mb-3">
           <strong>During the test:</strong> problem statements cannot be copied. Switching tabs or windows will automatically submit your test and sign you out.
-          You can still edit code in the editor.${isContestAttempt(test) ? ' Contest rules apply for the full duration.' : ''}
+          You can still edit code in the editor. These rules apply for the full duration.
         </div>`;
       el('instr-list').innerHTML = `${lockdownNote}<ul class="text-muted-2 mb-0 ps-3">${lines.length ? lines.map((line) => `<li>${esc(line)}</li>`).join('') : '<li>Read each problem carefully. Write and run your code before submitting.</li>'}</ul>`;
     }
