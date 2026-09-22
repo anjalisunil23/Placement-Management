@@ -47,11 +47,10 @@
     .letterhead,
     .letter-footer {
       width: 100%;
+      height: auto;
       display: block;
       flex-shrink: 0;
       background: #fff;
-      /* Fallback if PNG still contains black matte from export */
-      mix-blend-mode: screen;
     }
 
     .letter-footer { margin-top: auto; }
@@ -207,7 +206,6 @@
       .letterhead,
       .letter-footer {
         background: #fff !important;
-        mix-blend-mode: screen;
       }
       .no-print { display: none !important; }
       .sheet-viewport,
@@ -382,8 +380,9 @@
 (function () {
   const API_BASE = (location.protocol === 'file:' ? '' : '') + '/backend/api';
   const assetRoot = location.protocol === 'file:' ? '' : '/';
+  const ASSET_VER = '20260922header';
   document.querySelectorAll('[data-asset]').forEach((img) => {
-    img.src = assetRoot + img.getAttribute('data-asset');
+    img.src = assetRoot + img.getAttribute('data-asset') + '?v=' + ASSET_VER;
   });
 
   function academicYearRange(fromDate) {
