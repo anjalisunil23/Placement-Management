@@ -68,6 +68,8 @@
   .cod-class-bar .track{flex:1;height:.7rem;background:var(--surface-2);border-radius:999px;overflow:hidden}
   .cod-class-bar .track span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),#60a5fa)}
   .cod-class-bar .pct{width:3rem;text-align:right;font-size:.8rem;font-weight:700}
+  .jd-company-card{background:#fff;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .jd-company-card:hover{border-color:#94a3b8!important;box-shadow:0 .125rem .5rem rgba(15,23,42,.08)}
   body.cod-role-officer #codTake,
   body.cod-role-admin #codTake,
   body.cod-role-staff #codTake{display:none!important}
@@ -107,22 +109,43 @@
     <div class="row g-3 mb-3" id="myStatsRow"></div>
     <div class="row g-3">
       <div class="col-lg-7">
-        <div class="card-surface p-3 p-md-4 mb-3">
-          <h6 class="fw-bold mb-3">Available coding tests</h6>
-          <div id="testList" class="d-flex flex-column gap-2"></div>
-        </div>
-        <div class="card-surface p-3 p-md-4">
-          <h6 class="fw-bold mb-1">Weekly &amp; monthly contests</h6>
-          <p class="small text-muted-2 mb-3">Weekly contests stay open all week and monthly contests stay open all month. Your score appears after you finish. Last period winners are published after it closes.</p>
-          <div id="contestList" class="d-flex flex-column gap-2"></div>
+        <div class="card-surface p-0 overflow-hidden">
+          <div class="px-3 px-md-4 pt-3 pb-2">
+            <ul class="nav nav-pills gap-1 flex-wrap" id="takeListNav">
+              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="tests">Available tests</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Contests</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="jdblock">Company Block</a></li>
+            </ul>
+            <ul class="nav nav-pills gap-1 flex-wrap mt-2 d-none" id="takeContestTypeNav">
+              <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-contest-type="weekly">Weekly</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-contest-type="monthly">Monthly</a></li>
+            </ul>
+          </div>
+          <div id="testList" class="px-3 px-md-4 pb-3 d-flex flex-column gap-2"></div>
+          <div id="studentJdBlockPanel" class="d-none px-3 px-md-4 pb-3">
+            <div id="studentJdBlockDetailNav" class="d-none d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnStudentJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
+            </div>
+            <div id="studentJdBlockCompanyView">
+              <div id="studentJdBlockCompanyGrid" class="row g-3"></div>
+            </div>
+            <div id="studentJdBlockCompanyDetail" class="d-none">
+              <div id="studentJdBlockCompanyTests" class="d-flex flex-column gap-2"></div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="col-lg-5">
         <div class="card-surface p-3 p-md-4">
-          <h6 class="fw-bold mb-2">My scores</h6>
+          <h6 class="fw-bold mb-2">My recent results</h6>
           <ul class="nav nav-pills gap-1 mb-2 flex-wrap" id="myResultsNav">
-            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test scores</a></li>
-            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest arena</a></li>
+            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test results</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest results</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="company">Company test results</a></li>
+          </ul>
+          <ul class="nav nav-pills gap-1 mb-2 flex-wrap d-none" id="myResultsContestTypeNav">
+            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-contest-type="weekly">Weekly</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-contest-type="monthly">Monthly</a></li>
           </ul>
           <div id="myHistory" class="small text-muted-2">Finish a test to see your score here.</div>
           <div id="contestArena" class="d-none"></div>
@@ -527,5 +550,5 @@
 <script src="js/coding-execution.js?v=20260915back"></script>
 <script src="js/coding-service.js?v=20260921contest"></script>
 <script src="js/coding-exam.js?v=20260922autosubmit"></script>
-<script src="js/coding-page.js?v=20260921contest"></script>
+<script src="js/coding-page.js?v=20260922tabs"></script>
 </body></html>

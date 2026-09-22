@@ -16,7 +16,13 @@
   let bank = [];
   let managePanel = 'tests';
   let progressPanel = 'tests';
+  let takeListPanel = 'tests';
+  let takeContestType = 'weekly';
   let myResultsView = 'tests';
+  let myResultsContestType = 'weekly';
+  let myProgress = null;
+  let studentJdCompanyBlocks = [];
+  let studentJdSelectedCompanyId = null;
   let dirFilterBranch = '';
   let dirSearch = '';
   let dirSearchTimer = 0;
@@ -65,6 +71,159 @@
   function isContestTest(t) {
     const type = String(t?.contestType || 'none');
     return type === 'weekly' || type === 'monthly';
+  }
+
+  function isCompanyTest(t) {
+    if (!t) return false;
+    if (String(t.testKind || '') === 'company') return true;
+    return String(t.companyId || '').trim() !== '';
+  }
+
+  function isRegularTest(t) {
+    return !isContestTest(t) && !isCompanyTest(t);
+  }
+
+  function syncContestTypeNav(rootId, activeType, attr) {
+    document.querySelectorAll(`#${rootId} .nav-link`).forEach((link) => {
+      link.classList.toggle('active', link.getAttribute(attr) === activeType);
+    });
+  }
+
+  function contestTypeOf(entry) {
+    const type = String(entry?.contestType || '').toLowerCase();
+    if (type === 'weekly' || type === 'monthly') return type;
+    const test = tests.find((t) => String(t.id) === String(entry?.testId || ''));
+    const resolvedType = String(test?.contestType || '').toLowerCase();
+    return resolvedType === 'monthly' ? 'monthly' : 'weekly';
+  }
+
+  function historyEntryIsCompany(h) {
+    const row = h && typeof h === 'object' ? h : {};
+    const kind = String(row.testKind || '').toLowerCase();
+    if (kind === 'company') return true;
+    if (String(row.companyId || '').trim()) return true;
+    const test = tests.find((t) => String(t.id) === String(row.testId || ''));
+    return isCompanyTest(test);
+  }
+
+  function renderJdCompanyGridHtml(blocks) {
+    return (blocks || []).map((block) => {
+      const companyId = String(block.companyId || '_unassigned');
+      return `<div class="col-12 col-md-6 col-xl-4">
+        <button type="button" class="card h-100 w-100 text-start border rounded-3 p-3 jd-company-card" data-jd-company-id="${esc(companyId)}">
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <div class="fw-semibold text-truncate">${esc(block.companyName || 'Company')}</div>
+            <i class="bi bi-chevron-right text-muted-2 flex-shrink-0"></i>
+          </div>
+        </button>
+      </div>`;
+    }).join('');
+  }
+
+  function studentCompanyTestsFor(companyId) {
+    const id = String(companyId || '');
+    return tests.filter((t) => {
+      if (!isCompanyTest(t)) return false;
+      if (String(t.companyId || '') !== id) return false;
+      return (t.status || 'published') === 'published';
+    });
+  }
+
+  function showStudentJdCompanyDetail(companyId) {
+    studentJdSelectedCompanyId = companyId;
+    document.getElementById('studentJdBlockCompanyView')?.classList.add('d-none');
+    document.getElementById('studentJdBlockCompanyDetail')?.classList.remove('d-none');
+    document.getElementById('studentJdBlockDetailNav')?.classList.remove('d-none');
+    const testsRoot = document.getElementById('studentJdBlockCompanyTests');
+    const companyTests = studentCompanyTestsFor(companyId);
+    if (testsRoot) {
+      testsRoot.innerHTML = companyTests.length
+        ? companyTests.map((t) => testCardHtml(t)).join('')
+        : '<p class="small text-muted-2 mb-0">No company coding tests published for this company yet.</p>';
+      bindOpenTests(testsRoot, companyTests);
+    }
+  }
+
+  function showStudentJdCompanyGrid() {
+    studentJdSelectedCompanyId = null;
+    document.getElementById('studentJdBlockCompanyDetail')?.classList.add('d-none');
+    document.getElementById('studentJdBlockCompanyView')?.classList.remove('d-none');
+    document.getElementById('studentJdBlockDetailNav')?.classList.add('d-none');
+  }
+
+  function renderStudentJdBlock() {
+    const grid = document.getElementById('studentJdBlockCompanyGrid');
+    if (!grid) return;
+    const activeCompanyId = studentJdSelectedCompanyId;
+    if (!studentJdCompanyBlocks.length) {
+      showStudentJdCompanyGrid();
+      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No Company Block entries are available yet. Check back later.</p></div>';
+      return;
+    }
+    grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks);
+    grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
+      btn.addEventListener('click', () => showStudentJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
+    });
+    if (activeCompanyId) showStudentJdCompanyDetail(activeCompanyId);
+    else showStudentJdCompanyGrid();
+  }
+
+  async function loadStudentJdBlock() {
+    if (!access.canTake) return;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/student/jd-block').catch(() => null);
+      studentJdCompanyBlocks = (res?.data?.blocks || []).filter((b) => String(b.companyId || '').trim() !== '');
+    } else {
+      studentJdCompanyBlocks = [];
+    }
+    renderStudentJdBlock();
+  }
+
+  function applyTakeListPanel(panel) {
+    takeListPanel = panel === 'contests' ? 'contests' : (panel === 'jdblock' ? 'jdblock' : 'tests');
+    document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
+    });
+    document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
+    document.getElementById('testList')?.classList.toggle('d-none', takeListPanel === 'jdblock');
+    document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', takeListPanel !== 'jdblock');
+    syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
+    if (takeListPanel === 'jdblock') {
+      loadStudentJdBlock().catch(() => {});
+    } else {
+      renderTestList();
+    }
+  }
+
+  function applyTakeContestType(type) {
+    takeContestType = type === 'monthly' ? 'monthly' : 'weekly';
+    syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
+    renderTestList();
+  }
+
+  function setupTakeListNav() {
+    document.querySelector('#takeListNav [data-take-list="jdblock"]')
+      ?.closest('.nav-item')
+      ?.classList.toggle('d-none', !access.canTake);
+  }
+
+  function applyMyResultsPanel(panel) {
+    myResultsView = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
+    document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsView);
+    });
+    document.getElementById('myResultsContestTypeNav')?.classList.toggle('d-none', myResultsView !== 'contests');
+    syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
+    syncMyResultsPanels();
+    if (myResultsView === 'contests') renderContestArena();
+    else if (myProgress) renderHistory(myProgress);
+  }
+
+  function applyMyResultsContestType(type) {
+    myResultsContestType = type === 'monthly' ? 'monthly' : 'weekly';
+    syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
+    if (myProgress) renderHistory(myProgress);
+    if (myResultsView === 'contests') renderContestArena();
   }
 
   function formatIst(value, options = {}) {
@@ -314,14 +473,18 @@
   }
 
   function historyMatchesView(h) {
+    if (myResultsView === 'company') return historyEntryIsCompany(h);
     const contest = isContestTest(h) || String(h.contestType || '') === 'weekly' || String(h.contestType || '') === 'monthly';
-    return myResultsView === 'contests' ? contest : !contest;
+    if (myResultsView === 'contests') {
+      return contest && !historyEntryIsCompany(h) && contestTypeOf(h) === myResultsContestType;
+    }
+    return !contest && !historyEntryIsCompany(h);
   }
 
   function syncMyResultsPanels() {
-    const contest = myResultsView === 'contests';
-    document.getElementById('myHistory')?.classList.toggle('d-none', contest);
-    document.getElementById('contestArena')?.classList.toggle('d-none', !contest);
+    const showArena = myResultsView === 'contests';
+    document.getElementById('myHistory')?.classList.toggle('d-none', showArena);
+    document.getElementById('contestArena')?.classList.toggle('d-none', !showArena);
   }
 
   function renderHistory(p) {
@@ -344,7 +507,11 @@
               </div>
             </div>
           </div>`).join('')
-      : `<p class="text-muted-2 mb-0">${myResultsView === 'contests' ? 'No contest attempts yet.' : 'No coding attempts yet. Select a test on the left to begin.'}</p>`;
+      : `<p class="text-muted-2 mb-0">${myResultsView === 'company'
+        ? 'No company coding test attempts yet.'
+        : myResultsView === 'contests'
+          ? `No ${myResultsContestType === 'monthly' ? 'monthly' : 'weekly'} contest attempts yet.`
+          : 'No coding attempts yet. Select a test on the left to begin.'}</p>`;
   }
 
   function testCardHtml(t, { allowStart = true } = {}) {
@@ -386,23 +553,27 @@
   }
 
   function renderTestList(list) {
-    const published = (list || []).filter((t) => (t.status || 'published') === 'published');
-    const regular = published.filter((t) => !isContestTest(t));
-    const contests = published.filter((t) => isContestTest(t));
-    const testsRoot = document.getElementById('testList');
-    const contestsRoot = document.getElementById('contestList');
-    if (testsRoot) {
-      testsRoot.innerHTML = regular.length
-        ? regular.map((t) => testCardHtml(t)).join('')
-        : '<p class="text-muted-2 mb-0">No published coding tests yet. Placement officers add them under Manage tests.</p>';
-      bindOpenTests(testsRoot, regular);
+    const root = document.getElementById('testList');
+    if (!root || takeListPanel === 'jdblock') return;
+    const published = (list || tests || []).filter((t) => (t.status || 'published') === 'published');
+    const wantContests = takeListPanel === 'contests';
+    const visible = published.filter((t) => {
+      const isContest = isContestTest(t);
+      if (wantContests !== isContest) return false;
+      if (!wantContests && isCompanyTest(t)) return false;
+      if (isContest && String(t.contestType || '') !== takeContestType) return false;
+      return true;
+    });
+    if (!visible.length) {
+      const contestLabel = takeContestType === 'monthly' ? 'monthly' : 'weekly';
+      const msg = wantContests
+        ? `No ${contestLabel} coding contests are open right now, or none are published yet.`
+        : 'No published coding tests yet. Check back later or contact your placement officer.';
+      root.innerHTML = `<p class="text-muted-2 mb-0">${msg}</p>`;
+      return;
     }
-    if (contestsRoot) {
-      contestsRoot.innerHTML = contests.length
-        ? contests.map((t) => testCardHtml(t)).join('')
-        : '<p class="text-muted-2 mb-0">No weekly or monthly contests are published yet.</p>';
-      bindOpenTests(contestsRoot, contests);
-    }
+    root.innerHTML = visible.map((t) => testCardHtml(t)).join('');
+    bindOpenTests(root, visible);
   }
 
   function openExam(test) {
@@ -423,10 +594,14 @@
         CodingService.listTests(),
         CodingService.getProgress(),
       ]);
+      tests = list || [];
+      myProgress = progress;
       renderStats(progress);
-      renderHistory(progress);
-      renderTestList(list);
-      await renderContestArena();
+      syncMyResultsPanels();
+      if (myResultsView === 'contests') await renderContestArena();
+      else renderHistory(progress);
+      if (takeListPanel === 'jdblock') await loadStudentJdBlock();
+      else renderTestList();
     } catch (err) {
       toastMsg(err?.message || 'Could not load coding tests.', 'error');
     }
@@ -1301,15 +1476,33 @@
       });
       loadDirectory();
     });
+    document.getElementById('takeListNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-take-list]');
+      if (!link) return;
+      e.preventDefault();
+      applyTakeListPanel(link.getAttribute('data-take-list'));
+    });
+    document.getElementById('takeContestTypeNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-take-contest-type]');
+      if (!link) return;
+      e.preventDefault();
+      applyTakeContestType(link.getAttribute('data-take-contest-type'));
+    });
+    document.getElementById('btnStudentJdBlockBack')?.addEventListener('click', () => {
+      showStudentJdCompanyGrid();
+      renderStudentJdBlock();
+    });
     document.getElementById('myResultsNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-results-view]');
       if (!link) return;
       e.preventDefault();
-      myResultsView = link.getAttribute('data-results-view') || 'tests';
-      document.querySelectorAll('#myResultsNav .nav-link').forEach((a) => {
-        a.classList.toggle('active', a.getAttribute('data-results-view') === myResultsView);
-      });
-      loadHub();
+      applyMyResultsPanel(link.getAttribute('data-results-view') || 'tests');
+    });
+    document.getElementById('myResultsContestTypeNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-results-contest-type]');
+      if (!link) return;
+      e.preventDefault();
+      applyMyResultsContestType(link.getAttribute('data-results-contest-type'));
     });
     document.getElementById('btnNewTest')?.addEventListener('click', () => openTestForm());
     document.getElementById('btnNewWeeklyContest')?.addEventListener('click', () => openTestForm(null, { contestType: 'weekly', title: 'Weekly coding contest' }));
@@ -1416,6 +1609,7 @@
     }
     bindUi();
     await loadAccess();
+    setupTakeListNav();
     const any = access.canTake || access.canManage || access.canViewDirectory;
     document.getElementById('codDenied')?.classList.toggle('d-none', any);
     document.getElementById('codTake')?.classList.toggle('d-none', true);

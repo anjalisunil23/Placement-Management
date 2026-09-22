@@ -25,6 +25,20 @@ class CodingTestModel extends BaseModel
         return in_array($raw, ['weekly', 'monthly'], true) ? $raw : 'none';
     }
 
+    public static function normalizeTestKind(string $value): string
+    {
+        return strtolower(trim($value)) === 'company' ? 'company' : 'regular';
+    }
+
+    public static function isCompanyTest(array $test): bool
+    {
+        if (self::normalizeTestKind((string) ($test['testKind'] ?? '')) === 'company') {
+            return true;
+        }
+
+        return trim((string) ($test['companyId'] ?? '')) !== '';
+    }
+
     public static function normalizeContestStartTime(string $value): string
     {
         $raw = trim($value);
@@ -284,7 +298,13 @@ class CodingTestModel extends BaseModel
         if (!in_array($status, self::STATUSES, true)) {
             $status = 'unpublished';
         }
-        return [
+        $testKind = self::normalizeTestKind((string) ($data['testKind'] ?? 'regular'));
+        $companyId = trim((string) ($data['companyId'] ?? ''));
+        $companyName = trim((string) ($data['companyName'] ?? ''));
+        $contestType = $testKind === 'company'
+            ? 'none'
+            : self::normalizeContestType((string) ($data['contestType'] ?? 'none'));
+        $payload = [
             'title' => trim((string) ($data['title'] ?? '')),
             'description' => (string) ($data['description'] ?? ''),
             'category' => (string) ($data['category'] ?? 'Programming'),
@@ -292,7 +312,8 @@ class CodingTestModel extends BaseModel
             'duration' => max(1, (int) ($data['duration'] ?? $data['durationMinutes'] ?? 20)),
             'durationMinutes' => max(1, (int) ($data['duration'] ?? $data['durationMinutes'] ?? 20)),
             'status' => $status,
-            'contestType' => self::normalizeContestType((string) ($data['contestType'] ?? 'none')),
+            'testKind' => $testKind,
+            'contestType' => $contestType,
             'contestWeekday' => (int) ($data['contestWeekday'] ?? 1),
             'contestMonthDay' => (int) ($data['contestMonthDay'] ?? 1),
             'contestStartTime' => self::normalizeContestStartTime((string) ($data['contestStartTime'] ?? self::CONTEST_START_DEFAULT)),
@@ -304,6 +325,12 @@ class CodingTestModel extends BaseModel
             'totalMarks' => $marks,
             'departmentId' => (string) ($data['departmentId'] ?? ''),
         ];
+        if ($testKind === 'company' && $companyId !== '' && Security::isValidId($companyId)) {
+            $payload['companyId'] = $companyId;
+            $payload['companyName'] = $companyName !== '' ? $companyName : 'Company';
+        }
+
+        return $payload;
     }
 
     /**
@@ -363,6 +390,9 @@ class CodingTestModel extends BaseModel
             'totalMarks' => (float) ($test['totalMarks'] ?? $test['marks'] ?? 0),
             'items' => $includeHidden ? array_values((array) ($test['items'] ?? [])) : $items,
             'departmentId' => (string) ($test['departmentId'] ?? ''),
+            'testKind' => self::normalizeTestKind((string) ($test['testKind'] ?? 'regular')),
+            'companyId' => trim((string) ($test['companyId'] ?? '')) !== '' ? (string) $test['companyId'] : null,
+            'companyName' => trim((string) ($test['companyName'] ?? '')) !== '' ? (string) $test['companyName'] : null,
         ];
     }
 

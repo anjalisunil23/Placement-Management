@@ -270,6 +270,8 @@ final class CodingService
             'testId' => $testId,
             'testTitle' => (string) ($test['title'] ?? ''),
             'contestType' => (string) ($test['contestType'] ?? 'none'),
+            'testKind' => CodingTestModel::normalizeTestKind((string) ($test['testKind'] ?? 'regular')),
+            'companyId' => trim((string) ($test['companyId'] ?? '')) !== '' ? (string) $test['companyId'] : null,
             'contestStartTime' => (string) ($test['contestStartTime'] ?? '09:00'),
             'periodKey' => CodingTestModel::periodKey($test),
             'contestWindowBounds' => CodingTestModel::contestWindowBounds($test),
@@ -371,6 +373,8 @@ final class CodingService
                 'percentage' => $row['percentage'] ?? 0,
                 'status' => $row['resultStatus'] ?? $row['status'] ?? '',
                 'contestType' => $row['contestType'] ?? 'none',
+                'testKind' => $row['testKind'] ?? 'regular',
+                'companyId' => $row['companyId'] ?? null,
                 'dateLabel' => self::formatDateLabel($row['submittedAt'] ?? ''),
             ];
         }
