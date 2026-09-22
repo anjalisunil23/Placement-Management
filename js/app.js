@@ -829,6 +829,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     root.classList.remove('ph-booting');
   };
 
+  const clearStuckModalChrome = () => {
+    document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+  };
+
+  const bootSafetyTimer = setTimeout(() => {
+    if (document.documentElement.classList.contains('ph-app-ready')) return;
+    try { paintShell(); } catch (_) { /* ignore */ }
+    revealApp();
+    clearStuckModalChrome();
+  }, 10000);
+  const finishBoot = () => {
+    clearTimeout(bootSafetyTimer);
+    clearStuckModalChrome();
+  };
+
   // Fresh AES login lands on the destination page directly (no aes-complete interstitial).
   let freshAesLogin = false;
   try {
@@ -846,6 +864,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (canInstantReveal) {
     paintShell();
     revealApp();
+    finishBoot();
   }
 
   let hasSession = await Auth.bootstrap(
@@ -857,8 +876,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       freshAesLogin ? { soft: false, fast: true } : { soft: false, fast: true }
     );
   }
+  try {
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(pageBase)) {
+    paintShell();
     revealApp();
+    finishBoot();
     window.location.replace(`public-stats.html?next=${encodeURIComponent(pageBase)}`);
     return;
   }
@@ -866,7 +888,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (Auth.isDemo()) {
       // preview mode — read-only dashboards only
     } else {
+      paintShell();
       revealApp();
+      finishBoot();
       const roleHint = Auth.role() || Auth.user()?.role || '';
       const returnTarget = `${pageBase}${location.search || ''}${location.hash || ''}`;
       Auth.clear();
@@ -879,24 +903,37 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (typeof studentNeedsPlacementRegistration === 'function' && studentNeedsPlacementRegistration()) {
     const sharedTestEntry = typeof sharedAptitudeTestEntry === 'function' && sharedAptitudeTestEntry();
     if (pageBase !== 'placement-registration.html' && !sharedTestEntry) {
+      paintShell();
       revealApp();
+      finishBoot();
       window.location.replace('placement-registration.html');
       return;
     }
   } else if (pageBase === 'placement-registration.html' && Auth.role() === 'student') {
+    paintShell();
     revealApp();
+    finishBoot();
     window.location.replace(Auth.homePage() || 'dashboard.html');
     return;
   }
 
   if (!enforcePageRole(pageBase)) {
+    paintShell();
     revealApp();
+    finishBoot();
     return;
   }
 
   // Cold path: first paint here. Warm path: refresh shell after /auth/me or soft boot.
   paintShell();
   revealApp();
+  finishBoot();
+  } catch (bootErr) {
+    console.error('App boot failed', bootErr);
+    try { paintShell(); } catch (_) { /* ignore */ }
+    revealApp();
+    finishBoot();
+  }
 
   if (Auth.hasRealAuth() && pageBase !== 'settings.html' && pageBase !== 'placement-registration.html') {
     const enrichOpts = {};
@@ -939,6 +976,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   window.__phReady = true;
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();
+  finishBoot();
 });
 
 /** Shared staff / alumni referral modals — open from any page */

@@ -36,9 +36,8 @@
   display: none !important;
 }
 
-/* One-shot reveal: keep incomplete shell/body hidden until app.js paints nav + role. */
-html.ph-booting .app,
-.app:has(#sidebar:empty) {
+/* One-shot reveal: hide only while booting — never leave app invisible after ph-app-ready. */
+html.ph-booting .app {
   opacity: 0;
   pointer-events: none;
 }
@@ -47,12 +46,11 @@ html.ph-app-ready .app {
   pointer-events: auto;
   transition: opacity .14s ease;
 }
-html.ph-booting,
-html:has(.app #sidebar:empty) {
+html.ph-booting {
   background: var(--bg, #F8FAFC);
 }
 html.ph-booting::after,
-html:has(.app #sidebar:empty):not(.ph-app-ready)::after {
+html:not(.ph-app-ready):has(.app #sidebar:empty)::after {
   content: '';
   position: fixed;
   inset: 0;
