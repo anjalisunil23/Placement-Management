@@ -152,6 +152,15 @@ final class StaffController
         Response::success((new PcaOfferLetterService())->getForStaff($ctx, $id));
     }
 
+    /** GET /api/staff/pca-offer-letters — published PCA letters for assigned-class students */
+    public function listPcaOfferLetters(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        Response::success((new PcaOfferLetterService())->listPublishedSummaries($ctx));
+    }
+
     /** GET /api/staff/recommendations */
     public function listRecommendations(): void
     {

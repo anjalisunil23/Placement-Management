@@ -622,16 +622,24 @@ function paintPcaOfferLetters(list, listId, cardId, emptyText) {
   }).join('')}</tbody></table></div>`;
 }
 
-async function loadDashboardPcaOfferLetters() {
-  if (!Auth.hasRealAuth() || Auth.isDemo()) return;
-  if (role === 'admin') {
-    const res = await api('/admin/dashboard?lite=1').catch(() => null);
-    paintPcaOfferLetters(res?.data?.pcaOfferLetters, 'pcaOfferLettersAdminList', 'pcaOfferLettersAdminCard');
-    return;
-  }
-  if (role === 'staff') {
-    const res = await api('/staff/dashboard?lite=1').catch(() => null);
-    paintPcaOfferLetters(res?.data?.pcaOfferLetters, 'pcaOfferLettersStaffList', 'pcaOfferLettersStaffCard');
+let pcaOfferLettersLoadStarted = false;
+
+function schedulePcaOfferLettersLoad() {
+  if (pcaOfferLettersLoadStarted || !Auth.hasRealAuth() || Auth.isDemo()) return;
+  if (role !== 'admin' && role !== 'staff') return;
+  pcaOfferLettersLoadStarted = true;
+  const run = () => {
+    const path = role === 'admin' ? '/admin/pca-offer-letters' : '/staff/pca-offer-letters';
+    const listId = role === 'admin' ? 'pcaOfferLettersAdminList' : 'pcaOfferLettersStaffList';
+    const cardId = role === 'admin' ? 'pcaOfferLettersAdminCard' : 'pcaOfferLettersStaffCard';
+    api(path).then((res) => {
+      paintPcaOfferLetters(res?.data, listId, cardId);
+    }).catch(() => {});
+  };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(run, { timeout: 2500 });
+  } else {
+    setTimeout(run, 400);
   }
 }
 
@@ -762,20 +770,18 @@ if (role === 'admin') {
       if (pref?.dash?.success && pref.dash.data && map) {
         const lite = map(pref.dash.data, pref.dash.data.activeDrives ?? 0);
         paintAdminStats(lite);
-        paintPcaOfferLetters(pref.dash.data.pcaOfferLetters, 'pcaOfferLettersAdminList', 'pcaOfferLettersAdminCard');
         window.__phWriteDashKpi?.(role, { stats: lite });
       } else {
         await apisReady;
         if (Auth.hasRealAuth() && !Auth.isDemo()) {
           const lite = await dashboardStats({ lite: true });
           paintAdminStats(lite);
-          await loadDashboardPcaOfferLetters();
           window.__phWriteDashKpi?.(role, { stats: lite });
         }
       }
 
       if (Auth.hasRealAuth() && !Auth.isDemo()) {
-        loadDashboardPcaOfferLetters().catch(() => {});
+        schedulePcaOfferLettersLoad();
         const runFull = () => {
           Promise.all([apisReady, chartsReady, dashboardStats({})]).then(([, , full]) => {
             if (full) {
@@ -899,14 +905,7 @@ if (role === 'staff') {
       }
     }
     await paintStaffAptitude();
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const pref = await (window.__phPrefetchDashLite || Promise.resolve(null)).catch(() => null);
-      if (pref?.dash?.success && pref.dash.data?.pcaOfferLetters) {
-        paintPcaOfferLetters(pref.dash.data.pcaOfferLetters, 'pcaOfferLettersStaffList', 'pcaOfferLettersStaffCard');
-      } else {
-        await loadDashboardPcaOfferLetters();
-      }
-    }
+    schedulePcaOfferLettersLoad();
   })();
 }
 

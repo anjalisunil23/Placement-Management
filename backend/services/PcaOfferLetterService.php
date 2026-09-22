@@ -99,21 +99,46 @@ final class PcaOfferLetterService
      */
     public function listPublishedSummaries(?array $staffCtx = null): array
     {
-        $this->expireOutdatedAssignments();
+        $rows = (new StudentVolunteerModel())->listActive(['status' => 'active'], 500);
+        $published = array_values(array_filter(
+            $rows,
+            fn (array $row): bool => $this->letterStatus($row) === 'published'
+        ));
+        if ($published === []) {
+            return [];
+        }
 
-        $rows = (new StudentVolunteerModel())->listActive(['status' => 'active'], 5000);
         $studentModel = new StudentModel();
         $userModel = new UserModel();
         $deptModel = new DepartmentModel();
         $mode = $staffCtx !== null ? 'staff' : 'admin';
+
+        $studentIds = [];
+        $userIds = [];
+        $deptIds = [];
+        foreach ($published as $row) {
+            $sid = (string) ($row['studentId'] ?? '');
+            if ($sid !== '') {
+                $studentIds[$sid] = true;
+            }
+            $uid = (string) ($row['userId'] ?? '');
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+            $did = (string) ($row['departmentId'] ?? '');
+            if ($did !== '') {
+                $deptIds[$did] = true;
+            }
+        }
+
+        $students = $studentModel->findByIds(array_keys($studentIds));
+        $users = $userModel->findByIds(array_keys($userIds));
+        $departments = $deptModel->findByIds(array_keys($deptIds));
         $out = [];
 
-        foreach ($rows as $row) {
-            if ($this->letterStatus($row) !== 'published') {
-                continue;
-            }
-
-            $student = $studentModel->findById((string) ($row['studentId'] ?? ''));
+        foreach ($published as $row) {
+            $sid = (string) ($row['studentId'] ?? '');
+            $student = $students[$sid] ?? null;
             if ($student === null) {
                 continue;
             }
@@ -123,11 +148,14 @@ final class PcaOfferLetterService
 
             $assignmentId = (string) ($row['_id'] ?? '');
             $uid = (string) ($row['userId'] ?? $student['userId'] ?? '');
-            $studentUser = $uid !== '' ? $userModel->findById($uid) : null;
+            $studentUser = $uid !== '' ? ($users[$uid] ?? null) : null;
+            if (!$studentUser && !empty($student['userId'])) {
+                $studentUser = $users[(string) $student['userId']] ?? null;
+            }
             $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
             $name = trim((string) ($studentUser['name'] ?? $personal['name'] ?? $personal['fullName'] ?? ''));
             $deptId = (string) ($row['departmentId'] ?? $student['departmentId'] ?? '');
-            $dept = $deptId !== '' ? $deptModel->findById($deptId) : null;
+            $dept = $deptId !== '' ? ($departments[$deptId] ?? null) : null;
             $letter = is_array($row['offerLetter'] ?? null) ? $row['offerLetter'] : [];
 
             $out[] = [

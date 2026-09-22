@@ -68,9 +68,14 @@ final class AdminController
     {
         RBACMiddleware::requirePlacementDataViewer();
         $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
-        $data = $this->userModel->getDashboardStats(!$lite);
-        $data['pcaOfferLetters'] = (new PcaOfferLetterService())->listPublishedSummaries(null);
-        Response::success($data);
+        Response::success($this->userModel->getDashboardStats(!$lite));
+    }
+
+    /** GET /api/admin/pca-offer-letters — published PCA letters for dashboard (async load) */
+    public function listPcaOfferLetters(): void
+    {
+        RBACMiddleware::requirePlacementDataViewer();
+        Response::success((new PcaOfferLetterService())->listPublishedSummaries(null));
     }
 
     // --- Drives (Admin manages all drives) ---
