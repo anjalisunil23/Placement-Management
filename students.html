@@ -21,6 +21,31 @@
     line-height:1.35;
   }
   .profile-email-value .profile-email-line + .profile-email-line{margin-top:.2rem}
+  #pcaOfferLetterModal .modal-body{overflow:hidden}
+  #pcaOfferLetterModal .pca-modal-preview-col{
+    display:flex;
+    flex-direction:column;
+    min-height:min(78vh,960px);
+  }
+  .pca-a4-preview-wrap{
+    flex:1 1 auto;
+    min-height:480px;
+    height:min(72vh,880px);
+    width:100%;
+    margin:0 auto;
+    background:#fff;
+    border:1px solid #dee2e6;
+    border-radius:.375rem;
+    overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+  }
+  .pca-a4-preview-wrap iframe{
+    display:block;
+    width:100%;
+    height:100%;
+    border:0;
+    overflow:hidden;
+  }
 </style>
 <script src="js/ph-role-guard.js?v=20260724boot"></script></head>
 <body data-page="students.html"><div class="app">
@@ -806,9 +831,9 @@
             </div>
             <p class="small text-muted-2 mt-3 mb-0" id="pcaModalHint">Representatives are cleared automatically when the academic year changes (July–June).</p>
           </div>
-          <div class="col-lg-8">
-            <div class="border rounded overflow-hidden bg-white mx-auto" style="width:100%;max-width:210mm;aspect-ratio:210/297;max-height:297mm">
-              <iframe id="pcaLetterPreview" title="PCA offer letter preview" src="about:blank" style="width:100%;height:100%;border:0;display:block"></iframe>
+          <div class="col-lg-8 pca-modal-preview-col">
+            <div class="pca-a4-preview-wrap">
+              <iframe id="pcaLetterPreview" title="PCA offer letter preview" src="about:blank" scrolling="no"></iframe>
             </div>
           </div>
         </div>
@@ -2216,6 +2241,23 @@ function refreshPcaLetterPreview() {
   const iframe = document.getElementById('pcaLetterPreview');
   if (!iframe) return;
   iframe.src = pcaOfferLetterPreviewUrl(pcaModalPayloadFromForm());
+}
+
+function bindPcaPreviewIframeFit() {
+  const iframe = document.getElementById('pcaLetterPreview');
+  const modal = document.getElementById('pcaOfferLetterModal');
+  if (!iframe || !modal || iframe.dataset.pcaFitBound === '1') return;
+  iframe.dataset.pcaFitBound = '1';
+  modal.addEventListener('shown.bs.modal', () => {
+    setTimeout(() => {
+      try { iframe.contentWindow?.dispatchEvent(new Event('resize')); } catch { /* same-origin only */ }
+    }, 100);
+  });
+  iframe.addEventListener('load', () => {
+    setTimeout(() => {
+      try { iframe.contentWindow?.dispatchEvent(new Event('resize')); } catch { /* same-origin only */ }
+    }, 100);
+  });
 }
 
 async function openPcaOfferLetterModal(assignmentId, studentName = '') {
@@ -3768,6 +3810,7 @@ onAppReady(async () => {
     removeVolunteerStudent(btn.getAttribute('data-volunteer-id')).catch(() => {});
   });
   document.getElementById('pcaModalPreviewBtn')?.addEventListener('click', () => refreshPcaLetterPreview());
+  bindPcaPreviewIframeFit();
   document.getElementById('pcaModalSaveBtn')?.addEventListener('click', () => savePcaOfferLetterDraft().catch(() => {}));
   document.getElementById('pcaModalPublishBtn')?.addEventListener('click', () => publishPcaOfferLetter().catch(() => {}));
   document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {

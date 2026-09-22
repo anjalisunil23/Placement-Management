@@ -143,17 +143,45 @@
       margin: 0;
     }
 
+    html.embed,
     body.embed {
       background: #fff;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body.embed {
+      display: flex;
+      flex-direction: column;
     }
 
     body.embed .toolbar {
       display: none !important;
     }
 
+    body.embed .sheet-viewport {
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+
+    body.embed .sheet-scaler {
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
     body.embed .sheet {
-      margin: 0 auto;
+      margin: 0;
       box-shadow: none;
+      transform: scale(var(--embed-scale, 1));
+      transform-origin: top left;
     }
 
     @media print {
@@ -182,6 +210,16 @@
         mix-blend-mode: screen;
       }
       .no-print { display: none !important; }
+      .sheet-viewport,
+      .sheet-scaler {
+        width: auto !important;
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
+      }
+      .sheet {
+        transform: none !important;
+      }
     }
 
     .toolbar {
@@ -254,6 +292,8 @@
   <p class="hint">Academic year is calculated automatically (July–June). Adjust the letter date if needed before printing.</p>
 </div>
 
+<div class="sheet-viewport" id="sheetViewport">
+<div class="sheet-scaler" id="sheetScaler">
 <article class="sheet" id="letterSheet">
   <div class="letterhead-wrap">
     <img class="letterhead" data-asset="css/img/pca-letterhead.png" alt="Amal Jyothi College of Engineering letterhead"/>
@@ -335,6 +375,8 @@
     <img class="letter-footer" data-asset="css/img/pca-footer.png" alt="Contact and accreditation footer"/>
   </div>
 </article>
+</div>
+</div>
 
 <script>
 (function () {
@@ -397,6 +439,7 @@
   const readOnly = mode === 'student';
 
   if (embed) {
+    document.documentElement.classList.add('embed');
     document.body.classList.add('embed');
   }
 
@@ -473,9 +516,61 @@
     ayInline.forEach(el => { el.textContent = ay; });
   }
 
+  function fitEmbedPreview() {
+    if (!embed) return;
+    const viewport = document.getElementById('sheetViewport');
+    const scaler = document.getElementById('sheetScaler');
+    const sheet = document.getElementById('letterSheet');
+    if (!viewport || !scaler || !sheet) return;
+
+    sheet.style.transform = 'none';
+    scaler.style.width = '';
+    scaler.style.height = '';
+
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    const sw = sheet.offsetWidth;
+    const sh = sheet.offsetHeight;
+    if (!vw || !vh || !sw || !sh) return;
+
+    const scale = Math.min(vw / sw, vh / sh);
+    document.documentElement.style.setProperty('--embed-scale', String(scale));
+    scaler.style.width = Math.floor(sw * scale) + 'px';
+    scaler.style.height = Math.floor(sh * scale) + 'px';
+    sheet.style.transform = 'scale(' + scale + ')';
+    sheet.style.transformOrigin = 'top left';
+  }
+
+  function scheduleEmbedFit() {
+    if (!embed) return;
+    requestAnimationFrame(() => {
+      fitEmbedPreview();
+      requestAnimationFrame(fitEmbedPreview);
+    });
+  }
+
   [inpDate, inpName, inpClass].forEach(el => el.addEventListener('input', sync));
   document.getElementById('btnPrint').addEventListener('click', () => window.print());
-  loadLetterData();
+
+  if (embed) {
+    window.addEventListener('resize', scheduleEmbedFit);
+    const viewport = document.getElementById('sheetViewport');
+    if (viewport && typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(scheduleEmbedFit).observe(viewport);
+    }
+    document.querySelectorAll('.letterhead, .letter-footer, .principal-sign').forEach((img) => {
+      if (!img.complete) {
+        img.addEventListener('load', scheduleEmbedFit, { once: true });
+        img.addEventListener('error', scheduleEmbedFit, { once: true });
+      }
+    });
+    if (document.fonts?.ready) document.fonts.ready.then(scheduleEmbedFit).catch(() => {});
+  }
+
+  loadLetterData().finally(() => {
+    scheduleEmbedFit();
+    if (embed) setTimeout(scheduleEmbedFit, 150);
+  });
 })();
 </script>
 </body>
