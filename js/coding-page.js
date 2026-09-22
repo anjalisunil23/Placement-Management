@@ -10,11 +10,20 @@
     { value: 1, label: 'Monday' }, { value: 2, label: 'Tuesday' }, { value: 3, label: 'Wednesday' },
     { value: 4, label: 'Thursday' }, { value: 5, label: 'Friday' }, { value: 6, label: 'Saturday' }, { value: 7, label: 'Sunday' },
   ];
+  const DEFAULT_CONTEST_START_TIME = '09:00';
+  const DEFAULT_CONTEST_END_TIME = '23:59';
 
   let access = { canTake: false, canManage: false, canViewDirectory: false, scope: null };
   let tests = [];
   let bank = [];
   let managePanel = 'tests';
+  let manageContestType = 'weekly';
+  let jdSelectedCompanyId = null;
+  let adminJdBlockView = 'tests';
+  let jdCompanyBlocks = [];
+  let jdLibrarySets = [];
+  let jdCompanies = [];
+  const jdSetDetailsCache = {};
   let progressPanel = 'tests';
   let takeListPanel = 'tests';
   let takeContestType = 'weekly';
@@ -125,8 +134,406 @@
     return tests.filter((t) => {
       if (!isCompanyTest(t)) return false;
       if (String(t.companyId || '') !== id) return false;
+      if (access.canManage) return true;
       return (t.status || 'published') === 'published';
     });
+  }
+
+  function stripHtml(text) {
+    const div = document.createElement('div');
+    div.innerHTML = String(text || '');
+    return (div.textContent || div.innerText || '').trim();
+  }
+
+  function normalizeContestTimeClient(raw, fallback) {
+    const m = String(raw || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return fallback;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h < 0 || h > 23 || min < 0 || min > 59) return fallback;
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+
+  function contestTimesClient(test) {
+    return {
+      start: normalizeContestTimeClient(test?.contestStartTime, DEFAULT_CONTEST_START_TIME),
+      end: normalizeContestTimeClient(test?.contestEndTime, DEFAULT_CONTEST_END_TIME),
+    };
+  }
+
+  function applyContestTimesToDate(date, test) {
+    const { start, end } = contestTimesClient(test);
+    const [sh, sm] = start.split(':').map(Number);
+    const [eh, em] = end.split(':').map(Number);
+    const startDt = new Date(date);
+    startDt.setHours(sh, sm, 0, 0);
+    const endDt = new Date(date);
+    endDt.setHours(eh, em, 59, 999);
+    if (endDt <= startDt) endDt.setTime(startDt.getTime() + 60 * 60 * 1000);
+    return { start: startDt, end: endDt };
+  }
+
+  function parseContestCreatedAt(test) {
+    const raw = test?.createdAt;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function lastWeeklyOccurrenceStart(want, now = new Date()) {
+    const today = now.getDay() === 0 ? 7 : now.getDay();
+    const daysSince = (today - want + 7) % 7;
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - daysSince);
+    return d;
+  }
+
+  function lastMonthlyOccurrenceStart(want, now = new Date()) {
+    const dom = now.getDate();
+    let year = now.getFullYear();
+    let month = now.getMonth();
+    if (dom < want) {
+      month -= 1;
+      if (month < 0) {
+        month = 11;
+        year -= 1;
+      }
+    }
+    return new Date(year, month, want, 0, 0, 0);
+  }
+
+  function contestStatusClient(test) {
+    if (!isContestTest(test)) return test?.contestStatus ? String(test.contestStatus) : 'ACTIVE';
+    if (typeof test?.contestOpen === 'boolean') return test.contestOpen ? 'ACTIVE' : 'UPCOMING';
+    const type = String(test?.contestType || 'none');
+    const now = new Date();
+    const created = parseContestCreatedAt(test);
+    if (type === 'weekly') {
+      const want = Number(test?.contestWeekday);
+      if (!Number.isFinite(want) || want < 1 || want > 7) return 'UPCOMING';
+      const today = now.getDay() === 0 ? 7 : now.getDay();
+      if (today === want) {
+        const occ = lastWeeklyOccurrenceStart(want, now);
+        const { start, end } = applyContestTimesToDate(occ, test);
+        if (now < start) return 'UPCOMING';
+        return now <= end ? 'ACTIVE' : 'COMPLETED';
+      }
+      const daysSince = (today - want + 7) % 7;
+      if (daysSince >= 1 && daysSince <= 3) {
+        const lastOcc = lastWeeklyOccurrenceStart(want, now);
+        if (created && created <= lastOcc) return 'COMPLETED';
+        return 'UPCOMING';
+      }
+      return 'UPCOMING';
+    }
+    if (type === 'monthly') {
+      const want = Number(test?.contestMonthDay);
+      if (!Number.isFinite(want) || want < 1 || want > 28) return 'UPCOMING';
+      const dom = now.getDate();
+      if (dom === want) {
+        const occ = lastMonthlyOccurrenceStart(want, now);
+        const { start, end } = applyContestTimesToDate(occ, test);
+        if (now < start) return 'UPCOMING';
+        return now <= end ? 'ACTIVE' : 'COMPLETED';
+      }
+      if (dom > want) {
+        const lastOcc = lastMonthlyOccurrenceStart(want, now);
+        if (created && created <= lastOcc) return 'COMPLETED';
+        return 'UPCOMING';
+      }
+      return 'UPCOMING';
+    }
+    return 'UPCOMING';
+  }
+
+  function groupJdSetsIntoBlocks(sets) {
+    const blocks = new Map();
+    (sets || []).forEach((set) => {
+      const companyId = String(set.companyId || '');
+      const companyName = String(set.companyName || (companyId ? 'Company' : 'Unassigned'));
+      const key = companyId || '_unassigned';
+      if (!blocks.has(key)) {
+        blocks.set(key, { companyId, companyName, setCount: 0, questionCount: 0, sets: [] });
+      }
+      const block = blocks.get(key);
+      block.setCount += 1;
+      block.questionCount += Number(set.questionCount || 0);
+      block.sets.push(set);
+    });
+    return [...blocks.values()].sort((a, b) => String(a.companyName).localeCompare(String(b.companyName)));
+  }
+
+  async function ensureJdCompaniesLoaded() {
+    if (jdCompanies.length) return jdCompanies;
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/jd-companies').catch(() => null);
+      jdCompanies = res?.data?.companies || [];
+    }
+    return jdCompanies;
+  }
+
+  async function getJdSetDetail(setId) {
+    const id = String(setId || '');
+    if (!id) return null;
+    if (jdSetDetailsCache[id]) return jdSetDetailsCache[id];
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}`).catch(() => null);
+      if (res?.data) jdSetDetailsCache[id] = res.data;
+    }
+    return jdSetDetailsCache[id] || null;
+  }
+
+  async function loadJdLibrary() {
+    if (!access.canManage) return;
+    await ensureJdCompaniesLoaded().catch(() => {});
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/jd-sets').catch(() => null);
+      jdLibrarySets = res?.data?.sets || [];
+      jdCompanyBlocks = res?.data?.blocks || groupJdSetsIntoBlocks(jdLibrarySets);
+    } else {
+      jdLibrarySets = [];
+      jdCompanyBlocks = [];
+    }
+    renderJdBlock();
+  }
+
+  function jdDocumentUrl(detail) {
+    return String(detail?.jdFileUrl || detail?.jdFileDataUrl || '');
+  }
+
+  function isJdImageDocument(detail) {
+    const mime = String(detail?.jdMimeType || '');
+    if (mime.startsWith('image/')) return true;
+    return /\.(jpg|jpeg|png)$/i.test(String(detail?.jdFilename || ''));
+  }
+
+  function renderJdDocumentPanel(detail) {
+    const url = jdDocumentUrl(detail);
+    if (!url) return '<p class="small text-muted-2 mb-0">No uploaded document for this set.</p>';
+    const fn = esc(detail.jdFilename || 'JD document');
+    if (isJdImageDocument(detail)) {
+      return `<div class="border rounded-2 p-2 bg-light">
+        <div class="small text-muted-2 mb-2">${fn}</div>
+        <img src="${esc(url)}" alt="${fn}" class="img-fluid rounded border" style="max-height:480px;object-fit:contain"/>
+      </div>`;
+    }
+    return `<div class="border rounded-2 p-2 bg-light">
+      <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+        <span class="small text-muted-2">${fn}</span>
+        <a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary">Open in new tab</a>
+      </div>
+      <iframe src="${esc(url)}" class="w-100 rounded border" style="height:480px" title="${fn}"></iframe>
+    </div>`;
+  }
+
+  function renderMcqPickDetailHtml(q, index) {
+    const letters = ['A', 'B', 'C', 'D'];
+    const opts = (q.options || []).slice(0, 4);
+    const correct = Math.max(0, Math.min(3, Number(q.correctIndex ?? 0)));
+    const promptRaw = String(q.prompt || '').trim();
+    const promptBlock = /<[^>]+>/.test(promptRaw)
+      ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
+      : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
+    return `<div class="border rounded-2 p-3 bg-white">
+      <div class="fw-semibold mb-2">Q${index + 1}</div>
+      ${promptBlock}
+      <div class="small mb-2">${opts.length
+        ? opts.map((o, oi) => {
+          const label = esc(stripHtml(String(o || '')) || String(o || ''));
+          const isCorrect = oi === correct;
+          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${letters[oi]}. ${label}${isCorrect ? ' ✓' : ''}</div>`;
+        }).join('')
+        : '<div class="text-muted-2">No options</div>'}</div>
+    </div>`;
+  }
+
+  function renderJdSetCardsHtml(sets) {
+    return (sets || []).map((set) => {
+      const id = String(set.id || '');
+      const hasDoc = !!(set.hasDocument || set.jdFileUrl);
+      return `<div class="border rounded-3 p-3" data-jd-set-card="${esc(id)}">
+        <div class="d-flex align-items-start justify-content-between gap-2">
+          <div class="min-w-0">
+            <div class="fw-semibold">${esc(set.jdTitle || 'Untitled JD')}</div>
+            <div class="small text-muted-2 mt-1">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
+          </div>
+          <div class="d-flex gap-2 flex-shrink-0">
+            ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
+            <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
+          </div>
+        </div>
+        <div class="d-none mt-3" data-jd-doc-panel="${esc(id)}"></div>
+        <div class="d-none mt-3" data-jd-questions="${esc(id)}"></div>
+      </div>`;
+    }).join('');
+  }
+
+  function bindJdSetCardEvents(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-jd-doc]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-jd-doc');
+        const card = btn.closest('[data-jd-set-card]');
+        const panel = card?.querySelector('[data-jd-doc-panel]');
+        if (!panel) return;
+        if (!panel.classList.contains('d-none')) {
+          panel.classList.add('d-none');
+          btn.textContent = 'Document';
+          return;
+        }
+        const detail = await getJdSetDetail(id);
+        panel.innerHTML = renderJdDocumentPanel(detail || {});
+        panel.classList.remove('d-none');
+        btn.textContent = 'Hide doc';
+      });
+    });
+    root.querySelectorAll('[data-jd-view]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-jd-view');
+        const card = btn.closest('[data-jd-set-card]');
+        const panel = card?.querySelector('[data-jd-questions]');
+        if (!panel) return;
+        if (!panel.classList.contains('d-none')) {
+          panel.classList.add('d-none');
+          btn.textContent = 'Questions';
+          return;
+        }
+        const detail = await getJdSetDetail(id);
+        const qs = detail?.questions || [];
+        panel.innerHTML = qs.length
+          ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderMcqPickDetailHtml(q, i)).join('')}</div>`
+          : '<p class="small text-muted-2 mb-0">No questions in this set.</p>';
+        panel.classList.remove('d-none');
+        btn.textContent = 'Hide';
+      });
+    });
+    root.querySelectorAll('[data-jd-delete]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteJdSet(btn.getAttribute('data-jd-delete')));
+    });
+  }
+
+  async function deleteJdSet(id) {
+    if (!id || !confirm('Delete this JD question set and all its questions?')) return;
+    if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
+      toastMsg('JD sets require a live session.', 'info');
+      return;
+    }
+    const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.success) {
+      toastMsg(res?.message || 'Could not delete JD set.', 'error');
+      return;
+    }
+    delete jdSetDetailsCache[String(id)];
+    jdLibrarySets = jdLibrarySets.filter((s) => String(s.id) !== String(id));
+    toastMsg('JD set deleted.', 'success');
+    await loadJdLibrary();
+  }
+
+  function syncAdminJdBlockViewNav() {
+    document.querySelectorAll('#adminJdBlockViewNav .nav-link').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('data-admin-jd-block-view') === adminJdBlockView);
+    });
+  }
+
+  function applyAdminJdBlockView(view) {
+    adminJdBlockView = view === 'bank' ? 'bank' : 'tests';
+    syncAdminJdBlockViewNav();
+    if (jdSelectedCompanyId) showJdCompanyDetail(jdSelectedCompanyId);
+    else renderJdBlock();
+  }
+
+  function showJdCompanyGrid() {
+    jdSelectedCompanyId = null;
+    document.getElementById('jdBlockCompanyDetail')?.classList.add('d-none');
+    document.getElementById('jdBlockCompanyView')?.classList.remove('d-none');
+    document.getElementById('btnJdBlockBack')?.classList.add('d-none');
+    document.getElementById('adminJdBlockViewNav')?.classList.add('d-none');
+    document.getElementById('btnNewCompanyTest')?.classList.add('d-none');
+  }
+
+  function showJdCompanyDetail(companyId) {
+    const block = jdCompanyBlocks.find((b) => {
+      const id = String(b.companyId || '');
+      return (id || '_unassigned') === String(companyId || '_unassigned');
+    });
+    jdSelectedCompanyId = companyId;
+    document.getElementById('jdBlockCompanyView')?.classList.add('d-none');
+    document.getElementById('jdBlockCompanyDetail')?.classList.remove('d-none');
+    document.getElementById('btnJdBlockBack')?.classList.remove('d-none');
+    document.getElementById('adminJdBlockViewNav')?.classList.remove('d-none');
+    syncAdminJdBlockViewNav();
+    const showTests = adminJdBlockView === 'tests';
+    const testsRoot = document.getElementById('jdBlockCompanyTests');
+    const bankSection = document.getElementById('jdBlockBankSection');
+    testsRoot?.classList.toggle('d-none', !showTests);
+    bankSection?.classList.toggle('d-none', showTests);
+    document.getElementById('btnNewCompanyTest')?.classList.toggle('d-none', !showTests);
+    if (showTests) {
+      const companyTests = studentCompanyTestsFor(companyId);
+      if (testsRoot) {
+        testsRoot.innerHTML = companyTests.length
+          ? companyTests.map((t) => renderManageRow(t, { showCompanyBadge: true })).join('')
+          : '<p class="small text-muted-2 mb-0">No company tests for this company yet.</p>';
+        bindManageListActions(testsRoot);
+      }
+    } else {
+      const list = document.getElementById('jdBlockSetsList');
+      const sets = block?.sets || [];
+      if (!list) return;
+      list.innerHTML = sets.length
+        ? renderJdSetCardsHtml(sets)
+        : '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+      bindJdSetCardEvents(list);
+    }
+  }
+
+  function renderJdBlock() {
+    const grid = document.getElementById('jdBlockCompanyGrid');
+    if (!grid) return;
+    const activeCompanyId = jdSelectedCompanyId;
+    if (!jdCompanyBlocks.length) {
+      showJdCompanyGrid();
+      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No Company Block entries yet. Use AI Generate from the Company Block tab to create one.</p></div>';
+      return;
+    }
+    grid.innerHTML = renderJdCompanyGridHtml(jdCompanyBlocks);
+    grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
+      btn.addEventListener('click', () => showJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
+    });
+    if (activeCompanyId) showJdCompanyDetail(activeCompanyId);
+    else showJdCompanyGrid();
+  }
+
+  function formIsCompanyTest() {
+    return String(document.getElementById('tfTestKind')?.value || '') === 'company';
+  }
+
+  function selectedCompanyFromTestForm() {
+    const sel = document.getElementById('tfCompanyId');
+    const companyId = String(sel?.value || '').trim();
+    const companyName = String(sel?.selectedOptions?.[0]?.textContent || '').trim();
+    return { companyId, companyName: companyName === 'Select company…' ? '' : companyName };
+  }
+
+  async function fillTfCompanySelect(selectedId = '') {
+    await ensureJdCompaniesLoaded().catch(() => {});
+    const sel = document.getElementById('tfCompanyId');
+    if (!sel) return;
+    const pick = String(selectedId || '');
+    sel.innerHTML = `<option value="">Select company…</option>${jdCompanies.map((c) => {
+      const id = String(c.id || '');
+      return `<option value="${esc(id)}"${id === pick ? ' selected' : ''}>${esc(c.name || 'Company')}</option>`;
+    }).join('')}`;
+  }
+
+  function syncCompanyTestFormUi() {
+    const company = formIsCompanyTest();
+    document.getElementById('tfCompanyPanel')?.classList.toggle('d-none', !company);
+    document.getElementById('tfContestWrap')?.classList.toggle('d-none', company || !canManageContests());
+    if (company) document.getElementById('tfContestType').value = 'none';
+    syncContestFormFields();
   }
 
   function showStudentJdCompanyDetail(companyId) {
@@ -642,33 +1049,187 @@
     }
   }
 
+  function applyManageContestType(type) {
+    manageContestType = type === 'monthly' ? 'monthly' : 'weekly';
+    document.getElementById('manageWeeklyContestsSection')?.classList.toggle('d-none', manageContestType !== 'weekly');
+    document.getElementById('manageMonthlyContestsSection')?.classList.toggle('d-none', manageContestType !== 'monthly');
+    syncContestTypeNav('manageContestTypeNav', manageContestType, 'data-contest-type');
+  }
+
+  function openManageContests(type = manageContestType) {
+    applyManagePanel('contests');
+    applyManageContestType(type);
+  }
+
   function applyManagePanel(panel) {
-    if (panel === 'contests' && canManageContests()) managePanel = 'contests';
-    else if (panel === 'bank') managePanel = 'bank';
-    else managePanel = 'tests';
+    if (panel === 'weekly-contests' && canManageContests()) {
+      managePanel = 'contests';
+      manageContestType = 'weekly';
+    } else if (panel === 'monthly-contests' && canManageContests()) {
+      managePanel = 'contests';
+      manageContestType = 'monthly';
+    } else if (panel === 'contests' && canManageContests()) {
+      managePanel = 'contests';
+    } else if (panel === 'bank') {
+      managePanel = 'bank';
+    } else if (panel === 'jd') {
+      managePanel = 'jd';
+    } else {
+      managePanel = 'tests';
+    }
     document.getElementById('manageTestsPanel')?.classList.toggle('d-none', managePanel !== 'tests');
     document.getElementById('manageContestsPanel')?.classList.toggle('d-none', managePanel !== 'contests');
     document.getElementById('manageBankPanel')?.classList.toggle('d-none', managePanel !== 'bank');
+    document.getElementById('manageJdPanel')?.classList.toggle('d-none', managePanel !== 'jd');
     document.querySelectorAll('#manageViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-manage-view') === managePanel);
     });
+    if (managePanel === 'contests') applyManageContestType(manageContestType);
     if (managePanel === 'bank') renderBank();
+    if (managePanel === 'jd') loadJdLibrary().catch(() => {});
   }
 
   function syncManageContestActions() {
     const show = canManageContests();
     document.getElementById('manageContestNavItem')?.classList.toggle('d-none', !show);
-    document.getElementById('tfContestWrap')?.classList.toggle('d-none', !show);
     if (!show && managePanel === 'contests') applyManagePanel('tests');
+    syncCompanyTestFormUi();
   }
 
-  function renderManageRow(t, { showContestBadge = false } = {}) {
+  function isContestManageActive(test) {
+    const status = contestStatusClient(test);
+    return status === 'ACTIVE' || status === 'UPCOMING';
+  }
+
+  function contestScheduleTimeInputs(t, { inline = false } = {}) {
+    const id = esc(t.id);
+    const hasStoredTimes = String(t?.contestStartTime || '').trim() !== '';
+    const startVal = hasStoredTimes ? contestTimesClient(t).start : DEFAULT_CONTEST_START_TIME;
+    const inputStyle = 'width:auto;min-width:6.5rem';
+    return `<div class="d-flex flex-wrap align-items-center gap-2">
+      <label class="small text-muted-2 mb-0" for="contest-start-${id}">Start</label>
+      <input type="time" class="form-control form-control-sm" id="contest-start-${id}" style="${inputStyle}" value="${esc(startVal)}" data-contest-schedule="${id}" data-schedule-field="contestStartTime"/>
+    </div>`;
+  }
+
+  function contestScheduleControls(t, { inline = false } = {}) {
+    const type = String(t?.contestType || 'none');
+    const id = esc(t.id);
+    const wrapCls = inline ? 'd-flex flex-wrap align-items-center gap-2' : 'd-flex flex-wrap align-items-center gap-2 mt-2';
+    const timeInputs = contestScheduleTimeInputs(t, { inline });
+    if (type === 'weekly') {
+      const current = Number(t.contestWeekday) || 1;
+      const opts = CONTEST_WEEKDAYS.map((d) =>
+        `<option value="${d.value}" ${d.value === current ? 'selected' : ''}>${esc(d.label)}</option>`
+      ).join('');
+      return `<div class="${wrapCls}">
+        <label class="small text-muted-2 mb-0" for="contest-day-${id}">Runs every</label>
+        <select class="form-select form-select-sm" id="contest-day-${id}" style="width:auto;min-width:9rem" data-contest-schedule="${id}" data-schedule-field="contestWeekday">${opts}</select>
+        ${timeInputs}
+      </div>`;
+    }
+    if (type === 'monthly') {
+      const current = Number(t.contestMonthDay) || 1;
+      const opts = Array.from({ length: 28 }, (_, i) => {
+        const day = i + 1;
+        return `<option value="${day}" ${day === current ? 'selected' : ''}>${day}</option>`;
+      }).join('');
+      return `<div class="${wrapCls}">
+        <label class="small text-muted-2 mb-0" for="contest-day-${id}">Day of month</label>
+        <select class="form-select form-select-sm" id="contest-day-${id}" style="width:auto;min-width:6rem" data-contest-schedule="${id}" data-schedule-field="contestMonthDay">${opts}</select>
+        ${timeInputs}
+      </div>`;
+    }
+    return '';
+  }
+
+  function companyTestBadgeHtml(t) {
+    if (!isCompanyTest(t)) return '';
+    const name = esc(t.companyName || 'Company');
+    return `<span class="badge text-bg-light border mt-1">Company · ${name}</span>`;
+  }
+
+  function renderManageContestRow(t) {
+    const published = (t.status || 'unpublished') === 'published';
+    const publishLabel = published ? 'Published' : 'Unpublished';
+    const publishCls = published ? 'success' : 'warning';
+    const life = contestStatusClient(t);
+    const lifeCls = life === 'ACTIVE' ? 'success' : (life === 'COMPLETED' ? 'warning' : 'muted');
+    const lifeLabel = life === 'ACTIVE' ? 'Active' : (life === 'COMPLETED' ? 'Completed' : 'Upcoming');
+    const type = String(t.contestType || 'none');
+    const typeLabel = type === 'monthly' ? 'Monthly contest' : 'Weekly contest';
+    return `<tr>
+      <td class="fw-semibold">${esc(t.title)}</td>
+      <td class="small text-muted-2">${testMetaLine(t)}</td>
+      <td>
+        <div class="d-flex flex-wrap gap-1">
+          <span class="badge-soft ${publishCls}">${esc(publishLabel)}</span>
+          <span class="badge-soft info">${esc(typeLabel)}</span>
+          <span class="badge-soft ${lifeCls}">${esc(lifeLabel)}</span>
+        </div>
+      </td>
+      <td>${contestScheduleControls(t, { inline: true })}</td>
+      <td class="text-nowrap">
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  function renderManageContestActiveTable(contests, emptyMsg) {
+    if (!contests.length) return `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+    return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
+      <th>Title</th><th>Details</th><th>Status</th><th>Schedule</th><th>Actions</th>
+    </tr></thead><tbody>${contests.map((t) => renderManageContestRow(t)).join('')}</tbody></table></div>`;
+  }
+
+  function renderManageContestSections(contestType, listRoot) {
+    const all = tests.filter((t) => String(t.contestType) === contestType);
+    const active = all.filter((t) => isContestManageActive(t));
+    const label = contestType === 'monthly' ? 'monthly' : 'weekly';
+    if (!listRoot) return;
+    listRoot.innerHTML = renderManageContestActiveTable(active, `No active ${label} contests.`);
+    bindManageListActions(listRoot);
+  }
+
+  async function saveContestSchedule(id, field, value) {
+    const scheduleFields = ['contestWeekday', 'contestMonthDay', 'contestStartTime'];
+    if (!id || !scheduleFields.includes(field)) return;
+    const test = tests.find((t) => String(t.id) === String(id));
+    if (!test) {
+      toastMsg('Contest not found.', 'error');
+      return;
+    }
+    const patch = { [field]: value };
+    if (field === 'contestWeekday' || field === 'contestMonthDay') {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return;
+      patch[field] = n;
+    } else {
+      patch[field] = normalizeContestTimeClient(value, DEFAULT_CONTEST_START_TIME);
+    }
+    try {
+      await CodingService.saveTest({ ...test, ...patch, items: test.items || [] });
+      toastMsg('Contest schedule updated.', 'success');
+      await loadManaged();
+      renderManage();
+    } catch (err) {
+      toastMsg(err?.message || 'Could not update contest schedule.', 'error');
+    }
+  }
+
+  function renderManageRow(t, { showContestBadge = false, showCompanyBadge = false } = {}) {
+    const published = (t.status || 'unpublished') === 'published';
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div>
           <strong>${esc(t.title)}</strong>
-          <div class="small text-muted-2">${esc(t.status || 'unpublished')} · ${testMetaLine(t)}</div>
+          <div class="small text-muted-2">${published ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
+          ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
           ${showContestBadge ? contestBadgeHtml(t) : ''}
+          ${showContestBadge ? contestScheduleControls(t) : ''}
         </div>
         <div class="d-flex flex-wrap gap-2">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk="${esc(t.id)}">Bulk problems</button>
@@ -692,28 +1253,34 @@
     root.querySelectorAll('[data-bulk]').forEach((btn) => {
       btn.addEventListener('click', () => openBulkProblems(btn.getAttribute('data-bulk')));
     });
+    root.querySelectorAll('[data-contest-schedule]').forEach((el) => {
+      el.addEventListener('change', () => {
+        saveContestSchedule(
+          el.getAttribute('data-contest-schedule'),
+          el.getAttribute('data-schedule-field'),
+          el.value
+        );
+      });
+    });
   }
 
   function renderManage() {
     if (!access.canManage) return;
     syncManageContestActions();
     applyManagePanel(managePanel);
-    const regular = tests.filter((t) => !isContestTest(t));
-    const contests = tests.filter((t) => isContestTest(t));
+    const regular = tests.filter((t) => isRegularTest(t));
     const testsRoot = document.getElementById('manageTestsList');
-    const contestsRoot = document.getElementById('manageContestsList');
     if (testsRoot) {
       testsRoot.innerHTML = regular.length
         ? regular.map((t) => renderManageRow(t)).join('')
-        : '<p class="text-muted-2 mb-0">No regular tests yet. Click <strong>New test</strong> to create one for your department.</p>';
+        : '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
       bindManageListActions(testsRoot);
     }
-    if (contestsRoot) {
-      contestsRoot.innerHTML = contests.length
-        ? contests.map((t) => renderManageRow(t, { showContestBadge: true })).join('')
-        : '<p class="text-muted-2 mb-0">No weekly or monthly contests yet. Create a contest, publish it, then track results on Progress.</p>';
-      bindManageListActions(contestsRoot);
+    if (managePanel === 'jd' && jdSelectedCompanyId) {
+      showJdCompanyDetail(jdSelectedCompanyId);
     }
+    renderManageContestSections('weekly', document.getElementById('manageWeeklyContestsList'));
+    renderManageContestSections('monthly', document.getElementById('manageMonthlyContestsList'));
   }
 
   function problemEditorHtml(q) {
@@ -808,10 +1375,14 @@
     document.getElementById('tfContestMonthDayWrap')?.classList.toggle('d-none', type !== 'monthly');
   }
 
-  function openTestForm(test = null, preset = null) {
+  async function openTestForm(test = null, preset = null) {
+    const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
+    const isCompanyPreset = preset?.testKind === 'company' || isCompanyTest(test);
+    const isContest = isContestTest(test) || isContestPreset;
     document.getElementById('testFormTitle').textContent = test
-      ? (isContestTest(test) ? 'Edit contest' : 'Edit test')
-      : (preset?.contestType ? `New ${preset.contestType} contest` : 'Create test');
+      ? (isContest ? 'Edit contest' : (isCompanyPreset ? 'Edit company test' : 'Edit test'))
+      : (isContestPreset ? `New ${preset.contestType} contest` : (isCompanyPreset ? 'New company test' : 'Create test'));
+    document.getElementById('tfTestKind').value = isCompanyPreset ? 'company' : 'regular';
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
@@ -820,12 +1391,13 @@
     document.getElementById('tfDuration').value = test?.duration || test?.durationMinutes || 20;
     document.getElementById('tfStatus').value = test?.status === 'published' ? 'published' : 'unpublished';
     initContestMonthDaySelect();
-    const contestType = test?.contestType || preset?.contestType || 'none';
+    const contestType = isCompanyPreset ? 'none' : (test?.contestType || preset?.contestType || 'none');
     document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
-    document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || 1);
-    document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || 1);
-    document.getElementById('tfContestStartTime').value = test?.contestStartTime || '09:00';
-    syncContestFormFields();
+    document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
+    document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
+    document.getElementById('tfContestStartTime').value = test?.contestStartTime || preset?.contestStartTime || DEFAULT_CONTEST_START_TIME;
+    await fillTfCompanySelect(test?.companyId || preset?.companyId || '');
+    syncCompanyTestFormUi();
     const list = document.getElementById('problemList');
     list.innerHTML = '';
     const items = test?.items || [];
@@ -1528,9 +2100,50 @@
       e.preventDefault();
       applyMyResultsContestType(link.getAttribute('data-results-contest-type'));
     });
-    document.getElementById('btnNewTest')?.addEventListener('click', () => openTestForm());
-    document.getElementById('btnNewWeeklyContest')?.addEventListener('click', () => openTestForm(null, { contestType: 'weekly', title: 'Weekly coding contest' }));
-    document.getElementById('btnNewMonthlyContest')?.addEventListener('click', () => openTestForm(null, { contestType: 'monthly', title: 'Monthly coding contest' }));
+    document.getElementById('btnNewTest')?.addEventListener('click', () => {
+      applyManagePanel('tests');
+      openTestForm(null, { contestType: 'none' });
+    });
+    document.getElementById('btnNewCompanyTest')?.addEventListener('click', () => {
+      applyManagePanel('jd');
+      const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
+      openTestForm(null, { testKind: 'company', contestType: 'none', companyId });
+    });
+    document.getElementById('adminJdBlockViewNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-admin-jd-block-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyAdminJdBlockView(link.getAttribute('data-admin-jd-block-view'));
+    });
+    document.getElementById('btnJdBlockBack')?.addEventListener('click', () => showJdCompanyGrid());
+    document.getElementById('btnJdAiGenerate')?.addEventListener('click', () => {
+      toastMsg('JD question sets are shared with Aptitude. Opening Aptitude Company Block…', 'info');
+      window.open('mock-aptitude.html#manage', '_blank');
+    });
+    document.getElementById('btnNewWeeklyContest')?.addEventListener('click', () => {
+      openManageContests('weekly');
+      openTestForm(null, {
+        contestType: 'weekly',
+        contestWeekday: new Date().getDay() === 0 ? 7 : new Date().getDay(),
+        contestStartTime: DEFAULT_CONTEST_START_TIME,
+        title: 'Weekly coding contest',
+      });
+    });
+    document.getElementById('btnNewMonthlyContest')?.addEventListener('click', () => {
+      openManageContests('monthly');
+      openTestForm(null, {
+        contestType: 'monthly',
+        contestMonthDay: Math.min(28, new Date().getDate()),
+        contestStartTime: DEFAULT_CONTEST_START_TIME,
+        title: 'Monthly coding contest',
+      });
+    });
+    document.getElementById('manageContestTypeNav')?.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-contest-type]');
+      if (!link) return;
+      e.preventDefault();
+      applyManageContestType(link.getAttribute('data-contest-type'));
+    });
     document.getElementById('tfContestType')?.addEventListener('change', syncContestFormFields);
     document.getElementById('btnAddProblem')?.addEventListener('click', () => addProblemToForm(emptyProblem()));
     document.getElementById('btnPickBankProblems')?.addEventListener('click', () => showBankPicker());
@@ -1549,6 +2162,12 @@
         toastMsg('Add at least one problem with a title.', 'error');
         return;
       }
+      const isCompany = formIsCompanyTest();
+      const company = selectedCompanyFromTestForm();
+      if (isCompany && !company.companyId) {
+        toastMsg('Select a company for this test.', 'error');
+        return;
+      }
       const payload = {
         id: document.getElementById('tfId').value.trim(),
         title: document.getElementById('tfTitle').value.trim(),
@@ -1557,10 +2176,13 @@
         difficulty: document.getElementById('tfDifficulty').value,
         duration: Number(document.getElementById('tfDuration').value || 20),
         status: document.getElementById('tfStatus').value,
-        contestType: canManageContests() ? (document.getElementById('tfContestType').value || 'none') : 'none',
+        testKind: isCompany ? 'company' : 'regular',
+        companyId: isCompany ? company.companyId : '',
+        companyName: isCompany ? company.companyName : '',
+        contestType: isCompany ? 'none' : (canManageContests() ? (document.getElementById('tfContestType').value || 'none') : 'none'),
         contestWeekday: Number(document.getElementById('tfContestWeekday').value || 1),
         contestMonthDay: Number(document.getElementById('tfContestMonthDay').value || 1),
-        contestStartTime: document.getElementById('tfContestStartTime').value || '09:00',
+        contestStartTime: document.getElementById('tfContestStartTime').value || DEFAULT_CONTEST_START_TIME,
         instructions: [
           'Read each problem carefully.',
           'Select the programming language before submitting.',
@@ -1571,10 +2193,11 @@
       };
       try {
         const saved = await CodingService.saveTest(payload);
-        toastMsg(isContestTest(payload) || isContestTest(saved) ? 'Contest saved.' : 'Test saved.', 'success');
+        toastMsg(isContestTest(payload) || isContestTest(saved) ? 'Contest saved.' : (isCompany ? 'Company test saved.' : 'Test saved.'), 'success');
         testFormModal.hide();
         await loadManaged();
-        if (canManageContests() && (isContestTest(payload) || isContestTest(saved))) {
+        if (isCompany) applyManagePanel('jd');
+        else if (canManageContests() && (isContestTest(payload) || isContestTest(saved))) {
           applyManagePanel('contests');
         }
         renderManage();

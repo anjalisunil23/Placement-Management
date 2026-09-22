@@ -229,39 +229,47 @@
 
   <div id="codManage" class="d-none mt-3">
     <div class="card-surface p-3 p-md-4 mb-3">
-      <div class="mb-3">
-        <h6 class="fw-bold mb-0">Manage tests</h6>
-      </div>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Problem bank</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">Company Block</a></li>
       </ul>
 
       <div id="manageTestsPanel">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Regular coding mocks — always available when published.</p>
+        <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
           <button type="button" class="btn btn-sm btn-primary" id="btnNewTest"><i class="bi bi-plus-lg me-1"></i>New test</button>
         </div>
         <div id="manageTestsList" class="d-flex flex-column gap-2"></div>
       </div>
 
       <div id="manageContestsPanel" class="d-none">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <p class="small text-muted-2 mb-0">Weekly and monthly contests — visible to students only on the scheduled day.</p>
-          <div class="d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewWeeklyContest"><i class="bi bi-calendar-week me-1"></i>Weekly contest</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewMonthlyContest"><i class="bi bi-calendar-month me-1"></i>Monthly contest</button>
+        <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageContestTypeNav">
+          <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-contest-type="weekly">Weekly</a></li>
+          <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-contest-type="monthly">Monthly</a></li>
+        </ul>
+        <div id="manageWeeklyContestsSection">
+          <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
+            <button type="button" class="btn btn-sm btn-primary" id="btnNewWeeklyContest"><i class="bi bi-plus-lg me-1"></i>Create weekly contest</button>
           </div>
+          <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Active &amp; upcoming</h6>
+          <div id="manageWeeklyContestsList"></div>
         </div>
-        <div id="manageContestsList" class="d-flex flex-column gap-2"></div>
+        <div id="manageMonthlyContestsSection" class="d-none">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <p class="small text-muted-2 mb-0">Monthly contests — students get one attempt on the scheduled day of the month.</p>
+            <button type="button" class="btn btn-sm btn-primary" id="btnNewMonthlyContest"><i class="bi bi-plus-lg me-1"></i>Create monthly contest</button>
+          </div>
+          <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Active &amp; upcoming</h6>
+          <div id="manageMonthlyContestsList"></div>
+        </div>
       </div>
 
       <div id="manageBankPanel" class="d-none">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
           <div>
-            <h6 class="fw-bold mb-1">Add problems</h6>
-            <p class="small text-muted-2 mb-0">Reusable problem bucket — store Easy, Medium, and Hard coding problems for tests and contests.</p>
+            <h6 class="fw-bold mb-1">Question bank</h6>
+            <p class="small text-muted-2 mb-0">Reusable coding problems for tests and contests.</p>
           </div>
           <div class="d-flex flex-wrap gap-2">
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnNewBankProblem"><i class="bi bi-plus-lg me-1"></i>Add</button>
@@ -282,6 +290,29 @@
           <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Hard">Hard</a></li>
         </ul>
         <div id="bankQuestionsList" class="d-flex flex-column gap-2"></div>
+      </div>
+
+      <div id="manageJdPanel" class="d-none">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <ul class="nav nav-pills gap-1 flex-wrap mb-0 d-none" id="adminJdBlockViewNav">
+            <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-admin-jd-block-view="tests">Tests</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-admin-jd-block-view="bank">Question bank</a></li>
+          </ul>
+          <div class="d-flex flex-wrap align-items-center gap-2 ms-auto">
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
+            <button type="button" class="btn btn-sm btn-primary d-none" id="btnNewCompanyTest"><i class="bi bi-plus-lg me-1"></i>New company test</button>
+            <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" id="btnJdAiGenerate"><i class="bi bi-stars me-1"></i>AI Generate</button>
+          </div>
+        </div>
+        <div id="jdBlockCompanyView">
+          <div id="jdBlockCompanyGrid" class="row g-3"></div>
+        </div>
+        <div id="jdBlockCompanyDetail" class="d-none">
+          <div id="jdBlockCompanyTests" class="d-flex flex-column gap-2"></div>
+          <div id="jdBlockBankSection" class="d-none">
+            <div id="jdBlockSetsList" class="d-flex flex-column gap-3"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -444,8 +475,15 @@
   <form id="testForm">
     <div class="modal-body">
       <input type="hidden" id="tfId" value=""/>
+      <input type="hidden" id="tfTestKind" value="regular"/>
       <div class="row g-3">
         <div class="col-12"><label class="form-label small fw-semibold" for="tfTitle">Test title</label><input class="form-control" id="tfTitle" required maxlength="160"/></div>
+        <div class="col-12 d-none" id="tfCompanyPanel">
+          <label class="form-label small fw-semibold" for="tfCompanyId">Company</label>
+          <select class="form-select" id="tfCompanyId" aria-label="Company">
+            <option value="">Select company…</option>
+          </select>
+        </div>
         <div class="col-12"><label class="form-label small fw-semibold" for="tfDescription">Description</label><textarea class="form-control" id="tfDescription" rows="2"></textarea></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfCategory">Category</label><select class="form-select" id="tfCategory"></select></div>
         <div class="col-md-6"><label class="form-label small fw-semibold" for="tfDifficulty">Difficulty</label><select class="form-select" id="tfDifficulty"></select></div>
@@ -566,5 +604,5 @@
 <script src="js/coding-execution.js?v=20260915back"></script>
 <script src="js/coding-service.js?v=20260922split"></script>
 <script src="js/coding-exam.js?v=20260922autosubmit"></script>
-<script src="js/coding-page.js?v=20260922split"></script>
+<script src="js/coding-page.js?v=20260922manage"></script>
 </body></html>
