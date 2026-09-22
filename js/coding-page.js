@@ -2024,24 +2024,6 @@
     practiceProblems = await CodingService.listPracticeProblems();
   }
 
-  async function renderPracticeSubmissions() {
-    const root = document.getElementById('practiceSubmissionsList');
-    if (!root) return;
-    try {
-      const rows = await CodingService.listPracticeSubmissions();
-      root.innerHTML = rows.length
-        ? `<div class="apt-prob-list">${rows.map((r) => `<div class="apt-prob-row">
-            <span class="apt-prob-check">${r.accepted ? '<i class="bi bi-check-lg"></i>' : ''}</span>
-            <span class="apt-prob-title">${esc(r.problemTitle || 'Problem')}</span>
-            <span class="apt-prob-pct">${esc(r.dateLabel || '')}</span>
-            <span class="apt-prob-diff ${r.accepted ? 'is-easy' : 'is-hard'}">${esc(r.status || '')}</span>
-          </div>`).join('')}</div>`
-        : '<p class="text-muted-2 mb-0">No practice submissions yet. Open a test topic and solve a problem.</p>';
-    } catch (err) {
-      root.innerHTML = `<p class="text-muted-2 mb-0">${esc(err?.message || 'Could not load submissions.')}</p>`;
-    }
-  }
-
   async function openPracticeProblem(id) {
     if (!id || !exam) return;
     try {
@@ -2054,21 +2036,18 @@
   }
 
   function applyTakeListPanel(panel) {
-    const allowed = ['tests', 'contests', 'submissions', 'jdblock'];
+    const allowed = ['tests', 'contests', 'jdblock'];
     if (panel !== 'tests') selectedTestCategory = null;
     takeListPanel = allowed.includes(panel) ? panel : 'tests';
     document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
     });
     document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
-    document.getElementById('practiceSubmissionsPanel')?.classList.toggle('d-none', takeListPanel !== 'submissions');
     document.getElementById('testList')?.classList.toggle('d-none', takeListPanel !== 'tests' && takeListPanel !== 'contests');
     document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', takeListPanel !== 'jdblock');
     syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
     if (takeListPanel === 'jdblock') {
       loadStudentJdBlock().catch(() => {});
-    } else if (takeListPanel === 'submissions') {
-      renderPracticeSubmissions().catch(() => {});
     } else if (takeListPanel === 'tests') {
       loadPracticeProblems().then(() => renderTestList()).catch(() => renderTestList());
     } else {
@@ -2511,7 +2490,7 @@
 
   function renderTestList(list) {
     const root = document.getElementById('testList');
-    if (!root || takeListPanel === 'jdblock' || takeListPanel === 'submissions') return;
+    if (!root || takeListPanel === 'jdblock') return;
 
     if (takeListPanel === 'tests') {
       renderCategoryTestsView();
@@ -2556,7 +2535,6 @@
       renderStats(progress);
       renderHistory(progress);
       if (takeListPanel === 'jdblock') await loadStudentJdBlock();
-      else if (takeListPanel === 'submissions') await renderPracticeSubmissions();
       else {
         if (takeListPanel === 'tests') await loadPracticeProblems();
         renderTestList();
