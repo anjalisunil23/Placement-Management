@@ -1506,13 +1506,8 @@ final class OfficerController
     public function publishVolunteerOfferLetter(string $id): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
-        $service = new PcaOfferLetterService();
-        if ($input !== []) {
-            $service->saveDraft($scope['ctx'], $id, $input, (string) ($scope['user']['_id'] ?? ''));
-        }
         Response::success(
-            $service->publish($scope['ctx'], $id, (string) ($scope['user']['_id'] ?? '')),
+            (new PcaOfferLetterService())->publish($scope['ctx'], $id, (string) ($scope['user']['_id'] ?? '')),
             'Offer letter published. The student can now view and download it.'
         );
     }

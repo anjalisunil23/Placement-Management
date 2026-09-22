@@ -229,65 +229,66 @@
       border-radius: 8px;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 13px;
+    }
+
+    .toolbar-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      align-items: flex-end;
-    }
-
-    .toolbar label {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      font-weight: 600;
-      color: #444;
-    }
-
-    .toolbar input {
-      font-weight: 400;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      min-width: 180px;
-      font-size: 13px;
+      justify-content: flex-end;
     }
 
     .toolbar .hint {
-      flex: 1 1 100%;
       font-size: 12px;
       color: #666;
       font-weight: 400;
-      margin: 0;
+      margin: 8px 0 0;
     }
 
     .toolbar button {
       padding: 8px 14px;
       border: none;
       border-radius: 4px;
-      background: #1e4fa3;
-      color: #fff;
       font-weight: 600;
       cursor: pointer;
-      margin-left: auto;
     }
 
-    .toolbar button:hover { background: #163d7f; }
+    .toolbar .btn-outline {
+      background: #fff;
+      color: #1e4fa3;
+      border: 1px solid #1e4fa3;
+    }
+
+    .toolbar .btn-outline:hover { background: #eef4ff; }
+
+    .toolbar .btn-primary {
+      background: #1e4fa3;
+      color: #fff;
+    }
+
+    .toolbar .btn-primary:hover { background: #163d7f; }
+
+    .toolbar .btn-outline.is-hidden,
+    .toolbar .btn-primary.is-hidden {
+      display: none;
+    }
+
+    body.framed .toolbar {
+      margin-top: 0;
+      border-radius: 0;
+      border-left: 0;
+      border-right: 0;
+    }
   </style>
 </head>
 <body>
 
 <div class="toolbar no-print">
-  <label>Letter date
-    <input type="date" id="inpDate" aria-label="Letter date"/>
-  </label>
-  <label>Student name
-    <input type="text" id="inpName" value="" placeholder="Student full name" aria-label="Student name"/>
-  </label>
-  <label>Class / Department
-    <input type="text" id="inpClass" value="" placeholder="e.g. S8 CSE / Computer Science" aria-label="Class or department"/>
-  </label>
-  <button type="button" id="btnPrint">Print / Save as PDF</button>
-  <p class="hint">Academic year is calculated automatically (July–June). Adjust the letter date if needed before printing.</p>
+  <div class="toolbar-actions">
+    <button type="button" class="btn-outline" id="btnPreview">Preview</button>
+    <button type="button" class="btn-primary" id="btnPrint">Download as PDF</button>
+  </div>
+  <p class="hint" id="toolbarHint"></p>
 </div>
 
 <div class="sheet-viewport" id="sheetViewport">
@@ -423,50 +424,73 @@
     return new URLSearchParams(window.location.search).get(name) || '';
   }
 
-  const inpDate = document.getElementById('inpDate');
-  const inpName = document.getElementById('inpName');
-  const inpClass = document.getElementById('inpClass');
   const outDate = document.getElementById('outDate');
   const outName = document.getElementById('outName');
   const outClass = document.getElementById('outClass');
   const outAcademicYear = document.getElementById('outAcademicYear');
   const ayInline = document.querySelectorAll('.ay-inline');
+  const btnPreview = document.getElementById('btnPreview');
+  const btnPrint = document.getElementById('btnPrint');
+  const toolbarHint = document.getElementById('toolbarHint');
 
   const mode = qp('mode');
   const embed = qp('embed') === '1';
   const assignmentId = qp('assignment');
-  const readOnly = mode === 'student';
+  const isStudent = mode === 'student';
+  const isOfficer = mode === 'officer' || (!isStudent && !!assignmentId);
+
+  let letterData = {
+    letterDate: '',
+    studentName: '',
+    classLabel: '',
+    academicYear: '',
+    status: 'draft',
+  };
 
   if (embed) {
     document.documentElement.classList.add('embed');
     document.body.classList.add('embed');
+  } else if (window.self !== window.top) {
+    document.body.classList.add('framed');
   }
 
   function applyPayload(data) {
     if (!data) return;
-    if (data.letterDate) inpDate.value = data.letterDate;
-    if (data.studentName) inpName.value = data.studentName;
-    if (data.classLabel) inpClass.value = data.classLabel;
+    letterData = {
+      letterDate: data.letterDate || '',
+      studentName: data.studentName || '',
+      classLabel: data.classLabel || '',
+      academicYear: data.academicYear || '',
+      status: data.status || 'draft',
+    };
     sync();
   }
 
-  function setReadOnly(locked) {
-    [inpDate, inpName, inpClass].forEach((el) => { el.readOnly = locked; el.disabled = locked; });
+  function setupToolbar() {
     const toolbar = document.querySelector('.toolbar');
     if (!toolbar) return;
-    if (locked) {
-      toolbar.querySelectorAll('label').forEach((lbl, i) => {
-        if (i < 3) lbl.classList.add('d-none');
-      });
-      document.getElementById('btnPrint').textContent = 'Download / Print PDF';
+    if (embed) {
+      toolbar.style.display = 'none';
+      return;
     }
-    if (embed) toolbar.classList.add('d-none');
+    if (isStudent) {
+      btnPreview?.classList.add('is-hidden');
+      btnPrint.textContent = 'Download as PDF';
+      toolbarHint.textContent = 'View your PCA offer letter below and download it as a PDF.';
+      return;
+    }
+    if (isOfficer) {
+      btnPreview?.classList.remove('is-hidden');
+      btnPrint.textContent = 'Download as PDF';
+      toolbarHint.textContent = letterData.status === 'published'
+        ? 'Student details and letter date are fixed. Download a PDF copy below.'
+        : 'Student details are filled automatically. The letter date is set when you publish.';
+    }
   }
 
   async function loadLetterData() {
     try {
-      if (mode === 'student') {
-        setReadOnly(true);
+      if (isStudent) {
         const res = await fetch(API_BASE + '/student/pca-offer-letter', { credentials: 'include', cache: 'no-store' });
         const json = await res.json();
         if (!json?.success) {
@@ -474,6 +498,7 @@
           return;
         }
         applyPayload(json.data);
+        setupToolbar();
         return;
       }
       if (assignmentId) {
@@ -484,31 +509,27 @@
         const json = await res.json();
         if (json?.success) {
           applyPayload(json.data);
-          if (json.data?.status === 'published') setReadOnly(true);
+          setupToolbar();
           return;
         }
       }
     } catch { /* fall back to query params */ }
 
-    const urlName = qp('name') || qp('student');
-    const urlClass = qp('class') || qp('batch');
-    if (urlName) inpName.value = urlName;
-    if (urlClass) inpClass.value = urlClass;
-    const urlDate = qp('date');
-    inpDate.value = urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)
-      ? urlDate
-      : toInputDateValue(new Date());
+    letterData.studentName = qp('name') || qp('student') || '';
+    letterData.classLabel = qp('class') || qp('batch') || '';
+    letterData.letterDate = qp('date') && /^\d{4}-\d{2}-\d{2}$/.test(qp('date')) ? qp('date') : '';
+    letterData.academicYear = letterData.letterDate ? academicYearLabel(parseInputDate(letterData.letterDate)) : academicYearLabel(new Date());
     sync();
-    if (embed) document.querySelector('.toolbar')?.classList.add('d-none');
+    setupToolbar();
   }
 
   function sync() {
-    const letterDate = parseInputDate(inpDate.value);
-    const ay = academicYearLabel(letterDate);
-    const name = (inpName.value || '').trim() || '\u2014';
-    const cls = (inpClass.value || '').trim() || '\u2014';
+    const letterDate = letterData.letterDate ? parseInputDate(letterData.letterDate) : null;
+    const ay = letterData.academicYear || (letterDate ? academicYearLabel(letterDate) : academicYearLabel(new Date()));
+    const name = (letterData.studentName || '').trim() || '\u2014';
+    const cls = (letterData.classLabel || '').trim() || '\u2014';
 
-    outDate.textContent = formatLetterDate(letterDate);
+    outDate.textContent = letterDate ? formatLetterDate(letterDate) : '\u2014';
     outName.textContent = name;
     outClass.textContent = cls;
     outAcademicYear.textContent = ay;
@@ -548,8 +569,10 @@
     });
   }
 
-  [inpDate, inpName, inpClass].forEach(el => el.addEventListener('input', sync));
-  document.getElementById('btnPrint').addEventListener('click', () => window.print());
+  btnPreview?.addEventListener('click', () => {
+    document.getElementById('letterSheet')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  btnPrint.addEventListener('click', () => window.print());
 
   if (embed) {
     window.addEventListener('resize', scheduleEmbedFit);

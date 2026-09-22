@@ -21,30 +21,28 @@
     line-height:1.35;
   }
   .profile-email-value .profile-email-line + .profile-email-line{margin-top:.2rem}
-  #pcaOfferLetterModal .modal-body{overflow:hidden}
-  #pcaOfferLetterModal .pca-modal-preview-col{
+  #pcaOfferLetterModal .modal-dialog{
+    max-width:min(920px,96vw);
+  }
+  #pcaOfferLetterModal .modal-content{
+    min-height:min(92vh,980px);
     display:flex;
     flex-direction:column;
-    min-height:min(78vh,960px);
   }
-  .pca-a4-preview-wrap{
+  #pcaOfferLetterModal .modal-body{
     flex:1 1 auto;
-    min-height:480px;
-    height:min(72vh,880px);
-    width:100%;
-    margin:0 auto;
-    background:#fff;
-    border:1px solid #dee2e6;
-    border-radius:.375rem;
+    min-height:0;
+    padding:0;
     overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);
+    background:#e8e8e8;
   }
-  .pca-a4-preview-wrap iframe{
+  .pca-offer-letter-preview-frame{
     display:block;
     width:100%;
     height:100%;
+    min-height:min(82vh,900px);
     border:0;
-    overflow:hidden;
+    background:#e8e8e8;
   }
 </style>
 <script src="js/ph-role-guard.js?v=20260724boot"></script></head>
@@ -802,44 +800,25 @@
 </div>
 
 <div class="modal fade" id="pcaOfferLetterModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable modal-fullscreen-lg-down">
+  <div class="modal-dialog modal-dialog-centered modal-fullscreen-lg-down modal-xl">
     <div class="modal-content card-surface border-0">
-      <div class="modal-header border-0 pb-0">
-        <div>
+      <div class="modal-header border-0 pb-2 align-items-start">
+        <div class="me-auto pe-3">
           <h5 class="modal-title fw-bold mb-1">PCA offer letter — <span id="pcaModalStudentName">Student</span></h5>
-          <p class="small text-muted-2 mb-0">Edit, save, then publish so the student can view and download from their dashboard.</p>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body pt-3">
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-          <span class="badge-soft muted" id="pcaModalAcademicYear">Academic year</span>
-          <span class="badge-soft warning" id="pcaModalStatusBadge">Draft</span>
-        </div>
-        <div class="row g-3">
-          <div class="col-lg-4">
-            <label class="form-label small fw-semibold">Letter date</label>
-            <input type="date" class="form-control mb-2" id="pcaModalDate"/>
-            <label class="form-label small fw-semibold">Student name</label>
-            <input type="text" class="form-control mb-2" id="pcaModalName"/>
-            <label class="form-label small fw-semibold">Class / Department</label>
-            <input type="text" class="form-control mb-3" id="pcaModalClass"/>
-            <div class="d-flex flex-wrap gap-2">
-              <button type="button" class="btn btn-outline-primary btn-sm" id="pcaModalPreviewBtn"><i class="bi bi-eye me-1"></i>Preview</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="pcaModalSaveBtn"><i class="bi bi-save me-1"></i>Save</button>
-              <button type="button" class="btn btn-primary btn-sm" id="pcaModalPublishBtn"><i class="bi bi-send me-1"></i>Publish</button>
-            </div>
-            <p class="small text-muted-2 mt-3 mb-0" id="pcaModalHint">Representatives are cleared automatically when the academic year changes (July–June).</p>
-          </div>
-          <div class="col-lg-8 pca-modal-preview-col">
-            <div class="pca-a4-preview-wrap">
-              <iframe id="pcaLetterPreview" title="PCA offer letter preview" src="about:blank" scrolling="no"></iframe>
-            </div>
+          <p class="small text-muted-2 mb-2">Preview the letter below, then publish so the student can view and download it.</p>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="badge-soft muted" id="pcaModalAcademicYear">Academic year</span>
+            <span class="badge-soft warning" id="pcaModalStatusBadge">Draft</span>
           </div>
         </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0">
+          <a class="btn btn-outline-secondary btn-sm" id="pcaModalOpenTab" href="about:blank" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Open</a>
+          <button type="button" class="btn btn-primary btn-sm" id="pcaModalPublishBtn"><i class="bi bi-send me-1"></i>Publish</button>
+          <button type="button" class="btn-close ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
       </div>
-      <div class="modal-footer border-0 pt-0">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      <div class="modal-body">
+        <iframe id="pcaLetterPreview" class="pca-offer-letter-preview-frame" title="PCA offer letter preview" src="about:blank"></iframe>
       </div>
     </div>
   </div>
@@ -2207,22 +2186,11 @@ function formatVolunteerDate(raw) {
 
 let pcaModalAssignmentId = '';
 
-function pcaOfferLetterPreviewUrl(payload = {}) {
+function pcaOfferLetterPreviewUrl() {
   const params = new URLSearchParams();
-  params.set('embed', '1');
+  params.set('mode', 'officer');
   if (pcaModalAssignmentId) params.set('assignment', pcaModalAssignmentId);
-  if (payload.letterDate) params.set('date', payload.letterDate);
-  if (payload.studentName) params.set('name', payload.studentName);
-  if (payload.classLabel) params.set('class', payload.classLabel);
   return `pca-offer-letter.html?${params.toString()}`;
-}
-
-function pcaModalPayloadFromForm() {
-  return {
-    letterDate: document.getElementById('pcaModalDate')?.value || '',
-    studentName: document.getElementById('pcaModalName')?.value.trim() || '',
-    classLabel: document.getElementById('pcaModalClass')?.value.trim() || '',
-  };
 }
 
 function setPcaModalStatus(status) {
@@ -2231,43 +2199,25 @@ function setPcaModalStatus(status) {
   const published = status === 'published';
   badge.textContent = published ? 'Published' : 'Draft';
   badge.className = 'badge-soft ' + (published ? 'success' : 'warning');
-  const saveBtn = document.getElementById('pcaModalSaveBtn');
   const publishBtn = document.getElementById('pcaModalPublishBtn');
-  if (saveBtn) saveBtn.disabled = published;
   if (publishBtn) publishBtn.disabled = published;
 }
 
 function refreshPcaLetterPreview() {
   const iframe = document.getElementById('pcaLetterPreview');
+  const openTab = document.getElementById('pcaModalOpenTab');
+  const url = pcaOfferLetterPreviewUrl();
+  if (openTab) openTab.href = url;
   if (!iframe) return;
-  iframe.src = pcaOfferLetterPreviewUrl(pcaModalPayloadFromForm());
-}
-
-function bindPcaPreviewIframeFit() {
-  const iframe = document.getElementById('pcaLetterPreview');
-  const modal = document.getElementById('pcaOfferLetterModal');
-  if (!iframe || !modal || iframe.dataset.pcaFitBound === '1') return;
-  iframe.dataset.pcaFitBound = '1';
-  modal.addEventListener('shown.bs.modal', () => {
-    setTimeout(() => {
-      try { iframe.contentWindow?.dispatchEvent(new Event('resize')); } catch { /* same-origin only */ }
-    }, 100);
-  });
-  iframe.addEventListener('load', () => {
-    setTimeout(() => {
-      try { iframe.contentWindow?.dispatchEvent(new Event('resize')); } catch { /* same-origin only */ }
-    }, 100);
-  });
+  iframe.src = url;
 }
 
 async function openPcaOfferLetterModal(assignmentId, studentName = '') {
   if (!assignmentId || typeof OfficerApi === 'undefined') return;
   pcaModalAssignmentId = assignmentId;
   document.getElementById('pcaModalStudentName').textContent = studentName || 'Student';
-  document.getElementById('pcaModalDate').value = '';
-  document.getElementById('pcaModalName').value = '';
-  document.getElementById('pcaModalClass').value = '';
   setPcaModalStatus('draft');
+  refreshPcaLetterPreview();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('pcaOfferLetterModal')).show();
   const data = await OfficerApi.fetchVolunteerOfferLetter(assignmentId);
   if (!data) {
@@ -2275,48 +2225,28 @@ async function openPcaOfferLetterModal(assignmentId, studentName = '') {
     return;
   }
   document.getElementById('pcaModalStudentName').textContent = data.studentName || studentName || 'Student';
-  document.getElementById('pcaModalDate').value = data.letterDate || '';
-  document.getElementById('pcaModalName').value = data.studentName || '';
-  document.getElementById('pcaModalClass').value = data.classLabel || '';
   document.getElementById('pcaModalAcademicYear').textContent = 'Academic Year ' + (data.academicYear || '—');
   setPcaModalStatus(data.status || 'draft');
   refreshPcaLetterPreview();
 }
 
-async function savePcaOfferLetterDraft() {
-  if (!pcaModalAssignmentId) return;
-  const payload = pcaModalPayloadFromForm();
-  const res = await OfficerApi.saveVolunteerOfferLetter(pcaModalAssignmentId, payload);
-  if (!res?.success) {
-    toast(res?.message || 'Could not save offer letter.', 'error');
-    return;
-  }
-  toast('Offer letter saved.', 'success');
-  document.getElementById('pcaModalAcademicYear').textContent = 'Academic Year ' + (res.data?.academicYear || '—');
-  refreshPcaLetterPreview();
-}
-
 async function publishPcaOfferLetter() {
   if (!pcaModalAssignmentId) return;
-  const payload = pcaModalPayloadFromForm();
-  if (!payload.studentName) {
-    toast('Enter the student name before publishing.', 'warn');
-    return;
-  }
   const ok = await confirmAction({
     title: 'Publish PCA offer letter',
-    message: 'Publish this offer letter? The student will be notified and can view/download it from their dashboard.',
+    message: 'Publish this offer letter? The letter date will be set to today and the student will be notified to view and download it.',
     confirmText: 'Publish',
     variant: 'primary',
   });
   if (!ok) return;
-  const res = await OfficerApi.publishVolunteerOfferLetter(pcaModalAssignmentId, payload);
+  const res = await OfficerApi.publishVolunteerOfferLetter(pcaModalAssignmentId);
   if (!res?.success) {
     toast(res?.message || 'Could not publish offer letter.', 'error');
     return;
   }
   toast('Offer letter published.', 'success');
   setPcaModalStatus('published');
+  document.getElementById('pcaModalAcademicYear').textContent = 'Academic Year ' + (res.data?.academicYear || '—');
   volunteersLoaded = false;
   await loadVolunteers(true);
   refreshPcaLetterPreview();
@@ -3809,9 +3739,6 @@ onAppReady(async () => {
     if (!btn) return;
     removeVolunteerStudent(btn.getAttribute('data-volunteer-id')).catch(() => {});
   });
-  document.getElementById('pcaModalPreviewBtn')?.addEventListener('click', () => refreshPcaLetterPreview());
-  bindPcaPreviewIframeFit();
-  document.getElementById('pcaModalSaveBtn')?.addEventListener('click', () => savePcaOfferLetterDraft().catch(() => {}));
   document.getElementById('pcaModalPublishBtn')?.addEventListener('click', () => publishPcaOfferLetter().catch(() => {}));
   document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.assign-volunteer-btn');

@@ -102,8 +102,11 @@ final class PcaOfferLetterService
     public function publish(array $ctx, string $assignmentId, string $publishedByUserId): array
     {
         $row = $this->assertOfficerAccess($ctx, $assignmentId);
+        $row = $this->ensureLetterDefaults($row);
         $letter = is_array($row['offerLetter'] ?? null) ? $row['offerLetter'] : [];
-        $letter = $this->mergeLetterInput($row, $letter);
+        $now = new \DateTimeImmutable('now', new \DateTimeZone(self::TZ));
+        $letter['letterDate'] = $now->format('Y-m-d');
+        $letter['academicYear'] = self::academicYearFromDate($now);
         $letter['status'] = 'published';
         $letter['publishedAt'] = DocumentHelper::now();
         $letter['publishedBy'] = Security::toObjectId($publishedByUserId);
@@ -178,7 +181,7 @@ final class PcaOfferLetterService
 
         return [
             'status'      => 'draft',
-            'letterDate'  => $today->format('Y-m-d'),
+            'letterDate'  => '',
             'studentName' => $studentName,
             'classLabel'  => $classLabel,
             'academicYear'=> self::currentAcademicYear(),
@@ -201,12 +204,14 @@ final class PcaOfferLetterService
         }
 
         $letterDate = (string) ($letter['letterDate'] ?? '');
-        if ($letterDate === '') {
-            $assigned = $this->parseDate($row['assignedAt'] ?? null);
-            $letterDate = $assigned ? $assigned->format('Y-m-d') : (new \DateTimeImmutable('now', new \DateTimeZone(self::TZ)))->format('Y-m-d');
+        if ($status === 'published' && $letterDate === '') {
+            $published = $this->parseDate($letter['publishedAt'] ?? null);
+            $letterDate = $published ? $published->format('Y-m-d') : (new \DateTimeImmutable('now', new \DateTimeZone(self::TZ)))->format('Y-m-d');
         }
 
-        $parsedDate = $this->parseDate($letterDate . ' 12:00:00') ?? new \DateTimeImmutable('now', new \DateTimeZone(self::TZ));
+        $parsedDate = $letterDate !== ''
+            ? ($this->parseDate($letterDate . ' 12:00:00') ?? new \DateTimeImmutable('now', new \DateTimeZone(self::TZ)))
+            : new \DateTimeImmutable('now', new \DateTimeZone(self::TZ));
         $academicYear = (string) ($letter['academicYear'] ?? $row['academicYear'] ?? self::academicYearFromDate($parsedDate));
 
         return [
