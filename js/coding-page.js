@@ -598,18 +598,6 @@
     });
   }
 
-  function renderBankTopicNav() {
-    const nav = document.getElementById('bankTopicNav');
-    if (!nav) return;
-    nav.innerHTML = TOPIC_FILTERS.map((topic) => {
-      const active = bankCategoryFilter === topic.value;
-      return `<li><button type="button" class="cod-topic-pill cod-topic-${esc(topic.tone)}${active ? ' active' : ''}" data-bank-topic="${esc(topic.value)}" aria-pressed="${active ? 'true' : 'false'}">
-        <i class="bi ${esc(topic.icon)} cod-topic-icon" aria-hidden="true"></i>
-        <span>${esc(topic.label)}</span>
-      </button></li>`;
-    }).join('');
-  }
-
   function updateBankSelectionToolbar() {
     const count = selectedBankIds.size;
     document.getElementById('bankSelectedCount') && (document.getElementById('bankSelectedCount').textContent = `${count} selected`);
@@ -3210,7 +3198,6 @@
   }
 
   function renderBank() {
-    renderBankTopicNav();
     document.querySelectorAll('#bankDifficultyNav .nav-link').forEach((link) => {
       link.classList.toggle('active', (link.getAttribute('data-bank-difficulty') || '') === bankDifficultyFilter);
     });
@@ -4685,6 +4672,7 @@
       const link = e.target.closest('[data-manage-view]');
       if (!link) return;
       e.preventDefault();
+      if (link.getAttribute('data-manage-view') === 'bank') bankCategoryFilter = '';
       applyManagePanel(link.getAttribute('data-manage-view'));
     });
     contestResultsModal = document.getElementById('contestResultsModal')
@@ -5005,13 +4993,6 @@
       if (jdSelectedCompanyId) showJdCompanyDetail(jdSelectedCompanyId);
     });
     document.getElementById('btnJdDeleteSelected')?.addEventListener('click', () => deleteSelectedJdSets());
-    document.getElementById('bankTopicNav')?.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-bank-topic]');
-      if (!btn) return;
-      e.preventDefault();
-      bankCategoryFilter = btn.getAttribute('data-bank-topic') || '';
-      renderBank();
-    });
     document.getElementById('bankDifficultyNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-bank-difficulty]');
       if (!link) return;
