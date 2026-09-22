@@ -2297,73 +2297,98 @@
 
   function initContestMonthDaySelect() {
     const el = document.getElementById('tfContestMonthDay');
-    if (!el || el.options.length > 0) return;
+    if (!el || String(el.tagName || '').toUpperCase() !== 'SELECT') return;
+    if (el.options.length > 0) return;
     el.innerHTML = Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   }
 
+  function ensureTestFormModal() {
+    const el = document.getElementById('testFormModal');
+    if (!el) return null;
+    if (!testFormModal) testFormModal = new bootstrap.Modal(el);
+    return testFormModal;
+  }
+
   async function openTestForm(test = null, preset = null) {
-    const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
-    const isCompanyPreset = preset?.testKind === 'company' || isCompanyTest(test);
-    const isContest = isContestTest(test) || isContestPreset;
-    document.getElementById('testFormTitle').textContent = test
-      ? (isContest ? 'Edit contest' : (isCompanyPreset ? 'Edit company test' : 'Edit coding test'))
-      : (isContestPreset ? `New ${preset.contestType} contest` : (isCompanyPreset ? 'New company test' : 'New coding test'));
-    document.getElementById('tfTestKind').value = isCompanyPreset ? 'company' : 'regular';
-    document.getElementById('tfId').value = test?.id || '';
-    document.getElementById('tfTitle').value = test?.title || preset?.title || '';
-    document.getElementById('tfDescription').value = test?.description || '';
-    document.getElementById('tfQuestionCount').value = test
-      ? String(test?.questionCount || (test?.items || []).length || '')
-      : '';
-    document.getElementById('tfDuration').value = test?.duration || test?.durationMinutes || 20;
-    document.getElementById('tfStatus').value = test
-      ? (test.status === 'unpublished' ? 'unpublished' : 'published')
-      : 'published';
+    try {
+      const modal = ensureTestFormModal();
+      if (!modal) {
+        toastMsg('Test form is not available on this page.', 'error');
+        return;
+      }
 
-    let source = test?.questionSource === 'random' ? 'random' : 'manual';
-    if (isContest) source = 'random';
-    else if (isCompanyPreset) source = 'manual';
-    document.getElementById('tfSourceManual').checked = source === 'manual';
-    document.getElementById('tfSourceRandom').checked = source === 'random';
+      const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
+      const isCompanyPreset = preset?.testKind === 'company' || isCompanyTest(test);
+      const isContest = isContestTest(test) || isContestPreset;
+      document.getElementById('testFormTitle').textContent = test
+        ? (isContest ? 'Edit contest' : (isCompanyPreset ? 'Edit company test' : 'Edit coding test'))
+        : (isContestPreset ? `New ${preset.contestType} contest` : (isCompanyPreset ? 'New company test' : 'New coding test'));
+      document.getElementById('tfTestKind').value = isCompanyPreset ? 'company' : 'regular';
+      document.getElementById('tfId').value = test?.id || '';
+      document.getElementById('tfTitle').value = test?.title || preset?.title || '';
+      document.getElementById('tfDescription').value = test?.description || '';
+      document.getElementById('tfQuestionCount').value = test
+        ? String(test?.questionCount || (test?.items || []).length || '')
+        : '';
+      document.getElementById('tfDuration').value = test?.duration || test?.durationMinutes || 20;
+      document.getElementById('tfStatus').value = test
+        ? (test.status === 'unpublished' ? 'unpublished' : 'published')
+        : 'published';
 
-    document.getElementById('tfRandomRules').innerHTML = '';
-    const rules = test?.randomRules?.length ? test.randomRules : [];
-    if (source === 'random' && rules.length) rules.forEach((r) => addRandomRuleRow(r, { loading: true }));
+      let source = test?.questionSource === 'random' ? 'random' : 'manual';
+      if (isContest) source = 'random';
+      else if (isCompanyPreset) source = 'manual';
+      document.getElementById('tfSourceManual').checked = source === 'manual';
+      document.getElementById('tfSourceRandom').checked = source === 'random';
 
-    document.getElementById('tfManualBankRules').innerHTML = '';
-    manualBankRuleCounter = 0;
-    let bankRules = test?.bankFilterRules?.length ? test.bankFilterRules : [];
-    if (!bankRules.length && source === 'manual' && (test?.items || []).some((q) => q.bankId)) {
-      bankRules = inferBankRulesFromItems(test?.items || []);
+      document.getElementById('tfRandomRules').innerHTML = '';
+      const rules = test?.randomRules?.length ? test.randomRules : [];
+      if (source === 'random' && rules.length) rules.forEach((r) => addRandomRuleRow(r, { loading: true }));
+
+      document.getElementById('tfManualBankRules').innerHTML = '';
+      manualBankRuleCounter = 0;
+      manualBankAllProblems = [];
+      let bankRules = test?.bankFilterRules?.length ? test.bankFilterRules : [];
+      if (!bankRules.length && source === 'manual' && (test?.items || []).some((q) => q.bankId)) {
+        bankRules = inferBankRulesFromItems(test?.items || []);
+      }
+      const useBank = bankRules.length > 0;
+      const useBankEl = document.getElementById('tfUseBankManual');
+      if (useBankEl) useBankEl.checked = useBank;
+      document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
+      if (useBank) {
+        ensureManualBankProblemsLoaded().then(() => {
+          bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true }));
+          updateManualBankSummary();
+        }).catch(() => bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true })));
+      }
+
+      initContestMonthDaySelect();
+      const contestType = isCompanyPreset ? 'none' : (test?.contestType || preset?.contestType || 'none');
+      document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
+      document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
+      document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
+      document.getElementById('tfContestStartTime').value = test?.contestStartTime || preset?.contestStartTime || DEFAULT_CONTEST_START_TIME;
+      document.getElementById('tfContestEndTime').value = test?.contestEndTime || preset?.contestEndTime || '18:00';
+
+      const list = document.getElementById('problemList');
+      if (list) list.innerHTML = '';
+      const inlineItems = source === 'manual'
+        ? (test?.items || []).filter((q) => !q.bankId)
+        : [];
+      if (inlineItems.length) inlineItems.forEach((q) => addProblemToForm(q));
+
+      syncQuestionSourcePanels();
+      updateTestFormQuestionCount();
+      modal.show();
+
+      if (isCompanyPreset || isCompanyTest(test)) {
+        fillTfCompanySelect(test?.companyId || preset?.companyId || '').catch(() => {});
+      }
+    } catch (err) {
+      console.error('openTestForm failed', err);
+      toastMsg(err?.message || 'Could not open test form.', 'error');
     }
-    const useBank = bankRules.length > 0;
-    document.getElementById('tfUseBankManual').checked = useBank;
-    document.getElementById('tfBankPicker')?.classList.toggle('d-none', !useBank);
-    if (useBank) {
-      ensureManualBankProblemsLoaded().then(() => {
-        bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true }));
-        updateManualBankSummary();
-      }).catch(() => bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true })));
-    }
-
-    initContestMonthDaySelect();
-    const contestType = isCompanyPreset ? 'none' : (test?.contestType || preset?.contestType || 'none');
-    document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
-    document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
-    document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
-    document.getElementById('tfContestStartTime').value = test?.contestStartTime || preset?.contestStartTime || DEFAULT_CONTEST_START_TIME;
-    document.getElementById('tfContestEndTime').value = test?.contestEndTime || preset?.contestEndTime || '18:00';
-    await fillTfCompanySelect(test?.companyId || preset?.companyId || '');
-
-    const list = document.getElementById('problemList');
-    list.innerHTML = '';
-    const inlineItems = source === 'manual'
-      ? (test?.items || []).filter((q) => !q.bankId)
-      : [];
-    if (inlineItems.length) inlineItems.forEach((q) => addProblemToForm(q));
-
-    syncQuestionSourcePanels();
-    testFormModal.show();
   }
 
   async function showBankPicker() {
@@ -3648,12 +3673,12 @@
     });
     document.getElementById('btnNewTest')?.addEventListener('click', () => {
       applyManagePanel('tests');
-      openTestForm(null, { contestType: 'none' });
+      openTestForm(null, { contestType: 'none' }).catch(() => {});
     });
     document.getElementById('btnNewCompanyTest')?.addEventListener('click', () => {
       applyManagePanel('jd');
       const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
-      openTestForm(null, { testKind: 'company', contestType: 'none', companyId });
+      openTestForm(null, { testKind: 'company', contestType: 'none', companyId }).catch(() => {});
     });
     document.getElementById('adminJdBlockViewNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-admin-jd-block-view]');
