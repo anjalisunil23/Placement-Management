@@ -457,6 +457,8 @@
   const AI_JD_DEFAULT_INSTRUCTIONS = 'Generate questions relevant to the uploaded job description and suitable for campus placement assessment. Focus on the technical skills, concepts, tools, and responsibilities mentioned in the JD.';
   const AI_JD_MAX_FILE_BYTES = 5 * 1024 * 1024;
   const selectedBankIds = new Set();
+  const selectedManageTestIds = new Set();
+  const selectedJdSetIds = new Set();
 
   function dirOptionLabel(value) {
     const raw = String(value || '').trim();
@@ -1817,12 +1819,14 @@
     </div>`;
   }
 
-  function renderJdSetCardsHtml(sets, { allowDelete = true } = {}) {
+  function renderJdSetCardsHtml(sets, { allowDelete = true, selectable = false } = {}) {
     return (sets || []).map((set) => {
       const id = String(set.id || '');
       const hasDoc = !!(set.hasDocument || set.jdFileUrl);
+      const checked = selectedJdSetIds.has(id);
       return `<div class="border rounded-3 p-3" data-jd-set-card="${esc(id)}">
         <div class="d-flex align-items-start justify-content-between gap-2">
+          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select JD set"/>` : ''}
           <div class="min-w-0">
             <div class="fw-semibold">${esc(set.jdTitle || 'Untitled JD')}</div>
             <div class="small text-muted-2 mt-1">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
@@ -1839,8 +1843,61 @@
     }).join('');
   }
 
+  function updateManageTestsSelectionToolbar() {
+    const count = selectedManageTestIds.size;
+    document.getElementById('manageTestsSelectedCount') && (document.getElementById('manageTestsSelectedCount').textContent = `${count} selected`);
+    document.getElementById('btnManageTestsDeleteSelected')?.classList.toggle('d-none', count === 0);
+    const visibleIds = tests.filter((t) => isRegularTest(t)).map((t) => String(t.id || '')).filter(Boolean);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedManageTestIds.has(id));
+    const selectAll = document.getElementById('manageTestsSelectAllVisible');
+    if (selectAll) {
+      selectAll.indeterminate = count > 0 && !allVisibleSelected;
+      selectAll.checked = allVisibleSelected;
+    }
+  }
+
+  function updateContestSelectionToolbar(contestType) {
+    const prefix = contestType === 'monthly' ? 'manageMonthlyContests' : 'manageWeeklyContests';
+    const count = [...selectedManageTestIds].filter((id) => {
+      const t = tests.find((x) => String(x.id) === id);
+      return t && String(t.contestType) === contestType;
+    }).length;
+    document.getElementById(`${prefix}SelectedCount`) && (document.getElementById(`${prefix}SelectedCount`).textContent = `${count} selected`);
+    document.getElementById(`btn${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}DeleteSelected`)?.classList.toggle('d-none', count === 0);
+    const visibleIds = tests.filter((t) => String(t.contestType) === contestType && isContestManageActive(t)).map((t) => String(t.id || '')).filter(Boolean);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedManageTestIds.has(id));
+    const selectAll = document.getElementById(`${prefix}SelectAllVisible`);
+    if (selectAll) {
+      selectAll.indeterminate = count > 0 && !allVisibleSelected;
+      selectAll.checked = allVisibleSelected;
+    }
+  }
+
+  function updateJdSelectionToolbar(sets) {
+    const count = selectedJdSetIds.size;
+    document.getElementById('jdSelectedCount') && (document.getElementById('jdSelectedCount').textContent = `${count} selected`);
+    document.getElementById('btnJdDeleteSelected')?.classList.toggle('d-none', count === 0);
+    const visibleIds = (sets || []).map((s) => String(s.id || '')).filter(Boolean);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedJdSetIds.has(id));
+    const selectAll = document.getElementById('jdSelectAllVisible');
+    if (selectAll) {
+      selectAll.indeterminate = count > 0 && !allVisibleSelected;
+      selectAll.checked = allVisibleSelected;
+    }
+  }
+
   function bindJdSetCardEvents(root, { getDetail = getJdSetDetail, allowDelete = true } = {}) {
     if (!root) return;
+    root.querySelectorAll('[data-jd-select]').forEach((pick) => {
+      pick.addEventListener('change', () => {
+        const id = pick.getAttribute('data-jd-select');
+        if (!id) return;
+        if (pick.checked) selectedJdSetIds.add(String(id));
+        else selectedJdSetIds.delete(String(id));
+        const block = jdCompanyBlocks.find((b) => String(b.companyId || '') === String(jdSelectedCompanyId || ''));
+        updateJdSelectionToolbar(block?.sets || []);
+      });
+    });
     root.querySelectorAll('[data-jd-doc]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-jd-doc');
@@ -1905,7 +1962,7 @@
     if (!companyTests.length) {
       return '<p class="small text-muted-2 mb-0">No company tests for this company yet.</p>';
     }
-    return companyTests.map((t) => renderManageRow(t)).join('');
+    return companyTests.map((t) => renderManageRow(t, { selectable: true })).join('');
   }
 
   function showJdCompanyDetail(companyId) {
@@ -1935,10 +1992,17 @@
       const list = document.getElementById('jdBlockSetsList');
       const sets = block?.sets || [];
       if (!list) return;
-      list.innerHTML = sets.length
-        ? renderJdSetCardsHtml(sets)
-        : '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+      const bulkBar = document.getElementById('jdBulkActions');
+      if (!sets.length) {
+        bulkBar?.classList.add('d-none');
+        list.innerHTML = '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+        updateJdSelectionToolbar([]);
+        return;
+      }
+      bulkBar?.classList.remove('d-none');
+      list.innerHTML = renderJdSetCardsHtml(sets, { selectable: true });
       bindJdSetCardEvents(list);
+      updateJdSelectionToolbar(sets);
     }
   }
 
@@ -5118,10 +5182,19 @@
     const all = tests.filter((t) => String(t.contestType) === contestType);
     const active = all.filter((t) => isContestManageActive(t));
     const label = contestType === 'monthly' ? 'monthly' : 'weekly';
+    const bulkBar = document.getElementById(contestType === 'monthly' ? 'manageMonthlyContestsBulkActions' : 'manageWeeklyContestsBulkActions');
 
     if (!listRoot) return;
+    if (!active.length) {
+      bulkBar?.classList.add('d-none');
+      listRoot.innerHTML = `<p class="text-muted-2 mb-0">No active ${label} contests.</p>`;
+      updateContestSelectionToolbar(contestType);
+      return;
+    }
+    bulkBar?.classList.remove('d-none');
     listRoot.innerHTML = renderManageContestActiveTable(active, `No active ${label} contests.`);
     bindManageListActions(listRoot);
+    updateContestSelectionToolbar(contestType);
   }
 
   function contestScheduleTimeInputs(t, { inline = false } = {}) {
@@ -5179,8 +5252,11 @@
     const lifeLabel = life === 'ACTIVE' ? 'Active' : (life === 'COMPLETED' ? 'Completed' : 'Upcoming');
     const type = String(t.contestType || 'none');
     const typeLabel = type === 'monthly' ? 'Monthly contest' : 'Weekly contest';
+    const id = String(t.id || '');
+    const checked = selectedManageTestIds.has(id);
 
     return `<tr>
+      <td class="text-nowrap"><input class="form-check-input" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select contest"/></td>
       <td class="fw-semibold">${esc(t.title)}</td>
       <td class="small text-muted-2">${testMetaLine(t)}</td>
       <td>
@@ -5206,7 +5282,7 @@
       return `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
     }
     return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
-      <th>Title</th><th>Details</th><th>Status</th><th>Schedule</th><th>Actions</th>
+      <th style="width:2rem"></th><th>Title</th><th>Details</th><th>Status</th><th>Schedule</th><th>Actions</th>
     </tr></thead><tbody>${contests.map((t) => renderManageContestRow(t)).join('')}</tbody></table></div>`;
   }
 
@@ -5216,15 +5292,20 @@
     return `<span class="badge text-bg-light border mt-1">Company · ${name}</span>`;
   }
 
-  function renderManageRow(t, { showContestBadge = false, showCompanyBadge = false } = {}) {
+  function renderManageRow(t, { showContestBadge = false, showCompanyBadge = false, selectable = false } = {}) {
+    const id = String(t.id || '');
+    const checked = selectedManageTestIds.has(id);
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
-        <div>
+        <div class="d-flex align-items-start gap-2 min-w-0">
+          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
+          <div class="min-w-0">
           <strong>${esc(t.title)}</strong>
           <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
           ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
           ${showContestBadge ? contestBadgeHtml(t) : ''}
           ${showContestBadge ? contestScheduleControls(t) : ''}
+          </div>
         </div>
         <div class="d-flex flex-wrap gap-2">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>
@@ -5266,6 +5347,90 @@
         );
       });
     });
+    root.querySelectorAll('[data-manage-test-select]').forEach((el) => {
+      el.addEventListener('change', () => {
+        const id = el.getAttribute('data-manage-test-select');
+        if (!id) return;
+        if (el.checked) selectedManageTestIds.add(String(id));
+        else selectedManageTestIds.delete(String(id));
+        updateManageTestsSelectionToolbar();
+        updateContestSelectionToolbar('weekly');
+        updateContestSelectionToolbar('monthly');
+      });
+    });
+  }
+
+  async function deleteSelectedManageTests(contestType = null) {
+    let ids = [...selectedManageTestIds];
+    if (contestType) {
+      ids = ids.filter((id) => {
+        const t = tests.find((x) => String(x.id) === id);
+        return t && String(t.contestType) === contestType;
+      });
+    }
+    if (!ids.length) {
+      toast('Select at least one item to delete.', 'error');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected item(s)? This cannot be undone.`)) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    let deleted = 0;
+    for (const id of ids) {
+      if (!live) {
+        if (Auth.isDemo() && access.canManage) {
+          saveDemoTestsStore(loadDemoTestsStore().filter((t) => String(t.id) !== String(id)));
+          deleted += 1;
+          selectedManageTestIds.delete(String(id));
+        }
+        continue;
+      }
+      if (!isLiveAptitudeId(id)) continue;
+      const res = await api(`/aptitude/tests/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+      if (res?.success) {
+        deleted += 1;
+        selectedManageTestIds.delete(String(id));
+      }
+    }
+    if (!deleted) {
+      toast('Could not delete selected items.', 'error');
+      return;
+    }
+    toast(`Deleted ${deleted} item(s).`, 'success');
+    await loadTests();
+    renderTestList();
+    renderManage();
+  }
+
+  async function deleteSelectedJdSets() {
+    const ids = [...selectedJdSetIds];
+    if (!ids.length) {
+      toast('Select at least one JD set to delete.', 'error');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected JD set(s) and all their questions?`)) return;
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    let deleted = 0;
+    for (const id of ids) {
+      if (!live) {
+        saveDemoJdStore(loadDemoJdStore().filter((s) => String(s.id) !== String(id)));
+        deleted += 1;
+        selectedJdSetIds.delete(String(id));
+        continue;
+      }
+      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+      if (res?.success) {
+        deleted += 1;
+        delete jdSetDetailsCache[String(id)];
+        manualJdSetSummaries = manualJdSetSummaries.filter((s) => String(s.id) !== String(id));
+        selectedJdSetIds.delete(String(id));
+      }
+    }
+    if (!deleted) {
+      toast('Could not delete selected JD sets.', 'error');
+      return;
+    }
+    toast(`Deleted ${deleted} JD set(s).`, 'success');
+    await loadJdLibrary();
   }
 
   function isContestOpenClient(test) {
@@ -6458,11 +6623,17 @@
     const regular = tests.filter((t) => isRegularTest(t));
 
     const testsRoot = document.getElementById('manageTestsList');
+    const testsBulkBar = document.getElementById('manageTestsBulkActions');
     if (testsRoot) {
-      testsRoot.innerHTML = regular.length
-        ? regular.map((t) => renderManageRow(t)).join('')
-        : '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
-      bindManageListActions(testsRoot);
+      if (!regular.length) {
+        testsBulkBar?.classList.add('d-none');
+        testsRoot.innerHTML = '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
+      } else {
+        testsBulkBar?.classList.remove('d-none');
+        testsRoot.innerHTML = regular.map((t) => renderManageRow(t, { selectable: true })).join('');
+        bindManageListActions(testsRoot);
+      }
+      updateManageTestsSelectionToolbar();
     }
 
     if (managePanel === 'jd' && jdSelectedCompanyId) {
@@ -6878,6 +7049,51 @@
       renderQuestionBank();
     });
     document.getElementById('btnBankDeleteSelected')?.addEventListener('click', () => deleteSelectedBankQuestions());
+    document.getElementById('manageTestsSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      tests.filter((t) => isRegularTest(t)).forEach((t) => {
+        const id = String(t.id || '');
+        if (!id) return;
+        if (on) selectedManageTestIds.add(id);
+        else selectedManageTestIds.delete(id);
+      });
+      renderManage();
+    });
+    document.getElementById('btnManageTestsDeleteSelected')?.addEventListener('click', () => deleteSelectedManageTests());
+    document.getElementById('manageWeeklyContestsSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      tests.filter((t) => String(t.contestType) === 'weekly' && isContestManageActive(t)).forEach((t) => {
+        const id = String(t.id || '');
+        if (!id) return;
+        if (on) selectedManageTestIds.add(id);
+        else selectedManageTestIds.delete(id);
+      });
+      renderManage();
+    });
+    document.getElementById('btnManageWeeklyContestsDeleteSelected')?.addEventListener('click', () => deleteSelectedManageTests('weekly'));
+    document.getElementById('manageMonthlyContestsSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      tests.filter((t) => String(t.contestType) === 'monthly' && isContestManageActive(t)).forEach((t) => {
+        const id = String(t.id || '');
+        if (!id) return;
+        if (on) selectedManageTestIds.add(id);
+        else selectedManageTestIds.delete(id);
+      });
+      renderManage();
+    });
+    document.getElementById('btnManageMonthlyContestsDeleteSelected')?.addEventListener('click', () => deleteSelectedManageTests('monthly'));
+    document.getElementById('jdSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      const block = jdCompanyBlocks.find((b) => String(b.companyId || '') === String(jdSelectedCompanyId || ''));
+      (block?.sets || []).forEach((s) => {
+        const id = String(s.id || '');
+        if (!id) return;
+        if (on) selectedJdSetIds.add(id);
+        else selectedJdSetIds.delete(id);
+      });
+      if (jdSelectedCompanyId) showJdCompanyDetail(jdSelectedCompanyId);
+    });
+    document.getElementById('btnJdDeleteSelected')?.addEventListener('click', () => deleteSelectedJdSets());
     document.getElementById('bankDifficultyNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-bank-difficulty]');
       if (!link) return;

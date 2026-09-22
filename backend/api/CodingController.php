@@ -130,6 +130,18 @@ final class CodingController
         Response::success(null, 'Problem deleted.');
     }
 
+    /** POST /api/coding/problem-bank/bulk-delete */
+    public function bulkDeleteBankProblems(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $ids = is_array($body['ids'] ?? null) ? $body['ids'] : [];
+        Response::success(
+            $this->service()->bulkDeleteBankProblems($user, $ids),
+            'Problems deleted.'
+        );
+    }
+
     public function start(string $id): void
     {
         $user = AuthMiddleware::authenticate();
@@ -164,5 +176,48 @@ final class CodingController
     {
         $user = AuthMiddleware::authenticate();
         Response::success($this->service()->subjectProgress($user, $userId));
+    }
+
+    /** GET /api/coding/company-block/companies */
+    public function listCompanyBlockCompanies(): void
+    {
+        AuthMiddleware::authenticate();
+        Response::success($this->service()->listCompanyBlockCompanies());
+    }
+
+    /** GET /api/coding/company-block */
+    public function listCompanyBlock(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->listCompanyBlockForAdmin($user));
+    }
+
+    /** GET /api/coding/company-block/sets/{id} */
+    public function getCompanyBlockSet(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->getCompanyBlockSet($user, $id, false));
+    }
+
+    /** DELETE /api/coding/company-block/sets/{id} */
+    public function deleteCompanyBlockSet(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service()->deleteCompanyBlockSet($user, $id);
+        Response::success(null, 'Company problem set deleted.');
+    }
+
+    /** GET /api/coding/student/company-block */
+    public function listStudentCompanyBlock(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->listCompanyBlockForStudent($user));
+    }
+
+    /** GET /api/coding/student/company-block/sets/{id} */
+    public function getStudentCompanyBlockSet(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->getCompanyBlockSet($user, $id, true));
     }
 }

@@ -479,6 +479,22 @@
       saveBankStore(loadBankStore().filter((q) => String(q.id) !== String(id)));
     },
 
+    async bulkDeleteBankProblems(ids) {
+      const list = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
+      if (!list.length) throw new Error('Select at least one problem to delete.');
+      if (liveApi()) {
+        const res = await api('/coding/problem-bank/bulk-delete', {
+          method: 'POST',
+          body: JSON.stringify({ ids: list }),
+        });
+        if (!res?.success) throw new Error(res?.message || 'Could not delete selected problems.');
+        return res.data || { deleted: list.length };
+      }
+      const drop = new Set(list);
+      saveBankStore(loadBankStore().filter((q) => !drop.has(String(q.id))));
+      return { deleted: list.length };
+    },
+
     async contestBoard() {
       if (liveApi()) {
         const res = await api('/coding/contests/board').catch(() => null);

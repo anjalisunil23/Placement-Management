@@ -4,8 +4,31 @@
     console.error('CodeExecutionService is not loaded. Include js/coding-execution.js before js/coding-service.js.');
   }
 
-  const CATEGORIES = (typeof CodingData !== 'undefined' && CodingData.CATEGORIES) || ['Programming', 'Python', 'Data Structures', 'Programming Logic', 'Algorithms'];
+  const CATEGORIES = (typeof CodingData !== 'undefined' && CodingData.CATEGORIES) || ['Algorithms', 'Database', 'Shell', 'Concurrency', 'JavaScript', 'pandas'];
+  const TOPIC_FILTERS = (typeof CodingData !== 'undefined' && CodingData.TOPIC_FILTERS) || [
+    { value: '', label: 'All Topics', icon: 'bi-collection', tone: 'all' },
+    { value: 'Algorithms', label: 'Algorithms', icon: 'bi-diagram-3', tone: 'algorithms' },
+    { value: 'Database', label: 'Database', icon: 'bi-database', tone: 'database' },
+    { value: 'Shell', label: 'Shell', icon: 'bi-terminal', tone: 'shell' },
+    { value: 'Concurrency', label: 'Concurrency', icon: 'bi-shuffle', tone: 'concurrency' },
+    { value: 'JavaScript', label: 'JavaScript', icon: 'bi-filetype-js', tone: 'javascript' },
+    { value: 'pandas', label: 'pandas', icon: 'bi-bar-chart-line', tone: 'pandas' },
+  ];
   const DIFFICULTIES = (typeof CodingData !== 'undefined' && CodingData.DIFFICULTIES) || ['Easy', 'Medium', 'Hard'];
+
+  function normalizeCodingTopic(category) {
+    if (typeof CodingData !== 'undefined' && typeof CodingData.normalizeTopic === 'function') {
+      return CodingData.normalizeTopic(category);
+    }
+    const legacy = {
+      Programming: 'Algorithms',
+      Python: 'Shell',
+      'Data Structures': 'Algorithms',
+      'Programming Logic': 'Algorithms',
+    };
+    const c = String(category || '').trim();
+    return legacy[c] || c || 'Algorithms';
+  }
   const CONTEST_WEEKDAYS = [
     { value: 1, label: 'Monday' }, { value: 2, label: 'Tuesday' }, { value: 3, label: 'Wednesday' },
     { value: 4, label: 'Thursday' }, { value: 5, label: 'Friday' }, { value: 6, label: 'Saturday' }, { value: 7, label: 'Sunday' },
@@ -36,6 +59,10 @@
   let dirSearch = '';
   let dirSearchTimer = 0;
   let bankDifficultyFilter = '';
+  let bankCategoryFilter = '';
+  const selectedBankIds = new Set();
+  const selectedManageTestIds = new Set();
+  const selectedJdSetIds = new Set();
   let testFormModal = null;
   let bankPickModal = null;
   let bankProblemModal = null;
@@ -258,7 +285,7 @@
       }
       const block = blocks.get(key);
       block.setCount += 1;
-      block.questionCount += Number(set.questionCount || 0);
+      block.questionCount += Number(set.problemCount || set.questionCount || 0);
       block.sets.push(set);
     });
     return [...blocks.values()].sort((a, b) => String(a.companyName).localeCompare(String(b.companyName)));
@@ -267,7 +294,7 @@
   async function ensureJdCompaniesLoaded() {
     if (jdCompanies.length) return jdCompanies;
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/aptitude/jd-companies').catch(() => null);
+      const res = await api('/coding/company-block/companies').catch(() => null);
       jdCompanies = res?.data?.companies || [];
     }
     return jdCompanies;
@@ -278,7 +305,7 @@
     if (!id) return null;
     if (jdSetDetailsCache[id]) return jdSetDetailsCache[id];
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}`).catch(() => null);
+      const res = await api(`/coding/company-block/sets/${encodeURIComponent(id)}`).catch(() => null);
       if (res?.data) jdSetDetailsCache[id] = res.data;
     }
     return jdSetDetailsCache[id] || null;
@@ -288,12 +315,12 @@
     if (!access.canManage) return;
     await ensureJdCompaniesLoaded().catch(() => {});
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/aptitude/jd-sets').catch(() => null);
+      const res = await api('/coding/company-block').catch(() => null);
       jdLibrarySets = res?.data?.sets || [];
       jdCompanyBlocks = res?.data?.blocks || groupJdSetsIntoBlocks(jdLibrarySets);
     } else {
       jdLibrarySets = [];
-      jdCompanyBlocks = [];
+      jdCompanyBlocks = groupJdSetsIntoBlocks([]);
     }
     renderJdBlock();
   }
@@ -327,40 +354,39 @@
     </div>`;
   }
 
-  function renderMcqPickDetailHtml(q, index) {
-    const letters = ['A', 'B', 'C', 'D'];
-    const opts = (q.options || []).slice(0, 4);
-    const correct = Math.max(0, Math.min(3, Number(q.correctIndex ?? 0)));
-    const promptRaw = String(q.prompt || '').trim();
-    const promptBlock = /<[^>]+>/.test(promptRaw)
-      ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
-      : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
+  function renderCodingProblemDetailHtml(p, index) {
+    const desc = String(p.description || '').trim();
+    const meta = [normalizeCodingTopic(p.category), p.difficulty || 'Medium', `${p.marks || 2} marks`].filter(Boolean).join(' · ');
     return `<div class="border rounded-2 p-3 bg-white">
-      <div class="fw-semibold mb-2">Q${index + 1}</div>
-      ${promptBlock}
-      <div class="small mb-2">${opts.length
-        ? opts.map((o, oi) => {
-          const label = esc(stripHtml(String(o || '')) || String(o || ''));
-          const isCorrect = oi === correct;
-          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${letters[oi]}. ${label}${isCorrect ? ' ✓' : ''}</div>`;
-        }).join('')
-        : '<div class="text-muted-2">No options</div>'}</div>
+      <div class="fw-semibold mb-1">P${index + 1} · ${esc(p.title || 'Problem')}</div>
+      <div class="small text-muted-2 mb-2">${esc(meta)}</div>
+      ${desc ? `<div class="apt-q-card-text small mb-0">${esc(desc)}</div>` : '<p class="small text-muted-2 mb-0">No description.</p>'}
     </div>`;
   }
 
-  function renderJdSetCardsHtml(sets) {
+  function companySetTitle(set) {
+    return set?.setTitle || set?.jdTitle || 'Untitled set';
+  }
+
+  function companySetProblemCount(set) {
+    return Number(set?.problemCount ?? set?.questionCount ?? 0);
+  }
+
+  function renderJdSetCardsHtml(sets, { selectable = false } = {}) {
     return (sets || []).map((set) => {
       const id = String(set.id || '');
       const hasDoc = !!(set.hasDocument || set.jdFileUrl);
+      const checked = selectedJdSetIds.has(id);
       return `<div class="border rounded-3 p-3" data-jd-set-card="${esc(id)}">
         <div class="d-flex align-items-start justify-content-between gap-2">
+          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select JD set"/>` : ''}
           <div class="min-w-0">
-            <div class="fw-semibold">${esc(set.jdTitle || 'Untitled JD')}</div>
-            <div class="small text-muted-2 mt-1">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
+            <div class="fw-semibold">${esc(companySetTitle(set))}</div>
+            <div class="small text-muted-2 mt-1">${esc(companySetProblemCount(set))} problem(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
           </div>
           <div class="d-flex gap-2 flex-shrink-0">
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
-            <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Problems</button>
             <button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
           </div>
         </div>
@@ -370,8 +396,94 @@
     }).join('');
   }
 
+  function visibleBankProblems() {
+    return bank.filter((q) => {
+      if (bankCategoryFilter && normalizeCodingTopic(q.category) !== bankCategoryFilter) return false;
+      if (bankDifficultyFilter && String(q.difficulty || 'Medium') !== bankDifficultyFilter) return false;
+      return true;
+    });
+  }
+
+  function renderBankTopicNav() {
+    const nav = document.getElementById('bankTopicNav');
+    if (!nav) return;
+    nav.innerHTML = TOPIC_FILTERS.map((topic) => {
+      const active = bankCategoryFilter === topic.value;
+      return `<li><button type="button" class="cod-topic-pill cod-topic-${esc(topic.tone)}${active ? ' active' : ''}" data-bank-topic="${esc(topic.value)}" aria-pressed="${active ? 'true' : 'false'}">
+        <i class="bi ${esc(topic.icon)} cod-topic-icon" aria-hidden="true"></i>
+        <span>${esc(topic.label)}</span>
+      </button></li>`;
+    }).join('');
+  }
+
+  function updateBankSelectionToolbar() {
+    const count = selectedBankIds.size;
+    document.getElementById('bankSelectedCount') && (document.getElementById('bankSelectedCount').textContent = `${count} selected`);
+    document.getElementById('btnBankDeleteSelected')?.classList.toggle('d-none', count === 0);
+    const visibleIds = visibleBankProblems().map((q) => String(q.id || '')).filter(Boolean);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedBankIds.has(id));
+    const selectAll = document.getElementById('bankSelectAllVisible');
+    if (selectAll) {
+      selectAll.indeterminate = count > 0 && !allVisibleSelected;
+      selectAll.checked = allVisibleSelected;
+    }
+  }
+
+  function updateManageTestsSelectionToolbar() {
+    const count = selectedManageTestIds.size;
+    document.getElementById('manageTestsSelectedCount') && (document.getElementById('manageTestsSelectedCount').textContent = `${count} selected`);
+    document.getElementById('btnManageTestsDeleteSelected')?.classList.toggle('d-none', count === 0);
+    const visibleIds = tests.filter((t) => isRegularTest(t)).map((t) => String(t.id || '')).filter(Boolean);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedManageTestIds.has(id));
+    const selectAll = document.getElementById('manageTestsSelectAllVisible');
+    if (selectAll) {
+      selectAll.indeterminate = count > 0 && !allVisibleSelected;
+      selectAll.checked = allVisibleSelected;
+    }
+  }
+
+  function updateContestSelectionToolbar(contestType) {
+    const prefix = contestType === 'monthly' ? 'manageMonthlyContests' : 'manageWeeklyContests';
+    const count = [...selectedManageTestIds].filter((id) => {
+      const t = tests.find((x) => String(x.id) === id);
+      return t && String(t.contestType) === contestType;
+    }).length;
+    document.getElementById(`${prefix}SelectedCount`) && (document.getElementById(`${prefix}SelectedCount`).textContent = `${count} selected`);
+    document.getElementById(`btn${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}DeleteSelected`)?.classList.toggle('d-none', count === 0);
+    const visibleIds = tests.filter((t) => String(t.contestType) === contestType && isContestManageActive(t)).map((t) => String(t.id || '')).filter(Boolean);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedManageTestIds.has(id));
+    const selectAll = document.getElementById(`${prefix}SelectAllVisible`);
+    if (selectAll) {
+      selectAll.indeterminate = count > 0 && !allVisibleSelected;
+      selectAll.checked = allVisibleSelected;
+    }
+  }
+
+  function updateJdSelectionToolbar(sets) {
+    const count = selectedJdSetIds.size;
+    document.getElementById('jdSelectedCount') && (document.getElementById('jdSelectedCount').textContent = `${count} selected`);
+    document.getElementById('btnJdDeleteSelected')?.classList.toggle('d-none', count === 0);
+    const visibleIds = (sets || []).map((s) => String(s.id || '')).filter(Boolean);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedJdSetIds.has(id));
+    const selectAll = document.getElementById('jdSelectAllVisible');
+    if (selectAll) {
+      selectAll.indeterminate = count > 0 && !allVisibleSelected;
+      selectAll.checked = allVisibleSelected;
+    }
+  }
+
   function bindJdSetCardEvents(root) {
     if (!root) return;
+    root.querySelectorAll('[data-jd-select]').forEach((pick) => {
+      pick.addEventListener('change', () => {
+        const id = pick.getAttribute('data-jd-select');
+        if (!id) return;
+        if (pick.checked) selectedJdSetIds.add(String(id));
+        else selectedJdSetIds.delete(String(id));
+        const block = jdCompanyBlocks.find((b) => String(b.companyId || '') === String(jdSelectedCompanyId || ''));
+        updateJdSelectionToolbar(block?.sets || []);
+      });
+    });
     root.querySelectorAll('[data-jd-doc]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-jd-doc');
@@ -397,14 +509,14 @@
         if (!panel) return;
         if (!panel.classList.contains('d-none')) {
           panel.classList.add('d-none');
-          btn.textContent = 'Questions';
+          btn.textContent = 'Problems';
           return;
         }
         const detail = await getJdSetDetail(id);
-        const qs = detail?.questions || [];
+        const qs = detail?.problems || detail?.questions || [];
         panel.innerHTML = qs.length
-          ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderMcqPickDetailHtml(q, i)).join('')}</div>`
-          : '<p class="small text-muted-2 mb-0">No questions in this set.</p>';
+          ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderCodingProblemDetailHtml(q, i)).join('')}</div>`
+          : '<p class="small text-muted-2 mb-0">No problems in this set.</p>';
         panel.classList.remove('d-none');
         btn.textContent = 'Hide';
       });
@@ -415,19 +527,19 @@
   }
 
   async function deleteJdSet(id) {
-    if (!id || !confirm('Delete this JD question set and all its questions?')) return;
+    if (!id || !confirm('Delete this company problem set and all its problems?')) return;
     if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
-      toastMsg('JD sets require a live session.', 'info');
+      toastMsg('Company problem sets require a live session.', 'info');
       return;
     }
-    const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    const res = await api(`/coding/company-block/sets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
     if (!res?.success) {
-      toastMsg(res?.message || 'Could not delete JD set.', 'error');
+      toastMsg(res?.message || 'Could not delete company problem set.', 'error');
       return;
     }
     delete jdSetDetailsCache[String(id)];
     jdLibrarySets = jdLibrarySets.filter((s) => String(s.id) !== String(id));
-    toastMsg('JD set deleted.', 'success');
+    toastMsg('Company problem set deleted.', 'success');
     await loadJdLibrary();
   }
 
@@ -474,7 +586,7 @@
       const companyTests = studentCompanyTestsFor(companyId);
       if (testsRoot) {
         testsRoot.innerHTML = companyTests.length
-          ? companyTests.map((t) => renderManageRow(t, { showCompanyBadge: true })).join('')
+          ? companyTests.map((t) => renderManageRow(t, { showCompanyBadge: true, selectable: true })).join('')
           : '<p class="small text-muted-2 mb-0">No company tests for this company yet.</p>';
         bindManageListActions(testsRoot);
       }
@@ -482,10 +594,17 @@
       const list = document.getElementById('jdBlockSetsList');
       const sets = block?.sets || [];
       if (!list) return;
-      list.innerHTML = sets.length
-        ? renderJdSetCardsHtml(sets)
-        : '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+      const bulkBar = document.getElementById('jdBulkActions');
+      if (!sets.length) {
+        bulkBar?.classList.add('d-none');
+        list.innerHTML = '<p class="text-muted-2 mb-0">No company problem sets for this company yet.</p>';
+        updateJdSelectionToolbar([]);
+        return;
+      }
+      bulkBar?.classList.remove('d-none');
+      list.innerHTML = renderJdSetCardsHtml(sets, { selectable: true });
       bindJdSetCardEvents(list);
+      updateJdSelectionToolbar(sets);
     }
   }
 
@@ -495,7 +614,7 @@
     const activeCompanyId = jdSelectedCompanyId;
     if (!jdCompanyBlocks.length) {
       showJdCompanyGrid();
-      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No Company Block entries yet. Use AI Generate from the Company Block tab to create one.</p></div>';
+      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No coding company block entries yet. Add company tests or problem sets from the Company Block tab.</p></div>';
       return;
     }
     grid.innerHTML = renderJdCompanyGridHtml(jdCompanyBlocks);
@@ -578,12 +697,30 @@
   async function loadStudentJdBlock() {
     if (!access.canTake) return;
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/aptitude/student/jd-block').catch(() => null);
+      const res = await api('/coding/student/company-block').catch(() => null);
       studentJdCompanyBlocks = (res?.data?.blocks || []).filter((b) => String(b.companyId || '').trim() !== '');
     } else {
-      studentJdCompanyBlocks = [];
+      studentJdCompanyBlocks = buildDemoStudentCompanyBlocks();
     }
     renderStudentJdBlock();
+  }
+
+  function buildDemoStudentCompanyBlocks() {
+    const map = new Map();
+    tests.filter((t) => isCompanyTest(t) && (t.status || 'published') === 'published').forEach((t) => {
+      const companyId = String(t.companyId || '').trim();
+      if (!companyId) return;
+      if (!map.has(companyId)) {
+        map.set(companyId, {
+          companyId,
+          companyName: t.companyName || 'Company',
+          setCount: 0,
+          problemCount: 0,
+          sets: [],
+        });
+      }
+    });
+    return [...map.values()];
   }
 
   function applyTakeListPanel(panel) {
@@ -699,7 +836,7 @@
     const qn = t.questionCount || t.questions || (t.items || []).length || 0;
     const dur = t.durationMinutes || t.duration || 0;
     const marks = t.totalMarks || t.marks || 0;
-    return `${esc(t.category || 'Programming')} · ${esc(t.difficulty || 'Medium')} · ${esc(qn)} Qs · ${esc(dur)} min · ${esc(marks)} marks`;
+    return `${esc(normalizeCodingTopic(t.category || 'Algorithms'))} · ${esc(t.difficulty || 'Medium')} · ${esc(qn)} Qs · ${esc(dur)} min · ${esc(marks)} marks`;
   }
 
   function emptyProblem() {
@@ -717,7 +854,7 @@
       starterCode: starters,
       marks: 2,
       difficulty: 'Medium',
-      category: 'Programming',
+      category: 'Algorithms',
       keywords: { Python: [] },
       testCases: [
         { id: 's1', label: 'Sample Test Case', input: '', expected: '', sample: true },
@@ -1158,7 +1295,10 @@
     const lifeLabel = life === 'ACTIVE' ? 'Active' : (life === 'COMPLETED' ? 'Completed' : 'Upcoming');
     const type = String(t.contestType || 'none');
     const typeLabel = type === 'monthly' ? 'Monthly contest' : 'Weekly contest';
+    const id = String(t.id || '');
+    const checked = selectedManageTestIds.has(id);
     return `<tr>
+      <td class="text-nowrap"><input class="form-check-input" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select contest"/></td>
       <td class="fw-semibold">${esc(t.title)}</td>
       <td class="small text-muted-2">${testMetaLine(t)}</td>
       <td>
@@ -1181,7 +1321,7 @@
   function renderManageContestActiveTable(contests, emptyMsg) {
     if (!contests.length) return `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
     return `<div class="table-wrap mb-0"><table class="table-modern table-sm mb-0"><thead><tr>
-      <th>Title</th><th>Details</th><th>Status</th><th>Schedule</th><th>Actions</th>
+      <th style="width:2rem"></th><th>Title</th><th>Details</th><th>Status</th><th>Schedule</th><th>Actions</th>
     </tr></thead><tbody>${contests.map((t) => renderManageContestRow(t)).join('')}</tbody></table></div>`;
   }
 
@@ -1189,9 +1329,18 @@
     const all = tests.filter((t) => String(t.contestType) === contestType);
     const active = all.filter((t) => isContestManageActive(t));
     const label = contestType === 'monthly' ? 'monthly' : 'weekly';
+    const bulkBar = document.getElementById(contestType === 'monthly' ? 'manageMonthlyContestsBulkActions' : 'manageWeeklyContestsBulkActions');
     if (!listRoot) return;
+    if (!active.length) {
+      bulkBar?.classList.add('d-none');
+      listRoot.innerHTML = `<p class="text-muted-2 mb-0">No active ${label} contests.</p>`;
+      updateContestSelectionToolbar(contestType);
+      return;
+    }
+    bulkBar?.classList.remove('d-none');
     listRoot.innerHTML = renderManageContestActiveTable(active, `No active ${label} contests.`);
     bindManageListActions(listRoot);
+    updateContestSelectionToolbar(contestType);
   }
 
   async function saveContestSchedule(id, field, value) {
@@ -1220,16 +1369,21 @@
     }
   }
 
-  function renderManageRow(t, { showContestBadge = false, showCompanyBadge = false } = {}) {
+  function renderManageRow(t, { showContestBadge = false, showCompanyBadge = false, selectable = false } = {}) {
     const published = (t.status || 'unpublished') === 'published';
+    const id = String(t.id || '');
+    const checked = selectedManageTestIds.has(id);
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
-        <div>
+        <div class="d-flex align-items-start gap-2 min-w-0">
+          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
+          <div class="min-w-0">
           <strong>${esc(t.title)}</strong>
           <div class="small text-muted-2">${published ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
           ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
           ${showContestBadge ? contestBadgeHtml(t) : ''}
           ${showContestBadge ? contestScheduleControls(t) : ''}
+          </div>
         </div>
         <div class="d-flex flex-wrap gap-2">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk="${esc(t.id)}">Bulk problems</button>
@@ -1262,6 +1416,95 @@
         );
       });
     });
+    root.querySelectorAll('[data-manage-test-select]').forEach((el) => {
+      el.addEventListener('change', () => {
+        const id = el.getAttribute('data-manage-test-select');
+        if (!id) return;
+        if (el.checked) selectedManageTestIds.add(String(id));
+        else selectedManageTestIds.delete(String(id));
+        updateManageTestsSelectionToolbar();
+        updateContestSelectionToolbar('weekly');
+        updateContestSelectionToolbar('monthly');
+      });
+    });
+  }
+
+  async function deleteSelectedManageTests(contestType = null) {
+    let ids = [...selectedManageTestIds];
+    if (contestType) {
+      ids = ids.filter((id) => {
+        const t = tests.find((x) => String(x.id) === id);
+        return t && String(t.contestType) === contestType;
+      });
+    }
+    if (!ids.length) {
+      toastMsg('Select at least one item to delete.', 'error');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected item(s)? This cannot be undone.`)) return;
+    let deleted = 0;
+    for (const id of ids) {
+      try {
+        await CodingService.deleteTest(id);
+        deleted += 1;
+        selectedManageTestIds.delete(String(id));
+      } catch (_) {
+        /* continue with remaining */
+      }
+    }
+    if (!deleted) {
+      toastMsg('Could not delete selected items.', 'error');
+      return;
+    }
+    toastMsg(`Deleted ${deleted} item(s).`, 'success');
+    await loadManaged();
+    renderManage();
+  }
+
+  async function deleteSelectedBankProblems() {
+    const ids = [...selectedBankIds];
+    if (!ids.length) {
+      toastMsg('Select at least one problem to delete.', 'error');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected problem(s) from the bank?`)) return;
+    try {
+      const data = await CodingService.bulkDeleteBankProblems(ids);
+      ids.forEach((id) => selectedBankIds.delete(String(id)));
+      toastMsg(`Deleted ${data?.deleted ?? ids.length} problem(s).`, 'success');
+      bank = await CodingService.listBank();
+      renderBank();
+    } catch (err) {
+      toastMsg(err?.message || 'Could not delete selected problems.', 'error');
+    }
+  }
+
+  async function deleteSelectedJdSets() {
+    const ids = [...selectedJdSetIds];
+    if (!ids.length) {
+      toastMsg('Select at least one company problem set to delete.', 'error');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected company problem set(s)?`)) return;
+    if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
+      toastMsg('Company problem sets require a live session.', 'info');
+      return;
+    }
+    let deleted = 0;
+    for (const id of ids) {
+      const res = await api(`/coding/company-block/sets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+      if (res?.success) {
+        deleted += 1;
+        delete jdSetDetailsCache[String(id)];
+        selectedJdSetIds.delete(String(id));
+      }
+    }
+    if (!deleted) {
+      toastMsg('Could not delete selected company problem sets.', 'error');
+      return;
+    }
+    toastMsg(`Deleted ${deleted} company problem set(s).`, 'success');
+    await loadJdLibrary();
   }
 
   function renderManage() {
@@ -1270,11 +1513,17 @@
     applyManagePanel(managePanel);
     const regular = tests.filter((t) => isRegularTest(t));
     const testsRoot = document.getElementById('manageTestsList');
+    const testsBulkBar = document.getElementById('manageTestsBulkActions');
     if (testsRoot) {
-      testsRoot.innerHTML = regular.length
-        ? regular.map((t) => renderManageRow(t)).join('')
-        : '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
-      bindManageListActions(testsRoot);
+      if (!regular.length) {
+        testsBulkBar?.classList.add('d-none');
+        testsRoot.innerHTML = '<p class="text-muted-2 mb-0">No regular tests yet.</p>';
+      } else {
+        testsBulkBar?.classList.remove('d-none');
+        testsRoot.innerHTML = regular.map((t) => renderManageRow(t, { selectable: true })).join('');
+        bindManageListActions(testsRoot);
+      }
+      updateManageTestsSelectionToolbar();
     }
     if (managePanel === 'jd' && jdSelectedCompanyId) {
       showJdCompanyDetail(jdSelectedCompanyId);
@@ -1302,7 +1551,7 @@
             <select class="form-select form-select-sm" data-f="difficulty">${DIFFICULTIES.map((d) => `<option ${d === (q.difficulty || 'Medium') ? 'selected' : ''}>${d}</option>`).join('')}</select>
           </div>
           <div class="col-md-6"><label class="form-label small mb-1">Category</label>
-            <select class="form-select form-select-sm" data-f="category">${CATEGORIES.map((c) => `<option ${c === (q.category || 'Programming') ? 'selected' : ''}>${c}</option>`).join('')}</select>
+            <select class="form-select form-select-sm" data-f="category">${CATEGORIES.map((c) => `<option ${c === normalizeCodingTopic(q.category || 'Algorithms') ? 'selected' : ''}>${c}</option>`).join('')}</select>
           </div>
           <div class="col-12"><label class="form-label small mb-1">Description</label><textarea class="form-control form-control-sm" data-f="description" rows="2">${esc(q.description || '')}</textarea></div>
           <div class="col-md-6"><label class="form-label small mb-1">Input format</label><textarea class="form-control form-control-sm" data-f="inputFormat" rows="2">${esc(q.inputFormat || '')}</textarea></div>
@@ -1342,7 +1591,7 @@
       starterCode: starters,
       marks: Number(v('marks') || 2),
       difficulty: v('difficulty') || 'Medium',
-      category: v('category') || 'Programming',
+      category: v('category') || 'Algorithms',
       testCases,
     };
   }
@@ -1386,7 +1635,7 @@
     document.getElementById('tfId').value = test?.id || '';
     document.getElementById('tfTitle').value = test?.title || preset?.title || '';
     document.getElementById('tfDescription').value = test?.description || '';
-    fillSelect(document.getElementById('tfCategory'), CATEGORIES, test?.category || 'Programming');
+    fillSelect(document.getElementById('tfCategory'), CATEGORIES, normalizeCodingTopic(test?.category || 'Algorithms'));
     fillSelect(document.getElementById('tfDifficulty'), DIFFICULTIES, test?.difficulty || 'Medium');
     document.getElementById('tfDuration').value = test?.duration || test?.durationMinutes || 20;
     document.getElementById('tfStatus').value = test?.status === 'published' ? 'published' : 'unpublished';
@@ -1435,17 +1684,50 @@
     }
   }
 
+  function bindBankListEvents() {
+    const list = document.getElementById('bankQuestionsList');
+    if (!list || list.dataset.bankListBound === '1') return;
+    list.dataset.bankListBound = '1';
+    list.addEventListener('change', (e) => {
+      const pick = e.target.closest('[data-bank-select]');
+      if (!pick) return;
+      const id = pick.getAttribute('data-bank-select');
+      if (!id) return;
+      if (pick.checked) selectedBankIds.add(String(id));
+      else selectedBankIds.delete(String(id));
+      updateBankSelectionToolbar();
+    });
+    list.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('[data-bank-edit]');
+      if (editBtn) {
+        const q = bank.find((x) => String(x.id) === String(editBtn.getAttribute('data-bank-edit')));
+        if (q) openBankProblemForm(q);
+        return;
+      }
+      const delBtn = e.target.closest('[data-bank-del]');
+      if (!delBtn) return;
+      e.preventDefault();
+      (async () => {
+        if (!confirm('Delete this problem from the bank?')) return;
+        try {
+          await CodingService.deleteBankProblem(delBtn.getAttribute('data-bank-del'));
+          selectedBankIds.delete(String(delBtn.getAttribute('data-bank-del')));
+          toastMsg('Problem deleted.', 'success');
+          bank = await CodingService.listBank();
+          renderBank();
+        } catch (err) {
+          toastMsg(err?.message || 'Could not delete problem.', 'error');
+        }
+      })();
+    });
+  }
+
   function renderBank() {
-    const cat = document.getElementById('bankFilterCategory')?.value || '';
-    fillSelect(document.getElementById('bankFilterCategory'), [{ value: '', label: 'All categories' }, ...CATEGORIES.map((c) => ({ value: c, label: c }))], cat);
+    renderBankTopicNav();
     document.querySelectorAll('#bankDifficultyNav .nav-link').forEach((link) => {
       link.classList.toggle('active', (link.getAttribute('data-bank-difficulty') || '') === bankDifficultyFilter);
     });
-    const rows = bank.filter((q) => {
-      if (cat && String(q.category || '') !== cat) return false;
-      if (bankDifficultyFilter && String(q.difficulty || 'Medium') !== bankDifficultyFilter) return false;
-      return true;
-    });
+    const rows = visibleBankProblems();
     const counts = { total: bank.length, Easy: 0, Medium: 0, Hard: 0 };
     bank.forEach((q) => {
       const d = q.difficulty || 'Medium';
@@ -1458,39 +1740,34 @@
       ['Hard', counts.Hard],
     ].map(([lbl, val]) => `<div class="col-6 col-md-3"><div class="card-surface p-3 apt-stat"><div class="small text-muted-2">${esc(lbl)}</div><div class="val">${esc(val)}</div></div></div>`).join('');
     const list = document.getElementById('bankQuestionsList');
-    list.innerHTML = rows.length
-      ? rows.map((q) => `
-          <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-start gap-2">
-            <div class="min-w-0">
-              <div class="fw-semibold">${esc(q.title || 'Untitled problem')}</div>
-              <div class="small text-muted-2">${esc(q.category || 'Programming')} · ${esc((q.testCases || []).length)} test case(s) · ${esc(q.marks || 2)} mark(s)</div>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              <span class="badge-soft ${difficultyClass(q.difficulty)}">${esc(q.difficulty || 'Medium')}</span>
-              <button type="button" class="btn btn-sm btn-outline-primary" data-bank-edit="${esc(q.id)}">Edit</button>
-              <button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(q.id)}"><i class="bi bi-trash"></i></button>
-            </div>
-          </div>`).join('')
-      : '<p class="text-muted-2 mb-0">No problems in the bank yet. Add one manually or generate with AI.</p>';
-    list.querySelectorAll('[data-bank-edit]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const q = bank.find((x) => String(x.id) === String(btn.getAttribute('data-bank-edit')));
-        if (q) openBankProblemForm(q);
-      });
-    });
-    list.querySelectorAll('[data-bank-del]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this problem from the bank?')) return;
-        try {
-          await CodingService.deleteBankProblem(btn.getAttribute('data-bank-del'));
-          toastMsg('Problem deleted.', 'success');
-          bank = await CodingService.listBank();
-          renderBank();
-        } catch (err) {
-          toastMsg(err?.message || 'Could not delete problem.', 'error');
-        }
-      });
-    });
+    const bulkBar = document.getElementById('bankBulkActions');
+    bindBankListEvents();
+    if (!rows.length) {
+      bulkBar?.classList.add('d-none');
+      list.innerHTML = '<p class="text-muted-2 mb-0">No problems in the bank yet. Add one manually or generate with AI.</p>';
+      updateBankSelectionToolbar();
+      return;
+    }
+    bulkBar?.classList.remove('d-none');
+    list.innerHTML = rows.map((q) => {
+      const id = String(q.id || '');
+      const checked = selectedBankIds.has(id);
+      return `<div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <div class="d-flex align-items-start gap-2 min-w-0">
+          <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-bank-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select problem"/>
+          <div class="min-w-0">
+            <div class="fw-semibold">${esc(q.title || 'Untitled problem')}</div>
+            <div class="small text-muted-2">${esc(normalizeCodingTopic(q.category))} · ${esc((q.testCases || []).length)} test case(s) · ${esc(q.marks || 2)} mark(s)</div>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge-soft ${difficultyClass(q.difficulty)}">${esc(q.difficulty || 'Medium')}</span>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-bank-edit="${esc(id)}">Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(id)}"><i class="bi bi-trash"></i></button>
+        </div>
+      </div>`;
+    }).join('');
+    updateBankSelectionToolbar();
   }
 
   function openBankProblemForm(q = null) {
@@ -1942,9 +2219,10 @@
     document.getElementById('codAiPreviewPanel')?.classList.add('d-none');
   }
 
-  function openCodAiModal() {
-    fillSelect(document.getElementById('codAiCategory'), CATEGORIES, 'Programming');
+  function openCodAiModal(opts = {}) {
+    fillSelect(document.getElementById('codAiCategory'), CATEGORIES, 'Algorithms');
     fillSelect(document.getElementById('codAiDifficulty'), DIFFICULTIES, 'Medium');
+    aiLastFormParams = { companyId: opts.companyId || '' };
     showCodAiForm();
     document.getElementById('codAiPreviewList').innerHTML = '';
     document.getElementById('codAiGenerateStatus')?.classList.add('d-none');
@@ -1954,8 +2232,8 @@
 
   function collectCodAiParams() {
     return {
-      category: document.getElementById('codAiCategory')?.value || 'Programming',
-      topic: (document.getElementById('codAiTopic')?.value || '').trim() || (document.getElementById('codAiCategory')?.value || 'Programming'),
+      category: document.getElementById('codAiCategory')?.value || 'Algorithms',
+      topic: (document.getElementById('codAiTopic')?.value || '').trim() || (document.getElementById('codAiCategory')?.value || 'Algorithms'),
       difficulty: document.getElementById('codAiDifficulty')?.value || 'Medium',
       count: Number(document.getElementById('codAiCount')?.value || 5),
       instructions: document.getElementById('codAiInstructions')?.value || '',
@@ -2117,8 +2395,8 @@
     });
     document.getElementById('btnJdBlockBack')?.addEventListener('click', () => showJdCompanyGrid());
     document.getElementById('btnJdAiGenerate')?.addEventListener('click', () => {
-      toastMsg('JD question sets are shared with Aptitude. Opening Aptitude Company Block…', 'info');
-      window.open('mock-aptitude.html#manage', '_blank');
+      const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
+      openCodAiModal({ companyId });
     });
     document.getElementById('btnNewWeeklyContest')?.addEventListener('click', () => {
       openManageContests('weekly');
@@ -2210,7 +2488,69 @@
     document.getElementById('btnCodAiRun')?.addEventListener('click', () => runCodAiGenerate());
     document.getElementById('btnCodAiSave')?.addEventListener('click', () => saveCodAiSelected());
     document.getElementById('btnCodAiCancelPreview')?.addEventListener('click', () => showCodAiForm());
-    document.getElementById('bankFilterCategory')?.addEventListener('change', () => renderBank());
+    document.getElementById('bankSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      visibleBankProblems().forEach((q) => {
+        const id = String(q.id || '');
+        if (!id) return;
+        if (on) selectedBankIds.add(id);
+        else selectedBankIds.delete(id);
+      });
+      renderBank();
+    });
+    document.getElementById('btnBankDeleteSelected')?.addEventListener('click', () => deleteSelectedBankProblems());
+    document.getElementById('manageTestsSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      tests.filter((t) => isRegularTest(t)).forEach((t) => {
+        const id = String(t.id || '');
+        if (!id) return;
+        if (on) selectedManageTestIds.add(id);
+        else selectedManageTestIds.delete(id);
+      });
+      renderManage();
+    });
+    document.getElementById('btnManageTestsDeleteSelected')?.addEventListener('click', () => deleteSelectedManageTests());
+    document.getElementById('manageWeeklyContestsSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      tests.filter((t) => String(t.contestType) === 'weekly' && isContestManageActive(t)).forEach((t) => {
+        const id = String(t.id || '');
+        if (!id) return;
+        if (on) selectedManageTestIds.add(id);
+        else selectedManageTestIds.delete(id);
+      });
+      renderManage();
+    });
+    document.getElementById('btnManageWeeklyContestsDeleteSelected')?.addEventListener('click', () => deleteSelectedManageTests('weekly'));
+    document.getElementById('manageMonthlyContestsSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      tests.filter((t) => String(t.contestType) === 'monthly' && isContestManageActive(t)).forEach((t) => {
+        const id = String(t.id || '');
+        if (!id) return;
+        if (on) selectedManageTestIds.add(id);
+        else selectedManageTestIds.delete(id);
+      });
+      renderManage();
+    });
+    document.getElementById('btnManageMonthlyContestsDeleteSelected')?.addEventListener('click', () => deleteSelectedManageTests('monthly'));
+    document.getElementById('jdSelectAllVisible')?.addEventListener('change', (e) => {
+      const on = e.target.checked;
+      const block = jdCompanyBlocks.find((b) => String(b.companyId || '') === String(jdSelectedCompanyId || ''));
+      (block?.sets || []).forEach((s) => {
+        const id = String(s.id || '');
+        if (!id) return;
+        if (on) selectedJdSetIds.add(id);
+        else selectedJdSetIds.delete(id);
+      });
+      if (jdSelectedCompanyId) showJdCompanyDetail(jdSelectedCompanyId);
+    });
+    document.getElementById('btnJdDeleteSelected')?.addEventListener('click', () => deleteSelectedJdSets());
+    document.getElementById('bankTopicNav')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-bank-topic]');
+      if (!btn) return;
+      e.preventDefault();
+      bankCategoryFilter = btn.getAttribute('data-bank-topic') || '';
+      renderBank();
+    });
     document.getElementById('bankDifficultyNav')?.addEventListener('click', (e) => {
       const link = e.target.closest('[data-bank-difficulty]');
       if (!link) return;
@@ -2224,7 +2564,7 @@
       if (!host) return;
       const payload = collectProblem(host);
       payload.id = document.getElementById('bpId').value.trim() || payload.id;
-      payload.category = payload.category || 'Programming';
+      payload.category = payload.category || 'Algorithms';
       if (!payload.title) {
         toastMsg('Enter a problem title.', 'error');
         return;

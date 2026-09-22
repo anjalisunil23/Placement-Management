@@ -537,6 +537,7 @@ $routes = [
     ['POST', '/coding/problem-bank/ai/save',  [CodingController::class, 'saveAiBank']],
     ['PUT',  '/coding/problem-bank/{id}',     [CodingController::class, 'updateBankProblem']],
     ['DELETE','/coding/problem-bank/{id}',    [CodingController::class, 'deleteBankProblem']],
+    ['POST', '/coding/problem-bank/bulk-delete', [CodingController::class, 'bulkDeleteBankProblems']],
     ['POST', '/coding/tests/{id}/start',      [CodingController::class, 'start']],
     ['POST', '/coding/attempts/{id}/submit',  [CodingController::class, 'submit']],
     ['GET',  '/coding/me',                    [CodingController::class, 'myProgress']],
@@ -544,6 +545,12 @@ $routes = [
     ['GET',  '/coding/progress',              [CodingController::class, 'progressDirectory']],
     ['GET',  '/coding/contests/board',        [CodingController::class, 'contestBoard']],
     ['GET',  '/coding/subjects/{userId}',     [CodingController::class, 'subjectProgress']],
+    ['GET',  '/coding/company-block/companies', [CodingController::class, 'listCompanyBlockCompanies']],
+    ['GET',  '/coding/company-block',         [CodingController::class, 'listCompanyBlock']],
+    ['GET',  '/coding/company-block/sets/{id}', [CodingController::class, 'getCompanyBlockSet']],
+    ['DELETE','/coding/company-block/sets/{id}', [CodingController::class, 'deleteCompanyBlockSet']],
+    ['GET',  '/coding/student/company-block', [CodingController::class, 'listStudentCompanyBlock']],
+    ['GET',  '/coding/student/company-block/sets/{id}', [CodingController::class, 'getStudentCompanyBlockSet']],
 
     // Health & public
     ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],

@@ -36,8 +36,9 @@
   display: none !important;
 }
 
-/* One-shot reveal: hide only while booting — never leave app invisible after ph-app-ready. */
-html.ph-booting .app {
+/* One-shot reveal: keep incomplete shell/body hidden until app.js paints nav + role. */
+html.ph-booting .app,
+.app:has(#sidebar:empty) {
   opacity: 0;
   pointer-events: none;
 }
@@ -46,11 +47,12 @@ html.ph-app-ready .app {
   pointer-events: auto;
   transition: opacity .14s ease;
 }
-html.ph-booting {
+html.ph-booting,
+html:has(.app #sidebar:empty) {
   background: var(--bg, #F8FAFC);
 }
 html.ph-booting::after,
-html:not(.ph-app-ready):has(.app #sidebar:empty)::after {
+html:has(.app #sidebar:empty):not(.ph-app-ready)::after {
   content: '';
   position: fixed;
   inset: 0;
@@ -1445,3 +1447,46 @@ input[type="file"].form-control:focus::file-selector-button{
     gap:1.25rem;
   }
 }
+
+/* Coding question bank — topic filter pills */
+.cod-topic-pills{
+  margin:0;
+  padding:0;
+}
+.cod-topic-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:.45rem;
+  padding:.5rem .95rem;
+  border:0;
+  border-radius:999px;
+  background:#eef1f4;
+  color:#1f2937;
+  font-size:.875rem;
+  font-weight:600;
+  line-height:1.2;
+  white-space:nowrap;
+  transition:background .15s ease,color .15s ease,box-shadow .15s ease;
+}
+.cod-topic-pill:hover{
+  background:#e4e8ed;
+}
+.cod-topic-pill.active{
+  background:#111827;
+  color:#fff;
+  box-shadow:0 2px 8px rgba(17,24,39,.18);
+}
+.cod-topic-pill .cod-topic-icon{
+  font-size:1rem;
+  line-height:1;
+}
+.cod-topic-pill.active .cod-topic-icon{
+  color:#fff !important;
+}
+.cod-topic-algorithms .cod-topic-icon{ color:#e67700; }
+.cod-topic-database .cod-topic-icon{ color:#228be6; }
+.cod-topic-shell .cod-topic-icon{ color:#2f9e44; }
+.cod-topic-concurrency .cod-topic-icon{ color:#7950f2; }
+.cod-topic-javascript .cod-topic-icon{ color:#339af0; }
+.cod-topic-pandas .cod-topic-icon{ color:#1864ab; }
+.cod-topic-all .cod-topic-icon{ color:#495057; }

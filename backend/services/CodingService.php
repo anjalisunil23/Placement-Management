@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Models\CodingAttemptModel;
+use PMS\Models\CodingCompanyProblemSetModel;
 use PMS\Models\CodingProblemBankModel;
 use PMS\Models\CodingTestModel;
+use PMS\Models\CompanyModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Utils\Response;
+use PMS\Utils\Security;
 
 final class CodingService
 {
@@ -312,6 +315,41 @@ final class CodingService
             Response::notFound('Problem not found.');
         }
         $this->bank->delete($id);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<int, string> $ids
+     * @return array<string, mixed>
+     */
+    public function bulkDeleteBankProblems(array $user, array $ids): array
+    {
+        AptitudeAccessService::requireManager($user);
+        $deleted = 0;
+        $notFound = 0;
+
+        foreach (array_values(array_unique(array_filter(array_map('strval', $ids)))) as $id) {
+            if (!Security::isValidId($id)) {
+                $notFound++;
+                continue;
+            }
+            if (!$this->bank->findById($id)) {
+                $notFound++;
+                continue;
+            }
+            if ($this->bank->delete($id)) {
+                $deleted++;
+            }
+        }
+
+        if ($deleted === 0) {
+            Response::error('No problems were deleted.', 422);
+        }
+
+        return [
+            'deleted' => $deleted,
+            'notFound' => $notFound,
+        ];
     }
 
     /**
@@ -1210,5 +1248,191 @@ final class CodingService
             return $raw;
         }
         return date('d M Y', $ts);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listCompanyBlockCompanies(): array
+    {
+        $rows = (new CompanyModel())->listEnriched(500);
+        $companies = [];
+        foreach ($rows as $row) {
+            $id = trim((string) ($row['_id'] ?? ''));
+            $name = trim((string) ($row['companyName'] ?? ''));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+            $companies[] = ['id' => $id, 'name' => $name];
+        }
+        usort($companies, static fn (array $a, array $b): int => strcasecmp(
+            (string) ($a['name'] ?? ''),
+            (string) ($b['name'] ?? '')
+        ));
+
+        return ['companies' => $companies];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function listCompanyBlockForAdmin(array $user): array
+    {
+        AptitudeAccessService::requireManager($user);
+        $model = new CodingCompanyProblemSetModel();
+        $sets = $model->listSummaries();
+        $blocks = $this->mergeCompanyBlocks($model->listCompanyBlocks(), $this->companyBlocksFromTests(false));
+
+        return [
+            'sets' => $sets,
+            'blocks' => $blocks,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function listCompanyBlockForStudent(array $user): array
+    {
+        if (!AptitudeAccessService::canTake($user)) {
+            Response::forbidden('Students only.');
+        }
+        $model = new CodingCompanyProblemSetModel();
+        $blocks = $this->mergeCompanyBlocks($model->listStudentCompanyBlocks(), $this->companyBlocksFromTests(true));
+
+        return ['blocks' => $blocks];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function getCompanyBlockSet(array $user, string $id, bool $student = false): array
+    {
+        if ($student) {
+            if (!AptitudeAccessService::canTake($user)) {
+                Response::forbidden('Students only.');
+            }
+        } else {
+            AptitudeAccessService::requireManager($user);
+        }
+        $model = new CodingCompanyProblemSetModel();
+        $set = $model->findById($id);
+        if ($set === null) {
+            Response::notFound('Company problem set not found.');
+        }
+        if ($student && trim((string) ($set['companyId'] ?? '')) === '') {
+            Response::notFound('Company problem set not found.');
+        }
+
+        return $model->publicDetail($set);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function deleteCompanyBlockSet(array $user, string $id): void
+    {
+        AptitudeAccessService::requireManager($user);
+        $model = new CodingCompanyProblemSetModel();
+        if ($model->findById($id) === null) {
+            Response::notFound('Company problem set not found.');
+        }
+        if (!$model->deleteSet($id)) {
+            Response::error('Could not delete company problem set.', 422);
+        }
+    }
+
+    /**
+     * @param list<array<string, mixed>> $base
+     * @param list<array<string, mixed>> $extra
+     * @return list<array<string, mixed>>
+     */
+    private function mergeCompanyBlocks(array $base, array $extra): array
+    {
+        /** @var array<string, array<string, mixed>> $map */
+        $map = [];
+        foreach (array_merge($base, $extra) as $block) {
+            $companyId = trim((string) ($block['companyId'] ?? ''));
+            if ($companyId === '') {
+                continue;
+            }
+            if (!isset($map[$companyId])) {
+                $map[$companyId] = [
+                    'companyId' => $companyId,
+                    'companyName' => (string) ($block['companyName'] ?? 'Company'),
+                    'setCount' => 0,
+                    'problemCount' => 0,
+                    'sets' => [],
+                ];
+            }
+            $map[$companyId]['setCount'] += (int) ($block['setCount'] ?? 0);
+            $map[$companyId]['problemCount'] += (int) ($block['problemCount'] ?? 0);
+            foreach ((array) ($block['sets'] ?? []) as $set) {
+                if (!is_array($set)) {
+                    continue;
+                }
+                $sid = (string) ($set['id'] ?? '');
+                $exists = false;
+                foreach ($map[$companyId]['sets'] as $existing) {
+                    if ((string) ($existing['id'] ?? '') === $sid) {
+                        $exists = true;
+                        break;
+                    }
+                }
+                if (!$exists) {
+                    $map[$companyId]['sets'][] = $set;
+                }
+            }
+            if (trim((string) ($block['companyName'] ?? '')) !== '') {
+                $map[$companyId]['companyName'] = (string) $block['companyName'];
+            }
+        }
+        $out = array_values($map);
+        usort($out, static fn (array $a, array $b): int => strcasecmp(
+            (string) ($a['companyName'] ?? ''),
+            (string) ($b['companyName'] ?? '')
+        ));
+
+        return $out;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function companyBlocksFromTests(bool $publishedOnly): array
+    {
+        $rows = $this->tests->findAll([], 500, 0, ['createdAt' => -1]);
+        /** @var array<string, array<string, mixed>> $map */
+        $map = [];
+        foreach ($rows as $row) {
+            if (!CodingTestModel::isCompanyTest($row)) {
+                continue;
+            }
+            if ($publishedOnly && ($row['status'] ?? '') !== 'published') {
+                continue;
+            }
+            $companyId = trim((string) ($row['companyId'] ?? ''));
+            if ($companyId === '') {
+                continue;
+            }
+            $companyName = trim((string) ($row['companyName'] ?? ''));
+            if ($companyName === '') {
+                $companyName = 'Company';
+            }
+            if (!isset($map[$companyId])) {
+                $map[$companyId] = [
+                    'companyId' => $companyId,
+                    'companyName' => $companyName,
+                    'setCount' => 0,
+                    'problemCount' => 0,
+                    'sets' => [],
+                ];
+            }
+        }
+
+        return array_values($map);
     }
 }

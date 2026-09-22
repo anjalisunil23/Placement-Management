@@ -15,7 +15,7 @@ class CodingTestModel extends BaseModel
     private const CONTEST_START_DEFAULT = '09:00';
     private const CONTEST_WINDOW_HOURS = 24;
 
-    public const CATEGORIES = ['Programming', 'Python', 'Data Structures', 'Programming Logic', 'Algorithms'];
+    public const CATEGORIES = ['Algorithms', 'Database', 'Shell', 'Concurrency', 'JavaScript', 'pandas', 'Programming', 'Python', 'Data Structures', 'Programming Logic'];
     public const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
     public const STATUSES = ['published', 'unpublished'];
     public const PROBLEM_TEST_SEP = '::';

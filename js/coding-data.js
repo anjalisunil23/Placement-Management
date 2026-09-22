@@ -591,9 +591,30 @@
     };
   }
 
+  const CODING_TOPICS = ['Algorithms', 'Database', 'Shell', 'Concurrency', 'JavaScript', 'pandas'];
+  const LEGACY_TOPIC_MAP = {
+    Programming: 'Algorithms',
+    Python: 'Shell',
+    'Data Structures': 'Algorithms',
+    'Programming Logic': 'Algorithms',
+  };
+
   global.CodingData = {
     LANGUAGES,
-    CATEGORIES: ['Programming', 'Python', 'Data Structures', 'Programming Logic', 'Algorithms'],
+    CATEGORIES: CODING_TOPICS,
+    TOPIC_FILTERS: [
+      { value: '', label: 'All Topics', icon: 'bi-collection', tone: 'all' },
+      { value: 'Algorithms', label: 'Algorithms', icon: 'bi-diagram-3', tone: 'algorithms' },
+      { value: 'Database', label: 'Database', icon: 'bi-database', tone: 'database' },
+      { value: 'Shell', label: 'Shell', icon: 'bi-terminal', tone: 'shell' },
+      { value: 'Concurrency', label: 'Concurrency', icon: 'bi-shuffle', tone: 'concurrency' },
+      { value: 'JavaScript', label: 'JavaScript', icon: 'bi-filetype-js', tone: 'javascript' },
+      { value: 'pandas', label: 'pandas', icon: 'bi-bar-chart-line', tone: 'pandas' },
+    ],
+    normalizeTopic(category) {
+      const c = String(category || '').trim();
+      return LEGACY_TOPIC_MAP[c] || c || 'Algorithms';
+    },
     DIFFICULTIES: ['Easy', 'Medium', 'Hard'],
     defaultStarters,
     listTests() {
