@@ -152,12 +152,15 @@
       align-self: flex-end;
     }
 
-    .qr-block canvas,
     .qr-block img {
-      display: block;
+      display: none;
       width: 22mm;
       height: 22mm;
       margin: 0 auto;
+    }
+
+    .qr-block img[src] {
+      display: block;
     }
 
     .qr-caption {
@@ -400,7 +403,7 @@
         <div class="signature-caption">Signature of Principal</div>
       </div>
       <div class="qr-block" id="qrBlock" aria-label="Verification QR code">
-        <canvas id="pcaQr" width="96" height="96" aria-hidden="true"></canvas>
+        <img id="pcaQr" width="96" height="96" alt="Verification QR code"/>
         <div class="qr-caption">Scan to verify<br/>name &amp; class</div>
       </div>
     </div>
@@ -413,7 +416,7 @@
 </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<script src="js/qrcode.min.js?v=20260924"></script>
 <script>
 (function () {
   const API_BASE = (location.protocol === 'file:' ? '' : '') + '/backend/api';
@@ -537,23 +540,29 @@
   }
 
   async function renderQr() {
-    const canvas = document.getElementById('pcaQr');
+    const img = document.getElementById('pcaQr');
     const block = document.getElementById('qrBlock');
-    if (!canvas || !block || typeof QRCode === 'undefined') return;
+    if (!img || !block) return;
+    if (typeof QRCode === 'undefined') {
+      block.style.visibility = 'hidden';
+      return;
+    }
     const payload = buildQrPayload();
     if (!payload) {
       block.style.visibility = 'hidden';
       return;
     }
-    block.style.visibility = 'visible';
     try {
-      await QRCode.toCanvas(canvas, payload, {
-        width: 96,
+      img.src = await QRCode.toDataURL(payload, {
+        width: 192,
         margin: 1,
         errorCorrectionLevel: 'M',
         color: { dark: '#111111', light: '#ffffff' },
       });
+      img.style.display = 'block';
+      block.style.visibility = 'visible';
     } catch {
+      img.style.display = 'none';
       block.style.visibility = 'hidden';
     }
   }

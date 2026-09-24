@@ -98,6 +98,8 @@ final class ResumeBuilderPdfService
             $safeName = 'Resume.pdf';
         }
 
+        $pdfHtml = $this->prepareDocumentHtmlForPdf($documentHtml);
+
         $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
         $pdf->SetCreator('PlaceHub PMS');
         $pdf->SetAuthor('PlaceHub PMS');
@@ -106,8 +108,12 @@ final class ResumeBuilderPdfService
         $pdf->setPrintFooter(false);
         $pdf->SetMargins(16, 16, 16);
         $pdf->SetAutoPageBreak(true, 16);
+        $pdf->setCellPaddings(0, 0, 0, 0);
+        $pdf->setCellMargins(0, 0, 0, 0);
+        $pdf->setCellHeightRatio(1.35);
+        $pdf->SetFont('times', '', 10);
         $pdf->AddPage();
-        $pdf->writeHTML($this->wrapDocumentHtml($documentHtml), true, false, true, false, '');
+        $pdf->writeHTML($this->wrapDocumentHtml($pdfHtml), true, false, true, false, '');
 
         if (!headers_sent()) {
             header_remove('Content-Type');
@@ -269,34 +275,185 @@ final class ResumeBuilderPdfService
         return $clean;
     }
 
+    /**
+     * TCPDF cannot render flexbox rows from Live Preview — convert to table rows invisibly.
+     */
+    private function prepareDocumentHtmlForPdf(string $html): string
+    {
+        if (!class_exists(\DOMDocument::class)) {
+            return $this->prepareDocumentHtmlForPdfRegex($html);
+        }
+
+        libxml_use_internal_errors(true);
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $loaded = $dom->loadHTML(
+            '<?xml encoding="UTF-8"><div id="rb-pdf-root">' . $html . '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+
+        if (!$loaded) {
+            return $this->prepareDocumentHtmlForPdfRegex($html);
+        }
+
+        $xpath = new \DOMXPath($dom);
+
+        foreach ($xpath->query('//hr[contains(@class,"rb-resume-rule")]') as $hr) {
+            if (!$hr instanceof \DOMElement || !$hr->parentNode instanceof \DOMNode) {
+                continue;
+            }
+            $div = $dom->createElement('div');
+            $div->setAttribute('class', 'rb-resume-rule');
+            $hr->parentNode->replaceChild($div, $hr);
+        }
+
+        foreach ($xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " rb-resume-edu-row ")]') as $row) {
+            if ($row instanceof \DOMElement) {
+                $this->replaceFlexRowWithTable($dom, $row);
+            }
+        }
+
+        foreach ($xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " rb-resume-entry-top ")]') as $row) {
+            if ($row instanceof \DOMElement) {
+                $this->replaceFlexRowWithTable($dom, $row);
+            }
+        }
+
+        foreach ($xpath->query('//section') as $section) {
+            if (!$section instanceof \DOMElement || !$section->parentNode instanceof \DOMNode) {
+                continue;
+            }
+            $div = $dom->createElement('div');
+            $class = trim($section->getAttribute('class'));
+            if ($class !== '') {
+                $div->setAttribute('class', $class);
+            } else {
+                $div->setAttribute('class', 'rb-resume-section');
+            }
+            while ($section->firstChild) {
+                $div->appendChild($section->firstChild);
+            }
+            $section->parentNode->replaceChild($div, $section);
+        }
+
+        $root = $dom->getElementById('rb-pdf-root');
+        if (!$root) {
+            return $this->prepareDocumentHtmlForPdfRegex($html);
+        }
+
+        $out = '';
+        foreach ($root->childNodes as $child) {
+            $out .= $dom->saveHTML($child);
+        }
+
+        return $out;
+    }
+
+    private function replaceFlexRowWithTable(\DOMDocument $dom, \DOMElement $row): void
+    {
+        $children = [];
+        foreach ($row->childNodes as $child) {
+            if ($child instanceof \DOMElement) {
+                $children[] = $child;
+            }
+        }
+        if ($children === [] || !$row->parentNode instanceof \DOMNode) {
+            return;
+        }
+
+        $table = $dom->createElement('table');
+        $table->setAttribute('class', 'rb-resume-row');
+        $table->setAttribute('cellpadding', '0');
+        $table->setAttribute('cellspacing', '0');
+        $table->setAttribute('width', '100%');
+        $table->setAttribute('border', '0');
+
+        $tr = $dom->createElement('tr');
+        $table->appendChild($tr);
+
+        $left = $children[0];
+        $tdLeft = $dom->createElement('td');
+        $tdLeft->setAttribute('width', '72%');
+        $tdLeft->setAttribute('valign', 'top');
+        if ($left->hasAttribute('class')) {
+            $tdLeft->setAttribute('class', $left->getAttribute('class'));
+        }
+        while ($left->firstChild) {
+            $tdLeft->appendChild($left->firstChild);
+        }
+        $tr->appendChild($tdLeft);
+
+        if (isset($children[1])) {
+            $right = $children[1];
+            $tdRight = $dom->createElement('td');
+            $tdRight->setAttribute('width', '28%');
+            $tdRight->setAttribute('align', 'right');
+            $tdRight->setAttribute('valign', 'top');
+            $rightClass = trim($right->getAttribute('class') . ' rb-resume-right');
+            $tdRight->setAttribute('class', $rightClass);
+            while ($right->firstChild) {
+                $tdRight->appendChild($right->firstChild);
+            }
+            $tr->appendChild($tdRight);
+        }
+
+        $row->parentNode->replaceChild($table, $row);
+    }
+
+    private function prepareDocumentHtmlForPdfRegex(string $html): string
+    {
+        $html = preg_replace('/<hr class="rb-resume-rule"[^>]*\/?>/', '<div class="rb-resume-rule"></div>', $html) ?? $html;
+
+        $html = preg_replace_callback(
+            '/<div class="rb-resume-edu-row">\s*<div class="([^"]+)">(.*?)<\/div>\s*<div class="([^"]+)">(.*?)<\/div>\s*<\/div>/s',
+            static function (array $m): string {
+                return '<table class="rb-resume-row" cellpadding="0" cellspacing="0" width="100%" border="0"><tr>'
+                    . '<td class="' . $m[1] . '" width="72%" valign="top">' . $m[2] . '</td>'
+                    . '<td class="' . $m[3] . ' rb-resume-right" width="28%" align="right" valign="top">' . $m[4] . '</td>'
+                    . '</tr></table>';
+            },
+            $html
+        ) ?? $html;
+
+        return preg_replace_callback(
+            '/<div class="rb-resume-entry-top">\s*<div class="rb-resume-entry-title">(.*?)<\/div>\s*<div class="([^"]+)">(.*?)<\/div>\s*<\/div>/s',
+            static function (array $m): string {
+                return '<table class="rb-resume-row" cellpadding="0" cellspacing="0" width="100%" border="0"><tr>'
+                    . '<td class="rb-resume-entry-title" width="72%" valign="top">' . $m[1] . '</td>'
+                    . '<td class="' . $m[2] . ' rb-resume-right" width="28%" align="right" valign="top">' . $m[3] . '</td>'
+                    . '</tr></table>';
+            },
+            $html
+        ) ?? $html;
+    }
+
     private function wrapDocumentHtml(string $documentHtml): string
     {
         $css = <<<'CSS'
-body { margin: 0; padding: 0; color: #000; }
-.rb-resume-doc { font-family: "times"; font-size: 10.5pt; line-height: 1.35; color: #000; }
-.rb-resume-header { text-align: center; margin: 0 0 4mm; }
-.rb-resume-name { margin: 0 0 1mm; font-size: 26pt; font-weight: bold; line-height: 1.12; color: #000; }
-.rb-resume-contact { margin: 0; font-size: 10.5pt; line-height: 1.4; color: #000; }
-.rb-resume-section { margin-top: 3mm; }
-.rb-resume-h2 { margin: 0; font-size: 12pt; font-weight: bold; letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.2; color: #000; }
-.rb-resume-rule { margin: 0.5mm 0 1.5mm; border-top: 0.35mm solid #000; height: 0; }
+body { margin: 0; padding: 0; color: #000000; }
+.rb-resume-doc { font-family: times; font-size: 10.5pt; line-height: 1.35; color: #000000; }
+.rb-resume-header { text-align: center; margin: 0 0 6pt 0; padding: 0; }
+.rb-resume-name { margin: 0 0 2pt 0; padding: 0; font-size: 26pt; font-weight: bold; line-height: 1.12; color: #000000; }
+.rb-resume-contact { margin: 0; padding: 0; font-size: 10.5pt; line-height: 1.4; color: #000000; }
+.rb-resume-section { margin: 8pt 0 0 0; padding: 0; }
+.rb-resume-h2 { margin: 0; padding: 0; font-size: 12pt; font-weight: bold; letter-spacing: 1.5pt; text-transform: uppercase; line-height: 1.2; color: #000000; }
+.rb-resume-rule { margin: 1pt 0 3pt 0; padding: 0; height: 0; line-height: 0; font-size: 0; border-top: 0.75pt solid #000000; }
 .rb-resume-right-bold { font-weight: bold; }
-.rb-resume-para { margin: 0; font-size: 10.5pt; line-height: 1.38; color: #000; text-align: justify; }
-.rb-resume-bullets, .rb-resume-list { margin: 0.5mm 0 0; padding-left: 4mm; }
-.rb-resume-bullets li, .rb-resume-list li { margin: 0 0 0.5mm; font-size: 10.5pt; line-height: 1.35; color: #000; }
-.rb-resume-edu { margin-bottom: 1.5mm; }
-.rb-resume-edu-row, .rb-resume-entry-top { width: 100%; }
-.rb-resume-edu-degree, .rb-resume-entry-title { font-weight: bold; font-size: 10.5pt; line-height: 1.3; }
-.rb-resume-edu-inst, .rb-resume-entry-org { font-size: 10pt; font-style: italic; line-height: 1.3; color: #000; }
-.rb-resume-edu-year, .rb-resume-edu-score, .rb-resume-entry-right { font-size: 10.5pt; text-align: right; white-space: nowrap; }
-.rb-resume-edu-score { font-size: 10pt; font-style: normal; font-weight: normal; }
-.rb-resume-entry { margin-bottom: 1.5mm; }
-.rb-resume-tech { font-size: 10pt; font-style: italic; color: #000; }
+.rb-resume-para { margin: 0; padding: 0; font-size: 10.5pt; line-height: 1.38; color: #000000; text-align: justify; }
+.rb-resume-bullets, .rb-resume-list { margin: 1pt 0 0 0; padding-left: 12pt; }
+.rb-resume-bullets li, .rb-resume-list li { margin: 0; padding: 0 0 1pt 0; font-size: 10.5pt; line-height: 1.35; color: #000000; }
+.rb-resume-edu { margin: 0 0 3pt 0; padding: 0; }
+.rb-resume-edu-degree, .rb-resume-entry-title { font-weight: bold; font-size: 10.5pt; line-height: 1.3; color: #000000; }
+.rb-resume-edu-inst, .rb-resume-entry-org { font-size: 10pt; font-style: italic; font-weight: normal; line-height: 1.3; color: #000000; }
+.rb-resume-edu-year, .rb-resume-entry-right { font-size: 10.5pt; font-weight: bold; color: #000000; }
+.rb-resume-edu-score { font-size: 10pt; font-style: normal; font-weight: normal; color: #000000; }
+.rb-resume-entry { margin: 0 0 3pt 0; padding: 0; }
+.rb-resume-tech { margin: 0; padding: 0; font-size: 10pt; font-style: italic; color: #000000; }
 .rb-resume-strong { font-weight: bold; }
-.rb-resume-skill-line { font-size: 10.5pt; line-height: 1.35; color: #000; }
+.rb-resume-skill-line { margin: 0; padding: 0; font-size: 10.5pt; line-height: 1.35; color: #000000; }
 .rb-resume-skill-label { font-weight: bold; }
-table.rb-resume-row { width: 100%; border-collapse: collapse; margin: 0; padding: 0; }
-table.rb-resume-row td { vertical-align: top; padding: 0; border: 0; }
+table.rb-resume-row { width: 100%; border-collapse: collapse; margin: 0; padding: 0; border: 0; }
+table.rb-resume-row td { vertical-align: top; margin: 0; padding: 0; border: 0; }
 table.rb-resume-row td.rb-resume-right { text-align: right; white-space: nowrap; }
 CSS;
 
