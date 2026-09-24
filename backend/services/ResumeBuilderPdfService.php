@@ -91,6 +91,16 @@ final class ResumeBuilderPdfService
         return $html;
     }
 
+    public function renderPdfBytes(string $documentHtml): string
+    {
+        $pdfHtml = $this->prepareDocumentHtmlForPdf($documentHtml);
+        $pdf = $this->createPdfInstance();
+        $pdf->AddPage();
+        $pdf->writeHTML($this->wrapDocumentHtml($pdfHtml), true, false, true, false, '');
+
+        return $pdf->Output('', 'S');
+    }
+
     public function streamPdf(string $documentHtml, string $filename): void
     {
         $safeName = str_replace(['"', "\r", "\n"], '', $filename);
@@ -98,8 +108,19 @@ final class ResumeBuilderPdfService
             $safeName = 'Resume.pdf';
         }
 
-        $pdfHtml = $this->prepareDocumentHtmlForPdf($documentHtml);
+        if (!headers_sent()) {
+            header_remove('Content-Type');
+        }
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $safeName . '"');
+        header('Cache-Control: private, no-store');
+        header('X-Content-Type-Options: nosniff');
+        echo $this->renderPdfBytes($documentHtml);
+        exit;
+    }
 
+    private function createPdfInstance(): TCPDF
+    {
         $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
         $pdf->SetCreator('PlaceHub PMS');
         $pdf->SetAuthor('PlaceHub PMS');
@@ -120,18 +141,8 @@ final class ResumeBuilderPdfService
             'tbody' => [0 => $zeroVSpace, 1 => $zeroVSpace],
         ]);
         $pdf->SetFont('times', '', 10);
-        $pdf->AddPage();
-        $pdf->writeHTML($this->wrapDocumentHtml($pdfHtml), true, false, true, false, '');
 
-        if (!headers_sent()) {
-            header_remove('Content-Type');
-        }
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: attachment; filename="' . $safeName . '"');
-        header('Cache-Control: private, no-store');
-        header('X-Content-Type-Options: nosniff');
-        echo $pdf->Output($safeName, 'S');
-        exit;
+        return $pdf;
     }
 
     /**

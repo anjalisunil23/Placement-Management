@@ -310,6 +310,8 @@
     return 'Resume.pdf';
   }
 
+  let bucketSubmitting = false;
+
   function pdfButtonHtml(extraClass) {
     const reason = pdfDisabledReason();
     const allowed = reason === '';
@@ -325,6 +327,48 @@
       </span>`;
   }
 
+  function bucketButtonHtml(extraClass) {
+    const reason = pdfDisabledReason();
+    const allowed = reason === '' && !bucketSubmitting;
+    const cls = extraClass ? ' ' + extraClass : '';
+    const btn = `
+      <button type="button" class="btn btn-outline-primary${cls}" data-rb-add-to-bucket ${allowed ? '' : 'disabled'} aria-disabled="${allowed ? 'false' : 'true'}">
+        <i class="bi bi-folder-plus me-1"></i><span data-rb-bucket-btn-label>Add to Resume Bucket</span>
+      </button>`;
+    if (reason === '') return btn;
+    return `
+      <span class="d-inline-block" tabindex="0" data-rb-bucket-tooltip-wrap data-bs-toggle="tooltip" data-bs-placement="top" title="${esc(reason)}">
+        ${btn}
+      </span>`;
+  }
+
+  function previewExportButtonsHtml(extraClass) {
+    const cls = extraClass ? ' ' + extraClass : '';
+    return `<div class="d-flex flex-wrap gap-2${cls}">${pdfButtonHtml('')}${bucketButtonHtml('')}</div>`;
+  }
+
+  function setBucketButtonState(state) {
+    root.querySelectorAll('[data-rb-add-to-bucket]').forEach((btn) => {
+      const label = btn.querySelector('[data-rb-bucket-btn-label]');
+      if (state === 'adding') {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        if (label) label.textContent = 'Adding...';
+        return;
+      }
+      if (state === 'done') {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        if (label) label.textContent = 'Added to Resume Bucket';
+        return;
+      }
+      const allowed = pdfDisabledReason() === '' && !bucketSubmitting;
+      btn.disabled = !allowed;
+      btn.setAttribute('aria-disabled', allowed ? 'false' : 'true');
+      if (label) label.textContent = 'Add to Resume Bucket';
+    });
+  }
+
   function updatePdfButtons() {
     const reason = pdfDisabledReason();
     const allowed = reason === '';
@@ -333,6 +377,18 @@
       btn.setAttribute('aria-disabled', allowed ? 'false' : 'true');
     });
     root.querySelectorAll('[data-rb-pdf-tooltip-wrap]').forEach((wrap) => {
+      wrap.setAttribute('title', reason);
+      if (window.bootstrap && typeof bootstrap.Tooltip === 'function') {
+        const tip = bootstrap.Tooltip.getOrCreateInstance(wrap);
+        if (typeof tip.setContent === 'function') {
+          tip.setContent({ '.tooltip-inner': reason });
+        }
+      }
+    });
+    if (!bucketSubmitting) {
+      setBucketButtonState('idle');
+    }
+    root.querySelectorAll('[data-rb-bucket-tooltip-wrap]').forEach((wrap) => {
       wrap.setAttribute('title', reason);
       if (window.bootstrap && typeof bootstrap.Tooltip === 'function') {
         const tip = bootstrap.Tooltip.getOrCreateInstance(wrap);
@@ -1631,7 +1687,7 @@
           <button type="button" class="btn btn-outline-secondary" data-rb-preview-back>
             <i class="bi bi-arrow-left me-1"></i>Back to Resume Builder
           </button>
-          ${pdfButtonHtml('ms-md-auto')}
+          ${previewExportButtonsHtml('ms-md-auto')}
         </div>
         ${body}
       </div>`;
@@ -1771,6 +1827,84 @@
     window.print();
   }
 
+  async function addToResumeBucket() {
+    if (bucketSubmitting) return;
+
+    const reason = pdfDisabledReason();
+    if (reason) {
+      if (typeof toast === 'function') toast(reason, 'warn');
+      return;
+    }
+    if (!canUseResumeBuilderApi()) {
+      if (typeof toast === 'function') toast('Sign in to add your resume to the Resume Bucket.', 'warn');
+      return;
+    }
+    if (!state.previewMode) openLivePreview();
+
+    const printRoot = document.getElementById('rbResumePrintRoot');
+    if (!printRoot || printRoot.classList.contains('rb-resume-empty-doc')) {
+      if (typeof toast === 'function') toast('Add resume content before adding to your Resume Bucket.', 'warn');
+      return;
+    }
+
+    const documentHtml = buildResumeDocumentHtml();
+    bucketSubmitting = true;
+    setBucketButtonState('adding');
+
+    try {
+      const token = (typeof Auth !== 'undefined' && typeof Auth.token === 'function') ? Auth.token() : '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
+        headers.Authorization = 'Bearer ' + token;
+      }
+      const apiBase = (typeof API_BASE !== 'undefined') ? API_BASE : '/backend/api';
+      const res = await fetch(apiBase + '/student/resume-builder/add-to-bucket', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ documentHtml }),
+      });
+
+      let payload = null;
+      try {
+        payload = await res.json();
+      } catch (_parseErr) {
+        payload = null;
+      }
+
+      if (res.status === 409) {
+        const message = (payload && payload.message)
+          ? String(payload.message)
+          : 'Your current resume is already in the Resume Bucket.';
+        if (typeof toast === 'function') toast(message, 'info');
+        setBucketButtonState('done');
+        window.setTimeout(() => setBucketButtonState('idle'), 3000);
+        return;
+      }
+
+      if (!res.ok) {
+        const message = (payload && payload.message)
+          ? String(payload.message)
+          : 'Could not add resume to your Resume Bucket.';
+        throw new Error(message);
+      }
+
+      if (typeof toast === 'function') {
+        toast('Resume added to your Resume Bucket.', 'success');
+      }
+      setBucketButtonState('done');
+      window.setTimeout(() => setBucketButtonState('idle'), 3000);
+    } catch (err) {
+      setBucketButtonState('idle');
+      if (typeof toast === 'function') {
+        toast(err.message || 'Could not add resume to your Resume Bucket.', 'danger');
+      }
+    } finally {
+      bucketSubmitting = false;
+      updatePdfButtons();
+    }
+  }
+
   function sectionCard(section) {
     if (section.id === 'personal') {
       return `
@@ -1886,7 +2020,7 @@
             <button type="button" class="btn btn-outline-primary" data-rb-live-preview>
               <i class="bi bi-eye me-1"></i>Live Preview
             </button>
-            ${pdfButtonHtml('')}
+            ${previewExportButtonsHtml('')}
           </div>
         </div>
       </div>
@@ -1914,6 +2048,10 @@
       }
       if (event.target.closest('[data-rb-generate-pdf]')) {
         generateResumePdf();
+        return;
+      }
+      if (event.target.closest('[data-rb-add-to-bucket]')) {
+        addToResumeBucket();
         return;
       }
       if (event.target.closest('[data-rb-edit-profile]')) {
