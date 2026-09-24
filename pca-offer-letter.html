@@ -133,7 +133,17 @@
     .signature-with-seal {
       display: flex;
       align-items: flex-end;
-      gap: 5mm;
+      gap: 8mm;
+    }
+
+    .signature-item {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .signature-item.seal-item {
+      align-items: center;
     }
 
     .college-seal {
@@ -153,13 +163,20 @@
       max-width: 58mm;
       object-fit: contain;
       object-position: left bottom;
-      margin-bottom: 0.5mm;
+      margin-bottom: 0;
       mix-blend-mode: multiply;
     }
 
     .signature-caption {
       font-weight: 400;
-      margin-top: 0.5mm;
+      margin-top: 1mm;
+      font-size: 10pt;
+      line-height: 1.25;
+      text-align: center;
+    }
+
+    .signature-item:not(.seal-item) .signature-caption {
+      text-align: left;
     }
 
     .qr-block {
@@ -416,10 +433,15 @@
     <div class="signature-row">
       <div class="signature-block">
         <div class="signature-with-seal">
-          <img class="principal-sign" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
-          <img class="college-seal" data-asset="css/img/college-autonomous-seal.png" alt="Amal Jyothi College of Engineering (Autonomous) official seal"/>
+          <div class="signature-item">
+            <img class="principal-sign" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
+            <div class="signature-caption">Signature of Principal</div>
+          </div>
+          <div class="signature-item seal-item">
+            <img class="college-seal" data-asset="css/img/college-autonomous-seal.png" alt="Amal Jyothi College of Engineering (Autonomous) official seal"/>
+            <div class="signature-caption">College seal</div>
+          </div>
         </div>
-        <div class="signature-caption">Signature of Principal</div>
       </div>
       <div class="qr-block" id="qrBlock" aria-label="Verification QR code">
         <img id="pcaQr" width="96" height="96" alt="Verification QR code"/>
