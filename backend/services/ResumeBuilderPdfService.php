@@ -111,6 +111,14 @@ final class ResumeBuilderPdfService
         $pdf->setCellPaddings(0, 0, 0, 0);
         $pdf->setCellMargins(0, 0, 0, 0);
         $pdf->setCellHeightRatio(1.35);
+        $zeroVSpace = ['h' => 0, 'n' => 0];
+        $pdf->setHtmlVSpace([
+            'table' => [0 => $zeroVSpace, 1 => $zeroVSpace],
+            'tr' => [0 => $zeroVSpace, 1 => $zeroVSpace],
+            'td' => [0 => $zeroVSpace, 1 => $zeroVSpace],
+            'thead' => [0 => $zeroVSpace, 1 => $zeroVSpace],
+            'tbody' => [0 => $zeroVSpace, 1 => $zeroVSpace],
+        ]);
         $pdf->SetFont('times', '', 10);
         $pdf->AddPage();
         $pdf->writeHTML($this->wrapDocumentHtml($pdfHtml), true, false, true, false, '');
@@ -307,9 +315,9 @@ final class ResumeBuilderPdfService
             $hr->parentNode->replaceChild($div, $hr);
         }
 
-        foreach ($xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " rb-resume-edu-row ")]') as $row) {
-            if ($row instanceof \DOMElement) {
-                $this->replaceFlexRowWithTable($dom, $row);
+        foreach ($xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " rb-resume-edu ")]') as $edu) {
+            if ($edu instanceof \DOMElement) {
+                $this->replaceEducationBlockWithTable($dom, $edu);
             }
         }
 
@@ -349,6 +357,49 @@ final class ResumeBuilderPdfService
         return $out;
     }
 
+    private function replaceEducationBlockWithTable(\DOMDocument $dom, \DOMElement $edu): void
+    {
+        $rowElements = [];
+        foreach ($edu->childNodes as $child) {
+            if (!$child instanceof \DOMElement) {
+                continue;
+            }
+            $class = ' ' . trim($child->getAttribute('class')) . ' ';
+            if (!str_contains($class, ' rb-resume-edu-row ')) {
+                continue;
+            }
+            $columns = [];
+            foreach ($child->childNodes as $column) {
+                if ($column instanceof \DOMElement) {
+                    $columns[] = $column;
+                }
+            }
+            if ($columns !== []) {
+                $rowElements[] = $columns;
+            }
+        }
+
+        if ($rowElements === [] || !$edu->parentNode instanceof \DOMNode) {
+            return;
+        }
+
+        $table = $dom->createElement('table');
+        $table->setAttribute('class', 'rb-resume-edu rb-resume-edu-table');
+        $this->applyInvisibleTableAttributes($table);
+
+        foreach ($rowElements as $columns) {
+            $tr = $dom->createElement('tr');
+            $this->applyInvisibleTrAttributes($tr);
+            $table->appendChild($tr);
+            $tr->appendChild($this->createInvisibleTdFromElement($dom, $columns[0], '72%'));
+            if (isset($columns[1])) {
+                $tr->appendChild($this->createInvisibleTdFromElement($dom, $columns[1], '28%', true));
+            }
+        }
+
+        $edu->parentNode->replaceChild($table, $edu);
+    }
+
     private function replaceFlexRowWithTable(\DOMDocument $dom, \DOMElement $row): void
     {
         $children = [];
@@ -363,64 +414,109 @@ final class ResumeBuilderPdfService
 
         $table = $dom->createElement('table');
         $table->setAttribute('class', 'rb-resume-row');
+        $this->applyInvisibleTableAttributes($table);
+
+        $tr = $dom->createElement('tr');
+        $this->applyInvisibleTrAttributes($tr);
+        $table->appendChild($tr);
+        $tr->appendChild($this->createInvisibleTdFromElement($dom, $children[0], '72%'));
+
+        if (isset($children[1])) {
+            $tr->appendChild($this->createInvisibleTdFromElement($dom, $children[1], '28%', true));
+        }
+
+        $row->parentNode->replaceChild($table, $row);
+    }
+
+    private function applyInvisibleTableAttributes(\DOMElement $table): void
+    {
         $table->setAttribute('cellpadding', '0');
         $table->setAttribute('cellspacing', '0');
         $table->setAttribute('width', '100%');
         $table->setAttribute('border', '0');
+        $this->appendInlineStyle($table, 'border:none;border-collapse:collapse;margin:0;padding:0;background:transparent;');
+    }
 
-        $tr = $dom->createElement('tr');
-        $table->appendChild($tr);
+    private function applyInvisibleTrAttributes(\DOMElement $tr): void
+    {
+        $this->appendInlineStyle($tr, 'border:none;margin:0;padding:0;background:transparent;');
+    }
 
-        $left = $children[0];
-        $tdLeft = $dom->createElement('td');
-        $tdLeft->setAttribute('width', '72%');
-        $tdLeft->setAttribute('valign', 'top');
-        if ($left->hasAttribute('class')) {
-            $tdLeft->setAttribute('class', $left->getAttribute('class'));
+    private function createInvisibleTdFromElement(
+        \DOMDocument $dom,
+        \DOMElement $source,
+        string $width,
+        bool $rightAlign = false
+    ): \DOMElement {
+        $td = $dom->createElement('td');
+        $td->setAttribute('width', $width);
+        $td->setAttribute('valign', 'top');
+        if ($rightAlign) {
+            $td->setAttribute('align', 'right');
         }
-        while ($left->firstChild) {
-            $tdLeft->appendChild($left->firstChild);
+        $class = trim($source->getAttribute('class'));
+        if ($rightAlign) {
+            $class = trim($class . ' rb-resume-right');
         }
-        $tr->appendChild($tdLeft);
-
-        if (isset($children[1])) {
-            $right = $children[1];
-            $tdRight = $dom->createElement('td');
-            $tdRight->setAttribute('width', '28%');
-            $tdRight->setAttribute('align', 'right');
-            $tdRight->setAttribute('valign', 'top');
-            $rightClass = trim($right->getAttribute('class') . ' rb-resume-right');
-            $tdRight->setAttribute('class', $rightClass);
-            while ($right->firstChild) {
-                $tdRight->appendChild($right->firstChild);
-            }
-            $tr->appendChild($tdRight);
+        if ($class !== '') {
+            $td->setAttribute('class', $class);
+        }
+        $style = 'border:none;outline:none;margin:0;padding:0;vertical-align:top;background:transparent;';
+        if ($rightAlign) {
+            $style .= 'text-align:right;white-space:nowrap;';
+        }
+        $this->appendInlineStyle($td, $style);
+        while ($source->firstChild) {
+            $td->appendChild($source->firstChild);
         }
 
-        $row->parentNode->replaceChild($table, $row);
+        return $td;
+    }
+
+    private function appendInlineStyle(\DOMElement $element, string $style): void
+    {
+        $existing = trim($element->getAttribute('style'));
+        $element->setAttribute('style', $existing === '' ? $style : $existing . $style);
     }
 
     private function prepareDocumentHtmlForPdfRegex(string $html): string
     {
         $html = preg_replace('/<hr class="rb-resume-rule"[^>]*\/?>/', '<div class="rb-resume-rule"></div>', $html) ?? $html;
 
+        $invisibleTable = 'style="border:none;border-collapse:collapse;margin:0;padding:0;background:transparent;" cellpadding="0" cellspacing="0" width="100%" border="0"';
+        $invisibleTr = 'style="border:none;margin:0;padding:0;background:transparent;"';
+        $invisibleTd = 'style="border:none;outline:none;margin:0;padding:0;vertical-align:top;background:transparent;"';
+        $invisibleTdRight = 'style="border:none;outline:none;margin:0;padding:0;vertical-align:top;background:transparent;text-align:right;white-space:nowrap;"';
+
         $html = preg_replace_callback(
-            '/<div class="rb-resume-edu-row">\s*<div class="([^"]+)">(.*?)<\/div>\s*<div class="([^"]+)">(.*?)<\/div>\s*<\/div>/s',
-            static function (array $m): string {
-                return '<table class="rb-resume-row" cellpadding="0" cellspacing="0" width="100%" border="0"><tr>'
-                    . '<td class="' . $m[1] . '" width="72%" valign="top">' . $m[2] . '</td>'
-                    . '<td class="' . $m[3] . ' rb-resume-right" width="28%" align="right" valign="top">' . $m[4] . '</td>'
-                    . '</tr></table>';
+            '/<div class="rb-resume-edu">\s*((?:<div class="rb-resume-edu-row">.*?<\/div>\s*)+)<\/div>/s',
+            static function (array $m) use ($invisibleTable, $invisibleTr, $invisibleTd, $invisibleTdRight): string {
+                $rowsHtml = '';
+                if (preg_match_all(
+                    '/<div class="rb-resume-edu-row">\s*<div class="([^"]+)">(.*?)<\/div>\s*<div class="([^"]+)">(.*?)<\/div>\s*<\/div>/s',
+                    $m[1],
+                    $rows,
+                    PREG_SET_ORDER
+                )) {
+                    foreach ($rows as $row) {
+                        $rowsHtml .= '<tr ' . $invisibleTr . '>'
+                            . '<td class="' . $row[1] . '" ' . $invisibleTd . ' width="72%" valign="top">' . $row[2] . '</td>'
+                            . '<td class="' . $row[3] . ' rb-resume-right" ' . $invisibleTdRight . ' width="28%" align="right" valign="top">' . $row[4] . '</td>'
+                            . '</tr>';
+                    }
+                }
+
+                return '<table class="rb-resume-edu rb-resume-edu-table" ' . $invisibleTable . '>' . $rowsHtml . '</table>';
             },
             $html
         ) ?? $html;
 
         return preg_replace_callback(
             '/<div class="rb-resume-entry-top">\s*<div class="rb-resume-entry-title">(.*?)<\/div>\s*<div class="([^"]+)">(.*?)<\/div>\s*<\/div>/s',
-            static function (array $m): string {
-                return '<table class="rb-resume-row" cellpadding="0" cellspacing="0" width="100%" border="0"><tr>'
-                    . '<td class="rb-resume-entry-title" width="72%" valign="top">' . $m[1] . '</td>'
-                    . '<td class="' . $m[2] . ' rb-resume-right" width="28%" align="right" valign="top">' . $m[3] . '</td>'
+            static function (array $m) use ($invisibleTable, $invisibleTr, $invisibleTd, $invisibleTdRight): string {
+                return '<table class="rb-resume-row" ' . $invisibleTable . '><tr ' . $invisibleTr . '>'
+                    . '<td class="rb-resume-entry-title" ' . $invisibleTd . ' width="72%" valign="top">' . $m[1] . '</td>'
+                    . '<td class="' . $m[2] . ' rb-resume-right" ' . $invisibleTdRight . ' width="28%" align="right" valign="top">' . $m[3] . '</td>'
                     . '</tr></table>';
             },
             $html
@@ -442,7 +538,7 @@ body { margin: 0; padding: 0; color: #000000; }
 .rb-resume-para { margin: 0; padding: 0; font-size: 10.5pt; line-height: 1.38; color: #000000; text-align: justify; }
 .rb-resume-bullets, .rb-resume-list { margin: 1pt 0 0 0; padding-left: 12pt; }
 .rb-resume-bullets li, .rb-resume-list li { margin: 0; padding: 0 0 1pt 0; font-size: 10.5pt; line-height: 1.35; color: #000000; }
-.rb-resume-edu { margin: 0 0 3pt 0; padding: 0; }
+.rb-resume-edu, table.rb-resume-edu-table { margin: 0 0 3pt 0; padding: 0; }
 .rb-resume-edu-degree, .rb-resume-entry-title { font-weight: bold; font-size: 10.5pt; line-height: 1.3; color: #000000; }
 .rb-resume-edu-inst, .rb-resume-entry-org { font-size: 10pt; font-style: italic; font-weight: normal; line-height: 1.3; color: #000000; }
 .rb-resume-edu-year, .rb-resume-entry-right { font-size: 10.5pt; font-weight: bold; color: #000000; }
@@ -452,9 +548,10 @@ body { margin: 0; padding: 0; color: #000000; }
 .rb-resume-strong { font-weight: bold; }
 .rb-resume-skill-line { margin: 0; padding: 0; font-size: 10.5pt; line-height: 1.35; color: #000000; }
 .rb-resume-skill-label { font-weight: bold; }
-table.rb-resume-row { width: 100%; border-collapse: collapse; margin: 0; padding: 0; border: 0; }
-table.rb-resume-row td { vertical-align: top; margin: 0; padding: 0; border: 0; }
-table.rb-resume-row td.rb-resume-right { text-align: right; white-space: nowrap; }
+table.rb-resume-edu-table, table.rb-resume-row { width: 100%; border-collapse: collapse; margin: 0; padding: 0; border: none; background: transparent; }
+table.rb-resume-edu-table tr, table.rb-resume-row tr { margin: 0; padding: 0; border: none; background: transparent; }
+table.rb-resume-edu-table td, table.rb-resume-row td { vertical-align: top; margin: 0; padding: 0; border: none; outline: none; background: transparent; }
+table.rb-resume-edu-table td.rb-resume-right, table.rb-resume-row td.rb-resume-right { text-align: right; white-space: nowrap; }
 CSS;
 
         return '<style>' . $css . '</style><body>' . $documentHtml . '</body>';

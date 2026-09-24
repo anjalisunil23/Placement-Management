@@ -33,6 +33,16 @@ $html = <<<'HTML'
     <div class="rb-resume-edu-score rb-resume-right-bold">CGPA: 9.07</div>
   </div>
 </div>
+<div class="rb-resume-edu">
+  <div class="rb-resume-edu-row">
+    <div class="rb-resume-edu-degree">Bachelor of Computer Applications</div>
+    <div class="rb-resume-edu-year rb-resume-right-bold">2022 - 2025</div>
+  </div>
+  <div class="rb-resume-edu-row">
+    <div class="rb-resume-edu-inst">St. Antony's College, Peruvanthanam</div>
+    <div class="rb-resume-edu-score rb-resume-right-bold">CGPA: 8.60</div>
+  </div>
+</div>
 </section>
 <div class="rb-resume-entry">
   <div class="rb-resume-entry-top">
@@ -49,12 +59,19 @@ $method = $ref->getMethod('prepareDocumentHtmlForPdf');
 $method->setAccessible(true);
 $out = (string) $method->invoke($service, $html);
 
-$assert(str_contains($out, 'table class="rb-resume-row"'), 'education rows become tables');
+$tableCount = substr_count($out, '<table');
+$eduTableCount = substr_count($out, 'rb-resume-edu-table');
+
+$assert(str_contains($out, 'rb-resume-edu-table'), 'education blocks become merged tables');
+$assert($eduTableCount === 2, 'one merged table per education entry');
+$assert($tableCount === 3, 'experience row uses a single additional table');
 $assert(!str_contains($out, 'rb-resume-edu-row'), 'flex edu rows removed');
 $assert(!str_contains($out, 'rb-resume-entry-top'), 'flex entry rows removed');
 $assert(!str_contains($out, '<hr'), 'hr replaced for TCPDF');
 $assert(str_contains($out, 'rb-resume-rule'), 'section rule preserved as div');
 $assert(!str_contains($out, '<section'), 'section tags flattened to div');
+$assert(str_contains($out, 'border:none'), 'inline border removal on table cells');
+$assert(substr_count($out, '<tr') === 5, 'two rows per education entry plus one experience row');
 
 echo PHP_EOL . $passed . ' passed, ' . $failed . ' failed' . PHP_EOL;
 exit($failed > 0 ? 1 : 0);
