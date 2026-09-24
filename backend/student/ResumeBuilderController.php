@@ -729,7 +729,13 @@ final class ResumeBuilderController
             $pdfService->streamPdf($documentHtml, $filename);
         } catch (\Throwable $e) {
             error_log('Resume PDF generation failed: ' . $e->getMessage());
-            Response::error('Unable to generate your resume PDF. Please try again.', 500);
+            $detail = trim($e->getMessage());
+            Response::error(
+                $detail !== ''
+                    ? ('Unable to generate your resume PDF. ' . $detail)
+                    : 'Unable to generate your resume PDF. Please try again.',
+                500
+            );
         }
     }
 

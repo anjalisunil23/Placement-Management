@@ -1766,12 +1766,14 @@
         headers,
         body: JSON.stringify({ documentHtml: printRoot.outerHTML }),
       });
-      const contentType = String(res.headers.get('Content-Type') || '');
-      if (!res.ok || contentType.indexOf('pdf') === -1) {
+      const buf = await res.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const looksLikePdf = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+      if (!res.ok || !looksLikePdf) {
         let message = failMessage;
         try {
-          const json = JSON.parse(await res.text());
-          if (json && json.message && res.status !== 500) message = String(json.message);
+          const json = JSON.parse(new TextDecoder().decode(bytes));
+          if (json && json.message) message = String(json.message);
         } catch (_err) {
           // Keep generic message.
         }
@@ -1779,7 +1781,7 @@
         else window.alert(message);
         return;
       }
-      const blob = await res.blob();
+      const blob = new Blob([buf], { type: 'application/pdf' });
       let filename = resumePdfFilename();
       const disposition = String(res.headers.get('Content-Disposition') || '');
       const match = disposition.match(/filename="?([^"]+)"?/i);

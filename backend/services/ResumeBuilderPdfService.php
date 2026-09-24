@@ -166,10 +166,21 @@ CSS;
     private function printHtmlToPdfWithChromium(string $html): string
     {
         $chrome = $this->resolveChromeBinary();
-        if ($chrome === null) {
-            throw new \RuntimeException('Chromium is not available for resume PDF export.');
+        if ($chrome === null || !function_exists('proc_open')) {
+            error_log('Resume PDF: Chromium is not available; using TCPDF fallback.');
+            return $this->printHtmlToPdfWithTcpdf($html);
         }
 
+        try {
+            return $this->runChromePrintToPdf($chrome, $html);
+        } catch (\Throwable $e) {
+            error_log('Resume PDF Chromium failed: ' . $e->getMessage() . ' — using TCPDF fallback.');
+            return $this->printHtmlToPdfWithTcpdf($html);
+        }
+    }
+
+    private function runChromePrintToPdf(string $chrome, string $html): string
+    {
         $tempDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR);
         $htmlFile = $tempDir . DIRECTORY_SEPARATOR . 'pms-resume-' . bin2hex(random_bytes(8)) . '.html';
         $pdfFile = $tempDir . DIRECTORY_SEPARATOR . 'pms-resume-' . bin2hex(random_bytes(8)) . '.pdf';
@@ -189,6 +200,7 @@ CSS;
                 $chrome,
                 '--headless=new',
                 '--disable-gpu',
+                '--no-sandbox',
                 '--allow-file-access-from-files',
                 '--no-first-run',
                 '--no-default-browser-check',
@@ -216,12 +228,12 @@ CSS;
             }
             fclose($pipes[0]);
             stream_get_contents($pipes[1]);
-            stream_get_contents($pipes[2]);
+            $stderr = (string) stream_get_contents($pipes[2]);
             fclose($pipes[1]);
             fclose($pipes[2]);
             $code = proc_close($process);
             if ($code !== 0 && !is_file($pdfFile)) {
-                throw new \RuntimeException('Chromium PDF export failed.');
+                throw new \RuntimeException('Chromium PDF export failed: ' . substr($stderr, 0, 400));
             }
             if (!is_readable($pdfFile)) {
                 throw new \RuntimeException('Chromium PDF was not created.');
@@ -242,23 +254,33 @@ CSS;
         }
     }
 
+    private function printHtmlToPdfWithTcpdf(string $html): string
+    {
+        $html = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html) ?? $html;
+        $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+        $pdf->SetCreator('PlaceHub PMS');
+        $pdf->SetTitle('Resume');
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+        $pdf->SetMargins(16, 16, 16);
+        $pdf->SetAutoPageBreak(true, 16);
+        $pdf->setCellPaddings(0, 0, 0, 0);
+        $pdf->AddPage();
+        $pdf->SetFont('times', '', 10.5);
+        $pdf->writeHTML($html, true, false, true, false, '');
+        $bytes = $pdf->Output('', 'S');
+        if ($bytes === '' || strncmp($bytes, '%PDF', 4) !== 0) {
+            throw new \RuntimeException('TCPDF did not return a PDF.');
+        }
+        return $bytes;
+    }
+
     private function resolveChromeBinary(): ?string
     {
         $candidates = [];
-        $configPath = '';
-        $appConfig = dirname(__DIR__) . '/config/app.php';
-        if (is_readable($appConfig)) {
-            $cfg = require $appConfig;
-            if (is_array($cfg)) {
-                $configPath = trim((string) ($cfg['chrome_path'] ?? ''));
-            }
-        }
+        $configPath = trim((string) ($_ENV['CHROME_PATH'] ?? getenv('CHROME_PATH') ?: ''));
         if ($configPath !== '') {
             $candidates[] = $configPath;
-        }
-        $env = trim((string) (getenv('CHROME_PATH') ?: ''));
-        if ($env !== '') {
-            $candidates[] = $env;
         }
 
         $home = (string) (getenv('LOCALAPPDATA') ?: getenv('HOME') ?: '');
@@ -274,8 +296,15 @@ CSS;
             '/snap/bin/chromium',
         ]);
 
+        $usersRoot = (getenv('SystemDrive') ?: 'C:') . '\\Users';
+        if (is_dir($usersRoot)) {
+            foreach (glob($usersRoot . '\\*\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe') ?: [] as $userChrome) {
+                $candidates[] = $userChrome;
+            }
+        }
+
         foreach ($candidates as $path) {
-            $path = trim($path);
+            $path = trim((string) $path);
             if ($path !== '' && is_file($path) && is_executable($path)) {
                 return $path;
             }
