@@ -1277,7 +1277,10 @@
   body.rb-printing-resume .sidebar,
   body.rb-printing-resume .topbar,
   body.rb-printing-resume .page-header,
+  body.rb-printing-resume #saveSettings,
   body.rb-printing-resume #settingsNav,
+  body.rb-printing-resume .col-lg-3,
+  body.rb-printing-resume .tab-pane:not(#resume-builder),
   body.rb-printing-resume [data-rb-dashboard],
   body.rb-printing-resume .rb-preview-page-bar,
   body.rb-printing-resume .rb-preview-notice {
@@ -1291,13 +1294,11 @@
     background: #fff !important;
     box-shadow: none !important;
   }
-  body.rb-printing-resume * {
-    visibility: hidden !important;
-  }
-  body.rb-printing-resume #rbResumePrintRoot,
-  body.rb-printing-resume #rbResumePrintRoot * {
-    visibility: visible !important;
-  }
+  body.rb-printing-resume .main,
+  body.rb-printing-resume .page,
+  body.rb-printing-resume .row.g-3,
+  body.rb-printing-resume .col-lg-9,
+  body.rb-printing-resume #resume-builder,
   body.rb-printing-resume .rb-preview-page,
   body.rb-printing-resume .rb-preview-stage,
   body.rb-printing-resume .rb-preview-paper {
@@ -1308,24 +1309,19 @@
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
+    max-width: none !important;
     min-height: auto !important;
     border-radius: 0 !important;
   }
   body.rb-printing-resume #rbResumePrintRoot {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    padding: 16mm !important;
+    position: static !important;
+    width: 100% !important;
     margin: 0 !important;
     border: 0 !important;
     outline: 0 !important;
     background: #fff !important;
     color: #000 !important;
     box-shadow: none !important;
-    font-family: "Times New Roman", Times, "Liberation Serif", serif !important;
-    font-size: 10.5pt !important;
-    line-height: 1.35 !important;
   }
   body.rb-printing-resume .rb-resume-edu-row,
   body.rb-printing-resume .rb-resume-entry-top {

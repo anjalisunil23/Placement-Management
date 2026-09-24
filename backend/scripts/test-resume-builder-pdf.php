@@ -32,7 +32,8 @@ $assert(str_contains($js, 'function generateResumePdf'), 'generateResumePdf help
 $assert(str_contains($js, 'data-rb-generate-pdf'), 'Generate Resume PDF button marker');
 $assert(!str_contains($js, 'Print Preview'), 'Print Preview removed from Resume Builder flow');
 $assert(!str_contains($js, 'data-rb-preview-print'), 'print preview action removed');
-$assert(str_contains($js, '/student/resume-builder/pdf'), 'PDF API path in frontend');
+$assert(str_contains($js, 'rb-printing-resume'), 'browser print PDF uses preview print stylesheet');
+$assert(str_contains($js, 'window.print()'), 'PDF generated via browser print engine');
 $assert(str_contains($js, 'resumePdfFilename'), 'client filename fallback helper');
 $assert(str_contains($js, 'pdfGenerationAllowed'), 'PDF availability helper');
 $assert(str_contains($js, 'hasPdfMinimumPersonal'), 'PDF minimum personal check');
@@ -51,7 +52,7 @@ $assert(str_contains($service, 'replaceFlexRowWithTable'), 'flex rows converted 
 $assert(str_contains($service, "SetFont('times'"), 'Times font for PDF parity');
 $assert(!str_contains($service, 'Complete required sections first'), 'generic completion block removed from service');
 $assert(str_contains($service, 'Please complete your basic profile and education details before generating your resume.'), 'precise PDF block message in service');
-$assert(str_contains($settings, 'resume-builder.js?v=20260924rb23'), 'JS cache bust for PDF flow');
+$assert(str_contains($settings, 'resume-builder.js?v=20260924rb24'), 'JS cache bust for PDF flow');
 
 $sampleHtml = <<<'HTML'
 <article class="rb-resume-doc"><header class="rb-resume-header"><h1 class="rb-resume-name">Adonia Cyrus</h1><p class="rb-resume-contact">9876543210 | adonia@example.com</p></header><section class="rb-resume-section"><h2 class="rb-resume-h2">Education</h2><div class="rb-resume-edu"></div></section></article>

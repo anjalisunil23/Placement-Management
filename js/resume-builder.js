@@ -1728,15 +1728,16 @@
     }
   }
 
-  async function generateResumePdf() {
+  function generateResumePdf() {
     const reason = pdfDisabledReason();
     if (reason) {
       if (typeof toast === 'function') toast(reason, 'warn');
       return;
     }
     if (!state.previewMode) openLivePreview();
-    const documentHtml = buildResumeDocumentHtml();
-    if (documentHtml.indexOf('rb-resume-empty-doc') !== -1) {
+
+    const printRoot = document.getElementById('rbResumePrintRoot');
+    if (!printRoot || printRoot.classList.contains('rb-resume-empty-doc')) {
       if (typeof toast === 'function') toast('Add resume content before generating a PDF.', 'warn');
       return;
     }
@@ -1744,50 +1745,34 @@
     const buttons = root.querySelectorAll('[data-rb-generate-pdf]');
     buttons.forEach((btn) => { btn.disabled = true; });
 
-    try {
-      const token = (typeof Auth !== 'undefined' && typeof Auth.token === 'function') ? Auth.token() : '';
-      const headers = { 'Content-Type': 'application/json' };
-      if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
-        headers.Authorization = 'Bearer ' + token;
-      }
-      const apiBase = (typeof API_BASE !== 'undefined') ? API_BASE : '/backend/api';
-      const res = await fetch(apiBase + '/student/resume-builder/pdf', {
-        method: 'POST',
-        credentials: 'include',
-        headers,
-        body: JSON.stringify({ documentHtml }),
-      });
+    const previousTitle = document.title;
+    document.title = resumePdfFilename();
 
-      if (!res.ok) {
-        let message = 'Could not generate resume PDF.';
-        try {
-          const err = await res.json();
-          if (err && err.message) message = String(err.message);
-        } catch (_parseErr) {
-          // Ignore non-JSON error bodies.
-        }
-        throw new Error(message);
-      }
+    document.body.classList.add('rb-printing-resume');
 
-      const blob = await res.blob();
-      const cd = res.headers.get('Content-Disposition') || '';
-      const match = /filename="([^"]+)"/i.exec(cd);
-      const filename = match ? match[1] : resumePdfFilename();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.rel = 'noopener';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      if (typeof toast === 'function') toast('Resume PDF downloaded.', 'success');
-    } catch (err) {
-      if (typeof toast === 'function') toast(err.message || 'Could not generate resume PDF.', 'danger');
-    } finally {
+    const cleanup = () => {
+      document.body.classList.remove('rb-printing-resume');
+      document.title = previousTitle;
       updatePdfButtons();
+    };
+
+    const afterPrint = () => {
+      window.removeEventListener('afterprint', afterPrint);
+      cleanup();
+    };
+    window.addEventListener('afterprint', afterPrint);
+    window.setTimeout(() => {
+      if (document.body.classList.contains('rb-printing-resume')) {
+        window.removeEventListener('afterprint', afterPrint);
+        cleanup();
+      }
+    }, 2000);
+
+    if (typeof toast === 'function') {
+      toast('In the print dialog, choose "Save as PDF" to download your resume.', 'info');
     }
+
+    window.print();
   }
 
   function sectionCard(section) {
