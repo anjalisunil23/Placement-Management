@@ -52,7 +52,7 @@ $assert(str_contains($service, 'replaceFlexRowWithTable'), 'flex rows converted 
 $assert(str_contains($service, "SetFont('times'"), 'Times font for PDF parity');
 $assert(!str_contains($service, 'Complete required sections first'), 'generic completion block removed from service');
 $assert(str_contains($service, 'Please complete your basic profile and education details before generating your resume.'), 'precise PDF block message in service');
-$assert(str_contains($settings, 'resume-builder.js?v=20260924rb25'), 'JS cache bust for PDF flow');
+$assert(str_contains($settings, 'resume-builder.js?v=20260924rb26'), 'JS cache bust for PDF flow');
 
 $sampleHtml = <<<'HTML'
 <article class="rb-resume-doc"><header class="rb-resume-header"><h1 class="rb-resume-name">Adonia Cyrus</h1><p class="rb-resume-contact">9876543210 | adonia@example.com</p></header><section class="rb-resume-section"><h2 class="rb-resume-h2">Education</h2><div class="rb-resume-edu"></div></section></article>
