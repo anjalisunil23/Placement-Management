@@ -4963,6 +4963,22 @@ const DriveStore = {
     this._alumniCache = q ? mapped : this.filterApplicantDrives(mapped);
     return this._alumniCache;
   },
+  async fetchApplicantDriveById(driveId) {
+    const id = String(driveId || '').trim();
+    if (!id || Auth.isDemo()) return null;
+    const role = Auth.role();
+    if (role === 'student') {
+      const res = await api(`/student/drives/${encodeURIComponent(id)}`, { skipAuthRedirect: true });
+      if (!res.success || !res.data) return null;
+      return this.mapStudentDrive(res.data);
+    }
+    if (role === 'alumni') {
+      const res = await api(`/alumni/drives/${encodeURIComponent(id)}`, { skipAuthRedirect: true });
+      if (!res.success || !res.data) return null;
+      return this.mapStudentDrive(res.data);
+    }
+    return null;
+  },
   allWithCatalog() {
     if (this._studentCache?.length) return this._studentCache;
     if (this._alumniCache?.length) return this._alumniCache;
@@ -5496,6 +5512,29 @@ function isSharedAptitudeTestUrl(raw) {
     const u = /^https?:\/\//i.test(str) ? new URL(str) : new URL(str.startsWith('/') ? str : `/${str}`, base);
     const page = u.pathname.replace(/^\//, '').split('/').pop() || '';
     return page === 'mock-aptitude.html' && !!u.searchParams.get('test');
+  } catch {
+    return false;
+  }
+}
+
+/** True when the current page is a shared placement drive deep link. */
+function sharedDriveEntry() {
+  try {
+    return isSharedDriveUrl(location.pathname + location.search);
+  } catch {
+    return false;
+  }
+}
+
+/** True when URL targets a shared drive link (drives.html?drive=…). */
+function isSharedDriveUrl(raw) {
+  try {
+    const str = String(raw || '').trim();
+    if (!str) return false;
+    const base = typeof location !== 'undefined' ? location.origin : 'http://localhost';
+    const u = /^https?:\/\//i.test(str) ? new URL(str) : new URL(str.startsWith('/') ? str : `/${str}`, base);
+    const page = u.pathname.replace(/^\//, '').split('/').pop() || '';
+    return page === 'drives.html' && !!u.searchParams.get('drive');
   } catch {
     return false;
   }

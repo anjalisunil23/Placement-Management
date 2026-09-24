@@ -572,7 +572,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723statussearch3"></script>
+<script src="js/api.js?v=20260924driveshare"></script>
 <script src="js/app.js?v=20260722profilenav"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1210,6 +1210,80 @@ function drivesFromCardIds(idsCsv) {
   return rows.filter(d => !isDriveHiddenFromNonAdmin(d));
 }
 
+function getSharedDriveIdFromUrl() {
+  try {
+    return new URLSearchParams(location.search).get('drive') || '';
+  } catch {
+    return '';
+  }
+}
+
+function buildDriveShareUrl(driveId) {
+  const url = new URL('drives.html', window.location.href);
+  url.searchParams.set('drive', String(driveId || ''));
+  return url.href;
+}
+
+async function copyDriveShareLink(driveId) {
+  const id = String(driveId || '').trim();
+  if (!id) {
+    toast('Could not build share link.', 'warn');
+    return;
+  }
+  const url = buildDriveShareUrl(id);
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch {
+    const helper = document.createElement('textarea');
+    helper.value = url;
+    document.body.appendChild(helper);
+    helper.select();
+    document.execCommand('copy');
+    helper.remove();
+  }
+  toast('Drive link copied. Share it with students to open this drive.', 'success');
+}
+
+async function resolveSharedDrive(driveId) {
+  const id = String(driveId || '').trim();
+  if (!id) return null;
+  let drive = allDrives.find(d => String(d.id) === id);
+  if (drive) return drive;
+  if ((isStudent || alumniSeeking) && Auth.hasRealAuth() && !Auth.isDemo()) {
+    drive = await DriveStore.fetchApplicantDriveById(id);
+    if (drive) {
+      allDrives = [...allDrives.filter(d => String(d.id) !== id), drive];
+    }
+  }
+  return drive || null;
+}
+
+async function tryOpenSharedDrive() {
+  const driveId = getSharedDriveIdFromUrl();
+  if (!driveId) return;
+
+  const drive = await resolveSharedDrive(driveId);
+  if (!drive) {
+    toast('This drive link is invalid or the drive is not available.', 'error');
+    history.replaceState(null, '', 'drives.html');
+    return;
+  }
+
+  const companyKey = companyGroupKey(drive);
+  const group = allDrives.filter(d => companyGroupKey(d) === companyKey);
+  const list = group.length ? group : [drive];
+  const idsCsv = list.map(d => d.id).join(',');
+
+  if (canManage) {
+    openDriveApplicants(driveId);
+  } else {
+    openCompanyDriveDetail(idsCsv);
+    fillDriveDetailPanel(list, driveId);
+  }
+
+  history.replaceState(null, '', 'drives.html');
+}
+
 function driveAlreadyApplied(d) {
   if (!d) return false;
   if (d.applied) return true;
@@ -1549,6 +1623,7 @@ function filteredDrives() {
 function manageActions(d) {
   if (!canManage) return '';
   return `<div class="d-flex gap-1">
+    <button type="button" class="icon-btn" style="width:30px;height:30px" title="Copy share link" onclick="event.stopPropagation(); copyDriveShareLink('${d.id}')"><i class="bi bi-link-45deg"></i></button>
     <button type="button" class="icon-btn" style="width:30px;height:30px" title="View applicants" onclick="event.stopPropagation(); openDriveApplicants('${d.id}')"><i class="bi bi-people"></i></button>
     <button type="button" class="icon-btn" style="width:30px;height:30px" title="Edit" onclick="event.stopPropagation(); openEditDrive('${d.id}')"><i class="bi bi-pencil"></i></button>
     <button type="button" class="icon-btn" style="width:30px;height:30px;color:var(--danger)" title="Delete" onclick="event.stopPropagation(); deleteDrive('${d.id}')"><i class="bi bi-trash"></i></button>
@@ -2544,7 +2619,18 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
   });
   if (!result) return;
   bootstrap.Modal.getInstance(document.getElementById('createModal'))?.hide();
-  toast('Drive published successfully.', 'success');
+  const newDriveId = String(result.id || result._id || '').trim();
+  if (newDriveId) {
+    const url = buildDriveShareUrl(newDriveId);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Drive published. Share link copied to clipboard.', 'success');
+    } catch {
+      toast('Drive published. Copy the share link from the drives table.', 'success');
+    }
+  } else {
+    toast('Drive published successfully.', 'success');
+  }
   await DriveStore.fetch();
   await loadDrives();
 });
@@ -3192,6 +3278,7 @@ onAppReady(async () => {
   if (alumniSeeking && !Auth.isDemo()) await AlumniApps.fetch();
   // loadDrives() fetches for students/alumni/managers; avoid a duplicate DriveStore.fetch.
   await loadDrives();
+  await tryOpenSharedDrive();
   if (location.hash === '#create' && canManage) {
     openCreateDrive();
     history.replaceState(null, '', 'drives.html');

@@ -525,6 +525,38 @@ final class AlumniController
     Response::success(DocumentHelper::jsonSafe($result));
   }
 
+  /** GET /api/alumni/drives/{id} — shared drive deep link (open or status lookup). */
+  public function driveDetails(string $driveId): void
+  {
+    $user = RBACMiddleware::requireAlumni();
+    $student = (new StudentModel())->findByUserId((string) $user['_id']);
+    if (!$student) {
+      Response::notFound('Drive not found.');
+    }
+
+    $drive = (new DriveModel())->findById($driveId);
+    if (!$drive) {
+      Response::notFound('Drive not found.');
+    }
+
+    $studentId = (string) $student['_id'];
+    $appModel = new ApplicationModel();
+    $engine = new EligibilityEngine();
+    $eligibility = $engine->checkForDrive($studentId, $driveId);
+    $alreadyApplied = (bool) $appModel->findByStudentAndDrive($studentId, $driveId);
+    if (!$alreadyApplied && !$engine->driveVisibleToStudent($student, $drive)) {
+      Response::notFound('Drive not found.');
+    }
+
+    $company = !empty($drive['companyId']) ? (new CompanyModel())->findById((string) $drive['companyId']) : null;
+    $enriched = (new OfficerDataService())->enrichDrivesWithCompany([$drive]);
+    $out = $enriched[0] ?? DocumentHelper::serialize($drive);
+    $out['company'] = $company ? DocumentHelper::serialize($company) : null;
+    $out['eligibilityCheck'] = $eligibility;
+    $out['applied'] = $alreadyApplied;
+    Response::success($out);
+  }
+
   /** GET /api/alumni/resumes */
   public function listResumes(): void
   {
