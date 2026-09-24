@@ -1728,10 +1728,11 @@
     }
   }
 
-  function generateResumePdf() {
+  async function generateResumePdf() {
     const reason = pdfDisabledReason();
     if (reason) {
       if (typeof toast === 'function') toast(reason, 'warn');
+      else window.alert(reason);
       return;
     }
     if (!state.previewMode) openLivePreview();
@@ -1739,36 +1740,69 @@
     const printRoot = document.getElementById('rbResumePrintRoot');
     if (!printRoot || printRoot.classList.contains('rb-resume-empty-doc')) {
       if (typeof toast === 'function') toast('Add resume content before generating a PDF.', 'warn');
+      else window.alert('Add resume content before generating a PDF.');
       return;
     }
 
-    const buttons = root.querySelectorAll('[data-rb-generate-pdf]');
-    buttons.forEach((btn) => { btn.disabled = true; });
+    const buttons = Array.from(root.querySelectorAll('[data-rb-generate-pdf]'));
+    const previous = buttons.map((btn) => ({ el: btn, html: btn.innerHTML, disabled: btn.disabled }));
+    buttons.forEach((btn) => {
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating PDF...';
+    });
 
-    const previousTitle = document.title;
-    document.title = resumePdfFilename();
-
-    document.body.classList.add('rb-printing-resume');
-
-    const cleanup = () => {
-      document.body.classList.remove('rb-printing-resume');
-      document.title = previousTitle;
-      updatePdfButtons();
-    };
-
-    const afterPrint = () => {
-      window.removeEventListener('afterprint', afterPrint);
-      cleanup();
-    };
-    window.addEventListener('afterprint', afterPrint);
-    window.setTimeout(() => {
-      if (document.body.classList.contains('rb-printing-resume')) {
-        window.removeEventListener('afterprint', afterPrint);
-        cleanup();
+    const failMessage = 'Unable to generate your resume PDF. Please try again.';
+    try {
+      const token = (typeof Auth !== 'undefined' && typeof Auth.token === 'function') ? Auth.token() : '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
+        headers.Authorization = 'Bearer ' + token;
       }
-    }, 2000);
-
-    window.print();
+      const apiBase = (typeof API_BASE !== 'undefined' && API_BASE) ? API_BASE : '/backend/api';
+      const res = await fetch(apiBase + '/student/resume-builder/pdf', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ documentHtml: printRoot.outerHTML }),
+      });
+      const contentType = String(res.headers.get('Content-Type') || '');
+      if (!res.ok || contentType.indexOf('pdf') === -1) {
+        let message = failMessage;
+        try {
+          const json = JSON.parse(await res.text());
+          if (json && json.message && res.status !== 500) message = String(json.message);
+        } catch (_err) {
+          // Keep generic message.
+        }
+        if (typeof toast === 'function') toast(message, 'danger');
+        else window.alert(message);
+        return;
+      }
+      const blob = await res.blob();
+      let filename = resumePdfFilename();
+      const disposition = String(res.headers.get('Content-Disposition') || '');
+      const match = disposition.match(/filename="?([^"]+)"?/i);
+      if (match && match[1]) filename = match[1];
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (_err) {
+      if (typeof toast === 'function') toast(failMessage, 'danger');
+      else window.alert(failMessage);
+    } finally {
+      previous.forEach(({ el, html, disabled }) => {
+        el.innerHTML = html;
+        el.disabled = disabled;
+        el.removeAttribute('aria-busy');
+      });
+      updatePdfButtons();
+    }
   }
 
   function sectionCard(section) {

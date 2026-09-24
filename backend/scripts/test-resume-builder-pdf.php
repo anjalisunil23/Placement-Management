@@ -32,8 +32,11 @@ $assert(str_contains($js, 'function generateResumePdf'), 'generateResumePdf help
 $assert(str_contains($js, 'data-rb-generate-pdf'), 'Generate Resume PDF button marker');
 $assert(!str_contains($js, 'Print Preview'), 'Print Preview removed from Resume Builder flow');
 $assert(!str_contains($js, 'data-rb-preview-print'), 'print preview action removed');
-$assert(str_contains($js, 'rb-printing-resume'), 'browser print PDF uses preview print stylesheet');
-$assert(str_contains($js, 'window.print()'), 'PDF generated via browser print engine');
+$assert(!str_contains($js, 'window.print()'), 'browser print dialog not used');
+$assert(!str_contains($js, 'rb-printing-resume'), 'print-class PDF path removed from JS');
+$assert(str_contains($js, '/student/resume-builder/pdf'), 'frontend posts to PDF endpoint');
+$assert(str_contains($js, 'Generating PDF...'), 'loading state on generate button');
+$assert(str_contains($js, 'documentHtml'), 'preview HTML posted to converter');
 $assert(str_contains($js, 'resumePdfFilename'), 'client filename fallback helper');
 $assert(str_contains($js, 'pdfGenerationAllowed'), 'PDF availability helper');
 $assert(str_contains($js, 'hasPdfMinimumPersonal'), 'PDF minimum personal check');
@@ -42,7 +45,8 @@ $assert(!str_contains($js, 'Complete required sections first'), 'generic complet
 $assert(str_contains($js, 'Please complete your basic profile and education details before generating your resume.'), 'precise PDF block message in JS');
 $assert(str_contains($index, '/student/resume-builder/pdf'), 'PDF API route registered');
 $assert(str_contains($controller, 'function downloadPdf'), 'downloadPdf controller action');
-$assert(str_contains($controller, 'currentStudentId'), 'PDF uses authenticated student only');
+$assert(str_contains($controller, 'findByUserId'), 'PDF uses authenticated student only');
+$assert(!str_contains($controller, 'student_id'), 'no client student_id accepted');
 $assert(str_contains($service, 'use TCPDF'), 'TCPDF library used');
 $assert(str_contains($service, '_Resume.pdf'), 'filename pattern FirstName_LastName_Resume.pdf');
 $assert(str_contains($service, 'assertGenerationAllowed'), 'server-side PDF gate');
@@ -52,7 +56,7 @@ $assert(str_contains($service, 'replaceFlexRowWithTable'), 'flex rows converted 
 $assert(str_contains($service, "SetFont('times'"), 'Times font for PDF parity');
 $assert(!str_contains($service, 'Complete required sections first'), 'generic completion block removed from service');
 $assert(str_contains($service, 'Please complete your basic profile and education details before generating your resume.'), 'precise PDF block message in service');
-$assert(str_contains($settings, 'resume-builder.js?v=20260924rb28'), 'JS cache bust for PDF flow');
+$assert(str_contains($settings, 'resume-builder.js?v=20260924rb29'), 'JS cache bust for PDF flow');
 
 $sampleHtml = <<<'HTML'
 <article class="rb-resume-doc"><header class="rb-resume-header"><h1 class="rb-resume-name">Adonia Cyrus</h1><p class="rb-resume-contact">9876543210 | adonia@example.com</p></header><section class="rb-resume-section"><h2 class="rb-resume-h2">Education</h2><div class="rb-resume-edu"></div></section></article>

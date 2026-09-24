@@ -708,12 +708,12 @@ final class ResumeBuilderController
         ];
     }
 
-    /** POST /api/student/resume-builder/pdf */
+    /** GET|POST /api/student/resume-builder/pdf */
     public function downloadPdf(): void
     {
-        $studentId = $this->currentStudentId();
-        $profile = $this->studentModel->findById($studentId);
-        if (!$profile) {
+        $user = RBACMiddleware::requireStudent();
+        $profile = $this->studentModel->findByUserId((string) ($user['_id'] ?? ''));
+        if (!is_array($profile) || trim((string) ($profile['_id'] ?? '')) === '') {
             Response::notFound('Student profile not found. Please sign in again with your college account.');
         }
 
@@ -722,10 +722,15 @@ final class ResumeBuilderController
             $input = [];
         }
         $pdfService = new ResumeBuilderPdfService($this->studentModel);
-        $documentHtml = $pdfService->sanitizeDocumentHtml((string) ($input['documentHtml'] ?? ''));
-        $pdfService->assertGenerationAllowed($documentHtml);
-        $filename = $pdfService->buildFilename($profile);
-        $pdfService->streamPdf($documentHtml, $filename);
+        try {
+            $documentHtml = $pdfService->sanitizeDocumentHtml((string) ($input['documentHtml'] ?? ''));
+            $pdfService->assertGenerationAllowed($documentHtml);
+            $filename = $pdfService->buildFilename($profile);
+            $pdfService->streamPdf($documentHtml, $filename);
+        } catch (\Throwable $e) {
+            error_log('Resume PDF generation failed: ' . $e->getMessage());
+            Response::error('Unable to generate your resume PDF. Please try again.', 500);
+        }
     }
 
     /** GET /api/student/resume-builder/contact-links */

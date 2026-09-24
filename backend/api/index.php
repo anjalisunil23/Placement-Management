@@ -322,6 +322,7 @@ $routes = [
     ['POST', '/student/resume-builder/activities/{id}/delete', [ResumeBuilderController::class, 'deleteActivity']],
     ['GET',  '/student/resume-builder/contact-links', [ResumeBuilderController::class, 'getContactLinks']],
     ['PUT',  '/student/resume-builder/contact-links', [ResumeBuilderController::class, 'saveContactLinks']],
+    ['GET',  '/student/resume-builder/pdf', [ResumeBuilderController::class, 'downloadPdf']],
     ['POST', '/student/resume-builder/pdf', [ResumeBuilderController::class, 'downloadPdf']],
 
     // Company
