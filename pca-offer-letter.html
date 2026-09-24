@@ -130,6 +130,22 @@
       min-width: 0;
     }
 
+    .signature-with-seal {
+      display: flex;
+      align-items: flex-end;
+      gap: 5mm;
+    }
+
+    .college-seal {
+      display: block;
+      height: 24mm;
+      width: 24mm;
+      object-fit: contain;
+      object-position: center bottom;
+      flex-shrink: 0;
+      mix-blend-mode: multiply;
+    }
+
     .principal-sign {
       display: block;
       height: 16mm;
@@ -399,7 +415,10 @@
 
     <div class="signature-row">
       <div class="signature-block">
-        <img class="principal-sign" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
+        <div class="signature-with-seal">
+          <img class="college-seal" data-asset="css/img/college-autonomous-seal.png" alt="Amal Jyothi College of Engineering (Autonomous) official seal"/>
+          <img class="principal-sign" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
+        </div>
         <div class="signature-caption">Signature of Principal</div>
       </div>
       <div class="qr-block" id="qrBlock" aria-label="Verification QR code">
@@ -718,7 +737,7 @@
     if (viewport && typeof ResizeObserver !== 'undefined') {
       new ResizeObserver(scheduleEmbedFit).observe(viewport);
     }
-    document.querySelectorAll('.letterhead, .letter-footer, .principal-sign').forEach((img) => {
+    document.querySelectorAll('.letterhead, .letter-footer, .principal-sign, .college-seal').forEach((img) => {
       if (!img.complete) {
         img.addEventListener('load', scheduleEmbedFit, { once: true });
         img.addEventListener('error', scheduleEmbedFit, { once: true });

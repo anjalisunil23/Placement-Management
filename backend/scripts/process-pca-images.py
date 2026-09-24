@@ -64,6 +64,13 @@ def main() -> None:
         dark_threshold=90,
         white_to_gray=False,
     )
+    if (root / 'college-autonomous-seal.png').is_file():
+        process_image(
+            root / 'college-autonomous-seal.png',
+            root / 'college-autonomous-seal.png',
+            dark_threshold=100,
+            white_to_gray=False,
+        )
 
 
 if __name__ == '__main__':

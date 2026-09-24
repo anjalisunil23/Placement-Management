@@ -7,7 +7,9 @@
 <link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
 <style>
   .table-modern th.col-select,
-  .table-modern td.col-select{width:2.5rem;padding-left:.75rem;padding-right:.25rem}
+  .table-modern td.col-select{width:3.25rem;padding-left:.75rem;padding-right:.35rem;vertical-align:middle}
+  .table-modern th.col-select .form-check-input{margin-top:0;cursor:pointer}
+  .table-modern td.col-select .form-check-input{cursor:pointer}
 </style></head>
 <body data-page="users.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
@@ -47,6 +49,14 @@
       <div class="search-with-icon flex-grow-1">
         <i class="bi bi-search"></i>
         <input class="form-control" id="usersSearch" type="search" placeholder="Search name, email, department, company…" autocomplete="off"/>
+      </div>
+      <div class="d-none d-flex flex-wrap gap-2 align-items-center" id="usersSelectionTools">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnUsersSelectAll"><i class="bi bi-check2-square me-1"></i>Select all</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnUsersClearSelection">Clear</button>
+      </div>
+      <div class="d-none d-flex flex-wrap gap-2 align-items-center" id="volunteersSelectionTools">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnVolunteersSelectAll"><i class="bi bi-check2-square me-1"></i>Select all</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnVolunteersClearSelection">Clear</button>
       </div>
       <div class="d-none d-flex flex-wrap gap-2 align-items-center" id="usersBulkActions">
         <span class="small text-muted-2"><span id="usersSelectedCount">0</span> selected</span>
@@ -293,10 +303,65 @@ function selectedUserAccountIds() {
     .filter(Boolean);
 }
 
+function selectableKeysInTab(tabId) {
+  const pane = document.getElementById(tabId);
+  if (!pane) return [];
+  return [...pane.querySelectorAll('.user-delete-check[data-delete-key]')]
+    .map(cb => cb.dataset.deleteKey)
+    .filter(Boolean);
+}
+
+function selectableVolunteerIdsInTab() {
+  const pane = document.getElementById('tabVolunteers');
+  if (!pane) return [];
+  return [...pane.querySelectorAll('.volunteer-delete-check[data-volunteer-id]')]
+    .map(cb => cb.dataset.volunteerId)
+    .filter(Boolean);
+}
+
+function selectAllInActiveUserTab() {
+  const tabId = activeUsersTabId();
+  const pane = document.getElementById(tabId);
+  if (!pane) return;
+  selectableKeysInTab(tabId).forEach(key => selectedDeleteKeys.add(key));
+  pane.querySelectorAll('.user-delete-check[data-delete-key]').forEach(cb => {
+    if (cb.dataset.deleteKey) cb.checked = true;
+  });
+  syncSelectAllCheckbox(tabId);
+  updateBulkActionsUi();
+}
+
+function clearUserSelection() {
+  selectedDeleteKeys.clear();
+  document.querySelectorAll('.user-delete-check').forEach(cb => { cb.checked = false; });
+  syncAllSelectAllCheckboxes();
+  updateBulkActionsUi();
+}
+
+function selectAllVisibleVolunteers() {
+  const pane = document.getElementById('tabVolunteers');
+  if (!pane) return;
+  selectableVolunteerIdsInTab().forEach(id => selectedVolunteerIds.add(id));
+  pane.querySelectorAll('.volunteer-delete-check[data-volunteer-id]').forEach(cb => {
+    if (cb.dataset.volunteerId) cb.checked = true;
+  });
+  syncVolunteerSelectAllCheckbox();
+  updateBulkActionsUi();
+}
+
+function clearVolunteerSelection() {
+  selectedVolunteerIds.clear();
+  document.querySelectorAll('.volunteer-delete-check').forEach(cb => { cb.checked = false; });
+  syncVolunteerSelectAllCheckbox();
+  updateBulkActionsUi();
+}
+
 function updateBulkActionsUi() {
   const tab = activeUsersTabId();
   const userBar = document.getElementById('usersBulkActions');
   const volunteerBar = document.getElementById('volunteersBulkActions');
+  const userSelectionTools = document.getElementById('usersSelectionTools');
+  const volunteerSelectionTools = document.getElementById('volunteersSelectionTools');
   const userCount = selectedDeleteKeys.size;
   const volunteerCount = selectedVolunteerIds.size;
   const userCountEl = document.getElementById('usersSelectedCount');
@@ -305,15 +370,40 @@ function updateBulkActionsUi() {
   if (volunteerCountEl) volunteerCountEl.textContent = String(volunteerCount);
 
   const userTabs = new Set(['tabStudents', 'tabAdmins', 'tabOfficers', 'tabStaff', 'tabCompanies', 'tabAlumni']);
+  const visibleUserKeys = userTabs.has(tab) ? selectableKeysInTab(tab) : [];
+  const visibleVolunteerIds = tab === 'tabVolunteers' ? selectableVolunteerIdsInTab() : [];
+  const selectAllUsersBtn = document.getElementById('btnUsersSelectAll');
+  const selectAllVolunteersBtn = document.getElementById('btnVolunteersSelectAll');
+
   if (tab === 'tabVolunteers') {
     userBar?.classList.add('d-none');
+    userSelectionTools?.classList.add('d-none');
+    volunteerSelectionTools?.classList.remove('d-none');
     volunteerBar?.classList.toggle('d-none', volunteerCount === 0);
+    document.getElementById('btnVolunteersClearSelection')?.classList.toggle('d-none', volunteerCount === 0);
+    if (selectAllVolunteersBtn) {
+      selectAllVolunteersBtn.disabled = visibleVolunteerIds.length === 0;
+      selectAllVolunteersBtn.title = visibleVolunteerIds.length
+        ? `Select all ${visibleVolunteerIds.length} visible representative${visibleVolunteerIds.length === 1 ? '' : 's'}`
+        : 'No representatives to select';
+    }
   } else if (userTabs.has(tab)) {
     volunteerBar?.classList.add('d-none');
+    volunteerSelectionTools?.classList.add('d-none');
+    userSelectionTools?.classList.remove('d-none');
     userBar?.classList.toggle('d-none', userCount === 0);
+    document.getElementById('btnUsersClearSelection')?.classList.toggle('d-none', userCount === 0);
+    if (selectAllUsersBtn) {
+      selectAllUsersBtn.disabled = visibleUserKeys.length === 0;
+      selectAllUsersBtn.title = visibleUserKeys.length
+        ? `Select all ${visibleUserKeys.length} visible user${visibleUserKeys.length === 1 ? '' : 's'}`
+        : 'No users to select on this tab';
+    }
   } else {
     userBar?.classList.add('d-none');
     volunteerBar?.classList.add('d-none');
+    userSelectionTools?.classList.add('d-none');
+    volunteerSelectionTools?.classList.add('d-none');
   }
 }
 
@@ -321,9 +411,7 @@ function syncSelectAllCheckbox(tabId) {
   const pane = document.getElementById(tabId);
   const selectAll = pane?.querySelector('.user-delete-select-all');
   if (!selectAll) return;
-  const keys = [...pane.querySelectorAll('.user-delete-check[data-delete-key]')]
-    .map(cb => cb.dataset.deleteKey)
-    .filter(Boolean);
+  const keys = selectableKeysInTab(tabId);
   const allSelected = keys.length > 0 && keys.every(k => selectedDeleteKeys.has(k));
   const someSelected = keys.some(k => selectedDeleteKeys.has(k));
   selectAll.checked = allSelected;
@@ -386,9 +474,7 @@ function syncVolunteerSelectAllCheckbox() {
   const pane = document.getElementById('tabVolunteers');
   const selectAll = pane?.querySelector('.volunteer-select-all');
   if (!selectAll) return;
-  const ids = [...pane.querySelectorAll('.volunteer-delete-check[data-volunteer-id]')]
-    .map(cb => cb.dataset.volunteerId)
-    .filter(Boolean);
+  const ids = selectableVolunteerIdsInTab();
   const allSelected = ids.length > 0 && ids.every(id => selectedVolunteerIds.has(id));
   const someSelected = ids.some(id => selectedVolunteerIds.has(id));
   selectAll.checked = allSelected;
@@ -1643,6 +1729,10 @@ async function initUsersPage() {
     if (!btn) return;
     assignVolunteerStudent(btn.getAttribute('data-student-id')).catch(() => {});
   });
+  document.getElementById('btnUsersSelectAll')?.addEventListener('click', () => selectAllInActiveUserTab());
+  document.getElementById('btnUsersClearSelection')?.addEventListener('click', () => clearUserSelection());
+  document.getElementById('btnVolunteersSelectAll')?.addEventListener('click', () => selectAllVisibleVolunteers());
+  document.getElementById('btnVolunteersClearSelection')?.addEventListener('click', () => clearVolunteerSelection());
   document.getElementById('btnUsersApproveSelected')?.addEventListener('click', () => approveSelectedUsers());
   document.getElementById('btnUsersBlockSelected')?.addEventListener('click', () => blockSelectedUsers(true));
   document.getElementById('btnUsersUnblockSelected')?.addEventListener('click', () => blockSelectedUsers(false));
