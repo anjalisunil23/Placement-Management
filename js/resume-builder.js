@@ -1768,10 +1768,6 @@
       }
     }, 2000);
 
-    if (typeof toast === 'function') {
-      toast('In the print dialog, choose "Save as PDF" to download your resume.', 'info');
-    }
-
     window.print();
   }
 
