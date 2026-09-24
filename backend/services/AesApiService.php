@@ -775,14 +775,36 @@ final class AesApiService
      */
     private function extractPlacementBranch(array $record, array $departments = []): array
     {
-        $branch = strtoupper(trim((string) (
+        $courseShort = strtoupper(trim((string) (
             $record['stud_cource_short']
             ?? $record['stud_course']
-            ?? $record['branch']
+            ?? ''
+        )));
+        $namedBranch = trim((string) (
+            $record['stud_branch']
+            ?? $record['branch_name']
+            ?? $record['branchName']
+            ?? ''
+        ));
+        $programme = strtoupper(trim((string) (
+            $record['branch']
             ?? $record['programme']
             ?? $record['program']
             ?? ''
         )));
+        // stud_branch is the college branch (CSE, ECE, …). BT/MT are course level, not a branch.
+        if ($namedBranch !== '' && !$this->isCourseLevelShort($namedBranch)
+            && ($programme === '' || $this->isCourseLevelShort($programme))) {
+            $branch = $namedBranch;
+        } elseif ($programme !== '' && !$this->isCourseLevelShort($programme)) {
+            $branch = $programme;
+        } elseif ($courseShort !== '' && !$this->isCourseLevelShort($courseShort)) {
+            $branch = $courseShort;
+        } elseif ($namedBranch !== '') {
+            $branch = $namedBranch;
+        } else {
+            $branch = $programme !== '' ? $programme : $courseShort;
+        }
         $parentCode = strtoupper(trim((string) (
             $record['stud_deptcode']
             ?? $record['parentDepartmentCode']
@@ -2288,13 +2310,26 @@ final class AesApiService
 
         $record = $payload['data'] ?? $payload['student'] ?? $payload['profile'] ?? $payload['user'] ?? null;
         if (is_array($record) && $record !== []) {
-            return $record;
+            if (array_is_list($record)) {
+                foreach ($record as $row) {
+                    if (is_array($row) && $this->looksLikeStudentRecord($row)) {
+                        return $row;
+                    }
+                }
+                foreach ($record as $row) {
+                    if (is_array($row) && $row !== []) {
+                        return $row;
+                    }
+                }
+            } elseif ($this->looksLikeStudentRecord($record) || !isset($record['data'])) {
+                return $record;
+            }
         }
 
         $scalarKeys = [
             'name', 'student_name', 'stud_name', 'email', 'cgpa', 'department', 'dept', 'branch', 'admission_no',
             'stud_admno', 'deptCode', 'deptName', 'dept_code', 'dept_name', 'deptshort', 'stud_deptcode',
-            'stud_course', 'stud_cource_short', 'registerNumber',
+            'stud_course', 'stud_cource_short', 'stud_branch', 'registerNumber',
         ];
         foreach ($scalarKeys as $key) {
             if (isset($payload[$key]) && is_scalar($payload[$key]) && trim((string) $payload[$key]) !== '') {
@@ -2302,7 +2337,25 @@ final class AesApiService
             }
         }
 
-        return [];
+        $rows = $this->extractStudInfoRecords($result);
+        return $rows[0] ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function looksLikeStudentRecord(array $row): bool
+    {
+        foreach ([
+            'stud_name', 'student_name', 'stud_branch', 'stud_admno', 'stud_deptcode',
+            'stud_course', 'stud_cource_short', 'admno', 'registerno',
+        ] as $key) {
+            if (isset($row[$key]) && is_scalar($row[$key]) && trim((string) $row[$key]) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2926,7 +2979,7 @@ final class AesApiService
      */
     private function isStudInfoRow(array $row): bool
     {
-        foreach (['stud_class', 'stud_branch', 'stud_course', 'stud_cource_short', 'registerno', 'admno', 'stud_admno'] as $key) {
+        foreach (['stud_name', 'stud_class', 'stud_branch', 'stud_course', 'stud_cource_short', 'registerno', 'admno', 'stud_admno'] as $key) {
             if (!empty($row[$key]) && is_scalar($row[$key])) {
                 return true;
             }

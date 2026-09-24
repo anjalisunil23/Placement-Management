@@ -253,8 +253,18 @@ final class StudentController
           ['registerNumber' => (string) ($profile['registerNumber'] ?? '')]
       ));
     }
+    $placementRecord = [];
     if ($forceRefresh || (!$liteProfile && $this->shouldRefreshAesPlacement($profile))) {
-      $profile = $aes->refreshStudentPlacementData($profile);
+      $placementCtx = $aes->refreshStudentWithPlacementContext($profile);
+      $profile = $placementCtx['student'];
+      $placementRecord = is_array($placementCtx['placement'] ?? null) ? $placementCtx['placement'] : [];
+    }
+    if ($apiName === '') {
+      $fromPlacement = trim((string) ($placementRecord['stud_name'] ?? $placementRecord['name'] ?? ''));
+      if ($fromPlacement !== '') {
+        $apiName = $fromPlacement;
+        $user['name'] = $apiName;
+      }
     }
 
     $dept = !empty($profile['departmentId'])
@@ -325,7 +335,7 @@ final class StudentController
       'code' => (string) ($dept['code'] ?? ''),
       'name' => (string) ($dept['name'] ?? ''),
     ] : null;
-    $resolvedDept = $aes->resolveStudentDepartmentFields($dbDept, $reg);
+    $resolvedDept = $aes->resolveStudentDepartmentFields($dbDept, $reg, $placementRecord);
     $out['department'] = [
       'id'   => (string) ($dbDept['id'] ?? ''),
       'code' => $resolvedDept['code'],

@@ -273,14 +273,26 @@ function inferDepartmentFromRegisterNumber(registerNumber) {
   return m ? m[1].toUpperCase() : '';
 }
 
+function isCourseLevelBranchCode(value) {
+  const n = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return n === 'BT' || n === 'MT' || n === 'BTECH' || n === 'MTECH';
+}
+
 function resolveSessionDepartmentName(merged) {
   const aes = (merged.aesProfile && typeof merged.aesProfile === 'object') ? merged.aesProfile : {};
   const deptObj = (merged.department && typeof merged.department === 'object') ? merged.department : null;
+  const namedBranch = String(
+    merged.stud_branch || aes.stud_branch || merged.branch_name || aes.branch_name || aes.branchName || ''
+  ).trim();
   const branch = String(
     merged.branch || merged.programme || merged.program || merged.course
     || aes.branch || aes.programme || aes.stud_cource_short || aes.stud_course || ''
   ).trim();
-  if (branch) return branch.toUpperCase();
+  if (namedBranch && !isCourseLevelBranchCode(namedBranch) && !/^\d+$/.test(namedBranch)
+    && (!branch || isCourseLevelBranchCode(branch) || /^\d+$/.test(branch))) {
+    return namedBranch;
+  }
+  if (branch && !/^\d+$/.test(branch)) return isCourseLevelBranchCode(branch) ? branch : branch.toUpperCase();
   if (deptObj?.name) return String(deptObj.name).trim();
   const name = String(
     merged.departmentName || merged.deptName || merged.dept_name || aes.departmentName || aes.deptName || ''
@@ -841,6 +853,9 @@ const Auth = {
         website: merged.website || prev.website || '',
         dashboard,
         phone: resolveSessionPhone(merged) || prev.phone || '',
+        stud_name: merged.stud_name || prev.stud_name || '',
+        branch: merged.branch || prev.branch || '',
+        programme: merged.programme || prev.programme || '',
         course: merged.course || prev.course || '',
         year: merged.year || prev.year || '',
         semester: merged.semester || prev.semester || '',
