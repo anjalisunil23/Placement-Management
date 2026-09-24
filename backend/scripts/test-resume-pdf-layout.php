@@ -46,6 +46,7 @@ $out = $service->wrapLivePreviewDocument($html);
 
 $assert(str_contains($out, 'id="resumeBuilderDashboard"'), 'wrapper keeps Live Preview CSS scope');
 $assert(str_contains($out, 'id="rbResumePrintRoot"'), 'original resume article is unchanged');
+$assert(str_contains($out, 'class="rb-printing-resume"'), 'print class matches Live Preview print styles');
 $assert(str_contains($out, 'rb-resume-edu-row'), 'education flex markup preserved');
 $assert(str_contains($out, 'Times New Roman'), 'Times New Roman CSS included');
 $assert(str_contains($out, 'size: A4 portrait'), 'A4 page size');
@@ -61,6 +62,7 @@ try {
 
 if ($pdf !== '') {
     $assert(strncmp($pdf, '%PDF', 4) === 0, 'Chromium returned a PDF');
+    $assert(!str_contains($pdf, 'TCPDF'), 'PDF is not a TCPDF fallback');
     $assert(strlen($pdf) > 1000, 'PDF has content');
 }
 

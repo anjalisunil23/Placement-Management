@@ -128,33 +128,51 @@ final class ResumeBuilderPdfService
 
         $wrapperCss = <<<'CSS'
 @page { size: A4 portrait; margin: 0; }
-html, body {
-  margin: 0;
-  padding: 0;
-  background: #fff;
-  width: 210mm;
-  min-height: 297mm;
+html, body.rb-printing-resume {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #fff !important;
+  width: 210mm !important;
+  min-width: 210mm !important;
+  max-width: 210mm !important;
 }
-#resumeBuilderDashboard {
-  margin: 0;
-  padding: 0;
-  background: #fff;
-}
+#resumeBuilderDashboard,
 #resumeBuilderDashboard .rb-preview-paper {
-  width: 210mm;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #fff !important;
+  width: 210mm !important;
+  min-width: 210mm !important;
+  max-width: 210mm !important;
   min-height: 297mm;
-  margin: 0;
-  background: #fff;
-  color: #000;
-  box-shadow: none;
-  border: 0;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+#resumeBuilderDashboard .rb-resume-doc {
+  padding: 16mm !important;
+}
+#resumeBuilderDashboard .rb-resume-edu-row,
+#resumeBuilderDashboard .rb-resume-entry-top {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: baseline !important;
+  width: 100% !important;
+}
+#resumeBuilderDashboard .rb-resume-edu-year,
+#resumeBuilderDashboard .rb-resume-edu-score,
+#resumeBuilderDashboard .rb-resume-entry-right {
+  text-align: right !important;
+  white-space: nowrap !important;
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
 }
 CSS;
 
         return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
             . '<title>Resume</title>'
-            . '<style>' . $wrapperCss . "\n" . $resumeCss . '</style>'
-            . '</head><body>'
+            . '<style>' . $resumeCss . "\n" . $wrapperCss . '</style>'
+            . '</head><body class="rb-printing-resume">'
             . '<div id="resumeBuilderDashboard">'
             . '<div class="rb-preview-paper">'
             . $documentHtml
@@ -165,18 +183,15 @@ CSS;
 
     private function printHtmlToPdfWithChromium(string $html): string
     {
+        if (!function_exists('proc_open')) {
+            throw new \RuntimeException('PDF export requires proc_open so Chromium can print the Live Preview.');
+        }
         $chrome = $this->resolveChromeBinary();
-        if ($chrome === null || !function_exists('proc_open')) {
-            error_log('Resume PDF: Chromium is not available; using TCPDF fallback.');
-            return $this->printHtmlToPdfWithTcpdf($html);
+        if ($chrome === null) {
+            throw new \RuntimeException('Google Chrome or Microsoft Edge was not found. Install Chrome or set CHROME_PATH.');
         }
 
-        try {
-            return $this->runChromePrintToPdf($chrome, $html);
-        } catch (\Throwable $e) {
-            error_log('Resume PDF Chromium failed: ' . $e->getMessage() . ' — using TCPDF fallback.');
-            return $this->printHtmlToPdfWithTcpdf($html);
-        }
+        return $this->runChromePrintToPdf($chrome, $html);
     }
 
     private function runChromePrintToPdf(string $chrome, string $html): string
@@ -195,19 +210,23 @@ CSS;
                 throw new \RuntimeException('Could not create Chromium profile.');
             }
 
-            $htmlUrl = 'file:///' . str_replace(DIRECTORY_SEPARATOR, '/', $htmlFile);
+            $htmlUrl = 'file:///' . str_replace('\\', '/', $htmlFile);
             $cmd = [
                 $chrome,
-                '--headless=new',
+                '--headless',
                 '--disable-gpu',
                 '--no-sandbox',
+                '--disable-dev-shm-usage',
                 '--allow-file-access-from-files',
                 '--no-first-run',
                 '--no-default-browser-check',
                 '--disable-extensions',
                 '--disable-background-networking',
                 '--hide-scrollbars',
-                '--virtual-time-budget=8000',
+                '--font-render-hinting=none',
+                '--force-device-scale-factor=1',
+                '--window-size=794,1123',
+                '--virtual-time-budget=10000',
                 '--run-all-compositor-stages-before-draw',
                 '--no-pdf-header-footer',
                 '--user-data-dir=' . $userData,
@@ -232,6 +251,10 @@ CSS;
             fclose($pipes[1]);
             fclose($pipes[2]);
             $code = proc_close($process);
+            $deadline = microtime(true) + 12;
+            while (!is_file($pdfFile) && microtime(true) < $deadline) {
+                usleep(150000);
+            }
             if ($code !== 0 && !is_file($pdfFile)) {
                 throw new \RuntimeException('Chromium PDF export failed: ' . substr($stderr, 0, 400));
             }
@@ -252,27 +275,6 @@ CSS;
             }
             $this->removeDirectory($userData);
         }
-    }
-
-    private function printHtmlToPdfWithTcpdf(string $html): string
-    {
-        $html = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html) ?? $html;
-        $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
-        $pdf->SetCreator('PlaceHub PMS');
-        $pdf->SetTitle('Resume');
-        $pdf->setPrintHeader(false);
-        $pdf->setPrintFooter(false);
-        $pdf->SetMargins(16, 16, 16);
-        $pdf->SetAutoPageBreak(true, 16);
-        $pdf->setCellPaddings(0, 0, 0, 0);
-        $pdf->AddPage();
-        $pdf->SetFont('times', '', 10.5);
-        $pdf->writeHTML($html, true, false, true, false, '');
-        $bytes = $pdf->Output('', 'S');
-        if ($bytes === '' || strncmp($bytes, '%PDF', 4) !== 0) {
-            throw new \RuntimeException('TCPDF did not return a PDF.');
-        }
-        return $bytes;
     }
 
     private function resolveChromeBinary(): ?string

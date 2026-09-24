@@ -47,7 +47,8 @@ $assert(str_contains($service, 'wrapLivePreviewDocument'), 'standalone Live Prev
 $assert(str_contains($service, 'resume-builder.css'), 'existing resume CSS reused');
 $assert(str_contains($service, 'printHtmlToPdfWithChromium'), 'Chromium HTML-to-PDF');
 $assert(str_contains($service, '--print-to-pdf='), 'Chrome print-to-pdf');
-$assert(str_contains($service, 'printHtmlToPdfWithTcpdf'), 'TCPDF fallback when Chromium is unavailable');
+$assert(str_contains($service, 'rb-printing-resume'), 'PDF wrapper uses Live Preview print class');
+$assert(!str_contains($service, 'printHtmlToPdfWithTcpdf'), 'TCPDF not used for resume PDF');
 $assert(!str_contains($service, 'replaceFlexRowWithTable'), 'no PDF-specific flex rewrite');
 $assert(str_contains($service, '_Resume.pdf'), 'filename pattern FirstName_LastName_Resume.pdf');
 $assert(str_contains($service, 'assertGenerationAllowed'), 'server-side PDF gate');
