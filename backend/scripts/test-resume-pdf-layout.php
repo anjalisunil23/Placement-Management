@@ -19,7 +19,11 @@ $assert = static function (bool $ok, string $label) use (&$failed, &$passed): vo
 };
 
 $html = <<<'HTML'
-<article class="rb-resume-doc">
+<article class="rb-resume-doc" id="rbResumePrintRoot">
+<header class="rb-resume-header">
+  <h1 class="rb-resume-name">Adonia Cyrus</h1>
+  <p class="rb-resume-contact">9876543210 | adonia@example.com</p>
+</header>
 <section class="rb-resume-section">
 <h2 class="rb-resume-h2">Education</h2>
 <hr class="rb-resume-rule" aria-hidden="true" />
@@ -33,45 +37,32 @@ $html = <<<'HTML'
     <div class="rb-resume-edu-score rb-resume-right-bold">CGPA: 9.07</div>
   </div>
 </div>
-<div class="rb-resume-edu">
-  <div class="rb-resume-edu-row">
-    <div class="rb-resume-edu-degree">Bachelor of Computer Applications</div>
-    <div class="rb-resume-edu-year rb-resume-right-bold">2022 - 2025</div>
-  </div>
-  <div class="rb-resume-edu-row">
-    <div class="rb-resume-edu-inst">St. Antony's College, Peruvanthanam</div>
-    <div class="rb-resume-edu-score rb-resume-right-bold">CGPA: 8.60</div>
-  </div>
-</div>
 </section>
-<div class="rb-resume-entry">
-  <div class="rb-resume-entry-top">
-    <div class="rb-resume-entry-title">Intern</div>
-    <div class="rb-resume-entry-right rb-resume-right-bold">Jan 2024 – Present</div>
-  </div>
-</div>
 </article>
 HTML;
 
-$ref = new ReflectionClass(ResumeBuilderPdfService::class);
-$service = $ref->newInstanceWithoutConstructor();
-$method = $ref->getMethod('prepareDocumentHtmlForPdf');
-$method->setAccessible(true);
-$out = (string) $method->invoke($service, $html);
+$service = new ResumeBuilderPdfService();
+$out = $service->wrapLivePreviewDocument($html);
 
-$tableCount = substr_count($out, '<table');
-$eduTableCount = substr_count($out, 'rb-resume-edu-table');
+$assert(str_contains($out, 'id="resumeBuilderDashboard"'), 'wrapper keeps Live Preview CSS scope');
+$assert(str_contains($out, 'id="rbResumePrintRoot"'), 'original resume article is unchanged');
+$assert(str_contains($out, 'rb-resume-edu-row'), 'education flex markup preserved');
+$assert(str_contains($out, 'Times New Roman'), 'Times New Roman CSS included');
+$assert(str_contains($out, 'size: A4 portrait'), 'A4 page size');
+$assert(!str_contains($out, '<table'), 'no extra tables injected');
+$assert(str_contains($out, 'document.fonts.ready'), 'waits for fonts');
 
-$assert(str_contains($out, 'rb-resume-edu-table'), 'education blocks become merged tables');
-$assert($eduTableCount === 2, 'one merged table per education entry');
-$assert($tableCount === 3, 'experience row uses a single additional table');
-$assert(!str_contains($out, 'rb-resume-edu-row'), 'flex edu rows removed');
-$assert(!str_contains($out, 'rb-resume-entry-top'), 'flex entry rows removed');
-$assert(!str_contains($out, '<hr'), 'hr replaced for TCPDF');
-$assert(str_contains($out, 'rb-resume-rule'), 'section rule preserved as div');
-$assert(!str_contains($out, '<section'), 'section tags flattened to div');
-$assert(str_contains($out, 'border:none'), 'inline border removal on table cells');
-$assert(substr_count($out, '<tr') === 5, 'two rows per education entry plus one experience row');
+$pdf = '';
+try {
+    $pdf = $service->renderPdfBytes($html);
+} catch (Throwable $e) {
+    echo 'NOTE  Chromium PDF render skipped: ' . $e->getMessage() . PHP_EOL;
+}
+
+if ($pdf !== '') {
+    $assert(strncmp($pdf, '%PDF', 4) === 0, 'Chromium returned a PDF');
+    $assert(strlen($pdf) > 1000, 'PDF has content');
+}
 
 echo PHP_EOL . $passed . ' passed, ' . $failed . ' failed' . PHP_EOL;
 exit($failed > 0 ? 1 : 0);

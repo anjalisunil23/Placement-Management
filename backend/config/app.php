@@ -114,6 +114,7 @@ return [
         static fn (string $email): string => strtolower(trim($email)),
         explode(',', $_ENV['SUPER_ADMIN_EMAILS'] ?? 'placements@amaljyothi.ac.in')
     ))),
+    'chrome_path' => trim((string) ($_ENV['CHROME_PATH'] ?? '')),
     // Known HODs (AES login often omits designation). Matched by email and/or name.
     'hod_accounts' => [
         [
