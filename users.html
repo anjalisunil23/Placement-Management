@@ -4,7 +4,11 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260725responsive" rel="stylesheet"/></head>
+<link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+<style>
+  .table-modern th.col-select,
+  .table-modern td.col-select{width:2.5rem;padding-left:.75rem;padding-right:.25rem}
+</style></head>
 <body data-page="users.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
@@ -39,29 +43,38 @@
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabDepartments" id="linkTabDepartments">Departments</a></li>
   </ul>
   <div class="px-3 pt-3 pb-1 border-bottom" style="border-color:var(--border)!important">
-    <div class="search-with-icon">
-      <i class="bi bi-search"></i>
-      <input class="form-control" id="usersSearch" type="search" placeholder="Search name, email, department, company…" autocomplete="off"/>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <div class="search-with-icon flex-grow-1">
+        <i class="bi bi-search"></i>
+        <input class="form-control" id="usersSearch" type="search" placeholder="Search name, email, department, company…" autocomplete="off"/>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnUsersDeleteSelected" onclick="deleteSelectedUsers()">
+        <i class="bi bi-trash me-1"></i>Delete selected (<span id="usersDeleteSelectedCount">0</span>)
+      </button>
     </div>
   </div>
   <div class="tab-content">
     <div class="tab-pane fade show active" id="tabStudents">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th class="col-select"><input type="checkbox" class="form-check-input user-delete-select-all" aria-label="Select all students"></th>
         <th>Name</th><th>Register No</th><th>Dept</th><th>CGPA</th><th>Placement</th><th>Chances</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="studentRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabAdmins">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th class="col-select"><input type="checkbox" class="form-check-input user-delete-select-all" aria-label="Select all admins"></th>
         <th>Name</th><th>Email</th><th>Former department</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="adminRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabOfficers">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th class="col-select"><input type="checkbox" class="form-check-input user-delete-select-all" aria-label="Select all placement officers"></th>
         <th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="officerRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabStaff">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th class="col-select"><input type="checkbox" class="form-check-input user-delete-select-all" aria-label="Select all staff"></th>
         <th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="staffRows"></tbody></table></div>
     </div>
@@ -72,11 +85,13 @@
     </div>
     <div class="tab-pane fade" id="tabCompanies">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th class="col-select"><input type="checkbox" class="form-check-input user-delete-select-all" aria-label="Select all companies"></th>
         <th>Company</th><th>Contact</th><th>Category</th><th>Tier</th><th>Association</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="companyRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabAlumni">
       <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th class="col-select"><input type="checkbox" class="form-check-input user-delete-select-all" aria-label="Select all alumni"></th>
         <th>Name</th><th>Email</th><th>Company</th><th>Role</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody id="alumniRows"></tbody></table></div>
     </div>
@@ -202,6 +217,99 @@ let companyDirectory = [];
 let volunteersList = [];
 let volunteersLoaded = false;
 let editingDeptId = null;
+const selectedDeleteKeys = new Set();
+
+function deleteKeyForUser(u, tabId) {
+  if (tabId === 'tabCompanies') {
+    const companyId = u.companyId;
+    return companyId ? `company:${companyId}` : '';
+  }
+  if (u.role === 'student' && u.hasLogin !== true) {
+    const studentId = u.studentId || u.id;
+    return studentId ? `profile:${studentId}` : '';
+  }
+  const accountId = u.userId || u.id;
+  const hasLogin = u.role === 'student' ? u.hasLogin === true : (u.role !== 'company' || u.hasLogin !== false);
+  if (!hasLogin || !accountId) return '';
+  if (tabId === 'tabAdmins') {
+    const me = Auth.user() || {};
+    if (String(me.id || me._id || '') === String(accountId)) return '';
+  }
+  return `user:${accountId}`;
+}
+
+function userCheckboxCell(key) {
+  if (!key) return '<td class="col-select"></td>';
+  const checked = selectedDeleteKeys.has(key);
+  return `<td class="col-select"><input type="checkbox" class="form-check-input user-delete-check" data-delete-key="${key}" ${checked ? 'checked' : ''} aria-label="Select user"></td>`;
+}
+
+function updateBulkDeleteUi() {
+  const btn = document.getElementById('btnUsersDeleteSelected');
+  const countEl = document.getElementById('usersDeleteSelectedCount');
+  const count = selectedDeleteKeys.size;
+  if (countEl) countEl.textContent = String(count);
+  btn?.classList.toggle('d-none', count === 0);
+}
+
+function syncSelectAllCheckbox(tabId) {
+  const pane = document.getElementById(tabId);
+  const selectAll = pane?.querySelector('.user-delete-select-all');
+  if (!selectAll) return;
+  const keys = [...pane.querySelectorAll('.user-delete-check[data-delete-key]')]
+    .map(cb => cb.dataset.deleteKey)
+    .filter(Boolean);
+  const allSelected = keys.length > 0 && keys.every(k => selectedDeleteKeys.has(k));
+  const someSelected = keys.some(k => selectedDeleteKeys.has(k));
+  selectAll.checked = allSelected;
+  selectAll.indeterminate = !allSelected && someSelected;
+}
+
+function syncAllSelectAllCheckboxes() {
+  ['tabStudents', 'tabAdmins', 'tabOfficers', 'tabStaff', 'tabCompanies', 'tabAlumni'].forEach(syncSelectAllCheckbox);
+}
+
+function pruneSelectedDeleteKeys() {
+  const visible = new Set(
+    [...document.querySelectorAll('.user-delete-check[data-delete-key]')]
+      .map(cb => cb.dataset.deleteKey)
+      .filter(Boolean)
+  );
+  for (const key of selectedDeleteKeys) {
+    if (!visible.has(key)) selectedDeleteKeys.delete(key);
+  }
+}
+
+function bindUserDeleteSelection() {
+  const root = document.querySelector('.tab-content');
+  if (!root || root.dataset.deleteSelectWired === '1') return;
+  root.dataset.deleteSelectWired = '1';
+  root.addEventListener('change', e => {
+    const selectAll = e.target.closest('.user-delete-select-all');
+    if (selectAll) {
+      const tabId = selectAll.closest('.tab-pane')?.id;
+      const pane = tabId ? document.getElementById(tabId) : null;
+      pane?.querySelectorAll('.user-delete-check[data-delete-key]').forEach(cb => {
+        const key = cb.dataset.deleteKey;
+        if (!key) return;
+        if (selectAll.checked) selectedDeleteKeys.add(key);
+        else selectedDeleteKeys.delete(key);
+        cb.checked = selectAll.checked;
+      });
+      syncSelectAllCheckbox(tabId);
+      updateBulkDeleteUi();
+      return;
+    }
+    const cb = e.target.closest('.user-delete-check');
+    if (!cb) return;
+    const key = cb.dataset.deleteKey;
+    if (!key) return;
+    if (cb.checked) selectedDeleteKeys.add(key);
+    else selectedDeleteKeys.delete(key);
+    syncSelectAllCheckbox(cb.closest('.tab-pane')?.id || '');
+    updateBulkDeleteUi();
+  });
+}
 
 function deptModal() {
   return bootstrap.Modal.getOrCreateInstance(document.getElementById('deptModal'));
@@ -753,6 +861,52 @@ async function deleteUser(id) {
   render();
 }
 
+async function deleteSelectedUsers() {
+  const keys = [...selectedDeleteKeys];
+  if (!keys.length) return;
+  const confirmed = await confirmAction({
+    title: 'Delete selected users',
+    message: `Delete ${keys.length} selected user${keys.length === 1 ? '' : 's'}? This cannot be undone.`,
+    confirmText: 'Delete selected',
+    variant: 'danger',
+  });
+  if (!confirmed || !(await requireWriteSession())) return;
+
+  let ok = 0;
+  let fail = 0;
+  for (const key of keys) {
+    const sep = key.indexOf(':');
+    const kind = sep >= 0 ? key.slice(0, sep) : '';
+    const id = sep >= 0 ? key.slice(sep + 1) : '';
+    if (!kind || !id) {
+      fail++;
+      continue;
+    }
+    let success = false;
+    if (kind === 'company') {
+      const res = await api(`/admin/companies/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      success = !!res.success;
+    } else if (kind === 'profile') {
+      const res = await api(`/admin/students/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      success = !!res.success;
+    } else if (kind === 'user') {
+      const res = await api(`/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      success = !!res.success;
+    }
+    if (success) ok++;
+    else fail++;
+  }
+
+  selectedDeleteKeys.clear();
+  await UserRegistry.fetch();
+  await loadCompanies();
+  updateBulkDeleteUi();
+  if (fail === 0) toast(`Deleted ${ok} user${ok === 1 ? '' : 's'}.`, 'success');
+  else toast(`Deleted ${ok}; ${fail} could not be deleted.`, ok > 0 ? 'warn' : 'error');
+  render();
+}
+window.deleteSelectedUsers = deleteSelectedUsers;
+
 async function deleteStudentProfile(studentId) {
   const u = UserRegistry.all().find(x => x.studentId === studentId || (x.role === 'student' && x.id === studentId));
   const name = u?.name || 'this student';
@@ -778,6 +932,7 @@ window.deleteStudentProfile = deleteStudentProfile;
 function renderStudents(list) {
   document.getElementById('studentRows').innerHTML = list.length ? list.map(u => `
     <tr>
+      ${userCheckboxCell(deleteKeyForUser(u, 'tabStudents'))}
       <td><div class="fw-semibold small">${u.name}</div><div class="small text-muted-2">${u.email}</div></td>
       <td>${u.registerNumber || '—'}</td>
       <td>${u.department || '—'}</td>
@@ -786,47 +941,51 @@ function renderStudents(list) {
       <td><span class="small">${u.chancesUsed ?? 0} / ${u.chancesMax ?? 5}</span></td>
       <td>${userStatusBadge(u.status, u.blocked)}</td>
       <td>${actionBtns(u)}</td>
-    </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No students found.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No students found.</td></tr>';
 }
 
 function renderOfficers(list) {
   document.getElementById('officerRows').innerHTML = list.length ? list.map(u => `
     <tr>
+      ${userCheckboxCell(deleteKeyForUser(u, 'tabOfficers'))}
       <td class="fw-semibold small">${u.name}</td>
       <td>${u.email}</td>
       <td>${u.department || u.departmentName || '<span class="text-warning">Not assigned</span>'}</td>
       <td>${roleLabelForUser(u)}</td>
       <td>${userStatusBadge(u.status, u.blocked)}</td>
       <td>${officerActionBtns(u)}</td>
-    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No placement officers found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'placement_officer\')">Add one</button></td></tr>';
+    </tr>`).join('') : '<tr><td colspan="7" class="text-muted-2 p-4">No placement officers found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'placement_officer\')">Add one</button></td></tr>';
 }
 
 function renderAdmins(list) {
   document.getElementById('adminRows').innerHTML = list.length ? list.map(u => `
     <tr>
+      ${userCheckboxCell(deleteKeyForUser(u, 'tabAdmins'))}
       <td class="fw-semibold small">${u.name}</td>
       <td>${u.email}</td>
       <td>${u.department || u.departmentName || '—'}</td>
       <td>${userStatusBadge(u.status, u.blocked)}</td>
       <td>${adminActionBtns(u)}</td>
-    </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No administrators found. Promote a staff member from the Staff tab.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No administrators found. Promote a staff member from the Staff tab.</td></tr>';
 }
 
 function renderStaff(list) {
   document.getElementById('staffRows').innerHTML = list.length ? list.map(u => `
     <tr>
+      ${userCheckboxCell(deleteKeyForUser(u, 'tabStaff'))}
       <td class="fw-semibold small">${u.name}</td>
       <td>${u.email}</td>
       <td>${u.department || u.departmentName || '—'}</td>
       <td>${roleLabelForUser(u)}</td>
       <td>${userStatusBadge(u.status, u.blocked)}</td>
       <td>${staffActionBtns(u)}</td>
-    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No staff found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'staff\')">Add staff</button></td></tr>';
+    </tr>`).join('') : '<tr><td colspan="7" class="text-muted-2 p-4">No staff found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'staff\')">Add staff</button></td></tr>';
 }
 
 function renderCompanies(list) {
   document.getElementById('companyRows').innerHTML = list.length ? list.map(u => `
     <tr>
+      ${userCheckboxCell(deleteKeyForUser(u, 'tabCompanies'))}
       <td><div class="fw-semibold small">${u.companyName || u.name}</div><div class="small text-muted-2">${u.email}</div></td>
       <td>${u.contactPerson || u.name}<br><span class="small text-muted-2">${u.phone || '—'}</span></td>
       <td>${u.category || '—'}</td>
@@ -834,19 +993,20 @@ function renderCompanies(list) {
       <td>${u.associationStatus || '—'}</td>
       <td>${u.hasLogin ? userStatusBadge(u.status, u.blocked) : '<span class="badge-soft warning">No login</span>'}</td>
       <td>${companyActionBtns(u)}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="text-muted-2 p-4">No companies found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'company\')">Add company</button></td></tr>';
+    </tr>`).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No companies found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'company\')">Add company</button></td></tr>';
 }
 
 function renderAlumni(list) {
   document.getElementById('alumniRows').innerHTML = list.length ? list.map(u => `
     <tr>
+      ${userCheckboxCell(deleteKeyForUser(u, 'tabAlumni'))}
       <td class="fw-semibold small">${u.name}</td>
       <td>${u.email}</td>
       <td>${u.company || '<span class="text-muted-2">—</span>'}</td>
       <td>${u.alumniRole || '—'}</td>
       <td>${userStatusBadge(u.status, u.blocked)}</td>
       <td>${actionBtns(u)}</td>
-    </tr>`).join('') : '<tr><td colspan="6" class="text-muted-2 p-4">No alumni found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'alumni\')">Add alumni</button></td></tr>';
+    </tr>`).join('') : '<tr><td colspan="7" class="text-muted-2 p-4">No alumni found. <button type="button" class="btn btn-link btn-sm p-0" onclick="openAddUserModal(\'alumni\')">Add alumni</button></td></tr>';
 }
 
 function render() {
@@ -866,6 +1026,9 @@ function render() {
   renderCompanies(filterCompaniesList(companies));
   renderAlumni(filterUsersList(UserRegistry.byRole('alumni')));
   renderDepartments();
+  pruneSelectedDeleteKeys();
+  syncAllSelectAllCheckboxes();
+  updateBulkDeleteUi();
 }
 
 function refreshDepartmentOptions(role) {
@@ -1185,6 +1348,7 @@ async function initUsersPage() {
   if (live) await loadCompanies();
   if (live) await loadVolunteers();
   bindResumeVerifyToggle();
+  bindUserDeleteSelection();
   const search = document.getElementById('usersSearch');
   if (search && search.dataset.wired !== '1') {
     search.dataset.wired = '1';
