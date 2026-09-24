@@ -10,16 +10,11 @@ use PMS\Models\ResumeActivityModel;
 use PMS\Models\ResumeCareerObjectiveModel;
 use PMS\Models\ResumeCertificationModel;
 use PMS\Models\ResumeExperienceModel;
-use PMS\Models\ResumeModel;
 use PMS\Models\ResumeProjectModel;
 use PMS\Models\ResumeSkillModel;
 use PMS\Models\StudentModel;
-use PMS\Services\ApplicationWorkflowService;
-use PMS\Services\ObjectStorageService;
 use PMS\Services\ResumeBuilderPdfService;
-use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
-use PMS\Utils\Security;
 
 /**
  * Isolated Resume Builder APIs. Does not change student profile endpoints.
@@ -733,110 +728,6 @@ final class ResumeBuilderController
         $pdfService->streamPdf($documentHtml, $filename);
     }
 
-    /** POST /api/student/resume-builder/add-to-bucket */
-    public function addToResumeBucket(): void
-    {
-        $user = RBACMiddleware::requireStudent();
-        $studentId = $this->currentStudentId();
-        $profile = $this->studentModel->findById($studentId);
-        if (!$profile) {
-            Response::notFound('Student profile not found. Please sign in again with your college account.');
-        }
-
-        $input = json_decode(file_get_contents('php://input') ?: '{}', true);
-        if (!is_array($input)) {
-            $input = [];
-        }
-
-        $pdfService = new ResumeBuilderPdfService($this->studentModel);
-        $documentHtml = $pdfService->sanitizeDocumentHtml((string) ($input['documentHtml'] ?? ''));
-        $pdfService->assertGenerationAllowed($documentHtml);
-
-        $contentHash = hash('sha256', $documentHtml);
-        $resumeModel = new ResumeModel();
-        foreach ($resumeModel->findByStudent($studentId, 50) as $row) {
-            if (($row['source'] ?? '') === 'resume-builder'
-                && ($row['contentHash'] ?? '') === $contentHash) {
-                Response::error('Your current resume is already in the Resume Bucket.', 409);
-            }
-        }
-
-        try {
-            $pdfBytes = $pdfService->renderPdfBytes($documentHtml);
-        } catch (\Throwable $e) {
-            Response::error('Could not generate your resume PDF.', 500);
-        }
-
-        if ($pdfBytes === '') {
-            Response::error('Could not generate your resume PDF.', 500);
-        }
-
-        $fileName = $pdfService->buildFilename($profile);
-        $label = $this->buildResumeBucketLabel();
-        $profileType = 'General';
-        $config = require dirname(__DIR__) . '/config/app.php';
-        $registerNo = (string) ($profile['registerNumber'] ?? '');
-        $safeProfile = preg_replace('/[^a-zA-Z0-9_-]+/', '-', strtolower($profileType)) ?: 'general';
-        $hintName = ($registerNo !== '' ? $registerNo . '_' : '') . $safeProfile . '_' . time() . '.pdf';
-
-        $storage = new ObjectStorageService($config);
-        try {
-            $path = $storage->putContents(
-                ObjectStorageService::FOLDER_RESUMES,
-                $hintName,
-                $pdfBytes,
-                'application/pdf'
-            );
-        } catch (\Throwable $e) {
-            Response::error('Could not save your resume to the Resume Bucket.', 500);
-        }
-
-        $storedName = $storage->storedNameFromUri($path);
-        $userId = Security::toObjectId((string) ($user['_id'] ?? ''));
-        $studentObjectId = Security::toObjectId($studentId);
-        if ($userId === null || $studentObjectId === null) {
-            Response::error('Could not save your resume to the Resume Bucket.', 500);
-        }
-
-        $doc = [
-            'userId' => $userId,
-            'studentId' => $studentObjectId,
-            'label' => $label,
-            'profileType' => $profileType,
-            'fileName' => $fileName,
-            'fileSize' => strlen($pdfBytes),
-            'mime' => 'application/pdf',
-            'storedName' => $storedName,
-            'path' => $path,
-            'verified' => false,
-            'isDefault' => false,
-            'uploadedAt' => DocumentHelper::now(),
-            'source' => 'resume-builder',
-            'contentHash' => $contentHash,
-        ];
-
-        $id = $resumeModel->insert($doc);
-        $this->studentModel->update($studentId, [
-            'resume' => [
-                'filename' => $fileName,
-                'path' => $path,
-                'storedName' => $storedName,
-                'verified' => false,
-                'uploadedAt' => DocumentHelper::now(),
-            ],
-        ]);
-
-        (new ApplicationWorkflowService())->onResumeUploaded($studentId);
-
-        Response::success([
-            'id' => $id,
-            'label' => $label,
-            'profileType' => $profileType,
-            'viewUrl' => '/backend/api/student/resumes/' . $id . '/view',
-            'resumeBucketUrl' => 'settings.html#resumes',
-        ], 'Resume added to your Resume Bucket.', 201);
-    }
-
     /** GET /api/student/resume-builder/contact-links */
     public function getContactLinks(): void
     {
@@ -887,11 +778,6 @@ final class ResumeBuilderController
             'githubUrl' => $github !== '' ? $github : null,
             'websiteUrl' => $website !== '' ? $website : null,
         ];
-    }
-
-    private function buildResumeBucketLabel(): string
-    {
-        return 'Resume - ' . date('F Y');
     }
 
     private function currentStudentId(): string

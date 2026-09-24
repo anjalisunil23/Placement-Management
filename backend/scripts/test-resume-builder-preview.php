@@ -64,7 +64,7 @@ $assert(!str_contains($js, 'start + duration'), 'no start+duration calculation')
 $assert(str_contains($css, 'text-align: justify'), 'career objective justified');
 $assert(str_contains($css, 'screen and (max-width: 767.98px)'), 'mobile stack scoped to screen only');
 $assert(str_contains($settings, 'resume-builder.css?v=20260924rb24'), 'CSS cache bust');
-$assert(str_contains($settings, 'resume-builder.js?v=20260924rb27'), 'JS cache bust');
+$assert(str_contains($settings, 'resume-builder.js?v=20260924rb28'), 'JS cache bust');
 $assert(str_contains($css, 'margin: 0;'), 'print page margin zeroed to hide browser chrome');
 $assert(str_contains($js, 'generateResumePdf'), 'PDF download replaces print preview export');
 $assert(str_contains($css, 'font-size: 12pt'), 'section heading larger than body');
