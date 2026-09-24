@@ -57,7 +57,7 @@ $assert(str_contains($service, 'size: A4 portrait'), 'A4 page rule in wrapper');
 $assert(str_contains($composer, 'tecnickcom/tcpdf'), 'TCPDF remains for other reports');
 $assert(str_contains($js, 'data-rb-add-to-bucket'), 'Add to bucket button');
 $assert(str_contains($js, '/student/resumes/upload'), 'bucket upload uses existing API');
-$assert(str_contains($settings, 'resume-builder.js?v=20260924rb33'), 'JS cache bust');
+$assert(str_contains($settings, 'resume-builder.js?v=20260924rb34'), 'JS cache bust');
 
 echo "\n{$passed} passed, {$failed} failed\n";
 exit($failed > 0 ? 1 : 0);

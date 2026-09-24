@@ -1416,11 +1416,28 @@
     return esc(label);
   }
 
+  function formatResumePhone(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return raw;
+    let national = digits;
+    if (national.startsWith('91') && national.length >= 12) {
+      national = national.slice(2);
+    } else if (national.startsWith('0') && national.length === 11) {
+      national = national.slice(1);
+    }
+    if (national.length === 10) {
+      return '+91 ' + national;
+    }
+    return raw;
+  }
+
   function previewContactLine() {
     const personal = state.personal || {};
     const links = state.contactLinks || {};
     const parts = [];
-    const mobile = String(personal.mobile || '').trim();
+    const mobile = formatResumePhone(personal.mobile);
     const email = firstText(personal.personalEmail, personal.collegeEmail);
     const linkedin = contactLinkText(links.linkedinUrl, 'linkedin');
     const github = contactLinkText(links.githubUrl, 'github');
