@@ -279,39 +279,146 @@ CSS;
 
     private function resolveChromeBinary(): ?string
     {
-        $candidates = [];
-        $configPath = trim((string) ($_ENV['CHROME_PATH'] ?? getenv('CHROME_PATH') ?: ''));
-        if ($configPath !== '') {
-            $candidates[] = $configPath;
+        foreach ($this->chromeCandidatePaths() as $path) {
+            if ($this->isUsableBrowserBinary($path)) {
+                return $path;
+            }
         }
 
-        $home = (string) (getenv('LOCALAPPDATA') ?: getenv('HOME') ?: '');
-        $candidates = array_merge($candidates, [
+        return $this->lookupBrowserOnPath();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function chromeCandidatePaths(): array
+    {
+        $candidates = [];
+        foreach ([
+            $_SERVER['CHROME_PATH'] ?? '',
+            $_ENV['CHROME_PATH'] ?? '',
+            getenv('CHROME_PATH') ?: '',
+        ] as $configured) {
+            $configured = trim((string) $configured);
+            if ($configured !== '') {
+                $candidates[] = $configured;
+            }
+        }
+
+        $localAppData = trim((string) (
+            $_SERVER['LOCALAPPDATA']
+            ?? getenv('LOCALAPPDATA')
+            ?: ''
+        ));
+        $userProfile = trim((string) (
+            $_SERVER['USERPROFILE']
+            ?? getenv('USERPROFILE')
+            ?: getenv('HOME')
+            ?: ''
+        ));
+        $pf = trim((string) (getenv('ProgramFiles') ?: 'C:\\Program Files'));
+        $pf86 = trim((string) (getenv('ProgramFiles(x86)') ?: 'C:\\Program Files (x86)'));
+        $home = $localAppData !== '' ? $localAppData : ($userProfile !== '' ? $userProfile . '\\AppData\\Local' : '');
+
+        foreach ([
             $home . '\\Google\\Chrome\\Application\\chrome.exe',
+            $userProfile . '\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
+            $pf . '\\Google\\Chrome\\Application\\chrome.exe',
+            $pf86 . '\\Google\\Chrome\\Application\\chrome.exe',
+            $pf . '\\Microsoft\\Edge\\Application\\msedge.exe',
+            $pf86 . '\\Microsoft\\Edge\\Application\\msedge.exe',
             'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
             'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
             'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+            'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+            'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+            'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
             '/usr/bin/google-chrome',
             '/usr/bin/google-chrome-stable',
             '/usr/bin/chromium',
             '/usr/bin/chromium-browser',
+            '/usr/lib/chromium-browser/chromium-browser',
             '/snap/bin/chromium',
-        ]);
+        ] as $path) {
+            $candidates[] = $path;
+        }
 
-        $usersRoot = (getenv('SystemDrive') ?: 'C:') . '\\Users';
+        $usersRoot = (getenv('SystemDrive') ?: 'C:') . '/Users';
         if (is_dir($usersRoot)) {
-            foreach (glob($usersRoot . '\\*\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe') ?: [] as $userChrome) {
-                $candidates[] = $userChrome;
+            foreach ([
+                'AppData/Local/Google/Chrome/Application/chrome.exe',
+                'AppData/Local/Microsoft/Edge/Application/msedge.exe',
+            ] as $rel) {
+                foreach (glob($usersRoot . '/*/' . $rel) ?: [] as $userBrowser) {
+                    $candidates[] = $userBrowser;
+                }
+            }
+            $entries = @scandir($usersRoot) ?: [];
+            foreach ($entries as $user) {
+                if ($user === '.' || $user === '..') {
+                    continue;
+                }
+                $candidates[] = $usersRoot . '/' . $user . '/AppData/Local/Google/Chrome/Application/chrome.exe';
+                $candidates[] = $usersRoot . '/' . $user . '/AppData/Local/Microsoft/Edge/Application/msedge.exe';
             }
         }
 
-        foreach ($candidates as $path) {
-            $path = trim((string) $path);
-            if ($path !== '' && is_file($path) && is_executable($path)) {
-                return $path;
+        return array_values(array_unique(array_filter(array_map('trim', $candidates))));
+    }
+
+    private function isUsableBrowserBinary(string $path): bool
+    {
+        if ($path === '') {
+            return false;
+        }
+        if (!@is_file($path)) {
+            return false;
+        }
+        if (@is_executable($path)) {
+            return true;
+        }
+        $lower = strtolower($path);
+        return str_ends_with($lower, '.exe')
+            || str_ends_with($lower, 'chrome')
+            || str_ends_with($lower, 'chromium')
+            || str_ends_with($lower, 'msedge')
+            || str_ends_with($lower, 'chromium-browser');
+    }
+
+    private function lookupBrowserOnPath(): ?string
+    {
+        if (!function_exists('proc_open')) {
+            return null;
+        }
+        $names = PHP_OS_FAMILY === 'Windows'
+            ? ['msedge.exe', 'chrome.exe', 'msedge', 'chrome']
+            : ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'msedge'];
+        $finder = PHP_OS_FAMILY === 'Windows'
+            ? 'C:\\Windows\\System32\\where.exe'
+            : '/usr/bin/which';
+        if (!@is_file($finder)) {
+            $finder = PHP_OS_FAMILY === 'Windows' ? 'where.exe' : 'which';
+        }
+        foreach ($names as $name) {
+            $process = @proc_open(
+                [$finder, $name],
+                [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                $pipes,
+                null,
+                null,
+                ['bypass_shell' => true]
+            );
+            if (!is_resource($process)) {
+                continue;
             }
-            if ($path !== '' && is_file($path) && str_ends_with(strtolower($path), '.exe')) {
-                return $path;
+            $out = trim((string) stream_get_contents($pipes[1]));
+            stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            proc_close($process);
+            $first = trim((string) strtok($out, "\r\n"));
+            if ($this->isUsableBrowserBinary($first)) {
+                return $first;
             }
         }
 

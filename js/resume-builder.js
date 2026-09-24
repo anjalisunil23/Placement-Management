@@ -1728,6 +1728,97 @@
     }
   }
 
+  function filenameFromDisposition(res, fallback) {
+    const disposition = String(res.headers.get('Content-Disposition') || '');
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    return (match && match[1]) ? match[1] : fallback;
+  }
+
+  function downloadPdfBlob(blob, filename) {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  }
+
+  function shouldUseLivePreviewPdfFallback(message) {
+    const text = String(message || '').toLowerCase();
+    return text.indexOf('chrome') !== -1
+      || text.indexOf('chromium') !== -1
+      || text.indexOf('edge was not found') !== -1
+      || text.indexOf('proc_open') !== -1
+      || text.indexOf('print-to-pdf') !== -1;
+  }
+
+  function loadScriptOnce(src) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-rb-pdf-lib="' + src + '"]');
+      if (existing) {
+        if (existing.getAttribute('data-rb-loaded') === '1') {
+          resolve();
+          return;
+        }
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Failed to load PDF library')), { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.setAttribute('data-rb-pdf-lib', src);
+      script.addEventListener('load', () => {
+        script.setAttribute('data-rb-loaded', '1');
+        resolve();
+      }, { once: true });
+      script.addEventListener('error', () => reject(new Error('Failed to load PDF library')), { once: true });
+      document.head.appendChild(script);
+    });
+  }
+
+  async function ensureBrowserPdfLibs() {
+    const html2canvasFn = window.html2canvas;
+    const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
+    if (typeof html2canvasFn === 'function' && typeof jsPdfCtor === 'function') return;
+    await loadScriptOnce('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js');
+    await loadScriptOnce('https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js');
+    if (typeof window.html2canvas !== 'function' || !(window.jspdf && window.jspdf.jsPDF)) {
+      throw new Error('PDF libraries did not load.');
+    }
+  }
+
+  async function downloadLivePreviewPdf(printRoot, filename) {
+    await ensureBrowserPdfLibs();
+    const canvas = await window.html2canvas(printRoot, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+      windowWidth: printRoot.scrollWidth,
+      windowHeight: printRoot.scrollHeight,
+    });
+    const JsPDF = window.jspdf.jsPDF;
+    const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW = pageW;
+    const imgH = canvas.height * (pageW / canvas.width);
+    const dataUrl = canvas.toDataURL('image/png');
+    let y = 0;
+    let page = 0;
+    while (y < imgH - 0.5) {
+      if (page > 0) pdf.addPage();
+      pdf.addImage(dataUrl, 'PNG', 0, -y, imgW, imgH);
+      y += pageH;
+      page += 1;
+      if (page > 8) break;
+    }
+    pdf.save(filename);
+  }
+
   async function generateResumePdf() {
     const reason = pdfDisabledReason();
     if (reason) {
@@ -1769,34 +1860,30 @@
       const buf = await res.arrayBuffer();
       const bytes = new Uint8Array(buf);
       const looksLikePdf = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
-      if (!res.ok || !looksLikePdf) {
-        let message = failMessage;
-        try {
-          const json = JSON.parse(new TextDecoder().decode(bytes));
-          if (json && json.message) message = String(json.message);
-        } catch (_err) {
-          // Keep generic message.
-        }
-        if (typeof toast === 'function') toast(message, 'danger');
-        else window.alert(message);
+      if (res.ok && looksLikePdf) {
+        downloadPdfBlob(new Blob([buf], { type: 'application/pdf' }), filenameFromDisposition(res, resumePdfFilename()));
         return;
       }
-      const blob = new Blob([buf], { type: 'application/pdf' });
-      let filename = resumePdfFilename();
-      const disposition = String(res.headers.get('Content-Disposition') || '');
-      const match = disposition.match(/filename="?([^"]+)"?/i);
-      if (match && match[1]) filename = match[1];
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      let message = failMessage;
+      try {
+        const json = JSON.parse(new TextDecoder().decode(bytes));
+        if (json && json.message) message = String(json.message);
+      } catch (_err) {
+        // Keep generic message.
+      }
+      if (shouldUseLivePreviewPdfFallback(message)) {
+        await downloadLivePreviewPdf(printRoot, resumePdfFilename());
+        return;
+      }
+      if (typeof toast === 'function') toast(message, 'danger');
+      else window.alert(message);
     } catch (_err) {
-      if (typeof toast === 'function') toast(failMessage, 'danger');
-      else window.alert(failMessage);
+      try {
+        await downloadLivePreviewPdf(printRoot, resumePdfFilename());
+      } catch (_fallbackErr) {
+        if (typeof toast === 'function') toast(failMessage, 'danger');
+        else window.alert(failMessage);
+      }
     } finally {
       previous.forEach(({ el, html, disabled }) => {
         el.innerHTML = html;

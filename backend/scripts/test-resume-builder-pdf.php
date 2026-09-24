@@ -30,7 +30,8 @@ $css = (string) file_get_contents($root . '/css/resume-builder.css');
 $settings = (string) file_get_contents($root . '/settings.html');
 $composer = (string) file_get_contents($root . '/composer.json');
 
-$assert(str_contains($js, 'function generateResumePdf'), 'generateResumePdf helper exists');
+$assert(str_contains($js, 'downloadLivePreviewPdf'), 'browser fallback prints Live Preview');
+$assert(str_contains($js, 'html2canvas'), 'html2canvas used only when Chromium is unavailable');
 $assert(str_contains($js, 'data-rb-generate-pdf'), 'Generate Resume PDF button marker');
 $assert(!str_contains($js, 'Print Preview'), 'Print Preview removed from Resume Builder flow');
 $assert(!str_contains($js, 'window.print()'), 'browser print dialog not used');
@@ -54,7 +55,7 @@ $assert(str_contains($service, '_Resume.pdf'), 'filename pattern FirstName_LastN
 $assert(str_contains($service, 'assertGenerationAllowed'), 'server-side PDF gate');
 $assert(str_contains($service, 'size: A4 portrait'), 'A4 page rule in wrapper');
 $assert(str_contains($composer, 'tecnickcom/tcpdf'), 'TCPDF remains for other reports');
-$assert(str_contains($settings, 'resume-builder.js?v=20260924rb31'), 'JS cache bust');
+$assert(str_contains($settings, 'resume-builder.js?v=20260924rb32'), 'JS cache bust');
 
 echo "\n{$passed} passed, {$failed} failed\n";
 exit($failed > 0 ? 1 : 0);
