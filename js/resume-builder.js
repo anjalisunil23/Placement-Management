@@ -260,6 +260,79 @@
     if (countEl) countEl.textContent = 'Sections Completed: ' + done + '/' + TOTAL_SECTIONS;
     if (fillEl) fillEl.style.width = pct + '%';
     if (barEl) barEl.setAttribute('aria-valuenow', String(pct));
+    updatePdfButtons();
+  }
+
+  function resumeHasPreviewContent() {
+    const html = buildResumeDocumentHtml();
+    return html.indexOf('rb-resume-empty-doc') === -1;
+  }
+
+  function pdfDisabledReason() {
+    if (!canUseResumeBuilderApi()) return 'Sign in to generate your resume PDF';
+    if (!state.personalComplete || !state.educationComplete) return 'Complete required sections first';
+    if (!resumeHasPreviewContent()) return 'Add resume content before generating a PDF';
+    return '';
+  }
+
+  function pdfGenerationAllowed() {
+    return pdfDisabledReason() === '';
+  }
+
+  function resumePdfFilename() {
+    const full = String(state.personal?.fullName || '').trim();
+    const parts = full.split(/\s+/).filter(Boolean);
+    const sanitize = (value) => String(value || '').replace(/[^\w.-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    if (parts.length >= 2) {
+      const first = sanitize(parts[0]);
+      const last = sanitize(parts[parts.length - 1]);
+      if (first && last) return first + '_' + last + '_Resume.pdf';
+    }
+    if (parts.length === 1) {
+      const single = sanitize(parts[0]);
+      if (single) return single + '_Resume.pdf';
+    }
+    return 'Resume.pdf';
+  }
+
+  function pdfButtonHtml(extraClass) {
+    const reason = pdfDisabledReason();
+    const allowed = reason === '';
+    const cls = extraClass ? ' ' + extraClass : '';
+    const btn = `
+      <button type="button" class="btn btn-primary${cls}" data-rb-generate-pdf ${allowed ? '' : 'disabled'} aria-disabled="${allowed ? 'false' : 'true'}">
+        <i class="bi bi-file-earmark-pdf me-1"></i>Generate Resume PDF
+      </button>`;
+    if (allowed) return btn;
+    return `
+      <span class="d-inline-block" tabindex="0" data-rb-pdf-tooltip-wrap data-bs-toggle="tooltip" data-bs-placement="top" title="${esc(reason)}">
+        ${btn}
+      </span>`;
+  }
+
+  function updatePdfButtons() {
+    const reason = pdfDisabledReason();
+    const allowed = reason === '';
+    root.querySelectorAll('[data-rb-generate-pdf]').forEach((btn) => {
+      btn.disabled = !allowed;
+      btn.setAttribute('aria-disabled', allowed ? 'false' : 'true');
+    });
+    root.querySelectorAll('[data-rb-pdf-tooltip-wrap]').forEach((wrap) => {
+      wrap.setAttribute('title', reason);
+      if (window.bootstrap && typeof bootstrap.Tooltip === 'function') {
+        const tip = bootstrap.Tooltip.getOrCreateInstance(wrap);
+        if (typeof tip.setContent === 'function') {
+          tip.setContent({ '.tooltip-inner': reason });
+        }
+      }
+    });
+  }
+
+  function initResumeBuilderTooltips() {
+    if (!window.bootstrap || typeof bootstrap.Tooltip !== 'function') return;
+    root.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+      bootstrap.Tooltip.getOrCreateInstance(el);
+    });
   }
 
   function goToExistingProfile() {
@@ -1543,9 +1616,7 @@
           <button type="button" class="btn btn-outline-secondary" data-rb-preview-back>
             <i class="bi bi-arrow-left me-1"></i>Back to Resume Builder
           </button>
-          <button type="button" class="btn btn-primary" data-rb-preview-print>
-            <i class="bi bi-printer me-1"></i>Print Preview
-          </button>
+          ${pdfButtonHtml('ms-md-auto')}
         </div>
         ${body}
       </div>`;
@@ -1577,6 +1648,7 @@
     if (state.previewMode) {
       const page = root.querySelector('[data-rb-preview-page]');
       if (page) page.outerHTML = previewPageHtml(false);
+      updatePdfButtons();
       return;
     }
     const card = root.querySelector('[data-rb-card="preview"]');
@@ -1596,6 +1668,8 @@
       page.outerHTML = previewPageHtml(false);
     }
     root.querySelector('[data-rb-preview-page]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    initResumeBuilderTooltips();
+    updatePdfButtons();
   }
 
   function closeLivePreview() {
@@ -1639,24 +1713,66 @@
     }
   }
 
-  function printResumePreview() {
+  async function generateResumePdf() {
+    const reason = pdfDisabledReason();
+    if (reason) {
+      if (typeof toast === 'function') toast(reason, 'warn');
+      return;
+    }
     if (!state.previewMode) openLivePreview();
-    const previousTitle = document.title;
-    document.title = ' ';
-    document.body.classList.add('rb-printing-resume');
-    let restored = false;
-    const restorePrintChrome = () => {
-      if (restored) return;
-      restored = true;
-      document.body.classList.remove('rb-printing-resume');
-      document.title = previousTitle;
-      window.removeEventListener('afterprint', restorePrintChrome);
-    };
-    window.addEventListener('afterprint', restorePrintChrome);
-    window.setTimeout(() => {
-      window.print();
-      window.setTimeout(restorePrintChrome, 800);
-    }, 50);
+    const documentHtml = buildResumeDocumentHtml();
+    if (documentHtml.indexOf('rb-resume-empty-doc') !== -1) {
+      if (typeof toast === 'function') toast('Add resume content before generating a PDF.', 'warn');
+      return;
+    }
+
+    const buttons = root.querySelectorAll('[data-rb-generate-pdf]');
+    buttons.forEach((btn) => { btn.disabled = true; });
+
+    try {
+      const token = (typeof Auth !== 'undefined' && typeof Auth.token === 'function') ? Auth.token() : '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
+        headers.Authorization = 'Bearer ' + token;
+      }
+      const apiBase = (typeof API_BASE !== 'undefined') ? API_BASE : '/backend/api';
+      const res = await fetch(apiBase + '/student/resume-builder/pdf', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ documentHtml }),
+      });
+
+      if (!res.ok) {
+        let message = 'Could not generate resume PDF.';
+        try {
+          const err = await res.json();
+          if (err && err.message) message = String(err.message);
+        } catch (_parseErr) {
+          // Ignore non-JSON error bodies.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = /filename="([^"]+)"/i.exec(cd);
+      const filename = match ? match[1] : resumePdfFilename();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      if (typeof toast === 'function') toast('Resume PDF downloaded.', 'success');
+    } catch (err) {
+      if (typeof toast === 'function') toast(err.message || 'Could not generate resume PDF.', 'danger');
+    } finally {
+      updatePdfButtons();
+    }
   }
 
   function sectionCard(section) {
@@ -1774,11 +1890,7 @@
             <button type="button" class="btn btn-outline-primary" data-rb-live-preview>
               <i class="bi bi-eye me-1"></i>Live Preview
             </button>
-            <span class="d-inline-block" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Complete required sections first">
-              <button type="button" class="btn btn-primary" disabled aria-disabled="true">
-                <i class="bi bi-file-earmark-pdf me-1"></i>Generate Resume PDF
-              </button>
-            </span>
+            ${pdfButtonHtml('')}
           </div>
         </div>
       </div>
@@ -1804,8 +1916,8 @@
         refreshPreviewData();
         return;
       }
-      if (event.target.closest('[data-rb-preview-print]')) {
-        printResumePreview();
+      if (event.target.closest('[data-rb-generate-pdf]')) {
+        generateResumePdf();
         return;
       }
       if (event.target.closest('[data-rb-edit-profile]')) {
@@ -2008,11 +2120,7 @@
       if (saveBtn) saveBtn.disabled = !objectiveValid(ta.value);
     });
 
-    if (window.bootstrap && typeof bootstrap.Tooltip === 'function') {
-      root.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
-        bootstrap.Tooltip.getOrCreateInstance(el);
-      });
-    }
+    initResumeBuilderTooltips();
   }
 
   function applyPersonal(fields) {

@@ -13,6 +13,7 @@ use PMS\Models\ResumeExperienceModel;
 use PMS\Models\ResumeProjectModel;
 use PMS\Models\ResumeSkillModel;
 use PMS\Models\StudentModel;
+use PMS\Services\ResumeBuilderPdfService;
 use PMS\Utils\Response;
 
 /**
@@ -705,6 +706,27 @@ final class ResumeBuilderController
             'description' => (string) ($row['description'] ?? ''),
             'activityDate' => $activityDate !== '' ? $activityDate : null,
         ];
+    }
+
+    /** POST /api/student/resume-builder/pdf */
+    public function downloadPdf(): void
+    {
+        $studentId = $this->currentStudentId();
+        $profile = $this->studentModel->findById($studentId);
+        if (!$profile) {
+            Response::notFound('Student profile not found. Please sign in again with your college account.');
+        }
+
+        $pdfService = new ResumeBuilderPdfService($this->studentModel);
+        $pdfService->assertGenerationAllowed($profile);
+
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($input)) {
+            $input = [];
+        }
+        $documentHtml = $pdfService->sanitizeDocumentHtml((string) ($input['documentHtml'] ?? ''));
+        $filename = $pdfService->buildFilename($profile);
+        $pdfService->streamPdf($documentHtml, $filename);
     }
 
     /** GET /api/student/resume-builder/contact-links */
