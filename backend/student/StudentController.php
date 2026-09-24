@@ -772,7 +772,7 @@ final class StudentController
         'isDefault' => (bool) ($r['isDefault'] ?? false),
         'path' => $path,
         'storage' => str_starts_with($path, 's3://') ? 's3' : 'legacy',
-        'uploadedAt' => isset($r['uploadedAt']) ? DocumentHelper::serialize($r['uploadedAt']) : null,
+        'uploadedAt' => DocumentHelper::toIsoDate($r['uploadedAt'] ?? $r['createdAt'] ?? null),
         'viewUrl' => '/backend/api/student/resumes/' . (string) $r['_id'] . '/view',
       ];
     }, $rows);

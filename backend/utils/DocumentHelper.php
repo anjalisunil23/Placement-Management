@@ -58,6 +58,38 @@ final class DocumentHelper
     }
 
     /**
+     * Convert a stored timestamp (string, DateTime, or unix seconds) to an ISO-8601 string for JSON APIs.
+     */
+    public static function toIsoDate(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('c');
+        }
+        if (is_numeric($value)) {
+            $ts = (int) $value;
+            if ($ts <= 0) {
+                return null;
+            }
+            if ($ts > 9999999999) {
+                $ts = (int) floor($ts / 1000);
+            }
+            return (new \DateTimeImmutable('@' . $ts))->setTimezone(new \DateTimeZone('UTC'))->format('c');
+        }
+        $text = trim((string) $value);
+        if ($text === '') {
+            return null;
+        }
+        try {
+            return (new \DateTimeImmutable($text))->format('c');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * @param array<int, mixed> $docs
      * @return array<int, array<string, mixed>>
      */

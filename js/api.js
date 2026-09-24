@@ -1953,7 +1953,12 @@ function pipelineStatusBadge(status) {
 }
 
 function formatDate(iso) {
-  try { return new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }); } catch { return '—'; }
+  if (iso == null || iso === '') return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+  } catch { return '—'; }
 }
 
 function formatRelativeTime(iso) {
