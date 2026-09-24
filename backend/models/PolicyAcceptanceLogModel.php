@@ -35,7 +35,8 @@ class PolicyAcceptanceLogModel extends BaseModel
             'acceptedIp'      => trim((string) ($data['acceptedIp'] ?? '')),
             'userAgent'       => trim((string) ($data['userAgent'] ?? '')),
             'deviceType'      => trim((string) ($data['deviceType'] ?? 'unknown')),
-            'action'          => 'Accepted Placement Policy',
+            'action'          => trim((string) ($data['action'] ?? 'Accepted Placement Policy')),
+            'policyType'      => trim((string) ($data['policyType'] ?? 'placement')),
             'immutable'       => true,
         ]);
     }

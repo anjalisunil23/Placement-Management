@@ -263,6 +263,7 @@ $routes = [
     ['GET',  '/student/profile',           [StudentController::class, 'getProfile']],
     ['PUT',  '/student/profile',           [StudentController::class, 'updateProfile']],
     ['POST', '/student/policy/accept',     [StudentController::class, 'acceptPolicy']],
+    ['POST', '/student/policy/accept-internship', [StudentController::class, 'acceptInternshipPolicy']],
     ['POST', '/student/resume',            [StudentController::class, 'uploadResume']],
     ['POST', '/student/photo',            [StudentController::class, 'uploadPhoto']],
     ['POST', '/student/photo/remove',     [StudentController::class, 'removePhoto']],

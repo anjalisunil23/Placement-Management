@@ -512,8 +512,12 @@ const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html'
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'mock-aptitude.html', 'mock-coding.html'];
 
-/** Placement Cell guidelines version students must accept on first login. */
-const PLACEMENT_POLICY_VERSION = 'ajce-2026-v1';
+/** Placement policy PDF version (step 1). */
+const PLACEMENT_POLICY_VERSION = 'ajce-placement-2026-09';
+/** Internship policy PDF version (step 2). */
+const INTERNSHIP_POLICY_VERSION = 'ajce-internship-2026-09';
+const PLACEMENT_POLICY_PDF = 'assets/policies/amal-jyothi-placement-policy-2026.pdf';
+const INTERNSHIP_POLICY_PDF = 'assets/policies/ajce-student-internship-policy-2026.pdf';
 
 function studentNeedsPlacementRegistration() {
   if (Auth.role() !== 'student') return false;
@@ -817,6 +821,16 @@ const Auth = {
           : (prev.policyAccepted === true),
         policyVersion: merged.policyVersion || prev.policyVersion || '',
         policyAcceptedAt: merged.policyAcceptedAt || prev.policyAcceptedAt || '',
+        placementPolicyAccepted: Object.prototype.hasOwnProperty.call(merged, 'placementPolicyAccepted')
+          ? merged.placementPolicyAccepted === true || merged.placementPolicyAccepted === 1 || merged.placementPolicyAccepted === '1'
+          : (prev.placementPolicyAccepted === true),
+        placementPolicyVersion: merged.placementPolicyVersion || prev.placementPolicyVersion || '',
+        placementPolicyAcceptedAt: merged.placementPolicyAcceptedAt || prev.placementPolicyAcceptedAt || '',
+        internshipPolicyAccepted: Object.prototype.hasOwnProperty.call(merged, 'internshipPolicyAccepted')
+          ? merged.internshipPolicyAccepted === true || merged.internshipPolicyAccepted === 1 || merged.internshipPolicyAccepted === '1'
+          : (prev.internshipPolicyAccepted === true),
+        internshipPolicyVersion: merged.internshipPolicyVersion || prev.internshipPolicyVersion || '',
+        internshipPolicyAcceptedAt: merged.internshipPolicyAcceptedAt || prev.internshipPolicyAcceptedAt || '',
         title: merged.title ?? prev.title ?? '',
         package: merged.package ?? prev.package ?? '',
         experience: merged.experience ?? prev.experience,
@@ -1088,6 +1102,20 @@ const Auth = {
             : (prev.policyAccepted === true)),
         policyVersion: p.policyVersion || prev.policyVersion || '',
         policyAcceptedAt: p.policyAcceptedAt || prev.policyAcceptedAt || '',
+        placementPolicyAccepted: Object.prototype.hasOwnProperty.call(p, 'placementPolicyAccepted')
+          ? (p.placementPolicyAccepted === true || p.placementPolicyAccepted === 1 || p.placementPolicyAccepted === '1')
+          : (Object.prototype.hasOwnProperty.call(u, 'placementPolicyAccepted')
+            ? (u.placementPolicyAccepted === true || u.placementPolicyAccepted === 1 || u.placementPolicyAccepted === '1')
+            : (prev.placementPolicyAccepted === true)),
+        placementPolicyVersion: p.placementPolicyVersion || u.placementPolicyVersion || prev.placementPolicyVersion || '',
+        placementPolicyAcceptedAt: p.placementPolicyAcceptedAt || u.placementPolicyAcceptedAt || prev.placementPolicyAcceptedAt || '',
+        internshipPolicyAccepted: Object.prototype.hasOwnProperty.call(p, 'internshipPolicyAccepted')
+          ? (p.internshipPolicyAccepted === true || p.internshipPolicyAccepted === 1 || p.internshipPolicyAccepted === '1')
+          : (Object.prototype.hasOwnProperty.call(u, 'internshipPolicyAccepted')
+            ? (u.internshipPolicyAccepted === true || u.internshipPolicyAccepted === 1 || u.internshipPolicyAccepted === '1')
+            : (prev.internshipPolicyAccepted === true)),
+        internshipPolicyVersion: p.internshipPolicyVersion || u.internshipPolicyVersion || prev.internshipPolicyVersion || '',
+        internshipPolicyAcceptedAt: p.internshipPolicyAcceptedAt || u.internshipPolicyAcceptedAt || prev.internshipPolicyAcceptedAt || '',
         photoUrl: p.photoUrl || p.photo?.url || u.photoUrl || prev.photoUrl || '',
         photoProxyUrl: p.photoProxyUrl || u.photoProxyUrl || prev.photoProxyUrl || '',
         photo: p.photo || prev.photo || null,
