@@ -136,13 +136,35 @@
     color:#111;
     background:#fff;
   }
-  .policy-pdf-frame{
-    width:100%;
-    min-height:min(70vh,720px);
-    height:min(70vh,720px);
+  .policy-pdf-box{
     border:1.5px solid #111;
     background:#fff;
+    width:100%;
+    box-sizing:border-box;
+    overflow:hidden;
+  }
+  .policy-pdf-box-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:.75rem 1rem;
+    flex-wrap:wrap;
+    padding:.85rem 1.15rem;
+    border-bottom:1.5px solid #111;
+    background:#fff;
+  }
+  .policy-pdf-box-head h2{margin:0}
+  .policy-pdf-frame{
+    width:100%;
+    height:min(72vh,780px);
+    min-height:min(60vh,640px);
+    border:0;
+    margin:0;
+    padding:0;
     display:block;
+    vertical-align:top;
+    box-sizing:border-box;
+    background:#fff;
   }
   .policy-step-badge{
     display:inline-flex;align-items:center;gap:.35rem;
@@ -281,12 +303,12 @@
         </div>
 
         <div id="stepPlacementPanel">
-          <div class="mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <div class="mb-3 policy-pdf-box">
+            <div class="policy-pdf-box-head">
               <h2 class="h6 fw-bold mb-0">Amal Jyothi Placement Policy 2026</h2>
               <a class="small text-decoration-none" id="placementPdfOpen" href="assets/policies/amal-jyothi-placement-policy-2026.pdf" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Open PDF in new tab</a>
             </div>
-            <iframe class="policy-pdf-frame" id="placementPolicyPdf" title="Amal Jyothi Placement Policy 2026" src="assets/policies/amal-jyothi-placement-policy-2026.pdf"></iframe>
+            <iframe class="policy-pdf-frame" id="placementPolicyPdf" title="Amal Jyothi Placement Policy 2026" src="assets/policies/amal-jyothi-placement-policy-2026.pdf#view=FitH&toolbar=0&navpanes=0"></iframe>
           </div>
 
           <div class="mb-3">
@@ -312,12 +334,12 @@
         </div>
 
         <div id="stepInternshipPanel" class="d-none">
-          <div class="mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <div class="mb-3 policy-pdf-box">
+            <div class="policy-pdf-box-head">
               <h2 class="h6 fw-bold mb-0">AJCE Student Internship Policy</h2>
               <a class="small text-decoration-none" id="internshipPdfOpen" href="assets/policies/ajce-student-internship-policy-2026.pdf" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Open PDF in new tab</a>
             </div>
-            <iframe class="policy-pdf-frame" id="internshipPolicyPdf" title="AJCE Student Internship Policy" src="about:blank" data-src="assets/policies/ajce-student-internship-policy-2026.pdf"></iframe>
+            <iframe class="policy-pdf-frame" id="internshipPolicyPdf" title="AJCE Student Internship Policy" src="about:blank" data-src="assets/policies/ajce-student-internship-policy-2026.pdf#view=FitH&toolbar=0&navpanes=0"></iframe>
           </div>
 
           <div class="mb-3">
