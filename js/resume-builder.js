@@ -325,10 +325,29 @@
       </span>`;
   }
 
+  function bucketButtonHtml(extraClass) {
+    const reason = pdfDisabledReason();
+    const allowed = reason === '';
+    const cls = extraClass ? ' ' + extraClass : '';
+    return `
+      <button type="button" class="btn btn-outline-primary${cls}" data-rb-add-to-bucket ${allowed ? '' : 'disabled'} aria-disabled="${allowed ? 'false' : 'true'}">
+        <i class="bi bi-folder-plus me-1"></i>Add to bucket
+      </button>`;
+  }
+
+  function previewExportActionsHtml(extraClass) {
+    const wrapCls = extraClass ? ' ' + extraClass : '';
+    return `
+      <div class="d-flex flex-wrap gap-2${wrapCls}">
+        ${pdfButtonHtml('')}
+        ${bucketButtonHtml('')}
+      </div>`;
+  }
+
   function updatePdfButtons() {
     const reason = pdfDisabledReason();
     const allowed = reason === '';
-    root.querySelectorAll('[data-rb-generate-pdf]').forEach((btn) => {
+    root.querySelectorAll('[data-rb-generate-pdf], [data-rb-add-to-bucket]').forEach((btn) => {
       btn.disabled = !allowed;
       btn.setAttribute('aria-disabled', allowed ? 'false' : 'true');
     });
@@ -1631,7 +1650,7 @@
           <button type="button" class="btn btn-outline-secondary" data-rb-preview-back>
             <i class="bi bi-arrow-left me-1"></i>Back to Resume Builder
           </button>
-          ${pdfButtonHtml('ms-md-auto')}
+          ${previewExportActionsHtml('ms-md-auto')}
         </div>
         ${body}
       </div>`;
@@ -1816,53 +1835,38 @@
       page += 1;
       if (page > 8) break;
     }
-    pdf.save(filename);
+    return pdf.output('blob');
   }
 
-  async function generateResumePdf() {
-    const reason = pdfDisabledReason();
-    if (reason) {
-      if (typeof toast === 'function') toast(reason, 'warn');
-      else window.alert(reason);
-      return;
-    }
-    if (!state.previewMode) openLivePreview();
+  function resumeBuilderApiBase() {
+    return (typeof API_BASE !== 'undefined' && API_BASE) ? API_BASE : '/backend/api';
+  }
 
-    const printRoot = document.getElementById('rbResumePrintRoot');
-    if (!printRoot || printRoot.classList.contains('rb-resume-empty-doc')) {
-      if (typeof toast === 'function') toast('Add resume content before generating a PDF.', 'warn');
-      else window.alert('Add resume content before generating a PDF.');
-      return;
-    }
+  function authHeaders(json) {
+    const headers = json ? { 'Content-Type': 'application/json' } : {};
+    const token = (typeof Auth !== 'undefined' && typeof Auth.token === 'function') ? Auth.token() : '';
+    if (token) headers.Authorization = 'Bearer ' + token;
+    return headers;
+  }
 
-    const buttons = Array.from(root.querySelectorAll('[data-rb-generate-pdf]'));
-    const previous = buttons.map((btn) => ({ el: btn, html: btn.innerHTML, disabled: btn.disabled }));
-    buttons.forEach((btn) => {
-      btn.disabled = true;
-      btn.setAttribute('aria-busy', 'true');
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating PDF...';
-    });
-
+  async function buildResumePdfBlob(printRoot) {
     const failMessage = 'Unable to generate your resume PDF. Please try again.';
+    const filename = resumePdfFilename();
     try {
-      const token = (typeof Auth !== 'undefined' && typeof Auth.token === 'function') ? Auth.token() : '';
-      const headers = { 'Content-Type': 'application/json' };
-      if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
-        headers.Authorization = 'Bearer ' + token;
-      }
-      const apiBase = (typeof API_BASE !== 'undefined' && API_BASE) ? API_BASE : '/backend/api';
-      const res = await fetch(apiBase + '/student/resume-builder/pdf', {
+      const res = await fetch(resumeBuilderApiBase() + '/student/resume-builder/pdf', {
         method: 'POST',
         credentials: 'include',
-        headers,
+        headers: authHeaders(true),
         body: JSON.stringify({ documentHtml: printRoot.outerHTML }),
       });
       const buf = await res.arrayBuffer();
       const bytes = new Uint8Array(buf);
       const looksLikePdf = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
       if (res.ok && looksLikePdf) {
-        downloadPdfBlob(new Blob([buf], { type: 'application/pdf' }), filenameFromDisposition(res, resumePdfFilename()));
-        return;
+        return {
+          blob: new Blob([buf], { type: 'application/pdf' }),
+          filename: filenameFromDisposition(res, filename),
+        };
       }
       let message = failMessage;
       try {
@@ -1872,18 +1876,128 @@
         // Keep generic message.
       }
       if (shouldUseLivePreviewPdfFallback(message)) {
-        await downloadLivePreviewPdf(printRoot, resumePdfFilename());
+        return { blob: await downloadLivePreviewPdf(printRoot, filename), filename };
+      }
+      throw new Error(message);
+    } catch (err) {
+      try {
+        return { blob: await downloadLivePreviewPdf(printRoot, filename), filename };
+      } catch (_fallbackErr) {
+        if (err && err.message) throw err;
+        throw new Error(failMessage);
+      }
+    }
+  }
+
+  function resumePdfActionButtons() {
+    return Array.from(root.querySelectorAll('[data-rb-generate-pdf], [data-rb-add-to-bucket]'));
+  }
+
+  function requirePrintRoot() {
+    const reason = pdfDisabledReason();
+    if (reason) {
+      if (typeof toast === 'function') toast(reason, 'warn');
+      else window.alert(reason);
+      return null;
+    }
+    if (!state.previewMode) openLivePreview();
+    const printRoot = document.getElementById('rbResumePrintRoot');
+    if (!printRoot || printRoot.classList.contains('rb-resume-empty-doc')) {
+      if (typeof toast === 'function') toast('Add resume content before generating a PDF.', 'warn');
+      else window.alert('Add resume content before generating a PDF.');
+      return null;
+    }
+    return printRoot;
+  }
+
+  async function generateResumePdf() {
+    const printRoot = requirePrintRoot();
+    if (!printRoot) return;
+
+    const buttons = resumePdfActionButtons();
+    const previous = buttons.map((btn) => ({ el: btn, html: btn.innerHTML, disabled: btn.disabled }));
+    buttons.forEach((btn) => {
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      if (btn.hasAttribute('data-rb-generate-pdf')) {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating PDF...';
+      }
+    });
+
+    const failMessage = 'Unable to generate your resume PDF. Please try again.';
+    try {
+      const built = await buildResumePdfBlob(printRoot);
+      downloadPdfBlob(built.blob, built.filename);
+    } catch (_err) {
+      if (typeof toast === 'function') toast(failMessage, 'danger');
+      else window.alert(failMessage);
+    } finally {
+      previous.forEach(({ el, html, disabled }) => {
+        el.innerHTML = html;
+        el.disabled = disabled;
+        el.removeAttribute('aria-busy');
+      });
+      updatePdfButtons();
+    }
+  }
+
+  function resumeBucketLabel() {
+    const name = String(state.personal?.fullName || '').trim();
+    return name ? (name + ' Resume') : 'Resume Builder';
+  }
+
+  function resumeBucketProfileType() {
+    if (typeof RESUME_PROFILES !== 'undefined' && Array.isArray(RESUME_PROFILES) && RESUME_PROFILES.length) {
+      return String(RESUME_PROFILES[0]);
+    }
+    return 'General';
+  }
+
+  async function addResumeToBucket() {
+    const printRoot = requirePrintRoot();
+    if (!printRoot) return;
+    if (typeof Auth !== 'undefined' && typeof Auth.hasRealAuth === 'function' && !Auth.hasRealAuth()) {
+      if (typeof toast === 'function') toast('Sign in to upload resumes to the resume bucket.', 'warn');
+      else window.alert('Sign in to upload resumes to the resume bucket.');
+      return;
+    }
+
+    const buttons = resumePdfActionButtons();
+    const previous = buttons.map((btn) => ({ el: btn, html: btn.innerHTML, disabled: btn.disabled }));
+    buttons.forEach((btn) => {
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      if (btn.hasAttribute('data-rb-add-to-bucket')) {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Adding to bucket...';
+      }
+    });
+
+    try {
+      const built = await buildResumePdfBlob(printRoot);
+      const file = new File([built.blob], built.filename, { type: 'application/pdf' });
+      const uploadFd = new FormData();
+      uploadFd.append('file', file, built.filename);
+      uploadFd.append('label', resumeBucketLabel());
+      uploadFd.append('profileType', resumeBucketProfileType());
+      const res = await fetch(resumeBuilderApiBase() + '/student/resumes/upload', {
+        method: 'POST',
+        body: uploadFd,
+        headers: authHeaders(false),
+        credentials: 'include',
+      });
+      const json = await res.json().catch(() => ({ success: false, message: 'Bad response' }));
+      if (res.ok && json.success) {
+        if (typeof toast === 'function') toast('Resume added to bucket.', 'success');
+        else window.alert('Resume added to bucket.');
+        if (typeof refreshResumes === 'function') await refreshResumes();
         return;
       }
+      const message = json.message || 'Could not add the resume to the bucket.';
       if (typeof toast === 'function') toast(message, 'danger');
       else window.alert(message);
     } catch (_err) {
-      try {
-        await downloadLivePreviewPdf(printRoot, resumePdfFilename());
-      } catch (_fallbackErr) {
-        if (typeof toast === 'function') toast(failMessage, 'danger');
-        else window.alert(failMessage);
-      }
+      if (typeof toast === 'function') toast('Could not add the resume to the bucket.', 'danger');
+      else window.alert('Could not add the resume to the bucket.');
     } finally {
       previous.forEach(({ el, html, disabled }) => {
         el.innerHTML = html;
@@ -2010,6 +2124,7 @@
               <i class="bi bi-eye me-1"></i>Live Preview
             </button>
             ${pdfButtonHtml('')}
+            ${bucketButtonHtml('')}
           </div>
         </div>
       </div>
@@ -2037,6 +2152,10 @@
       }
       if (event.target.closest('[data-rb-generate-pdf]')) {
         generateResumePdf();
+        return;
+      }
+      if (event.target.closest('[data-rb-add-to-bucket]')) {
+        addResumeToBucket();
         return;
       }
       if (event.target.closest('[data-rb-edit-profile]')) {
