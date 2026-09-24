@@ -62,7 +62,7 @@
   <li class="nav-item" id="finalYearPendingTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link" data-bs-toggle="tab" href="#tabFinalYearPending" id="linkFinalYearPending">Non-Registered</a></li>
   <li class="nav-item" id="placedTabItem" data-roles="admin,placement_officer,staff"><a class="nav-link" data-bs-toggle="tab" href="#tabPlaced" id="linkPlaced">Placed</a></li>
   <li class="nav-item" id="applicationsTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabApplications" id="linkApplications">Drive Applications</a></li>
-  <li class="nav-item" id="volunteersTabItem" data-roles="placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabVolunteers" id="linkVolunteers">Placement representatives</a></li>
+  <li class="nav-item" id="volunteersTabItem" data-roles="admin,placement_officer"><a class="nav-link" data-bs-toggle="tab" href="#tabVolunteers" id="linkVolunteers">Placement representatives</a></li>
   <li class="nav-item" id="blacklistTabItem" data-roles="admin"><a class="nav-link" data-bs-toggle="tab" href="#tabBlacklist" id="linkBlacklist">Blacklist</a></li>
 </ul>
 
@@ -851,7 +851,7 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/staff-api.js?v=20260723perf"></script>
-<script src="js/admin-api.js?v=20260727clearapps"></script>
+<script src="js/admin-api.js?v=20260924voladmin"></script>
 <script src="js/officer-api.js?v=20260920pca"></script>
 <script src="js/api.js?v=20260723perf"></script>
 <script src="js/app.js?v=20260922bootfix"></script>
@@ -866,7 +866,7 @@ const canViewPlaced = canViewFinalYear;
 const canVerifySelfPlacement = role === 'admin' || role === 'placement_officer' || isHodRole;
 const canManageApplications = role === 'admin' || role === 'placement_officer' || isHodRole;
 const canManageBlacklist = role === 'admin';
-const canManageVolunteers = role === 'placement_officer' || isHodRole;
+const canManageVolunteers = isAdminRole || role === 'placement_officer' || isHodRole;
 const canViewStaffPolicy = false; // replaced by department Registered / Non-registered tabs
 const canUseFindStudent = false; // Find Student removed from placement officer module
 
@@ -886,6 +886,24 @@ if (isAdminRole) {
   const placedSub = document.getElementById('placedTabSub');
   if (placedSub) {
     placedSub.textContent = 'All placed students across departments.';
+  }
+  const volunteersSub = document.querySelector('#tabVolunteers .small.text-muted-2');
+  if (volunteersSub) {
+    volunteersSub.textContent = 'Assign students from any department as placement representatives.';
+  }
+  const assignVolunteerSub = document.querySelector('#assignVolunteerModal .small.text-muted-2');
+  if (assignVolunteerSub) {
+    assignVolunteerSub.textContent = 'Choose a registered final-year student from any department.';
+  }
+  const volunteerHead = document.querySelector('#tabVolunteers table thead tr');
+  if (volunteerHead && !volunteerHead.querySelector('[data-admin-dept-col]')) {
+    const batchTh = volunteerHead.querySelector('th:nth-child(3)');
+    if (batchTh) {
+      const deptTh = document.createElement('th');
+      deptTh.dataset.adminDeptCol = '1';
+      deptTh.textContent = 'Department';
+      volunteerHead.insertBefore(deptTh, batchTh);
+    }
   }
 } else if (role === 'staff') {
   const pageSub = document.getElementById('pageSub');
@@ -2186,9 +2204,15 @@ function formatVolunteerDate(raw) {
 
 let pcaModalAssignmentId = '';
 
+function volunteerMgmtApi() {
+  if (isAdminRole && typeof AdminApi !== 'undefined') return AdminApi;
+  if (typeof OfficerApi !== 'undefined') return OfficerApi;
+  return null;
+}
+
 function pcaOfferLetterPreviewUrl() {
   const params = new URLSearchParams();
-  params.set('mode', 'officer');
+  params.set('mode', isAdminRole ? 'admin' : 'officer');
   if (pcaModalAssignmentId) params.set('assignment', pcaModalAssignmentId);
   return `pca-offer-letter.html?${params.toString()}`;
 }
@@ -2213,13 +2237,14 @@ function refreshPcaLetterPreview() {
 }
 
 async function openPcaOfferLetterModal(assignmentId, studentName = '') {
-  if (!assignmentId || typeof OfficerApi === 'undefined') return;
+  const api = volunteerMgmtApi();
+  if (!assignmentId || !api?.fetchVolunteerOfferLetter) return;
   pcaModalAssignmentId = assignmentId;
   document.getElementById('pcaModalStudentName').textContent = studentName || 'Student';
   setPcaModalStatus('draft');
   refreshPcaLetterPreview();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('pcaOfferLetterModal')).show();
-  const data = await OfficerApi.fetchVolunteerOfferLetter(assignmentId);
+  const data = await api.fetchVolunteerOfferLetter(assignmentId);
   if (!data) {
     toast('Could not load offer letter.', 'error');
     return;
@@ -2232,6 +2257,8 @@ async function openPcaOfferLetterModal(assignmentId, studentName = '') {
 
 async function publishPcaOfferLetter() {
   if (!pcaModalAssignmentId) return;
+  const api = volunteerMgmtApi();
+  if (!api?.publishVolunteerOfferLetter) return;
   const ok = await confirmAction({
     title: 'Publish PCA offer letter',
     message: 'Publish this offer letter? The letter date will be set to today and the student will be notified to view and download it.',
@@ -2239,7 +2266,7 @@ async function publishPcaOfferLetter() {
     variant: 'primary',
   });
   if (!ok) return;
-  const res = await OfficerApi.publishVolunteerOfferLetter(pcaModalAssignmentId);
+  const res = await api.publishVolunteerOfferLetter(pcaModalAssignmentId);
   if (!res?.success) {
     toast(res?.message || 'Could not publish offer letter.', 'error');
     return;
@@ -2290,7 +2317,7 @@ function filteredVolunteers() {
   const q = document.getElementById('searchVolunteers')?.value.trim().toLowerCase() || '';
   if (!q) return volunteersAll;
   return volunteersAll.filter((v) => {
-    const hay = [v.name, v.registerNumber, v.email, v.classBatch, v.assignedByName]
+    const hay = [v.name, v.registerNumber, v.email, v.classBatch, v.assignedByName, v.departmentName, v.departmentCode]
       .map((x) => String(x || '').toLowerCase()).join(' ');
     return hay.includes(q);
   });
@@ -2301,19 +2328,21 @@ function renderVolunteersTab() {
   const countEl = document.getElementById('volunteersCount');
   if (!tbody) return;
   const list = filteredVolunteers();
+  const colCount = isAdminRole ? 6 : 5;
   if (countEl) countEl.textContent = String(list.length);
   if (!volunteersLoaded) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-muted-2 p-4 text-center">Loading…</td></tr>`;
     return;
   }
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">No placement representatives assigned yet. Use Assign representative to add students.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-muted-2 p-4 text-center">No placement representatives assigned yet. Use Assign representative to add students.</td></tr>`;
     return;
   }
   tbody.innerHTML = list.map((v) => `
     <tr>
       <td><strong>${esc(v.name || '—')}</strong>${v.email ? `<div class="small text-muted-2">${esc(v.email)}</div>` : ''}</td>
       <td>${esc(v.registerNumber || '—')}</td>
+      ${isAdminRole ? `<td>${esc(v.departmentName || v.departmentCode || '—')}</td>` : ''}
       <td>${esc(v.classBatch || '—')}</td>
       <td>${formatVolunteerDate(v.assignedAt)}</td>
       <td class="text-end text-nowrap">
@@ -2326,17 +2355,19 @@ function renderVolunteersTab() {
 
 async function loadVolunteers(force = false) {
   if (!canManageVolunteers) return;
+  const colCount = isAdminRole ? 6 : 5;
   if (volunteersLoaded && !force) {
     renderVolunteersTab();
     return;
   }
   const tbody = document.getElementById('volunteerRows');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading placement representatives…</td></tr>';
-  const rows = typeof OfficerApi !== 'undefined' ? await OfficerApi.fetchVolunteers() : null;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-muted-2 p-4 text-center">Loading placement representatives…</td></tr>`;
+  const api = volunteerMgmtApi();
+  const rows = api?.fetchVolunteers ? await api.fetchVolunteers() : null;
   if (!rows) {
     volunteersAll = [];
     volunteersLoaded = true;
-    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load placement representatives.</td></tr>';
+    if (tbody) tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-danger p-4 text-center">Could not load placement representatives.</td></tr>`;
     return;
   }
   volunteersAll = rows;
@@ -2348,7 +2379,9 @@ async function loadVolunteers(force = false) {
 
 async function assignVolunteerStudent(studentId) {
   if (!canManageVolunteers || !studentId) return;
-  const res = await OfficerApi.assignVolunteer(studentId);
+  const api = volunteerMgmtApi();
+  if (!api?.assignVolunteer) return;
+  const res = await api.assignVolunteer(studentId);
   if (!res?.success) {
     toast(res?.message || 'Could not assign placement representative.', 'error');
     return;
@@ -2367,7 +2400,9 @@ async function removeVolunteerStudent(assignmentId) {
     confirmText: 'Remove',
     variant: 'danger',
   }))) return;
-  const res = await OfficerApi.removeVolunteer(assignmentId);
+  const api = volunteerMgmtApi();
+  if (!api?.removeVolunteer) return;
+  const res = await api.removeVolunteer(assignmentId);
   if (!res?.success) {
     toast(res?.message || 'Could not remove placement representative.', 'error');
     return;
@@ -2396,8 +2431,10 @@ function renderAssignVolunteerPicker() {
     const name = esc(s.displayName || s.name || 'Student');
     const reg = esc(s.registerNumber || s.admno || '');
     const batch = esc(s.classBatch || '');
+    const dept = esc(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || ''));
+    const meta = [reg, isAdminRole && dept ? dept : '', batch].filter(Boolean).join(' · ');
     return `<button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center assign-volunteer-pick" data-student-id="${sid}">
-      <span><strong>${name}</strong><div class="small text-muted-2">${reg}${batch ? ` · ${batch}` : ''}</div></span>
+      <span><strong>${name}</strong><div class="small text-muted-2">${meta || '—'}</div></span>
       <span class="badge-soft primary">Assign</span>
     </button>`;
   }).join('');

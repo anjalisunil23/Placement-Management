@@ -480,7 +480,8 @@
   const isAdmin = mode === 'admin';
   const isStaff = mode === 'staff';
   const isOfficer = mode === 'officer';
-  const isViewer = isStudent || isAdmin || isStaff;
+  const isAdminManager = isAdmin && !!assignmentId;
+  const isViewer = isStudent || (isAdmin && !isAdminManager) || isStaff;
 
   let letterData = {
     assignmentId: '',
@@ -584,7 +585,7 @@
           : 'View your PCA offer letter below and download it as a PDF.';
       return;
     }
-    if (isOfficer) {
+    if (isOfficer || isAdminManager) {
       btnPreview?.classList.remove('is-hidden');
       btnPrint.textContent = 'Download as PDF';
       toolbarHint.textContent = letterData.status === 'published'
@@ -613,7 +614,7 @@
         });
         const json = await res.json();
         if (!json?.success) {
-          document.body.innerHTML = '<p class="p-4 text-center">No published PCA offer letter is available for this representative.</p>';
+          document.body.innerHTML = '<p class="p-4 text-center">Could not load the PCA offer letter for this representative.</p>';
           return;
         }
         applyPayload(json.data);

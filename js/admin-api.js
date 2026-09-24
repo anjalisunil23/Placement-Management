@@ -632,6 +632,25 @@ const AdminApi = {
   async removeVolunteer(assignmentId) {
     return api(`/admin/volunteers/${encodeURIComponent(assignmentId)}`, { method: 'DELETE' });
   },
+
+  async fetchVolunteerOfferLetter(assignmentId) {
+    const res = await api(`/admin/volunteers/${encodeURIComponent(assignmentId)}/offer-letter`);
+    return res?.success ? res.data : null;
+  },
+
+  async saveVolunteerOfferLetter(assignmentId, payload) {
+    return api(`/admin/volunteers/${encodeURIComponent(assignmentId)}/offer-letter`, {
+      method: 'PUT',
+      body: payload,
+    });
+  },
+
+  async publishVolunteerOfferLetter(assignmentId, payload = {}) {
+    return api(`/admin/volunteers/${encodeURIComponent(assignmentId)}/offer-letter/publish`, {
+      method: 'POST',
+      body: payload,
+    });
+  },
 };
 
 const ReportCenter = {

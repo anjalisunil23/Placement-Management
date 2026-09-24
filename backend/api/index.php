@@ -163,6 +163,8 @@ $routes = [
     ['DELETE', '/admin/volunteers/{id}',        [AdminController::class, 'removeVolunteer']],
     ['GET',    '/admin/pca-offer-letters',      [AdminController::class, 'listPcaOfferLetters']],
     ['GET',    '/admin/volunteers/{id}/offer-letter', [AdminController::class, 'getVolunteerOfferLetter']],
+    ['PUT',    '/admin/volunteers/{id}/offer-letter', [AdminController::class, 'saveVolunteerOfferLetter']],
+    ['POST',   '/admin/volunteers/{id}/offer-letter/publish', [AdminController::class, 'publishVolunteerOfferLetter']],
     ['GET',    '/admin/departments',            [AdminController::class, 'listDepartments']],
     ['POST',   '/admin/departments',            [AdminController::class, 'createDepartment']],
     ['PUT',    '/admin/departments/{id}',       [AdminController::class, 'updateDepartment']],

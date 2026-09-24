@@ -876,11 +876,35 @@ final class AdminController
         ));
     }
 
-    /** GET /api/admin/volunteers/{id}/offer-letter — published PCA letter (read-only) */
+    /** GET /api/admin/volunteers/{id}/offer-letter — draft or published PCA letter for admin editing */
     public function getVolunteerOfferLetter(string $id): void
     {
-        RBACMiddleware::requireAdmin();
-        Response::success((new PcaOfferLetterService())->getForAdmin($id));
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        Response::success((new PcaOfferLetterService())->getForManager($ctx, $id));
+    }
+
+    /** PUT /api/admin/volunteers/{id}/offer-letter */
+    public function saveVolunteerOfferLetter(string $id): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        Response::success(
+            (new PcaOfferLetterService())->saveDraft($ctx, $id, $input, (string) ($admin['_id'] ?? '')),
+            'Offer letter saved.'
+        );
+    }
+
+    /** POST /api/admin/volunteers/{id}/offer-letter/publish */
+    public function publishVolunteerOfferLetter(string $id): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        Response::success(
+            (new PcaOfferLetterService())->publish($ctx, $id, (string) ($admin['_id'] ?? '')),
+            'Offer letter published. The student can now view and download it.'
+        );
     }
 
     /** POST /api/admin/volunteers */

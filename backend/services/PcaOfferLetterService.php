@@ -71,6 +71,19 @@ final class PcaOfferLetterService
         return $this->serializeLetter($row, includeDraft: true);
     }
 
+    /**
+     * Officer (department) or admin (campus-wide) — includes draft for editing.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<string, mixed>
+     */
+    public function getForManager(array $ctx, string $assignmentId): array
+    {
+        $row = $this->assertAssignmentAccess($ctx, $assignmentId);
+        $row = $this->ensureLetterDefaults($row);
+        return $this->serializeLetter($row, includeDraft: true);
+    }
+
     /** Published letter for admin view (same payload shape as student). */
     public function getForAdmin(string $assignmentId): array
     {
@@ -181,7 +194,7 @@ final class PcaOfferLetterService
      */
     public function saveDraft(array $ctx, string $assignmentId, array $input, string $savedByUserId): array
     {
-        $row = $this->assertOfficerAccess($ctx, $assignmentId);
+        $row = $this->assertAssignmentAccess($ctx, $assignmentId);
         if ($this->letterStatus($row) === 'published') {
             Response::error('This offer letter is already published. Unpublish is not supported — create a new representative assignment if needed.', 409);
         }
@@ -204,7 +217,7 @@ final class PcaOfferLetterService
      */
     public function publish(array $ctx, string $assignmentId, string $publishedByUserId): array
     {
-        $row = $this->assertOfficerAccess($ctx, $assignmentId);
+        $row = $this->assertAssignmentAccess($ctx, $assignmentId);
         $row = $this->ensureLetterDefaults($row);
         $letter = is_array($row['offerLetter'] ?? null) ? $row['offerLetter'] : [];
         $now = new \DateTimeImmutable('now', new \DateTimeZone(self::TZ));
@@ -447,11 +460,25 @@ final class PcaOfferLetterService
      * @param array<string, mixed> $ctx
      * @return array<string, mixed>
      */
-    private function assertOfficerAccess(array $ctx, string $assignmentId): array
+    /**
+     * @param array<string, mixed> $ctx
+     * @return array<string, mixed>
+     */
+    private function assertAssignmentAccess(array $ctx, string $assignmentId): array
     {
         if (!empty($ctx['isAdmin'])) {
-            Response::forbidden('Use User Management for campus-wide representative records.');
+            return $this->assertActiveAssignment($assignmentId);
         }
+
+        return $this->assertOfficerAccess($ctx, $assignmentId);
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return array<string, mixed>
+     */
+    private function assertOfficerAccess(array $ctx, string $assignmentId): array
+    {
         if (empty($ctx['departmentId'])) {
             Response::forbidden('Your placement officer profile has no department assigned.');
         }
