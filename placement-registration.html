@@ -136,17 +136,22 @@
     color:#111;
     background:#fff;
   }
-  .guidelines-box{
-    max-height:min(60vh,560px);overflow:auto;
-    border:1px solid #cbd5e1;
-    border-radius:0;
-    padding:1.15rem 1.35rem;
-    background:#fff;
-    font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
-    font-size:1rem;line-height:1.65;
+  .policy-pdf-frame{
     width:100%;
-    box-sizing:border-box;
+    min-height:min(70vh,720px);
+    height:min(70vh,720px);
+    border:1.5px solid #111;
+    background:#fff;
+    display:block;
   }
+  .policy-step-badge{
+    display:inline-flex;align-items:center;gap:.35rem;
+    border:1.5px solid #111;padding:.25rem .65rem;
+    font-family:Arial,Helvetica,'Source Sans 3',sans-serif;
+    font-size:.85rem;font-weight:600;background:#fff;
+  }
+  .policy-step-badge.active{background:#111;color:#fff}
+  .policy-step-badge.done{background:#ecfdf5;border-color:#059669;color:#065f46}
   .guidelines-box h6{
     font-family:'Times New Roman',Times,'Libre Baskerville',Georgia,serif;
     font-weight:700;font-size:1rem;letter-spacing:0;text-transform:none;
@@ -202,19 +207,23 @@
         <img id="collegeLogo" class="policy-college-logo" alt="Amal Jyothi College of Engineering" decoding="async"/>
       </div>
       <div class="policy-header-text">
-        <h1>Placement Cell – Registration</h1>
+        <h1 id="pageTitle">Placement Cell – Registration</h1>
         <div class="college">Amal Jyothi College of Engineering Autonomous</div>
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          <span class="policy-step-badge active" id="stepBadgePlacement">Step 1 · Placement policy</span>
+          <span class="policy-step-badge" id="stepBadgeInternship">Step 2 · Internship policy</span>
+        </div>
       </div>
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnLogout">Sign out</button>
     </div>
 
     <div class="policy-body">
-      <form id="registrationForm" novalidate>
+      <form id="registrationForm" novalidate data-step="placement">
         <div class="policy-fields-box">
           <div class="d-flex justify-content-end mb-2">
             <div class="policy-yop" id="policyYopBadge">YoP: —</div>
           </div>
-          <p class="small text-muted-2 mb-3">Please complete this registration and confirm that you have read the Placement Guidelines. You can access the portal only after confirmation.</p>
+          <p class="small text-muted-2 mb-3" id="stepIntro">Complete your details, read the placement policy PDF below, and accept it to continue to the internship policy.</p>
 
           <div class="row g-3">
             <div class="col-md-6">
@@ -271,134 +280,66 @@
           </div>
         </div>
 
-        <div class="mb-3">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h2 class="h6 fw-bold mb-0">Placement Guidelines</h2>
-            <span class="small text-muted-2">Scroll and read fully</span>
+        <div id="stepPlacementPanel">
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+              <h2 class="h6 fw-bold mb-0">Amal Jyothi Placement Policy 2026</h2>
+              <a class="small text-decoration-none" id="placementPdfOpen" href="assets/policies/amal-jyothi-placement-policy-2026.pdf" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Open PDF in new tab</a>
+            </div>
+            <iframe class="policy-pdf-frame" id="placementPolicyPdf" title="Amal Jyothi Placement Policy 2026" src="assets/policies/amal-jyothi-placement-policy-2026.pdf"></iframe>
           </div>
-          <div class="guidelines-box" id="guidelinesBox" tabindex="0">
-            <p>The Placement Cell functions as a facilitator and counselor for placement related activities. It provides placement assistance to all the registered students.</p>
 
-            <h6>Selection of Companies</h6>
-            <p>Companies will be invited and recruitment drives will be scheduled by the Placement Cell on the basis of one or more of the following parameters:</p>
-            <ol type="a">
-              <li>Job profile and growth prospects.</li>
-              <li>The pay package offered by the company.</li>
-              <li>Past record of recruitment at AJCE.</li>
-              <li>Feedback from the alumni regarding the company.</li>
-            </ol>
-
-            <h6>Eligibility Criterion</h6>
-            <ol type="a">
-              <li><strong>Green Zone:</strong> Candidates who secured an aggregate of 60% and above throughout (from SSC onwards) and having no standing backlogs in B.Tech/M.Tech/MCA. The institute will put maximum effort to place all Green Zone students.</li>
-              <li><strong>Red Zone:</strong> Students with aggregate less than 60% or having backlogs. If a company permits backlogs, they may attend. Prior to onboarding, candidates are expected to clear all arrears and complete the entire course.</li>
-              <li>For non-technical jobs, aggregate or backlogs may not be a major criterion; strong communication and soft skills are required.</li>
-              <li>Some companies recruit based on outstanding skills/certifications; aggregate or backlogs may not apply.</li>
-              <li>If at joining time the student has arrears or aggregate below company norms, the offer may stand cancelled as per company norms.</li>
-            </ol>
-
-            <h6>Rules for Placement</h6>
-            <ol>
-              <li>Only candidates looking for a career immediately after the currently pursuing course should register. Those planning entrepreneurship or higher studies should not opt for placement.</li>
-              <li>The Placement Committee strictly enforces a <strong>One-Student-One-Job Offer</strong> policy.</li>
-              <li>Companies are categorized by CTC:
-                <ul>
-                  <li><strong>Category A:</strong> CTC &gt; ₹5 LPA or Tier-1 as listed by Placement Cell.</li>
-                  <li><strong>Category B:</strong> CTC from ₹3 LPA to less than ₹5 LPA.</li>
-                  <li><strong>Category C:</strong> CTC &lt; ₹3 LPA.</li>
-                </ul>
-                <p class="mb-1">Placement in Category A removes the student from further campus attempts.</p>
-                <p class="mb-1">As soon as a student secures a Category C offer, they will be shown only Category A Tier-1 companies (Tier 3 and other categories will not appear) and will not be allowed to attempt any other company in the placement session.</p>
-                <p class="mb-0">After a Category B offer, students may attempt only Category A drives (not Tier 3).</p>
-              </li>
-              <li>Students must review JD, work nature, salary and company before registering. Cancelling after registration or rejecting after confirmation will not be entertained.</li>
-              <li>Students should also research employers independently.</li>
-              <li>Placement Cell does not endorse paid selections. Training fees demanded after selection must be reported; candidates decide whether to proceed at their own responsibility.</li>
-              <li>Exclusive Tier-1 recruitments require impeccable professional behaviour. Actions harming college reputation lead to debarring.</li>
-              <li>Shortlisting for limited seats may use department feedback.</li>
-              <li>Background verification is standard. False information can lead to lifetime bans by companies and immediate debar from placement.</li>
-              <li>Students are advised to also seek opportunities externally and maintain an active LinkedIn profile.</li>
-            </ol>
-
-            <h6>Placement Database</h6>
-            <ol start="11">
-              <li>Eligible candidate lists are filtered from the placement database.</li>
-              <li>Update personal/academic changes in person at Placement Cell promptly.</li>
-              <li>Details must be genuine; do not round off marks. Violations lead to debarring.</li>
-            </ol>
-
-            <h6>Recruitment Drives — Registration, Participation, Communication</h6>
-            <ol start="14">
-              <li>Register for drives before the deadline; late registrations are not entertained.</li>
-              <li>Enter contact details carefully; wrong data may be treated as unauthorized absence.</li>
-              <li>Keep resume and certificates ready (hard &amp; soft copies).</li>
-              <li>Upload correct files with the instructed naming format.</li>
-              <li>If an ineligible student receives a registration link, do not register; report to Placement Cell.</li>
-              <li>Inform genuine inability to attend in writing before the list is sent to the company.</li>
-              <li>Withdrawing mid-process disqualifies the student for the rest of the year.</li>
-              <li>Opt-out requires a written letter to the placement committee.</li>
-              <li>Check email daily; Placement Cell is not responsible for missed mail.</li>
-              <li>Do not share Placement Cell emails/links unless directed.</li>
-              <li>Once placed through college, do not attend other college-directed interviews; own-effort searches remain allowed.</li>
-              <li>Attend screening programmes when requested.</li>
-              <li>Students who apply and get shortlisted must complete the process unless rejected by the company.</li>
-              <li>Placement Cell may cancel candidature for ineligibility, misconduct, improper attire, or missing documents.</li>
-            </ol>
-
-            <h6>Training, Resume, Dress Code &amp; Discipline</h6>
-            <ol start="28">
-              <li>Attend training, mock interviews and GDs arranged by Placement Cell.</li>
-              <li>Maintain an updated ATS-friendly resume with verifiable information.</li>
-              <li>Formal college uniform and professional grooming are mandatory for company interactions.</li>
-              <li>Carry College ID, Government ID, resumes, photos and mark lists as required.</li>
-              <li>Maintain punctuality and discipline; no unfair means; no negotiation of CTC with company executives during selection.</li>
-              <li>PPT attendance is compulsory for applied drives.</li>
-            </ol>
-
-            <h6>Joining, Bond &amp; Offer Letters</h6>
-            <ol start="47">
-              <li>Selected students should expect course completion expectations, possible 18–24 month work commitment, and company bond terms. Understand terms before/during PPT.</li>
-              <li>Report job confirmations to Placement Cell immediately and submit self-attested offer copies.</li>
-              <li>Placement Cell is not responsible for company cancellation of offers/LoIs.</li>
-            </ol>
-
-            <h6>General Guidelines</h6>
-            <ol start="50">
-              <li>Placement support may continue for registered candidates for at least two years after graduation.</li>
-              <li>Do not contact company executives directly for official communication except as directed; keep Placement Cell in CC when an official company email is provided.</li>
-              <li>Background verification may include academics, character and social media.</li>
-              <li>Sign attendance for drives/events; be prepared for off-campus interviews at own expense (subject to college conveyance rules).</li>
-              <li>Report fake recruiters demanding money or bank details.</li>
-            </ol>
-
-            <h6>Caution Deposit</h6>
-            <ol start="58">
-              <li>A refundable caution deposit of <strong>₹2,000/-</strong> must be remitted at registration. Unauthorized absence after registration: first ₹1,000; second ₹2,000 and removal from placement process (except verified emergency/medical reasons).</li>
-              <li>Serious violations / fraudulent or unprofessional conduct may lead to debarring without refund of caution deposit.</li>
-              <li>Caution deposit is refunded to the candidate’s bank account after the academic year; Placement Cell is not responsible for losses due to incorrect account details.</li>
-            </ol>
-          </div>
-        </div>
-
-        <div class="mb-3">
-          <div class="declaration-cell">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="declarationAccepted" name="declarationAccepted" required/>
-              <label class="form-check-label" for="declarationAccepted" id="declarationText">
-                I (<span id="declarationStudentName">student</span>) read and understood the rules and guidelines mentioned in this document and agree to strictly adhere to the same. Placement Cell may take appropriate action following the violation of any rules from my side.
-              </label>
+          <div class="mb-3">
+            <div class="declaration-cell">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="declarationAccepted" name="declarationAccepted" required/>
+                <label class="form-check-label" for="declarationAccepted" id="declarationText">
+                  I (<span id="declarationStudentName">student</span>) have read and understood the Amal Jyothi Placement Policy 2026 and agree to strictly adhere to the same. The Placement Cell may take appropriate action for any violation.
+                </label>
+              </div>
+            </div>
+            <div class="mt-3" style="max-width:220px">
+              <label class="form-label small fw-semibold">Date of confirmation</label>
+              <input class="form-control" name="signedDate" id="signedDate" type="date" required/>
             </div>
           </div>
-          <div class="mt-3" style="max-width:220px">
-            <label class="form-label small fw-semibold">Date of confirmation</label>
-            <input class="form-control" name="signedDate" id="signedDate" type="date" required/>
+
+          <div class="policy-sticky d-flex flex-wrap gap-2 justify-content-end">
+            <button type="submit" class="btn btn-primary px-4" id="btnConfirm">
+              <i class="bi bi-check2-circle me-1"></i>Accept placement policy &amp; continue
+            </button>
           </div>
         </div>
 
-        <div class="policy-sticky d-flex flex-wrap gap-2 justify-content-end">
-          <button type="submit" class="btn btn-primary px-4" id="btnConfirm">
-            <i class="bi bi-check2-circle me-1"></i>Confirm &amp; continue
-          </button>
+        <div id="stepInternshipPanel" class="d-none">
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+              <h2 class="h6 fw-bold mb-0">AJCE Student Internship Policy</h2>
+              <a class="small text-decoration-none" id="internshipPdfOpen" href="assets/policies/ajce-student-internship-policy-2026.pdf" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Open PDF in new tab</a>
+            </div>
+            <iframe class="policy-pdf-frame" id="internshipPolicyPdf" title="AJCE Student Internship Policy" src="about:blank" data-src="assets/policies/ajce-student-internship-policy-2026.pdf"></iframe>
+          </div>
+
+          <div class="mb-3">
+            <div class="declaration-cell">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="internshipDeclarationAccepted" name="internshipDeclarationAccepted"/>
+                <label class="form-check-label" for="internshipDeclarationAccepted" id="internshipDeclarationText">
+                  I (<span id="internshipDeclarationStudentName">student</span>) have read and understood the AJCE Student Internship Policy and agree to strictly adhere to the same.
+                </label>
+              </div>
+            </div>
+            <div class="mt-3" style="max-width:220px">
+              <label class="form-label small fw-semibold">Date of confirmation</label>
+              <input class="form-control" name="internshipSignedDate" id="internshipSignedDate" type="date"/>
+            </div>
+          </div>
+
+          <div class="policy-sticky d-flex flex-wrap gap-2 justify-content-end">
+            <button type="button" class="btn btn-primary px-4" id="btnConfirmInternship">
+              <i class="bi bi-check2-circle me-1"></i>Accept internship policy &amp; enter portal
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -406,7 +347,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260723perf"></script>
+<script src="js/api.js?v=20260924policy2step"></script>
 <script>
 (function initCollegeLogo() {
   const el = document.getElementById('collegeLogo');
@@ -543,8 +484,10 @@ function fillFromUser(u) {
   ).trim();
   if (displayName) {
     document.getElementById('regName').value = displayName;
-    const nameSpan = document.getElementById('declarationStudentName');
-    if (nameSpan) nameSpan.textContent = displayName;
+    ['declarationStudentName', 'internshipDeclarationStudentName'].forEach((id) => {
+      const nameSpan = document.getElementById(id);
+      if (nameSpan) nameSpan.textContent = displayName;
+    });
   }
   if (u.phone) {
     const parts = typeof splitContactPhone === 'function'
@@ -567,6 +510,62 @@ function fillFromUser(u) {
   document.getElementById('regBranchBatch').value = branch;
 }
 
+function registrationStep(u) {
+  if (u?.policyAccepted === true) return 'done';
+  if (u?.placementPolicyAccepted === true) return 'internship';
+  return 'placement';
+}
+
+function showRegistrationStep(step) {
+  const placementPanel = document.getElementById('stepPlacementPanel');
+  const internshipPanel = document.getElementById('stepInternshipPanel');
+  const fieldsBox = document.querySelector('.policy-fields-box');
+  const badgePlacement = document.getElementById('stepBadgePlacement');
+  const badgeInternship = document.getElementById('stepBadgeInternship');
+  const pageTitle = document.getElementById('pageTitle');
+  const stepIntro = document.getElementById('stepIntro');
+  const form = document.getElementById('registrationForm');
+  const isInternship = step === 'internship';
+
+  if (fieldsBox) fieldsBox.classList.toggle('d-none', isInternship);
+  if (placementPanel) placementPanel.classList.toggle('d-none', isInternship);
+  if (internshipPanel) internshipPanel.classList.toggle('d-none', !isInternship);
+  if (form) form.dataset.step = step;
+
+  if (badgePlacement) {
+    badgePlacement.classList.toggle('active', !isInternship);
+    badgePlacement.classList.toggle('done', isInternship);
+  }
+  if (badgeInternship) {
+    badgeInternship.classList.toggle('active', isInternship);
+    badgeInternship.classList.toggle('done', false);
+  }
+  if (pageTitle) {
+    pageTitle.textContent = isInternship
+      ? 'Internship Policy – Registration'
+      : 'Placement Cell – Registration';
+  }
+  if (stepIntro) {
+    stepIntro.textContent = isInternship
+      ? 'Read the internship policy PDF below and accept it to access the placement portal.'
+      : 'Complete your details, read the placement policy PDF below, and accept it to continue to the internship policy.';
+  }
+
+  if (isInternship) {
+    const iframe = document.getElementById('internshipPolicyPdf');
+    if (iframe && iframe.src === 'about:blank' && iframe.dataset.src) {
+      iframe.src = iframe.dataset.src;
+    }
+    const internshipDate = document.getElementById('internshipSignedDate');
+    if (internshipDate && !internshipDate.value) {
+      const now = new Date();
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      internshipDate.value = local.toISOString().slice(0, 10);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
 async function gate() {
   if (!Auth.role()) {
     const ok = await Auth.bootstrap();
@@ -583,23 +582,26 @@ async function gate() {
     await Auth.enrichFromProfile({ refresh: true, skipIncompleteRedirect: true });
   }
   const u = Auth.user() || {};
-  if (u.policyAccepted === true) {
+  if (registrationStep(u) === 'done') {
     window.location.replace('dashboard.html');
     return;
   }
   fillFromUser(u);
+  showRegistrationStep(registrationStep(u));
 }
 
 document.getElementById('registrationForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.target;
+  if (form.dataset.step === 'internship') return;
+
   const branch = String(form.branchBatch.value || document.getElementById('regBranchBatch').value || '').trim();
   if (!branch) {
     toast('Your branch is missing from your profile. Contact the Placement Cell.', 'warn');
     return;
   }
   if (!form.declarationAccepted.checked) {
-    toast('Please accept the declaration to continue.', 'warn');
+    toast('Please accept the placement policy declaration to continue.', 'warn');
     return;
   }
   if (!form.checkValidity()) {
@@ -637,14 +639,47 @@ document.getElementById('registrationForm').addEventListener('submit', async (e)
   }
   Auth.applySessionUser({
     ...(Auth.user() || {}),
-    policyAccepted: true,
-    policyVersion: res.data?.policyVersion || 'ajce-2026-v1',
-    policyAcceptedAt: res.data?.policyAcceptedAt || new Date().toISOString(),
+    placementPolicyAccepted: true,
+    placementPolicyVersion: res.data?.placementPolicyVersion || (typeof PLACEMENT_POLICY_VERSION !== 'undefined' ? PLACEMENT_POLICY_VERSION : ''),
+    placementPolicyAcceptedAt: res.data?.placementPolicyAcceptedAt || new Date().toISOString(),
     phone: payload.mobile,
     name: payload.name,
     registerNumber: payload.registerNumber,
   });
-  toast('Registration confirmed. Opening your dashboard…', 'success');
+  toast('Placement policy accepted. Please review the internship policy.', 'success');
+  showRegistrationStep('internship');
+});
+
+document.getElementById('btnConfirmInternship')?.addEventListener('click', async () => {
+  const checkbox = document.getElementById('internshipDeclarationAccepted');
+  if (!checkbox?.checked) {
+    toast('Please accept the internship policy declaration to continue.', 'warn');
+    return;
+  }
+  const btn = document.getElementById('btnConfirmInternship');
+  btn.disabled = true;
+  const res = await api('/student/policy/accept-internship', {
+    method: 'POST',
+    body: {
+      declarationAccepted: true,
+      signedDate: document.getElementById('internshipSignedDate')?.value?.trim() || '',
+    },
+  });
+  btn.disabled = false;
+  if (!res.success) {
+    toast(res.message || 'Could not save internship policy acceptance.', 'error');
+    return;
+  }
+  Auth.applySessionUser({
+    ...(Auth.user() || {}),
+    policyAccepted: true,
+    internshipPolicyAccepted: true,
+    internshipPolicyVersion: res.data?.internshipPolicyVersion || (typeof INTERNSHIP_POLICY_VERSION !== 'undefined' ? INTERNSHIP_POLICY_VERSION : ''),
+    internshipPolicyAcceptedAt: res.data?.internshipPolicyAcceptedAt || new Date().toISOString(),
+    policyAcceptedAt: res.data?.policyAcceptedAt || new Date().toISOString(),
+    policyVersion: res.data?.internshipPolicyVersion || '',
+  });
+  toast('Registration complete. Opening your dashboard…', 'success');
   setTimeout(() => {
     window.location.replace('dashboard.html');
   }, 500);

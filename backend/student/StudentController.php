@@ -553,7 +553,7 @@ final class StudentController
       Response::error('Validation failed.', 422, $errors);
     }
 
-    $version = 'ajce-2026-v1';
+    $version = 'ajce-placement-2026-09';
     $now = gmdate('c');
     $studentName = trim((string) $input['name']);
     $signedName = trim((string) ($input['signedName'] ?? ''));
@@ -587,9 +587,9 @@ final class StudentController
     }
 
     $this->studentModel->update((string) $profile['_id'], [
-      'policyAccepted'   => true,
-      'policyAcceptedAt' => $now,
-      'policyVersion'    => $version,
+      'placementPolicyAccepted'   => true,
+      'placementPolicyAcceptedAt' => $now,
+      'placementPolicyVersion'    => $version,
       'placementRegistration' => $registration,
       'classBatch'       => $branch . ($mtechBranch !== '' ? ' — ' . $mtechBranch : ''),
       'personal'         => $personal,
@@ -607,6 +607,8 @@ final class StudentController
         'acceptedIp'     => (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? ''),
         'userAgent'      => substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500),
         'deviceType'     => 'web',
+        'policyType'     => 'placement',
+        'action'         => 'Accepted Placement Policy',
       ]);
     } catch (\Throwable $e) {
       // Registration itself already saved; do not block the student on audit-log failure.
@@ -614,10 +616,80 @@ final class StudentController
     }
 
     Response::success([
+      'placementPolicyAccepted' => true,
+      'placementPolicyVersion'  => $version,
+      'placementPolicyAcceptedAt' => $now,
+    ], 'Placement policy accepted. Please review and accept the internship policy to continue.');
+  }
+
+  /** POST /api/student/policy/accept-internship — internship policy confirmation (step 2) */
+  public function acceptInternshipPolicy(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $profile = $this->getStudentProfile($user);
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+
+    if (empty($profile['placementPolicyAccepted'])) {
+      Response::error('Accept the placement policy and complete registration first.', 422);
+    }
+    if (!empty($profile['policyAccepted']) && !empty($profile['internshipPolicyAccepted'])) {
+      Response::success([
+        'policyAccepted' => true,
+        'internshipPolicyAccepted' => true,
+        'internshipPolicyVersion' => (string) ($profile['internshipPolicyVersion'] ?? ''),
+        'policyAcceptedAt' => (string) ($profile['policyAcceptedAt'] ?? ''),
+      ], 'Internship policy already accepted.');
+      return;
+    }
+
+    if (empty($input['declarationAccepted']) && empty($input['declaration'])) {
+      Response::error('You must accept the internship policy declaration.', 422, [
+        'declarationAccepted' => 'You must accept the internship policy declaration.',
+      ]);
+    }
+
+    $version = 'ajce-internship-2026-09';
+    $now = gmdate('c');
+    $registration = is_array($profile['placementRegistration'] ?? null)
+      ? $profile['placementRegistration']
+      : [];
+    $studentName = trim((string) ($registration['name'] ?? $user['name'] ?? ''));
+    $registerNumber = strtoupper(trim((string) ($registration['registerNumber'] ?? $profile['registerNumber'] ?? '')));
+
+    $this->studentModel->update((string) $profile['_id'], [
+      'internshipPolicyAccepted'   => true,
+      'internshipPolicyAcceptedAt' => $now,
+      'internshipPolicyVersion'    => $version,
+      'policyAccepted'             => true,
+      'policyAcceptedAt'           => $now,
+      'policyVersion'              => $version,
+    ]);
+
+    try {
+      (new PolicyAcceptanceLogModel())->logAcceptance([
+        'studentId'      => (string) $profile['_id'],
+        'userId'         => (string) $user['_id'],
+        'studentName'    => $studentName,
+        'registerNumber' => $registerNumber,
+        'policyVersion'  => $version,
+        'acceptedAt'     => $now,
+        'acceptedIp'     => (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? ''),
+        'userAgent'      => substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500),
+        'deviceType'     => 'web',
+        'policyType'     => 'internship',
+        'action'         => 'Accepted Internship Policy',
+      ]);
+    } catch (\Throwable $e) {
+      error_log('policy_acceptance_logs insert failed: ' . $e->getMessage());
+    }
+
+    Response::success([
       'policyAccepted' => true,
-      'policyVersion'  => $version,
+      'internshipPolicyAccepted' => true,
+      'internshipPolicyVersion'  => $version,
+      'internshipPolicyAcceptedAt' => $now,
       'policyAcceptedAt' => $now,
-    ], 'Placement Cell registration confirmed.');
+    ], 'Internship policy accepted. You may now use the placement portal.');
   }
 
   /** POST /api/student/resume */
