@@ -621,6 +621,17 @@ const AdminApi = {
     const rows = Array.isArray(res.data) ? res.data : [];
     return rows.map(r => this.mapVolunteerRow(r)).filter(Boolean);
   },
+
+  async assignVolunteer(studentId, notes = '') {
+    return api('/admin/volunteers', {
+      method: 'POST',
+      body: { studentId, notes: notes || undefined },
+    });
+  },
+
+  async removeVolunteer(assignmentId) {
+    return api(`/admin/volunteers/${encodeURIComponent(assignmentId)}`, { method: 'DELETE' });
+  },
 };
 
 const ReportCenter = {

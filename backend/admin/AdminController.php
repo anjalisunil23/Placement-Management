@@ -883,6 +883,39 @@ final class AdminController
         Response::success((new PcaOfferLetterService())->getForAdmin($id));
     }
 
+    /** POST /api/admin/volunteers */
+    public function assignVolunteer(): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $studentId = (string) ($input['studentId'] ?? '');
+        if ($studentId === '') {
+            Response::error('studentId is required.', 422);
+        }
+        $notes = isset($input['notes']) ? (string) $input['notes'] : null;
+        $ctx = PlacementOfficerContext::resolve($admin);
+        $row = (new VolunteerAssignmentService())->assign(
+            $ctx,
+            $studentId,
+            (string) ($admin['_id'] ?? ''),
+            $notes
+        );
+        Response::success($row, 'Placement representative assigned.');
+    }
+
+    /** DELETE /api/admin/volunteers/{id} */
+    public function removeVolunteer(string $id): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        $ctx = PlacementOfficerContext::resolve($admin);
+        (new VolunteerAssignmentService())->remove(
+            $ctx,
+            $id,
+            (string) ($admin['_id'] ?? '')
+        );
+        Response::success(null, 'Placement representative removed.');
+    }
+
     /** PUT /api/admin/departments/{id}/placement-officer */
     public function assignPlacementOfficer(string $departmentId): void
     {

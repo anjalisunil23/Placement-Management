@@ -46,14 +46,13 @@ final class VolunteerAssignmentService
     {
         (new PcaOfferLetterService())->expireOutdatedAssignments();
 
-        if (!empty($ctx['isAdmin'])) {
-            Response::forbidden('Use the admin placement representatives view to manage campus-wide assignments.');
+        $isAdmin = !empty($ctx['isAdmin']);
+        if (!$isAdmin) {
+            if (empty($ctx['departmentId'])) {
+                Response::forbidden('Your placement officer profile has no department assigned.');
+            }
+            PlacementOfficerContext::assertStudentInDepartment($studentId, $ctx);
         }
-        if (empty($ctx['departmentId'])) {
-            Response::forbidden('Your placement officer profile has no department assigned.');
-        }
-
-        PlacementOfficerContext::assertStudentInDepartment($studentId, $ctx);
 
         $studentModel = new StudentModel();
         $student = $studentModel->findById($studentId)
@@ -64,7 +63,10 @@ final class VolunteerAssignmentService
 
         $canonicalStudentId = (string) ($student['_id'] ?? '');
         $deptId = (string) ($student['departmentId'] ?? '');
-        if ($deptId !== (string) $ctx['departmentId']) {
+        if ($deptId === '') {
+            Response::error('This student has no department assigned.', 422);
+        }
+        if (!$isAdmin && $deptId !== (string) $ctx['departmentId']) {
             Response::forbidden('This student does not belong to your department.');
         }
 

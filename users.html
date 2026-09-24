@@ -48,9 +48,17 @@
         <i class="bi bi-search"></i>
         <input class="form-control" id="usersSearch" type="search" placeholder="Search name, email, department, company…" autocomplete="off"/>
       </div>
-      <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnUsersDeleteSelected" onclick="deleteSelectedUsers()">
-        <i class="bi bi-trash me-1"></i>Delete selected (<span id="usersDeleteSelectedCount">0</span>)
-      </button>
+      <div class="d-none d-flex flex-wrap gap-2 align-items-center" id="usersBulkActions">
+        <span class="small text-muted-2"><span id="usersSelectedCount">0</span> selected</span>
+        <button type="button" class="btn btn-sm btn-success" id="btnUsersApproveSelected"><i class="bi bi-check2 me-1"></i>Approve</button>
+        <button type="button" class="btn btn-sm btn-outline-warning" id="btnUsersBlockSelected"><i class="bi bi-slash-circle me-1"></i>Block</button>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnUsersUnblockSelected"><i class="bi bi-unlock me-1"></i>Unblock</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="btnUsersDeleteSelected"><i class="bi bi-trash me-1"></i>Delete</button>
+      </div>
+      <div class="d-none d-flex flex-wrap gap-2 align-items-center" id="volunteersBulkActions">
+        <span class="small text-muted-2"><span id="volunteersSelectedCount">0</span> selected</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="btnVolunteersRemoveSelected"><i class="bi bi-trash me-1"></i>Remove</button>
+      </div>
     </div>
   </div>
   <div class="tab-content">
@@ -79,7 +87,15 @@
       </tr></thead><tbody id="staffRows"></tbody></table></div>
     </div>
     <div class="tab-pane fade" id="tabVolunteers">
+      <div class="p-3 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between" style="border-color:var(--border)!important">
+        <div>
+          <h6 class="fw-bold mb-0">Placement representatives</h6>
+          <p class="small text-muted-2 mb-0">Assign students as class placement representatives campus-wide.</p>
+        </div>
+        <button type="button" class="btn btn-sm btn-primary" id="btnAddVolunteer"><i class="bi bi-person-plus me-1"></i>Add representative</button>
+      </div>
       <div class="table-wrap"><table class="table-modern"><thead><tr>
+        <th class="col-select"><input type="checkbox" class="form-check-input volunteer-select-all" aria-label="Select all representatives"></th>
         <th>Name</th><th>Register No</th><th>Department</th><th>Batch</th><th>Assigned by</th><th>Assigned on</th><th>Letter</th><th>Actions</th>
       </tr></thead><tbody id="volunteerRows"></tbody></table></div>
     </div>
@@ -206,9 +222,28 @@
   </form>
 </div></div></div>
 
+<div class="modal fade" id="assignVolunteerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold mb-0">Add placement representative</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted-2 mb-3">Search and select a student to assign as a placement representative.</p>
+        <div class="search-with-icon mb-3">
+          <i class="bi bi-search"></i>
+          <input class="form-control" id="assignVolunteerSearch" placeholder="Search by name or register number…" autocomplete="off"/>
+        </div>
+        <div class="list-group list-group-flush" id="assignVolunteerList" style="max-height:420px;overflow:auto"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260920volunteer"></script>
+<script src="js/admin-api.js?v=20260924voladmin"></script>
 <script src="js/api.js?v=20260727nologin"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
@@ -216,8 +251,11 @@ let departments = [];
 let companyDirectory = [];
 let volunteersList = [];
 let volunteersLoaded = false;
+let volunteerStudentPicker = [];
+let volunteerStudentPickerLoaded = false;
 let editingDeptId = null;
 const selectedDeleteKeys = new Set();
+const selectedVolunteerIds = new Set();
 
 function deleteKeyForUser(u, tabId) {
   if (tabId === 'tabCompanies') {
@@ -244,12 +282,39 @@ function userCheckboxCell(key) {
   return `<td class="col-select"><input type="checkbox" class="form-check-input user-delete-check" data-delete-key="${key}" ${checked ? 'checked' : ''} aria-label="Select user"></td>`;
 }
 
-function updateBulkDeleteUi() {
-  const btn = document.getElementById('btnUsersDeleteSelected');
-  const countEl = document.getElementById('usersDeleteSelectedCount');
-  const count = selectedDeleteKeys.size;
-  if (countEl) countEl.textContent = String(count);
-  btn?.classList.toggle('d-none', count === 0);
+function activeUsersTabId() {
+  return document.querySelector('.tab-content .tab-pane.active')?.id || '';
+}
+
+function selectedUserAccountIds() {
+  return [...selectedDeleteKeys]
+    .filter(key => key.startsWith('user:'))
+    .map(key => key.slice(5))
+    .filter(Boolean);
+}
+
+function updateBulkActionsUi() {
+  const tab = activeUsersTabId();
+  const userBar = document.getElementById('usersBulkActions');
+  const volunteerBar = document.getElementById('volunteersBulkActions');
+  const userCount = selectedDeleteKeys.size;
+  const volunteerCount = selectedVolunteerIds.size;
+  const userCountEl = document.getElementById('usersSelectedCount');
+  const volunteerCountEl = document.getElementById('volunteersSelectedCount');
+  if (userCountEl) userCountEl.textContent = String(userCount);
+  if (volunteerCountEl) volunteerCountEl.textContent = String(volunteerCount);
+
+  const userTabs = new Set(['tabStudents', 'tabAdmins', 'tabOfficers', 'tabStaff', 'tabCompanies', 'tabAlumni']);
+  if (tab === 'tabVolunteers') {
+    userBar?.classList.add('d-none');
+    volunteerBar?.classList.toggle('d-none', volunteerCount === 0);
+  } else if (userTabs.has(tab)) {
+    volunteerBar?.classList.add('d-none');
+    userBar?.classList.toggle('d-none', userCount === 0);
+  } else {
+    userBar?.classList.add('d-none');
+    volunteerBar?.classList.add('d-none');
+  }
 }
 
 function syncSelectAllCheckbox(tabId) {
@@ -297,7 +362,7 @@ function bindUserDeleteSelection() {
         cb.checked = selectAll.checked;
       });
       syncSelectAllCheckbox(tabId);
-      updateBulkDeleteUi();
+      updateBulkActionsUi();
       return;
     }
     const cb = e.target.closest('.user-delete-check');
@@ -307,7 +372,55 @@ function bindUserDeleteSelection() {
     if (cb.checked) selectedDeleteKeys.add(key);
     else selectedDeleteKeys.delete(key);
     syncSelectAllCheckbox(cb.closest('.tab-pane')?.id || '');
-    updateBulkDeleteUi();
+    updateBulkActionsUi();
+  });
+}
+
+function volunteerCheckboxCell(id) {
+  if (!id) return '<td class="col-select"></td>';
+  const checked = selectedVolunteerIds.has(id);
+  return `<td class="col-select"><input type="checkbox" class="form-check-input volunteer-delete-check" data-volunteer-id="${id}" ${checked ? 'checked' : ''} aria-label="Select representative"></td>`;
+}
+
+function syncVolunteerSelectAllCheckbox() {
+  const pane = document.getElementById('tabVolunteers');
+  const selectAll = pane?.querySelector('.volunteer-select-all');
+  if (!selectAll) return;
+  const ids = [...pane.querySelectorAll('.volunteer-delete-check[data-volunteer-id]')]
+    .map(cb => cb.dataset.volunteerId)
+    .filter(Boolean);
+  const allSelected = ids.length > 0 && ids.every(id => selectedVolunteerIds.has(id));
+  const someSelected = ids.some(id => selectedVolunteerIds.has(id));
+  selectAll.checked = allSelected;
+  selectAll.indeterminate = !allSelected && someSelected;
+}
+
+function bindVolunteerSelection() {
+  const pane = document.getElementById('tabVolunteers');
+  if (!pane || pane.dataset.selectWired === '1') return;
+  pane.dataset.selectWired = '1';
+  pane.addEventListener('change', e => {
+    const selectAll = e.target.closest('.volunteer-select-all');
+    if (selectAll) {
+      pane.querySelectorAll('.volunteer-delete-check[data-volunteer-id]').forEach(cb => {
+        const id = cb.dataset.volunteerId;
+        if (!id) return;
+        if (selectAll.checked) selectedVolunteerIds.add(id);
+        else selectedVolunteerIds.delete(id);
+        cb.checked = selectAll.checked;
+      });
+      syncVolunteerSelectAllCheckbox();
+      updateBulkActionsUi();
+      return;
+    }
+    const cb = e.target.closest('.volunteer-delete-check');
+    if (!cb) return;
+    const id = cb.dataset.volunteerId;
+    if (!id) return;
+    if (cb.checked) selectedVolunteerIds.add(id);
+    else selectedVolunteerIds.delete(id);
+    syncVolunteerSelectAllCheckbox();
+    updateBulkActionsUi();
   });
 }
 
@@ -354,11 +467,132 @@ async function loadVolunteers(force = false) {
   return volunteersList;
 }
 
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function assignedVolunteerStudentIds() {
+  return new Set((volunteersList || []).map(v => String(v.studentId || '')).filter(Boolean));
+}
+
+async function loadVolunteerStudentPicker(force = false) {
+  if (volunteerStudentPickerLoaded && !force) return volunteerStudentPicker;
+  if (typeof AdminApi === 'undefined' || typeof AdminApi.fetchFinalYearStudents !== 'function') {
+    volunteerStudentPicker = [];
+    volunteerStudentPickerLoaded = true;
+    return volunteerStudentPicker;
+  }
+  const rows = await AdminApi.fetchFinalYearStudents();
+  volunteerStudentPicker = Array.isArray(rows) ? rows : [];
+  volunteerStudentPickerLoaded = true;
+  return volunteerStudentPicker;
+}
+
+function renderAssignVolunteerPicker() {
+  const root = document.getElementById('assignVolunteerList');
+  if (!root) return;
+  const q = (document.getElementById('assignVolunteerSearch')?.value || '').trim().toLowerCase();
+  const assigned = assignedVolunteerStudentIds();
+  const candidates = volunteerStudentPicker.filter(s => {
+    const sid = String(s.studentId || s.id || '');
+    if (!sid || assigned.has(sid)) return false;
+    if (!q) return true;
+    const hay = `${s.name || ''} ${s.registerNumber || s.admno || ''} ${s.departmentName || s.department || ''}`.toLowerCase();
+    return hay.includes(q);
+  });
+  if (!candidates.length) {
+    root.innerHTML = '<div class="list-group-item text-muted-2 small">No eligible students found.</div>';
+    return;
+  }
+  root.innerHTML = candidates.slice(0, 80).map(s => {
+    const sid = escHtml(String(s.studentId || s.id || ''));
+    const name = escHtml(s.name || 'Student');
+    const reg = escHtml(s.registerNumber || s.admno || '');
+    const dept = escHtml(s.departmentName || s.department || '');
+    return `<button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center assign-volunteer-pick" data-student-id="${sid}">
+      <span><strong>${name}</strong><div class="small text-muted-2">${reg}${dept ? ` · ${dept}` : ''}</div></span>
+      <span class="badge-soft primary">Assign</span>
+    </button>`;
+  }).join('');
+}
+
+async function openAssignVolunteerModal() {
+  await loadVolunteerStudentPicker();
+  document.getElementById('assignVolunteerSearch').value = '';
+  renderAssignVolunteerPicker();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('assignVolunteerModal')).show();
+}
+
+async function assignVolunteerStudent(studentId) {
+  const sid = String(studentId || '').trim();
+  if (!sid || typeof AdminApi === 'undefined') return;
+  if (!(await requireWriteSession())) return;
+  const res = await AdminApi.assignVolunteer(sid);
+  if (!res?.success) {
+    toast(res?.message || 'Could not assign placement representative.', 'error');
+    return;
+  }
+  toast('Placement representative assigned.', 'success');
+  bootstrap.Modal.getInstance(document.getElementById('assignVolunteerModal'))?.hide();
+  volunteersLoaded = false;
+  volunteerStudentPickerLoaded = false;
+  await loadVolunteers(true);
+  render();
+}
+
+async function removeVolunteerAssignment(assignmentId) {
+  const id = String(assignmentId || '').trim();
+  if (!id || typeof AdminApi === 'undefined') return;
+  if (!(await confirmAction({
+    title: 'Remove placement representative',
+    message: 'Remove this placement representative assignment?',
+    confirmText: 'Remove',
+    variant: 'danger',
+  }))) return;
+  if (!(await requireWriteSession())) return;
+  const res = await AdminApi.removeVolunteer(id);
+  if (!res?.success) {
+    toast(res?.message || 'Could not remove placement representative.', 'error');
+    return;
+  }
+  selectedVolunteerIds.delete(id);
+  toast('Placement representative removed.', 'success');
+  volunteersLoaded = false;
+  await loadVolunteers(true);
+  render();
+}
+
+async function removeSelectedVolunteers() {
+  const ids = [...selectedVolunteerIds];
+  if (!ids.length) return;
+  if (!(await confirmAction({
+    title: 'Remove selected representatives',
+    message: `Remove ${ids.length} selected placement representative${ids.length === 1 ? '' : 's'}?`,
+    confirmText: 'Remove selected',
+    variant: 'danger',
+  }))) return;
+  if (!(await requireWriteSession())) return;
+  let ok = 0;
+  let fail = 0;
+  for (const id of ids) {
+    const res = await AdminApi.removeVolunteer(id);
+    if (res?.success) ok++;
+    else fail++;
+  }
+  selectedVolunteerIds.clear();
+  volunteersLoaded = false;
+  await loadVolunteers(true);
+  updateBulkActionsUi();
+  if (fail === 0) toast(`Removed ${ok} representative${ok === 1 ? '' : 's'}.`, 'success');
+  else toast(`Removed ${ok}; ${fail} could not be removed.`, ok > 0 ? 'warn' : 'error');
+  render();
+}
+
 function renderVolunteers(list) {
   const tbody = document.getElementById('volunteerRows');
   if (!tbody) return;
   if (!volunteersLoaded) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-muted-2 p-4">Loading placement representatives…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-muted-2 p-4">Loading placement representatives…</td></tr>';
     return;
   }
   tbody.innerHTML = list.length ? list.map(v => {
@@ -367,20 +601,22 @@ function renderVolunteers(list) {
       ? '<span class="badge-soft success">Published</span>'
       : '<span class="badge-soft warning">Draft</span>';
     const actionCell = published
-      ? `<a class="btn btn-sm btn-outline-primary" href="pca-offer-letter.html?mode=admin&amp;assignment=${encodeURIComponent(v.id)}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-arrow-down me-1"></i>View &amp; download</a>`
+      ? `<a class="btn btn-sm btn-outline-primary" href="pca-offer-letter.html?mode=admin&amp;assignment=${encodeURIComponent(v.id)}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-arrow-down me-1"></i>View</a>`
       : '<span class="small text-muted-2">Not published</span>';
     return `
     <tr>
-      <td><div class="fw-semibold small">${v.name || '—'}</div>${v.email ? `<div class="small text-muted-2">${v.email}</div>` : ''}</td>
-      <td>${v.registerNumber || '—'}</td>
-      <td>${v.departmentName || v.departmentCode || '—'}</td>
-      <td>${v.classBatch || '—'}</td>
-      <td>${v.assignedByName || '—'}</td>
+      ${volunteerCheckboxCell(v.id)}
+      <td><div class="fw-semibold small">${escHtml(v.name || '—')}</div>${v.email ? `<div class="small text-muted-2">${escHtml(v.email)}</div>` : ''}</td>
+      <td>${escHtml(v.registerNumber || '—')}</td>
+      <td>${escHtml(v.departmentName || v.departmentCode || '—')}</td>
+      <td>${escHtml(v.classBatch || '—')}</td>
+      <td>${escHtml(v.assignedByName || '—')}</td>
       <td>${formatVolunteerDate(v.assignedAt)}</td>
       <td>${letterBadge}</td>
-      <td>${actionCell}</td>
+      <td><div class="d-flex gap-1 flex-wrap">${actionCell}<button type="button" class="btn btn-sm btn-outline-danger" onclick="removeVolunteerAssignment('${escHtml(v.id)}')"><i class="bi bi-trash"></i></button></div></td>
     </tr>`;
-  }).join('') : '<tr><td colspan="8" class="text-muted-2 p-4">No placement representatives assigned yet.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No placement representatives assigned yet. Use Add representative to assign students.</td></tr>';
+  syncVolunteerSelectAllCheckbox();
 }
 
 function openAddDept() {
@@ -900,12 +1136,61 @@ async function deleteSelectedUsers() {
   selectedDeleteKeys.clear();
   await UserRegistry.fetch();
   await loadCompanies();
-  updateBulkDeleteUi();
+  updateBulkActionsUi();
   if (fail === 0) toast(`Deleted ${ok} user${ok === 1 ? '' : 's'}.`, 'success');
   else toast(`Deleted ${ok}; ${fail} could not be deleted.`, ok > 0 ? 'warn' : 'error');
   render();
 }
-window.deleteSelectedUsers = deleteSelectedUsers;
+
+async function approveSelectedUsers() {
+  const ids = selectedUserAccountIds();
+  if (!ids.length) {
+    toast('Select users with login accounts to approve.', 'warn');
+    return;
+  }
+  if (!(await confirmAction({
+    title: 'Approve selected users',
+    message: `Approve ${ids.length} selected user${ids.length === 1 ? '' : 's'}?`,
+    confirmText: 'Approve selected',
+    variant: 'success',
+  }))) return;
+  let ok = 0;
+  for (const id of ids) {
+    if (await UserRegistry.approve(id)) ok++;
+  }
+  selectedDeleteKeys.clear();
+  updateBulkActionsUi();
+  toast(`Approved ${ok} user${ok === 1 ? '' : 's'}.`, 'success');
+  render();
+}
+
+async function blockSelectedUsers(blocked) {
+  const ids = selectedUserAccountIds();
+  if (!ids.length) {
+    toast('Select users with login accounts to block or unblock.', 'warn');
+    return;
+  }
+  const confirmed = await confirmAction({
+    title: blocked ? 'Block selected users' : 'Unblock selected users',
+    message: blocked
+      ? `Block ${ids.length} selected user${ids.length === 1 ? '' : 's'}?`
+      : `Unblock ${ids.length} selected user${ids.length === 1 ? '' : 's'}?`,
+    confirmText: blocked ? 'Block selected' : 'Unblock selected',
+    variant: blocked ? 'warning' : 'primary',
+  });
+  if (!confirmed) return;
+  let ok = 0;
+  for (const id of ids) {
+    if (await UserRegistry.block(id, blocked)) ok++;
+  }
+  selectedDeleteKeys.clear();
+  updateBulkActionsUi();
+  toast(
+    blocked ? `Blocked ${ok} user${ok === 1 ? '' : 's'}.` : `Unblocked ${ok} user${ok === 1 ? '' : 's'}.`,
+    blocked ? 'warn' : 'success'
+  );
+  render();
+}
 
 async function deleteStudentProfile(studentId) {
   const u = UserRegistry.all().find(x => x.studentId === studentId || (x.role === 'student' && x.id === studentId));
@@ -1028,7 +1313,8 @@ function render() {
   renderDepartments();
   pruneSelectedDeleteKeys();
   syncAllSelectAllCheckboxes();
-  updateBulkDeleteUi();
+  syncVolunteerSelectAllCheckbox();
+  updateBulkActionsUi();
 }
 
 function refreshDepartmentOptions(role) {
@@ -1349,6 +1635,22 @@ async function initUsersPage() {
   if (live) await loadVolunteers();
   bindResumeVerifyToggle();
   bindUserDeleteSelection();
+  bindVolunteerSelection();
+  document.getElementById('btnAddVolunteer')?.addEventListener('click', () => openAssignVolunteerModal());
+  document.getElementById('assignVolunteerSearch')?.addEventListener('input', () => renderAssignVolunteerPicker());
+  document.getElementById('assignVolunteerList')?.addEventListener('click', e => {
+    const btn = e.target.closest('.assign-volunteer-pick');
+    if (!btn) return;
+    assignVolunteerStudent(btn.getAttribute('data-student-id')).catch(() => {});
+  });
+  document.getElementById('btnUsersApproveSelected')?.addEventListener('click', () => approveSelectedUsers());
+  document.getElementById('btnUsersBlockSelected')?.addEventListener('click', () => blockSelectedUsers(true));
+  document.getElementById('btnUsersUnblockSelected')?.addEventListener('click', () => blockSelectedUsers(false));
+  document.getElementById('btnUsersDeleteSelected')?.addEventListener('click', () => deleteSelectedUsers());
+  document.getElementById('btnVolunteersRemoveSelected')?.addEventListener('click', () => removeSelectedVolunteers());
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
+    tab.addEventListener('shown.bs.tab', () => updateBulkActionsUi());
+  });
   const search = document.getElementById('usersSearch');
   if (search && search.dataset.wired !== '1') {
     search.dataset.wired = '1';

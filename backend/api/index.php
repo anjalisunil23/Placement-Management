@@ -159,6 +159,8 @@ $routes = [
     ['POST',   '/admin/users/{id}/demote-from-admin', [AdminController::class, 'demoteAdminToStaff']],
     ['GET',    '/admin/placement-officers',     [AdminController::class, 'listPlacementOfficers']],
     ['GET',    '/admin/volunteers',             [AdminController::class, 'listVolunteers']],
+    ['POST',   '/admin/volunteers',             [AdminController::class, 'assignVolunteer']],
+    ['DELETE', '/admin/volunteers/{id}',        [AdminController::class, 'removeVolunteer']],
     ['GET',    '/admin/pca-offer-letters',      [AdminController::class, 'listPcaOfferLetters']],
     ['GET',    '/admin/volunteers/{id}/offer-letter', [AdminController::class, 'getVolunteerOfferLetter']],
     ['GET',    '/admin/departments',            [AdminController::class, 'listDepartments']],
