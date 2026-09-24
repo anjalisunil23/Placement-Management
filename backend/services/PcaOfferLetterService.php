@@ -317,8 +317,10 @@ final class PcaOfferLetterService
             : new \DateTimeImmutable('now', new \DateTimeZone(self::TZ));
         $academicYear = (string) ($letter['academicYear'] ?? $row['academicYear'] ?? self::academicYearFromDate($parsedDate));
 
+        $assignmentId = (string) ($row['_id'] ?? '');
+
         return [
-            'assignmentId'  => (string) ($row['_id'] ?? ''),
+            'assignmentId'  => $assignmentId,
             'studentId'     => (string) ($row['studentId'] ?? ''),
             'status'        => $status,
             'letterDate'    => $letterDate,
@@ -329,6 +331,37 @@ final class PcaOfferLetterService
             'publishedAt'   => $this->formatTimestamp($letter['publishedAt'] ?? null),
             'savedAt'       => $this->formatTimestamp($letter['savedAt'] ?? null),
             'viewUrl'       => '/pca-offer-letter.html?mode=student',
+            'verifyUrl'     => $status === 'published' && $assignmentId !== ''
+                ? '/pca-verify.html?id=' . rawurlencode($assignmentId)
+                : '',
+        ];
+    }
+
+    /**
+     * Public QR verification — published PCA letters only (name + class).
+     *
+     * @return array<string, mixed>
+     */
+    public function getPublicVerify(string $assignmentId): array
+    {
+        if (!Security::isValidId($assignmentId)) {
+            Response::notFound('Invalid verification code.');
+        }
+        $row = (new StudentVolunteerModel())->findById($assignmentId);
+        if ($row === null || (string) ($row['status'] ?? '') !== 'active') {
+            Response::notFound('Placement representative appointment not found.');
+        }
+        if ($this->letterStatus($row) !== 'published') {
+            Response::notFound('Offer letter not published.');
+        }
+        $letter = is_array($row['offerLetter'] ?? null) ? $row['offerLetter'] : [];
+
+        return [
+            'studentName' => (string) ($letter['studentName'] ?? ''),
+            'classLabel'  => (string) ($letter['classLabel'] ?? ''),
+            'academicYear' => (string) ($letter['academicYear'] ?? $row['academicYear'] ?? ''),
+            'role'        => 'Placement Campus Ambassador',
+            'institution' => 'Amal Jyothi College of Engineering (Autonomous)',
         ];
     }
 

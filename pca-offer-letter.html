@@ -116,9 +116,18 @@
     .closing .wish { font-weight: 700; margin-bottom: 1.5mm; }
     .closing .sign-off { font-weight: 700; line-height: 1.4; }
 
-    .signature-block {
+    .signature-row {
       margin-top: 6mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 10mm;
       font-size: 10.5pt;
+    }
+
+    .signature-block {
+      flex: 1 1 auto;
+      min-width: 0;
     }
 
     .principal-sign {
@@ -135,6 +144,27 @@
     .signature-caption {
       font-weight: 400;
       margin-top: 0.5mm;
+    }
+
+    .qr-block {
+      flex: 0 0 auto;
+      text-align: center;
+      align-self: flex-end;
+    }
+
+    .qr-block canvas,
+    .qr-block img {
+      display: block;
+      width: 22mm;
+      height: 22mm;
+      margin: 0 auto;
+    }
+
+    .qr-caption {
+      font-size: 8pt;
+      line-height: 1.25;
+      margin-top: 1mm;
+      max-width: 28mm;
     }
 
     @page {
@@ -364,9 +394,15 @@
       </p>
     </div>
 
-    <div class="signature-block">
-      <img class="principal-sign" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
-      <div class="signature-caption">Signature of Principal</div>
+    <div class="signature-row">
+      <div class="signature-block">
+        <img class="principal-sign" data-asset="css/img/principal-signature.png" alt="Signature of Dr. Lillykutty Jacob, Principal"/>
+        <div class="signature-caption">Signature of Principal</div>
+      </div>
+      <div class="qr-block" id="qrBlock" aria-label="Verification QR code">
+        <canvas id="pcaQr" width="96" height="96" aria-hidden="true"></canvas>
+        <div class="qr-caption">Scan to verify<br/>name &amp; class</div>
+      </div>
     </div>
   </div>
 
@@ -377,6 +413,7 @@
 </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script>
 (function () {
   const API_BASE = (location.protocol === 'file:' ? '' : '') + '/backend/api';
@@ -443,6 +480,8 @@
   const isViewer = isStudent || isAdmin || isStaff;
 
   let letterData = {
+    assignmentId: '',
+    verifyUrl: '',
     letterDate: '',
     studentName: '',
     classLabel: '',
@@ -460,6 +499,8 @@
   function applyPayload(data) {
     if (!data) return;
     letterData = {
+      assignmentId: data.assignmentId || '',
+      verifyUrl: data.verifyUrl || '',
       letterDate: data.letterDate || '',
       studentName: data.studentName || '',
       classLabel: data.classLabel || '',
@@ -467,6 +508,54 @@
       status: data.status || 'draft',
     };
     sync();
+  }
+
+  function buildQrPayload() {
+    const name = (letterData.studentName || '').trim();
+    const cls = (letterData.classLabel || '').trim();
+    const plainText = [
+      'Placement Campus Ambassador',
+      'Amal Jyothi College of Engineering (Autonomous)',
+      'Name: ' + (name || '—'),
+      'Class: ' + (cls || '—'),
+    ].join('\n');
+    if (letterData.status !== 'published') {
+      return plainText;
+    }
+    const verifyPath = (letterData.verifyUrl || '').trim();
+    if (verifyPath) {
+      try {
+        return new URL(verifyPath, location.origin).href;
+      } catch {
+        return location.origin + verifyPath;
+      }
+    }
+    if (letterData.assignmentId) {
+      return location.origin + '/pca-verify.html?id=' + encodeURIComponent(letterData.assignmentId);
+    }
+    return plainText;
+  }
+
+  async function renderQr() {
+    const canvas = document.getElementById('pcaQr');
+    const block = document.getElementById('qrBlock');
+    if (!canvas || !block || typeof QRCode === 'undefined') return;
+    const payload = buildQrPayload();
+    if (!payload) {
+      block.style.visibility = 'hidden';
+      return;
+    }
+    block.style.visibility = 'visible';
+    try {
+      await QRCode.toCanvas(canvas, payload, {
+        width: 96,
+        margin: 1,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#111111', light: '#ffffff' },
+      });
+    } catch {
+      block.style.visibility = 'hidden';
+    }
   }
 
   function setupToolbar() {
@@ -569,6 +658,7 @@
     outClass.textContent = cls;
     outAcademicYear.textContent = ay;
     ayInline.forEach(el => { el.textContent = ay; });
+    renderQr().catch(() => {});
   }
 
   function fitEmbedPreview() {
@@ -607,7 +697,10 @@
   btnPreview?.addEventListener('click', () => {
     document.getElementById('letterSheet')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-  btnPrint.addEventListener('click', () => window.print());
+  btnPrint.addEventListener('click', async () => {
+    await renderQr().catch(() => {});
+    window.print();
+  });
 
   if (embed) {
     window.addEventListener('resize', scheduleEmbedFit);

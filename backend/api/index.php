@@ -571,6 +571,7 @@ $routes = [
     ['GET', '/public/report-resume/student/{id}/{exp}/{sig}', [PublicController::class, 'serveReportStudentResume']],
     ['GET', '/public/report-resume/application/{id}', [PublicController::class, 'serveReportApplicationResume']],
     ['GET', '/public/report-resume/student/{id}', [PublicController::class, 'serveReportStudentResume']],
+    ['GET', '/public/pca-verify/{id}', [PublicController::class, 'pcaVerify']],
     ['GET', '/public/departments',      [PublicController::class, 'listDepartments']],
     ['GET', '/public/placement-stats',  [PublicController::class, 'placementStats']],
     ['GET', '/public/site-content',    [PublicController::class, 'siteContent']],

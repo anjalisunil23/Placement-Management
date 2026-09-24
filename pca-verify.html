@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PCA Appointment Verification</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background: #f4f6f8;
+    }
+    .verify-card {
+      max-width: 420px;
+      width: 100%;
+    }
+    .verify-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6c757d;
+      margin-bottom: 0.25rem;
+    }
+    .verify-value {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card-surface verify-card p-4 p-md-5 text-center">
+    <div class="small text-primary fw-semibold mb-2">Training &amp; Placement Cell</div>
+    <h1 class="h5 fw-bold mb-1">PCA Appointment Verification</h1>
+    <p class="small text-muted-2 mb-4">Amal Jyothi College of Engineering (Autonomous)</p>
+    <div id="verifyState">Verifying appointment…</div>
+  </div>
+
+  <script>
+  (function () {
+    const API_BASE = (location.protocol === 'file:' ? '' : '') + '/backend/api';
+    const root = document.getElementById('verifyState');
+    const id = new URLSearchParams(location.search).get('id') || '';
+
+    function esc(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderError(message) {
+      root.innerHTML = '<div class="alert alert-warning mb-0">' + esc(message || 'Could not verify this appointment.') + '</div>';
+    }
+
+    function renderSuccess(data) {
+      root.innerHTML = [
+        '<div class="verify-label">Student name</div>',
+        '<div class="verify-value">' + esc(data.studentName || '—') + '</div>',
+        '<div class="verify-label">Class</div>',
+        '<div class="verify-value mb-0">' + esc(data.classLabel || '—') + '</div>',
+        data.academicYear
+          ? '<div class="small text-muted-2 mt-3">Academic year ' + esc(data.academicYear) + '</div>'
+          : '',
+        '<div class="small text-muted-2 mt-2">Placement Campus Ambassador</div>',
+      ].join('');
+    }
+
+    if (!id) {
+      renderError('Missing verification code.');
+      return;
+    }
+
+    fetch(API_BASE + '/public/pca-verify/' + encodeURIComponent(id), { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((json) => {
+        if (!json?.success) {
+          renderError(json?.message || 'Appointment not found or letter not published.');
+          return;
+        }
+        renderSuccess(json.data || {});
+      })
+      .catch(() => renderError('Network error while verifying appointment.'));
+  })();
+  </script>
+</body>
+</html>

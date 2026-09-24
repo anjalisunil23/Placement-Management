@@ -15,6 +15,7 @@ use PMS\Middleware\RBACMiddleware;
 use PMS\Services\AnalyticsService;
 use PMS\Services\ObjectStorageService;
 use PMS\Services\OfficerDataService;
+use PMS\Services\PcaOfferLetterService;
 use PMS\Services\PlacementOfficerContext;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -298,6 +299,12 @@ final class PublicController
     /**
      * POST /api/aes/check-login — proxy username/password or social login to AES.
      */
+    /** GET /api/public/pca-verify/{id} — QR scan verification for published PCA letters */
+    public function pcaVerify(string $id): void
+    {
+        Response::success((new PcaOfferLetterService())->getPublicVerify($id));
+    }
+
     public function aesCheckLogin(): void
     {
         $raw = json_decode((string) file_get_contents('php://input'), true);
