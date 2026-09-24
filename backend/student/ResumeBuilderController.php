@@ -717,14 +717,13 @@ final class ResumeBuilderController
             Response::notFound('Student profile not found. Please sign in again with your college account.');
         }
 
-        $pdfService = new ResumeBuilderPdfService($this->studentModel);
-        $pdfService->assertGenerationAllowed($profile);
-
         $input = json_decode(file_get_contents('php://input') ?: '{}', true);
         if (!is_array($input)) {
             $input = [];
         }
+        $pdfService = new ResumeBuilderPdfService($this->studentModel);
         $documentHtml = $pdfService->sanitizeDocumentHtml((string) ($input['documentHtml'] ?? ''));
+        $pdfService->assertGenerationAllowed($documentHtml);
         $filename = $pdfService->buildFilename($profile);
         $pdfService->streamPdf($documentHtml, $filename);
     }

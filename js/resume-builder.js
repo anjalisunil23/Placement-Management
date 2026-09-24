@@ -268,10 +268,25 @@
     return html.indexOf('rb-resume-empty-doc') === -1;
   }
 
+  /** PDF minimum: name + contact + education. Independent of 7/8 completion score. */
+  function hasPdfMinimumPersonal() {
+    const personal = state.personal || {};
+    const name = String(personal.fullName || '').trim();
+    const contact = String(personal.mobile || '').trim()
+      || firstText(personal.personalEmail, personal.collegeEmail);
+    return !!(name && contact);
+  }
+
+  function hasPdfMinimumEducation() {
+    return Array.isArray(state.education) && state.education.length > 0;
+  }
+
   function pdfDisabledReason() {
     if (!canUseResumeBuilderApi()) return 'Sign in to generate your resume PDF';
-    if (!state.personalComplete || !state.educationComplete) return 'Complete required sections first';
-    if (!resumeHasPreviewContent()) return 'Add resume content before generating a PDF';
+    if (!hasPdfMinimumPersonal() || !hasPdfMinimumEducation()) {
+      return 'Please complete your basic profile and education details before generating your resume.';
+    }
+    if (!resumeHasPreviewContent()) return 'Add resume content before generating a PDF.';
     return '';
   }
 

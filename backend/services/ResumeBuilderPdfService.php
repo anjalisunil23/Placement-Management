@@ -22,16 +22,27 @@ final class ResumeBuilderPdfService
     }
 
     /**
-     * @param array<string, mixed> $profile
+     * PDF eligibility follows the submitted preview HTML, not the 7/8 completion score.
+     * Minimum: name, contact line, and an education section.
      */
-    public function assertGenerationAllowed(array $profile): void
+    public function assertGenerationAllowed(string $documentHtml): void
     {
-        if (!$this->isPersonalComplete($profile)) {
-            Response::error('Complete required sections first.', 422);
+        if (!$this->documentMeetsPdfMinimum($documentHtml)) {
+            Response::error(
+                'Please complete your basic profile and education details before generating your resume.',
+                422
+            );
         }
-        if ($this->extractEducationRows($profile) === []) {
-            Response::error('Complete required sections first.', 422);
-        }
+    }
+
+    private function documentMeetsPdfMinimum(string $html): bool
+    {
+        $hasName = (bool) preg_match('/class="rb-resume-name"[^>]*>\s*[^<\s]/', $html);
+        $hasContact = (bool) preg_match('/class="rb-resume-contact"[^>]*>\s*[^<\s]/', $html);
+        $hasEducation = (bool) preg_match('/class="rb-resume-h2"[^>]*>\s*Education\s*<\/h2>/i', $html)
+            || str_contains($html, 'class="rb-resume-edu"');
+
+        return $hasName && $hasContact && $hasEducation;
     }
 
     public function buildFilename(array $profile): string
