@@ -316,6 +316,14 @@ const AdminApi = {
     return res.data.map(u => this.mapUser(u));
   },
 
+  async bulkDeleteUsers(items) {
+    const rows = Array.isArray(items) ? items : [];
+    return api('/admin/users/bulk-delete', {
+      method: 'POST',
+      body: { items: rows },
+    });
+  },
+
   async fetchStudents(params = {}) {
     const qs = new URLSearchParams();
     if (params.q) qs.set('q', params.q);
@@ -680,7 +688,39 @@ const ReportCenter = {
     return href;
   },
 
-  async downloadFile(downloadUrl, fallbackName = 'report.xlsx') {
+  _xlsxLoadPromise: null,
+
+  async ensureXlsx() {
+    if (typeof window !== 'undefined' && window.XLSX) return window.XLSX;
+    if (!this._xlsxLoadPromise) {
+      this._xlsxLoadPromise = new Promise((resolve, reject) => {
+        const id = 'rc-xlsx-js';
+        const existing = document.getElementById(id);
+        if (existing) {
+          if (window.XLSX) {
+            resolve(window.XLSX);
+            return;
+          }
+          existing.addEventListener('load', () => resolve(window.XLSX));
+          existing.addEventListener('error', () => reject(new Error('Could not load Excel preview library.')));
+          return;
+        }
+        const script = document.createElement('script');
+        script.id = id;
+        script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        script.async = true;
+        script.onload = () => resolve(window.XLSX);
+        script.onerror = () => reject(new Error('Could not load Excel preview library.'));
+        document.head.appendChild(script);
+      }).catch((err) => {
+        this._xlsxLoadPromise = null;
+        throw err;
+      });
+    }
+    return this._xlsxLoadPromise;
+  },
+
+  async fetchFileBuffer(downloadUrl) {
     const apiPath = this.downloadApiPath(downloadUrl);
     if (!apiPath || apiPath === '#') {
       throw new Error('Download link missing.');
@@ -706,8 +746,7 @@ const ReportCenter = {
       } catch { /* not JSON */ }
       throw new Error(message);
     }
-    // Avoid saving JSON error bodies as .xlsx (e.g. 200 with error payload)
-    if (bytes.length >= 1 && bytes[0] === 0x7b) { // '{'
+    if (bytes.length >= 1 && bytes[0] === 0x7b) {
       let parsed = null;
       try {
         parsed = JSON.parse(new TextDecoder().decode(bytes));
@@ -716,13 +755,48 @@ const ReportCenter = {
         throw new Error(parsed.message || 'Report file not found.');
       }
     }
-    const type = String(res.headers.get('content-type') || '').toLowerCase();
-    if (type.includes('json') || type.includes('text/html')) {
+    const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('json') || contentType.includes('text/html')) {
       throw new Error('Report download returned an invalid file. Try generating again.');
     }
-    const blob = new Blob([buffer], {
-      type: type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
+    const mime = contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    return {
+      buffer,
+      blob: new Blob([buffer], { type: mime }),
+      contentType: mime,
+    };
+  },
+
+  async buildPreview(buffer, opts = {}) {
+    const maxRows = Number(opts.maxRows) > 0 ? Number(opts.maxRows) : 150;
+    const XLSX = await this.ensureXlsx();
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const sheetName = wb.SheetNames[0] || 'Sheet1';
+    const ws = wb.Sheets[sheetName];
+    if (!ws || !ws['!ref']) {
+      throw new Error('Report has no previewable sheet.');
+    }
+    const fullRange = XLSX.utils.decode_range(ws['!ref']);
+    const totalRows = Math.max(0, fullRange.e.r - fullRange.s.r);
+    const previewEndRow = Math.min(fullRange.e.r, fullRange.s.r + maxRows);
+    const previewRange = {
+      s: fullRange.s,
+      e: { c: fullRange.e.c, r: previewEndRow },
+    };
+    const previewWs = { ...ws, '!ref': XLSX.utils.encode_range(previewRange) };
+    const html = XLSX.utils.sheet_to_html(previewWs, { id: 'reportPreviewTable', editable: false });
+    return {
+      html,
+      sheetName,
+      sheetCount: wb.SheetNames.length,
+      totalRows,
+      previewRows: Math.max(0, previewEndRow - fullRange.s.r),
+      truncated: previewEndRow < fullRange.e.r,
+    };
+  },
+
+  async downloadFile(downloadUrl, fallbackName = 'report.xlsx') {
+    const { blob } = await this.fetchFileBuffer(downloadUrl);
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = objectUrl;

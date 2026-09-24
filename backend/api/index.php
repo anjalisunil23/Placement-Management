@@ -147,6 +147,7 @@ $routes = [
     ['POST',   '/admin/job-posts/{id}/reject',  [AdminController::class, 'rejectJobPost']],
     ['DELETE', '/admin/job-posts/{id}',         [AdminController::class, 'deleteJobPost']],
     ['GET',    '/admin/users',                  [AdminController::class, 'listUsers']],
+    ['POST',   '/admin/users/bulk-delete',      [AdminController::class, 'bulkDeleteUsers']],
     ['POST',   '/admin/users',                  [AdminController::class, 'createUser']],
     ['PUT',    '/admin/users/{id}',             [AdminController::class, 'updateUser']],
     ['DELETE', '/admin/users/{id}',             [AdminController::class, 'deleteUser']],

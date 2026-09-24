@@ -4084,6 +4084,27 @@ const UserRegistry = {
     if (!/^[a-f\d]{24}$/i.test(userId)) return { row, userId: '' };
     return { row, userId };
   },
+  _rowDeleteKeys(u) {
+    if (!u) return [];
+    const keys = [];
+    if (u.companyId) keys.push(`company:${u.companyId}`);
+    if (u.role === 'student' && u.hasLogin !== true) {
+      const studentId = u.studentId || u.id;
+      if (studentId) keys.push(`profile:${studentId}`);
+    }
+    const accountId = u.userId || u.id;
+    const hasLogin = u.role === 'student'
+      ? u.hasLogin === true
+      : (u.role !== 'company' || u.hasLogin !== false);
+    if (accountId && hasLogin) keys.push(`user:${accountId}`);
+    return keys;
+  },
+  purgeDeleteKeys(keys) {
+    const keySet = new Set((keys || []).map(String));
+    if (!keySet.size) return;
+    const list = this.all().filter(u => !this._rowDeleteKeys(u).some(k => keySet.has(k)));
+    this.save(list);
+  },
   async approve(id) {
     if (!(await requireWriteSession())) return false;
     const { row, userId } = this._resolveLoginUserId(id);
@@ -4121,16 +4142,23 @@ const UserRegistry = {
     const row = this.get(id) || this.all().find(u =>
       u.id === id || u.userId === id || u.companyId === id || u.studentId === id
     );
+    const purgeKeys = this._rowDeleteKeys(row);
     if (row?.role === 'company' && row.companyId && !row.hasLogin) {
       const res = await api(`/admin/companies/${encodeURIComponent(row.companyId)}`, { method: 'DELETE' });
-      if (res.success) { await this.fetch(); return true; }
+      if (res.success) {
+        this.purgeDeleteKeys(purgeKeys.length ? purgeKeys : [`company:${row.companyId}`]);
+        return true;
+      }
       return false;
     }
     if (row?.role === 'student' && row.hasLogin !== true) {
       const studentId = row.studentId || row.id;
       if (!studentId || !/^[a-f\d]{24}$/i.test(String(studentId))) return false;
       const res = await api(`/admin/students/${encodeURIComponent(studentId)}`, { method: 'DELETE' });
-      if (res.success) { await this.fetch(); return true; }
+      if (res.success) {
+        this.purgeDeleteKeys(purgeKeys.length ? purgeKeys : [`profile:${studentId}`]);
+        return true;
+      }
       return false;
     }
     const { userId } = this._resolveLoginUserId(id);
@@ -4141,7 +4169,10 @@ const UserRegistry = {
       return false;
     }
     const res = await api(`/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
-    if (res.success) { await this.fetch(); return true; }
+    if (res.success) {
+      this.purgeDeleteKeys(purgeKeys.length ? purgeKeys : [`user:${userId}`]);
+      return true;
+    }
     return false;
   },
 };

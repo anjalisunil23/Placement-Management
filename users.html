@@ -253,8 +253,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260924voladmin"></script>
-<script src="js/api.js?v=20260727nologin"></script>
+<script src="js/admin-api.js?v=20260924bulkdel"></script>
+<script src="js/api.js?v=20260924bulkdel"></script>
 <script src="js/app.js?v=20260716notifflat"></script>
 <script>
 let departments = [];
@@ -1194,37 +1194,47 @@ async function deleteSelectedUsers() {
   });
   if (!confirmed || !(await requireWriteSession())) return;
 
+  const items = keys.map((key) => {
+    const sep = key.indexOf(':');
+    return {
+      kind: sep >= 0 ? key.slice(0, sep) : '',
+      id: sep >= 0 ? key.slice(sep + 1) : '',
+    };
+  }).filter(item => item.kind && item.id);
+
+  const deleteBtn = document.getElementById('btnUsersDeleteSelected');
+  if (deleteBtn) deleteBtn.disabled = true;
+
   let ok = 0;
   let fail = 0;
-  for (const key of keys) {
-    const sep = key.indexOf(':');
-    const kind = sep >= 0 ? key.slice(0, sep) : '';
-    const id = sep >= 0 ? key.slice(sep + 1) : '';
-    if (!kind || !id) {
-      fail++;
-      continue;
+  const res = typeof AdminApi !== 'undefined' && AdminApi.bulkDeleteUsers
+    ? await AdminApi.bulkDeleteUsers(items)
+    : null;
+
+  if (deleteBtn) deleteBtn.disabled = false;
+
+  if (res?.success) {
+    ok = Number(res.data?.deleted) || 0;
+    fail = Number(res.data?.failed) || 0;
+    UserRegistry.purgeDeleteKeys(keys);
+    if (keys.some(k => k.startsWith('company:'))) {
+      await loadCompanies();
     }
-    let success = false;
-    if (kind === 'company') {
-      const res = await api(`/admin/companies/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      success = !!res.success;
-    } else if (kind === 'profile') {
-      const res = await api(`/admin/students/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      success = !!res.success;
-    } else if (kind === 'user') {
-      const res = await api(`/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      success = !!res.success;
+    if (fail > 0) {
+      await UserRegistry.fetch();
+      if (keys.some(k => k.startsWith('company:'))) await loadCompanies();
     }
-    if (success) ok++;
-    else fail++;
+  } else {
+    fail = items.length;
+    toast(res?.message || 'Could not delete selected users.', 'error');
   }
 
   selectedDeleteKeys.clear();
-  await UserRegistry.fetch();
-  await loadCompanies();
   updateBulkActionsUi();
-  if (fail === 0) toast(`Deleted ${ok} user${ok === 1 ? '' : 's'}.`, 'success');
-  else toast(`Deleted ${ok}; ${fail} could not be deleted.`, ok > 0 ? 'warn' : 'error');
+  if (res?.success) {
+    if (fail === 0) toast(`Deleted ${ok} user${ok === 1 ? '' : 's'}.`, 'success');
+    else toast(`Deleted ${ok}; ${fail} could not be deleted.`, ok > 0 ? 'warn' : 'error');
+  }
   render();
 }
 

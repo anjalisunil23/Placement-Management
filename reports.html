@@ -18,6 +18,19 @@
   width:40px;height:40px;border-radius:10px;display:grid;place-items:center;
   background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--primary)
 }
+#reportPreviewModal .report-preview-wrap{
+  max-height:min(62vh,520px);overflow:auto;border:1px solid var(--border);border-radius:10px;background:#fff
+}
+#reportPreviewModal table{
+  width:100%;margin:0;font-size:.8125rem;border-collapse:collapse
+}
+#reportPreviewModal table td,#reportPreviewModal table th{
+  border:1px solid color-mix(in srgb,var(--border) 85%,#cbd5e1);
+  padding:.35rem .5rem;white-space:nowrap;vertical-align:top
+}
+#reportPreviewModal table tr:first-child td,#reportPreviewModal table tr:first-child th{
+  position:sticky;top:0;z-index:1;background:#f8fafc;font-weight:600
+}
 </style>
 </head>
 <body data-page="reports.html"><div class="app">
@@ -26,7 +39,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Reports Center</h1>
-    <p class="page-sub" id="repSub">Generate and download placement reports as Excel from live database records.</p>
+    <p class="page-sub" id="repSub">Generate placement reports as Excel from live database records. Preview opens before download.</p>
   </div>
   <div class="d-flex gap-2 flex-wrap align-items-center" id="reportFilterBar">
     <input type="month" class="form-control" id="filterMonth" style="width:auto" title="Month for monthly reports"/>
@@ -59,8 +72,36 @@
 </div>
 
 </main></div></div>
+
+<div class="modal fade" id="reportPreviewModal" tabindex="-1" aria-labelledby="reportPreviewTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title fw-bold" id="reportPreviewTitle">Report preview</h5>
+          <p class="small text-muted-2 mb-0" id="reportPreviewMeta"></p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-2">
+        <div id="reportPreviewLoading" class="text-center py-5 d-none">
+          <div class="spinner-border text-primary" role="status"></div>
+          <p class="small text-muted-2 mt-2 mb-0">Loading preview…</p>
+        </div>
+        <div id="reportPreviewBody" class="report-preview-wrap d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success" id="reportPreviewDownloadBtn">
+          <i class="bi bi-file-earmark-excel me-1"></i>Download Excel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260720exceldl"></script>
+<script src="js/admin-api.js?v=20260924reportprev"></script>
 <script src="js/officer-api.js?v=20260716xlsx"></script>
 <script src="js/api.js?v=20260724staffview2"></script>
 <script src="js/app.js?v=20260724nostud"></script>
@@ -76,6 +117,55 @@ const REPORT_DEFS = [
 
 let reportCompanies = [];
 let companyFolderOpen = false;
+let reportPreviewModal = null;
+let pendingReportDownload = null;
+
+function getReportPreviewModal() {
+  if (!reportPreviewModal) {
+    reportPreviewModal = new bootstrap.Modal(document.getElementById('reportPreviewModal'));
+  }
+  return reportPreviewModal;
+}
+
+function setReportPreviewLoading(isLoading) {
+  document.getElementById('reportPreviewLoading')?.classList.toggle('d-none', !isLoading);
+  document.getElementById('reportPreviewBody')?.classList.toggle('d-none', isLoading);
+  const dlBtn = document.getElementById('reportPreviewDownloadBtn');
+  if (dlBtn) dlBtn.disabled = isLoading;
+}
+
+async function openReportPreview(resData, fallbackName, typeLabel) {
+  const title = resData?.title || typeLabel || 'Report';
+  const filename = resData?.filename || fallbackName;
+  pendingReportDownload = {
+    downloadUrl: resData?.downloadUrl,
+    filename,
+  };
+  document.getElementById('reportPreviewTitle').textContent = title;
+  document.getElementById('reportPreviewMeta').textContent = 'Loading preview…';
+  document.getElementById('reportPreviewBody').innerHTML = '';
+  setReportPreviewLoading(true);
+  getReportPreviewModal().show();
+  try {
+    const { buffer } = await ReportCenter.fetchFileBuffer(resData.downloadUrl);
+    const preview = await ReportCenter.buildPreview(buffer, { maxRows: 150 });
+    document.getElementById('reportPreviewBody').innerHTML = preview.html;
+    const metaParts = [
+      `Sheet: ${preview.sheetName}`,
+      preview.sheetCount > 1 ? `${preview.sheetCount} sheets (first shown)` : null,
+      preview.truncated
+        ? `Showing first ${preview.previewRows} of ${preview.totalRows} rows`
+        : `${preview.totalRows} row${preview.totalRows === 1 ? '' : 's'}`,
+      filename,
+    ].filter(Boolean);
+    document.getElementById('reportPreviewMeta').textContent = metaParts.join(' · ');
+    setReportPreviewLoading(false);
+  } catch (err) {
+    getReportPreviewModal().hide();
+    pendingReportDownload = null;
+    throw err;
+  }
+}
 
 function reportFilters() {
   const monthInput = document.getElementById('filterMonth').value;
@@ -104,7 +194,7 @@ function renderCards() {
           <span class="badge-soft warning">Folder</span>
         </div>
         <h6 class="fw-bold mb-1">Company Applicants</h6>
-        <p class="text-muted-2 small mb-3">Open this folder, pick a company, and download applicant Excel with profile details, shortlisted / selected, and resume links.</p>
+        <p class="text-muted-2 small mb-3">Open this folder, pick a company, and preview applicant Excel with profile details, shortlisted / selected, and resume links.</p>
         <div class="d-flex gap-2 flex-wrap">
           <span class="btn btn-sm btn-primary"><i class="bi bi-folder2-open me-1"></i>Open folder</span>
         </div>
@@ -124,7 +214,7 @@ function renderCards() {
         <p class="text-muted-2 small mb-3">${r.desc}</p>
         <div class="d-flex gap-2 flex-wrap">
           <button class="btn btn-sm btn-success" onclick="generateReport('${r.type}')">
-            <i class="bi bi-file-earmark-excel me-1"></i>Download Excel
+            <i class="bi bi-eye me-1"></i>Preview &amp; download
           </button>
         </div>
       </div>
@@ -214,8 +304,8 @@ function renderCompanyFolderCards() {
           <div class="company-ic"><i class="bi bi-building"></i></div>
           <div class="min-w-0 flex-grow-1">
             <h6 class="fw-bold mb-1 text-truncate">${esc(c.companyName)}</h6>
-            <p class="small text-muted-2 mb-2">${esc([c.category, c.tier].filter(Boolean).join(' · ') || 'Click to download applicants Excel')}</p>
-            <span class="btn btn-sm btn-primary"><i class="bi bi-file-earmark-excel me-1"></i>Excel report</span>
+            <p class="small text-muted-2 mb-2">${esc([c.category, c.tier].filter(Boolean).join(' · ') || 'Click to preview applicants Excel')}</p>
+            <span class="btn btn-sm btn-primary"><i class="bi bi-eye me-1"></i>Preview report</span>
           </div>
         </div>
       </div>
@@ -252,18 +342,19 @@ async function generateCompanyApplicantsReport(companyId, companyName, cardEl) {
   });
   if (btn) {
     btn.classList.remove('disabled');
-    btn.innerHTML = '<i class="bi bi-file-earmark-excel me-1"></i>Excel report';
+    btn.innerHTML = '<i class="bi bi-eye me-1"></i>Preview report';
   }
   if (res.success) {
-    toast(`Excel ready for ${companyName || 'company'}.`, 'success');
+    toast(`Preview ready for ${companyName || 'company'}.`, 'success');
     if (res.data?.downloadUrl) {
       try {
-        await ReportCenter.downloadFile(
-          res.data.downloadUrl,
-          `${String(companyName || 'company').replace(/[^\w.\-]+/g, '_')}_applicants.xlsx`
+        await openReportPreview(
+          res.data,
+          `${String(companyName || 'company').replace(/[^\w.\-]+/g, '_')}_applicants.xlsx`,
+          `Company Applicants — ${companyName || 'Company'}`
         );
       } catch (err) {
-        toast(err?.message || 'Could not download Excel report.', 'error');
+        toast(err?.message || 'Could not load Excel preview.', 'error');
       }
     }
   } else if (res.status === 401) {
@@ -286,15 +377,16 @@ async function generateReport(type) {
   const res = await ReportCenter.generate(type, { ...filters, format: 'xlsx' });
   if (btn) { btn.disabled = false; }
   if (res.success) {
-    toast(res.message || 'Report generated.', 'success');
+    toast(res.message || 'Report ready for preview.', 'success');
     if (res.data?.downloadUrl) {
       try {
-        await ReportCenter.downloadFile(
-          res.data.downloadUrl,
-          `${String(type || 'report').replace(/[^\w.\-]+/g, '_')}_report.xlsx`
+        await openReportPreview(
+          res.data,
+          `${String(type || 'report').replace(/[^\w.\-]+/g, '_')}_report.xlsx`,
+          ReportCenter.typeLabel(type)
         );
       } catch (err) {
-        toast(err?.message || 'Could not download Excel report.', 'error');
+        toast(err?.message || 'Could not load Excel preview.', 'error');
       }
     }
   } else if (res.status === 401) {
@@ -330,6 +422,32 @@ async function initReportsPage() {
   });
   document.getElementById('btnBackReports')?.addEventListener('click', showReportsHome);
   document.getElementById('companyReportSearch')?.addEventListener('input', () => renderCompanyFolderCards());
+  document.getElementById('reportPreviewDownloadBtn')?.addEventListener('click', async () => {
+    if (!pendingReportDownload?.downloadUrl) {
+      toast('Download link missing.', 'error');
+      return;
+    }
+    const btn = document.getElementById('reportPreviewDownloadBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Downloading…';
+    }
+    try {
+      await ReportCenter.downloadFile(pendingReportDownload.downloadUrl, pendingReportDownload.filename);
+      toast('Excel downloaded.', 'success');
+    } catch (err) {
+      toast(err?.message || 'Could not download Excel report.', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-file-earmark-excel me-1"></i>Download Excel';
+      }
+    }
+  });
+  document.getElementById('reportPreviewModal')?.addEventListener('hidden.bs.modal', () => {
+    pendingReportDownload = null;
+    document.getElementById('reportPreviewBody').innerHTML = '';
+  });
 
   const sessionOk = await Auth.ensureSession();
   if (!sessionOk) {
@@ -352,7 +470,7 @@ async function initReportsPage() {
       document.getElementById('repSub').textContent = `Department-scoped reports for ${dept}.`;
     }
   } else if (typeof Auth.canViewPlacementAdminData === 'function' && Auth.canViewPlacementAdminData()) {
-    document.getElementById('repSub').textContent = 'View-only access to placement reports. Generate and download Excel from live records.';
+    document.getElementById('repSub').textContent = 'View-only access to placement reports. Preview Excel before download from live records.';
   }
 }
 

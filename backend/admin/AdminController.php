@@ -789,13 +789,76 @@ final class AdminController
         Response::success(null, 'User updated.');
     }
 
+    /** POST /api/admin/users/bulk-delete — delete many users/companies/profiles in one request */
+    public function bulkDeleteUsers(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $items = is_array($input['items'] ?? null) ? $input['items'] : [];
+        if ($items === []) {
+            Response::error('items array is required.', 422);
+        }
+
+        $deleted = 0;
+        $failed = 0;
+        $errors = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                $failed++;
+                continue;
+            }
+            $kind = strtolower(trim((string) ($item['kind'] ?? '')));
+            $id = trim((string) ($item['id'] ?? ''));
+            if ($kind === '' || $id === '') {
+                $failed++;
+                continue;
+            }
+            try {
+                match ($kind) {
+                    'user' => $this->deleteUserRecord($id),
+                    'company' => $this->deleteCompanyRecord($id),
+                    'profile' => $this->deleteStudentProfileRecord($id),
+                    default => throw new \InvalidArgumentException('Unsupported delete kind.'),
+                };
+                $deleted++;
+            } catch (\Throwable $e) {
+                $failed++;
+                if (count($errors) < 20) {
+                    $errors[] = [
+                        'kind' => $kind,
+                        'id' => $id,
+                        'message' => $e->getMessage(),
+                    ];
+                }
+            }
+        }
+
+        Response::success([
+            'deleted' => $deleted,
+            'failed'  => $failed,
+            'errors'  => $errors,
+        ], $deleted > 0
+            ? "Deleted {$deleted} record(s)." . ($failed > 0 ? " {$failed} could not be deleted." : '')
+            : 'No records deleted.');
+    }
+
     /** DELETE /api/admin/users/{id} */
     public function deleteUser(string $id): void
     {
         RBACMiddleware::requireAdmin();
+        try {
+            $this->deleteUserRecord($id);
+        } catch (\RuntimeException $e) {
+            Response::notFound($e->getMessage());
+        }
+        Response::success(null, 'User deleted.');
+    }
+
+    private function deleteUserRecord(string $id): void
+    {
         $user = $this->userModel->findById($id);
         if (!$user) {
-            Response::notFound('User not found.');
+            throw new \RuntimeException('User not found.');
         }
         if (($user['role'] ?? '') === 'placement_officer') {
             (new PlacementOfficerModel())->deleteByUserId($id);
@@ -813,9 +876,8 @@ final class AdminController
             (new StudentModel())->deleteByUserId($id);
         }
         if (!$this->userModel->delete($id)) {
-            Response::notFound('User not found.');
+            throw new \RuntimeException('User not found.');
         }
-        Response::success(null, 'User deleted.');
     }
 
     /** POST /api/admin/users/{id}/block */
@@ -1220,23 +1282,31 @@ final class AdminController
     public function deleteStudent(string $studentId): void
     {
         RBACMiddleware::requireAdmin();
+        try {
+            $this->deleteStudentProfileRecord($studentId);
+        } catch (\RuntimeException $e) {
+            Response::notFound($e->getMessage());
+        }
+        Response::success(null, 'Student profile deleted.');
+    }
+
+    private function deleteStudentProfileRecord(string $studentId): void
+    {
         $studentModel = new StudentModel();
         $student = $studentModel->findById($studentId);
         if (!$student) {
-            Response::notFound('Student not found.');
+            throw new \RuntimeException('Student not found.');
         }
 
         $userId = trim((string) ($student['userId'] ?? ''));
         if ($userId !== '' && $this->userModel->findById($userId)) {
-            // Full account delete also removes the student profile.
-            $this->deleteUser($userId);
+            $this->deleteUserRecord($userId);
             return;
         }
 
         if (!$studentModel->delete($studentId)) {
-            Response::notFound('Student not found.');
+            throw new \RuntimeException('Student not found.');
         }
-        Response::success(null, 'Student profile deleted.');
     }
 
     // --- Reports ---
@@ -1745,17 +1815,26 @@ final class AdminController
     public function deleteCompany(string $id): void
     {
         RBACMiddleware::requireAdmin();
+        try {
+            $this->deleteCompanyRecord($id);
+        } catch (\RuntimeException $e) {
+            Response::notFound($e->getMessage());
+        }
+        Response::success(null, 'Company deleted.');
+    }
+
+    private function deleteCompanyRecord(string $id): void
+    {
         $model = new CompanyModel();
         $company = $model->findById($id);
         if (!$company) {
-            Response::notFound();
+            throw new \RuntimeException('Company not found.');
         }
         $userId = (string) ($company['userId'] ?? '');
         $model->delete($id);
         if ($userId !== '') {
             $this->userModel->delete($userId);
         }
-        Response::success(null, 'Company deleted.');
     }
 
     // --- Staff recommendations & company registration ---
