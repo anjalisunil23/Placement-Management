@@ -2189,6 +2189,11 @@ const ResumeBucket = {
     return entry;
   },
   remove(id) { this.save(this.all().filter(r => r.id !== id)); },
+  rename(id, fileName) {
+    const next = String(fileName || '').trim();
+    if (!next) return;
+    this.save(this.all().map(r => (r.id === id ? { ...r, fileName: next } : r)));
+  },
   forProfile(profileType) {
     const all = this.all();
     if (!all.length) return [];

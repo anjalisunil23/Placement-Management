@@ -963,6 +963,65 @@ final class StudentController
     Response::success(null, 'Resume deleted.');
   }
 
+  /** POST /api/student/resumes/{id}/rename */
+  public function renameResumeFile(string $resumeId): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $profile = $this->getStudentProfile($user);
+
+    $resume = (new ResumeModel())->findById($resumeId);
+    if (!$resume || (string) ($resume['studentId'] ?? '') !== (string) $profile['_id']) {
+      Response::notFound('Resume not found.');
+    }
+
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true);
+    if (!is_array($input)) {
+      $input = [];
+    }
+    $fileName = $this->sanitizeResumeDisplayName((string) ($input['fileName'] ?? ''));
+    if ($fileName === null) {
+      Response::error('Enter a PDF file name.', 422);
+    }
+
+    (new ResumeModel())->update($resumeId, [
+      'fileName' => $fileName,
+      'updatedAt' => DocumentHelper::now(),
+    ]);
+
+    $profileResume = is_array($profile['resume'] ?? null) ? $profile['resume'] : [];
+    $renamedPath = trim((string) ($resume['path'] ?? ''));
+    $renamedStored = basename((string) ($resume['storedName'] ?? ''));
+    $profilePath = trim((string) ($profileResume['path'] ?? ''));
+    $profileStored = basename((string) ($profileResume['storedName'] ?? ''));
+    $isActive = ($renamedPath !== '' && $renamedPath === $profilePath)
+        || ($renamedStored !== '' && $renamedStored === $profileStored);
+    if ($isActive) {
+      $profileResume['filename'] = $fileName;
+      $this->studentModel->update((string) $profile['_id'], ['resume' => $profileResume]);
+    }
+
+    Response::success(['fileName' => $fileName], 'Resume renamed.');
+  }
+
+  private function sanitizeResumeDisplayName(string $name): ?string
+  {
+    $name = trim(str_replace(['\\', '/'], '', $name));
+    $name = preg_replace('/[\x00-\x1F]+/u', '', $name) ?? '';
+    $name = preg_replace('/[^\w.\- ()]+/u', '_', $name) ?? '';
+    $name = trim($name, " \t._");
+    if ($name === '') {
+      return null;
+    }
+    if (!preg_match('/\.pdf$/i', $name)) {
+      $name .= '.pdf';
+    }
+    if (strlen($name) > 180) {
+      return null;
+    }
+
+    return $name;
+  }
+
   /** POST /api/student/resumes/{id}/default */
   public function setDefaultResume(string $resumeId): void
   {

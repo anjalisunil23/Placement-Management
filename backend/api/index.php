@@ -272,6 +272,7 @@ $routes = [
     ['POST', '/student/resumes/upload',   [StudentController::class, 'uploadResumeToLibrary']],
     ['GET',  '/student/resumes/{id}/view',[StudentController::class, 'viewResume']],
     ['POST', '/student/resumes/{id}/delete',[StudentController::class, 'deleteResumeFromLibrary']],
+    ['POST', '/student/resumes/{id}/rename',[StudentController::class, 'renameResumeFile']],
     ['POST', '/student/resumes/{id}/default',[StudentController::class, 'setDefaultResume']],
     ['GET',  '/student/jobs',              [JobFeedController::class, 'student']],
     ['GET',  '/student/drives',            [StudentController::class, 'listDrives']],
