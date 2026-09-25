@@ -629,6 +629,14 @@ final class AesLoginService
                     'stud_cource_short', 'stud_course', 'branch', 'programme', 'program',
                 ])));
             }
+            $namedBranch = trim($this->pickInsensitive($aesProfile, [
+                'stud_branch', 'branch_name', 'branchName',
+            ]));
+            $api = new AesApiService();
+            if ($namedBranch !== '' && !$api->isCourseLevelShort($namedBranch)
+                && ($branch === '' || $api->isCourseLevelShort($branch) || ctype_digit($branch))) {
+                $branch = $namedBranch;
+            }
             if ($branch !== '') {
                 $code = $branch;
                 $name = $branch;
@@ -1771,6 +1779,13 @@ final class AesLoginService
         $branch = strtoupper(trim($this->pickInsensitive($aesDetails, [
             'stud_cource_short', 'stud_course', 'branch', 'programme', 'program',
         ])));
+        $namedBranch = trim($this->pickInsensitive($aesDetails, [
+            'stud_branch', 'branch_name', 'branchName',
+        ]));
+        if ($namedBranch !== '' && !$aesApi->isCourseLevelShort($namedBranch)
+            && ($branch === '' || $aesApi->isCourseLevelShort($branch))) {
+            $branch = $namedBranch;
+        }
         if ($branch !== '') {
             $mapped['department'] = $branch;
             $mapped['departmentName'] = $branch;
