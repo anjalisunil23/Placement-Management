@@ -992,9 +992,14 @@ final class StudentController
     if ($fileName === null) {
       Response::error('Enter a PDF file name.', 422);
     }
+    $label = $this->sanitizeResumeLabel((string) ($input['label'] ?? ($resume['label'] ?? '')));
+    if ($label === null) {
+      Response::error('Enter a resume label.', 422);
+    }
 
     (new ResumeModel())->update($resumeId, [
       'fileName' => $fileName,
+      'label' => $label,
       'updatedAt' => DocumentHelper::now(),
     ]);
 
@@ -1010,7 +1015,17 @@ final class StudentController
       $this->studentModel->update((string) $profile['_id'], ['resume' => $profileResume]);
     }
 
-    Response::success(['fileName' => $fileName], 'Resume renamed.');
+    Response::success(['fileName' => $fileName, 'label' => $label], 'Resume updated.');
+  }
+
+  private function sanitizeResumeLabel(string $label): ?string
+  {
+    $label = trim(preg_replace('/[\x00-\x1F]+/u', '', $label) ?? '');
+    if ($label === '' || strlen($label) > 120) {
+      return null;
+    }
+
+    return $label;
   }
 
   private function sanitizeResumeDisplayName(string $name): ?string

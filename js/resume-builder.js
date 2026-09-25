@@ -1970,6 +1970,44 @@
     return 'General';
   }
 
+  function promptBucketLabel() {
+    return new Promise((resolve) => {
+      const modalEl = document.getElementById('rbBucketLabelModal');
+      const form = document.getElementById('rbBucketLabelForm');
+      const input = document.getElementById('rbBucketLabelInput');
+      if (!modalEl || !form || !input || !window.bootstrap) {
+        resolve(resumeBucketLabel());
+        return;
+      }
+      input.value = resumeBucketLabel();
+      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        form.removeEventListener('submit', onSubmit);
+        modalEl.removeEventListener('hidden.bs.modal', onHide);
+        resolve(value);
+      };
+      const onSubmit = (event) => {
+        event.preventDefault();
+        const label = String(input.value || '').trim();
+        if (!label) {
+          if (typeof toast === 'function') toast('Enter a resume label.', 'warn');
+          else window.alert('Enter a resume label.');
+          return;
+        }
+        finish(label);
+        modal.hide();
+      };
+      const onHide = () => finish('');
+      form.addEventListener('submit', onSubmit);
+      modalEl.addEventListener('hidden.bs.modal', onHide);
+      modal.show();
+      window.setTimeout(() => input.focus(), 150);
+    });
+  }
+
   async function addResumeToBucket() {
     const printRoot = requirePrintRoot();
     if (!printRoot) return;
@@ -1978,6 +2016,9 @@
       else window.alert('Sign in to upload resumes to the resume bucket.');
       return;
     }
+
+    const label = await promptBucketLabel();
+    if (!label) return;
 
     const buttons = resumePdfActionButtons();
     const previous = buttons.map((btn) => ({ el: btn, html: btn.innerHTML, disabled: btn.disabled }));
@@ -1994,7 +2035,7 @@
       const file = new File([built.blob], built.filename, { type: 'application/pdf' });
       const uploadFd = new FormData();
       uploadFd.append('file', file, built.filename);
-      uploadFd.append('label', resumeBucketLabel());
+      uploadFd.append('label', label);
       uploadFd.append('profileType', resumeBucketProfileType());
       const res = await fetch(resumeBuilderApiBase() + '/student/resumes/upload', {
         method: 'POST',
