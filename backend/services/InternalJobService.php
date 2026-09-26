@@ -18,7 +18,7 @@ final class InternalJobService
     public const STIPEND = 'stipend';
 
     /** @var string[] */
-    public const WORK_MODES = ['on_site', 'remote', 'hybrid'];
+    public const WORK_MODES = ['online', 'offline'];
 
     /** @var string[] */
     public const FREQUENCIES = ['monthly', 'weekly', 'one_time'];
@@ -44,11 +44,14 @@ final class InternalJobService
     {
         $value = strtolower(trim($raw));
         $value = str_replace(['-', ' '], '_', $value);
-        if ($value === 'onsite') {
-            $value = 'on_site';
+        if (in_array($value, ['online', 'remote'], true)) {
+            return 'online';
+        }
+        if (in_array($value, ['offline', 'on_site', 'onsite'], true)) {
+            return 'offline';
         }
 
-        return in_array($value, self::WORK_MODES, true) ? $value : '';
+        return '';
     }
 
     public static function normalizeCompensationType(string $raw): string
@@ -87,9 +90,8 @@ final class InternalJobService
     public static function workModeLabel(string $mode): string
     {
         return match ($mode) {
-            'on_site' => 'On-site',
-            'remote' => 'Remote',
-            'hybrid' => 'Hybrid',
+            'online', 'remote' => 'Online',
+            'offline', 'on_site' => 'Offline',
             default => '',
         };
     }
@@ -191,7 +193,7 @@ final class InternalJobService
             $errors[] = 'Application deadline is not a valid date.';
         }
         if (trim((string) ($input['workMode'] ?? '')) !== '' && $workMode === '') {
-            $errors[] = 'Work mode must be On-site, Remote, or Hybrid.';
+            $errors[] = 'Mode must be Online or Offline.';
         }
         if ($vacanciesRaw !== '' && $vacancies < 1) {
             $errors[] = 'Number of vacancies must be at least 1.';
@@ -244,7 +246,7 @@ final class InternalJobService
                 $errors[] = 'Work location is required.';
             }
             if ($workMode === '') {
-                $errors[] = 'Select a work mode.';
+                $errors[] = 'Select online or offline.';
             }
             if ($startDate === '') {
                 $errors[] = 'Start date is required.';

@@ -93,12 +93,11 @@
         <select class="form-select form-select-sm" id="filterDepartment"></select>
       </div>
       <div class="col-md-4 col-lg-2">
-        <label class="form-label small fw-semibold" for="filterWorkMode">Work mode</label>
+        <label class="form-label small fw-semibold" for="filterWorkMode">Mode</label>
         <select class="form-select form-select-sm" id="filterWorkMode">
           <option value="all">All</option>
-          <option value="on_site">On-site</option>
-          <option value="remote">Remote</option>
-          <option value="hybrid">Hybrid</option>
+          <option value="online">Online</option>
+          <option value="offline">Offline</option>
         </select>
       </div>
       <div class="col-md-4 col-lg-2">
@@ -184,12 +183,11 @@
           <input class="form-control" id="fieldLocation"/>
         </div>
         <div class="col-md-4">
-          <label class="form-label small fw-semibold" for="fieldWorkMode">Work mode</label>
+          <label class="form-label small fw-semibold" for="fieldWorkMode">Mode</label>
           <select class="form-select" id="fieldWorkMode">
             <option value="">Select</option>
-            <option value="on_site">On-site</option>
-            <option value="remote">Remote</option>
-            <option value="hybrid">Hybrid</option>
+            <option value="online">Online</option>
+            <option value="offline">Offline</option>
           </select>
         </div>
         <div class="col-md-4">
@@ -304,7 +302,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260926ijtab"></script>
 <script src="js/app.js?v=20260926certnav"></script>
-<script src="js/internal-jobs-page.js?v=20260926ijcand"></script>
+<script src="js/internal-jobs-page.js?v=20260926ijdraft"></script>
 <script>
 onAppReady(() => {
 const role = Auth.role();

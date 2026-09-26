@@ -141,7 +141,7 @@ final class InternalJobController
         $doc = $check['data'];
         $doc['departmentCode'] = $department['code'];
         $doc['departmentName'] = $department['name'];
-        $doc['attachment'] = $this->storeAttachment(null);
+        $doc['attachment'] = $this->storeAttachment(null, $input);
         $doc['status'] = $publish ? 'published' : 'draft';
         $doc['createdBy'] = (string) $user['_id'];
         $doc['createdByRole'] = $scope['kind'] === 'admin' ? 'admin' : 'placement_officer';
@@ -182,7 +182,7 @@ final class InternalJobController
         $doc = $check['data'];
         $doc['departmentCode'] = $department['code'];
         $doc['departmentName'] = $department['name'];
-        $doc['attachment'] = $this->storeAttachment(is_array($post['attachment'] ?? null) ? $post['attachment'] : null);
+        $doc['attachment'] = $this->storeAttachment(is_array($post['attachment'] ?? null) ? $post['attachment'] : null, $input);
         if ($publish) {
             $doc['status'] = 'published';
             $doc['publishedAt'] = DocumentHelper::now();
@@ -481,14 +481,58 @@ final class InternalJobController
 
     /**
      * @param array<string, mixed>|null $existing
+     * @param array<string, mixed> $input
      * @return array<string, mixed>|null
      */
-    private function storeAttachment(?array $existing): ?array
+    private function storeAttachment(?array $existing, array $input = []): ?array
     {
         $file = $_FILES['attachment'] ?? null;
-        if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        if (is_array($file) && (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            return $this->storeUploadedFile($file, $existing);
+        }
+
+        $encoded = preg_replace('/\s+/', '', (string) ($input['attachmentBase64'] ?? '')) ?? '';
+        $name = trim((string) ($input['attachmentName'] ?? ''));
+        if ($encoded === '' || $name === '') {
             return $existing;
         }
+        $binary = base64_decode($encoded, true);
+        if ($binary === false) {
+            Response::error('The attachment could not be read.', 400);
+        }
+        if (strlen($binary) > 10 * 1024 * 1024) {
+            Response::error('File exceeds maximum allowed size.', 400);
+        }
+        $tmp = tempnam(sys_get_temp_dir(), 'ijob');
+        if ($tmp === false) {
+            Response::error('Failed to save the attachment.', 500);
+        }
+        if (file_put_contents($tmp, $binary) === false) {
+            unlink($tmp);
+            Response::error('Failed to save the attachment.', 500);
+        }
+        try {
+            return $this->storeUploadedFile([
+                'name' => $name,
+                'type' => '',
+                'tmp_name' => $tmp,
+                'error' => UPLOAD_ERR_OK,
+                'size' => strlen($binary),
+            ], $existing);
+        } finally {
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $file
+     * @param array<string, mixed>|null $existing
+     * @return array<string, mixed>
+     */
+    private function storeUploadedFile(array $file, ?array $existing): array
+    {
         $error = Security::validateUploadedFile(
             $file,
             10 * 1024 * 1024,
@@ -606,7 +650,7 @@ final class InternalJobController
         $mode = strtolower(trim((string) ($_GET['workMode'] ?? '')));
         if ($mode !== '' && $mode !== 'all') {
             $normalized = InternalJobService::normalizeWorkMode($mode);
-            if ($normalized !== '' && (string) ($post['workMode'] ?? '') !== $normalized) {
+            if ($normalized !== '' && InternalJobService::normalizeWorkMode((string) ($post['workMode'] ?? '')) !== $normalized) {
                 return false;
             }
         }

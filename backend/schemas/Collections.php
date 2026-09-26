@@ -300,7 +300,7 @@ final class Collections
                 'minCgpa' => 'float|null',
                 'vacancies' => 'int',
                 'workLocation' => 'string',
-                'workMode' => 'string (on_site|remote|hybrid)',
+                'workMode' => 'string (online|offline)',
                 'startDate' => 'string',
                 'endDate' => 'string',
                 'duration' => 'string',

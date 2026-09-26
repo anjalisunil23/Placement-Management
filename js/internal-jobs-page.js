@@ -57,8 +57,25 @@ function compensationLabel(d) {
   return '';
 }
 
+function fileBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '');
+      const comma = text.indexOf(',');
+      resolve(comma >= 0 ? text.slice(comma + 1) : text);
+    };
+    reader.onerror = () => reject(reader.error || new Error('Could not read the attachment.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function workModeLabel(mode) {
-  return { on_site: 'On-site', remote: 'Remote', hybrid: 'Hybrid' }[mode] || '';
+  return { online: 'Online', remote: 'Online', offline: 'Offline', on_site: 'Offline' }[mode] || '';
+}
+
+function storedModeValue(mode) {
+  return { online: 'online', remote: 'online', offline: 'offline', on_site: 'offline' }[mode] || '';
 }
 
 function jobTypeLabel(type) {
@@ -117,7 +134,7 @@ function clientErrors(forPublish) {
   if (!d.eligibilityCriteria) errors.push('Eligibility criteria are required.');
   if (!d.vacancies || Number(d.vacancies) < 1) errors.push('Number of vacancies is required.');
   if (!d.workLocation) errors.push('Work location is required.');
-  if (!d.workMode) errors.push('Select a work mode.');
+  if (!d.workMode) errors.push('Select online or offline.');
   if (!d.startDate) errors.push('Start date is required.');
   if (!d.endDate && !d.duration) errors.push('Enter an end date or a duration.');
   if (!d.workingHours) errors.push('Working hours are required.');
@@ -268,7 +285,7 @@ function fillForm(post) {
   $('fieldMinCgpa').value = post.minCgpa ?? '';
   $('fieldVacancies').value = post.vacancies || '';
   $('fieldLocation').value = post.workLocation || '';
-  $('fieldWorkMode').value = post.workMode || '';
+  $('fieldWorkMode').value = storedModeValue(post.workMode);
   $('fieldStart').value = post.startDate || '';
   $('fieldEnd').value = post.endDate || '';
   $('fieldDuration').value = post.duration || '';
@@ -357,7 +374,7 @@ function detailHtml(p) {
     ['Minimum CGPA', p.minCgpa ? String(p.minCgpa) : '—'],
     ['Vacancies', p.vacancies ? String(p.vacancies) : '—'],
     ['Location', p.workLocation],
-    ['Work mode', p.workModeLabel],
+    ['Mode', p.workModeLabel],
     ['Start date', p.startDate],
     ['End date', p.endDate],
     ['Duration', p.durationLabel],
@@ -499,15 +516,19 @@ async function submitJob(action) {
   }
   const d = readForm();
   const verb = publish ? 'Publish' : (editingId ? 'Save' : 'Save draft');
+  if (!(await requireWriteSession())) return;
   if (!(await confirmAction({ title: verb, message: `${verb} "${d.title}"?`, confirmText: verb, variant: 'primary' }))) return;
-  const body = new FormData();
-  Object.entries(d).forEach(([key, value]) => body.append(key, value ?? ''));
-  body.set('action', publish ? 'publish' : 'draft');
-  if (file) body.append('attachment', file, file.name);
+  const payload = { ...d, action: publish ? 'publish' : 'draft' };
+  if (file) {
+    payload.attachmentName = file.name;
+    payload.attachmentBase64 = await fileBase64(file);
+  }
   const path = editingId ? `/internal-jobs/${encodeURIComponent(editingId)}/save` : '/internal-jobs';
-  const res = await api(path, { method: 'POST', body, noRedirectOn401: true });
+  const res = await api(path, { method: 'POST', body: payload, noRedirectOn401: true });
   if (!res?.success) {
-    toast(res?.message || 'Could not save the post.', 'error');
+    toast(res.status === 401
+      ? 'Your sign-in expired. Sign in again, then save the draft.'
+      : (res?.message || 'Could not save the post.'), 'error');
     return;
   }
   toast(res.message || 'Saved.', 'success');
