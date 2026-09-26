@@ -19,33 +19,32 @@ $assert = static function (bool $ok, string $label) use (&$failed, &$passed): vo
     }
 };
 
-$passingYear = static function (string $monthYear): int {
-    return preg_match('/(19|20)\d{2}/', $monthYear, $m) ? (int) $m[0] : 0;
-};
-
-$previewEducationDuration = static function (string $year) use ($passingYear): string {
+$previewEducationDuration = static function (string $year): string {
     $raw = trim($year);
     if ($raw === '') {
         return '';
     }
     if (preg_match('/((?:19|20)\d{2})\s*[-–—−]\s*((?:19|20)\d{2})/u', $raw, $full)) {
-        return $full[1] . ' - ' . $full[2];
+        return $full[2];
     }
     if (preg_match('/((?:19|20)\d{2})\s*[-–—−]\s*(\d{2})(?!\d)/u', $raw, $short)) {
         $start = (int) $short[1];
         $end = (int) (floor($start / 100) * 100 + (int) $short[2]);
         if ($end >= $start) {
-            return $start . ' - ' . $end;
+            return (string) $end;
         }
     }
-    $y = $passingYear($raw);
-    return $y > 0 ? (string) $y : $raw;
+    if (preg_match('/(19|20)\d{2}/', $raw, $m)) {
+        return $m[0];
+    }
+    return $raw;
 };
 
 $cases = [
-    ['MCA2025-27-S3', '2025 - 2027', '1 current batch range'],
-    ['2022 - 2025', '2022 - 2025', '2 completed start+end'],
-    ['2022–2025', '2022 - 2025', '2 completed en-dash'],
+    ['MCA2025-27-S3', '2027', '1 batch code passout year'],
+    ['MCAINT2023-28-S7', '2028', '1 other dept batch passout year'],
+    ['2022 - 2025', '2025', '2 completed range passout year'],
+    ['2022–2025', '2025', '2 completed en-dash passout year'],
     ['2025', '2025', '3 end year only'],
     ['2022', '2022', '3 plus two end only'],
     ['2020', '2020', '3 sslc end only'],
@@ -60,7 +59,7 @@ foreach ($cases as [$in, $want, $label]) {
 
 $bca = $previewEducationDuration('2025');
 $mca = $previewEducationDuration('MCA2025-27-S3');
-$assert($bca === '2025' && $mca === '2025 - 2027', '8 records independent (BCA end-only vs MCA batch)');
+$assert($bca === '2025' && $mca === '2027', '8 records independent (BCA year vs MCA batch passout)');
 
 $js = (string) file_get_contents(dirname(__DIR__, 2) . '/js/resume-builder.js');
 $assert(!str_contains($js, 'educationProgramYears'), 'no course-duration invention helper in JS');

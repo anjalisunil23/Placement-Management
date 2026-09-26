@@ -1480,24 +1480,20 @@
   function previewEducationDuration(row) {
     const raw = String(row.year || '').trim();
     if (!raw) return '';
+    if (typeof passoutYearLabel === 'function') return passoutYearLabel(raw);
 
-    // Explicit full range already on this record: "2022 - 2025" / "2022–2025"
     const fullRange = raw.match(/((?:19|20)\d{2})\s*[-–—−]\s*((?:19|20)\d{2})/);
-    if (fullRange) return fullRange[1] + ' - ' + fullRange[2];
+    if (fullRange) return fullRange[2];
 
-    // Batch-style range on this record only: e.g. "MCA2025-27-S3" → 2025 - 2027
     const shortRange = raw.match(/((?:19|20)\d{2})\s*[-–—−]\s*(\d{2})(?!\d)/);
     if (shortRange) {
       const start = Number(shortRange[1]);
-      const endTwo = Number(shortRange[2]);
-      const end = Math.floor(start / 100) * 100 + endTwo;
-      if (end >= start) return start + ' - ' + end;
+      const end = Math.floor(start / 100) * 100 + Number(shortRange[2]);
+      if (end >= start) return String(end);
     }
 
-    // Single year (or first year found) — display only what exists; do not invent a range
     const yearOnly = passingYear(raw);
     if (yearOnly > 0) return String(yearOnly);
-
     return raw;
   }
 

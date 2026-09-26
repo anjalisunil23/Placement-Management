@@ -64,7 +64,7 @@ const NAV = [
   {
     group: "mock",
     icon: "bi-lightning-charge-fill",
-    label: "Mock",
+    label: "Practice",
     roles: ['admin', 'placement_officer', 'student', 'staff'],
     children: [
       {

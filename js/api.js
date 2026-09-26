@@ -1976,6 +1976,22 @@ function formatDate(iso) {
   } catch { return '—'; }
 }
 
+/** Passout year from a qualification month/year or batch code. Uses only that value. */
+function passoutYearLabel(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const full = raw.match(/((?:19|20)\d{2})\s*[-–—−]\s*((?:19|20)\d{2})/);
+  if (full) return full[2];
+  const short = raw.match(/((?:19|20)\d{2})\s*[-–—−]\s*(\d{2})(?!\d)/);
+  if (short) {
+    const start = Number(short[1]);
+    const end = Math.floor(start / 100) * 100 + Number(short[2]);
+    if (end >= start) return String(end);
+  }
+  const single = raw.match(/(19|20)\d{2}/);
+  return single ? single[0] : raw;
+}
+
 function formatRelativeTime(iso) {
   if (!iso) return '—';
   try {
