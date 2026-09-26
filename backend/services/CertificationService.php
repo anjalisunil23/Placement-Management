@@ -62,12 +62,15 @@ final class CertificationService
         if (is_array($progress) && (string) ($progress['status'] ?? '') === 'completed' && self::hasProof($progress)) {
             return 'completed';
         }
-        $due = (string) ($certification['dueDate'] ?? '');
-        if ($due !== '' && $due < self::today()) {
-            return 'overdue';
-        }
 
         return 'available';
+    }
+
+    public static function isPastDue(array $certification): bool
+    {
+        $due = (string) ($certification['dueDate'] ?? '');
+
+        return $due !== '' && $due < self::today();
     }
 
     /**
@@ -100,6 +103,9 @@ final class CertificationService
         $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $due, new \DateTimeZone(self::TZ));
         if (!$date || $date->format('Y-m-d') !== $due) {
             return ['ok' => false, 'message' => 'Due date must be a valid date in YYYY-MM-DD format.', 'data' => []];
+        }
+        if ($due < self::today()) {
+            return ['ok' => false, 'message' => 'Due date cannot be in the past.', 'data' => []];
         }
         if (strlen($description) > 2000) {
             return ['ok' => false, 'message' => 'Description must be 2000 characters or fewer.', 'data' => []];
@@ -342,8 +348,9 @@ final class CertificationService
             throw new \RuntimeException('You do not have permission to access this proof.', 403);
         } elseif ($studentId === null || $studentId === '') {
             throw new \InvalidArgumentException('Student id is required.');
+        } else {
+            $this->assertOfficerCanView($user, $row);
         }
-        $this->assertOfficerCanView($user, $row);
 
         $progress = $this->progress->findByPair($studentId, $certificationId);
         if (!is_array($progress) || !self::hasProof($progress)) {
@@ -719,6 +726,7 @@ final class CertificationService
             'name' => (string) ($certification['name'] ?? ''),
             'url' => (string) ($certification['url'] ?? ''),
             'dueDate' => (string) ($certification['dueDate'] ?? ''),
+            'pastDue' => self::isPastDue($certification),
             'description' => (string) ($certification['description'] ?? ''),
             'visibility' => (string) ($certification['visibility'] ?? 'departments'),
             'departmentIds' => array_values($certification['departmentIds'] ?? []),

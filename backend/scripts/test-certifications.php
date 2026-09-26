@@ -54,7 +54,15 @@ $check(!CertificationService::validate(['name' => 'Python', 'url' => 'https://ex
 $future = ['dueDate' => '2099-01-01'];
 $past = ['dueDate' => '2000-01-01'];
 $check(CertificationService::displayStatus($future, null) === 'available', '7 no proof before due date is available');
-$check(CertificationService::displayStatus($past, null) === 'overdue', '8 no proof after due date is overdue');
+$check(CertificationService::displayStatus($past, null) === 'available', '8 past due date stays available');
+$check(CertificationService::isPastDue($past) && !CertificationService::isPastDue($future), '8b past due is only a warning flag');
+$pastDate = CertificationService::validate([
+    'name' => 'Python',
+    'url' => 'https://example.com',
+    'dueDate' => '2000-01-01',
+    'visibility' => 'all',
+]);
+$check(!$pastDate['ok'], '8c past due date is rejected');
 $completed = ['status' => 'completed', 'proofPath' => 's3://bucket/certification-proofs/file.pdf'];
 $check(CertificationService::displayStatus($past, $completed) === 'completed', '9 proof makes status completed');
 
