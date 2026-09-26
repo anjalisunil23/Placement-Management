@@ -18,17 +18,17 @@ function esc(s) {
 function deptLabel(code, name) {
   const c = String(code || '').trim();
   const n = String(name || '').trim();
-  if (c && n && c.toLowerCase() !== n.toLowerCase()) return `${c} â€” ${n}`;
-  return n || c || 'â€”';
+  if (c && n && c.toLowerCase() !== n.toLowerCase()) return `${c} — ${n}`;
+  return n || c || '—';
 }
 
 function formatMoney(amount, per) {
   const raw = String(amount || '').trim();
   if (!raw) return '';
-  const numeric = raw.replace(/[â‚¹,\s]/g, '');
+  const numeric = raw.replace(/[₹,\s]/g, '');
   if (/^\d+(\.\d+)?$/.test(numeric)) {
     const n = Number(numeric);
-    const formatted = 'â‚¹' + n.toLocaleString('en-IN', { maximumFractionDigits: n % 1 ? 2 : 0 });
+    const formatted = '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: n % 1 ? 2 : 0 });
     return per ? `${formatted}/${per}` : formatted;
   }
   if (per && !/\/\s*(month|week|one-?time)/i.test(raw)) return `${raw}/${per}`;
@@ -67,7 +67,7 @@ function jobTypeLabel(type) {
 
 function statusBadge(status) {
   const map = { draft: ['muted', 'Draft'], published: ['success', 'Published'], closed: ['warning', 'Closed'] };
-  const pair = map[status] || ['muted', status || 'â€”'];
+  const pair = map[status] || ['muted', status || '—'];
   return `<span class="badge-soft ${pair[0]}">${pair[1]}</span>`;
 }
 
@@ -158,13 +158,55 @@ function syncCompensationUi() {
   $('unpaidNote').classList.toggle('d-none', !(internship && type === 'unpaid'));
   $('amountLabel').textContent = type === 'fee' ? 'Internship fee' : 'Stipend amount';
   $('amountHelp').textContent = type === 'fee'
-    ? 'Shown as Fee: â‚¹2,500.'
-    : '8000 with Monthly is shown as Stipend: â‚¹8,000/month.';
+    ? 'Shown as Fee: ₹2,500.'
+    : '8000 with Monthly is shown as Stipend: ₹8,000/month.';
+}
+
+function showKindTab(which) {
+  const createHidden = $('createTabItem')?.classList.contains('d-none');
+  const link = document.getElementById((which === 'apply' || createHidden) ? 'applyTabLink' : 'createTabLink');
+  if (!link) return;
+  bootstrap.Tab.getOrCreateInstance(link).show();
+}
+
+function markKindChoice() {
+  document.querySelectorAll('.kind-choice').forEach(btn => {
+    const on = btn.dataset.kind === jobType;
+    btn.classList.toggle('border-primary', on);
+    btn.style.borderWidth = on ? '2px' : '';
+  });
+  if ($('createTabLink')) {
+    $('createTabLink').textContent = jobType === 'internship' ? 'Create Internship' : 'Create Part Time Job';
+  }
+  if ($('wizardTitle') && !editingId) {
+    $('wizardTitle').textContent = jobType === 'internship' ? 'Create Internship' : 'Create Part Time Job';
+  }
+}
+
+function selectKind(kind) {
+  const switching = kind !== jobType;
+  jobType = kind;
+  $('kindWorkspace')?.classList.remove('d-none');
+  markKindChoice();
+  syncTypeUi();
+  if (switching) {
+    const keep = jobType;
+    resetForm();
+    jobType = keep;
+    editingId = '';
+    editingStatus = 'draft';
+    syncTypeUi();
+    markKindChoice();
+  }
+  showStep(2);
+  showKindTab(access.canManage ? 'create' : 'apply');
+  loadPosts();
 }
 
 function showStep(next) {
+  if (next < 2) next = 2;
   if (next === 2 && !jobType) {
-    toast('Select Part-Time Job or Internship.', 'warn');
+    toast('Select Part Time Job or Internship.', 'warn');
     return;
   }
   if (next === 3) {
@@ -181,12 +223,13 @@ function showStep(next) {
   document.querySelectorAll('[data-step-panel]').forEach(panel => {
     panel.classList.toggle('d-none', Number(panel.dataset.stepPanel) !== step);
   });
-  $('stepBar').innerHTML = STEPS.map((label, i) => {
-    const n = i + 1;
-    const cls = n === step ? 'primary' : (n < step ? 'success' : 'muted');
-    return `<span class="badge-soft ${cls}">${n}. ${label}</span>`;
+  const labels = ['Details', 'Department', 'Preview'];
+  $('stepBar').innerHTML = labels.map((label, i) => {
+    const panel = i + 2;
+    const cls = panel === step ? 'primary' : (panel < step ? 'success' : 'muted');
+    return `<span class="badge-soft ${cls}">${i + 1}. ${label}</span>`;
   }).join('');
-  $('btnBack').classList.toggle('d-none', step === 1);
+  $('btnBack').classList.toggle('d-none', step === 2);
   const draftVisible = step > 1 && editingStatus !== 'published';
   $('btnSaveDraft').classList.toggle('d-none', !draftVisible);
   $('btnSaveDraft').textContent = editingId && editingStatus === 'closed' ? 'Save changes' : 'Save draft';
@@ -201,8 +244,8 @@ function renderPreview() {
     ? deptLabel(access.departmentCode, access.departmentName)
     : (access.departments.find(x => x.id === d.departmentId)
       ? deptLabel(access.departments.find(x => x.id === d.departmentId).code, access.departments.find(x => x.id === d.departmentId).name)
-      : 'â€”');
-  const duration = d.duration || (d.startDate && d.endDate ? `${d.startDate} to ${d.endDate}` : (d.endDate || d.startDate || 'â€”'));
+      : '—');
+  const duration = d.duration || (d.startDate && d.endDate ? `${d.startDate} to ${d.endDate}` : (d.endDate || d.startDate || '—'));
   $('previewCard').innerHTML = postCardHtml({
     ...d,
     jobTypeLabel: jobTypeLabel(d.jobType),
@@ -253,7 +296,6 @@ function fillForm(post) {
 function resetForm() {
   editingId = '';
   editingStatus = 'draft';
-  jobType = '';
   ['fieldTitle','fieldCompany','fieldDescription','fieldSkills','fieldEligibility','fieldMinCgpa','fieldVacancies','fieldLocation','fieldHours','fieldStipend','fieldAmount','fieldDuration','fieldContact','fieldExtra'].forEach(id => { $(id).value = ''; });
   ['fieldWorkMode','fieldCompType','fieldFrequency','fieldStart','fieldEnd','fieldDeadline'].forEach(id => { $(id).value = ''; });
   $('fieldAttachment').value = '';
@@ -263,38 +305,39 @@ function resetForm() {
 }
 
 function openWizard(post) {
-  if (post) {
-    editingId = post.id;
-    editingStatus = post.status || 'draft';
-    fillForm(post);
-    $('wizardTitle').textContent = 'Edit internal job post';
-  } else {
-    resetForm();
-    $('wizardTitle').textContent = 'Create Internal Job Post';
-  }
-  $('browser').classList.add('d-none');
-  $('listHeader').classList.add('d-none');
-  $('wizard').classList.remove('d-none');
-  showStep(post ? 2 : 1);
+  if (!post) return;
+  jobType = post.jobType || jobType;
+  $('kindWorkspace')?.classList.remove('d-none');
+  editingId = post.id;
+  editingStatus = post.status || 'draft';
+  fillForm(post);
+  markKindChoice();
+  $('wizardTitle').textContent = jobType === 'internship' ? 'Edit internship' : 'Edit part time job';
+  showKindTab('create');
+  showStep(2);
 }
 
 function closeWizard() {
-  $('wizard').classList.add('d-none');
-  $('browser').classList.remove('d-none');
-  $('listHeader').classList.remove('d-none');
+  const keep = jobType;
+  resetForm();
+  jobType = keep;
+  syncTypeUi();
+  markKindChoice();
+  showStep(2);
+  showKindTab('apply');
 }
 
 function postCardHtml(p, preview) {
-  const comp = p.compensationLabel || 'â€”';
+  const comp = p.compensationLabel || '—';
   return `<article class="card-surface h-100 p-3 d-flex flex-column">
     <div class="d-flex flex-wrap gap-2 mb-2">${typeBadge(p.jobType)}${statusBadge(p.status)}${p.applied ? '<span class="badge-soft success">Applied</span>' : ''}</div>
     <h3 class="h6 fw-bold mb-1">${esc(p.title || 'Untitled')}</h3>
-    <div class="small text-muted-2 mb-2">${esc(p.company || 'â€”')}</div>
+    <div class="small text-muted-2 mb-2">${esc(p.company || '—')}</div>
     <div class="small d-grid gap-1">
-      <div><i class="bi bi-diagram-3 me-2"></i>${esc(p.departmentLabel || 'â€”')}</div>
-      <div><i class="bi bi-geo-alt me-2"></i>${esc(p.workLocation || 'â€”')}</div>
-      <div><i class="bi bi-laptop me-2"></i>${esc(p.workModeLabel || 'â€”')}</div>
-      <div><i class="bi bi-calendar-range me-2"></i>${esc(p.durationLabel || 'â€”')}</div>
+      <div><i class="bi bi-diagram-3 me-2"></i>${esc(p.departmentLabel || '—')}</div>
+      <div><i class="bi bi-geo-alt me-2"></i>${esc(p.workLocation || '—')}</div>
+      <div><i class="bi bi-laptop me-2"></i>${esc(p.workModeLabel || '—')}</div>
+      <div><i class="bi bi-calendar-range me-2"></i>${esc(p.durationLabel || '—')}</div>
       <div><i class="bi bi-cash-coin me-2"></i>${esc(comp)}</div>
     </div>
     ${preview ? '' : '<div class="mt-3" data-card-actions></div>'}
@@ -309,8 +352,8 @@ function detailHtml(p) {
     ['Description', p.description],
     ['Required skills', p.requiredSkills],
     ['Eligibility', p.eligibilityCriteria],
-    ['Minimum CGPA', p.minCgpa ? String(p.minCgpa) : 'â€”'],
-    ['Vacancies', p.vacancies ? String(p.vacancies) : 'â€”'],
+    ['Minimum CGPA', p.minCgpa ? String(p.minCgpa) : '—'],
+    ['Vacancies', p.vacancies ? String(p.vacancies) : '—'],
     ['Location', p.workLocation],
     ['Work mode', p.workModeLabel],
     ['Start date', p.startDate],
@@ -322,7 +365,7 @@ function detailHtml(p) {
     ['Contact', p.contactInformation],
     ['Additional requirements', p.additionalRequirements],
   ];
-  return rows.map(([label, value]) => `<div class="mb-2"><div class="small text-muted-2">${esc(label)}</div><div>${esc(value || 'â€”')}</div></div>`).join('')
+  return rows.map(([label, value]) => `<div class="mb-2"><div class="small text-muted-2">${esc(label)}</div><div>${esc(value || '—')}</div></div>`).join('')
     + (p.attachmentUrl ? `<a class="btn btn-sm btn-outline-primary" href="${esc(p.attachmentUrl)}" target="_blank" rel="noopener">Open attachment</a>` : '');
 }
 
@@ -377,17 +420,8 @@ function fillDepartmentControls() {
 
 function applyAccessChrome() {
   const student = access.kind === 'student';
-  $('pageTitle').textContent = student ? 'Internal Jobs' : 'Internal Job Posts';
-  if (student) {
-    $('pageSub').textContent = `Part-time jobs and internships for ${deptLabel(access.departmentCode, access.departmentName)}.`;
-  } else if (access.departmentLocked) {
-    $('pageSub').textContent = `You can create and manage posts for ${deptLabel(access.departmentCode, access.departmentName)} only.`;
-  } else if (access.kind === 'admin') {
-    $('pageSub').textContent = 'Choose a department for each post. Students in that department can view and apply.';
-  } else {
-    $('pageSub').textContent = 'Internal job posts are created by an admin or a placement officer assigned to a department.';
-  }
-  $('btnCreate').classList.toggle('d-none', !access.canManage);
+  $('createTabItem')?.classList.toggle('d-none', !access.canManage);
+  if (!access.canManage && jobType) showKindTab('apply');
   const key = `${access.kind}:${access.departmentId}:${access.canManage}`;
   if (chromeKey !== key) {
     fillDepartmentControls();
@@ -404,7 +438,7 @@ function applyAccessChrome() {
 
 function filterQuery() {
   const q = new URLSearchParams();
-  q.set('jobType', $('filterJobType').value || 'all');
+  q.set('jobType', jobType || 'all');
   q.set('compensation', $('filterCompensation').value || 'all');
   q.set('workMode', $('filterWorkMode').value || 'all');
   const location = $('filterLocation').value.trim();
@@ -456,9 +490,8 @@ async function submitJob(action) {
   await loadPosts();
 }
 
-$('btnCreate').addEventListener('click', () => openWizard(null));
-$('btnCancelWizard').addEventListener('click', closeWizard);
-$('btnBack').addEventListener('click', () => showStep(Math.max(1, step - 1)));
+$('btnCancelWizard')?.addEventListener('click', closeWizard);
+$('btnBack').addEventListener('click', () => showStep(Math.max(2, step - 1)));
 $('btnNext').addEventListener('click', () => showStep(Math.min(4, step + 1)));
 $('btnSaveDraft').addEventListener('click', () => submitJob('draft'));
 $('btnPublish').addEventListener('click', () => {
@@ -472,8 +505,11 @@ document.querySelectorAll('.job-type-choice').forEach(btn => {
   });
 });
 $('fieldCompType').addEventListener('change', syncCompensationUi);
-['filterJobType','filterCompensation','filterDepartment','filterWorkMode','filterStatus'].forEach(id => {
-  $(id).addEventListener('change', () => loadPosts());
+['filterCompensation','filterDepartment','filterWorkMode','filterStatus'].forEach(id => {
+  $(id)?.addEventListener('change', () => loadPosts());
+});
+document.querySelectorAll('.kind-choice').forEach(btn => {
+  btn.addEventListener('click', () => selectKind(btn.dataset.kind || ''));
 });
 $('filterLocation').addEventListener('change', () => loadPosts());
 
