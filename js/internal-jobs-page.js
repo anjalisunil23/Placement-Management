@@ -57,6 +57,10 @@ function compensationLabel(d) {
   return '';
 }
 
+function signedOut(res) {
+  return Number(res?.status) === 401;
+}
+
 function fileBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -399,8 +403,9 @@ async function showCandidateList(post) {
   $('candidateTitle').textContent = post.title || 'Candidates';
   $('candidateMeta').textContent = [post.company, post.departmentLabel, post.jobTypeLabel].filter(Boolean).join(' · ');
   $('candidateBody').innerHTML = '<div class="text-muted-2">Loading candidates…</div>';
-  const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/applications`, { noRedirectOn401: true });
+  const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/applications`);
   const rows = res?.success && Array.isArray(res.data) ? res.data : [];
+  if (signedOut(res)) return;
   if (!res?.success) {
     $('candidateBody').innerHTML = `<div class="text-muted-2">${esc(res?.message || 'Could not load candidates.')}</div>`;
     return;
@@ -492,7 +497,8 @@ function filterQuery() {
 }
 
 async function loadPosts() {
-  const res = await api('/internal-jobs?' + filterQuery(), { noRedirectOn401: true });
+  const res = await api('/internal-jobs?' + filterQuery());
+  if (signedOut(res)) return;
   if (!res?.success) {
     posts = [];
     renderList();
@@ -524,11 +530,10 @@ async function submitJob(action) {
     payload.attachmentBase64 = await fileBase64(file);
   }
   const path = editingId ? `/internal-jobs/${encodeURIComponent(editingId)}/save` : '/internal-jobs';
-  const res = await api(path, { method: 'POST', body: payload, noRedirectOn401: true });
+  const res = await api(path, { method: 'POST', body: payload });
+  if (signedOut(res)) return;
   if (!res?.success) {
-    toast(res.status === 401
-      ? 'Your sign-in expired. Sign in again, then save the draft.'
-      : (res?.message || 'Could not save the post.'), 'error');
+    toast(res?.message || 'Could not save the post.', 'error');
     return;
   }
   toast(res.message || 'Saved.', 'success');
@@ -575,7 +580,8 @@ $('postList').addEventListener('click', async e => {
   if (btn.dataset.edit) { openWizard(post); return; }
   if (btn.dataset.publish) {
     if (!(await confirmAction({ title: 'Publish', message: `Publish "${post.title}"?`, confirmText: 'Publish', variant: 'primary' }))) return;
-    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/publish`, { method: 'POST', body: {}, noRedirectOn401: true });
+    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/publish`, { method: 'POST', body: {} });
+    if (signedOut(res)) return;
     if (!res?.success) { toast(res?.message || 'Could not publish.', 'error'); return; }
     toast(res.message || 'Published.', 'success');
     await loadPosts();
@@ -583,7 +589,8 @@ $('postList').addEventListener('click', async e => {
   }
   if (btn.dataset.close) {
     if (!(await confirmAction({ title: 'Close post', message: `Close "${post.title}"? Students will no longer be able to apply.`, confirmText: 'Close', variant: 'warning' }))) return;
-    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/close`, { method: 'POST', body: {}, noRedirectOn401: true });
+    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/close`, { method: 'POST', body: {} });
+    if (signedOut(res)) return;
     if (!res?.success) { toast(res?.message || 'Could not close the post.', 'error'); return; }
     toast('Post closed.', 'success');
     await loadPosts();
@@ -591,7 +598,8 @@ $('postList').addEventListener('click', async e => {
   }
   if (btn.dataset.delete) {
     if (!(await confirmAction({ title: 'Delete post', message: `Delete "${post.title}"?`, confirmText: 'Delete', variant: 'danger' }))) return;
-    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}`, { method: 'DELETE', noRedirectOn401: true });
+    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}`, { method: 'DELETE' });
+    if (signedOut(res)) return;
     if (!res?.success) { toast(res?.message || 'Could not delete the post.', 'error'); return; }
     toast('Post deleted.', 'success');
     await loadPosts();
@@ -603,7 +611,8 @@ $('postList').addEventListener('click', async e => {
   }
   if (btn.dataset.apply) {
     if (!(await confirmAction({ title: 'Apply', message: `Apply for "${post.title}"?`, confirmText: 'Apply', variant: 'primary' }))) return;
-    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/apply`, { method: 'POST', body: {}, noRedirectOn401: true });
+    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/apply`, { method: 'POST', body: {} });
+    if (signedOut(res)) return;
     if (!res?.success) { toast(res?.message || 'Could not apply.', 'error'); return; }
     toast('Application submitted.', 'success');
     await loadPosts();

@@ -74,8 +74,8 @@ try {
     $emitJsonError('Configuration failed: ' . $e->getMessage());
 }
 
-// Start session before any output headers (login stores session user).
-\PMS\Utils\Security::startSession();
+// Resume an existing sign-in. Do not create a session cookie on anonymous calls.
+\PMS\Utils\Security::startSession(false);
 
 // CORS — allow configured origins (supports localhost and 127.0.0.1 in dev)
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
