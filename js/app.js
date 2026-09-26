@@ -87,11 +87,12 @@ const NAV = [
   { section: "Placement", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'] },
   { href: "drives.html", icon: "bi-briefcase-fill", label: "Placement Drives", roles: ['admin', 'placement_officer', 'staff'] },
   { href: "drives.html", icon: "bi-search", label: "Browse & Apply", roles: ['student'], studentOnly: true },
+  { href: "job-posts.html#internal", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['student'], studentOnly: true },
   { href: "get-placed.html", icon: "bi-briefcase-fill", label: "Placement details", roles: ['student'], studentOnly: true },
   { href: "drives.html", icon: "bi-search", label: "Apply for Jobs", roles: ['alumni'], alumniSeeking: true },
   { href: "students.html", icon: "bi-people-fill", label: "Students", roles: ['admin', 'placement_officer', 'staff'], hideForStaffViewer: true },
   { href: "users.html", icon: "bi-person-gear", label: "User Management", roles: ['admin'] },
-  { href: "job-posts.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['admin'] },
+  { href: "job-posts.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['admin', 'placement_officer'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin', 'placement_officer'] },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin', 'placement_officer'] },
   { href: "admin-settings.html", icon: "bi-gear-wide-connected", label: "System Settings", roles: ['admin'] },
@@ -127,6 +128,7 @@ const PAGE_LABELS = {
   'analytics.html': 'Analytics',
   'drives.html': 'Placement Drives',
   'job-posts.html': 'Job Posts',
+  'internal-jobs.html': 'Internal Jobs',
   'create-drive.html': 'Create Drive',
   'placement-console.html': 'Placement Drives · Console',
   'students.html': 'Students',
@@ -914,14 +916,6 @@ document.addEventListener("DOMContentLoaded", async () => {
           && pageBase !== 'placement-registration.html'
           && !sharedTestEntry) {
           window.location.replace('placement-registration.html');
-          return;
-        }
-        if (Auth.role() === 'student'
-          && Auth._profileIncomplete
-          && pageBase !== 'settings.html'
-          && pageBase !== 'placement-registration.html'
-          && !sharedTestEntry) {
-          window.location.replace('settings.html');
           return;
         }
         if (document.body?.dataset?.page) renderShell(shellActivePage());

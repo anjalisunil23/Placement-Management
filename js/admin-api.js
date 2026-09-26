@@ -161,6 +161,7 @@ const AdminApi = {
       loginEmail: c.loginEmail || (hasLogin ? c.email : '') || '',
       companyName: c.companyName || '',
       companyWebsite: c.website || c.companyWebsite || '',
+      logoUrl: c.logo?.url || c.logoUrl || '',
       hrName,
       hrEmail,
       contactNumber,

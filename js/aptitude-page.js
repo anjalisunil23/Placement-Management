@@ -1864,7 +1864,7 @@
     }).length;
     document.getElementById(`${prefix}SelectedCount`) && (document.getElementById(`${prefix}SelectedCount`).textContent = `${count} selected`);
     document.getElementById(`btn${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}DeleteSelected`)?.classList.toggle('d-none', count === 0);
-    const visibleIds = tests.filter((t) => String(t.contestType) === contestType && isContestManageActive(t)).map((t) => String(t.id || '')).filter(Boolean);
+    const visibleIds = tests.filter((t) => String(t.contestType) === contestType).map((t) => String(t.id || '')).filter(Boolean);
     const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedManageTestIds.has(id));
     const selectAll = document.getElementById(`${prefix}SelectAllVisible`);
     if (selectAll) {
@@ -5180,19 +5180,18 @@
 
   function renderManageContestSections(contestType, listRoot) {
     const all = tests.filter((t) => String(t.contestType) === contestType);
-    const active = all.filter((t) => isContestManageActive(t));
     const label = contestType === 'monthly' ? 'monthly' : 'weekly';
     const bulkBar = document.getElementById(contestType === 'monthly' ? 'manageMonthlyContestsBulkActions' : 'manageWeeklyContestsBulkActions');
 
     if (!listRoot) return;
-    if (!active.length) {
+    if (!all.length) {
       bulkBar?.classList.add('d-none');
-      listRoot.innerHTML = `<p class="text-muted-2 mb-0">No active ${label} contests.</p>`;
+      listRoot.innerHTML = `<p class="text-muted-2 mb-0">No ${label} contests yet.</p>`;
       updateContestSelectionToolbar(contestType);
       return;
     }
     bulkBar?.classList.remove('d-none');
-    listRoot.innerHTML = renderManageContestActiveTable(active, `No active ${label} contests.`);
+    listRoot.innerHTML = renderManageContestActiveTable(all, `No ${label} contests yet.`);
     bindManageListActions(listRoot);
     updateContestSelectionToolbar(contestType);
   }
@@ -7062,7 +7061,7 @@
     document.getElementById('btnManageTestsDeleteSelected')?.addEventListener('click', () => deleteSelectedManageTests());
     document.getElementById('manageWeeklyContestsSelectAllVisible')?.addEventListener('change', (e) => {
       const on = e.target.checked;
-      tests.filter((t) => String(t.contestType) === 'weekly' && isContestManageActive(t)).forEach((t) => {
+      tests.filter((t) => String(t.contestType) === 'weekly').forEach((t) => {
         const id = String(t.id || '');
         if (!id) return;
         if (on) selectedManageTestIds.add(id);
@@ -7073,7 +7072,7 @@
     document.getElementById('btnManageWeeklyContestsDeleteSelected')?.addEventListener('click', () => deleteSelectedManageTests('weekly'));
     document.getElementById('manageMonthlyContestsSelectAllVisible')?.addEventListener('change', (e) => {
       const on = e.target.checked;
-      tests.filter((t) => String(t.contestType) === 'monthly' && isContestManageActive(t)).forEach((t) => {
+      tests.filter((t) => String(t.contestType) === 'monthly').forEach((t) => {
         const id = String(t.id || '');
         if (!id) return;
         if (on) selectedManageTestIds.add(id);

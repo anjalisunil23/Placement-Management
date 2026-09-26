@@ -1972,6 +1972,61 @@ final class AdminController
         ], $companyUserId !== '' ? 'Company profile and login created.' : 'Company registered.', 201);
     }
 
+    /** POST /api/admin/companies/{id}/logo — optional logo while registering or updating a company */
+    public function uploadCompanyLogo(string $id): void
+    {
+        RBACMiddleware::requirePlacementOfficer();
+        $model = new CompanyModel();
+        $company = $model->findById($id);
+        if (!$company) {
+            Response::notFound('Company not found.');
+        }
+        $file = $_FILES['logo'] ?? $_FILES['photo'] ?? null;
+        if (!is_array($file)) {
+            Response::error('Company logo is required.', 400);
+        }
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $error = Security::validateUploadedFile(
+            $file,
+            2 * 1024 * 1024,
+            Security::allowedPhotoExtensions()
+        );
+        if ($error) {
+            Response::error($error, 400);
+        }
+
+        $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $hintName = 'company_logo_' . (string) $company['_id'] . '_' . time() . '.' . $ext;
+        $storage = new ObjectStorageService($config);
+        try {
+            $path = $storage->putUploadedFile(
+                ObjectStorageService::FOLDER_PHOTOS,
+                $hintName,
+                $file
+            );
+        } catch (\Throwable $e) {
+            Response::error('Failed to save company logo.', 500);
+        }
+
+        $old = is_array($company['logo'] ?? null) ? $company['logo'] : [];
+        if (!empty($old['path'])) {
+            $storage->delete((string) $old['path']);
+        }
+
+        $filename = $storage->storedNameFromUri($path);
+        $relative = $storage->mediaUrl(ObjectStorageService::FOLDER_PHOTOS, $filename);
+        $model->update((string) $company['_id'], [
+            'logo' => [
+                'file'       => $filename,
+                'path'       => $path,
+                'url'        => $relative,
+                'uploadedAt' => DocumentHelper::now(),
+            ],
+        ]);
+        Response::success(['url' => $relative], 'Company logo saved.');
+    }
+
     /** GET /api/admin/alumni-referrals */
     public function listAlumniReferrals(): void
     {

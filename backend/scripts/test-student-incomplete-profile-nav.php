@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Incomplete profile must open Profile & Resumes; complete students go to dashboard.
+ * Student profile details are optional. Policy registration still gates the portal.
  *
  * Usage: php backend/scripts/test-student-incomplete-profile-nav.php
  */
@@ -28,22 +28,16 @@ $svc = (string) file_get_contents($root . '/backend/services/StudentProfileEditS
 $settings = (string) file_get_contents($root . '/settings.html');
 
 $assert(
-    preg_match('/if\s*\(\s*r\s*===\s*[\'"]student[\'"]\s*&&\s*this\._profileIncomplete\s*\)/', $api) === 1,
-    'homePage routes incomplete students to settings'
+    preg_match('/if\s*\(\s*r\s*===\s*[\'"]student[\'"]\s*&&\s*this\._profileIncomplete\s*\)/', $api) !== 1,
+    'homePage does not force incomplete students onto settings'
 );
 $assert(
-    str_contains($api, "return 'settings.html';")
-        && str_contains($api, '_profileIncomplete'),
-    'homePage returns settings.html when profile is incomplete'
+    !str_contains($api, "window.location.replace('settings.html')"),
+    'enrichFromProfile does not redirect incomplete students to settings'
 );
 $assert(
-    str_contains($api, "window.location.replace('settings.html')"),
-    'enrichFromProfile hard-redirects incomplete students to settings'
-);
-$assert(
-    str_contains($app, 'Auth._profileIncomplete')
-        && str_contains($app, "window.location.replace('settings.html')"),
-    'app.js gates non-settings pages when profile is incomplete'
+    !str_contains($app, 'Auth._profileIncomplete'),
+    'app.js does not block other pages when the student profile is incomplete'
 );
 $assert(str_contains($app, 'studentNeedsPlacementRegistration'), 'app.js still enforces policy registration gate');
 

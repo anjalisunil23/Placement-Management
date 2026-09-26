@@ -106,6 +106,7 @@ use PMS\Admin\AdminController;
 use PMS\Alumni\AlumniController;
 use PMS\Api\AptitudeController;
 use PMS\Api\CodingController;
+use PMS\Api\InternalJobController;
 use PMS\Api\JobFeedController;
 use PMS\Api\PublicController;
 use PMS\Auth\AuthController;
@@ -217,6 +218,7 @@ $routes = [
     ['PUT',    '/admin/companies/{id}',              [AdminController::class, 'updateCompany']],
     ['DELETE', '/admin/companies/{id}',              [AdminController::class, 'deleteCompany']],
     ['POST',   '/admin/companies/register',         [AdminController::class, 'registerCompany']],
+    ['POST',   '/admin/companies/{id}/logo',        [AdminController::class, 'uploadCompanyLogo']],
     ['GET',    '/admin/recommendations',            [AdminController::class, 'listRecommendations']],
     ['PUT',    '/admin/recommendations/{id}/status', [AdminController::class, 'updateRecommendationStatus']],
     ['PUT',    '/admin/recommendations/{id}',       [AdminController::class, 'updateRecommendation']],
@@ -572,6 +574,17 @@ $routes = [
     ['GET',  '/coding/student/company-block/sets/{id}/document', [CodingController::class, 'streamStudentCompanyBlockDocument']],
     ['POST', '/coding/ai/extract-jd', [CodingController::class, 'extractAiJobDescription']],
     ['POST', '/coding/ai/save-company-block', [CodingController::class, 'saveAiCompanyBlockSet']],
+
+    // Internal job posts (part-time and internship, department scoped)
+    ['GET',    '/internal-jobs',                    [InternalJobController::class, 'index']],
+    ['POST',   '/internal-jobs',                    [InternalJobController::class, 'create']],
+    ['GET',    '/internal-jobs/{id}/applications',  [InternalJobController::class, 'applications']],
+    ['POST',   '/internal-jobs/{id}/publish',       [InternalJobController::class, 'publish']],
+    ['POST',   '/internal-jobs/{id}/close',         [InternalJobController::class, 'close']],
+    ['POST',   '/internal-jobs/{id}/save',          [InternalJobController::class, 'save']],
+    ['POST',   '/internal-jobs/{id}/apply',         [InternalJobController::class, 'apply']],
+    ['GET',    '/internal-jobs/{id}',               [InternalJobController::class, 'show']],
+    ['DELETE', '/internal-jobs/{id}',               [InternalJobController::class, 'delete']],
 
     // Health & public
     ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],

@@ -482,7 +482,8 @@ const PAGE_PERMS = {
   'dashboard.html':     ROLES,
   'analytics.html':     ['admin','placement_officer'],
   'drives.html':        ['admin','placement_officer','student','alumni','staff'],
-  'job-posts.html':     ['admin','placement_officer','staff','alumni'],
+  'job-posts.html':     ['admin','placement_officer','staff','alumni','student'],
+  'internal-jobs.html': ['admin','placement_officer','student'],
   'create-drive.html':  ['admin','placement_officer'],
   'tracking.html':      ['admin','placement_officer'],
   'students.html':      ['admin','placement_officer','staff'],
@@ -522,7 +523,7 @@ const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html',
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-aptitude.html', 'mock-coding.html'];
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
-const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'mock-aptitude.html', 'mock-coding.html'];
+const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'job-posts.html', 'internal-jobs.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'mock-aptitude.html', 'mock-coding.html'];
 
 /** Placement policy PDF version (step 1). */
 const PLACEMENT_POLICY_VERSION = 'ajce-placement-2026-09';
@@ -722,10 +723,6 @@ const Auth = {
     if (r === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
     }
-    // Incomplete academic/contact profile → Profile & Resumes first.
-    if (r === 'student' && this._profileIncomplete) {
-      return 'settings.html';
-    }
     if (u?.dashboard) {
       const page = String(u.dashboard).replace(/^\//, '').split('#')[0];
       if (page && this.isAllowed(page)) return page;
@@ -736,11 +733,6 @@ const Auth = {
     if (this.role() === 'student' && studentNeedsPlacementRegistration()) {
       if (!isSharedAptitudeTestUrl(next)) {
         return 'placement-registration.html';
-      }
-    }
-    if (this.role() === 'student' && this._profileIncomplete) {
-      if (!isSharedAptitudeTestUrl(next)) {
-        return 'settings.html';
       }
     }
     const raw = (next || '').trim();
@@ -815,6 +807,7 @@ const Auth = {
         registerNumber: merged.registerNumber || prev.registerNumber || '',
         studentId: merged.studentId || prev.studentId || '',
         classBatch: merged.classBatch || prev.classBatch || '',
+        stud_class: merged.stud_class || prev.stud_class || '',
         assignedClassBatches: Array.isArray(merged.assignedClassBatches)
           ? merged.assignedClassBatches
           : (Array.isArray(prev.assignedClassBatches) ? prev.assignedClassBatches : []),
@@ -1110,6 +1103,8 @@ const Auth = {
         departmentAesId: aesDeptId || prev.departmentAesId || '',
         branch: p.branch || p.programme || prev.branch || '',
         programme: p.programme || p.branch || prev.programme || '',
+        classBatch: String(p.classBatch || p.stud_class || prev.classBatch || '').trim(),
+        stud_class: String(p.stud_class || p.classBatch || prev.stud_class || '').trim(),
         policyAccepted: Object.prototype.hasOwnProperty.call(p, 'policyAccepted')
           ? (p.policyAccepted === true || p.policyAccepted === 1 || p.policyAccepted === '1')
           : (Object.prototype.hasOwnProperty.call(u, 'policyAccepted')
@@ -1168,38 +1163,7 @@ const Auth = {
         }) ?? resolvedCgpa ?? merged.cgpa ?? prev.cgpa,
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
-      // Incomplete profile: send student to Profile & Resumes until fields are filled.
-      // Policy registration still takes priority (handled by homePage / app gate).
-      if (role === 'student' && Array.isArray(p.missingFields) && p.missingFields.length) {
-        this._profileIncomplete = true;
-        const page = (document.body?.dataset?.page || '').split('#')[0];
-        const awaitingPolicy = typeof studentNeedsPlacementRegistration === 'function'
-          && studentNeedsPlacementRegistration();
-        const onPolicyPage = page === 'placement-registration.html';
-        const onSettingsPage = page === 'settings.html';
-        const onSharedTest = typeof isSharedAptitudeTestUrl === 'function'
-          && (isSharedAptitudeTestUrl(page + (typeof location !== 'undefined' ? location.search : ''))
-            || isSharedAptitudeTestUrl(typeof location !== 'undefined' ? location.pathname + location.search : ''));
-        try {
-          if (!sessionStorage.getItem('ph_missing_fields_reminded') && !onPolicyPage && !onSettingsPage && !onSharedTest) {
-            sessionStorage.setItem('ph_missing_fields_reminded', '1');
-            const names = p.missingFields.slice(0, 5).join(', ');
-            const extra = p.missingFields.length > 5 ? ` and ${p.missingFields.length - 5} more` : '';
-            toast(`Complete your profile first: ${names}${extra}.`, 'warn');
-          }
-        } catch (_) { /* sessionStorage blocked */ }
-
-        if (!opts.skipIncompleteRedirect
-          && !awaitingPolicy
-          && !onPolicyPage
-          && !onSettingsPage
-          && !onSharedTest
-          && page
-        ) {
-          window.location.replace('settings.html');
-          return true;
-        }
-      } else if (role === 'student') {
+      if (role === 'student') {
         this._profileIncomplete = false;
       }
       return true;
@@ -1506,6 +1470,22 @@ const RegisteredCompanies = {
       return res.data;
     }
     toast(res.message || 'Could not register company.', res.status === 409 ? 'warn' : 'error');
+    return null;
+  },
+  async uploadLogo(companyId, file) {
+    if (!(await requireWriteSession())) return null;
+    if (!companyId || !file) return null;
+    const form = new FormData();
+    form.append('logo', file, file.name);
+    const res = await api(`/admin/companies/${encodeURIComponent(companyId)}/logo`, {
+      method: 'POST',
+      body: form,
+    });
+    if (res.success) {
+      await this.fetch();
+      return res.data;
+    }
+    toast(res.message || 'Could not upload company logo.', 'error');
     return null;
   },
   async addSimple(payload) {
