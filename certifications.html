@@ -159,12 +159,14 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260926certboard"></script>
-<script src="js/app.js?v=20260926certboard"></script>
+<script src="js/api.js?v=20260926certfix"></script>
+<script src="js/app.js?v=20260926certfix"></script>
 <script>
 function escHtml(value) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
+
+const certificationState = { rows: [], departments: [] };
 
 function certificationRole() {
   return (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -273,14 +275,20 @@ async function loadDepartments() {
 async function loadCertifications() {
   const body = document.getElementById('certificationRows');
   body.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4">Loading certifications…</td></tr>';
-  const res = await api('/certifications', { noRedirectOn401: true });
-  if (!res?.success) {
-    body.innerHTML = '<tr><td colspan="5" class="text-danger p-4">Could not load certifications.</td></tr>';
-    toast(res?.message || 'Could not load certifications.', 'error');
-    return;
+  try {
+    const res = await api('/certifications', { noRedirectOn401: true });
+    if (!res?.success) {
+      certificationState.rows = [];
+      body.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4">No certifications yet.</td></tr>';
+      if (res?.message) toast(res.message, 'error');
+      return;
+    }
+    certificationState.rows = Array.isArray(res.data) ? res.data : [];
+    renderCertifications();
+  } catch (_err) {
+    certificationState.rows = [];
+    body.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4">No certifications yet.</td></tr>';
   }
-  certificationState.rows = Array.isArray(res.data) ? res.data : [];
-  renderCertifications();
 }
 
 function selectedDepartmentIds() {
