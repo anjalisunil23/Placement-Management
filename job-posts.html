@@ -113,6 +113,12 @@
   </div>
   <div id="postList"></div>
 </div>
+<div id="candidatePanel" class="d-none card-surface p-3 p-md-4">
+  <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="btnBackToJobs"><i class="bi bi-arrow-left me-1"></i>Back to jobs</button>
+  <h3 class="h6 fw-bold mb-1" id="candidateTitle">Candidates</h3>
+  <p class="small text-muted-2 mb-3" id="candidateMeta"></p>
+  <div id="candidateBody"></div>
+</div>
 </div>
 <div class="tab-pane fade show active" id="ijCreatePane">
 <div id="wizard">
@@ -298,7 +304,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260926ijtab"></script>
 <script src="js/app.js?v=20260926ijtab"></script>
-<script src="js/internal-jobs-page.js?v=20260926ijkind"></script>
+<script src="js/internal-jobs-page.js?v=20260926ijcand"></script>
 <script>
 onAppReady(() => {
 const role = Auth.role();

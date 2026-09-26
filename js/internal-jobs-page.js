@@ -198,6 +198,7 @@ function selectKind(kind) {
     syncTypeUi();
     markKindChoice();
   }
+  showCreatedJobs();
   showStep(2);
   showKindTab(access.canManage ? 'create' : 'apply');
   loadPosts();
@@ -323,6 +324,7 @@ function closeWizard() {
   jobType = keep;
   syncTypeUi();
   markKindChoice();
+  showCreatedJobs();
   showStep(2);
   showKindTab('apply');
 }
@@ -369,22 +371,45 @@ function detailHtml(p) {
     + (p.attachmentUrl ? `<a class="btn btn-sm btn-outline-primary" href="${esc(p.attachmentUrl)}" target="_blank" rel="noopener">Open attachment</a>` : '');
 }
 
+function showCreatedJobs() {
+  $('candidatePanel')?.classList.add('d-none');
+  $('browser')?.classList.remove('d-none');
+}
+
+async function showCandidateList(post) {
+  $('browser')?.classList.add('d-none');
+  $('candidatePanel')?.classList.remove('d-none');
+  $('candidateTitle').textContent = post.title || 'Candidates';
+  $('candidateMeta').textContent = [post.company, post.departmentLabel, post.jobTypeLabel].filter(Boolean).join(' · ');
+  $('candidateBody').innerHTML = '<div class="text-muted-2">Loading candidates…</div>';
+  const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/applications`, { noRedirectOn401: true });
+  const rows = res?.success && Array.isArray(res.data) ? res.data : [];
+  if (!res?.success) {
+    $('candidateBody').innerHTML = `<div class="text-muted-2">${esc(res?.message || 'Could not load candidates.')}</div>`;
+    return;
+  }
+  $('candidateBody').innerHTML = rows.length
+    ? `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Register no.</th><th>Department</th><th>Applied</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.studentName)}</td><td>${esc(r.registerNumber)}</td><td>${esc(r.departmentCode)}</td><td>${esc(formatDate(r.appliedAt))}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="text-muted-2">No candidates have applied yet.</div>';
+}
+
 function renderList() {
   const canManage = !!access.canManage;
+  const emptyLabel = jobType === 'internship' ? 'No internships created yet.' : 'No part-time jobs created yet.';
   $('postList').innerHTML = posts.length ? `<div class="row g-3">${posts.map(p => `
     <div class="col-md-6 col-xl-4">
       ${postCardHtml(p, false).replace('<div class="mt-3" data-card-actions></div>', `<div class="d-flex flex-wrap gap-2 mt-3">
+        ${canManage ? `<button class="btn btn-sm btn-primary" type="button" data-applicants="${esc(p.id)}">Apply candidate list (${p.applicantCount || 0})</button>` : ''}
         <button class="btn btn-sm btn-outline-secondary" type="button" data-detail="${esc(p.id)}">Details</button>
         ${canManage ? `<button class="btn btn-sm btn-outline-primary" type="button" data-edit="${esc(p.id)}">Edit</button>` : ''}
         ${canManage && p.status !== 'published' ? `<button class="btn btn-sm btn-success" type="button" data-publish="${esc(p.id)}">Publish</button>` : ''}
         ${canManage && p.status === 'published' ? `<button class="btn btn-sm btn-outline-warning" type="button" data-close="${esc(p.id)}">Close</button>` : ''}
-        ${canManage ? `<button class="btn btn-sm btn-outline-secondary" type="button" data-applicants="${esc(p.id)}">Applicants (${p.applicantCount || 0})</button>` : ''}
         ${canManage ? `<button class="btn btn-sm btn-outline-danger" type="button" data-delete="${esc(p.id)}">Delete</button>` : ''}
         ${!canManage && p.canApply ? `<button class="btn btn-sm btn-primary" type="button" data-apply="${esc(p.id)}">Apply</button>` : ''}
         ${!canManage && p.applyBlockReason && p.status === 'published' && !p.applied ? `<div class="small text-muted-2 w-100">${esc(p.applyBlockReason)}</div>` : ''}
       </div>`)}
     </div>`).join('')}</div>`
-    : '<div class="card-surface text-muted-2 text-center p-4">No internal job posts match these filters.</div>';
+    : `<div class="card-surface text-muted-2 text-center p-4">${emptyLabel}</div>`;
 }
 
 function fillDepartmentControls() {
@@ -512,6 +537,7 @@ document.querySelectorAll('.kind-choice').forEach(btn => {
   btn.addEventListener('click', () => selectKind(btn.dataset.kind || ''));
 });
 $('filterLocation').addEventListener('change', () => loadPosts());
+$('btnBackToJobs')?.addEventListener('click', showCreatedJobs);
 
 $('postList').addEventListener('click', async e => {
   const btn = e.target.closest('button');
@@ -551,12 +577,7 @@ $('postList').addEventListener('click', async e => {
     return;
   }
   if (btn.dataset.applicants) {
-    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/applications`, { noRedirectOn401: true });
-    const rows = res?.success && Array.isArray(res.data) ? res.data : [];
-    $('applicantsBody').innerHTML = rows.length
-      ? `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Register no.</th><th>Applied</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.studentName)}</td><td>${esc(r.registerNumber)}</td><td>${esc(formatDate(r.appliedAt))}</td></tr>`).join('')}</tbody></table></div>`
-      : '<div class="text-muted-2">No applications yet.</div>';
-    bootstrap.Modal.getOrCreateInstance($('applicantsModal')).show();
+    await showCandidateList(post);
     return;
   }
   if (btn.dataset.apply) {
