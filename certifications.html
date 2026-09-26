@@ -261,8 +261,8 @@ function renderCertifications() {
       ? `<button type="button" class="btn btn-sm btn-outline-secondary me-1" data-cert-edit="${escHtml(row.id)}">Edit</button>
          <button type="button" class="btn btn-sm btn-outline-danger" data-cert-delete="${escHtml(row.id)}">Delete</button>`
       : '<span class="small text-muted-2">View only</span>';
-    return `<tr>
-      <td><button type="button" class="btn btn-link p-0 fw-semibold text-decoration-none" data-cert-view="${escHtml(row.id)}">${escHtml(row.name || '')}</button></td>
+    return `<tr data-cert-view="${escHtml(row.id)}" style="cursor:pointer">
+      <td class="fw-semibold">${escHtml(row.name || '')}</td>
       <td>${escHtml(visibilityLabel(row))}</td>
       <td>${escHtml(formatDate(row.dueDate))}${dueWarning(row) ? `<div class="small text-warning">${escHtml(dueWarning(row))}</div>` : ''}</td>
       <td>${escHtml(statusLabel(row))}</td>
@@ -361,17 +361,16 @@ document.getElementById('visibilitySelected')?.addEventListener('change', syncDe
 document.getElementById('addCertificationBtn')?.addEventListener('click', () => openCertificationForm(null));
 
 document.getElementById('certificationRows')?.addEventListener('click', (event) => {
-  const edit = event.target.closest('[data-cert-edit]');
-  const view = event.target.closest('[data-cert-view]');
-  const remove = event.target.closest('[data-cert-delete]');
-  const id = (edit || view || remove)?.getAttribute(edit ? 'data-cert-edit' : (view ? 'data-cert-view' : 'data-cert-delete'));
-  const row = certificationState.rows.find((item) => item.id === id);
-  if (!row) return;
-  if (remove) {
-    deleteCertification(row);
+  if (event.target.closest('[data-cert-delete]')) {
+    const id = event.target.closest('[data-cert-delete]').getAttribute('data-cert-delete');
+    const row = certificationState.rows.find((item) => item.id === id);
+    if (row) deleteCertification(row);
     return;
   }
-  openCertificationForm(row);
+  const rowEl = event.target.closest('tr[data-cert-view]');
+  if (!rowEl) return;
+  const row = certificationState.rows.find((item) => item.id === rowEl.getAttribute('data-cert-view'));
+  if (row) openCertificationForm(row);
 });
 
 document.getElementById('certificationForm')?.addEventListener('submit', async (event) => {
