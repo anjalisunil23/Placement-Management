@@ -19,27 +19,57 @@ final class Security
         return password_verify($password, $hash);
     }
 
-    public static function startSession(): void
+    public static function startSession(bool $createIfMissing = true): void
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            $config = require dirname(__DIR__) . '/config/app.php';
-            ini_set('session.cookie_httponly', '1');
-            ini_set('session.cookie_samesite', 'Lax');
-            ini_set('session.use_strict_mode', '1');
-            session_set_cookie_params([
-                'lifetime' => $config['session']['lifetime'],
-                'path'     => '/',
-                'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
-                'httponly' => true,
-                'samesite' => 'Lax',
-            ]);
-            session_start();
+        if (session_status() !== PHP_SESSION_NONE) {
+            return;
+        }
+        $config = require dirname(__DIR__) . '/config/app.php';
+        ini_set('session.cookie_httponly', '1');
+        ini_set('session.cookie_samesite', 'Lax');
+        ini_set('session.use_strict_mode', '1');
+        session_set_cookie_params([
+            'lifetime' => $config['session']['lifetime'],
+            'path'     => '/',
+            'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+
+        $incoming = $_COOKIE[session_name()] ?? '';
+        if (!is_string($incoming)) {
+            $incoming = '';
+        }
+        // Anonymous API calls must not mint a new session cookie. A 401 used to
+        // replace a valid sign-in cookie, which then failed every later page.
+        if (!$createIfMissing && $incoming === '') {
+            return;
+        }
+
+        session_start();
+        if ($createIfMissing) {
+            return;
+        }
+
+        $hasUser = isset($_SESSION['user']) && is_array($_SESSION['user']);
+        $replacedUnknownId = $incoming !== '' && session_id() !== $incoming;
+        if ($hasUser && !$replacedUnknownId) {
+            return;
+        }
+
+        $_SESSION = [];
+        session_destroy();
+        if (!headers_sent()) {
+            header_remove('Set-Cookie');
         }
     }
 
     public static function touchSession(): void
     {
-        self::startSession();
+        self::startSession(false);
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return;
+        }
         if (isset($_SESSION['user']) && is_array($_SESSION['user'])) {
             $_SESSION['last_activity'] = time();
         }
@@ -78,7 +108,10 @@ final class Security
      */
     public static function getSessionAesProfile(): array
     {
-        self::startSession();
+        self::startSession(false);
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return [];
+        }
         $profile = $_SESSION['aes_profile'] ?? [];
         return is_array($profile) ? $profile : [];
     }
@@ -106,8 +139,12 @@ final class Security
      */
     public static function getSessionUser(): ?array
     {
-        self::startSession();
-        return $_SESSION['user'] ?? null;
+        self::startSession(false);
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return null;
+        }
+        $user = $_SESSION['user'] ?? null;
+        return is_array($user) ? $user : null;
     }
 
     public static function generateId(): string

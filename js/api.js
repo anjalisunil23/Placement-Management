@@ -5700,7 +5700,7 @@ async function apiFetch(path, opts = {}) {
       const serverMsg = (json && json.message) ? String(json.message) : '';
       if (!opts.skipAuthRetry && !opts._authRetry) {
         Auth._sessionReady = false;
-        const restored = await Auth.bootstrap();
+        const restored = await Auth.bootstrap({ soft: false });
         if (restored) {
           return apiFetch(path, { ...opts, _authRetry: true });
         }
