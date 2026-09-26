@@ -322,6 +322,8 @@ $routes = [
     ['POST', '/student/resume-builder/certifications', [ResumeBuilderController::class, 'addCertification']],
     ['PUT',  '/student/resume-builder/certifications/{id}', [ResumeBuilderController::class, 'updateCertification']],
     ['POST', '/student/resume-builder/certifications/{id}/delete', [ResumeBuilderController::class, 'deleteCertification']],
+    ['GET',  '/student/resume-builder/platform-certifications', [ResumeBuilderController::class, 'listPlatformCertifications']],
+    ['PUT',  '/student/resume-builder/platform-certifications/{id}', [ResumeBuilderController::class, 'setPlatformCertificationSelected']],
     ['GET',  '/student/resume-builder/activities', [ResumeBuilderController::class, 'listActivities']],
     ['POST', '/student/resume-builder/activities', [ResumeBuilderController::class, 'addActivity']],
     ['PUT',  '/student/resume-builder/activities/{id}', [ResumeBuilderController::class, 'updateActivity']],

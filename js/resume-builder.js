@@ -146,6 +146,7 @@
     experiencesMessage: '',
     experiencesFormOpen: false,
     certifications: [],
+    platformCertifications: [],
     certificationsEditingId: '',
     certificationsMessage: '',
     certificationsFormOpen: false,
@@ -1220,6 +1221,17 @@
       ? `<div class="rb-cert-list">${state.certifications.map(certificationCardItem).join('')}</div>${addBtnHtml}`
       : (formOpen ? '' : emptyHtml);
 
+    const platformHtml = state.platformCertifications.length
+      ? `<div class="mb-3">
+          <div class="small fw-semibold mb-2">Completed certifications</div>
+          ${state.platformCertifications.map((item) => `
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="rb-platform-${esc(item.certificationId)}" data-rb-platform-cert="${esc(item.certificationId)}" ${item.selected ? 'checked' : ''} />
+              <label class="form-check-label" for="rb-platform-${esc(item.certificationId)}">${esc(item.name)}</label>
+            </div>`).join('')}
+        </div>`
+      : '';
+
     return `
       <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
         <h6 class="fw-bold mb-0">Certifications</h6>
@@ -1228,6 +1240,7 @@
       <div class="alert alert-info py-2 small mb-3" role="note">
         Include courses, certifications, workshops, trainings, MOOCs, and professional credentials relevant to your academic and career goals.
       </div>
+      ${platformHtml}
       <div class="rb-cert-summary mb-3">
         <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
           <div class="fw-semibold">Certifications Added: ${count}</div>
@@ -1578,9 +1591,12 @@
     return resumeSection('Professional Experience', items);
   }
 
+  function selectedPlatformCertifications() {
+    return (state.platformCertifications || []).filter((item) => item && item.selected !== false && item.name);
+  }
+
   function previewCertificationsHtml() {
-    if (!state.certifications.length) return '';
-    const items = state.certifications.map((c) => {
+    const manual = state.certifications.map((c) => {
       const issued = formatCertDate(c.issueDate);
       const parts = [c.issuingOrganization, issued].filter(Boolean).join(', ');
       const line = parts
@@ -1588,6 +1604,9 @@
         : esc(c.certificationName);
       return `<li>${line}</li>`;
     }).join('');
+    const platform = selectedPlatformCertifications().map((item) => `<li>${esc(item.name)}</li>`).join('');
+    const items = manual + platform;
+    if (!items) return '';
     return resumeSection('Certifications', `<ul class="rb-resume-list">${items}</ul>`);
   }
 
@@ -1746,6 +1765,7 @@
         loadProjects(),
         loadExperience(),
         loadCertifications(),
+        loadPlatformCertifications(),
         loadActivities(),
       ]);
     } finally {
@@ -2190,6 +2210,11 @@
 
     if (root.dataset.rbEventsBound === '1') return;
     root.dataset.rbEventsBound = '1';
+
+    root.addEventListener('change', (event) => {
+      if (!event.target.matches || !event.target.matches('[data-rb-platform-cert]')) return;
+      savePlatformCertificationSelection(event.target.getAttribute('data-rb-platform-cert') || '', event.target.checked);
+    });
 
     root.addEventListener('click', (event) => {
       if (event.target.closest('[data-rb-preview-back]')) {
@@ -3044,6 +3069,52 @@
     applyCertifications([]);
   }
 
+  async function loadPlatformCertifications() {
+    if (!canUseResumeBuilderApi()) {
+      state.platformCertifications = [];
+      renderCertificationsCard();
+      renderPreviewCard();
+      return;
+    }
+    try {
+      const res = await api('/student/resume-builder/platform-certifications', { skipAuthRedirect: true });
+      state.platformCertifications = res?.success && Array.isArray(res.data?.certifications)
+        ? res.data.certifications
+        : [];
+    } catch (_err) {
+      state.platformCertifications = [];
+    }
+    renderCertificationsCard();
+    if (state.previewMode) {
+      const page = root.querySelector('[data-rb-preview-page]');
+      if (page) page.outerHTML = previewPageHtml(false);
+    } else {
+      renderPreviewCard();
+    }
+  }
+
+  async function savePlatformCertificationSelection(certificationId, selected) {
+    const item = state.platformCertifications.find((row) => row.certificationId === certificationId);
+    if (!item) return;
+    item.selected = !!selected;
+    renderPreviewCard();
+    if (state.previewMode) {
+      const page = root.querySelector('[data-rb-preview-page]');
+      if (page) page.outerHTML = previewPageHtml(false);
+    }
+    const res = await api('/student/resume-builder/platform-certifications/' + encodeURIComponent(certificationId), {
+      method: 'PUT',
+      body: { selected: !!selected },
+      skipAuthRedirect: true,
+    });
+    if (!res?.success) {
+      item.selected = !selected;
+      renderCertificationsCard();
+      renderPreviewCard();
+      if (typeof toast === 'function') toast(res?.message || 'Could not update the resume certification.', 'danger');
+    }
+  }
+
   function readCertificationForm() {
     const nameEl = root.querySelector('[data-rb-cert-name]');
     const orgEl = root.querySelector('[data-rb-cert-org]');
@@ -3377,6 +3448,7 @@
     loadProjects();
     loadExperience();
     loadCertifications();
+    loadPlatformCertifications();
     loadActivities();
   }
 

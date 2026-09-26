@@ -9,6 +9,9 @@ use PMS\Models\ResumeContactLinkModel;
 use PMS\Models\ResumeActivityModel;
 use PMS\Models\ResumeCareerObjectiveModel;
 use PMS\Models\ResumeCertificationModel;
+use PMS\Models\ResumePlatformCertSelectionModel;
+use PMS\Models\CertificationModel;
+use PMS\Models\StudentCertificationModel;
 use PMS\Models\ResumeExperienceModel;
 use PMS\Models\ResumeProjectModel;
 use PMS\Models\ResumeSkillModel;
@@ -447,6 +450,71 @@ final class ResumeBuilderController
             'endDate' => $currently || $end === '' ? null : $end,
             'currentlyWorking' => $currently,
         ];
+    }
+
+    /** GET /api/student/resume-builder/platform-certifications */
+    public function listPlatformCertifications(): void
+    {
+        $studentId = $this->currentStudentId();
+        Response::success(['certifications' => $this->completedPlatformCertifications($studentId)]);
+    }
+
+    /** PUT /api/student/resume-builder/platform-certifications/{id} */
+    public function setPlatformCertificationSelected(string $id): void
+    {
+        $studentId = $this->currentStudentId();
+        $completed = false;
+        foreach ($this->completedPlatformCertifications($studentId) as $row) {
+            if ($row['certificationId'] === $id) {
+                $completed = true;
+                break;
+            }
+        }
+        if (!$completed) {
+            Response::error('Only your completed certifications can be added to the resume.', 422);
+        }
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($input)) {
+            $input = [];
+        }
+        $selected = filter_var($input['selected'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        (new ResumePlatformCertSelectionModel())->setSelected($studentId, $id, $selected);
+        Response::success(['certifications' => $this->completedPlatformCertifications($studentId)], 'Resume certification selection saved.');
+    }
+
+    /**
+     * Completed Certification-module records for the signed-in student.
+     * A missing selection row means selected. Deselection does not change completion.
+     *
+     * @return list<array{certificationId: string, name: string, url: string, completedAt: mixed, selected: bool}>
+     */
+    private function completedPlatformCertifications(string $studentId): array
+    {
+        $saved = (new ResumePlatformCertSelectionModel())->mapForStudent($studentId);
+        $certs = new CertificationModel();
+        $out = [];
+        foreach ((new StudentCertificationModel())->findByStudent($studentId) as $row) {
+            if ((string) ($row['status'] ?? '') !== 'completed') {
+                continue;
+            }
+            if (trim((string) ($row['proofPath'] ?? '')) === '') {
+                continue;
+            }
+            $certificationId = (string) ($row['certificationId'] ?? '');
+            $cert = $certificationId !== '' ? $certs->findById($certificationId) : null;
+            if (!is_array($cert) || trim((string) ($cert['name'] ?? '')) === '') {
+                continue;
+            }
+            $out[] = [
+                'certificationId' => $certificationId,
+                'name' => (string) $cert['name'],
+                'url' => (string) ($cert['url'] ?? ''),
+                'completedAt' => $row['completedAt'] ?? null,
+                'selected' => array_key_exists($certificationId, $saved) ? (bool) $saved[$certificationId] : true,
+            ];
+        }
+
+        return $out;
     }
 
     /** GET /api/student/resume-builder/certifications */

@@ -373,3 +373,13 @@ CREATE TABLE IF NOT EXISTS student_certifications (
   updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   UNIQUE KEY uniq_student_certification (pair_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS resume_platform_cert_selections (
+  id CHAR(24) NOT NULL PRIMARY KEY,
+  student_id CHAR(24) NOT NULL,
+  certification_id CHAR(24) NOT NULL,
+  selected TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uniq_resume_platform_cert (student_id, certification_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
