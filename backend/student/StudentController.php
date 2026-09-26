@@ -348,6 +348,14 @@ final class StudentController
     $out['departmentName'] = $resolvedDept['name'];
     $out['programme'] = $resolvedDept['name'];
     $out['branch'] = $resolvedDept['name'];
+    $storedBatch = trim((string) ($out['classBatch'] ?? ''));
+    $placementBatch = trim((string) ($placementRecord['stud_class'] ?? $placementRecord['classBatch'] ?? ''));
+    if ($placementBatch !== '' && ($storedBatch === '' || preg_match('/20\d{2}/', $storedBatch) !== 1)) {
+      $out['classBatch'] = $placementBatch;
+      $out['stud_class'] = $placementBatch;
+    } elseif ($storedBatch !== '') {
+      $out['stud_class'] = $storedBatch;
+    }
     $out['gender'] = (string) ($merged['gender'] ?? $personal['gender'] ?? '');
     $out['maritalStatus'] = (string) ($personal['maritalStatus'] ?? $merged['maritalStatus'] ?? '');
     if (!empty($merged['maritalStatus']) && empty($personal['maritalStatus'])) {
@@ -601,7 +609,6 @@ final class StudentController
       'placementPolicyAcceptedAt' => $now,
       'placementPolicyVersion'    => $version,
       'placementRegistration' => $registration,
-      'classBatch'       => $branch . ($mtechBranch !== '' ? ' — ' . $mtechBranch : ''),
       'personal'         => $personal,
       'profileFieldLocks'=> $locks,
     ]);

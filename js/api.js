@@ -722,10 +722,6 @@ const Auth = {
     if (r === 'student' && studentNeedsPlacementRegistration()) {
       return 'placement-registration.html';
     }
-    // Incomplete academic/contact profile → Profile & Resumes first.
-    if (r === 'student' && this._profileIncomplete) {
-      return 'settings.html';
-    }
     if (u?.dashboard) {
       const page = String(u.dashboard).replace(/^\//, '').split('#')[0];
       if (page && this.isAllowed(page)) return page;
@@ -736,11 +732,6 @@ const Auth = {
     if (this.role() === 'student' && studentNeedsPlacementRegistration()) {
       if (!isSharedAptitudeTestUrl(next)) {
         return 'placement-registration.html';
-      }
-    }
-    if (this.role() === 'student' && this._profileIncomplete) {
-      if (!isSharedAptitudeTestUrl(next)) {
-        return 'settings.html';
       }
     }
     const raw = (next || '').trim();
@@ -815,6 +806,7 @@ const Auth = {
         registerNumber: merged.registerNumber || prev.registerNumber || '',
         studentId: merged.studentId || prev.studentId || '',
         classBatch: merged.classBatch || prev.classBatch || '',
+        stud_class: merged.stud_class || prev.stud_class || '',
         assignedClassBatches: Array.isArray(merged.assignedClassBatches)
           ? merged.assignedClassBatches
           : (Array.isArray(prev.assignedClassBatches) ? prev.assignedClassBatches : []),
@@ -1110,6 +1102,8 @@ const Auth = {
         departmentAesId: aesDeptId || prev.departmentAesId || '',
         branch: p.branch || p.programme || prev.branch || '',
         programme: p.programme || p.branch || prev.programme || '',
+        classBatch: String(p.classBatch || p.stud_class || prev.classBatch || '').trim(),
+        stud_class: String(p.stud_class || p.classBatch || prev.stud_class || '').trim(),
         policyAccepted: Object.prototype.hasOwnProperty.call(p, 'policyAccepted')
           ? (p.policyAccepted === true || p.policyAccepted === 1 || p.policyAccepted === '1')
           : (Object.prototype.hasOwnProperty.call(u, 'policyAccepted')
@@ -1168,38 +1162,7 @@ const Auth = {
         }) ?? resolvedCgpa ?? merged.cgpa ?? prev.cgpa,
       });
       document.dispatchEvent(new CustomEvent('ph-user-updated'));
-      // Incomplete profile: send student to Profile & Resumes until fields are filled.
-      // Policy registration still takes priority (handled by homePage / app gate).
-      if (role === 'student' && Array.isArray(p.missingFields) && p.missingFields.length) {
-        this._profileIncomplete = true;
-        const page = (document.body?.dataset?.page || '').split('#')[0];
-        const awaitingPolicy = typeof studentNeedsPlacementRegistration === 'function'
-          && studentNeedsPlacementRegistration();
-        const onPolicyPage = page === 'placement-registration.html';
-        const onSettingsPage = page === 'settings.html';
-        const onSharedTest = typeof isSharedAptitudeTestUrl === 'function'
-          && (isSharedAptitudeTestUrl(page + (typeof location !== 'undefined' ? location.search : ''))
-            || isSharedAptitudeTestUrl(typeof location !== 'undefined' ? location.pathname + location.search : ''));
-        try {
-          if (!sessionStorage.getItem('ph_missing_fields_reminded') && !onPolicyPage && !onSettingsPage && !onSharedTest) {
-            sessionStorage.setItem('ph_missing_fields_reminded', '1');
-            const names = p.missingFields.slice(0, 5).join(', ');
-            const extra = p.missingFields.length > 5 ? ` and ${p.missingFields.length - 5} more` : '';
-            toast(`Complete your profile first: ${names}${extra}.`, 'warn');
-          }
-        } catch (_) { /* sessionStorage blocked */ }
-
-        if (!opts.skipIncompleteRedirect
-          && !awaitingPolicy
-          && !onPolicyPage
-          && !onSettingsPage
-          && !onSharedTest
-          && page
-        ) {
-          window.location.replace('settings.html');
-          return true;
-        }
-      } else if (role === 'student') {
+      if (role === 'student') {
         this._profileIncomplete = false;
       }
       return true;

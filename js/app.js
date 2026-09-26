@@ -916,14 +916,6 @@ document.addEventListener("DOMContentLoaded", async () => {
           window.location.replace('placement-registration.html');
           return;
         }
-        if (Auth.role() === 'student'
-          && Auth._profileIncomplete
-          && pageBase !== 'settings.html'
-          && pageBase !== 'placement-registration.html'
-          && !sharedTestEntry) {
-          window.location.replace('settings.html');
-          return;
-        }
         if (document.body?.dataset?.page) renderShell(shellActivePage());
       })
       .catch(() => { });
