@@ -134,6 +134,27 @@ try {
     ]);
     $check(($updated['departmentIds'] ?? []) === [$cseId], '11 admin can update certification visibility');
 
+    $officerCannotEditAdminCert = false;
+    try {
+        $service->update($officer, $selectedId, [
+            'name' => 'Changed by officer',
+            'url' => 'https://example.com/python-cse-mca',
+            'dueDate' => '2026-12-02',
+            'visibility' => 'departments',
+            'departmentIds' => [$cseId],
+        ]);
+    } catch (\RuntimeException $e) {
+        $officerCannotEditAdminCert = $e->getCode() === 403;
+    }
+    $check($officerCannotEditAdminCert, '11b officer cannot edit a certification created by the placement admin');
+
+    $ownUpdate = $service->update($officer, $officerCertId, [
+        'name' => 'CSE only certification',
+        'url' => 'https://example.com/cse-only',
+        'dueDate' => '2026-12-20',
+    ]);
+    $check(($ownUpdate['dueDate'] ?? '') === '2026-12-20', '11c officer can still edit a certification they created');
+
     $studentBlocked = false;
     try {
         $service->create($studentUser, $valid['data']);

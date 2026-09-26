@@ -690,6 +690,10 @@ final class CertificationService
         if ($locked === null) {
             return;
         }
+        $createdBy = (string) ($certification['createdBy'] ?? '');
+        if ($createdBy === '' || $createdBy !== (string) ($user['_id'] ?? '')) {
+            throw new \RuntimeException('You can only edit certifications you created. Certifications created by the placement admin are view only.', 403);
+        }
         $ids = self::normalizeIdList($certification['departmentIds'] ?? []);
         $ownOnly = (string) ($certification['visibility'] ?? '') === 'departments'
             && $ids === [$locked['id']];

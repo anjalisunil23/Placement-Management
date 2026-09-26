@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Mock · Certification · AJCE Placements</title>
+<title>Practice · Certification · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -159,8 +159,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260926certview"></script>
-<script src="js/app.js?v=20260926certview"></script>
+<script src="js/api.js?v=20260926certofficer"></script>
+<script src="js/app.js?v=20260926certofficer"></script>
 <script>
 function escHtml(value) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -180,6 +180,9 @@ function officerDepartmentId() {
 function canEditCertification(row) {
   if (certificationRole() === 'admin') return true;
   if (certificationRole() !== 'placement_officer') return false;
+  const user = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+  const myId = String(user._id || user.id || '').trim();
+  if (!myId || String(row.createdBy || '') !== myId) return false;
   const mine = officerDepartmentId();
   const ids = Array.isArray(row.departmentIds) ? row.departmentIds.map(String) : [];
   return row.visibility === 'departments' && ids.length === 1 && ids[0] === mine && mine !== '';
@@ -440,7 +443,7 @@ function renderStudentCertifications() {
     const done = row.status === 'completed';
     const uploadLabel = done ? 'Replace certificate' : 'Upload certificate';
     const viewBtn = done
-      ? `<button type="button" class="btn btn-outline-secondary" data-proof-view="${escHtml(row.id)}">View certificate</button>`
+      ? `<button type="button" class="btn btn-outline-primary" data-proof-view="${escHtml(row.id)}">View certificate</button>`
       : '';
     const description = row.description
       ? `<p class="text-muted-2 mb-2">${escHtml(row.description)}</p>`
@@ -496,12 +499,14 @@ function validateProofFile(file) {
 }
 
 async function viewOwnProof(id) {
+  const preview = window.open('', '_blank');
   const headers = {};
   const token = (typeof Auth !== 'undefined' && Auth.token) ? Auth.token() : '';
   if (token && token !== 'session' && !String(token).startsWith('demo-token')) headers.Authorization = 'Bearer ' + token;
   const apiBase = (typeof API_BASE !== 'undefined' && API_BASE) ? API_BASE : '/backend/api';
   const res = await fetch(apiBase + '/certifications/' + encodeURIComponent(id) + '/proof', { credentials: 'include', headers });
   if (!res.ok) {
+    if (preview) preview.close();
     let message = 'Could not open your certificate.';
     try {
       const json = await res.json();
@@ -513,18 +518,11 @@ async function viewOwnProof(id) {
     return;
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.target = '_blank';
-  link.rel = 'noopener';
-  const disposition = String(res.headers.get('Content-Disposition') || '');
-  const match = disposition.match(/filename="?([^"]+)"?/i);
-  if (match && match[1]) link.download = match[1];
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  const typed = blob.type ? blob : new Blob([blob], { type: res.headers.get('Content-Type') || 'application/pdf' });
+  const url = URL.createObjectURL(typed);
+  if (preview) preview.location.href = url;
+  else window.open(url, '_blank', 'noopener');
+  window.setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
 
 document.getElementById('studentCertificationList')?.addEventListener('click', (event) => {
