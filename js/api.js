@@ -1471,6 +1471,22 @@ const RegisteredCompanies = {
     toast(res.message || 'Could not register company.', res.status === 409 ? 'warn' : 'error');
     return null;
   },
+  async uploadLogo(companyId, file) {
+    if (!(await requireWriteSession())) return null;
+    if (!companyId || !file) return null;
+    const form = new FormData();
+    form.append('logo', file, file.name);
+    const res = await api(`/admin/companies/${encodeURIComponent(companyId)}/logo`, {
+      method: 'POST',
+      body: form,
+    });
+    if (res.success) {
+      await this.fetch();
+      return res.data;
+    }
+    toast(res.message || 'Could not upload company logo.', 'error');
+    return null;
+  },
   async addSimple(payload) {
     if (!(await requireWriteSession())) return null;
     const res = await api('/admin/companies', {

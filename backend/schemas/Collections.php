@@ -225,6 +225,7 @@ final class Collections
                 'description'   => 'string',
                 'location'      => 'string',
                 'recruiterPhoto' => 'object|null',
+                'logo'           => 'object|null (company logo upload)',
                 'createdAt'     => 'UTCDateTime',
                 'updatedAt'     => 'UTCDateTime',
             ],

@@ -217,6 +217,7 @@ $routes = [
     ['PUT',    '/admin/companies/{id}',              [AdminController::class, 'updateCompany']],
     ['DELETE', '/admin/companies/{id}',              [AdminController::class, 'deleteCompany']],
     ['POST',   '/admin/companies/register',         [AdminController::class, 'registerCompany']],
+    ['POST',   '/admin/companies/{id}/logo',        [AdminController::class, 'uploadCompanyLogo']],
     ['GET',    '/admin/recommendations',            [AdminController::class, 'listRecommendations']],
     ['PUT',    '/admin/recommendations/{id}/status', [AdminController::class, 'updateRecommendationStatus']],
     ['PUT',    '/admin/recommendations/{id}',       [AdminController::class, 'updateRecommendation']],
