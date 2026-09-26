@@ -110,6 +110,14 @@ final class CertificationController
         Response::success($this->service->submitProof($user, $id, $_FILES['file']), 'Certification proof saved.');
     }
 
+    /** POST /api/certifications/{id}/remove — student removes their own uploaded proof. */
+    public function removeOwnCompletion(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $this->service->removeOwnCompletion($user, $id);
+        Response::success(null, 'Uploaded certificate removed.');
+    }
+
     public function downloadOwnProof(string $id): void
     {
         $this->downloadProof($id, '');

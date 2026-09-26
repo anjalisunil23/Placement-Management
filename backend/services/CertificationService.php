@@ -414,12 +414,28 @@ final class CertificationService
         throw new \InvalidArgumentException('Status must be pending.');
     }
 
+    public function removeOwnCompletion(array $user, string $certificationId): void
+    {
+        if (AuthMiddleware::resolvedRole($user) !== 'student') {
+            throw new \RuntimeException('Only students can remove their uploaded certificate.', 403);
+        }
+        $this->requireCertification($certificationId);
+        $student = $this->requireStudent($user);
+        $progress = $this->progress->findByPair((string) $student['_id'], $certificationId);
+        if (!is_array($progress)) {
+            throw new \RuntimeException('You have not uploaded a certificate for this item.', 404);
+        }
+        $this->removeProofFile($progress);
+        $this->progress->delete((string) ($progress['_id'] ?? ''));
+    }
+
     /**
-     * @return array<int, array{rank: int, name: string, completed: int}>
+     * @return array<int, array{rank: int, name: string, completed: int, certifications: list<string>}>
      */
     public function leaderboard(): array
     {
         $counts = [];
+        $titles = [];
         foreach ($this->progress->findAll(['status' => 'completed'], 5000) as $row) {
             if (!self::hasProof($row)) {
                 continue;
@@ -429,13 +445,21 @@ final class CertificationService
                 continue;
             }
             $counts[$studentId] = ($counts[$studentId] ?? 0) + 1;
+            $cert = $this->certifications->findById((string) ($row['certificationId'] ?? ''));
+            $title = is_array($cert) ? trim((string) ($cert['name'] ?? '')) : '';
+            if ($title !== '') {
+                $titles[$studentId][] = $title;
+            }
         }
         $rows = [];
         foreach ($counts as $studentId => $count) {
             $student = $this->students->findById($studentId);
+            $names = $titles[$studentId] ?? [];
+            sort($names, SORT_FLAG_CASE | SORT_STRING);
             $rows[] = [
                 'name' => $this->displayName(is_array($student) ? $student : []),
                 'completed' => $count,
+                'certifications' => $names,
             ];
         }
         usort($rows, static function (array $a, array $b): int {
@@ -448,6 +472,7 @@ final class CertificationService
                 'rank' => $index + 1,
                 'name' => $row['name'],
                 'completed' => $row['completed'],
+                'certifications' => $row['certifications'],
             ];
         }
 

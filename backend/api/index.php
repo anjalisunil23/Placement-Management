@@ -594,6 +594,7 @@ $routes = [
     ['GET',    '/certifications/{id}/completions',  [CertificationController::class, 'completions']],
     ['PUT',    '/certifications/{id}/completions/{studentId}', [CertificationController::class, 'updateCompletion']],
     ['POST',   '/certifications/{id}/proof',        [CertificationController::class, 'submitProof']],
+    ['POST',   '/certifications/{id}/remove',       [CertificationController::class, 'removeOwnCompletion']],
     ['GET',    '/certifications/{id}/proof',        [CertificationController::class, 'downloadOwnProof']],
     ['GET',    '/certifications/{id}/proof/{studentId}', [CertificationController::class, 'downloadProof']],
     ['GET',    '/certifications/{id}',              [CertificationController::class, 'show']],

@@ -29,10 +29,11 @@
             <th>Rank</th>
             <th>Student</th>
             <th>Completed</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="leaderboardRows">
-          <tr><td colspan="3" class="text-muted-2 p-4">Loading leaderboard…</td></tr>
+          <tr><td colspan="4" class="text-muted-2 p-4">Loading leaderboard…</td></tr>
         </tbody>
       </table>
     </div>
@@ -78,6 +79,23 @@
     </table>
   </div>
 </div>
+</div>
+
+</div>
+
+<div class="modal fade" id="boardCertModal" tabindex="-1" aria-labelledby="boardCertModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="boardCertModalLabel">Completed certifications</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="boardCertList"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="modal fade" id="proofModal" tabindex="-1" aria-labelledby="proofModalLabel" aria-hidden="true">
@@ -166,7 +184,7 @@ function escHtml(value) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
-const certificationState = { rows: [], departments: [] };
+const certificationState = { rows: [], departments: [], leaderboard: [] };
 
 function certificationRole() {
   return (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
@@ -469,6 +487,7 @@ function renderStudentCertifications() {
         <div class="d-flex flex-wrap gap-2 align-items-start">
           <a class="btn btn-outline-primary" href="${escHtml(row.url || '#')}" target="_blank" rel="noopener noreferrer">Open certification</a>
           ${viewBtn}
+          ${done ? `<button type="button" class="btn btn-outline-danger" data-proof-delete="${escHtml(row.id)}">Delete</button>` : ''}
           <button type="button" class="btn btn-primary" data-proof-upload="${escHtml(row.id)}">${uploadLabel}</button>
         </div>
       </div>
@@ -537,15 +556,37 @@ async function viewOwnProof(id) {
 document.getElementById('studentCertificationList')?.addEventListener('click', (event) => {
   const upload = event.target.closest('[data-proof-upload]');
   const view = event.target.closest('[data-proof-view]');
-  const id = (upload || view)?.getAttribute(upload ? 'data-proof-upload' : 'data-proof-view');
+  const remove = event.target.closest('[data-proof-delete]');
+  const id = (upload || view || remove)?.getAttribute(upload ? 'data-proof-upload' : (view ? 'data-proof-view' : 'data-proof-delete'));
   const row = certificationState.rows.find((item) => item.id === id);
   if (!row) return;
+  if (remove) {
+    removeOwnCertificate(row);
+    return;
+  }
   if (view) {
     viewOwnProof(row.id);
     return;
   }
   openProofModal(row);
 });
+
+async function removeOwnCertificate(row) {
+  const ok = await confirmAction({
+    title: 'Delete uploaded certificate',
+    message: 'Remove the certificate you uploaded for ' + (row.name || 'this certification') + '? The certification will no longer count as completed.',
+    confirmText: 'Delete',
+    variant: 'danger',
+  });
+  if (!ok) return;
+  const res = await api('/certifications/' + encodeURIComponent(row.id) + '/remove', { method: 'POST', noRedirectOn401: true });
+  if (!res?.success) {
+    toast(res?.message || 'Could not delete the uploaded certificate.', 'error');
+    return;
+  }
+  toast('Uploaded certificate removed.', 'success');
+  await loadStudentCertifications();
+}
 
 document.getElementById('proofForm')?.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -584,24 +625,39 @@ document.getElementById('proofForm')?.addEventListener('submit', async (event) =
 
 async function loadLeaderboard() {
   const body = document.getElementById('leaderboardRows');
-  body.innerHTML = '<tr><td colspan="3" class="text-muted-2 p-4">Loading leaderboard…</td></tr>';
+  body.innerHTML = '<tr><td colspan="4" class="text-muted-2 p-4">Loading leaderboard…</td></tr>';
   const res = await api('/certifications/leaderboard', { noRedirectOn401: true });
   if (!res?.success) {
-    body.innerHTML = '<tr><td colspan="3" class="text-danger p-4">Could not load the leaderboard.</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" class="text-danger p-4">Could not load the leaderboard.</td></tr>';
     toast(res?.message || 'Could not load the leaderboard.', 'error');
     return;
   }
   const rows = Array.isArray(res.data) ? res.data : [];
+  certificationState.leaderboard = rows;
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="3" class="text-muted-2 p-4">No certifications have been completed yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" class="text-muted-2 p-4">No certifications have been completed yet.</td></tr>';
     return;
   }
-  body.innerHTML = rows.map((row) => `<tr>
+  body.innerHTML = rows.map((row, index) => `<tr>
     <td>${escHtml(row.rank)}</td>
     <td>${escHtml(row.name || '')}</td>
     <td>${escHtml(row.completed)}</td>
+    <td><button type="button" class="btn btn-sm btn-outline-primary" data-board-view="${index}">View</button></td>
   </tr>`).join('');
 }
+
+document.getElementById('leaderboardRows')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-board-view]');
+  if (!button) return;
+  const row = certificationState.leaderboard[Number(button.getAttribute('data-board-view'))];
+  if (!row) return;
+  const names = Array.isArray(row.certifications) ? row.certifications : [];
+  document.getElementById('boardCertModalLabel').textContent = (row.name || 'Student') + ' · completed certifications';
+  document.getElementById('boardCertList').innerHTML = names.length
+    ? '<ul class="mb-0">' + names.map((name) => '<li>' + escHtml(name) + '</li>').join('') + '</ul>'
+    : '<p class="text-muted-2 mb-0">No certification names are available.</p>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('boardCertModal')).show();
+});
 
 function showCertificationTab(which) {
   const board = which === 'leaderboard';
