@@ -1,0 +1,597 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Mock · Certification · AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+</head>
+<body data-page="certifications.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<ul class="nav nav-pills gap-2 mb-3" id="certificationTabs">
+  <li class="nav-item"><button type="button" class="nav-link active" id="tabCertifications">Certifications</button></li>
+  <li class="nav-item"><button type="button" class="nav-link" id="tabLeaderboard">Leaderboard</button></li>
+</ul>
+
+<div id="leaderboardPanel" class="d-none">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Leaderboard</h1>
+      <p class="page-sub mb-0">Global ranking by completed certifications.</p>
+    </div>
+  </div>
+  <div class="card-surface p-0">
+    <div class="table-wrap">
+      <table class="table-modern mb-0">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Student</th>
+            <th>Completed</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboardRows">
+          <tr><td colspan="3" class="text-muted-2 p-4">Loading leaderboard…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="studentCertificationPage" class="d-none">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Certification</h1>
+      <p class="page-sub mb-0">Certifications available for your department.</p>
+    </div>
+  </div>
+  <div id="studentCertificationList" class="d-flex flex-column gap-3">
+    <div class="card-surface p-4 text-muted-2">Loading certifications…</div>
+  </div>
+</div>
+
+<div id="managerCertificationPage">
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Certification</h1>
+    <p class="page-sub mb-0">Recommended certifications for students in selected departments.</p>
+  </div>
+  <button type="button" class="btn btn-primary" id="addCertificationBtn"><i class="bi bi-plus-lg me-1"></i>Add Certification</button>
+</div>
+
+<div class="card-surface p-0">
+  <div class="table-wrap">
+    <table class="table-modern mb-0">
+      <thead>
+        <tr>
+          <th>Certification</th>
+          <th>Visibility</th>
+          <th>Due date</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="certificationRows">
+        <tr><td colspan="5" class="text-muted-2 p-4">Loading certifications…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<div class="modal fade" id="proofModal" tabindex="-1" aria-labelledby="proofModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form id="proofForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="proofModalLabel">Upload certificate</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="proofCertificationId"/>
+          <p class="fw-semibold mb-3" id="proofCertificationName"></p>
+          <label class="form-label small fw-semibold" for="proofFile">Certificate file</label>
+          <input class="form-control" id="proofFile" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required/>
+          <div class="form-text">PDF, JPG, or PNG. Maximum 5 MB.</div>
+          <p class="small text-danger mb-0 mt-2 d-none" id="proofFormError"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="proofSubmitBtn">Submit certificate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="certificationModal" tabindex="-1" aria-labelledby="certificationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <form id="certificationForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="certificationModalLabel">Add certification</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="certificationId"/>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="certificationName">Certification name</label>
+            <input class="form-control" id="certificationName" maxlength="160" required/>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="certificationUrl">Certification URL</label>
+            <input class="form-control" id="certificationUrl" type="url" placeholder="https://" required/>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="certificationDue">Due date</label>
+            <input class="form-control" id="certificationDue" type="date" required/>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="certificationDescription">Description</label>
+            <textarea class="form-control" id="certificationDescription" rows="3" maxlength="2000"></textarea>
+          </div>
+          <div class="mb-2">
+            <div class="form-label small fw-semibold">Visibility</div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="certVisibility" id="visibilityAll" value="all"/>
+              <label class="form-check-label" for="visibilityAll">All departments</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="certVisibility" id="visibilitySelected" value="departments" checked/>
+              <label class="form-check-label" for="visibilitySelected">Selected departments</label>
+            </div>
+          </div>
+          <div id="departmentPicker" class="border rounded-3 p-3">
+            <div class="small text-muted-2 mb-2">Loading departments…</div>
+          </div>
+          <p class="small text-danger mb-0 mt-2 d-none" id="certificationFormError"></p>
+          <div id="certificationCompletion" class="small text-muted-2 mt-3 d-none"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="certificationSaveBtn">Save certification</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=20260926certboard"></script>
+<script src="js/app.js?v=20260926certboard"></script>
+<script>
+function escHtml(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function certificationRole() {
+  return (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
+}
+
+function officerDepartmentId() {
+  const user = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+  return String(user.departmentId || '').trim();
+}
+
+function canEditCertification(row) {
+  if (certificationRole() === 'admin') return true;
+  if (certificationRole() !== 'placement_officer') return false;
+  const mine = officerDepartmentId();
+  const ids = Array.isArray(row.departmentIds) ? row.departmentIds.map(String) : [];
+  return row.visibility === 'departments' && ids.length === 1 && ids[0] === mine && mine !== '';
+}
+
+function departmentLabel(id) {
+  const dept = certificationState.departments.find((item) => String(item.id || item._id) === String(id));
+  if (!dept) return '';
+  return dept.code || dept.name || '';
+}
+
+function visibilityLabel(row) {
+  if (row.visibility === 'all') return 'All departments';
+  const names = (row.departmentIds || []).map(departmentLabel).filter(Boolean);
+  return names.length ? names.join(', ') : 'Selected departments';
+}
+
+function statusLabel(row) {
+  if (row.status === 'overdue') return 'Overdue';
+  return 'Open';
+}
+
+function showFormError(message) {
+  const el = document.getElementById('certificationFormError');
+  if (!el) return;
+  el.textContent = message || '';
+  el.classList.toggle('d-none', !message);
+}
+
+function syncDepartmentPicker() {
+  const selected = document.getElementById('visibilitySelected')?.checked;
+  const picker = document.getElementById('departmentPicker');
+  if (!picker) return;
+  picker.classList.toggle('d-none', !selected);
+  picker.querySelectorAll('input').forEach((input) => { input.disabled = !selected; });
+}
+
+function renderDepartmentPicker(selectedIds) {
+  const picker = document.getElementById('departmentPicker');
+  const locked = certificationRole() === 'placement_officer' ? officerDepartmentId() : '';
+  const chosen = new Set((selectedIds || []).map(String));
+  const depts = certificationState.departments.filter((dept) => !locked || String(dept.id || dept._id) === locked);
+  if (!depts.length) {
+    picker.innerHTML = '<div class="small text-muted-2 mb-0">No departments are available for your account.</div>';
+    return;
+  }
+  picker.innerHTML = depts.map((dept) => {
+    const id = String(dept.id || dept._id || '');
+    const label = dept.code ? `${dept.code}${dept.name ? ' · ' + dept.name : ''}` : (dept.name || id);
+    const checked = locked ? 'checked' : (chosen.has(id) ? 'checked' : '');
+    const disabled = locked ? 'disabled' : '';
+    return `<div class="form-check">
+      <input class="form-check-input cert-dept" type="checkbox" value="${escHtml(id)}" id="dept-${escHtml(id)}" ${checked} ${disabled}/>
+      <label class="form-check-label" for="dept-${escHtml(id)}">${escHtml(label)}</label>
+    </div>`;
+  }).join('');
+  if (locked) {
+    document.getElementById('visibilitySelected').checked = true;
+    document.getElementById('visibilityAll').disabled = true;
+  }
+  syncDepartmentPicker();
+}
+
+function renderCertifications() {
+  const body = document.getElementById('certificationRows');
+  if (!certificationState.rows.length) {
+    body.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4">No certifications yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = certificationState.rows.map((row) => {
+    const editable = canEditCertification(row);
+    const actions = editable
+      ? `<button type="button" class="btn btn-sm btn-outline-secondary me-1" data-cert-edit="${escHtml(row.id)}">Edit</button>
+         <button type="button" class="btn btn-sm btn-outline-danger" data-cert-delete="${escHtml(row.id)}">Delete</button>`
+      : '<span class="small text-muted-2">View only</span>';
+    return `<tr>
+      <td><button type="button" class="btn btn-link p-0 fw-semibold text-decoration-none" data-cert-view="${escHtml(row.id)}">${escHtml(row.name || '')}</button></td>
+      <td>${escHtml(visibilityLabel(row))}</td>
+      <td>${escHtml(formatDate(row.dueDate))}</td>
+      <td>${escHtml(statusLabel(row))}</td>
+      <td class="text-nowrap">${actions}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadDepartments() {
+  if (typeof DepartmentStore !== 'undefined' && DepartmentStore.fetch) {
+    certificationState.departments = await DepartmentStore.fetch({ force: true });
+  }
+  if (!Array.isArray(certificationState.departments)) certificationState.departments = [];
+}
+
+async function loadCertifications() {
+  const body = document.getElementById('certificationRows');
+  body.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4">Loading certifications…</td></tr>';
+  const res = await api('/certifications', { noRedirectOn401: true });
+  if (!res?.success) {
+    body.innerHTML = '<tr><td colspan="5" class="text-danger p-4">Could not load certifications.</td></tr>';
+    toast(res?.message || 'Could not load certifications.', 'error');
+    return;
+  }
+  certificationState.rows = Array.isArray(res.data) ? res.data : [];
+  renderCertifications();
+}
+
+function selectedDepartmentIds() {
+  return Array.from(document.querySelectorAll('.cert-dept:checked')).map((input) => input.value);
+}
+
+function openCertificationForm(row) {
+  const editing = !!row;
+  document.getElementById('certificationModalLabel').textContent = editing ? (canEditCertification(row) ? 'Edit certification' : 'Certification details') : 'Add certification';
+  document.getElementById('certificationSaveBtn').classList.toggle('d-none', editing && !canEditCertification(row));
+  document.getElementById('certificationSaveBtn').textContent = editing ? 'Save changes' : 'Save certification';
+  document.getElementById('certificationId').value = row?.id || '';
+  document.getElementById('certificationName').value = row?.name || '';
+  document.getElementById('certificationUrl').value = row?.url || '';
+  document.getElementById('certificationDue').value = row?.dueDate || '';
+  document.getElementById('certificationDescription').value = row?.description || '';
+  const all = row?.visibility === 'all';
+  document.getElementById('visibilityAll').checked = all;
+  document.getElementById('visibilitySelected').checked = !all;
+  renderDepartmentPicker(row?.departmentIds || (officerDepartmentId() ? [officerDepartmentId()] : []));
+  showFormError('');
+  const completion = document.getElementById('certificationCompletion');
+  completion.classList.add('d-none');
+  completion.textContent = '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('certificationModal')).show();
+  if (editing && row?.id) loadCompletionCount(row.id);
+}
+
+async function loadCompletionCount(id) {
+  const completion = document.getElementById('certificationCompletion');
+  completion.textContent = 'Loading completion summary…';
+  completion.classList.remove('d-none');
+  const res = await api('/certifications/' + encodeURIComponent(id) + '/completions', { noRedirectOn401: true });
+  if (!res?.success || !Array.isArray(res.data)) {
+    completion.classList.add('d-none');
+    return;
+  }
+  const count = res.data.filter((item) => item.status === 'completed' && item.hasProof).length;
+  completion.textContent = 'Completion: ' + count + (count === 1 ? ' student completed' : ' students completed');
+}
+
+function validateCertificationForm() {
+  const name = document.getElementById('certificationName').value.trim();
+  const url = document.getElementById('certificationUrl').value.trim();
+  const due = document.getElementById('certificationDue').value.trim();
+  const selected = document.getElementById('visibilitySelected').checked;
+  const departments = selectedDepartmentIds();
+  if (name.length < 2) return 'Enter a certification name.';
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return 'Enter a valid http or https URL.';
+  } catch (_err) {
+    return 'Enter a valid certification URL.';
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return 'Choose a due date.';
+  if (selected && !departments.length) return 'Select at least one department.';
+  return '';
+}
+
+document.getElementById('visibilityAll')?.addEventListener('change', syncDepartmentPicker);
+document.getElementById('visibilitySelected')?.addEventListener('change', syncDepartmentPicker);
+document.getElementById('addCertificationBtn')?.addEventListener('click', () => openCertificationForm(null));
+
+document.getElementById('certificationRows')?.addEventListener('click', (event) => {
+  const edit = event.target.closest('[data-cert-edit]');
+  const view = event.target.closest('[data-cert-view]');
+  const remove = event.target.closest('[data-cert-delete]');
+  const id = (edit || view || remove)?.getAttribute(edit ? 'data-cert-edit' : (view ? 'data-cert-view' : 'data-cert-delete'));
+  const row = certificationState.rows.find((item) => item.id === id);
+  if (!row) return;
+  if (remove) {
+    deleteCertification(row);
+    return;
+  }
+  openCertificationForm(row);
+});
+
+document.getElementById('certificationForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const message = validateCertificationForm();
+  if (message) {
+    showFormError(message);
+    return;
+  }
+  const id = document.getElementById('certificationId').value.trim();
+  const selected = document.getElementById('visibilitySelected').checked;
+  const body = {
+    name: document.getElementById('certificationName').value.trim(),
+    url: document.getElementById('certificationUrl').value.trim(),
+    dueDate: document.getElementById('certificationDue').value,
+    description: document.getElementById('certificationDescription').value.trim(),
+    visibility: selected ? 'departments' : 'all',
+    departmentIds: selected ? selectedDepartmentIds() : [],
+  };
+  const button = document.getElementById('certificationSaveBtn');
+  button.disabled = true;
+  button.textContent = 'Saving certification…';
+  const res = await api(id ? '/certifications/' + encodeURIComponent(id) : '/certifications', {
+    method: id ? 'PUT' : 'POST',
+    body,
+    noRedirectOn401: true,
+  });
+  button.disabled = false;
+  button.textContent = id ? 'Save changes' : 'Save certification';
+  if (!res?.success) {
+    showFormError(res?.message || 'Could not save the certification.');
+    toast(res?.message || 'Could not save the certification.', 'error');
+    return;
+  }
+  bootstrap.Modal.getInstance(document.getElementById('certificationModal'))?.hide();
+  toast(id ? 'Certification updated.' : 'Certification created.', 'success');
+  await loadCertifications();
+});
+
+async function deleteCertification(row) {
+  const ok = await confirmAction({
+    title: 'Delete certification',
+    message: 'Are you sure you want to delete this certification?',
+    confirmText: 'Delete',
+    variant: 'danger',
+  });
+  if (!ok) return;
+  const res = await api('/certifications/' + encodeURIComponent(row.id), { method: 'DELETE', noRedirectOn401: true });
+  if (!res?.success) {
+    toast(res?.message || 'Could not delete the certification.', 'error');
+    return;
+  }
+  toast('Certification deleted.', 'success');
+  await loadCertifications();
+}
+
+function studentStatusLabel(status) {
+  if (status === 'completed') return 'Completed';
+  if (status === 'overdue') return 'Overdue';
+  return 'Pending';
+}
+
+function renderStudentCertifications() {
+  const list = document.getElementById('studentCertificationList');
+  if (!certificationState.rows.length) {
+    list.innerHTML = '<div class="card-surface p-4 text-muted-2 mb-0">No certifications are currently available for your department.</div>';
+    return;
+  }
+  list.innerHTML = certificationState.rows.map((row) => {
+    const done = row.status === 'completed';
+    const uploadLabel = done ? 'Replace certificate' : 'Upload certificate';
+    const viewBtn = done
+      ? `<button type="button" class="btn btn-outline-secondary" data-proof-view="${escHtml(row.id)}">View certificate</button>`
+      : '';
+    const description = row.description
+      ? `<p class="text-muted-2 mb-2">${escHtml(row.description)}</p>`
+      : '';
+    return `<div class="card-surface p-4">
+      <div class="d-flex flex-column flex-md-row justify-content-between gap-3">
+        <div>
+          <h5 class="fw-bold mb-1">${escHtml(row.name || '')}</h5>
+          ${description}
+          <div class="small text-muted-2">Due date: ${escHtml(formatDate(row.dueDate))}</div>
+          <div class="small mt-1">Status: <strong>${escHtml(studentStatusLabel(row.status))}</strong>${done ? ' · Certificate uploaded' : ''}</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-start">
+          <a class="btn btn-outline-primary" href="${escHtml(row.url || '#')}" target="_blank" rel="noopener noreferrer">Open certification</a>
+          ${viewBtn}
+          <button type="button" class="btn btn-primary" data-proof-upload="${escHtml(row.id)}">${uploadLabel}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadStudentCertifications() {
+  const list = document.getElementById('studentCertificationList');
+  list.innerHTML = '<div class="card-surface p-4 text-muted-2 mb-0">Loading certifications…</div>';
+  const res = await api('/certifications', { noRedirectOn401: true });
+  if (!res?.success) {
+    list.innerHTML = '<div class="card-surface p-4 text-danger mb-0">Could not load certifications.</div>';
+    toast(res?.message || 'Could not load certifications.', 'error');
+    return;
+  }
+  certificationState.rows = Array.isArray(res.data) ? res.data : [];
+  renderStudentCertifications();
+}
+
+function openProofModal(row) {
+  document.getElementById('proofCertificationId').value = row.id;
+  document.getElementById('proofCertificationName').textContent = row.name || 'Certification';
+  document.getElementById('proofModalLabel').textContent = row.status === 'completed' ? 'Replace certificate' : 'Upload certificate';
+  document.getElementById('proofSubmitBtn').textContent = 'Submit certificate';
+  document.getElementById('proofFile').value = '';
+  document.getElementById('proofFormError').classList.add('d-none');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('proofModal')).show();
+}
+
+function validateProofFile(file) {
+  if (!file) return 'Choose a certificate file.';
+  const ext = String(file.name || '').split('.').pop().toLowerCase();
+  if (!['pdf', 'jpg', 'jpeg', 'png'].includes(ext)) return 'Upload a PDF, JPG, or PNG file.';
+  if (file.size > 5 * 1024 * 1024) return 'File must be 5 MB or smaller.';
+  return '';
+}
+
+async function viewOwnProof(id) {
+  const headers = {};
+  const token = (typeof Auth !== 'undefined' && Auth.token) ? Auth.token() : '';
+  if (token && token !== 'session' && !String(token).startsWith('demo-token')) headers.Authorization = 'Bearer ' + token;
+  const apiBase = (typeof API_BASE !== 'undefined' && API_BASE) ? API_BASE : '/backend/api';
+  const res = await fetch(apiBase + '/certifications/' + encodeURIComponent(id) + '/proof', { credentials: 'include', headers });
+  if (!res.ok) {
+    toast('Could not open your certificate.', 'error');
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noopener');
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+document.getElementById('studentCertificationList')?.addEventListener('click', (event) => {
+  const upload = event.target.closest('[data-proof-upload]');
+  const view = event.target.closest('[data-proof-view]');
+  const id = (upload || view)?.getAttribute(upload ? 'data-proof-upload' : 'data-proof-view');
+  const row = certificationState.rows.find((item) => item.id === id);
+  if (!row) return;
+  if (view) {
+    viewOwnProof(row.id);
+    return;
+  }
+  openProofModal(row);
+});
+
+document.getElementById('proofForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const id = document.getElementById('proofCertificationId').value;
+  const file = document.getElementById('proofFile').files?.[0] || null;
+  const message = validateProofFile(file);
+  const error = document.getElementById('proofFormError');
+  if (message) {
+    error.textContent = message;
+    error.classList.remove('d-none');
+    return;
+  }
+  error.classList.add('d-none');
+  const button = document.getElementById('proofSubmitBtn');
+  button.disabled = true;
+  button.textContent = 'Uploading certificate…';
+  const body = new FormData();
+  body.append('file', file, file.name);
+  const res = await api('/certifications/' + encodeURIComponent(id) + '/proof', {
+    method: 'POST',
+    body,
+    noRedirectOn401: true,
+  });
+  button.disabled = false;
+  button.textContent = 'Submit certificate';
+  if (!res?.success) {
+    error.textContent = res?.message || 'Could not upload the certificate.';
+    error.classList.remove('d-none');
+    toast(res?.message || 'Could not upload the certificate.', 'error');
+    return;
+  }
+  bootstrap.Modal.getInstance(document.getElementById('proofModal'))?.hide();
+  toast('Certificate uploaded.', 'success');
+  await loadStudentCertifications();
+});
+
+async function loadLeaderboard() {
+  const body = document.getElementById('leaderboardRows');
+  body.innerHTML = '<tr><td colspan="3" class="text-muted-2 p-4">Loading leaderboard…</td></tr>';
+  const res = await api('/certifications/leaderboard', { noRedirectOn401: true });
+  if (!res?.success) {
+    body.innerHTML = '<tr><td colspan="3" class="text-danger p-4">Could not load the leaderboard.</td></tr>';
+    toast(res?.message || 'Could not load the leaderboard.', 'error');
+    return;
+  }
+  const rows = Array.isArray(res.data) ? res.data : [];
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="3" class="text-muted-2 p-4">No certifications have been completed yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map((row) => `<tr>
+    <td>${escHtml(row.rank)}</td>
+    <td>${escHtml(row.name || '')}</td>
+    <td>${escHtml(row.completed)}</td>
+  </tr>`).join('');
+}
+
+function showCertificationTab(which) {
+  const board = which === 'leaderboard';
+  document.getElementById('tabLeaderboard')?.classList.toggle('active', board);
+  document.getElementById('tabCertifications')?.classList.toggle('active', !board);
+  document.getElementById('leaderboardPanel')?.classList.toggle('d-none', !board);
+  const student = certificationRole() === 'student';
+  document.getElementById('studentCertificationPage')?.classList.toggle('d-none', board || !student);
+  document.getElementById('managerCertificationPage')?.classList.toggle('d-none', board || student);
+  if (board) loadLeaderboard();
+}
+
+document.getElementById('tabCertifications')?.addEventListener('click', () => showCertificationTab('certifications'));
+document.getElementById('tabLeaderboard')?.addEventListener('click', () => showCertificationTab('leaderboard'));
+
+onAppReady(async () => {
+  if (certificationRole() === 'student') {
+    document.getElementById('studentCertificationPage')?.classList.remove('d-none');
+    document.getElementById('managerCertificationPage')?.classList.add('d-none');
+    await loadStudentCertifications();
+    return;
+  }
+  if (!['admin', 'placement_officer'].includes(certificationRole())) return;
+  await loadDepartments();
+  renderDepartmentPicker([]);
+  await loadCertifications();
+});
+</script>
+</body></html>

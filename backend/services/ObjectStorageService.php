@@ -24,6 +24,7 @@ final class ObjectStorageService
 {
     public const FOLDER_RESUMES = 'resumes';
     public const FOLDER_CERTIFICATES = 'certificates';
+    public const FOLDER_CERTIFICATION_PROOFS = 'certification-proofs';
     public const FOLDER_REPORTS = 'reports';
     public const FOLDER_JD = 'jd';
     public const FOLDER_SHORTLISTS = 'shortlists';
@@ -633,6 +634,7 @@ final class ObjectStorageService
         $map = [
             '/resumes/' => self::FOLDER_RESUMES,
             '/certificates/' => self::FOLDER_CERTIFICATES,
+            '/certification-proofs/' => self::FOLDER_CERTIFICATION_PROOFS,
             '/reports/' => self::FOLDER_REPORTS,
             '/jd/' => self::FOLDER_JD,
             '/shortlists/' => self::FOLDER_SHORTLISTS,
@@ -663,6 +665,7 @@ final class ObjectStorageService
         $dirKey = match ($folder) {
             self::FOLDER_RESUMES => 'resume_dir',
             self::FOLDER_CERTIFICATES => 'certificate_dir',
+            self::FOLDER_CERTIFICATION_PROOFS => 'certification_proof_dir',
             self::FOLDER_REPORTS => 'reports_dir',
             self::FOLDER_JD => 'jd_dir',
             self::FOLDER_SHORTLISTS => 'shortlist_dir',

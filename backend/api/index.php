@@ -107,6 +107,7 @@ use PMS\Alumni\AlumniController;
 use PMS\Api\AptitudeController;
 use PMS\Api\CodingController;
 use PMS\Api\InternalJobController;
+use PMS\Api\CertificationController;
 use PMS\Api\JobFeedController;
 use PMS\Api\PublicController;
 use PMS\Auth\AuthController;
@@ -585,6 +586,17 @@ $routes = [
     ['POST',   '/internal-jobs/{id}/apply',         [InternalJobController::class, 'apply']],
     ['GET',    '/internal-jobs/{id}',               [InternalJobController::class, 'show']],
     ['DELETE', '/internal-jobs/{id}',               [InternalJobController::class, 'delete']],
+    ['GET',    '/certifications/leaderboard',       [CertificationController::class, 'leaderboard']],
+    ['GET',    '/certifications',                   [CertificationController::class, 'index']],
+    ['POST',   '/certifications',                   [CertificationController::class, 'create']],
+    ['GET',    '/certifications/{id}/completions',  [CertificationController::class, 'completions']],
+    ['PUT',    '/certifications/{id}/completions/{studentId}', [CertificationController::class, 'updateCompletion']],
+    ['POST',   '/certifications/{id}/proof',        [CertificationController::class, 'submitProof']],
+    ['GET',    '/certifications/{id}/proof',        [CertificationController::class, 'downloadOwnProof']],
+    ['GET',    '/certifications/{id}/proof/{studentId}', [CertificationController::class, 'downloadProof']],
+    ['GET',    '/certifications/{id}',              [CertificationController::class, 'show']],
+    ['PUT',    '/certifications/{id}',              [CertificationController::class, 'update']],
+    ['DELETE', '/certifications/{id}',              [CertificationController::class, 'delete']],
 
     // Health & public
     ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],

@@ -81,6 +81,13 @@ const NAV = [
         roles: ['admin', 'placement_officer', 'student', 'staff'],
         children: [],
       },
+      {
+        group: "certifications",
+        label: "Certification",
+        href: "certifications.html",
+        roles: ['admin', 'placement_officer', 'student'],
+        children: [],
+      },
     ],
   },
 
@@ -164,6 +171,7 @@ const PAGE_LABELS = {
   'mock-coding.html#take': 'Mock · Coding Practice · Take test',
   'mock-coding.html#progress': 'Mock · Coding Practice · Progress',
   'mock-coding.html#manage': 'Mock · Coding Practice · Manage',
+  'certifications.html': 'Mock · Certification',
 };
 
 function initials(name = '') {

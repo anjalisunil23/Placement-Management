@@ -29,6 +29,8 @@ final class Collections
     public const ALUMNI_JOB_POSTS = 'alumni_job_posts';
     public const INTERNAL_JOB_POSTS = 'internal_job_posts';
     public const INTERNAL_JOB_APPLICATIONS = 'internal_job_applications';
+    public const CERTIFICATIONS = 'certifications';
+    public const STUDENT_CERTIFICATIONS = 'student_certifications';
     public const PLACEMENT_OFFICERS = 'placement_officers';
     public const STUDENT_VOLUNTEERS = 'student_volunteers';
     public const RESUMES = 'resumes';
@@ -329,6 +331,30 @@ final class Collections
                 'departmentCode' => 'string',
                 'status' => 'string (applied)',
                 'appliedAt' => 'UTCDateTime',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::CERTIFICATIONS => [
+                '_id' => 'ObjectId',
+                'name' => 'string',
+                'url' => 'string',
+                'dueDate' => 'string (YYYY-MM-DD, Asia/Kolkata calendar date)',
+                'description' => 'string',
+                'visibility' => 'string (all|departments)',
+                'departmentIds' => 'array of department ids',
+                'createdBy' => 'ObjectId',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::STUDENT_CERTIFICATIONS => [
+                '_id' => 'ObjectId',
+                'studentId' => 'ObjectId',
+                'certificationId' => 'ObjectId',
+                'pairKey' => 'string (studentId:certificationId, unique)',
+                'status' => 'string (pending|completed)',
+                'proofPath' => 'string',
+                'proofFileName' => 'string',
+                'completedAt' => 'UTCDateTime|null',
                 'createdAt' => 'UTCDateTime',
                 'updatedAt' => 'UTCDateTime',
             ],

@@ -76,6 +76,7 @@ return [
         // Legacy local dirs kept for reading older files only; new uploads go to S3.
         'resume_dir' => $rootPath . '/uploads/ajce-placements/resumes',
         'certificate_dir' => $rootPath . '/uploads/certificates',
+        'certification_proof_dir' => $rootPath . '/uploads/certification-proofs',
         'reports_dir'=> $rootPath . '/uploads/ajce-placements/reports',
         'jd_dir'     => $rootPath . '/uploads/jd',
         'shortlist_dir' => $rootPath . '/uploads/shortlists',

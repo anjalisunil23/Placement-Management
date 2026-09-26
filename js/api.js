@@ -516,6 +516,7 @@ const PAGE_PERMS = {
   'admin-settings.html':    ['admin'],
   'mock-aptitude.html':     ['admin','placement_officer','student','staff'],
   'mock-coding.html':       ['admin','placement_officer','student','staff'],
+  'certifications.html':    ['admin','placement_officer','student'],
 };
 
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
@@ -523,7 +524,7 @@ const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html',
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
 const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'mock-aptitude.html', 'mock-coding.html'];
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
-const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'job-posts.html', 'internal-jobs.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'mock-aptitude.html', 'mock-coding.html'];
+const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'job-posts.html', 'internal-jobs.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'mock-aptitude.html', 'mock-coding.html', 'certifications.html'];
 
 /** Placement policy PDF version (step 1). */
 const PLACEMENT_POLICY_VERSION = 'ajce-placement-2026-09';
