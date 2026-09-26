@@ -397,8 +397,18 @@ function detailHtml(p) {
     ['Contact', p.contactInformation],
     ['Additional requirements', p.additionalRequirements],
   ];
+  const studentView = !access.canManage && access.kind !== 'staff';
+  let apply = '';
+  if (studentView && p.applied) {
+    apply = '<button type="button" class="btn btn-success" disabled>Applied</button>';
+  } else if (studentView && p.canApply) {
+    apply = `<button type="button" class="btn btn-primary" data-apply="${esc(p.id)}">Apply</button>`;
+  } else if (studentView && p.applyBlockReason) {
+    apply = `<div class="small text-muted-2">${esc(p.applyBlockReason)}</div>`;
+  }
   return rows.map(([label, value]) => `<div class="mb-2"><div class="small text-muted-2">${esc(label)}</div><div>${esc(value || '—')}</div></div>`).join('')
-    + (p.attachmentUrl ? `<a class="btn btn-sm btn-outline-primary" href="${esc(p.attachmentUrl)}" target="_blank" rel="noopener">Open attachment</a>` : '');
+    + (p.attachmentUrl ? `<a class="btn btn-sm btn-outline-primary me-2" href="${esc(p.attachmentUrl)}" target="_blank" rel="noopener">Open attachment</a>` : '')
+    + (apply ? `<div class="mt-3">${apply}</div>` : '');
 }
 
 function showCreatedJobs() {
@@ -634,15 +644,32 @@ $('postList').addEventListener('click', async e => {
     await showCandidateList(post);
     return;
   }
-  if (btn.dataset.apply) {
-    if (!(await confirmAction({ title: 'Apply', message: `Apply for "${post.title}"?`, confirmText: 'Apply', variant: 'primary' }))) return;
-    const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/apply`, { method: 'POST', body: {} });
-    if (signedOut(res)) return;
-    if (!res?.success) { toast(res?.message || 'Could not apply.', 'error'); return; }
-    toast('Application submitted.', 'success');
-    await loadPosts();
+  if (btn.dataset.apply) await submitApplication(post);
+});
+
+$('detailBody')?.addEventListener('click', async e => {
+  const btn = e.target.closest('[data-apply]');
+  if (!btn) return;
+  const post = posts.find(p => p.id === btn.dataset.apply);
+  if (!post) return;
+  await submitApplication(post);
+  if (post.applied) {
+    $('detailBody').innerHTML = detailHtml(post);
   }
 });
+
+async function submitApplication(post) {
+  if (!(await confirmAction({ title: 'Apply', message: `Apply for "${post.title}"?`, confirmText: 'Apply', variant: 'primary' }))) return;
+  const res = await api(`/internal-jobs/${encodeURIComponent(post.id)}/apply`, { method: 'POST', body: {} });
+  if (signedOut(res)) return;
+  if (!res?.success) { toast(res?.message || 'Could not apply.', 'error'); return; }
+  post.applied = true;
+  post.canApply = false;
+  toast('Application submitted.', 'success');
+  const modal = bootstrap.Modal.getInstance($('detailModal'));
+  if (modal) modal.hide();
+  await loadPosts();
+}
 
 onAppReady(loadPosts);
 })();
