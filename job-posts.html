@@ -5,8 +5,8 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
-<style>html.ij-student #campusTabItem,html.ij-student #campusPosts{display:none!important}html.ij-student #internalPosts{display:block!important;opacity:1}</style>
-<script>try{if(localStorage.getItem('ph-role')==='student'){document.documentElement.classList.add('ij-student');if(location.hash!=='#internal')history.replaceState(null,'','job-posts.html#internal');}}catch(e){}</script>
+<style>html.ij-internal-only #campusTabItem,html.ij-internal-only #campusPosts{display:none!important}html.ij-internal-only #internalPosts{display:block!important;opacity:1}</style>
+<script>try{var role=localStorage.getItem('ph-role');if(role==='student'||role==='staff'){document.documentElement.classList.add('ij-internal-only');if(location.hash!=='#internal')history.replaceState(null,'','job-posts.html#internal');}}catch(e){}</script>
 </head>
 <body data-page="job-posts.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
@@ -265,9 +265,9 @@
         <p class="small mb-0 mt-2">This department comes from your account. Students in this department can view and apply. You cannot choose another department.</p>
       </div>
       <div id="deptPicker">
-        <label class="form-label small fw-semibold" for="fieldDepartment">Target department</label>
-        <select class="form-select" id="fieldDepartment"></select>
-        <div class="form-text">Students in this department can view and apply for the post.</div>
+        <div class="form-label small fw-semibold">Target departments</div>
+        <div id="fieldDepartments" class="border rounded p-2" style="max-height:240px;overflow:auto"></div>
+        <div class="form-text">Select one or more departments. Students in those departments can view the post and apply.</div>
       </div>
     </div>
     <div data-step-panel="4" class="d-none">
@@ -301,23 +301,24 @@
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260926ijauth"></script>
-<script src="js/app.js?v=20260926certnav"></script>
-<script src="js/internal-jobs-page.js?v=20260926ijauth"></script>
+<script src="js/app.js?v=20260926ijmulti"></script>
+<script src="js/internal-jobs-page.js?v=20260926ijmulti"></script>
 <script>
 onAppReady(() => {
 const role = Auth.role();
 const isAdmin = role === 'admin';
 const isOfficer = role === 'placement_officer';
 const isStudent = role === 'student';
+const isStaff = role === 'staff';
 const isAdminLike = isAdmin || isOfficer;
 
-if (!isAdminLike && !isStudent) {
+if (!isAdminLike && !isStudent && !isStaff) {
   window.location.replace('notifications.html');
   return;
 }
 
-const wantInternal = isStudent || location.hash === '#internal';
-if (isStudent) {
+const wantInternal = isStudent || isStaff || location.hash === '#internal';
+if (isStudent || isStaff) {
   document.getElementById('campusTabItem')?.classList.add('d-none');
   if (location.hash !== '#internal') history.replaceState(null, '', 'job-posts.html#internal');
 }

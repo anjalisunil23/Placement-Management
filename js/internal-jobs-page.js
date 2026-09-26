@@ -98,6 +98,11 @@ function typeBadge(type) {
   return label ? `<span class="badge-soft ${cls}">${esc(label)}</span>` : '';
 }
 
+function selectedDepartmentIds() {
+  if (access.departmentLocked) return access.departmentId ? [access.departmentId] : [];
+  return [...document.querySelectorAll('#fieldDepartments input:checked')].map(input => input.value);
+}
+
 function readForm() {
   return {
     jobType,
@@ -121,7 +126,7 @@ function readForm() {
     applicationDeadline: $('fieldDeadline').value,
     contactInformation: $('fieldContact').value.trim(),
     additionalRequirements: $('fieldExtra').value.trim(),
-    departmentId: access.departmentLocked ? access.departmentId : $('fieldDepartment').value,
+    departmentIds: selectedDepartmentIds(),
   };
 }
 
@@ -132,7 +137,7 @@ function clientErrors(forPublish) {
   if (!d.title) errors.push(d.jobType === 'internship' ? 'Internship title is required.' : 'Job title is required.');
   if (!forPublish) return errors;
   if (!d.company) errors.push('Company / organization is required.');
-  if (!d.departmentId) errors.push('Select a department.');
+  if (!d.departmentIds.length) errors.push('Select at least one department.');
   if (!d.description) errors.push(d.jobType === 'internship' ? 'Internship description is required.' : 'Job description is required.');
   if (!d.requiredSkills) errors.push('Required skills are required.');
   if (!d.eligibilityCriteria) errors.push('Eligibility criteria are required.');
@@ -237,7 +242,7 @@ function showStep(next) {
   }
   if (next === 4) {
     const errors = clientErrors(false);
-    if (!readForm().departmentId) errors.push('Select a department.');
+    if (!readForm().departmentIds.length) errors.push('Select at least one department.');
     if (errors.length) { toast(errors[0], 'warn'); return; }
     renderPreview();
   }
@@ -262,11 +267,10 @@ function showStep(next) {
 
 function renderPreview() {
   const d = readForm();
+  const selected = (d.departmentIds || []).map(id => access.departments.find(x => x.id === id)).filter(Boolean);
   const dept = access.departmentLocked
     ? deptLabel(access.departmentCode, access.departmentName)
-    : (access.departments.find(x => x.id === d.departmentId)
-      ? deptLabel(access.departments.find(x => x.id === d.departmentId).code, access.departments.find(x => x.id === d.departmentId).name)
-      : '—');
+    : (selected.map(x => deptLabel(x.code, x.name)).join(', ') || '—');
   const duration = d.duration || (d.startDate && d.endDate ? `${d.startDate} to ${d.endDate}` : (d.endDate || d.startDate || '—'));
   $('previewCard').innerHTML = postCardHtml({
     ...d,
@@ -294,6 +298,12 @@ function fillForm(post) {
   $('fieldEnd').value = post.endDate || '';
   $('fieldDuration').value = post.duration || '';
   $('fieldHours').value = post.workingHours || '';
+  const chosen = Array.isArray(post.departmentIds) && post.departmentIds.length
+    ? post.departmentIds
+    : (post.departmentId ? [post.departmentId] : []);
+  document.querySelectorAll('#fieldDepartments input').forEach(input => {
+    input.checked = chosen.includes(input.value);
+  });
   $('fieldStipend').value = post.stipend || '';
   $('fieldCompType').value = post.compensationType || '';
   $('fieldAmount').value = post.compensationAmount || '';
@@ -302,7 +312,6 @@ function fillForm(post) {
   $('fieldContact').value = post.contactInformation || '';
   $('fieldExtra').value = post.additionalRequirements || '';
   $('fieldAttachment').value = '';
-  if (!access.departmentLocked && post.departmentId) $('fieldDepartment').value = post.departmentId;
   const link = $('currentAttachment');
   if (post.attachmentUrl) {
     link.href = post.attachmentUrl;
@@ -322,7 +331,7 @@ function resetForm() {
   ['fieldWorkMode','fieldCompType','fieldFrequency','fieldStart','fieldEnd','fieldDeadline'].forEach(id => { $(id).value = ''; });
   $('fieldAttachment').value = '';
   $('currentAttachment').classList.add('d-none');
-  if (!access.departmentLocked) $('fieldDepartment').value = '';
+  document.querySelectorAll('#fieldDepartments input').forEach(input => { input.checked = false; });
   syncTypeUi();
 }
 
@@ -410,34 +419,41 @@ async function showCandidateList(post) {
     $('candidateBody').innerHTML = `<div class="text-muted-2">${esc(res?.message || 'Could not load candidates.')}</div>`;
     return;
   }
+  const empty = access.kind === 'staff'
+    ? 'No students from your class have applied yet.'
+    : 'No candidates have applied yet.';
   $('candidateBody').innerHTML = rows.length
-    ? `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Register no.</th><th>Department</th><th>Applied</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.studentName)}</td><td>${esc(r.registerNumber)}</td><td>${esc(r.departmentCode)}</td><td>${esc(formatDate(r.appliedAt))}</td></tr>`).join('')}</tbody></table></div>`
-    : '<div class="text-muted-2">No candidates have applied yet.</div>';
+    ? `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Register no.</th><th>Department</th><th>Class</th><th>Applied</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.studentName)}</td><td>${esc(r.registerNumber)}</td><td>${esc(r.departmentCode)}</td><td>${esc(r.classBatch || '—')}</td><td>${esc(formatDate(r.appliedAt))}</td></tr>`).join('')}</tbody></table></div>`
+    : `<div class="text-muted-2">${empty}</div>`;
 }
 
 function renderList() {
   const canManage = !!access.canManage;
+  const isStaff = access.kind === 'staff';
   const emptyLabel = jobType === 'internship' ? 'No internships created yet.' : 'No part-time jobs created yet.';
-  $('postList').innerHTML = posts.length ? `<div class="row g-3">${posts.map(p => `
+  $('postList').innerHTML = posts.length ? `<div class="row g-3">${posts.map(p => {
+    const manageThis = canManage && p.canManagePost !== false;
+    const listLabel = isStaff ? 'Class apply list' : 'Apply candidate list';
+    return `
     <div class="col-md-6 col-xl-4">
       ${postCardHtml(p, false).replace('<div class="mt-3" data-card-actions></div>', `<div class="d-flex flex-wrap gap-2 mt-3">
-        ${canManage ? `<button class="btn btn-sm btn-primary" type="button" data-applicants="${esc(p.id)}">Apply candidate list (${p.applicantCount || 0})</button>` : ''}
+        ${(manageThis || isStaff) ? `<button class="btn btn-sm btn-primary" type="button" data-applicants="${esc(p.id)}">${listLabel} (${p.applicantCount || 0})</button>` : ''}
         <button class="btn btn-sm btn-outline-secondary" type="button" data-detail="${esc(p.id)}">Details</button>
-        ${canManage ? `<button class="btn btn-sm btn-outline-primary" type="button" data-edit="${esc(p.id)}">Edit</button>` : ''}
-        ${canManage && p.status !== 'published' ? `<button class="btn btn-sm btn-success" type="button" data-publish="${esc(p.id)}">Publish</button>` : ''}
-        ${canManage && p.status === 'published' ? `<button class="btn btn-sm btn-outline-warning" type="button" data-close="${esc(p.id)}">Close</button>` : ''}
-        ${canManage ? `<button class="btn btn-sm btn-outline-danger" type="button" data-delete="${esc(p.id)}">Delete</button>` : ''}
-        ${!canManage && p.canApply ? `<button class="btn btn-sm btn-primary" type="button" data-apply="${esc(p.id)}">Apply</button>` : ''}
-        ${!canManage && p.applyBlockReason && p.status === 'published' && !p.applied ? `<div class="small text-muted-2 w-100">${esc(p.applyBlockReason)}</div>` : ''}
+        ${manageThis ? `<button class="btn btn-sm btn-outline-primary" type="button" data-edit="${esc(p.id)}">Edit</button>` : ''}
+        ${manageThis && p.status !== 'published' ? `<button class="btn btn-sm btn-success" type="button" data-publish="${esc(p.id)}">Publish</button>` : ''}
+        ${manageThis && p.status === 'published' ? `<button class="btn btn-sm btn-outline-warning" type="button" data-close="${esc(p.id)}">Close</button>` : ''}
+        ${manageThis ? `<button class="btn btn-sm btn-outline-danger" type="button" data-delete="${esc(p.id)}">Delete</button>` : ''}
+        ${!canManage && !isStaff && p.canApply ? `<button class="btn btn-sm btn-primary" type="button" data-apply="${esc(p.id)}">Apply</button>` : ''}
+        ${!canManage && !isStaff && p.applyBlockReason && p.status === 'published' && !p.applied ? `<div class="small text-muted-2 w-100">${esc(p.applyBlockReason)}</div>` : ''}
       </div>`)}
-    </div>`).join('')}</div>`
+    </div>`;
+  }).join('')}</div>`
     : `<div class="card-surface text-muted-2 text-center p-4">${emptyLabel}</div>`;
 }
 
 function fillDepartmentControls() {
   const filter = $('filterDepartment');
-  const picker = $('fieldDepartment');
-  const locked = !!access.departmentLocked || access.kind === 'student';
+  const locked = !!access.departmentLocked || access.kind === 'student' || access.kind === 'staff';
   const own = deptLabel(access.departmentCode, access.departmentName);
   if (locked) {
     filter.innerHTML = `<option value="${esc(access.departmentId)}">${esc(own)}</option>`;
@@ -447,9 +463,10 @@ function fillDepartmentControls() {
     $('deptLockedLabel').textContent = own;
   } else if (access.kind === 'admin') {
     const options = (access.departments || []).map(d => `<option value="${esc(d.id)}">${esc(deptLabel(d.code, d.name))}</option>`).join('');
+    const checks = (access.departments || []).map(d => `<label class="form-check mb-1"><input class="form-check-input" type="checkbox" value="${esc(d.id)}"><span class="form-check-label">${esc(deptLabel(d.code, d.name))}</span></label>`).join('');
     filter.innerHTML = `<option value="all">All</option>${options}`;
     filter.disabled = false;
-    picker.innerHTML = `<option value="">Select department</option>${options}`;
+    $('fieldDepartments').innerHTML = checks || '<div class="small text-muted-2">No departments found.</div>';
     $('deptPicker').classList.remove('d-none');
     $('deptLocked').classList.add('d-none');
   } else {
@@ -459,6 +476,9 @@ function fillDepartmentControls() {
   if (access.kind === 'student') {
     $('filterStatusLabel').textContent = 'Application status';
     $('filterStatus').innerHTML = '<option value="all">All</option><option value="applied">Applied</option><option value="not_applied">Not applied</option>';
+  } else if (access.kind === 'staff') {
+    $('filterStatusLabel').textContent = 'Status';
+    $('filterStatus').innerHTML = '<option value="all">All</option><option value="published">Published</option><option value="closed">Closed</option>';
   } else {
     $('filterStatusLabel').textContent = 'Status';
     $('filterStatus').innerHTML = '<option value="all">All</option><option value="draft">Draft</option><option value="published">Published</option><option value="closed">Closed</option>';
@@ -475,7 +495,12 @@ function applyAccessChrome() {
     chromeKey = key;
   }
   const notice = $('lockedNotice');
-  if (!student && !access.canManage) {
+  if (access.kind === 'staff') {
+    notice.textContent = access.departmentId
+      ? 'You can view internal job posts for your department. The apply list shows only students from your class.'
+      : 'Your account is not assigned to a department, so internal job posts are hidden.';
+    notice.classList.remove('d-none');
+  } else if (!student && !access.canManage) {
     notice.textContent = 'Your account is not assigned to a department, so you cannot create or manage internal job posts.';
     notice.classList.remove('d-none');
   } else {
