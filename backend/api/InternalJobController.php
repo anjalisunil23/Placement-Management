@@ -13,6 +13,7 @@ use PMS\Models\PlacementOfficerModel;
 use PMS\Models\StaffModel;
 use PMS\Models\StudentModel;
 use PMS\Services\InternalJobService;
+use PMS\Services\StaffContext;
 use PMS\Services\ObjectStorageService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -75,10 +76,13 @@ final class InternalJobController
         $rows = $posts->findAll([], 500);
         $out = [];
         foreach ($rows as $row) {
-            if (!$this->managerCanTouch($scope, $row)) {
+            if (!$this->canViewPost($scope, $row)) {
                 continue;
             }
-            $view = $this->presentForManager($row, $apps);
+            $view = $scope['kind'] === 'staff'
+                ? $this->presentForStaff($row, $user)
+                : $this->presentForManager($row, $apps);
+            $view['canManagePost'] = $this->canManagePost($scope, $row);
             if (!$this->passesFilters($view, $row, false)) {
                 continue;
             }
@@ -115,10 +119,12 @@ final class InternalJobController
             Response::success($this->presentForStudent($post, $student, $applied, $apps));
         }
         $scope = $this->managerScope($user);
-        if ($scope === null || !$this->managerCanTouch($scope, $post)) {
+        if ($scope === null || !$this->canViewPost($scope, $post)) {
             Response::forbidden('You do not have permission to view this post.');
         }
-        Response::success($this->presentForManager($post, $apps));
+        Response::success($scope['kind'] === 'staff'
+            ? $this->presentForStaff($post, $user)
+            : $this->presentForManager($post, $apps));
     }
 
     /** POST /api/internal-jobs */
@@ -131,16 +137,15 @@ final class InternalJobController
         }
         $input = $this->readInput();
         $publish = $this->wantsPublish($input);
-        $department = $this->resolveDepartment($scope, (string) ($input['departmentId'] ?? ''));
-        $input['departmentId'] = $department['id'];
+        $departments = $this->resolveDepartments($scope, $input, $publish);
+        $input['departmentId'] = $departments[0]['id'] ?? '';
         $check = InternalJobService::validate($input, $publish);
         if (!$check['ok']) {
             Response::error($check['message'], 422, $check['errors']);
         }
         $now = DocumentHelper::now();
         $doc = $check['data'];
-        $doc['departmentCode'] = $department['code'];
-        $doc['departmentName'] = $department['name'];
+        $doc = $this->applyDepartments($doc, $departments);
         $doc['attachment'] = $this->storeAttachment(null, $input);
         $doc['status'] = $publish ? 'published' : 'draft';
         $doc['createdBy'] = (string) $user['_id'];
@@ -166,22 +171,26 @@ final class InternalJobController
         if (!$post) {
             Response::notFound('Internal job post not found.');
         }
-        if ($scope === null || !$scope['canManage'] || !$this->managerCanTouch($scope, $post)) {
+        if ($scope === null || !$scope['canManage'] || !$this->canManagePost($scope, $post)) {
             Response::forbidden('You do not have permission to update this post.');
         }
         $input = $this->readInput();
         $publish = $this->wantsPublish($input);
         $current = (string) ($post['status'] ?? 'draft');
         $forPublish = $publish || $current === 'published';
-        $department = $this->resolveDepartment($scope, (string) ($input['departmentId'] ?? $post['departmentId'] ?? ''));
-        $input['departmentId'] = $department['id'];
+        if (!array_key_exists('departmentIds', $input) && !array_key_exists('departmentId', $input)) {
+            $input['departmentIds'] = array_map(
+                static fn (array $dept): string => $dept['id'],
+                InternalJobService::departmentList($post)
+            );
+        }
+        $departments = $this->resolveDepartments($scope, $input, $forPublish);
+        $input['departmentId'] = $departments[0]['id'] ?? '';
         $check = InternalJobService::validate($input, $forPublish);
         if (!$check['ok']) {
             Response::error($check['message'], 422, $check['errors']);
         }
-        $doc = $check['data'];
-        $doc['departmentCode'] = $department['code'];
-        $doc['departmentName'] = $department['name'];
+        $doc = $this->applyDepartments($check['data'], $departments);
         $doc['attachment'] = $this->storeAttachment(is_array($post['attachment'] ?? null) ? $post['attachment'] : null, $input);
         if ($publish) {
             $doc['status'] = 'published';
@@ -206,7 +215,7 @@ final class InternalJobController
         if (!$post) {
             Response::notFound('Internal job post not found.');
         }
-        if ($scope === null || !$scope['canManage'] || !$this->managerCanTouch($scope, $post)) {
+        if ($scope === null || !$scope['canManage'] || !$this->canManagePost($scope, $post)) {
             Response::forbidden('You do not have permission to publish this post.');
         }
         $check = InternalJobService::validate($post, true);
@@ -232,7 +241,7 @@ final class InternalJobController
         if (!$post) {
             Response::notFound('Internal job post not found.');
         }
-        if ($scope === null || !$scope['canManage'] || !$this->managerCanTouch($scope, $post)) {
+        if ($scope === null || !$scope['canManage'] || !$this->canManagePost($scope, $post)) {
             Response::forbidden('You do not have permission to close this post.');
         }
         if ((string) ($post['status'] ?? '') === 'draft') {
@@ -256,7 +265,7 @@ final class InternalJobController
         if (!$post) {
             Response::notFound('Internal job post not found.');
         }
-        if ($scope === null || !$scope['canManage'] || !$this->managerCanTouch($scope, $post)) {
+        if ($scope === null || !$scope['canManage'] || !$this->canManagePost($scope, $post)) {
             Response::forbidden('You do not have permission to delete this post.');
         }
         $attachment = is_array($post['attachment'] ?? null) ? $post['attachment'] : [];
@@ -304,6 +313,7 @@ final class InternalJobController
             'registerNumber' => $student['registerNumber'],
             'departmentId' => $student['departmentId'],
             'departmentCode' => $student['departmentCode'],
+            'classBatch' => $student['classBatch'],
             'status' => 'applied',
             'appliedAt' => DocumentHelper::now(),
         ]);
@@ -323,21 +333,16 @@ final class InternalJobController
         if (!$post) {
             Response::notFound('Internal job post not found.');
         }
-        if ($scope === null || !$scope['canManage'] || !$this->managerCanTouch($scope, $post)) {
+        if ($scope !== null && $scope['kind'] === 'staff') {
+            if (!$this->canViewPost($scope, $post)) {
+                Response::forbidden('You do not have permission to view these applications.');
+            }
+            Response::success($this->classApplications($id, StaffContext::resolve($user)));
+        }
+        if ($scope === null || !$scope['canManage'] || !$this->canManagePost($scope, $post)) {
             Response::forbidden('You do not have permission to view these applications.');
         }
-        $rows = [];
-        foreach ((new InternalJobApplicationModel())->findByPost($id) as $app) {
-            $rows[] = [
-                'id' => (string) ($app['_id'] ?? ''),
-                'studentName' => (string) ($app['studentName'] ?? ''),
-                'registerNumber' => (string) ($app['registerNumber'] ?? ''),
-                'departmentCode' => (string) ($app['departmentCode'] ?? ''),
-                'appliedAt' => (string) ($app['appliedAt'] ?? $app['createdAt'] ?? ''),
-                'status' => (string) ($app['status'] ?? 'applied'),
-            ];
-        }
-        Response::success($rows);
+        Response::success($this->applicationRows($id, null));
     }
 
     private function today(): string
@@ -357,6 +362,24 @@ final class InternalJobController
                 'kind' => 'admin',
                 'canManage' => true,
                 'department' => null,
+            ];
+        }
+        if ($role === 'staff') {
+            $ctx = StaffContext::resolve($user);
+            $department = null;
+            if (is_array($ctx['department'] ?? null)) {
+                $dept = $ctx['department'];
+                $department = [
+                    'id' => (string) ($dept['_id'] ?? $ctx['departmentId'] ?? ''),
+                    'code' => trim((string) ($dept['code'] ?? '')),
+                    'name' => trim((string) ($dept['name'] ?? '')),
+                ];
+            }
+
+            return [
+                'kind' => 'staff',
+                'canManage' => false,
+                'department' => $department,
             ];
         }
         if ($role !== 'placement_officer') {
@@ -412,44 +435,147 @@ final class InternalJobController
     }
 
     /**
-     * @param array{kind:string,canManage:bool,department:?array{id:string,code:string,name:string}} $scope
-     * @return array{id:string,code:string,name:string}
+     * @param array<string, mixed> $doc
+     * @param list<array{id:string,code:string,name:string}> $departments
+     * @return array<string, mixed>
      */
-    private function resolveDepartment(array $scope, string $requestedId): array
+    private function applyDepartments(array $doc, array $departments): array
+    {
+        $doc['departments'] = $departments;
+        $first = $departments[0] ?? ['id' => '', 'code' => '', 'name' => ''];
+        $doc['departmentId'] = $first['id'];
+        $doc['departmentCode'] = $first['code'];
+        $doc['departmentName'] = $first['name'];
+
+        return $doc;
+    }
+
+    /**
+     * @param array{kind:string,canManage:bool,department:?array{id:string,code:string,name:string}} $scope
+     * @param array<string, mixed> $input
+     * @return list<array{id:string,code:string,name:string}>
+     */
+    private function resolveDepartments(array $scope, array $input, bool $required): array
     {
         if ($scope['department'] !== null) {
-            return $scope['department'];
+            return [$scope['department']];
         }
-        $requestedId = trim($requestedId);
-        if ($requestedId === '') {
-            Response::error('Select a department.', 422);
+        $raw = $input['departmentIds'] ?? $input['departmentId'] ?? [];
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : preg_split('/\s*,\s*/', $raw);
         }
-        $dept = (new DepartmentModel())->findById($requestedId);
-        if (!$dept || !DepartmentModel::isStudentAcademicDepartment(
-            (string) ($dept['code'] ?? ''),
-            (string) ($dept['name'] ?? '')
-        )) {
-            Response::error('Select a valid student department.', 422);
+        if (!is_array($raw)) {
+            $raw = [$raw];
+        }
+        $out = [];
+        $seen = [];
+        foreach ($raw as $item) {
+            if (is_array($item)) {
+                $item = $item['id'] ?? '';
+            }
+            $id = trim((string) $item);
+            if ($id === '' || isset($seen[strtolower($id)])) {
+                continue;
+            }
+            $dept = (new DepartmentModel())->findById($id);
+            if (!$dept || !DepartmentModel::isStudentAcademicDepartment(
+                (string) ($dept['code'] ?? ''),
+                (string) ($dept['name'] ?? '')
+            )) {
+                Response::error('Select a valid student department.', 422);
+            }
+            $seen[strtolower($id)] = true;
+            $out[] = [
+                'id' => (string) ($dept['_id'] ?? $id),
+                'code' => trim((string) ($dept['code'] ?? '')),
+                'name' => trim((string) ($dept['name'] ?? '')),
+            ];
+        }
+        if ($required && $out === []) {
+            Response::error('Select at least one department.', 422);
         }
 
-        return [
-            'id' => (string) ($dept['_id'] ?? $requestedId),
-            'code' => trim((string) ($dept['code'] ?? '')),
-            'name' => trim((string) ($dept['name'] ?? '')),
-        ];
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $post
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function presentForStaff(array $post, array $user): array
+    {
+        $view = InternalJobService::present($post);
+        $view['applicantCount'] = count($this->classApplications((string) ($post['_id'] ?? ''), StaffContext::resolve($user)));
+        $view['applied'] = false;
+        $view['canApply'] = false;
+        $view['applyBlockReason'] = '';
+
+        return $view;
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return list<array<string, mixed>>
+     */
+    private function classApplications(string $postId, array $ctx): array
+    {
+        $rows = [];
+        foreach ($this->applicationRows($postId, $ctx) as $row) {
+            if (StaffContext::canEditClassBatch($ctx, (string) ($row['classBatch'] ?? ''))) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed>|null $staffCtx
+     * @return list<array<string, mixed>>
+     */
+    private function applicationRows(string $postId, ?array $staffCtx): array
+    {
+        $rows = [];
+        foreach ((new InternalJobApplicationModel())->findByPost($postId) as $app) {
+            $batch = trim((string) ($app['classBatch'] ?? ''));
+            if ($batch === '') {
+                $student = (new StudentModel())->findByUserId((string) ($app['studentUserId'] ?? ''));
+                if (is_array($student)) {
+                    $batch = trim((string) ($student['classBatch'] ?? $student['stud_class'] ?? ''));
+                }
+            }
+            $rows[] = [
+                'id' => (string) ($app['_id'] ?? ''),
+                'studentName' => (string) ($app['studentName'] ?? ''),
+                'registerNumber' => (string) ($app['registerNumber'] ?? ''),
+                'departmentCode' => (string) ($app['departmentCode'] ?? ''),
+                'classBatch' => $batch,
+                'appliedAt' => (string) ($app['appliedAt'] ?? $app['createdAt'] ?? ''),
+                'status' => (string) ($app['status'] ?? 'applied'),
+            ];
+        }
+
+        return $rows;
     }
 
     /**
      * @param array{kind:string,canManage:bool,department:?array{id:string,code:string,name:string}} $scope
      * @param array<string, mixed> $post
      */
-    private function managerCanTouch(array $scope, array $post): bool
+    private function canViewPost(array $scope, array $post): bool
     {
         if ($scope['kind'] === 'admin') {
             return true;
         }
-        if (!$scope['canManage'] || $scope['department'] === null) {
-            return false;
+        if ($scope['kind'] === 'staff') {
+            if (!in_array((string) ($post['status'] ?? ''), ['published', 'closed'], true)) {
+                return false;
+            }
+        }
+        if ($scope['department'] === null) {
+            return $scope['kind'] !== 'staff' && $scope['canManage'];
         }
 
         return InternalJobService::departmentMatches(
@@ -459,9 +585,25 @@ final class InternalJobController
         );
     }
 
+    private function canManagePost(array $scope, array $post): bool
+    {
+        if ($scope['kind'] === 'admin') {
+            return true;
+        }
+        if (!$scope['canManage'] || $scope['department'] === null) {
+            return false;
+        }
+
+        return InternalJobService::limitedToDepartment(
+            $post,
+            $scope['department']['id'],
+            $scope['department']['code']
+        );
+    }
+
     /**
      * @param array<string, mixed> $user
-     * @return array{departmentId:string,departmentCode:string,departmentName:string,cgpa:float,registerNumber:string}
+     * @return array{departmentId:string,departmentCode:string,departmentName:string,cgpa:float,registerNumber:string,classBatch:string}
      */
     private function studentContext(array $user): array
     {
@@ -476,6 +618,7 @@ final class InternalJobController
             'departmentName' => trim((string) ($dept['name'] ?? '')),
             'cgpa' => (float) ($academic['cgpa'] ?? 0),
             'registerNumber' => trim((string) ($profile['registerNumber'] ?? '')),
+            'classBatch' => trim((string) (is_array($profile) ? ($profile['classBatch'] ?? $profile['stud_class'] ?? '') : '')),
         ];
     }
 
@@ -656,7 +799,7 @@ final class InternalJobController
         }
         $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
         if (!$student && $departmentId !== '' && $departmentId !== 'all'
-            && strcasecmp((string) ($post['departmentId'] ?? ''), $departmentId) !== 0) {
+            && !InternalJobService::departmentMatches($post, $departmentId, '')) {
             return false;
         }
         $location = strtolower(trim((string) ($_GET['location'] ?? '')));

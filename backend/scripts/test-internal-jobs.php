@@ -106,6 +106,16 @@ $allowed = InternalJobService::applyDecision($post, [
 ]);
 check($allowed['canApply'], 'student in the same department can apply');
 
+$multi = $post;
+$multi['departments'] = [
+    ['id' => 'dept1', 'code' => 'CSE', 'name' => 'Computer Science'],
+    ['id' => 'dept2', 'code' => 'ECE', 'name' => 'Electronics'],
+];
+check(InternalJobService::departmentMatches($multi, 'dept2', 'ECE'), 'a post can match a second selected department');
+check(!InternalJobService::departmentMatches($multi, 'mech', 'ME'), 'a student outside the selected departments cannot match');
+check(!InternalJobService::limitedToDepartment($multi, 'dept1', 'CSE'), 'a multi-department post is not limited to one department');
+check(str_contains(InternalJobService::departmentLabelFromList($multi), 'ECE'), 'department label lists every selected department');
+
 check(InternalJobService::matchesCompensationFilter($okPart['data'], 'stipend'), 'stipend filter includes part-time jobs');
 check(!InternalJobService::matchesCompensationFilter($unpaid['data'], 'stipend'), 'stipend filter excludes unpaid internships');
 check(InternalJobService::matchesCompensationFilter($fee['data'], 'fee'), 'fee filter matches fee-based internships');

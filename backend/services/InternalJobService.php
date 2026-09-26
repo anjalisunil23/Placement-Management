@@ -128,17 +128,99 @@ final class InternalJobService
         return trim($requested);
     }
 
+    /**
+     * @param array<string, mixed> $post
+     * @return list<array{id:string,code:string,name:string}>
+     */
+    public static function departmentList(array $post): array
+    {
+        $list = [];
+        $raw = $post['departments'] ?? null;
+        if (is_array($raw)) {
+            foreach ($raw as $dept) {
+                if (!is_array($dept)) {
+                    continue;
+                }
+                $id = trim((string) ($dept['id'] ?? ''));
+                $code = trim((string) ($dept['code'] ?? ''));
+                $name = trim((string) ($dept['name'] ?? ''));
+                if ($id === '' && $code === '') {
+                    continue;
+                }
+                $list[] = ['id' => $id, 'code' => $code, 'name' => $name];
+            }
+        }
+        if ($list === []) {
+            $id = trim((string) ($post['departmentId'] ?? ''));
+            $code = trim((string) ($post['departmentCode'] ?? ''));
+            $name = trim((string) ($post['departmentName'] ?? ''));
+            if ($id !== '' || $code !== '') {
+                $list[] = ['id' => $id, 'code' => $code, 'name' => $name];
+            }
+        }
+
+        return $list;
+    }
+
     public static function departmentMatches(array $post, string $departmentId, string $departmentCode): bool
     {
-        $postId = trim((string) ($post['departmentId'] ?? ''));
+        foreach (self::departmentList($post) as $dept) {
+            if (self::oneDepartmentMatches($dept, $departmentId, $departmentCode)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * True when every targeted department is this one department.
+     */
+    public static function limitedToDepartment(array $post, string $departmentId, string $departmentCode): bool
+    {
+        $list = self::departmentList($post);
+        if ($list === []) {
+            return false;
+        }
+        foreach ($list as $dept) {
+            if (!self::oneDepartmentMatches($dept, $departmentId, $departmentCode)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array{id?:string,code?:string,name?:string} $dept
+     */
+    private static function oneDepartmentMatches(array $dept, string $departmentId, string $departmentCode): bool
+    {
         $departmentId = trim($departmentId);
-        if ($departmentId !== '' && $postId !== '' && strcasecmp($postId, $departmentId) === 0) {
+        $id = trim((string) ($dept['id'] ?? ''));
+        if ($departmentId !== '' && $id !== '' && strcasecmp($id, $departmentId) === 0) {
             return true;
         }
         $code = strtoupper(trim($departmentCode));
-        $postCode = strtoupper(trim((string) ($post['departmentCode'] ?? '')));
+        $postCode = strtoupper(trim((string) ($dept['code'] ?? '')));
 
         return $code !== '' && $postCode !== '' && $code === $postCode;
+    }
+
+    public static function departmentLabelFromList(array $post): string
+    {
+        $parts = [];
+        foreach (self::departmentList($post) as $dept) {
+            $code = trim((string) ($dept['code'] ?? ''));
+            $name = trim((string) ($dept['name'] ?? ''));
+            if ($code !== '' && $name !== '' && strcasecmp($code, $name) !== 0) {
+                $parts[] = $code . ' — ' . $name;
+            } elseif ($name !== '' || $code !== '') {
+                $parts[] = $name !== '' ? $name : $code;
+            }
+        }
+
+        return implode(', ', $parts);
     }
 
     /**
@@ -425,11 +507,11 @@ final class InternalJobService
         $jobType = (string) ($post['jobType'] ?? '');
         $mode = (string) ($post['workMode'] ?? '');
         $compType = (string) ($post['compensationType'] ?? '');
-        $code = trim((string) ($post['departmentCode'] ?? ''));
-        $name = trim((string) ($post['departmentName'] ?? ''));
-        $departmentLabel = $code !== '' && $name !== '' && strcasecmp($code, $name) !== 0
-            ? $code . ' — ' . $name
-            : ($name !== '' ? $name : $code);
+        $departments = self::departmentList($post);
+        $first = $departments[0] ?? ['id' => '', 'code' => '', 'name' => ''];
+        $code = trim((string) ($first['code'] ?? ''));
+        $name = trim((string) ($first['name'] ?? ''));
+        $departmentLabel = self::departmentLabelFromList($post);
         $attachment = is_array($post['attachment'] ?? null) ? $post['attachment'] : [];
 
         return [
@@ -438,7 +520,9 @@ final class InternalJobService
             'jobTypeLabel' => self::jobTypeLabel($jobType),
             'title' => (string) ($post['title'] ?? ''),
             'company' => (string) ($post['company'] ?? ''),
-            'departmentId' => (string) ($post['departmentId'] ?? ''),
+            'departmentId' => (string) ($first['id'] ?? $post['departmentId'] ?? ''),
+            'departmentIds' => array_values(array_map(static fn (array $dept): string => $dept['id'], $departments)),
+            'departments' => $departments,
             'departmentCode' => $code,
             'departmentName' => $name,
             'departmentLabel' => $departmentLabel !== '' ? $departmentLabel : '—',
